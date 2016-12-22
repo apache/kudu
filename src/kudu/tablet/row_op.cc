@@ -18,6 +18,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/pb_util.h"
 
 namespace kudu {
 namespace tablet {
@@ -31,19 +32,19 @@ RowOp::~RowOp() {
 }
 
 void RowOp::SetFailed(const Status& s) {
-  DCHECK(!result) << result->DebugString();
+  DCHECK(!result) << SecureDebugString(*result);
   result.reset(new OperationResultPB());
   StatusToPB(s, result->mutable_failed_status());
 }
 
 void RowOp::SetInsertSucceeded(int mrs_id) {
-  DCHECK(!result) << result->DebugString();
+  DCHECK(!result) << SecureDebugString(*result);
   result.reset(new OperationResultPB());
   result->add_mutated_stores()->set_mrs_id(mrs_id);
 }
 
 void RowOp::SetMutateSucceeded(gscoped_ptr<OperationResultPB> result) {
-  DCHECK(!this->result) << result->DebugString();
+  DCHECK(!this->result) << SecureDebugString(*result);
   this->result = std::move(result);
 }
 
@@ -52,7 +53,7 @@ string RowOp::ToString(const Schema& schema) const {
 }
 
 void RowOp::SetAlreadyFlushed() {
-  DCHECK(!result) << result->DebugString();
+  DCHECK(!result) << SecureDebugString(*result);
   result.reset(new OperationResultPB());
   result->set_flushed(true);
 }

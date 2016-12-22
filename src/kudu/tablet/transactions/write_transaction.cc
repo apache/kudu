@@ -34,6 +34,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
@@ -372,7 +373,7 @@ string WriteTransactionState::ToString() const {
 
   return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2, rows=$3]",
                     this,
-                    op_id().ShortDebugString(),
+                    SecureShortDebugString(op_id()),
                     ts_str,
                     row_ops_str);
 }

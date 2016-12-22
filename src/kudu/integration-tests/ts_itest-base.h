@@ -32,6 +32,7 @@
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
@@ -151,7 +152,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
           SleepFor(MonoDelta::FromSeconds(1));
           continue;
         }
-        FAIL() << "Response had a fatal error: " << resp.error().ShortDebugString();
+        FAIL() << "Response had a fatal error: " << SecureShortDebugString(resp.error());
       }
 
       for (const master::TabletLocationsPB& location : resp.tablet_locations()) {
@@ -162,7 +163,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
         if (tablet_replicas.count(location.tablet_id()) < FLAGS_num_replicas) {
           LOG(WARNING)<< "Couldn't find the leader and/or replicas. Location: "
-              << location.ShortDebugString();
+              << SecureShortDebugString(location);
           replicas_missing = true;
           SleepFor(MonoDelta::FromSeconds(1));
           break;

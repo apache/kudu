@@ -41,8 +41,9 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);
@@ -203,7 +204,7 @@ class TabletPeerTest : public KuduTabletTest {
     CHECK_OK(tablet_peer->SubmitWrite(std::move(tx_state)));
     rpc_latch.Wait();
     CHECK(!resp->has_error())
-        << "\nReq:\n" << req.DebugString() << "Resp:\n" << resp->DebugString();
+        << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
 
     // Roll the log after each write.
     // Usually the append thread does the roll and no additional sync is required. However in
@@ -249,7 +250,7 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
     CHECK_LT(retention.for_durability, last_log_opid.index())
       << "Expected valid log anchor, got earliest opid: " << retention.for_durability
-      << " (expected any value earlier than last log id: " << last_log_opid.ShortDebugString()
+      << " (expected any value earlier than last log id: " << SecureShortDebugString(last_log_opid)
       << ")";
   }
 
@@ -361,7 +362,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
   OpId id;
   log->GetLatestEntryOpId(&id);
-  LOG(INFO) << "Before: " << id.ShortDebugString();
+  LOG(INFO) << "Before: " << SecureShortDebugString(id);
 
 
   // We currently have no anchors and the last operation in the log is 0.3

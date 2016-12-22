@@ -23,6 +23,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/util/pb_util.h"
 
 namespace kudu {
 namespace tablet {
@@ -86,11 +87,11 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
   // Compare the 2 dumped superblock PBs.
   ASSERT_EQ(superblock_pb_1.SerializeAsString(),
             superblock_pb_2.SerializeAsString())
-    << superblock_pb_1.DebugString()
-    << superblock_pb_2.DebugString();
+    << SecureDebugString(superblock_pb_1)
+    << SecureDebugString(superblock_pb_2);
 
   LOG(INFO) << "Superblocks match:\n"
-            << superblock_pb_1.DebugString();
+            << SecureDebugString(superblock_pb_1);
 }
 
 

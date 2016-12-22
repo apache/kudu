@@ -39,6 +39,7 @@
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 
 namespace kudu {
@@ -95,7 +96,7 @@ const string& TServerDetails::uuid() const {
 string TServerDetails::ToString() const {
   return Substitute("TabletServer: $0, Rpc address: $1",
                     instance_id.permanent_uuid(),
-                    registration.rpc_addresses(0).ShortDebugString());
+                    SecureShortDebugString(registration.rpc_addresses(0)));
 }
 
 client::KuduSchema SimpleIntKeyKuduSchema() {
@@ -127,7 +128,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
     RETURN_NOT_OK_PREPEND(
       ts->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller),
       Substitute("Failed to fetch last op id from $0",
-                 ts->instance_id.ShortDebugString()));
+                 SecureShortDebugString(ts->instance_id)));
     op_ids->push_back(opid_resp.opid());
   }
 
@@ -238,7 +239,7 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
   RETURN_NOT_OK(master_proxy->ListTabletServers(req, &resp, &controller));
   RETURN_NOT_OK(controller.status());
   if (resp.has_error()) {
-    return Status::RemoteError("Response had an error", resp.error().ShortDebugString());
+    return Status::RemoteError("Response had an error", SecureShortDebugString(resp.error()));
   }
 
   ts_map->clear();
@@ -316,7 +317,7 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
   return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1."
                                      "Last consensus state: $2. Last status: $3",
                                      config_size, timeout.ToString(),
-                                     cstate.ShortDebugString(), s.ToString()));
+                                     SecureShortDebugString(cstate), s.ToString()));
 }
 
 Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
@@ -343,7 +344,7 @@ Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                      "Last consensus state: $2. Last status: $3",
                                      opid_index,
                                      (MonoTime::Now() - start).ToString(),
-                                     cstate.ShortDebugString(), s.ToString()));
+                                     SecureShortDebugString(cstate), s.ToString()));
 }
 
 Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
@@ -615,10 +616,10 @@ Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
     return StatusFromPB(resp.error().status());
   }
   if (resp.errors_size() > 0) {
-    CHECK_EQ(1, resp.errors_size()) << resp.ShortDebugString();
+    CHECK_EQ(1, resp.errors_size()) << SecureShortDebugString(resp);
     return StatusFromPB(resp.errors(0).status());
   }
-  CHECK_EQ(1, resp.tablet_locations_size()) << resp.ShortDebugString();
+  CHECK_EQ(1, resp.tablet_locations_size()) << SecureShortDebugString(resp);
   *tablet_locations = resp.tablet_locations(0);
   return Status::OK();
 }

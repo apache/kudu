@@ -42,6 +42,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
@@ -287,7 +288,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Replica starting. Triggering "
                                    << info.orphaned_replicates.size()
                                    << " pending transactions. Active config: "
-                                   << state_->GetActiveConfigUnlocked().ShortDebugString();
+                                   << SecureShortDebugString(state_->GetActiveConfigUnlocked());
     for (ReplicateMsg* replicate : info.orphaned_replicates) {
       ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
@@ -405,7 +406,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       SnoozeFailureDetectorUnlocked(); // Avoid excessive election noise while in this state.
       return Status::IllegalState("Not starting election: Node is currently "
                                   "a non-participant in the raft config",
-                                  state_->GetActiveConfigUnlocked().ShortDebugString());
+                                  SecureShortDebugString(state_->GetActiveConfigUnlocked()));
     }
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Starting " << mode_str
@@ -432,7 +433,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
 
     const RaftConfigPB& active_config = state_->GetActiveConfigUnlocked();
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting " << mode_str << " with config: "
-                                   << active_config.ShortDebugString();
+                                   << SecureShortDebugString(active_config);
 
     // Initialize the VoteCounter.
     int num_voters = CountVoters(active_config);
@@ -614,7 +615,7 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
 
     Status s = state_->CheckNoConfigChangePendingUnlocked();
     if (PREDICT_FALSE(!s.ok())) {
-      s = s.CloneAndAppend(Substitute("\n  New config: $0", new_config.ShortDebugString()));
+      s = s.CloneAndAppend(Substitute("\n  New config: $0", SecureShortDebugString(new_config)));
       LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
       return s;
     }
@@ -632,8 +633,8 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
           << "Ignoring setting pending config change with OpId "
           << round->replicate_msg()->id() << " because the committed config has OpId index "
           << committed_config.opid_index() << ". The config change we are ignoring is: "
-          << "Old config: { " << change_record->old_config().ShortDebugString() << " }. "
-          << "New config: { " << new_config.ShortDebugString() << " }";
+          << "Old config: { " << SecureShortDebugString(change_record->old_config()) << " }. "
+          << "New config: { " << SecureShortDebugString(new_config) << " }";
     }
   }
 
@@ -741,7 +742,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
   response->set_responder_uuid(state_->GetPeerUuid());
 
-  VLOG_WITH_PREFIX(2) << "Replica received request: " << request->ShortDebugString();
+  VLOG_WITH_PREFIX(2) << "Replica received request: " << SecureShortDebugString(*request);
 
   // see var declaration
   std::lock_guard<simple_spinlock> lock(update_lock_);
@@ -749,7 +750,8 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
       VLOG_WITH_PREFIX(1) << "Replica replied to status only request. Replica: "
-                          << state_->ToString() << ". Response: " << response->ShortDebugString();
+                          << state_->ToString() << ". Response: "
+                          << SecureShortDebugString(*response);
     }
   }
   return s;
@@ -770,7 +772,8 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
                                 "is set to true.");
   }
 
-  VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: "
+                               << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
   RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
@@ -903,8 +906,8 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
   string error_msg = Substitute(
     "Log matching property violated."
     " Preceding OpId in replica: $0. Preceding OpId from leader: $1. ($2 mismatch)",
-    queue_->GetLastOpIdInLog().ShortDebugString(),
-    req.preceding_opid->ShortDebugString(),
+    SecureShortDebugString(queue_->GetLastOpIdInLog()),
+    SecureShortDebugString(*req.preceding_opid),
     term_mismatch ? "term" : "index");
 
 
@@ -964,7 +967,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
     s = PendingRounds::CheckOpInSequence(*prev, message->get()->id());
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "
-          << s.ToString() << ". Leader Request: " << request->ShortDebugString();
+          << s.ToString() << ". Leader Request: " << SecureShortDebugString(*request);
       break;
     }
     prev = &message->get()->id();
@@ -1318,7 +1321,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG_WITH_PREFIX(2) << "Replica updated."
-        << state_->ToString() << " Request: " << request->ShortDebugString();
+        << state_->ToString() << " Request: " << SecureShortDebugString(*request);
   }
 
   TRACE("UpdateReplicas() finished");
@@ -1457,12 +1460,12 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                                    boost::optional<TabletServerErrorPB::Code>* error_code) {
   if (PREDICT_FALSE(!req.has_type())) {
     return Status::InvalidArgument("Must specify 'type' argument to ChangeConfig()",
-                                   req.ShortDebugString());
+                                   SecureShortDebugString(req));
   }
   if (PREDICT_FALSE(!req.has_server())) {
     *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument("Must specify 'server' argument to ChangeConfig()",
-                                   req.ShortDebugString());
+                                   SecureShortDebugString(req));
   }
   ChangeConfigType type = req.type();
   const RaftPeerPB& server = req.server();
@@ -1481,7 +1484,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
 
     if (!server.has_permanent_uuid()) {
       return Status::InvalidArgument("server must have permanent_uuid specified",
-                                     req.ShortDebugString());
+                                     SecureShortDebugString(req));
     }
     const RaftConfigPB& committed_config = state_->GetCommittedConfigUnlocked();
 
@@ -1506,15 +1509,15 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
         if (IsRaftConfigMember(server_uuid, committed_config)) {
           return Status::InvalidArgument(
               Substitute("Server with UUID $0 is already a member of the config. RaftConfig: $1",
-                        server_uuid, committed_config.ShortDebugString()));
+                        server_uuid, SecureShortDebugString(committed_config)));
         }
         if (!server.has_member_type()) {
           return Status::InvalidArgument("server must have member_type specified",
-                                         req.ShortDebugString());
+                                         SecureShortDebugString(req));
         }
         if (!server.has_last_known_addr()) {
           return Status::InvalidArgument("server must have last_known_addr specified",
-                                         req.ShortDebugString());
+                                         SecureShortDebugString(req));
         }
         *new_config.add_peers() = server;
         break;
@@ -1526,13 +1529,13 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                          "Force another leader to be elected to remove this server. "
                          "Active consensus state: $1",
                          server_uuid,
-                         state_->ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE)
-                            .ShortDebugString()));
+                         SecureShortDebugString(state_->ConsensusStateUnlocked(
+                             CONSENSUS_CONFIG_ACTIVE))));
         }
         if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
           return Status::NotFound(
               Substitute("Server with UUID $0 not a member of the config. RaftConfig: $1",
-                        server_uuid, committed_config.ShortDebugString()));
+                        server_uuid, SecureShortDebugString(committed_config)));
         }
         break;
 
@@ -1599,9 +1602,9 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
   OperationType op_type = msg->get()->op_type();
   CHECK(IsConsensusOnlyOperation(op_type))
       << "Expected a consensus-only op type, got " << OperationType_Name(op_type)
-      << ": " << msg->get()->ShortDebugString();
+      << ": " << SecureShortDebugString(*msg->get());
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
-                               << msg->get()->id().ShortDebugString();
+                               << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
                                              Unretained(this),
@@ -1686,8 +1689,8 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
                           GetRequestVoteLogPrefixUnlocked(*request),
                           request->candidate_uuid(),
                           request->candidate_term(),
-                          local_last_logged_opid.ShortDebugString(),
-                          request->candidate_status().last_received().ShortDebugString());
+                          SecureShortDebugString(local_last_logged_opid),
+                          SecureShortDebugString(request->candidate_status().last_received()));
   LOG(INFO) << msg;
   StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
   return Status::OK();
@@ -1941,7 +1944,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
                                       << " decision while not in active config. "
                                       << "Result: Term " << election_term << ": "
                                       << (result.decision == VOTE_GRANTED ? "won" : "lost")
-                                      << ". RaftConfig: " << active_config.ShortDebugString();
+                                      << ". RaftConfig: " << SecureShortDebugString(active_config);
     return;
   }
 
@@ -2094,18 +2097,19 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
   // messages were delayed.
   const RaftConfigPB& committed_config = state_->GetCommittedConfigUnlocked();
   if (new_config.opid_index() > committed_config.opid_index()) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
-                                   << op_id << ": "
-                                   << DiffRaftConfigs(old_config, new_config)
-                                   << ". New config: { " << new_config.ShortDebugString() << " }";
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Committing config change with OpId "
+        << op_id << ": "
+        << DiffRaftConfigs(old_config, new_config)
+        << ". New config: { " << SecureShortDebugString(new_config) << " }";
     CHECK_OK(state_->SetCommittedConfigUnlocked(new_config));
   } else {
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Ignoring commit of config change with OpId "
         << op_id << " because the committed config has OpId index "
         << committed_config.opid_index() << ". The config change we are ignoring is: "
-        << "Old config: { " << old_config.ShortDebugString() << " }. "
-        << "New config: { " << new_config.ShortDebugString() << " }";
+        << "Old config: { " << SecureShortDebugString(old_config) << " }. "
+        << "New config: { " << SecureShortDebugString(new_config) << " }";
   }
 }
 

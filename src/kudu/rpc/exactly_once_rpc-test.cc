@@ -16,8 +16,9 @@
 // under the License.
 
 #include "kudu/rpc/retriable_rpc.h"
-#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc-test-base.h"
+#include "kudu/rpc/rpc.h"
+#include "kudu/util/pb_util.h"
 
 DECLARE_int64(remember_clients_ttl_ms);
 DECLARE_int64(remember_responses_ttl_ms);
@@ -114,7 +115,8 @@ class CalculatorServiceRpc : public RetriableRpc<CalculatorServiceProxy,
     if (!successful_response_.IsInitialized()) {
       successful_response_.CopyFrom(resp_);
     } else {
-      CHECK_EQ(successful_response_.DebugString(), resp_.DebugString());
+      CHECK_EQ(SecureDebugString(successful_response_),
+               SecureDebugString(resp_));
     }
 
     if (sometimes_retry_successful_) {
@@ -297,10 +299,10 @@ class ExactlyOnceRpcTest : public RpcTestBase {
       Status s = MakeAddCall(sequence_number, 0, &response);
       if (s.ok()) {
         if (!result_gced) {
-          CHECK_EQ(response.ShortDebugString(), original_response.ShortDebugString());
+          CHECK_EQ(SecureDebugString(response), SecureDebugString(original_response));
         } else {
           client_gced = true;
-          CHECK_NE(response.ShortDebugString(), original_response.ShortDebugString());
+          CHECK_NE(SecureDebugString(response), SecureDebugString(original_response));
         }
         SleepFor(MonoDelta::FromMilliseconds(rand() % 10));
       } else if (s.IsRemoteError()) {
@@ -493,7 +495,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollection) {
   // Making the same request again, should return the same response.
   ExactlyOnceResponsePB resp;
   ASSERT_OK(MakeAddCall(sequence_number, 1, &resp));
-  ASSERT_EQ(original.ShortDebugString(), resp.ShortDebugString());
+  ASSERT_EQ(SecureShortDebugString(original), SecureShortDebugString(resp));
 
   // Now sleep for 'remember_responses_ttl_ms' and run GC, we should then
   // get a STALE back.
@@ -516,7 +518,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollection) {
 
   resp.Clear();
   ASSERT_OK(MakeAddCall(sequence_number, 1, &resp));
-  ASSERT_NE(resp.ShortDebugString(), original.ShortDebugString());
+  ASSERT_NE(SecureShortDebugString(resp), SecureShortDebugString(original));
 }
 
 // This test creates a thread continuously making requests to the server, some lasting longer

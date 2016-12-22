@@ -24,6 +24,7 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -208,7 +209,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   RowwiseRowBlockPB pb;
   faststring direct, indirect;
   SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
-  SCOPED_TRACE(pb.DebugString());
+  SCOPED_TRACE(SecureDebugString(pb));
   SCOPED_TRACE("Row data: " + direct.ToString());
   SCOPED_TRACE("Indirect data: " + indirect.ToString());
 

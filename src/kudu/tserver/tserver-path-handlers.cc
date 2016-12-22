@@ -39,6 +39,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
 
 using kudu::consensus::GetConsensusRole;
@@ -146,13 +147,13 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
         (*output) << Substitute(
           "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
           EscapeForHtmlToString(peer->tablet_id()),
-          EscapeForHtmlToString(inflight_tx.op_id().ShortDebugString()),
+          EscapeForHtmlToString(SecureShortDebugString(inflight_tx.op_id())),
           OperationType_Name(inflight_tx.tx_type()),
           total_time_str,
           EscapeForHtmlToString(description));
       } else {
         (*output) << "Tablet: " << peer->tablet_id() << endl;
-        (*output) << "Op ID: " << inflight_tx.op_id().ShortDebugString() << endl;
+        (*output) << "Op ID: " << SecureShortDebugString(inflight_tx.op_id()) << endl;
         (*output) << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
         (*output) << "Running: " << total_time_str;
         (*output) << description << endl;
@@ -557,7 +558,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);
   if (ContainsKey(req.parsed_args, "raw")) {
-    *output << pb.DebugString();
+    *output << SecureDebugString(pb);
     return;
   }
 

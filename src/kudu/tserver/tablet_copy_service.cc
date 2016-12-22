@@ -34,6 +34,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/pb_util.h"
 
 // Note, this macro assumes the existence of a local var named 'context'.
 #define RPC_RETURN_APP_ERROR(app_err, message, s) \
@@ -285,24 +286,24 @@ Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
     *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
         Substitute("Only one of BlockId or segment sequence number are required, "
-            "but both were specified. DataTypeID: $0", data_id.ShortDebugString()));
+            "but both were specified. DataTypeID: $0", SecureShortDebugString(data_id)));
   } else if (PREDICT_FALSE(!data_id.has_block_id() && !data_id.has_wal_segment_seqno())) {
     *app_error = TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST;
     return Status::InvalidArgument(
         Substitute("Only one of BlockId or segment sequence number are required, "
-            "but neither were specified. DataTypeID: $0", data_id.ShortDebugString()));
+            "but neither were specified. DataTypeID: $0", SecureShortDebugString(data_id)));
   }
 
   if (data_id.type() == DataIdPB::BLOCK) {
     if (PREDICT_FALSE(!data_id.has_block_id())) {
       return Status::InvalidArgument("block_id must be specified for type == BLOCK",
-                                     data_id.ShortDebugString());
+                                     SecureShortDebugString(data_id));
     }
   } else {
     if (PREDICT_FALSE(!data_id.wal_segment_seqno())) {
       return Status::InvalidArgument(
           "segment sequence number must be specified for type == LOG_SEGMENT",
-          data_id.ShortDebugString());
+          SecureShortDebugString(data_id));
     }
   }
 

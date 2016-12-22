@@ -26,6 +26,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -47,7 +48,7 @@ string AlterSchemaTransactionState::ToString() const {
                     "[timestamp=$0, schema=$1, request=$2]",
                     has_timestamp() ? timestamp().ToString() : "<unassigned>",
                     schema_ == nullptr ? "(none)" : schema_->ToString(),
-                    request_ == nullptr ? "(none)" : request_->ShortDebugString());
+                    request_ == nullptr ? "(none)" : SecureShortDebugString(*request_));
 }
 
 void AlterSchemaTransactionState::AcquireSchemaLock(rw_semaphore* l) {

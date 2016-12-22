@@ -338,11 +338,11 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
 
   // The consensus bootstrap info should include the orphaned REPLICATE.
   ASSERT_EQ(1, boot_info.orphaned_replicates.size());
-  ASSERT_STR_CONTAINS(boot_info.orphaned_replicates[0]->ShortDebugString(),
+  ASSERT_STR_CONTAINS(SecureShortDebugString(*boot_info.orphaned_replicates[0]),
                       "this is a test mutate");
 
   // And it should also include the latest opids.
-  EXPECT_EQ("term: 1 index: 1", boot_info.last_id.ShortDebugString());
+  EXPECT_EQ("term: 1 index: 1", SecureShortDebugString(boot_info.last_id));
 }
 
 // Bootstrap should fail if no ConsensusMetadata file exists.

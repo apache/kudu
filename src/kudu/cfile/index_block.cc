@@ -18,6 +18,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/protobuf_util.h"
 
 namespace kudu {
@@ -161,7 +162,7 @@ Status IndexBlockReader::Parse(const Slice &data) {
   key_offsets_ = trailer_ptr - sizeof(uint32_t) * trailer_.num_entries();
   CHECK(trailer_ptr >= data_.data());
 
-  VLOG(2) << "Parsed index trailer: " << trailer_.DebugString();
+  VLOG(2) << "Parsed index trailer: " << SecureDebugString(trailer_);
 
   parsed_ = true;
   return Status::OK();

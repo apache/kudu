@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(print_meta);
@@ -92,8 +93,8 @@ Status DumpCFile(const RunnerContext& context) {
   RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
-    cout << "Header:\n" << reader->header().DebugString() << endl;
-    cout << "Footer:\n" << reader->footer().DebugString() << endl;
+    cout << "Header:\n" << SecureDebugString(reader->header()) << endl;
+    cout << "Footer:\n" << SecureDebugString(reader->footer()) << endl;
   }
 
   if (FLAGS_print_rows) {

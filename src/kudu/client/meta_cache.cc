@@ -36,6 +36,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 
 using std::map;
 using std::set;
@@ -769,7 +770,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
                                         MetaCacheEntry* cache_entry) {
   VLOG(2) << "Processing master response for " << rpc.ToString()
-          << ". Response: " << rpc.resp().ShortDebugString();
+          << ". Response: " << SecureShortDebugString(rpc.resp());
 
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(rpc.resp().ttl_millis());
@@ -859,7 +860,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
         DCHECK_EQ(tablet_lower_bound, remote->partition().partition_key_start());
         DCHECK_EQ(tablet_upper_bound, remote->partition().partition_key_end());
 
-        VLOG(3) << "Refreshing tablet " << tablet_id << ": " << tablet.ShortDebugString();
+        VLOG(3) << "Refreshing tablet " << tablet_id << ": " << SecureShortDebugString(tablet);
         remote->Refresh(ts_cache_, tablet.replicas());
 
         // Update the entry TTL.

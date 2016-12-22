@@ -33,6 +33,7 @@
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/user.h"
@@ -279,7 +280,8 @@ TEST_F(RpcStubTest, TestApplicationError) {
   EXPECT_EQ("message: \"Got some error\"\n"
             "[kudu.rpc_test.CalculatorError.app_error_ext] {\n"
             "  extra_error_data: \"some application-specific error data\"\n"
-            "}\n", controller.error_response()->DebugString());
+            "}\n",
+            SecureDebugString(*controller.error_response()));
 }
 
 TEST_F(RpcStubTest, TestRpcPanic) {
@@ -482,7 +484,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   dump_req.set_include_traces(true);
 
   ASSERT_OK(client_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
-  LOG(INFO) << "client messenger: " << dump_resp.DebugString();
+  LOG(INFO) << "client messenger: " << SecureDebugString(dump_resp);
   ASSERT_EQ(1, dump_resp.outbound_connections_size());
   ASSERT_EQ(1, dump_resp.outbound_connections(0).calls_in_flight_size());
   ASSERT_EQ("Sleep", dump_resp.outbound_connections(0).calls_in_flight(0).
@@ -502,7 +504,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
-  LOG(INFO) << "server messenger: " << dump_resp.DebugString();
+  LOG(INFO) << "server messenger: " << SecureDebugString(dump_resp);
   ASSERT_EQ(1, dump_resp.inbound_connections_size());
   ASSERT_EQ(1, dump_resp.inbound_connections(0).calls_in_flight_size());
   ASSERT_EQ("Sleep", dump_resp.inbound_connections(0).calls_in_flight(0).
@@ -535,24 +537,24 @@ TEST_F(RpcStubTest, TestDumpSampledCalls) {
   DumpRpczStoreResponsePB sampled_rpcs;
   server_messenger_->rpcz_store()->DumpPB(DumpRpczStoreRequestPB(), &sampled_rpcs);
   EXPECT_EQ(sampled_rpcs.methods_size(), 1);
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+  ASSERT_STR_CONTAINS(SecureDebugString(sampled_rpcs),
                       "    metrics {\n"
                       "      key: \"test_sleep_us\"\n"
                       "      value: 150000\n"
                       "    }\n");
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+  ASSERT_STR_CONTAINS(SecureDebugString(sampled_rpcs),
                       "    metrics {\n"
                       "      key: \"test_sleep_us\"\n"
                       "      value: 1500000\n"
                       "    }\n");
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(),
+  ASSERT_STR_CONTAINS(SecureDebugString(sampled_rpcs),
                       "    metrics {\n"
                       "      child_path: \"test_child\"\n"
                       "      key: \"related_trace_metric\"\n"
                       "      value: 1\n"
                       "    }");
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "SleepRequestPB");
-  ASSERT_STR_CONTAINS(sampled_rpcs.DebugString(), "duration_ms");
+  ASSERT_STR_CONTAINS(SecureDebugString(sampled_rpcs), "SleepRequestPB");
+  ASSERT_STR_CONTAINS(SecureDebugString(sampled_rpcs), "duration_ms");
 }
 
 namespace {

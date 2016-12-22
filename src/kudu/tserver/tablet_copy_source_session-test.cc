@@ -37,6 +37,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
@@ -171,8 +172,8 @@ class TabletCopyTest : public KuduTabletTest {
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_peer_->SubmitWrite(std::move(state)));
       latch.Wait();
-      ASSERT_FALSE(resp.has_error()) << "Request failed: " << resp.error().ShortDebugString();
-      ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << resp.ShortDebugString();
+      ASSERT_FALSE(resp.has_error()) << "Request failed: " << SecureShortDebugString(resp.error());
+      ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << SecureShortDebugString(resp);
     }
     ASSERT_OK(tablet()->Flush());
   }

@@ -70,6 +70,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -704,7 +705,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
 
   TabletSuperBlockPB pb1;
   meta->ToSuperBlock(&pb1);
-  debug_str = pb1.DebugString();
+  debug_str = SecureDebugString(pb1);
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, "Superblock:");
   ASSERT_STR_CONTAINS(stdout, debug_str);
@@ -834,7 +835,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
     TabletSuperBlockPB pb1;
     meta->ToSuperBlock(&pb1);
-    debug_str = pb1.DebugString();
+    debug_str = SecureDebugString(pb1);
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, "Superblock:");
     ASSERT_STR_CONTAINS(stdout, debug_str);

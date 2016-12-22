@@ -34,8 +34,9 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
 DECLARE_int32(heartbeat_interval_ms);
@@ -123,8 +124,8 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   ServerRegistrationPB reg;
   descs[0]->GetRegistration(&reg);
   {
-    SCOPED_TRACE(reg.ShortDebugString());
-    ASSERT_EQ(reg.ShortDebugString().find("0.0.0.0"), string::npos)
+    SCOPED_TRACE(SecureShortDebugString(reg));
+    ASSERT_EQ(SecureShortDebugString(reg).find("0.0.0.0"), string::npos)
       << "Should not include wildcards in registration";
   }
 
@@ -146,7 +147,7 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
   ServerRegistrationPB reg;
   cluster_->mini_master()->master()->GetMasterRegistration(&reg);
   {
-    SCOPED_TRACE(reg.ShortDebugString());
+    SCOPED_TRACE(SecureShortDebugString(reg));
     ASSERT_TRUE(reg.has_software_version());
     ASSERT_STR_CONTAINS(reg.software_version(),
                         VersionInfo::GetShortVersionString());

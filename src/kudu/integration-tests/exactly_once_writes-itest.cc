@@ -19,6 +19,7 @@
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/pb_util.h"
 
 namespace kudu {
 namespace tserver {
@@ -204,12 +205,12 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
   bool mismatched = false;
   for (int i = 0; i < num_batches; i++) {
     for (int j = 0; j < num_threads; j++) {
-      string expected_response = responses[j][i].ShortDebugString();
+      string expected_response = SecureShortDebugString(responses[j][i]);
       string expected_ts = strings::Substitute(
           "T:$0 TSidx:$1 TSuuid:$2", j, j % FLAGS_num_replicas,
           cluster_.get()->tablet_server(j % FLAGS_num_replicas)->instance_id().permanent_uuid());
       for (int k = 0; k < num_threads; k++) {
-        string got_response = responses[k][i].ShortDebugString();
+        string got_response = SecureShortDebugString(responses[k][i]);
         string got_ts = strings::Substitute(
             "T:$0 TSidx:$1 TSuuid:$2", k, k % FLAGS_num_replicas,
             cluster_.get()->tablet_server(k % FLAGS_num_replicas)->instance_id().permanent_uuid());

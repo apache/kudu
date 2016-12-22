@@ -31,6 +31,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 
 using kudu::rpc::Messenger;
@@ -149,7 +150,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
 
       controller.Reset();
       ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-      SCOPED_TRACE(resp.DebugString());
+      SCOPED_TRACE(SecureDebugString(resp));
 
       if (resp.has_error()) {
         ASSERT_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
@@ -169,7 +170,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     req.set_partition_key_start("a");
     req.set_max_returned_locations(3);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(3, resp.tablet_locations().size());
@@ -186,7 +187,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     req.set_partition_key_start("");
     req.set_max_returned_locations(3);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(3, resp.tablet_locations().size());
@@ -203,7 +204,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     req.set_partition_key_start("b");
     req.set_max_returned_locations(3);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(3, resp.tablet_locations().size());
@@ -220,7 +221,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     req.set_partition_key_start("z");
     req.set_max_returned_locations(3);
     ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
 
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(1, resp.tablet_locations().size());

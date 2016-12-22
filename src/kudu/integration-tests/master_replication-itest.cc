@@ -30,6 +30,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 
 using std::vector;
@@ -243,7 +244,7 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
 
     // All masters (including followers) should accept the heartbeat.
     ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
+    SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_FALSE(resp.has_error());
   }
 

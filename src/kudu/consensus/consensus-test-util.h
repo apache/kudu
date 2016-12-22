@@ -37,6 +37,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/threadpool.h"
 
@@ -47,8 +48,8 @@
   OpId TOKENPASTE2(_left, __LINE__) = (left); \
   OpId TOKENPASTE2(_right, __LINE__) = (right); \
   if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) \
-    FAIL() << "Expected: " << TOKENPASTE2(_right,__LINE__).ShortDebugString() << "\n" \
-           << "Value: " << TOKENPASTE2(_left,__LINE__).ShortDebugString() << "\n"
+    FAIL() << "Expected: " << SecureShortDebugString(TOKENPASTE2(_right,__LINE__)) << "\n" \
+           << "Value: " << SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"
 
 namespace kudu {
 namespace consensus {
@@ -235,7 +236,7 @@ class MockedPeerProxy : public TestPeerProxy {
   }
 
   virtual void set_update_response(const ConsensusResponsePB& update_response) {
-    CHECK(update_response.IsInitialized()) << update_response.ShortDebugString();
+    CHECK(update_response.IsInitialized()) << SecureShortDebugString(update_response);
     {
       std::lock_guard<simple_spinlock> l(lock_);
       update_response_ = update_response;
@@ -465,7 +466,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
       miss_comm_ = false;
     }
     if (PREDICT_FALSE(miss_comm_copy)) {
-      VLOG(2) << this << ": injecting fault on " << request->ShortDebugString();
+      VLOG(2) << this << ": injecting fault on " << SecureShortDebugString(*request);
       SetResponseError(Status::IOError("Artificial error caused by communication "
           "failure injection."), final_response);
     } else {
@@ -495,7 +496,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not Update replica with request: "
-                   << other_peer_req.ShortDebugString()
+                   << SecureShortDebugString(other_peer_req)
                    << " Status: " << s.ToString();
       SetResponseError(s, &other_peer_resp);
     }
@@ -524,7 +525,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not RequestVote from replica with request: "
-                   << other_peer_req.ShortDebugString()
+                   << SecureShortDebugString(other_peer_req)
                    << " Status: " << s.ToString();
       SetResponseError(s, &other_peer_resp);
     }

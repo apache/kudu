@@ -28,6 +28,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 
@@ -88,7 +89,7 @@ Status ReplicaState::LockForRead(UniqueLock* lock) const {
 
 Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const {
   ThreadRestrictions::AssertWaitAllowed();
-  DCHECK(!msg.has_id()) << "Should not have an ID yet: " << msg.ShortDebugString();
+  DCHECK(!msg.has_id()) << "Should not have an ID yet: " << SecureShortDebugString(msg);
   UniqueLock l(update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
@@ -121,7 +122,7 @@ Status ReplicaState::CheckActiveLeaderUnlocked() const {
                                              "Consensus state: $2",
                                              peer_uuid_,
                                              RaftPeerPB::Role_Name(role),
-                                             cstate.ShortDebugString()));
+                                             SecureShortDebugString(cstate)));
   }
 }
 
@@ -187,8 +188,8 @@ Status ReplicaState::CheckNoConfigChangePendingUnlocked() const {
     return Status::IllegalState(
         Substitute("RaftConfig change currently pending. Only one is allowed at a time.\n"
                    "  Committed config: $0.\n  Pending config: $1",
-                   GetCommittedConfigUnlocked().ShortDebugString(),
-                   GetPendingConfigUnlocked().ShortDebugString()));
+                   SecureShortDebugString(GetCommittedConfigUnlocked()),
+                   SecureShortDebugString(GetPendingConfigUnlocked())));
   }
   return Status::OK();
 }
@@ -199,8 +200,8 @@ Status ReplicaState::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
                         "Invalid config to set as pending");
   CHECK(!cmeta_->has_pending_config())
       << "Attempt to set pending config while another is already pending! "
-      << "Existing pending config: " << cmeta_->pending_config().ShortDebugString() << "; "
-      << "Attempted new pending config: " << new_config.ShortDebugString();
+      << "Existing pending config: " << SecureShortDebugString(cmeta_->pending_config()) << "; "
+      << "Attempted new pending config: " << SecureShortDebugString(new_config);
   cmeta_->set_pending_config(new_config);
   return Status::OK();
 }
@@ -229,7 +230,8 @@ Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& committed_co
   CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(), committed_config.SerializeAsString())
       << Substitute("New committed config must equal pending config, but does not. "
                     "Pending config: $0, committed config: $1",
-                    pending_config.ShortDebugString(), committed_config.ShortDebugString());
+                    SecureShortDebugString(pending_config),
+                    SecureShortDebugString(committed_config));
 
   cmeta_->set_committed_config(committed_config);
   cmeta_->clear_pending_config();
@@ -372,7 +374,7 @@ Status PendingRounds::CancelPendingTransactions() {
     const scoped_refptr<ConsensusRound>& round = txn.second;
     // We cancel only transactions whose applies have not yet been triggered.
     LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
-                                   << txn.second->replicate_msg()->ShortDebugString();
+                                   << SecureShortDebugString(*txn.second->replicate_msg());
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
   }
   return Status::OK();
@@ -509,8 +511,8 @@ Status PendingRounds::SetInitialCommittedOpId(const OpId& committed_op) {
     }
 
     RETURN_NOT_OK(AdvanceCommittedIndex(committed_op.index()));
-    CHECK_EQ(last_committed_op_id_.ShortDebugString(),
-             committed_op.ShortDebugString());
+    CHECK_EQ(SecureShortDebugString(last_committed_op_id_),
+             SecureShortDebugString(committed_op));
 
   } else {
     last_committed_op_id_ = committed_op;

@@ -31,6 +31,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -809,11 +810,11 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   StartTabletCopyRequestPB tc_req;
   ASSERT_OK(queue_->GetTabletCopyRequestForPeer(kPeerUuid, &tc_req));
 
-  ASSERT_TRUE(tc_req.IsInitialized()) << tc_req.ShortDebugString();
+  ASSERT_TRUE(tc_req.IsInitialized()) << SecureShortDebugString(tc_req);
   ASSERT_EQ(kTestTablet, tc_req.tablet_id());
   ASSERT_EQ(kLeaderUuid, tc_req.copy_peer_uuid());
-  ASSERT_EQ(FakeRaftPeerPB(kLeaderUuid).last_known_addr().ShortDebugString(),
-            tc_req.copy_peer_addr().ShortDebugString());
+  ASSERT_EQ(SecureShortDebugString(FakeRaftPeerPB(kLeaderUuid).last_known_addr()),
+            SecureShortDebugString(tc_req.copy_peer_addr()));
 }
 
 TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {

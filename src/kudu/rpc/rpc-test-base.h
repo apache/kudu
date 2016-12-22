@@ -42,6 +42,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/stopwatch.h"
@@ -168,7 +169,7 @@ class GenericCalculatorService : public ServiceIf {
       return;
     }
 
-    LOG(INFO) << "got call: " << req.ShortDebugString();
+    LOG(INFO) << "got call: " << SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);

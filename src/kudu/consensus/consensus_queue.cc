@@ -46,6 +46,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/url-coding.h"
 
@@ -149,8 +150,8 @@ void PeerMessageQueue::SetLeaderMode(int64_t committed_index,
   queue_state_.majority_replicated_index = committed_index;
   queue_state_.active_config.reset(new RaftConfigPB(active_config));
   CHECK(IsRaftConfigVoter(local_peer_pb_.permanent_uuid(), *queue_state_.active_config))
-      << local_peer_pb_.ShortDebugString() << " not a voter in config: "
-      << queue_state_.active_config->ShortDebugString();
+      << SecureShortDebugString(local_peer_pb_) << " not a voter in config: "
+      << SecureShortDebugString(*queue_state_.active_config);
   queue_state_.majority_size_ = MajoritySize(CountVoters(*queue_state_.active_config));
   queue_state_.mode = LEADER;
 
@@ -462,11 +463,11 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     if (request->ops_size() > 0) {
       VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending request with operations to Peer: " << uuid
           << ". Size: " << request->ops_size()
-          << ". From: " << request->ops(0).id().ShortDebugString() << ". To: "
-          << request->ops(request->ops_size() - 1).id().ShortDebugString();
+          << ". From: " << SecureShortDebugString(request->ops(0).id()) << ". To: "
+          << SecureShortDebugString(request->ops(request->ops_size() - 1).id());
     } else {
       VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending status only request to Peer: " << uuid
-          << ": " << request->DebugString();
+          << ": " << SecureDebugString(*request);
     }
   }
 
@@ -592,7 +593,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                                         const ConsensusResponsePB& response,
                                         bool* more_pending) {
   DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
-      << response.InitializationErrorString() << ". Response: " << response.ShortDebugString();
+      << response.InitializationErrorString() << ". Response: " << SecureShortDebugString(response);
 
   boost::optional<int64_t> updated_commit_index;
   Mode mode_copy;
@@ -603,7 +604,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
     if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == nullptr)) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
-          "peer response. Response: " << response.ShortDebugString();
+          "peer response. Response: " << SecureShortDebugString(response);
       *more_pending = false;
       return;
     }
@@ -612,7 +613,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     if (response.has_error()) {
       // We only let special types of errors through to this point from the peer.
       CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())
-          << response.ShortDebugString();
+          << SecureShortDebugString(response);
 
       peer->needs_tablet_copy = true;
       VLOG_WITH_PREFIX_UNLOCKED(1) << "Marked peer as needing tablet copy: "
@@ -623,8 +624,9 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
 
     // Sanity checks.
     // Some of these can be eventually removed, but they are handy for now.
-    DCHECK(response.status().IsInitialized()) << "Error: Uninitialized: "
-        << response.InitializationErrorString() << ". Response: " << response.ShortDebugString();
+    DCHECK(response.status().IsInitialized())
+        << "Error: Uninitialized: " << response.InitializationErrorString()
+        << ". Response: "<< SecureShortDebugString(response);
     // TODO: Include uuid in error messages as well.
     DCHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
         << "Got response from peer with empty UUID";
@@ -708,7 +710,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
         default: {
           LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected consensus error. Code: "
               << ConsensusErrorPB::Code_Name(status.error().code()) << ". Response: "
-              << response.ShortDebugString();
+              << SecureShortDebugString(response);
         }
       }
     }
@@ -727,7 +729,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer (" << peer->ToString() << "). "
-          << "Response: " << response.ShortDebugString();
+          << "Response: " << SecureShortDebugString(response);
     }
 
     mode_copy = queue_state_.mode;
@@ -1014,7 +1016,7 @@ string PeerMessageQueue::QueueState::ToString() const {
       all_replicated_index, majority_replicated_index,
       committed_index, OpIdToString(last_appended), current_term,
       majority_size_, state, (mode == LEADER ? "LEADER" : "NON_LEADER"),
-      active_config ? ", active raft config: " + active_config->ShortDebugString() : "");
+      active_config ? ", active raft config: " + SecureShortDebugString(*active_config) : "");
 }
 
 }  // namespace consensus

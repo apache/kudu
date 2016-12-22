@@ -453,7 +453,7 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  return Status::TimedOut(resp.DebugString());
+  return Status::TimedOut(SecureDebugString(resp));
 }
 
 namespace {
@@ -579,7 +579,7 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
                         "rpc failed");
   if (resp.result() != server::SetFlagResponsePB::SUCCESS) {
     return Status::RemoteError("failed to set flag",
-                               resp.ShortDebugString());
+                               SecureShortDebugString(resp));
   }
   return Status::OK();
 }
@@ -714,7 +714,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   RETURN_NOT_OK_PREPEND(pb_util::ReadPBFromPath(Env::Default(), info_path, status_.get()),
                         "Failed to read info file from " + info_path);
   LOG(INFO) << "Started " << exe_ << " as pid " << p->pid();
-  VLOG(1) << exe_ << " instance information:\n" << status_->DebugString();
+  VLOG(1) << exe_ << " instance information:\n" << SecureDebugString(*status_);
 
   process_.swap(p);
   return Status::OK();

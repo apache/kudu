@@ -24,6 +24,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
@@ -51,7 +52,7 @@ PeerManager::~PeerManager() {
 }
 
 Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
-  VLOG(1) << "Updating peers from new config: " << config.ShortDebugString();
+  VLOG(1) << "Updating peers from new config: " << SecureShortDebugString(config);
 
   std::lock_guard<simple_spinlock> lock(lock_);
   // Create new peers
@@ -63,7 +64,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
       continue;
     }
 
-    VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << peer_pb.ShortDebugString();
+    VLOG(1) << GetLogPrefix() << "Adding remote peer. Peer: " << SecureShortDebugString(peer_pb);
     gscoped_ptr<PeerProxy> peer_proxy;
     RETURN_NOT_OK_PREPEND(peer_proxy_factory_->NewProxy(peer_pb, &peer_proxy),
                           "Could not obtain a remote proxy to the peer.");
@@ -89,7 +90,7 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << GetLogPrefix()
                    << "Peer was closed, removing from peers. Peer: "
-                   << (*iter).second->peer_pb().ShortDebugString();
+                   << SecureShortDebugString((*iter).second->peer_pb());
       peers_.erase(iter++);
     } else {
       ++iter;

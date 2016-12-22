@@ -31,6 +31,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
 
 using std::pair;
@@ -106,7 +107,7 @@ Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifie
         case PartitionSchemaPB_ColumnIdentifierPB::kId: {
           ColumnId column_id(identifier.id());
           if (schema.find_column_by_id(column_id) == Schema::kColumnNotFound) {
-            return Status::InvalidArgument("unknown column id", identifier.DebugString());
+            return Status::InvalidArgument("unknown column id", SecureDebugString(identifier));
           }
           column_ids->push_back(column_id);
           continue;
@@ -114,12 +115,12 @@ Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifie
         case PartitionSchemaPB_ColumnIdentifierPB::kName: {
           int32_t column_idx = schema.find_column(identifier.name());
           if (column_idx == Schema::kColumnNotFound) {
-            return Status::InvalidArgument("unknown column", identifier.DebugString());
+            return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
           }
           column_ids->push_back(schema.column_id(column_idx));
           continue;
         }
-        default: return Status::InvalidArgument("unknown column", identifier.DebugString());
+        default: return Status::InvalidArgument("unknown column", SecureDebugString(identifier));
       }
     }
     return Status::OK();
