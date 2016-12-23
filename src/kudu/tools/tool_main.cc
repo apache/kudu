@@ -222,13 +222,13 @@ static bool ParseCommandLineFlags(int* argc, char*** argv) {
 }
 
 int main(int argc, char** argv) {
+  // Disable redaction by default so that user data printed to the console will be shown
+  // in full.
+  CHECK_NE("",  google::SetCommandLineOptionWithMode(
+      "log_redact_user_data", "false", google::SET_FLAGS_DEFAULT));
+
   FLAGS_logtostderr = true;
   bool show_help = ParseCommandLineFlags(&argc, &argv);
-
-  if (google::GetCommandLineFlagInfoOrDie("log_redact_user_data").is_default) {
-    // Disable redaction so that user data printed to the console will be shown in full.
-    FLAGS_log_redact_user_data = false;
-  }
 
   kudu::InitGoogleLoggingSafe(argv[0]);
   return kudu::tools::RunTool(argc, argv, show_help);
