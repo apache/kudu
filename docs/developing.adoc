@@ -66,34 +66,21 @@ out of date.
 These examples should serve as helpful starting points for your own Kudu applications and integrations.
 
 === Maven Artifacts
-The following Maven `<dependency>` element is valid for the Kudu public beta:
+The following Maven `<dependency>` element is valid for the Apache Kudu public release
+(since 1.0.0):
 
 [source,xml]
 ----
 <dependency>
   <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
-  <version>0.5.0</version>
+  <version>1.1.0</version>
 </dependency>
 ----
 
-Because the Maven artifacts are not in Maven Central, use the following `<repository>`
-element:
-
-[source,xml]
-----
-<repository>
-  <id>cdh.repo</id>
-  <name>Cloudera Repositories</name>
-  <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
-  <snapshots>
-    <enabled>false</enabled>
-  </snapshots>
-</repository>
-----
-
-See subdirectories of https://github.com/cloudera/kudu-examples/tree/master/java for
-example Maven pom.xml files.
+Convenience binary artifacts for the Java client and various Java integrations (e.g. Spark, Flume)
+are also now available via the link:http://repository.apache.org[ASF Maven repository] and
+link:https://mvnrepository.com/artifact/org.apache.kudu[Maven Central repository].
 
 == Example Impala Commands With Kudu
 
@@ -102,12 +89,21 @@ and using Impala with Kudu, including several `impala-shell` examples.
 
 == Kudu Integration with Spark
 
-Kudu integrates with Spark through the Data Source API as of version 0.9.
-Include the kudu-spark jar using the --jars option:
+Kudu integrates with Spark through the Data Source API as of version 1.0.0.
+Include the kudu-spark dependency using the --packages option:
+
+Use the kudu-spark_2.10 artifact if using Spark with Scala 2.10
 [source]
 ----
-spark-shell --jars kudu-spark-0.9.0.jar
+spark-shell --packages org.apache.kudu:kudu-spark_2.10:1.1.0
 ----
+
+Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11
+[source]
+----
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.1.0
+----
+
 then import kudu-spark and create a dataframe:
 [source,scala]
 ----
