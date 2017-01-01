@@ -34,7 +34,7 @@ import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
 
-public class TestKeyEncoding {
+public class TestKeyEncoding extends BaseKuduTest {
 
   private static Schema buildSchema(ColumnSchemaBuilder... columns) {
     int i = 0;
@@ -76,6 +76,21 @@ public class TestKeyEncoding {
     return new PartitionSchema(
         new PartitionSchema.RangeSchema(columnIds),
         ImmutableList.<PartitionSchema.HashBucketSchema>of(), schema);
+  }
+
+  /**
+   * Builds the default CreateTableOptions for a schema.
+   *
+   * @param schema the schema
+   * @return a default CreateTableOptions
+   */
+  private CreateTableOptions defaultCreateTableOptions(Schema schema) {
+    List<String> columnNames = new ArrayList<>();
+    for (ColumnSchema columnSchema : schema.getPrimaryKeyColumns()) {
+      columnNames.add(columnSchema.getName());
+    }
+    return new CreateTableOptions()
+        .setRangePartitionColumns(columnNames);
   }
 
   @Test
@@ -298,5 +313,56 @@ public class TestKeyEncoding {
                           'b', 0, 0,            // b = "b"
                           'c'                   // b = "c"
                       });
+  }
+
+  @Test(timeout = 100000)
+  public void testAllPrimaryKeyTypes() throws Exception {
+    Schema schema = buildSchema(
+        new ColumnSchemaBuilder("int8", Type.INT8).key(true),
+        new ColumnSchemaBuilder("int16", Type.INT16).key(true),
+        new ColumnSchemaBuilder("int32", Type.INT32).key(true),
+        new ColumnSchemaBuilder("int64", Type.INT64).key(true),
+        new ColumnSchemaBuilder("string", Type.STRING).key(true),
+        new ColumnSchemaBuilder("binary", Type.BINARY).key(true),
+        new ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).key(true),
+        new ColumnSchemaBuilder("bool", Type.BOOL),       // not primary key type
+        new ColumnSchemaBuilder("float", Type.FLOAT),     // not primary key type
+        new ColumnSchemaBuilder("double", Type.DOUBLE));  // not primary key type
+
+    KuduTable table = createTable("testAllPrimaryKeyTypes-" + System.currentTimeMillis(),
+        schema, defaultCreateTableOptions(schema));
+    KuduSession session = syncClient.newSession();
+
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addByte(0, (byte) 1);
+    row.addShort(1, (short) 2);
+    row.addInt(2, 3);
+    row.addLong(3, 4l);
+    row.addString(4, "foo");
+    row.addBinary(5, "bar".getBytes(Charsets.UTF_8));
+    row.addLong(6, 6l);
+    row.addBoolean(7, true);
+    row.addFloat(8, 8.8f);
+    row.addDouble(9, 9.9);
+    session.apply(insert);
+    session.close();
+
+    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    while (scanner.hasMoreRows()) {
+      RowResultIterator it = scanner.nextRows();
+      assertTrue(it.hasNext());
+      RowResult rr = it.next();
+      assertEquals((byte) 0x01, rr.getByte(0));
+      assertEquals((short) 2, rr.getShort(1));
+      assertEquals(3, rr.getInt(2));
+      assertEquals(4l, rr.getLong(3));
+      assertBytesEquals(rr.getBinaryCopy(4), "foo");
+      assertBytesEquals(rr.getBinaryCopy(5), "bar");
+      assertEquals(6l, rr.getLong(6));
+      assertTrue(rr.getBoolean(7));
+      assertEquals(8.8f, rr.getFloat(8), .001f);
+      assertEquals(9.9, rr.getDouble(9), .001);
+    }
   }
 }
