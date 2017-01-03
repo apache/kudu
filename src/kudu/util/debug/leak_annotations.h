@@ -17,6 +17,21 @@
 #ifndef KUDU_UTIL_DEBUG_LEAK_ANNOTATIONS_H_
 #define KUDU_UTIL_DEBUG_LEAK_ANNOTATIONS_H_
 
+// Ignore a single leaked object, given its pointer.
+// Does nothing if LeakSanitizer is not enabled.
+#define ANNOTATE_LEAKING_OBJECT_PTR(p)
+
+#if defined(__has_feature)
+#  if __has_feature(address_sanitizer)
+#    if defined(__linux__)
+
+#undef ANNOTATE_LEAKING_OBJECT_PTR
+#define ANNOTATE_LEAKING_OBJECT_PTR(p) __lsan_ignore_object(p);
+
+#    endif
+#  endif
+#endif
+
 // API definitions from LLVM lsan_interface.h
 
 extern "C" {
@@ -24,8 +39,10 @@ extern "C" {
   // be treated as non-leaks. Disable/enable pairs may be nested.
   void __lsan_disable();
   void __lsan_enable();
+
   // The heap object into which p points will be treated as a non-leak.
   void __lsan_ignore_object(const void *p);
+
   // The user may optionally provide this function to disallow leak checking
   // for the program it is linked into (if the return value is non-zero). This
   // function must be defined as returning a constant value; any behavior beyond
@@ -50,15 +67,17 @@ extern "C" {
   // __lsan_do_leak_check() or the end-of-process leak check, and is not
   // affected by them.
   int __lsan_do_recoverable_leak_check();
-}  // extern "C"
+} // extern "C"
 
 namespace kudu {
 namespace debug {
+
 class ScopedLSANDisabler {
  public:
   ScopedLSANDisabler() { __lsan_disable(); }
   ~ScopedLSANDisabler() { __lsan_enable(); }
 };
+
 } // namespace debug
 } // namespace kudu
 
