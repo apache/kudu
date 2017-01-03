@@ -33,6 +33,8 @@
 #   * EXTRA_CXXFLAGS - additional flags passed to the C++ compiler.
 #   * EXTRA_LDFLAGS - additional flags passed to the linker.
 #   * EXTRA_LIBS - additional libraries to link.
+#   * EXTRA_MAKEFLAGS - additional flags passed to make.
+#   * PARALLEL - parallelism to use when compiling (defaults to number of cores).
 
 set -ex
 
@@ -129,11 +131,11 @@ EXTRA_CXXFLAGS="-fno-omit-frame-pointer -O2 $EXTRA_CXXFLAGS"
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
   DYLIB_SUFFIX="so"
-  PARALLEL=$(grep -c processor /proc/cpuinfo)
+  PARALLEL=${PARALLEL:-$(grep -c processor /proc/cpuinfo)}
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
   DYLIB_SUFFIX="dylib"
-  PARALLEL=$(sysctl -n hw.ncpu)
+  PARALLEL=${PARALLEL:-$(sysctl -n hw.ncpu)}
 
   # Kudu builds with C++11, which on OS X requires using libc++ as the standard
   # library implementation. Some of the dependencies do not compile against

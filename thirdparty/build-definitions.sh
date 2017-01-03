@@ -91,8 +91,7 @@ build_cmake() {
   $CMAKE_SOURCE/bootstrap \
     --prefix=$PREFIX \
     --parallel=$PARALLEL
-  make -j$PARALLEL
-  make install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -107,7 +106,7 @@ build_libcxxabi() {
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
     -DLLVM_PATH=$LLVM_SOURCE \
     $LLVM_SOURCE/projects/libcxxabi
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -136,7 +135,7 @@ build_libcxx() {
     -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$LLVM_SOURCE/projects/libcxxabi/include \
     -DLLVM_USE_SANITIZER=$SANITIZER_TYPE \
     $LLVM_SOURCE/projects/libcxx
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -155,7 +154,7 @@ build_or_find_python() {
     mkdir -p $PYTHON_BDIR
     pushd $PYTHON_BDIR
     $PYTHON_SOURCE/configure
-    make -j$PARALLEL
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
     PYTHON_EXECUTABLE="$PYTHON_BDIR/python"
     popd
   fi
@@ -219,7 +218,7 @@ build_llvm() {
     $TOOLS_ARGS \
     $LLVM_SOURCE
 
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
 
   if [[ "$BUILD_TYPE" == "normal" ]]; then
     # Create a link from Clang to thirdparty/clang-toolchain. This path is used
@@ -245,7 +244,7 @@ build_gflags() {
     -DBUILD_SHARED_LIBS=On \
     -DBUILD_STATIC_LIBS=On \
     $GFLAGS_SOURCE
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -259,7 +258,7 @@ build_libunwind() {
     --disable-minidebuginfo \
     --with-pic \
     --prefix=$PREFIX
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -288,7 +287,7 @@ build_glog() {
     --prefix=$PREFIX \
     --with-gflags=$PREFIX
   fixup_libtool
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -306,7 +305,7 @@ build_gperftools() {
     --with-pic \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -328,7 +327,7 @@ build_gmock() {
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
       -DBUILD_SHARED_LIBS=$SHARED \
       $GMOCK_SOURCE
-    make -j$PARALLEL
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
     popd
   done
   echo Installing gmock...
@@ -352,7 +351,7 @@ build_protobuf() {
     --enable-static \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -368,7 +367,7 @@ build_snappy() {
     --with-pic \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -384,7 +383,7 @@ build_zlib() {
   CFLAGS="$EXTRA_CFLAGS -fPIC" \
     ./configure \
     --prefix=$PREFIX
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -398,7 +397,7 @@ build_lz4() {
     -DBUILD_TOOLS=0 \
     -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
     $LZ4_SOURCE/cmake_unofficial
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -462,7 +461,7 @@ build_libev() {
     $LIBEV_SOURCE/configure \
     --with-pic \
     --prefix=$PREFIX
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -510,7 +509,7 @@ build_curl() {
     --disable-tftp \
     --without-librtmp \
     --without-ssl
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -531,7 +530,7 @@ build_crcutil() {
     ./configure \
     --prefix=$PREFIX
   fixup_libtool
-  make -j$PARALLEL install
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -571,7 +570,7 @@ build_nvml() {
     # Add PREFIX/lib to the rpath; libpmemobj depends on libpmem at runtime.
     EXTRA_CFLAGS="$EXTRA_CFLAGS -Wno-error" \
       EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-rpath,$PREFIX/lib" \
-      make -j$PARALLEL $LIB DEBUG=0
+      make -j$PARALLEL $EXTRA_MAKEFLAGS DEBUG=0 $LIB
 
     # NVML doesn't allow configuring PREFIX -- it always installs into
     # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
