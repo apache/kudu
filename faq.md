@@ -69,11 +69,21 @@ forward to working with a larger community during its next phase of development.
 
 #### Is training available?
 
-Currently, commercial training for Kudu is not available. You can get help with using
-Kudu through [documentation](docs/index.html),
+Training is not provided by the Apache Software Foundation, but may be provided
+by third-party vendors.
+
+As of January 2016, Cloudera offers an
+[on-demand training course](https://university.cloudera.com/content/cloudera-university-ondemand-introduction-to-apache-kudu)
+entitled "Introduction to Apache Kudu".
+This training covers what Kudu is, and how it compares to other Hadoop-related
+storage systems, use cases that will benefit from using Kudu, and how to create,
+store, and access data in Kudu tables with Apache Impala.
+
+Aside from training, you can also get help with using Kudu through
+[documentation](docs/index.html),
 the [mailing lists](community.html),
-the [Kudu chat room](https://getkudu-slack.herokuapp.com/), and the [Cloudera beta
-release forum](https://community.cloudera.com/t5/Beta-Releases-Kudu-RecordService/bd-p/Beta).
+the [Kudu chat room](https://getkudu-slack.herokuapp.com/), and the
+[Cloudera beta release forum](https://community.cloudera.com/t5/Beta-Releases-Kudu-RecordService/bd-p/Beta).
 
 #### Is there a quickstart VM?
 
@@ -112,6 +122,7 @@ allow the cache to survive tablet server restarts, so that it never starts "cold
 In addition, Kudu's C++ implementation can scale to very large heaps. Coupled
 with its CPU-efficient design, Kudu's heap scalability offers outstanding
 performance for data sets that fit in memory.
+
 #### Does Kudu run its own format type or does it use Parquet? What is the compression recommendation?
 
 Kudu's on-disk data format closely resembles Parquet, with a few differences to
