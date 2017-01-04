@@ -398,6 +398,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_OK(CreateTable(kTableName, kTableSchema));
 
   // Restart the master, verify the table still shows up.
+  mini_master_->Shutdown();
   ASSERT_OK(mini_master_->Restart());
   ASSERT_OK(mini_master_->master()->
       WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
@@ -1055,6 +1056,7 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
 
   // Restart the catalog manager to ensure that it can survive reloading the
   // metadata we wrote to disk.
+  mini_master_->Shutdown();
   ASSERT_OK(mini_master_->Restart());
 
   // Reload the metadata again, this time verifying its consistency.

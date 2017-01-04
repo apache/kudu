@@ -190,6 +190,7 @@ class FuzzTest : public KuduTest {
     tablet_peer_.reset();
     auto ts = cluster_->mini_tablet_server(0);
     if (ts->server()) {
+      ts->Shutdown();
       ASSERT_OK(ts->Restart());
     } else {
       ASSERT_OK(ts->Start());

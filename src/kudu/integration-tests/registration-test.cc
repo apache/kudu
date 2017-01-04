@@ -133,6 +133,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
   // Restart the master, so it loses the descriptor, and ensure that the
   // hearbeater thread handles re-registering.
+  cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
 
   ASSERT_OK(cluster_->WaitForTabletServerCount(1));
@@ -185,6 +186,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
   ts->Shutdown();
+  cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
   ASSERT_OK(ts->Start());
 

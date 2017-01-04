@@ -85,7 +85,8 @@ class MiniMaster {
   ATTRIBUTE_MEMBER_UNUSED Env* const env_;
   const std::string fs_root_;
   const uint16_t rpc_port_;
-
+  Sockaddr bound_rpc_;
+  Sockaddr bound_http_;
   gscoped_ptr<Master> master_;
 };
 

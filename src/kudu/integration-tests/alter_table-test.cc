@@ -154,6 +154,7 @@ class AlterTableTest : public KuduTest {
   void RestartTabletServer(int idx = 0) {
     tablet_peer_.reset();
     if (cluster_->mini_tablet_server(idx)->server()) {
+      cluster_->mini_tablet_server(idx)->Shutdown();
       ASSERT_OK(cluster_->mini_tablet_server(idx)->Restart());
     } else {
       ASSERT_OK(cluster_->mini_tablet_server(idx)->Start());

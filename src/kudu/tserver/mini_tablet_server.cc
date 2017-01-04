@@ -101,8 +101,7 @@ void MiniTabletServer::Shutdown() {
 }
 
 Status MiniTabletServer::Restart() {
-  CHECK(started_);
-  Shutdown();
+  CHECK(!started_);
   RETURN_NOT_OK(Start());
   return Status::OK();
 }

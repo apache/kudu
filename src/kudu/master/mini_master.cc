@@ -62,6 +62,8 @@ Status MiniMaster::StartDistributedMaster(const vector<uint16_t>& peer_ports) {
 
 void MiniMaster::Shutdown() {
   if (running_) {
+    bound_rpc_ = bound_rpc_addr();
+    bound_http_ = bound_http_addr();
     master_->Shutdown();
   }
   running_ = false;
@@ -111,13 +113,8 @@ Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web
 }
 
 Status MiniMaster::Restart() {
-  CHECK(running_);
-
-  Sockaddr prev_rpc = bound_rpc_addr();
-  Sockaddr prev_http = bound_http_addr();
-  Shutdown();
-
-  RETURN_NOT_OK(StartOnPorts(prev_rpc.port(), prev_http.port()));
+  CHECK(!running_);
+  RETURN_NOT_OK(StartOnPorts(bound_rpc_.port(), bound_http_.port()));
   CHECK(running_);
   return WaitForCatalogManagerInit();
 }

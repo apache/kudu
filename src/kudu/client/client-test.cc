@@ -526,6 +526,7 @@ class ClientTest : public KuduTest {
       if (ts->server()->instance_pb().permanent_uuid() == uuid) {
         if (restart) {
           LOG(INFO) << "Restarting TS at " << ts->bound_rpc_addr().ToString();
+          ts->Shutdown();
           RETURN_NOT_OK(ts->Restart());
           if (wait_started) {
             LOG(INFO) << "Waiting for TS " << ts->bound_rpc_addr().ToString()
@@ -4171,6 +4172,7 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(i);
     ts->options()->rpc_opts.service_queue_length = 1;
+    ts->Shutdown();
     ASSERT_OK(ts->Restart());
     ASSERT_OK(ts->WaitStarted());
   }
@@ -4213,6 +4215,7 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
     FLAGS_log_inject_latency_ms_stddev = 0;
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      ts->Shutdown();
       ASSERT_OK(ts->Restart());
     }
 
