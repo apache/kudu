@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.1 Release Notes
+= Apache Kudu 1.2.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,207 +28,42 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.1.0]]
+[[rn_1.2.0]]
 
-[[rn_1.1.0_new_features]]
+[[rn_1.2.0_new_features]]
 == New features
 
-* The Python client has been brought up to feature parity with the Java and {cpp} clients
-  and as such the package version will be brought to 1.1 with this release (from 0.3). A
-  list of the highlights can be found below.
-    ** Improved Partial Row semantics
-    ** Range partition support
-    ** Scan Token API
-    ** Enhanced predicate support
-    ** Support for all Kudu data types (including a mapping of Python's `datetime.datetime` to
-    `UNIXTIME_MICROS`)
-    ** Alter table support
-    ** Enabled Read at Snapshot for Scanners
-    ** Enabled Scanner Replica Selection
-    ** A few bug fixes for Python 3 in addition to various other improvements.
-
-* IN LIST predicate pushdown support was added to allow optimized execution of filters which
-  match on a set of column values. Support for Spark, Map Reduce and Impala queries utilizing
-  IN LIST pushdown is not yet complete.
-
-* The Java client now features client-side request tracing in order to help troubleshoot timeouts.
-  Error messages are now augmented with traces that show which servers were contacted before the
-  timeout occured instead of just the last error. The traces also contain RPCs that were
-  required to fulfill the client's request, such as contacting the master to discover a tablet's
-  location. Note that the traces are not available for successful requests and are not
-  programatically queryable.
 
 == Optimizations and improvements
 
-* Kudu now publishes JAR files for Spark 2.0 compiled with Scala 2.11 along with the
-  existing Spark 1.6 JAR compiled with Scala 2.10.
-
-* The Java client now allows configuring scanners to read from the closest replica instead of
-  the known leader replica. The default remains the latter. Use the relevant `ReplicaSelection`
-  enum with the scanner's builder to change this behavior.
-
-* Tablet servers use a new policy for retaining write-ahead log (WAL) segments.
-  Previously, servers used the 'log_min_segments_to_retain' flag to prioritize
-  any flushes which were retaining log segments past the configured value (default 2).
-  This policy caused servers to flush in-memory data more frequently than necessary,
-  limiting write performance.
-+
-The new policy introduces a new flag 'log_target_replay_size_mb' which
-  determines the threshold at which write-ahead log retention will prioritize flushes.
-  The new flag is considered experimental and users should not need to modify
-  its value.
-+
-The improved policy has been seen to improve write performance in some use cases
-  by a factor of 2x relative to the old policy.
-
-* Kudu's implementation of the Raft consensus algorithm has been improved to include
-  a "pre-election" phase. This can improve the stability of tablet leader election
-  in high-load scenarios, especially if each server hosts a high number of tablets.
-
-* Tablet server start-up time has been substantially improved in the case that
-  the server contains a high number of tombstoned tablet replicas.
 
 === Command line tools
 
-* The tool `kudu tablet leader_step_down` has been added to manually force a leader to step down.
-* The tool `kudu remote_replica copy` has been added to manually copy a replica from
-  one running tablet server to another.
-* The tool `kudu local_replica delete` has been added to delete a replica of a tablet.
-* The `kudu test loadgen` tool has been added to replace the obsoleted
-  `insert-generated-rows` standalone binary. The new tool is enriched with
-  additional functionality and can be used to run load generation tests against
-  a Kudu cluster.
 
 == Wire protocol compatibility
 
-Kudu 1.1.0 is wire-compatible with previous versions of Kudu:
+Kudu 1.2.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.1 clients may connect to servers running Kudu 1.0. If the client uses the new
-  'IN LIST' predicate type, an error will be returned.
-* Kudu 1.0 clients may connect to servers running Kudu 1.1 without limitations.
-* Rolling upgrade between Kudu 1.0 and Kudu 1.1 servers is believed to be possible
+* Kudu 1.2 clients may connect to servers running Kudu 1.0. If the client uses features
+  that are not available on the target server, an error will be returned.
+* Kudu 1.0 clients may connect to servers running Kudu 1.2 without limitations.
+* Rolling upgrade between Kudu 1.1 and Kudu 1.2 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
 
-[[rn_1.1.0_incompatible_changes]]
-== Incompatible changes in Kudu 1.1.0
+[[rn_1.2.0_incompatible_changes]]
+== Incompatible changes in Kudu 1.2.0
 
 === Client APIs ({cpp}/Java/Python)
 
-* The {cpp} client no longer requires the
-  link:https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html[old gcc5 ABI].
-  Which ABI is actually used depends on the compiler configuration. Some new distros
-  (e.g. Ubuntu 16.04) will use the new ABI. Your application must use the same ABI as is
-  used by the client library; an easy way to guarantee this is to use the same compiler
-  to build both.
+[[rn_1.2.0_known_issues]]
 
-* The {cpp} client's `KuduSession::CountBufferedOperations()` method is
-  deprecated. Its behavior is inconsistent unless the session runs in the
-  `MANUAL_FLUSH` mode. Instead, to get number of buffered operations, count
-  invocations of the `KuduSession::Apply()` method since last
-  `KuduSession::Flush()` call or, if using asynchronous flushing, since last
-  invocation of the callback passed into `KuduSession::FlushAsync()`.
-
-* The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
-  to emphasize that it doesn't return milliseconds, unlike what its Javadoc indicated. The renamed
-  method was also hidden from the public APIs and should not be used.
-
-* The Java client's sync API (`KuduClient`, `KuduSession`, `KuduScanner`) used to throw either
-  a `NonRecoverableException` or a `TimeoutException` for a timeout, and now it's only possible for the
-  client to throw the former.
-
-* The Java client's handling of errors in `KuduSession` was modified so that subclasses of
-  `KuduException` are converted into RowErrors instead of being thrown.
-
-[[known_issues_and_limitations]]
 == Known Issues and Limitations
 
-=== Schema and Usage Limitations
-* Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
-  a single row contains multiple kilobytes of data.
+Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
+documentation.
 
-* The columns which make up the primary key must be listed first in the schema.
-
-* Key columns cannot be altered. You must drop and recreate a table to change its keys.
-
-* Key columns must not be null.
-
-* Columns with `DOUBLE`, `FLOAT`, or `BOOL` types are not allowed as part of a
-  primary key definition.
-
-* Type and nullability of existing columns cannot be changed by altering the table.
-
-* A table’s primary key cannot be changed.
-
-* Dropping a column does not immediately reclaim space. Compaction must run first.
-There is no way to run compaction manually, but dropping the table will reclaim the
-space immediately.
-
-=== Partitioning Limitations
-* Tables must be manually pre-split into tablets using simple or compound primary
-  keys. Automatic splitting is not yet possible. Range partitions may be added
-  or dropped after a table has been created. See
-  link:schema_design.html[Schema Design] for more information.
-
-* Data in existing tables cannot currently be automatically repartitioned. As a workaround,
-  create a new table with the new partitioning and insert the contents of the old
-  table.
-
-=== Replication and Backup Limitations
-* Kudu does not currently include any built-in features for backup and restore.
-  Users are encouraged to use tools such as Spark or Impala to export or import
-  tables as necessary.
-
-=== Impala Limitations
-
-* To use Kudu with Impala, you must install a special release of Impala called
-  Impala_Kudu. Obtaining and installing a compatible Impala release is detailed in Kudu's
-  link:kudu_impala_integration.html[Impala Integration] documentation.
-
-* To use Impala_Kudu alongside an existing Impala instance, you must install using parcels.
-
-* Updates, inserts, and deletes via Impala are non-transactional. If a query
-  fails part of the way through, its partial effects will not be rolled back.
-
-* No timestamp and decimal type support.
-
-* The maximum parallelism of a single query is limited to the number of tablets
-  in a table. For good analytic performance, aim for 10 or more tablets per host
-  or use large tables.
-
-=== Security Limitations
-
-* Authentication and authorization features are not implemented.
-* Data encryption is not built in. Kudu has been reported to run correctly
-  on systems using local block device encryption (e.g. `dmcrypt`).
-
-=== Client and API Limitations
-
-* `ALTER TABLE` is not yet fully supported via the client APIs. More `ALTER TABLE`
-  operations will become available in future releases.
-
-=== Other Known Issues
-
-The following are known bugs and issues with the current release of Kudu. They will
-be addressed in later releases. Note that this list is not exhaustive, and is meant
-to communicate only the most important known issues.
-
-* If the Kudu master is configured with the `-log_force_fsync_all` option, tablet servers
-  and clients will experience frequent timeouts, and the cluster may become unusable.
-
-* If a tablet server has a very large number of tablets, it may take several minutes
-  to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
-  Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
-  you can monitor the number of tablets per server in the web UI.
-
-* Due to a known bug in Linux kernels prior to 3.8, running Kudu on `ext4` mount points
-  may cause a subsequent `fsck` to fail with errors such as `Logical start <N> does
-  not match logical start <M> at next level`. These errors are repairable using `fsck -y`,
-  but may impact server restart time.
-+
-This affects RHEL/CentOS 6.8 and below. A fix is planned for RHEL/CentOS 6.9.
-  RHEL 7.0 and higher are not affected. Ubuntu 14.04 and later are not affected.
-  SLES 12 and later are not affected.
+[[resources_and_next_steps]]
 
 == Resources
 

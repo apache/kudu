@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-[[release_notes]]
+[[prior_release_notes]]
 = Apache Kudu Prior Version Release Notes
 
 :author: Kudu Team
@@ -27,6 +27,128 @@
 :backend: html5
 :sectlinks:
 :experimental:
+
+This section reproduces the release notes for new features and incompatible
+changes in prior releases of Apache Kudu.
+
+
+NOTE: The list of known issues and limitations for prior releases are not
+reproduced on this page. Please consult the
+link:http://kudu.apache.org/releases/[documentation of the appropriate release]
+for a list of known issues and limitations.
+
+[[rn_1.1.0]]
+== Release notes specific to 1.1.0
+
+[[rn_1.1.0_new_features]]
+== New features
+
+* The Python client has been brought up to feature parity with the Java and {cpp} clients
+  and as such the package version will be brought to 1.1 with this release (from 0.3). A
+  list of the highlights can be found below.
+    ** Improved Partial Row semantics
+    ** Range partition support
+    ** Scan Token API
+    ** Enhanced predicate support
+    ** Support for all Kudu data types (including a mapping of Python's `datetime.datetime` to
+    `UNIXTIME_MICROS`)
+    ** Alter table support
+    ** Enabled Read at Snapshot for Scanners
+    ** Enabled Scanner Replica Selection
+    ** A few bug fixes for Python 3 in addition to various other improvements.
+
+* IN LIST predicate pushdown support was added to allow optimized execution of filters which
+  match on a set of column values. Support for Spark, Map Reduce and Impala queries utilizing
+  IN LIST pushdown is not yet complete.
+
+* The Java client now features client-side request tracing in order to help troubleshoot timeouts.
+  Error messages are now augmented with traces that show which servers were contacted before the
+  timeout occured instead of just the last error. The traces also contain RPCs that were
+  required to fulfill the client's request, such as contacting the master to discover a tablet's
+  location. Note that the traces are not available for successful requests and are not
+  programatically queryable.
+
+== Optimizations and improvements
+
+* Kudu now publishes JAR files for Spark 2.0 compiled with Scala 2.11 along with the
+  existing Spark 1.6 JAR compiled with Scala 2.10.
+
+* The Java client now allows configuring scanners to read from the closest replica instead of
+  the known leader replica. The default remains the latter. Use the relevant `ReplicaSelection`
+  enum with the scanner's builder to change this behavior.
+
+* Tablet servers use a new policy for retaining write-ahead log (WAL) segments.
+  Previously, servers used the 'log_min_segments_to_retain' flag to prioritize
+  any flushes which were retaining log segments past the configured value (default 2).
+  This policy caused servers to flush in-memory data more frequently than necessary,
+  limiting write performance.
++
+The new policy introduces a new flag 'log_target_replay_size_mb' which
+  determines the threshold at which write-ahead log retention will prioritize flushes.
+  The new flag is considered experimental and users should not need to modify
+  its value.
++
+The improved policy has been seen to improve write performance in some use cases
+  by a factor of 2x relative to the old policy.
+
+* Kudu's implementation of the Raft consensus algorithm has been improved to include
+  a "pre-election" phase. This can improve the stability of tablet leader election
+  in high-load scenarios, especially if each server hosts a high number of tablets.
+
+* Tablet server start-up time has been substantially improved in the case that
+  the server contains a high number of tombstoned tablet replicas.
+
+=== Command line tools
+
+* The tool `kudu tablet leader_step_down` has been added to manually force a leader to step down.
+* The tool `kudu remote_replica copy` has been added to manually copy a replica from
+  one running tablet server to another.
+* The tool `kudu local_replica delete` has been added to delete a replica of a tablet.
+* The `kudu test loadgen` tool has been added to replace the obsoleted
+  `insert-generated-rows` standalone binary. The new tool is enriched with
+  additional functionality and can be used to run load generation tests against
+  a Kudu cluster.
+
+== Wire protocol compatibility
+
+Kudu 1.1.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.1 clients may connect to servers running Kudu 1.0. If the client uses the new
+  'IN LIST' predicate type, an error will be returned.
+* Kudu 1.0 clients may connect to servers running Kudu 1.1 without limitations.
+* Rolling upgrade between Kudu 1.0 and Kudu 1.1 servers is believed to be possible
+  though has not been sufficiently tested. Users are encouraged to shut down all nodes
+  in the cluster, upgrade the software, and then restart the daemons on the new version.
+
+[[rn_1.1.0_incompatible_changes]]
+== Incompatible changes in Kudu 1.1.0
+
+=== Client APIs ({cpp}/Java/Python)
+
+* The {cpp} client no longer requires the
+  link:https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html[old gcc5 ABI].
+  Which ABI is actually used depends on the compiler configuration. Some new distros
+  (e.g. Ubuntu 16.04) will use the new ABI. Your application must use the same ABI as is
+  used by the client library; an easy way to guarantee this is to use the same compiler
+  to build both.
+
+* The {cpp} client's `KuduSession::CountBufferedOperations()` method is
+  deprecated. Its behavior is inconsistent unless the session runs in the
+  `MANUAL_FLUSH` mode. Instead, to get number of buffered operations, count
+  invocations of the `KuduSession::Apply()` method since last
+  `KuduSession::Flush()` call or, if using asynchronous flushing, since last
+  invocation of the callback passed into `KuduSession::FlushAsync()`.
+
+* The Java client's `OperationResponse.getWriteTimestamp` method was renamed to `getWriteTimestampRaw`
+  to emphasize that it doesn't return milliseconds, unlike what its Javadoc indicated. The renamed
+  method was also hidden from the public APIs and should not be used.
+
+* The Java client's sync API (`KuduClient`, `KuduSession`, `KuduScanner`) used to throw either
+  a `NonRecoverableException` or a `TimeoutException` for a timeout, and now it's only possible for the
+  client to throw the former.
+
+* The Java client's handling of errors in `KuduSession` was modified so that subclasses of
+  `KuduException` are converted into RowErrors instead of being thrown.
 
 [[rn_1.0.1]]
 == Release notes specific to 1.0.1
@@ -397,38 +519,6 @@ This feature may be configured using the `fs_data_dirs_reserved_bytes` and
   replication on a previously-unreplicated table. This change is internal and
   should not be visible to users.
 
-[[rn_0.10.0_upgrade]]
-=== Upgrading from 0.9.x to 0.10.0
-
-Before upgrading, see <<rn_0.10.0_incompatible_changes>> and
-<<rn_0.10.0_downgrade>>.
-
-To upgrade from Kudu 0.9.x to Kudu 0.10.0, perform the following high-level
-steps, which are detailed in the installation guide under
-link:installation.html#upgrade_procedure[Upgrade Procedure]:
-
-. Shut down all Kudu services.
-. Install the new Kudu packages or parcels, or install Kudu 0.10.0 from source.
-. Restart all Kudu services.
-
-WARNING: Rolling upgrades are not supported when upgrading from Kudu 0.9.x to
-0.10.0 and they are known to cause errors in this release. If you run into a
-problem after an accidental rolling upgrade, shut down all services and then
-restart all services and the system should come up properly.
-
-NOTE: For the duration of the Kudu Beta, upgrade instructions are generally
-only given for going from the previous latest version to the newly released
-version.
-
-[[rn_0.10.0_downgrade]]
-=== Downgrading from 0.10.0 to 0.9.x
-
-After upgrading to Kudu 0.10.0, it is possible to downgrade to 0.9.x with the
-following exceptions:
-
-. Tables created in 0.10.0 will not be accessible after a downgrade to 0.9.x
-. A multi-master setup formatted in 0.10.0 may not be downgraded to 0.9.x
-
 [[rn_0.9.1]]
 == Release notes specific to 0.9.1
 
@@ -439,18 +529,6 @@ See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20
 %20AND%20fixVersion%20%3D%200.9.1">JIRAs resolved
 for Kudu 0.9.1</a>+++ and +++<a href="https://github.com/apache/kudu/compare/0.9.0...0.9.1">Git
 changes between 0.9.0 and 0.9.1</a>+++.
-
-[[rn_0.9.1_upgrade]]
-=== Upgrading from 0.9.0 to 0.9.1
-
-Before upgrading to Kudu 0.9.1 from Kudu 0.8.0, please read the <<rn_0.9.0>>.
-
-Upgrading from 0.8.0 or 0.9.0 to 0.9.1 is supported. To upgrade from Kudu 0.8.0
-or Kudu 0.9.0 to Kudu 0.9.1, use the procedure documented in <<rn_0.9.0_upgrade>>.
-
-NOTE: For the duration of the Kudu Beta, upgrade instructions are generally
-only given for going from the previous latest version to the newly released
-version.
 
 [[rn_0.9.1_fixed_issues]]
 === Fixed Issues
@@ -558,30 +636,6 @@ All Kudu clients have longer default timeout values, as listed below.
   `cfile_do_on_finish` has been changed from `close` to `flush`.
   link:http://getkudu.io/2016/04/26/ycsb.html[Experiments using YCSB] indicate that these
   values will provide better throughput for write-heavy applications on typical server hardware.
-
-[[rn_0.9.0_upgrade]]
-=== Upgrading from 0.8.0 to 0.9.x
-
-Before upgrading, see <<rn_0.9.0_incompatible_changes>> and
-<<rn_0.9.0_client_compatibility>>. To upgrade from Kudu 0.8.0 to 0.9.0, perform
-the following high-level steps, which are detailed in the installation guide
-under link:installation.html#upgrade_procedure[Upgrade Procedure]:
-
-. Shut down all Kudu services.
-. Install the new Kudu packages or parcels, or install Kudu 0.9.1 from source.
-. Restart all Kudu services.
-
-It is technically possible to upgrade Kudu using rolling restarts, but it has not
-been tested and is not recommended.
-
-NOTE: For the duration of the Kudu Beta, upgrade instructions are only given for going
-from the previous latest version to the newest.
-
-[[rn_0.9.0_client_compatibility]]
-=== Client compatibility
-
-Masters and tablet servers should be upgraded before clients are upgraded. For specific
-information about client compatibility, see the <<rn_0.9.0_incompatible_changes>> section.
 
 
 [[rn_0.8.0]]
@@ -779,15 +833,6 @@ previous link and link:http://developerblog.redhat.com/2015/02/05/gcc5-and-the-c
 
 - The Python client is no longer considered experimental.
 
-=== Limitations
-
-See also <<beta_limitations>>. Where applicable, this list adds to or overrides that
-list.
-
-==== Operating System Limitations
-* Kudu 0.7 is known to work on RHEL 7 or 6.4 or newer, CentOS 7 or 6.4 or newer, Ubuntu
-Trusty, and SLES 12. Other operating systems may work but have not been tested.
-
 
 [[rn_0.6.0]]
 == Release notes specific to 0.6.0
@@ -806,160 +851,9 @@ consistent with the C++ client.
 - OSX is now supported for single-host development. Please consult its specific installation
 instructions in link:installation.html#osx_from_source[OS X].
 
-=== Limitations
-
-See also <<beta_limitations>>. Where applicable, this list adds to or overrides that
-list.
-
-==== Operating System Limitations
-* Kudu 0.6 is known to work on RHEL 6.4 or newer, CentOS 6.4 or newer, and Ubuntu
-Trusty. Other operating systems may work but have not been tested.
-
-==== API Limitations
-* The Python client is still considered experimental.
-
 
 [[rn_0.5.0]]
 == Release Notes Specific to 0.5.0
 
-=== Limitations
-
-See also <<beta_limitations>>. Where applicable, this list adds to or overrides that
-list.
-
-==== Operating System Limitations
-* Kudu 0.5 is known to work on RHEL 7 or 6.4 or newer, CentOS 7 or 6.4 or newer, Ubuntu
-Trusty, and SLES 12. Other operating systems may work but have not been tested.
-
-==== API Limitations
-* The Python client is considered experimental.
-
-== About the Kudu Public Beta
-
-Releases of Apache Kudu prior to 1.0 are considered beta. Do not run beta releases on production clusters.
-During the public beta period, Kudu will be supported via a
-link:https://issues.cloudera.org/projects/KUDU[public JIRA] and a public
-link:http://mail-archives.apache.org/mod_mbox/kudu-user/[mailing list], which will be
-monitored by the Kudu development team and community members. Commercial support
-is not available at this time.
-
-* You can submit any issues or feedback related to your Kudu experience via either
-the JIRA system or the mailing list. The Kudu development team and community members
-will respond and assist as quickly as possible.
-* The Kudu team will work with early adopters to fix bugs and release new binary drops
-when fixes or features are ready. However, we cannot commit to issue resolution or
-bug fix delivery times during the public beta period, and it is possible that some
-fixes or enhancements will not be selected for a release.
-* We can't guarantee time frames or contents for future beta code drops. However,
-they will be announced to the user group when they occur.
-* No guarantees are made regarding upgrades from this release to follow-on releases.
-While multiple drops of beta code are planned, we can't guarantee their schedules
-or contents.
-
-
-[[beta_limitations]]
-=== Limitations of the Kudu Public Beta
-
-Items in this list may be amended or superseded by limitations listed in the release
-notes for specific Kudu releases above.
-
-
-==== Schema Limitations
-* Kudu is primarily designed for analytic use cases and, in the beta release,
-you are likely to encounter issues if a single row contains multiple kilobytes of data.
-* The columns which make up the primary key must be listed first in the schema.
-* Key columns cannot be altered. You must drop and recreate a table to change its keys.
-* Key columns must not be null.
-* Columns with `DOUBLE`, `FLOAT`, or `BOOL` types are not allowed as part of a
-primary key definition.
-* Type and nullability of existing columns cannot be changed by altering the table.
-* A table’s primary key cannot be changed.
-* Dropping a column does not immediately reclaim space. Compaction must run first.
-There is no way to run compaction manually, but dropping the table will reclaim the
-space immediately.
-
-==== Ingest Limitations
-* Ingest via Sqoop or Flume is not supported in the public beta. The recommended
-approach for bulk ingest is to use Impala’s `CREATE TABLE AS SELECT` functionality
-or use the Kudu Java or C++ API.
-* Tables must be manually pre-split into tablets using simple or compound primary
-keys. Automatic splitting is not yet possible. See
-link:schema_design.html[Schema Design].
-* Tablets cannot currently be merged. Instead, create a new table with the contents
-of the old tables to be merged.
-
-==== Replication and Backup Limitations
-* Replication and failover of Kudu masters is considered experimental. It is
-recommended to run a single master and periodically perform a manual backup of
-its data directories.
-
-==== Impala Limitations
-* To use Kudu with Impala, you must install a special release of Impala called
-Impala_Kudu. Obtaining and installing a compatible Impala release is detailed in Kudu's
-link:kudu_impala_integration.html[Impala Integration] documentation.
-* To use Impala_Kudu alongside an existing Impala instance, you must install using parcels.
-* Updates, inserts, and deletes via Impala are non-transactional. If a query
-fails part of the way through, its partial effects will not be rolled back.
-* All queries will be distributed across all Impala hosts which host a replica
-of the target table(s), even if a predicate on a primary key could correctly
-restrict the query to a single tablet. This limits the maximum concurrency of
-short queries made via Impala.
-* No timestamp and decimal type support.
-* The maximum parallelism of a single query is limited to the number of tablets
-in a table. For good analytic performance, aim for 10 or more tablets per host
-or use large tables.
-* Impala is only able to push down predicates involving `=`, `<=`, `>=`,
-or `BETWEEN` comparisons between any column and a literal value, and `<` and `>`
-for integer columns only. For example, for a table with an integer key `ts`, and
-a string key `name`, the predicate `WHERE ts >= 12345` will convert into an
-efficient range scan, whereas `where name > 'lipcon'` will currently fetch all
-data from the table and evaluate the predicate within Impala.
-
-==== Security Limitations
-
-* Authentication and authorization are not included in the public beta.
-* Data encryption is not included in the public beta.
-
-==== Client and API Limitations
-
-* Potentially-incompatible C++, Java and Python API changes may be required during the
-public beta.
-* `ALTER TABLE` is not yet fully supported via the client APIs. More `ALTER TABLE`
-operations will become available in future betas.
-
-==== Application Integration Limitations
-
-* The Spark DataFrame implementation is not yet complete.
-
-==== Other Known Issues
-
-The following are known bugs and issues with the current release of Kudu. They will
-be addressed in later beta releases.
-
-* If the Kudu master is configured with the `-log_force_fsync_all` option, tablet servers
-and clients will experience frequent timeouts, and the cluster may become unusable.
-
-* If a tablet server has a very large number of tablets, it may take several minutes
-to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
-Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
-you can monitor the number of tablets per server in the web UI.
-
-== Resources
-
-- link:http://getkudu.io[Kudu Website]
-- link:http://github.com/apache/kudu[Kudu GitHub Repository]
-- link:index.html[Kudu Documentation]
-
-== Installation Options
-* A Quickstart VM is provided to get you up and running quickly.
-* You can install Kudu using provided deb/yum packages.
-* You can install Kudu, in clusters managed by Cloudera Manager, using parcels or deb/yum packages.
-* You can build Kudu from source.
-
-For full installation details, see link:installation.html[Kudu Installation].
-
-== Next Steps
-- link:quickstart.html[Kudu Quickstart]
-- link:installation.html[Installing Kudu]
-- link:configuration.html[Configuring Kudu]
-
+Kudu 0.5.0 was the first public release. As such, no improvements or changes were
+noted in its release notes.

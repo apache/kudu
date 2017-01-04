@@ -1,0 +1,95 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+[[known_issues_and_limitations]]
+= Known Issues and Limitations
+
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+== Schema and Usage Limitations
+* Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
+  a single row contains multiple kilobytes of data.
+
+* The columns which make up the primary key must be listed first in the schema.
+
+* Key columns cannot be altered. You must drop and recreate a table to change its keys.
+
+* Key columns must not be null.
+
+* Columns with `DOUBLE`, `FLOAT`, or `BOOL` types are not allowed as part of a
+  primary key definition.
+
+* Type and nullability of existing columns cannot be changed by altering the table.
+
+* A table’s primary key cannot be changed.
+
+* Dropping a column does not immediately reclaim space. Compaction must run first.
+There is no way to run compaction manually, but dropping the table will reclaim the
+space immediately.
+
+== Partitioning Limitations
+* Tables must be manually pre-split into tablets using simple or compound primary
+  keys. Automatic splitting is not yet possible. Range partitions may be added
+  or dropped after a table has been created. See
+  link:schema_design.html[Schema Design] for more information.
+
+* Data in existing tables cannot currently be automatically repartitioned. As a workaround,
+  create a new table with the new partitioning and insert the contents of the old
+  table.
+
+== Replication and Backup Limitations
+* Kudu does not currently include any built-in features for backup and restore.
+  Users are encouraged to use tools such as Spark or Impala to export or import
+  tables as necessary.
+
+== Impala Limitations
+
+* Updates, inserts, and deletes via Impala are non-transactional. If a query
+  fails part of the way through, its partial effects will not be rolled back.
+
+* No timestamp and decimal type support.
+
+* The maximum parallelism of a single query is limited to the number of tablets
+  in a table. For good analytic performance, aim for 10 or more tablets per host
+  or use large tables.
+
+== Security Limitations
+
+* Authentication and authorization features are not implemented.
+* Data encryption is not built in. Kudu has been reported to run correctly
+  on systems using local block device encryption (e.g. `dmcrypt`).
+
+== Other Known Issues
+
+The following are known bugs and issues with the current release of Kudu. They will
+be addressed in later releases. Note that this list is not exhaustive, and is meant
+to communicate only the most important known issues.
+
+* If the Kudu master is configured with the `-log_force_fsync_all` option, tablet servers
+  and clients will experience frequent timeouts, and the cluster may become unusable.
+
+* If a tablet server has a very large number of tablets, it may take several minutes
+  to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
+  Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
+  you can monitor the number of tablets per server in the web UI.
