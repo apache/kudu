@@ -110,6 +110,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // Format a filesystem tree for each of the new masters and get the uuids.
   for (int i = 1; i < kMasterRpcPorts.size(); i++) {
     string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
+    ASSERT_OK(env_->CreateDir(DirName(data_root)));
     {
       vector<string> args = {
           kBinPath,
