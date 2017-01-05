@@ -34,6 +34,7 @@
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
+/// @cond
 namespace kudu {
 class ColumnSchema;
 namespace client {
@@ -41,6 +42,7 @@ class KuduWriteOperation;
 template<typename KeyTypeWrapper> struct SliceKeysTestSetup;
 template<typename KeyTypeWrapper> struct IntKeysTestSetup;
 } // namespace client
+/// @endcond
 
 class Schema;
 class PartialRowPB;

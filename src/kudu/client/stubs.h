@@ -92,9 +92,11 @@
 // the expression is false, most compilers will issue a warning/error
 // containing the name of the variable.
 
+/// @cond
 template <bool>
 struct StubsCompileAssert {
 };
+/// @endcond
 
 #define COMPILE_ASSERT(expr, msg) \
   typedef StubsCompileAssert<(bool(expr))> msg[bool(expr) ? 1 : -1] ATTRIBUTE_UNUSED // NOLINT(*)
