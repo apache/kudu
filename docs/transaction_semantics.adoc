@@ -67,9 +67,9 @@ the state of the storage engine at that point in time.
 functionality, but _timestamp_ is an internal concept mostly invisible to users,
 except when setting timestamp on a `KuduScanner`.
 
-* We generally refer to methods and classes of the _async java_ client. While the {cpp}
-client mostly has analogous methods and classes, parity between the APIs is still
-a work in progress. At times, we may refer specifically to the {cpp} client.
+* We generally refer to methods and classes of the {cpp} client. While the Java
+client mostly has analogous methods and classes, the exact names of the APIs
+may differ.
 ====
 
 == Single tablet write operations
@@ -84,7 +84,7 @@ replication. This timestamp will be the write's "tag" in MVCC.
 . After the changes are complete, they are made visible to concurrent writes
 and reads, atomically.
 
-All replicas of a tablet observe the same order of operations and if a write
+All replicas of a tablet observe the same order of operations, and if a write
 operation is assigned timestamp _n_ and changes row _x_, a second write operation
 at timestamp _m > n_ is guaranteed to see the new value of _x_.
 
@@ -96,7 +96,7 @@ though in an admittedly limited context. See this
 link:http://www.bailis.org/blog/linearizability-versus-serializability[blog post]
 for a little more context regarding what these semantics mean.
 
-While Isolated and Durable in an ACID sense, write operations are not yet fully Atomic.
+While Isolated and Durable in an ACID sense, multi-row write operations are not yet fully Atomic.
 The failure of a single write in a batch operation does not roll back the operation,
 but produces per-row errors.
 
@@ -106,13 +106,13 @@ Kudu does not yet support transactions that span multiple tablets. However,
 consistent snapshot reads are possible (with caveats in the current implementation)
 as explained below.
 
-Writes to a Kudu client are optionally buffered in memory until they are flushed and sent
-to the server. During the client's session flush, the rows for each tablet are batched
+Writes from a Kudu client are optionally buffered in memory until they are flushed and sent
+to the server. When client's session flushes, the rows for each tablet are batched
 together, and sent to the tablet server which hosts the leader replica of the tablet.
 Since there are no inter-tablet transactions, each of these batches represents a single,
-independent write operation with its own timestamp.
-However you have the option to impose some constraints on the assigned timestamps
-and on how writes to different tablets can be observed by clients.
+independent write operation with its own timestamp. However, the client API provides
+the option to impose some constraints on the assigned timestamps and on how writes to
+different tablets can be observed by clients.
 
 Kudu, like Spanner, was designed to be externally consistent <<5>>, preserving consistency
 even when operations span multiple tablets and even multiple data centers. In practice this
@@ -127,37 +127,56 @@ timestamps so that the causal relationship between them is captured.
 .`CLIENT_PROPAGATED` Consistency
 Kudu's default external consistency mode is called `CLIENT_PROPAGATED`.
 See <<1>> for an extensive explanation on how it works. In brief, this mode causes writes
-from _a single client_ to be automatically externally consistent. In this mode, writes are only externally
-consistent from the perspective of a single client. In the clickstream scenario above,
-if the two clicks are submitted by different client instances, the application must
+from _a single client_ to be automatically externally consistent. In the clickstream scenario
+above, if the two clicks are submitted by different client instances, the application must
 manually propagate timestamps from one client to the other for the causal relationship
 to be captured.
 
-`CLIENT_PROPAGATED` consistency is currently only available on the java client
-and is exposed through the `AsyncKuduClient#getLastPropagatedTimestamp()` and
-`AsyncKuduClient#setLastPropagatedTimestamp()` methods.
+Timestamps between clients _a_ and _b_ can be propagated as follows:
 
-.`Commit Wait` Consistency
-Kudu also implements an experimental implementation of an external consistency
-model used in Google's Spanner , called `Commit Wait`. `Commit Wait` works
+Java Client:: Call `AsyncKuduClient#getLastPropagatedTimestamp()` on client _a_,
+propagate the timestamp to client _b_, and call
+`AsyncKuduClient#setLastPropagatedTimestamp()` on client _b_.
+
+{cpp} Client:: Call `KuduClient::GetLatestObservedTimestamp()` on client _a_,
+propagate the timestamp to client _b_, and call
+`KuduClient::SetLatestObservedTimestamp()` on client _b_.
+
+
+
+.`COMMIT_WAIT` Consistency
+Kudu also has an experimental implementation of an external consistency
+model used in Google's Spanner , called `COMMIT_WAIT`. `COMMIT_WAIT` works
 by tightly synchronizing the clocks on all machines in the cluster. Then, when a
 write occurs, timestamps are assigned and the results of the write are not made
 visible until enough time has passed so that no other machine in the cluster could
 possibly assign a lower timestamp to a following write.
 
-For the moment, Kudu's experimental implementation of `Commit Wait` is only available
-in the java client, by setting `KuduSession#setExternalConsistencyMode()`
-to `COMMIT_WAIT`. When using this mode, the latency of writes is tightly
-tied to the accuracy of clocks on all the cluster hosts, and using this mode
-with loose clock synchronization causes writes to take a long time to complete or even time
-out. See <<known_issues>>.
+When using this mode, the latency of writes is tightly tied to the accuracy of clocks on
+all the cluster hosts, and using this mode with loose clock synchronization causes writes
+to take a long time to complete or even time out. See <<known_issues>>.
+
+The `COMMIT_WAIT` consistency mode may be selected as follows:
+
+Java Client:: Call `KuduSession#setExternalConsistencyMode(ExternalConsistencyMode.COMMIT_WAIT)`
+
+{cpp} Client:: Call `KuduSession::SetExternalConsistencyMode(COMMIT_WAIT)`
+
+CAUTION: `COMMIT_WAIT` consistency is considered an experimental feature. It may return
+incorrect results, exhibit performance issues, or negatively impact cluster stability.
+Use in production environments is discouraged.
 
 == Read Operations (Scans)
 
 Scans are read operations performed by clients that may span one or more rows across
-one or more tablets. When a server receives a scan, it takes a snapshot of the MVCC
+one or more tablets. When a server receives a scan request, it takes a snapshot of the MVCC
 state and then proceeds in one of two ways depending on the read mode selected by
-the user by means of the `KuduScanner::SetReadMode()` method.
+the user. The mode may be selected as follows:
+
+Java Client:: Call `KuduScannerBuilder#setReadMode(...)`
+{cpp} Client:: Call `KuduScanner::SetReadMode()`
+
+The following modes are available in both clients:
 
 `READ_LATEST`:: This is the default read mode. The server takes a snapshot of
 the MVCC state and proceeds with the read immediately. Reads in this mode only yield
@@ -186,49 +205,36 @@ so you might choose `READ_LATEST` instead.
 [[known_issues]]
 == Known Issues and Limitations
 
-We plan to fix the following issues. Monitor the linked JIRAs for progress.
-
-== Serialization
 There are several gaps and corner cases that prevent Kudu from being fully strictly-serializable
 in some situations, at the moment. Below are the details and next, some recommendations.
 
 [[known_issues_scans]]
-=== Scans
+=== Reads (Scans)
+
 * Support for `COMMIT_WAIT` is experimental and requires careful tuning of the
-  time-synchronization protocol, such as NTP (Network Time Protocol).
-* Support for externally-consistent write modes is only fully available in the Java
-  API at this time. (see link:https://issues.cloudera.org/browse/KUDU-1187[KUDU-1187])
-* In some rare circumstances, the `READ_AT_SNAPSHOT` scan mode may yield anomalous,
-  non-repeatable reads.
-  ** When scanning a replica at a snapshot, the replica may not have received all the writes
-  from the leader and might reply immediately, yielding a non-repeatable read (see link:https://issues.cloudera.org/browse/KUDU-798[KUDU-798]).
-  ** On a leader change, scans at a snapshot whose timestamp is beyond the last
-  write may also yield non-repeatable reads (see link:https://issues.cloudera.org/browse/KUDU-1188[KUDU-1188]). See <<recommendations>> for a workaround.
-  ** When performing multi-tablet scans without selecting a snapshot timestamp (see link:https://issues.cloudera.org/browse/KUDU-1189[KUDU-1189]).
+  time-synchronization protocol, such as NTP (Network Time Protocol). Its use
+  is discouraged in production environments.
+
+=== Writes
+
+* On a leader change, `READ_AT_SNAPSHOT` scans at a snapshot whose timestamp is beyond the last
+  write may also yield non-repeatable reads (see
+  link:https://issues.apache.org/jira/browse/KUDU-1188[KUDU-1188]).
+  See <<recommendations>> for a workaround.
 * Impala scans are currently performed as `READ_LATEST` and have no consistency
   guarantees.
 
 
-=== Writes
-* When a write fails with a timeout or is aborted, it is possible that it may
-  actually be committed. Kudu is currently missing a way to determine if a particular
-  timed-out write ever actually succeeded. On a retry, the write may succeed but
-  may also generate errors if some rows have already been inserted, or deleted (see link:https://issues.cloudera.org/browse/KUDU-568[KUDU-568]).
-
-* When a delete is performed to a row that has already been flushed, and the row is reinserted
-  all history is reset (see link:https://issues.cloudera.org/browse/KUDU-237[KUDU-237]).
-  This is not the case for rows that haven't been flushed yet and still reside in memory.
-
 [[recommendations]]
-== Recommendations
+=== Recommendations
 
 * If repeatable snapshot reads are a requirement, use `READ_AT_SNAPSHOT`
   with a timestamp that is slightly in the past (between 2-5 seconds, ideally).
-  This will circumvent the anomalies described in <<known_issues_scans>>. Even when the
-  anomalies have been addressed, back-dating the timestamp will always make scans
+  This will circumvent the anomaly described in <<known_issues_scans>>. Even when the
+  anomaly has been addressed, back-dating the timestamp will always make scans
   faster, since they are unlikely to block.
 
-* If external consistency is a requirement and you decide to use `Commit Wait`, the
+* If external consistency is a requirement and you decide to use `COMMIT_WAIT`, the
   time-synchronization protocol needs to be tuned carefully. Each transaction will wait
   2x the maximum clock error at the time of execution, which is usually in the 100 msec.
   to 1 sec. range with the default settings, maybe more. Thus, transactions would take at least
@@ -249,7 +255,7 @@ may place a greater load on the time server, since they make the servers poll mu
 frequently.
 
 [bibliography]
-.References
+== References
 - [[[1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
 - [[[2]]] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, J. J. Furman, Sanjay Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak, Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan, Rajesh Rao, Lindsay Rolig, Yasushi Saito, Michal Szymaniak, Christopher Taylor, Ruth Wang, and Dale Woodford. 2012. Spanner: Google's globally-distributed database. In Proceedings of the 10th USENIX conference on Operating Systems Design and Implementation (OSDI'12). USENIX Association, Berkeley, CA, USA, 251-264.
 - [[[3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 http://doi.acm.org/10.1145/2213836.2213838
