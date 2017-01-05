@@ -486,12 +486,29 @@ build_squeasel() {
 }
 
 build_curl() {
-  # Configure for a very minimal install - basically only HTTP, since we only
-  # use this for testing our own HTTP endpoints at this point in time.
+  # Configure for a very minimal install - basically only HTTP(S), since we only
+  # use this for testing our own HTTP/HTTPS endpoints at this point in time.
   CURL_BDIR=$TP_BUILD_DIR/$CURL_NAME$MODE_SUFFIX
   mkdir -p $CURL_BDIR
   pushd $CURL_BDIR
-  $CURL_SOURCE/configure \
+
+  # If the el6 workaround openssl is present, we must build curl against that
+  # version of openssl, not the system version, because at test runtime we use
+  # the workaround openssl.
+  local CURL_EXTRA_CPPFLAGS=""
+  local CURL_EXTRA_LDFLAGS=""
+  if [ -d "$OPENSSL_WORKAROUND_DIR" ]; then
+    CURL_EXTRA_CPPFLAGS="-I$OPENSSL_WORKAROUND_DIR/usr/include"
+    CURL_EXTRA_LDFLAGS="-L$OPENSSL_WORKAROUND_DIR/usr/lib64 -Wl,-rpath,$OPENSSL_WORKAROUND_DIR/usr/lib64"
+  fi
+
+  # Note: curl shows a message asking for CPPFLAGS to be used for include
+  # directories, not CFLAGS.
+  CFLAGS="$EXTRA_CFLAGS" \
+    CPPFLAGS="$CURL_EXTRA_CPPFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS $CURL_EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    $CURL_SOURCE/configure \
     --prefix=$PREFIX \
     --disable-dict \
     --disable-file \
@@ -507,8 +524,7 @@ build_curl() {
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
-    --without-librtmp \
-    --without-ssl
+    --without-librtmp
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
