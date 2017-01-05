@@ -20,6 +20,7 @@
 #define KUDU_UTIL_PATH_UTIL_H
 
 #include <string>
+#include <vector>
 
 namespace kudu {
 
@@ -32,6 +33,9 @@ extern const char kOldTmpInfix[];
 // if necessary.
 std::string JoinPathSegments(const std::string &a,
                              const std::string &b);
+
+// Split a path into segments with the appropriate path separator.
+std::vector<std::string> SplitPath(const std::string& path);
 
 // Return the enclosing directory of path.
 // This is like dirname(3) but for C++ strings.

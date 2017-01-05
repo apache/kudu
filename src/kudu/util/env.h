@@ -152,6 +152,12 @@ class Env {
   // Delete the specified directory.
   virtual Status DeleteDir(const std::string& dirname) = 0;
 
+  // Return the current working directory.
+  virtual Status GetCurrentWorkingDir(std::string* cwd) const = 0;
+
+  // Change the current working directory.
+  virtual Status ChangeDir(const std::string& dest) = 0;
+
   // Synchronize the entry for a specific directory.
   virtual Status SyncDir(const std::string& dirname) = 0;
 

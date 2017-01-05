@@ -826,4 +826,22 @@ TEST_F(TestEnv, TestGetBytesFree) {
       << "Failed after " << kIters << " attempts";
 }
 
+TEST_F(TestEnv, TestChangeDir) {
+  string orig_dir;
+  ASSERT_OK(env_->GetCurrentWorkingDir(&orig_dir));
+
+  string cwd;
+  ASSERT_OK(env_->ChangeDir("/"));
+  ASSERT_OK(env_->GetCurrentWorkingDir(&cwd));
+  ASSERT_EQ("/", cwd);
+
+  ASSERT_OK(env_->ChangeDir(test_dir_));
+  ASSERT_OK(env_->GetCurrentWorkingDir(&cwd));
+  ASSERT_EQ(test_dir_, cwd);
+
+  ASSERT_OK(env_->ChangeDir(orig_dir));
+  ASSERT_OK(env_->GetCurrentWorkingDir(&cwd));
+  ASSERT_EQ(orig_dir, cwd);
+}
+
 }  // namespace kudu

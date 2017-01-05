@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/env_util.h"
+
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -30,9 +33,9 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
-#include "kudu/util/status.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
 
 DEFINE_int64(disk_reserved_bytes_free_for_testing, -1,
              "For testing only! Set to number of bytes free on each filesystem. "
@@ -56,9 +59,6 @@ DEFINE_string(disk_reserved_override_prefix_2_path_for_testing, "",
 DEFINE_int64(disk_reserved_override_prefix_2_bytes_free_for_testing, -1,
              "For testing only! Set number of bytes free on the path prefix specified by "
              "--disk_reserved_override_prefix_2_path_for_testing. Set to -1 to disable.");
-//DEFINE_string(disk_reserved_prefixes_with_bytes_free_for_testing, "",
-//             "For testing only! Syntax: '/path/a:5,/path/b:7' means a has 5 bytes free, "
-//             "b has 7 bytes free. Set to empty string to disable this test-specific override.");
 TAG_FLAG(disk_reserved_override_prefix_1_path_for_testing, unsafe);
 TAG_FLAG(disk_reserved_override_prefix_2_path_for_testing, unsafe);
 TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, unsafe);
@@ -69,6 +69,7 @@ TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, runtime);
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -187,6 +188,27 @@ Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
     *created = s.ok();
   }
   return s.IsAlreadyPresent() ? Status::OK() : s;
+}
+
+Status CreateDirsRecursively(Env* env, const string& path) {
+  vector<string> segments = SplitPath(path);
+  string partial_path;
+  for (const string& segment : segments) {
+    partial_path = partial_path.empty() ? segment : JoinPathSegments(partial_path, segment);
+    bool is_dir;
+    Status s = env->IsDirectory(partial_path, &is_dir);
+    if (s.ok()) {
+      // We didn't get a NotFound error, so something is there.
+      if (is_dir) continue; // It's a normal directory.
+      // Maybe a file or a symlink. Let's try to follow the symlink.
+      string real_partial_path;
+      RETURN_NOT_OK(env->Canonicalize(partial_path, &real_partial_path));
+      s = env->IsDirectory(real_partial_path, &is_dir);
+      if (s.ok() && is_dir) continue; // It's a symlink to a directory.
+    }
+    RETURN_NOT_OK_PREPEND(env->CreateDir(partial_path), "Unable to create directory");
+  }
+  return Status::OK();
 }
 
 Status CopyFile(Env* env, const string& source_path, const string& dest_path,

@@ -24,12 +24,16 @@
 #include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/split.h"
 
 #if defined(__APPLE__)
 #include <mutex>
 #endif // defined(__APPLE__)
 
 using std::string;
+using std::vector;
+using strings::SkipEmpty;
+using strings::Split;
 
 namespace kudu {
 
@@ -47,6 +51,17 @@ std::string JoinPathSegments(const std::string &a,
   } else {
     return a + "/" + b;
   }
+}
+
+vector<string> SplitPath(const string& path) {
+  if (path.empty()) return {};
+  vector<string> segments;
+  if (path[0] == '/') segments.push_back("/");
+  vector<StringPiece> pieces = Split(path, "/", SkipEmpty());
+  for (const StringPiece& piece : pieces) {
+    segments.emplace_back(piece.data(), piece.size());
+  }
+  return segments;
 }
 
 string DirName(const string& path) {

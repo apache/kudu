@@ -890,6 +890,27 @@ class PosixEnv : public Env {
     return result;
   };
 
+  Status GetCurrentWorkingDir(string* cwd) const override {
+    TRACE_EVENT0("io", "PosixEnv::GetCurrentWorkingDir");
+    ThreadRestrictions::AssertIOAllowed();
+    unique_ptr<char, FreeDeleter> wd(getcwd(NULL, 0));
+    if (!wd) {
+      return IOError("getcwd()", errno);
+    }
+    cwd->assign(wd.get());
+    return Status::OK();
+  }
+
+  Status ChangeDir(const string& dest) override {
+    TRACE_EVENT1("io", "PosixEnv::ChangeDir", "dest", dest);
+    ThreadRestrictions::AssertIOAllowed();
+    Status result;
+    if (chdir(dest.c_str()) != 0) {
+      result = IOError(dest, errno);
+    }
+    return result;
+  }
+
   virtual Status SyncDir(const std::string& dirname) OVERRIDE {
     TRACE_EVENT1("io", "SyncDir", "path", dirname);
     ThreadRestrictions::AssertIOAllowed();

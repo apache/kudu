@@ -68,6 +68,12 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
 Status CreateDirIfMissing(Env* env, const std::string& path,
                           bool* created = NULL);
 
+// Recursively create directories, if they do not exist, along the given path.
+// Returns OK if successful or if the given path already existed.
+// Upon failure, it is possible that some part of the directory structure may
+// have been successfully created. Emulates the behavior of `mkdir -p`.
+Status CreateDirsRecursively(Env* env, const std::string& path);
+
 // Copy the contents of file source_path to file dest_path.
 // This is not atomic, and if there is an error while reading or writing,
 // a partial copy may be left in 'dest_path'. Does not fsync the parent
