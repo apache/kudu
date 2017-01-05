@@ -442,10 +442,7 @@ support renaming primary key columns.
 [[known-limitations]]
 == Known Limitations
 
-Kudu currently has some known limitations that may factor into schema design. When
-designing your schema, consider these limitations together, not in isolation. If you
-test these limitations and your findings are different from these, please share your
-test cases and results.
+Kudu currently has some known limitations that may factor into schema design.
 
 Number of Columns:: By default, Kudu will not permit the creation of tables with
 more than 300 columns. We recommend schema designs that use fewer columns for best
@@ -458,6 +455,9 @@ being returned to the client.
 
 Size of Rows:: Although individual cells may be up to 64KB, and Kudu supports up to
 300 columns, it is recommended that no single row be larger than a few hundred KB.
+
+Valid Identifiers:: Identifiers such as table and column names must be valid UTF-8
+sequences and no longer than 256 bytes.
 
 Immutable Primary Keys:: Kudu does not allow you to update the primary key
 columns of a row.

@@ -33,16 +33,20 @@
 
 * The columns which make up the primary key must be listed first in the schema.
 
-* Key columns cannot be altered. You must drop and recreate a table to change its keys.
+* Columns that are part of the primary key cannot be renamed.
+  The primary key may not be changed after the table is created.
+  You must drop and recreate a table to select a new primary key
+  or rename key columns.
 
-* Key columns must not be null.
+* The primary key of a row may not be modified using the `UPDATE` functionality.
+  To modify a row's primary key, the row must be deleted and re-inserted with
+  the modified key. Such a modification is non-atomic.
 
 * Columns with `DOUBLE`, `FLOAT`, or `BOOL` types are not allowed as part of a
-  primary key definition.
+  primary key definition. Additionally, all columns that are part of a primary
+  key definition must be `NOT NULL`.
 
 * Type and nullability of existing columns cannot be changed by altering the table.
-
-* A table’s primary key cannot be changed.
 
 * Dropping a column does not immediately reclaim space. Compaction must run first.
 There is no way to run compaction manually, but dropping the table will reclaim the
