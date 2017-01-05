@@ -305,5 +305,17 @@
         <module>kudu-csd</module>
       </modules>
     </profile>
+
+    <!-- Build the jepsen test for Kudu.
+
+         Disabled by default since Java 8 and maven >= 3.3.6 is required to
+         build the kudu-jepsen artifact.  To enable, add '-Pjepsen'
+         to the maven command line. -->
+    <profile>
+      <id>jepsen</id>
+      <modules>
+        <module>kudu-jepsen</module>
+      </modules>
+    </profile>
   </profiles>
 </project>

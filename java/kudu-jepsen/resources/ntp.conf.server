@@ -1,0 +1,3 @@
+enable calibrate
+server 127.127.1.0 burst iburst minpoll 4 maxpoll 4
+fudge 127.127.1.0 stratum 10
