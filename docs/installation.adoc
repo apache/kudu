@@ -370,7 +370,7 @@ $ sudo apt-get install autoconf automake curl g++ gcc gdb git \
 . Optional: Install additional packages to build the documentation
 +
 ----
-$ sudo apt-get install xsltproc zlib1g-dev
+$ sudo apt-get install xsltproc zlib1g-dev gem ruby-dev
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
