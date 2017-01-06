@@ -389,8 +389,13 @@ void CatalogManagerBgTasks::Run() {
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog_manager_);
       if (!l.catalog_status().ok()) {
-        LOG(WARNING) << "Catalog manager background task thread going to sleep: "
-                     << l.catalog_status().ToString();
+        if (l.catalog_status().IsServiceUnavailable()) {
+          LOG(INFO) << "Waiting for catalog manager background task thread to start: "
+                    << l.catalog_status().ToString();
+        } else {
+          LOG(WARNING) << "Catalog manager background task thread going to sleep: "
+                       << l.catalog_status().ToString();
+        }
       } else if (l.leader_status().ok()) {
         std::vector<scoped_refptr<TabletInfo>> to_process;
 
