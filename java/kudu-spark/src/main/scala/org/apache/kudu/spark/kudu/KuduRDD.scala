@@ -18,12 +18,11 @@ package org.apache.kudu.spark.kudu
 
 import scala.collection.JavaConverters._
 
+import org.apache.kudu.client._
+import org.apache.kudu.{Type, client}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.apache.spark.{Partition, SparkContext, TaskContext}
-
-import org.apache.kudu.client._
-import org.apache.kudu.{Type, client}
 
 /**
   * A Resilient Distributed Dataset backed by a Kudu table.
@@ -59,7 +58,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
     val client: KuduClient = kuduContext.syncClient
     val partition: KuduPartition = part.asInstanceOf[KuduPartition]
     val scanner = KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowResultIteratorScala(scanner)
+    new RowIterator(scanner)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -70,15 +69,15 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
 /**
   * A Spark SQL [[Partition]] which wraps a [[KuduScanToken]].
   */
-private[spark] class KuduPartition(val index: Int,
-                                   val scanToken: Array[Byte],
-                                   val locations: Array[String]) extends Partition {}
+private class KuduPartition(val index: Int,
+                            val scanToken: Array[Byte],
+                            val locations: Array[String]) extends Partition {}
 
 /**
   * A Spark SQL [[Row]] iterator which wraps a [[KuduScanner]].
   * @param scanner the wrapped scanner
   */
-private[spark] class RowResultIteratorScala(private val scanner: KuduScanner) extends Iterator[Row] {
+private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = null
 
@@ -90,17 +89,7 @@ private[spark] class RowResultIteratorScala(private val scanner: KuduScanner) ex
     currentIterator.hasNext
   }
 
-  override def next(): Row = new KuduRow(currentIterator.next())
-}
-
-/**
-  * A Spark SQL [[Row]] which wraps a Kudu [[RowResult]].
-  * @param rowResult the wrapped row result
-  */
-private[spark] class KuduRow(private val rowResult: RowResult) extends Row {
-  override def length: Int = rowResult.getColumnProjection.getColumnCount
-
-  override def get(i: Int): Any = {
+  private def get(rowResult: RowResult, i: Int): Any = {
     if (rowResult.isNull(i)) null
     else rowResult.getColumnType(i) match {
       case Type.BOOL => rowResult.getBoolean(i)
@@ -116,7 +105,8 @@ private[spark] class KuduRow(private val rowResult: RowResult) extends Row {
     }
   }
 
-  override def copy(): Row = Row.fromSeq(Range(0, length).map(get))
-
-  override def toString(): String = rowResult.toString
+  override def next(): Row = {
+    val rowResult = currentIterator.next()
+    Row.fromSeq(Range(0, rowResult.getColumnProjection.getColumnCount).map(get(rowResult, _)))
+  }
 }
