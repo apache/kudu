@@ -30,6 +30,7 @@
 
 #include <functional>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -55,6 +56,9 @@ using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 namespace kudu {
+
+// Make glog's STL-compatible operators visible inside this namespace.
+using ::operator<<;
 
 namespace {
 

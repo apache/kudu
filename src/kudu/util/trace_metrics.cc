@@ -30,6 +30,9 @@ using std::string;
 
 namespace kudu {
 
+// Make glog's STL-compatible operators visible inside this namespace.
+using ::operator<<;
+
 namespace {
 
 static simple_spinlock g_intern_map_lock;

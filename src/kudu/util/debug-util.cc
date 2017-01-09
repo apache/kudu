@@ -24,6 +24,7 @@
 #include <string>
 #include <sys/syscall.h>
 
+#include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
