@@ -142,7 +142,7 @@ LIBUNWIND_SOURCE=$TP_SOURCE_DIR/$LIBUNWIND_NAME
 # 7. Unpack the libc++abi tarball as projects/libcxxabi
 # 8. Create new tarball from the resulting source tree
 #
-LLVM_VERSION=3.9.0
+LLVM_VERSION=3.9.1
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 
