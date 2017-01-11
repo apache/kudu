@@ -17,10 +17,10 @@
 
 package org.apache.kudu.client;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -45,6 +45,13 @@ public class PartitionPruner {
    */
   private PartitionPruner(Deque<Pair<byte[], byte[]>> rangePartitions) {
     this.rangePartitions = rangePartitions;
+  }
+
+  /**
+   * @return the number of remaining partition ranges for the scan
+   */
+  public int numRangesRemainingForTests() {
+    return rangePartitions.size();
   }
 
   /**
@@ -127,10 +134,10 @@ public class PartitionPruner {
     // examples above:
     //
     // 1) The partition keys are truncated after the final constrained component
-    //    (hash bucket components are constrained when the scan is limited to a
-    //    single bucket via equality predicates on that component, while range
-    //    components are constrained if they have an upper or lower bound via
-    //    range or equality predicates on that component).
+    //    Hash bucket components are constrained when the scan is limited to a
+    //    subset of buckets via equality or in-list predicates on that component.
+    //    Range components are constrained if they have an upper or lower bound
+    //    via range or equality predicates on that component.
     //
     // 2) If the final constrained component is a hash bucket, then the
     //    corresponding bucket in the upper bound is incremented in order to make
@@ -139,7 +146,12 @@ public class PartitionPruner {
     // 3) The number of partition key ranges in the result is equal to the product
     //    of the number of buckets of each unconstrained hash component which come
     //    before a final constrained component. If there are no unconstrained hash
-    //    components, then the number of partition key ranges is one.
+    //    components, then the number of resulting partition key ranges is one. Note
+    //    that this can be a lot of ranges, and we may find we need to limit the
+    //    algorithm to give up on pruning if the number of ranges exceeds a limit.
+    //    Until this becomes a problem in practice, we'll continue always pruning,
+    //    since it is precisely these highly-hash-partitioned tables which get the
+    //    most benefit from pruning.
 
     // Step 1: Build the range portion of the partition key. If the range partition
     // columns match the primary key columns, then we can substitute the primary
@@ -159,11 +171,10 @@ public class PartitionPruner {
 
     // Step 2: Create the hash bucket portion of the partition key.
 
-    // The list of hash buckets per hash component, or null if the component is
-    // not constrained.
-    List<Integer> hashBuckets = new ArrayList<>(partitionSchema.getHashBucketSchemas().size());
+    // List of pruned hash buckets per hash component.
+    List<BitSet> hashComponents = new ArrayList<>(partitionSchema.getHashBucketSchemas().size());
     for (PartitionSchema.HashBucketSchema hashSchema : partitionSchema.getHashBucketSchemas()) {
-      hashBuckets.add(pushPredicatesIntoHashBucket(schema, hashSchema, predicates));
+      hashComponents.add(pruneHashComponent(schema, hashSchema, predicates));
     }
 
     // The index of the final constrained component in the partition key.
@@ -171,12 +182,14 @@ public class PartitionPruner {
     if (rangeLowerBound.length > 0 || rangeUpperBound.length > 0) {
       // The range component is constrained if either of the range bounds are
       // specified (non-empty).
-      constrainedIndex = hashBuckets.size();
+      constrainedIndex = partitionSchema.getHashBucketSchemas().size();
     } else {
       // Search the hash bucket constraints from right to left, looking for the
       // first constrained component.
-      for (int i = hashBuckets.size(); i > 0; i--) {
-        if (hashBuckets.get(i - 1) != null) {
+      for (int i = hashComponents.size(); i > 0; i--) {
+        int numBuckets = partitionSchema.getHashBucketSchemas().get(i - 1).getNumBuckets();
+        BitSet hashBuckets = hashComponents.get(i - 1);
+        if (hashBuckets.nextClearBit(0) < numBuckets) {
           constrainedIndex = i;
           break;
         }
@@ -185,52 +198,35 @@ public class PartitionPruner {
 
     // Build up a set of partition key ranges out of the hash components.
     //
-    // Each constrained hash component simply appends its bucket number to the
+    // Each hash component simply appends its bucket number to the
     // partition key ranges (possibly incrementing the upper bound by one bucket
     // number if this is the final constraint, see note 2 in the example above).
-    //
-    // Each unconstrained hash component results in creating a new partition key
-    // range for each bucket of the hash component.
     List<Pair<ByteVec, ByteVec>> partitionKeyRanges = new ArrayList<>();
     partitionKeyRanges.add(new Pair<>(ByteVec.create(), ByteVec.create()));
 
-    ByteBuffer bucketBuf = ByteBuffer.allocate(4);
-    bucketBuf.order(ByteOrder.BIG_ENDIAN);
     for (int hashIdx = 0; hashIdx < constrainedIndex; hashIdx++) {
       // This is the final partition key component if this is the final constrained
       // bucket, and the range upper bound is empty. In this case we need to
       // increment the bucket on the upper bound to convert from inclusive to
       // exclusive.
       boolean isLast = hashIdx + 1 == constrainedIndex && rangeUpperBound.length == 0;
+      BitSet hashBuckets = hashComponents.get(hashIdx);
 
-      if (hashBuckets.get(hashIdx) != null) {
-        // This hash component is constrained by equality predicates to a single
-        // hash bucket.
-        int bucket = hashBuckets.get(hashIdx);
-        int bucketUpper = isLast ? bucket + 1 : bucket;
-
-        for (Pair<ByteVec, ByteVec> partitionKeyRange : partitionKeyRanges) {
-          KeyEncoder.encodeHashBucket(bucket, partitionKeyRange.getFirst());
-          KeyEncoder.encodeHashBucket(bucketUpper, partitionKeyRange.getSecond());
+      List<Pair<ByteVec, ByteVec>> newPartitionKeyRanges =
+          new ArrayList<>(partitionKeyRanges.size() * hashBuckets.cardinality());
+      for (Pair<ByteVec, ByteVec> partitionKeyRange : partitionKeyRanges) {
+        for (int bucket = hashBuckets.nextSetBit(0);
+             bucket != -1;
+             bucket = hashBuckets.nextSetBit(bucket + 1)) {
+          int bucketUpper = isLast ? bucket + 1 : bucket;
+          ByteVec lower = partitionKeyRange.getFirst().clone();
+          ByteVec upper = partitionKeyRange.getFirst().clone();
+          KeyEncoder.encodeHashBucket(bucket, lower);
+          KeyEncoder.encodeHashBucket(bucketUpper, upper);
+          newPartitionKeyRanges.add(new Pair<>(lower, upper));
         }
-      } else {
-        PartitionSchema.HashBucketSchema hashSchema =
-            partitionSchema.getHashBucketSchemas().get(hashIdx);
-        // Add a partition key range for each possible hash bucket.
-        List<Pair<ByteVec, ByteVec>> newPartitionKeyRanges =
-            new ArrayList<>(partitionKeyRanges.size() * hashSchema.getNumBuckets());
-        for (Pair<ByteVec, ByteVec> partitionKeyRange : partitionKeyRanges) {
-          for (int bucket = 0; bucket < hashSchema.getNumBuckets(); bucket++) {
-            int bucketUpper = isLast ? bucket + 1 : bucket;
-            ByteVec lower = partitionKeyRange.getFirst().clone();
-            ByteVec upper = partitionKeyRange.getFirst().clone();
-            KeyEncoder.encodeHashBucket(bucket, lower);
-            KeyEncoder.encodeHashBucket(bucketUpper, upper);
-            newPartitionKeyRanges.add(new Pair<>(lower, upper));
-          }
-        }
-        partitionKeyRanges = newPartitionKeyRanges;
       }
+      partitionKeyRanges = newPartitionKeyRanges;
     }
 
     // Step 3: append the (possibly empty) range bounds to the partition key ranges.
@@ -309,7 +305,7 @@ public class PartitionPruner {
    * @param partition to prune
    * @return {@code true} if the partition should be pruned
    */
-  boolean shouldPrune(Partition partition) {
+  boolean shouldPruneForTests(Partition partition) {
     // The C++ version uses binary search to do this with fewer key comparisons,
     // but the algorithm isn't easily translatable, so this just uses a linear
     // search.
@@ -492,22 +488,51 @@ public class PartitionPruner {
   }
 
   /**
-   * Determines if the provided predicates can constrain the hash component to a
-   * single bucket, and if so, returns the bucket number. Otherwise returns null.
+   * Search all combination of in-list and equality predicates for pruneable hash partitions.
+   * @return a bitset containing {@code false} bits for hash buckets which may be pruned
    */
-  private static Integer pushPredicatesIntoHashBucket(Schema schema,
-                                                      PartitionSchema.HashBucketSchema hashSchema,
-                                                      Map<String, KuduPredicate> predicates) {
+  private static BitSet pruneHashComponent(Schema schema,
+                                           PartitionSchema.HashBucketSchema hashSchema,
+                                           Map<String, KuduPredicate> predicates) {
+    BitSet hashBuckets = new BitSet(hashSchema.getNumBuckets());
     List<Integer> columnIdxs = idsToIndexes(schema, hashSchema.getColumnIds());
-    PartialRow row = schema.newPartialRow();
     for (int idx : columnIdxs) {
       ColumnSchema column = schema.getColumnByIndex(idx);
       KuduPredicate predicate = predicates.get(column.getName());
-      if (predicate == null || predicate.getType() != KuduPredicate.PredicateType.EQUALITY) {
-        return null;
+      if (predicate == null ||
+          (predicate.getType() != KuduPredicate.PredicateType.EQUALITY &&
+           predicate.getType() != KuduPredicate.PredicateType.IN_LIST)) {
+        hashBuckets.set(0, hashSchema.getNumBuckets());
+        return hashBuckets;
       }
-      row.setRaw(idx, predicate.getLower());
     }
-    return KeyEncoder.getHashBucket(row, hashSchema);
+
+    List<PartialRow> rows = Arrays.asList(schema.newPartialRow());
+    for (int idx : columnIdxs) {
+      List<PartialRow> newRows = new ArrayList<>();
+      ColumnSchema column = schema.getColumnByIndex(idx);
+      KuduPredicate predicate = predicates.get(column.getName());
+      List<byte[]> predicateValues;
+      if (predicate.getType() == KuduPredicate.PredicateType.EQUALITY) {
+        predicateValues = Arrays.asList(predicate.getLower());
+      } else {
+        predicateValues = Arrays.asList(predicate.getInListValues());
+      }
+      // For each of the encoded string, replicate it by the number of values in
+      // equality and in-list predicate.
+      for (PartialRow row : rows) {
+        for (byte[] predicateValue : predicateValues) {
+          PartialRow newRow = new PartialRow(row);
+          newRow.setRaw(idx, predicateValue);
+          newRows.add(newRow);
+        }
+      }
+      rows = newRows;
+    }
+    for (PartialRow row : rows) {
+      int hash = KeyEncoder.getHashBucket(row, hashSchema);
+      hashBuckets.set(hash);
+    }
+    return hashBuckets;
   }
 }

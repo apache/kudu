@@ -61,6 +61,11 @@ class PartitionPruner {
   // Returns true if the provided partition should be pruned.
   bool ShouldPrune(const Partition& partition) const;
 
+  // Returns the number of partition key ranges remaining in the scan.
+  size_t NumRangesRemainingForTests() const {
+    return partition_key_ranges_.size();
+  }
+
   // Returns a text description of this partition pruner suitable for debug
   // printing.
   std::string ToString(const Schema& schema, const PartitionSchema& partition_schema) const;

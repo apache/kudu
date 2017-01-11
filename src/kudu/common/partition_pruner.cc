@@ -250,10 +250,10 @@ void PartitionPruner::Init(const Schema& schema,
   // examples above:
   //
   // 1) The partition keys are truncated after the final constrained component
-  //    (hash bucket components are constrained when the scan is limited to some
-  //    bucket via equality or in-list predicates on that component, while range
-  //    components are constrained if they have an upper or lower bound via
-  //    range or equality predicates on that component).
+  //    Hash bucket components are constrained when the scan is limited to a
+  //    subset of buckets via equality or in-list predicates on that component.
+  //    Range components are constrained if they have an upper or lower bound
+  //    via range or equality predicates on that component.
   //
   // 2) If the final constrained component is a hash bucket, then the
   //    corresponding bucket in the upper bound is incremented in order to make
@@ -262,8 +262,12 @@ void PartitionPruner::Init(const Schema& schema,
   // 3) The number of partition key ranges in the result is equal to the product
   //    of the number of buckets of each unconstrained hash component which come
   //    before a final constrained component. If there are no unconstrained hash
-  //    components and no in-list predicates, then the number of
-  //    partition key ranges is one.
+  //    components, then the number of resulting partition key ranges is one. Note
+  //    that this can be a lot of ranges, and we may find we need to limit the
+  //    algorithm to give up on pruning if the number of ranges exceeds a limit.
+  //    Until this becomes a problem in practice, we'll continue always pruning,
+  //    since it is precisely these highly-hash-partitioned tables which get the
+  //    most benefit from pruning.
 
   // Step 1: Build the range portion of the partition key.
   string range_lower_bound;
@@ -327,7 +331,7 @@ void PartitionPruner::Init(const Schema& schema,
                                  find_if(hash_bucket_bitsets.rbegin(),
                                          hash_bucket_bitsets.rend(),
                                          [] (const vector<bool>& x) {
-                                           return std::find(x.begin(), x.end(), true) != x.end();
+                                           return std::find(x.begin(), x.end(), false) != x.end();
                                          }));
   }
 

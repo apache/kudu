@@ -43,11 +43,15 @@ using std::vector;
 
 namespace kudu {
 
+class PartitionPrunerTest : public KuduTest {
+};
+
 void CheckPrunedPartitions(const Schema& schema,
                            const PartitionSchema& partition_schema,
-                           const vector<Partition> partitions,
+                           const vector<Partition>& partitions,
                            const ScanSpec& spec,
-                           size_t remaining_tablets) {
+                           size_t remaining_tablets,
+                           size_t pruner_ranges) {
 
   PartitionPruner pruner;
   pruner.Init(schema, partition_schema, spec);
@@ -63,9 +67,10 @@ void CheckPrunedPartitions(const Schema& schema,
                                      return pruner.ShouldPrune(partition);
                                    });
   ASSERT_EQ(remaining_tablets, partitions.size() - pruned_partitions);
+  ASSERT_EQ(pruner_ranges, pruner.NumRangesRemainingForTests());
 }
 
-TEST(TestPartitionPruner, TestPrimaryKeyRangePruning) {
+TEST_F(PartitionPrunerTest, TestPrimaryKeyRangePruning) {
   // CREATE TABLE t
   // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)) SPLIT ROWS [(0, 0, 0), (10, 10, 10)]
@@ -119,7 +124,9 @@ TEST(TestPartitionPruner, TestPrimaryKeyRangePruning) {
       enc_upper_bound = EncodedKey::FromContiguousRow(row);
       spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
     }
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds
@@ -172,9 +179,15 @@ TEST(TestPartitionPruner, TestPrimaryKeyRangePruning) {
   Check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
         make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
         2);
+
+  // PK  < (0, 0, 0)
+  // PK >= (10, 10, 11)
+  Check(make_tuple<int8_t, int8_t, int8_t>(10, 10, 11),
+        make_tuple<int8_t, int8_t, int8_t>(0, 0, 0),
+        0);
 }
 
-TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning) {
+TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   // CREATE TABLE t
   // (a INT8, b STRING, c STRING, PRIMARY KEY (a, b, c))
   // DISTRIBUTE BY RANGE(a, b)
@@ -232,7 +245,9 @@ TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning) {
       enc_upper_bound = EncodedKey::FromContiguousRow(row);
       spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
     }
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // No bounds
@@ -280,7 +295,7 @@ TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning) {
         make_tuple<int8_t, string>(10, "m"), 1);
 }
 
-TEST(TestPartitionPruner, TestRangePruning) {
+TEST_F(PartitionPrunerTest, TestRangePruning) {
   // CREATE TABLE t
   // (a INT8, b STRING, c INT8)
   // PRIMARY KEY (a, b, c))
@@ -319,7 +334,9 @@ TEST(TestPartitionPruner, TestRangePruning) {
       spec.AddPredicate(pred);
     }
 
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   int8_t neg_ten = -10;
@@ -458,7 +475,7 @@ TEST(TestPartitionPruner, TestRangePruning) {
   Check({ ColumnPredicate::IsNotNull(schema.column(2)) }, 3);
 }
 
-TEST(TestPartitionPruner, TestHashPruning) {
+TEST_F(PartitionPrunerTest, TestHashPruning) {
   // CREATE TABLE t
   // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)
@@ -489,14 +506,17 @@ TEST(TestPartitionPruner, TestHashPruning) {
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
-  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+  auto Check = [&] (const vector<ColumnPredicate>& predicates,
+                    size_t remaining_tablets,
+                    size_t pruner_ranges) {
     ScanSpec spec;
 
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
 
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   int8_t zero = 0;
@@ -504,30 +524,30 @@ TEST(TestPartitionPruner, TestHashPruning) {
   int8_t two = 2;
 
   // No Bounds
-  Check({}, 4);
+  Check({}, 4, 1);
 
   // a = 0;
-  Check({ ColumnPredicate::Equality(schema.column(0), &zero) }, 2);
+  Check({ ColumnPredicate::Equality(schema.column(0), &zero) }, 2, 1);
 
   // a >= 0;
-  Check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) }, 4);
+  Check({ ColumnPredicate::Range(schema.column(0), &zero, nullptr) }, 4, 1);
 
   // a >= 0;
   // a < 1;
-  Check({ ColumnPredicate::Range(schema.column(0), &zero, &one) }, 2);
+  Check({ ColumnPredicate::Range(schema.column(0), &zero, &one) }, 2, 1);
 
   // a >= 0;
   // a < 2;
-  Check({ ColumnPredicate::Range(schema.column(0), &zero, &two) }, 4);
+  Check({ ColumnPredicate::Range(schema.column(0), &zero, &two) }, 4, 1);
 
   // b = 1;
-  Check({ ColumnPredicate::Equality(schema.column(1), &one) }, 4);
+  Check({ ColumnPredicate::Equality(schema.column(1), &one) }, 4, 1);
 
   // b = 1;
   // c = 2;
   Check({ ColumnPredicate::Equality(schema.column(1), &one),
           ColumnPredicate::Equality(schema.column(2), &two) },
-        2);
+        2, 2);
 
   // a = 0;
   // b = 1;
@@ -535,10 +555,10 @@ TEST(TestPartitionPruner, TestHashPruning) {
   Check({ ColumnPredicate::Equality(schema.column(0), &zero),
           ColumnPredicate::Equality(schema.column(1), &one),
           ColumnPredicate::Equality(schema.column(2), &two) },
-        1);
+        1, 1);
 }
 
-TEST(TestPartitionPruner, TestInListHashPruning) {
+TEST_F(PartitionPrunerTest, TestInListHashPruning) {
   // CREATE TABLE t
   // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)
@@ -574,14 +594,17 @@ TEST(TestPartitionPruner, TestInListHashPruning) {
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
-  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+  auto Check = [&] (const vector<ColumnPredicate>& predicates,
+                    size_t remaining_tablets,
+                    size_t pruner_ranges) {
     ScanSpec spec;
 
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
 
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
@@ -595,26 +618,26 @@ TEST(TestPartitionPruner, TestInListHashPruning) {
 
   // a in [0, 1];
   a_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 18);
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 18, 2);
 
   // a in [0, 1, 8];
   a_values = { &zero, &one, &eight };
-  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 27);
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 27, 1);
 
   // b in [0, 1]
   b_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 18);
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 18, 6);
 
   // c in [0, 1]
   c_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 18);
+  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 18, 18);
 
   // b in [0, 1], c in [0, 1]
   b_values = { &zero, &one };
   c_values = { &zero, &one };
   Check({ ColumnPredicate::InList(schema.column(1), &b_values),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        12);
+        12, 12);
 
   //a in [0, 1], b in [0, 1], c in [0, 1]
   a_values = { &zero, &one };
@@ -623,10 +646,10 @@ TEST(TestPartitionPruner, TestInListHashPruning) {
   Check({ ColumnPredicate::InList(schema.column(0), &a_values),
           ColumnPredicate::InList(schema.column(1), &b_values),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        8);
+        8, 8);
 }
 
-TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
+TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
   // CREATE TABLE t
   // (a INT8, b INT8, c INT8)
   // PRIMARY KEY (a, b, c)
@@ -658,14 +681,17 @@ TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
 
   // Applies the specified predicates to a scan and checks that the expected
   // number of partitions are pruned.
-  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+  auto Check = [&] (const vector<ColumnPredicate>& predicates,
+                    size_t remaining_tablets,
+                    size_t pruner_ranges) {
     ScanSpec spec;
 
     for (const auto& pred : predicates) {
       spec.AddPredicate(pred);
     }
 
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   // zero, one, eight are in different buckets when bucket number is 3 and seed is 0.
@@ -679,19 +705,19 @@ TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
 
   // a in [0, 1];
   a_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 6);
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 6, 2);
 
   // a in [0, 1, 8];
   a_values = { &zero, &one, &eight };
-  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 9);
+  Check({ ColumnPredicate::InList(schema.column(0), &a_values) }, 9, 1);
 
   // b in [0, 1]
   b_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 9);
+  Check({ ColumnPredicate::InList(schema.column(1), &b_values) }, 9, 1);
 
   // c in [0, 1]
   c_values = { &zero, &one };
-  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 9);
+  Check({ ColumnPredicate::InList(schema.column(2), &c_values) }, 9, 1);
 
   // b in [0, 1], c in [0, 1]
   // (0, 0) in bucket 2
@@ -702,19 +728,19 @@ TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
   c_values = { &zero, &one };
   Check({ ColumnPredicate::InList(schema.column(1), &b_values),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        9);
+        9, 1);
 
   // b = 0, c in [0, 1]
   c_values = { &zero, &one };
   Check({ ColumnPredicate::Equality(schema.column(1), &zero),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        3);
+        3, 3);
 
   // b = 1, c in [0, 1]
   c_values = { &zero, &one };
   Check({ ColumnPredicate::Equality(schema.column(1), &one),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        6);
+        6, 6);
 
   //a in [0, 1], b in [0, 1], c in [0, 1]
   a_values = { &zero, &one };
@@ -723,15 +749,16 @@ TEST(TestPartitionPruner, TestMultiColumnInListHashPruning) {
   Check({ ColumnPredicate::InList(schema.column(0), &a_values),
           ColumnPredicate::InList(schema.column(1), &b_values),
           ColumnPredicate::InList(schema.column(2), &c_values) },
-        6);
+        6, 2);
 }
 
-TEST(TestPartitionPruner, TestPruning) {
+TEST_F(PartitionPrunerTest, TestPruning) {
   // CREATE TABLE timeseries
   // (host STRING, metric STRING, time UNIXTIME_MICROS, value DOUBLE)
   // PRIMARY KEY (host, metric, time)
-  // DISTRIBUTE BY RANGE(time) SPLIT ROWS [(10)],
-  //               HASH(host, metric) INTO 2 BUCKETS;
+  // PARTITION BY RANGE (time) (PARTITION VALUES < 10,
+  //                            PARTITION VALUES >= 10)
+  //              HASH (host, metric) 2 PARTITIONS;
   Schema schema({ ColumnSchema("host", STRING),
                   ColumnSchema("metric", STRING),
                   ColumnSchema("time", UNIXTIME_MICROS),
@@ -763,7 +790,8 @@ TEST(TestPartitionPruner, TestPruning) {
   auto Check = [&] (const vector<ColumnPredicate>& predicates,
                     string lower_bound_partition_key,
                     string upper_bound_partition_key,
-                    size_t remaining_tablets) {
+                    size_t remaining_tablets,
+                    size_t pruner_ranges) {
     ScanSpec spec;
 
     spec.SetLowerBoundPartitionKey(lower_bound_partition_key);
@@ -772,7 +800,8 @@ TEST(TestPartitionPruner, TestPruning) {
       spec.AddPredicate(pred);
     }
 
-    CheckPrunedPartitions(schema, partition_schema, partitions, spec, remaining_tablets);
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
   };
 
   Slice a = "a";
@@ -788,7 +817,7 @@ TEST(TestPartitionPruner, TestPruning) {
           ColumnPredicate::Equality(schema.column(1), &a),
           ColumnPredicate::Range(schema.column(2), &nine, nullptr) },
         "", "",
-        2);
+        2, 1);
 
   // host = "a"
   // metric = "a"
@@ -798,7 +827,7 @@ TEST(TestPartitionPruner, TestPruning) {
           ColumnPredicate::Equality(schema.column(1), &a),
           ColumnPredicate::Range(schema.column(2), &ten, &twenty) },
         "", "",
-        1);
+        1, 1);
 
   // host = "a"
   // metric = "a"
@@ -807,7 +836,7 @@ TEST(TestPartitionPruner, TestPruning) {
           ColumnPredicate::Equality(schema.column(1), &a),
           ColumnPredicate::Range(schema.column(2), nullptr, &ten) },
         "", "",
-        1);
+        1, 1);
 
   // host = "a"
   // metric = "a"
@@ -816,7 +845,7 @@ TEST(TestPartitionPruner, TestPruning) {
           ColumnPredicate::Equality(schema.column(1), &a),
           ColumnPredicate::Range(schema.column(2), &ten, nullptr) },
         "", "",
-        1);
+        1, 1);
 
   // host = "a"
   // metric = "a"
@@ -825,22 +854,22 @@ TEST(TestPartitionPruner, TestPruning) {
           ColumnPredicate::Equality(schema.column(1), &a),
           ColumnPredicate::Equality(schema.column(2), &ten) },
         "", "",
-        1);
+        1, 1);
 
   // partition key < (hash=1)
-  Check({}, "", string("\0\0\0\1", 4), 2);
+  Check({}, "", string("\0\0\0\1", 4), 2, 1);
 
   // partition key >= (hash=1)
-  Check({}, string("\0\0\0\1", 4), "", 2);
+  Check({}, string("\0\0\0\1", 4), "", 2, 1);
 
   // timestamp = 10
   // partition key < (hash=1)
   Check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-        "", string("\0\0\0\1", 4), 1);
+        "", string("\0\0\0\1", 4), 1, 1);
 
   // timestamp = 10
   // partition key >= (hash=1)
   Check({ ColumnPredicate::Equality(schema.column(2), &ten) },
-        string("\0\0\0\1", 4), "", 1);
+        string("\0\0\0\1", 4), "", 1, 1);
 }
 } // namespace kudu

@@ -478,8 +478,8 @@ class KUDU_EXPORT KuduPartialRow {
   friend class TestScanSpec;
   template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
-  FRIEND_TEST(TestPartitionPruner, TestPrimaryKeyRangePruning);
-  FRIEND_TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning);
+  FRIEND_TEST(PartitionPrunerTest, TestPrimaryKeyRangePruning);
+  FRIEND_TEST(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning);
 
   template<typename T>
   Status Set(const Slice& col_name, const typename T::cpp_type& val,

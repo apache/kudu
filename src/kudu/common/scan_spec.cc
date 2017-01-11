@@ -58,7 +58,7 @@ bool ScanSpec::CanShortCircuit() const {
   if (lower_bound_key_ &&
       exclusive_upper_bound_key_ &&
       lower_bound_key_->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) >= 0) {
-    return false;
+    return true;
   }
 
   return any_of(predicates_.begin(), predicates_.end(),
