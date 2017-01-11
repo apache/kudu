@@ -179,12 +179,8 @@ keep under 80 where possible, but you can spill over to 100 or so if necessary.
 .Smart Pointers and Singly-Owned Pointers
 
 Generally, most objects should have clear "single-owner" semantics.
-Most of the time, singly-owned objects can be wrapped in a `gscoped_ptr<>`
-or in a `unique_ptr` which ensures deletion on scope
-exit and prevents accidental copying.
-`gscoped_ptr` is similar to {cpp}11's `unique_ptr` in that it has a `release`
-method and also provides emulated `move` semantics (see _gscoped_ptr.h_ for
-example usage).
+Most of the time, singly-owned objects can be wrapped in a `unique_ptr<>`
+which ensures deletion on scope exit and prevents accidental copying.
 
 If an object is singly owned, but referenced from multiple places, such as when
 the pointed-to object is known to be valid at least as long as the pointer itself,
@@ -199,11 +195,11 @@ as in the following example.
   }
 ----
 
-If you use raw pointers within STL collections or inside of vectors and other containers,
-associate a comment with the container, which explains the ownership
-semantics (owned or un-owned). Use utility code from _gutil/stl_util.h_, such as
-`STLDeleteElements` or `ElementDeleter`, to ease handling of deletion of the
-contained elements.
+NOTE: Older parts of the Kudu code base use `gscoped_ptr` instead of
+`unique_ptr`. These are hold-overs from before Kudu adopted {cpp}11.
+New code should not use `gscoped_ptr` except when necessary to interface
+with existing code. Alternatively, consider updating usages as you come
+across them.
 
 WARNING: Using `std::auto_ptr` is strictly disallowed because of its difficult and
 bug-prone semantics. Besides, `std::auto_ptr` is declared deprecated

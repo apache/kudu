@@ -153,8 +153,6 @@ kuduContext.deleteTable("unwanted_table")
 
 === Spark Integration Known Issues and Limitations
 
-- The Kudu Spark integration is tested and developed against Spark 1.6 and Scala
-  2.10.
 - Kudu tables with a name containing upper case or non-ascii characters must be
   assigned an alternate name when registered as a temporary table.
 - Kudu tables with a column name containing upper case or non-ascii characters

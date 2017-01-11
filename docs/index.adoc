@@ -27,7 +27,7 @@
 :sectlinks:
 :experimental:
 
-Kudu is a columnar storage manager developed for the Hadoop platform.  Kudu shares
+Kudu is a columnar storage manager developed for the Apache Hadoop platform.  Kudu shares
 the common technical properties of Hadoop ecosystem applications: it runs on commodity
 hardware, is horizontally scalable, and supports highly available operation.
 
@@ -35,8 +35,8 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 
 - Fast processing of OLAP workloads.
 - Integration with MapReduce, Spark and other Hadoop ecosystem components.
-- Tight integration with Cloudera Impala, making it a good, mutable alternative
-  to using HDFS with Parquet.
+- Tight integration with Apache Impala (incubating), making it a good, mutable
+  alternative to using HDFS with Apache Parquet.
 - Strong but flexible consistency model, allowing you to choose consistency
   requirements on a per-request basis, including the option for strict-serializable consistency.
 - Strong performance for running sequential and random workloads simultaneously.
@@ -65,8 +65,8 @@ refreshes of the predictive model based on all historic data
 For more information about these and other scenarios, see <<kudu_use_cases>>.
 
 == Kudu-Impala Integration Features
-`CREATE TABLE`::
-  Impala supports creating and dropping tables using Kudu as the persistence layer.
+`CREATE/ALTER/DROP TABLE`::
+  Impala supports creating, altering, and dropping tables using Kudu as the persistence layer.
   The tables follow the same internal / external approach as other tables in Impala,
   allowing for flexible data ingestion and querying.
 `INSERT`::
@@ -77,7 +77,6 @@ For more information about these and other scenarios, see <<kudu_use_cases>>.
   a Kudu table row-by-row or as a batch. The syntax of the SQL commands is chosen
   to be as compatible as possible with existing standards. In addition to simple `DELETE`
   or `UPDATE` commands, you can specify complex joins with a `FROM` clause in a subquery.
-  Not all types of joins have been tested.
 Flexible Partitioning::
   Similar to partitioning of tables in Hive, Kudu allows you to dynamically
   pre-split tables by hash or range into a predefined number of tablets, in order
@@ -91,6 +90,9 @@ High-efficiency queries::
   Where possible, Impala pushes down predicate evaluation to Kudu, so that predicates
   are evaluated as close as possible to the data. Query performance is comparable
   to Parquet in many workloads.
+
+For more details regarding querying data stored in Kudu using Impala, please
+refer to the Impala documentation.
 
 == Concepts and Terms
 [[kudu_columnar_data_store]]
@@ -119,15 +121,16 @@ a totally ordered primary key. A table is split into segments called tablets.
 
 .Tablet
 
-A _tablet_ is a contiguous segment of a table. A given tablet is
-replicated on multiple tablet servers, and one of these replicas is considered
-the leader tablet. Any replica can service reads, and writes require consensus
-among the set of tablet servers serving the tablet.
+A _tablet_ is a contiguous segment of a table, similar to a _partition_ in
+other data storage engines or relational databases. A given tablet is
+replicated on multiple tablet servers, and at any given point in time,
+one of these replicas is considered the leader tablet. Any replica can service
+reads, and writes require consensus among the set of tablet servers serving the tablet.
 
 .Tablet Server
 
 A _tablet server_ stores and serves tablets to clients. For a
-given tablet, one tablet server serves the lead tablet, and the others serve
+given tablet, one tablet server acts as a leader, and the others act as
 follower replicas of that tablet. Only leaders service write requests, while
 leaders or followers each service read requests. Leaders are elected using
 <<raft>>. One tablet server can serve multiple tablets, and one tablet can be served
@@ -141,7 +144,7 @@ in time, there can only be one acting master (the leader). If the current leader
 disappears, a new master is elected using <<raft>>.
 
 The master also coordinates metadata operations for clients. For example, when
-creating a new table, the client internally sends an RPC to the master. The
+creating a new table, the client internally sends the request to the master. The
 master writes the metadata for the new table into the catalog table, and
 coordinates the process of creating tablets on the tablet servers.
 
@@ -166,7 +169,10 @@ in a majority of replicas it is acknowledged to the client. A given group of `N`
 
 The _catalog table_ is the central location for
 metadata of Kudu. It stores information about tables and tablets. The catalog
-table is accessible to clients via the master, using the client API.
+table may not be read or written directly. Instead, it is accessible
+only via metadata operations exposed in the client API.
+
+The catalog table stores two categories of metadata:
 
 Tables:: table schemas, locations, and states
 
