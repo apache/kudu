@@ -20,9 +20,6 @@
 #include <memory>
 #include <vector>
 
-#include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/compression_codec.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
@@ -31,21 +28,52 @@
 namespace kudu {
 namespace cfile {
 
+class CompressionCodec;
+
+// A compressed block has the following format:
+//
+// CFile version 1
+// -----------------
+// 4-byte little-endian: compressed_size
+//    the size of the compressed data, not including the 8-byte header.
+// 4-byte little-endian: uncompressed_size
+//    the expected size of the data after decompression
+// <compressed data>
+//
+// CFile version 2
+// -----------------
+// 4-byte little-endian: uncompressed_size
+//    The size of the data after decompression.
+//
+//    NOTE: if uncompressed_size is equal to the remaining size of the
+//    block (i.e. the uncompressed and compressed sizes are equal)
+//    then the block is assumed to be uncompressed, and the codec should
+//    not be executed.
+// <compressed data>
+
+
+// Builder for writing compressed blocks.
+// Always writes v2 format.
 class CompressedBlockBuilder {
  public:
   // 'codec' is expected to remain alive for the lifetime of this object.
   explicit CompressedBlockBuilder(const CompressionCodec* codec);
 
-  // Sets "*result" to the compressed version of the "data".
-  // The data inside the result is owned by the CompressedBlockBuilder class
-  // and valid until the class is destructed or until Compress() is called again.
+  // Sets "*data_slices" to the compressed version of the given input data.
+  // The input data is formed by concatenating the elements of 'data_slices'.
+  //
+  // The slices inside the result may either refer to data owned by this instance,
+  // or to slices of the input data. In the former case, the slices remain valid
+  // until the class is destructed or until Compress() is called again. In the latter
+  // case, it's up to the user to ensure that the original input data is not
+  // modified while the elements of 'result' are still being used.
   //
   // If an error was encountered, returns a non-OK status.
-  Status Compress(const Slice& data, Slice *result);
-  Status Compress(const std::vector<Slice> &data_slices, Slice *result);
+  Status Compress(const std::vector<Slice>& data_slices,
+                  std::vector<Slice>* result);
 
-  // header includes a 32-bit compressed length, 32-bit uncompressed length
-  static const size_t kHeaderReservedLength = (2 * sizeof(uint32_t));
+  // See format information above.
+  static const size_t kHeaderLength = 4;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
@@ -53,37 +81,50 @@ class CompressedBlockBuilder {
   faststring buffer_;
 };
 
+// Builder for reading compressed blocks.
+// Can read v1 or v2 format based on 'cfile_version' constructor parameter.
 class CompressedBlockDecoder {
  public:
   // 'codec' is expected to remain alive for the lifetime of this object.
-  explicit CompressedBlockDecoder(const CompressionCodec* codec);
+  CompressedBlockDecoder(const CompressionCodec* codec,
+                         int cfile_version,
+                         const Slice& block_data);
 
-  // Sets "*result" to the uncompressed version of the "data".
-  // It is the caller's responsibility to free the result data.
-  //
-  // If an error was encountered, returns a non-OK status.
-  Status Uncompress(const Slice& data, Slice *result);
-
-  // Validates the header in the data block 'data'.
-  // Sets '*uncompressed_size' to the uncompressed size of the data block
-  // (i.e. the size of buffer that's required for a later call for UncompressIntoBuffer()).
+  // Parses and validates the header in the data block.
+  // After calling this, the accessors below as well as UncompressIntoBuffer()
+  // may be safely called.
   //
   // Returns Corruption if the data block header indicates a compressed size
   // that is different than the amount of remaining data in the block, or if the
-  // uncompressed size is greater than the 'size_limit' provided in this class's constructor.
-  //
-  // In the case that this doesn't return OK, the output parameter may still
-  // be modified.
-  Status ValidateHeader(const Slice& data, uint32_t *uncompressed_size);
+  // uncompressed size is greater than the configured maximum uncompressed block size.
+  Status Init();
+
+  int uncompressed_size() const {
+    DCHECK_GE(uncompressed_size_, 0) << "must Init()";
+    return uncompressed_size_;
+  }
 
   // Uncompress into the provided 'dst' buffer, which must be at least as
-  // large as 'uncompressed_size'. It's assumed that this length has already
-  // been determined by calling Uncompress_Validate().
-  Status UncompressIntoBuffer(const Slice& data, uint8_t* dst,
-                              uint32_t uncompressed_size);
+  // large as the 'uncompressed_size()'.
+  //
+  // REQUIRES: Init() has been called and returned successfully.
+  // REQUIRES: !block_skipped()
+  Status UncompressIntoBuffer(uint8_t* dst);
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
-  const CompressionCodec* codec_;
+
+  static const size_t kHeaderLengthV1 = 8;
+  static const size_t kHeaderLengthV2 = 4;
+
+  size_t header_length() const {
+    return cfile_version_ == 1 ? kHeaderLengthV1 : kHeaderLengthV2;
+  }
+
+  const CompressionCodec* const codec_;
+  const int cfile_version_;
+  const Slice data_;
+
+  int uncompressed_size_ = -1;
 };
 
 } // namespace cfile

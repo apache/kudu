@@ -23,6 +23,7 @@
 
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/compression_codec.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
@@ -452,24 +453,22 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
                              BlockPointer *block_ptr,
                              const char *name_for_log) {
   uint64_t start_offset = off_;
+  vector<Slice> out_slices;
 
   if (block_compressor_ != nullptr) {
     // Write compressed block
-    Slice cdata;
-    Status s = block_compressor_->Compress(data_slices, &cdata);
+    Status s = block_compressor_->Compress(data_slices, &out_slices);
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to compress slice of size "
-                   << cdata.size() << " at offset " << off_
+      LOG(WARNING) << "Unable to compress block at offset " << off_
                    << ": " << s.ToString();
-      return(s);
+      return s;
     }
-
-    RETURN_NOT_OK(WriteRawData(cdata));
   } else {
-    // Write uncompressed block
-    for (const Slice &data : data_slices) {
-      RETURN_NOT_OK(WriteRawData(data));
-    }
+    out_slices = data_slices;
+  }
+
+  for (const Slice &data : out_slices) {
+    RETURN_NOT_OK(WriteRawData(data));
   }
 
   uint64_t total_size = off_ - start_offset;

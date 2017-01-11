@@ -27,6 +27,7 @@
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/compression_codec.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -93,6 +94,7 @@ CFileReader::CFileReader(ReaderOptions options,
                          gscoped_ptr<ReadableBlock> block) :
   block_(std::move(block)),
   file_size_(file_size),
+  codec_(nullptr),
   mem_consumption_(std::move(options.parent_mem_tracker),
                    memory_footprint()) {
 }
@@ -226,9 +228,7 @@ Status CFileReader::ReadAndParseFooter() {
 
   // Verify if the compression codec is available
   if (footer_->compression() != NO_COMPRESSION) {
-    const CompressionCodec* codec;
-    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec));
-    block_uncompressor_.reset(new CompressedBlockDecoder(codec));
+    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec_));
   }
 
   VLOG(2) << "Read footer: " << SecureDebugString(*footer_);
@@ -357,7 +357,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   // If we are reading uncompressed data and plan to cache the result,
   // then we should allocate our scratch memory directly from the cache.
   // This avoids an extra memory copy in the case of an NVM cache.
-  if (block_uncompressor_ == nullptr && cache_control == CACHE_BLOCK) {
+  if (codec_ == nullptr && cache_control == CACHE_BLOCK) {
     scratch.TryAllocateFromCache(cache, key, ptr.size());
   } else {
     scratch.AllocateFromHeap(ptr.size());
@@ -371,16 +371,17 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   }
 
   // Decompress the block
-  if (block_uncompressor_ != nullptr) {
-    // Get the size required for the uncompressed buffer
-    uint32_t uncompressed_size;
-    Status s = block_uncompressor_->ValidateHeader(block, &uncompressed_size);
+  if (codec_ != nullptr) {
+    // Init the decompressor and get the size required for the uncompressed buffer.
+    CompressedBlockDecoder uncompressor(codec_, cfile_version_, block);
+    Status s = uncompressor.Init();
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to get uncompressed size at "
+      LOG(WARNING) << "Unable to validate compressed block at "
                    << ptr.offset() << " of size " << ptr.size() << ": "
                    << s.ToString();
       return s;
     }
+    int uncompressed_size = uncompressor.uncompressed_size();
 
     // If we plan to put the uncompressed block in the cache, we should
     // decompress directly into the cache's memory (to avoid a memcpy for NVM).
@@ -390,8 +391,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     } else {
       decompressed_scratch.AllocateFromHeap(uncompressed_size);
     }
-    s = block_uncompressor_->UncompressIntoBuffer(block, decompressed_scratch.get(),
-                                                  uncompressed_size);
+    s = uncompressor.UncompressIntoBuffer(decompressed_scratch.get());
     if (!s.ok()) {
       LOG(WARNING) << "Unable to uncompress block at " << ptr.offset()
                    << " of size " << ptr.size() << ": " << s.ToString();
@@ -476,9 +476,6 @@ size_t CFileReader::memory_footprint() const {
   }
   if (footer_) {
     size += footer_->SpaceUsed();
-  }
-  if (block_uncompressor_) {
-    size += kudu_malloc_usable_size(block_uncompressor_.get());
   }
   return size;
 }

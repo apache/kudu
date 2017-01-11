@@ -197,9 +197,7 @@ class CFileReader {
 
   gscoped_ptr<CFileHeaderPB> header_;
   gscoped_ptr<CFileFooterPB> footer_;
-
-  gscoped_ptr<CompressedBlockDecoder> block_uncompressor_;
-
+  const CompressionCodec* codec_;
   const TypeInfo *type_info_;
   const TypeEncodingInfo *type_encoding_info_;
 

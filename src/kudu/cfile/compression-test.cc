@@ -67,10 +67,18 @@ static void TestCompressionCodec(CompressionType compression) {
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));
 }
 
+// Generator for fully random int32 data.
+class RandomInt32DataGenerator : public DataGenerator<INT32, /* HAS_NULLS= */ false> {
+ public:
+  int32_t BuildTestValue(size_t /*block_index*/, size_t /*value*/) override {
+    return random();
+  }
+};
+
 class TestCompression : public CFileTestBase {
  protected:
   void TestReadWriteCompressed(CompressionType compression) {
-    const size_t nrows = 10000;
+    const size_t nrows = 1000000;
     BlockId block_id;
     size_t rdrows;
 
@@ -84,8 +92,19 @@ class TestCompression : public CFileTestBase {
     }
 
     {
-      UInt32DataGenerator<false> int_gen;
-      WriteTestFile(&int_gen, GROUP_VARINT, compression, nrows,
+      Int32DataGenerator<false> int_gen;
+      WriteTestFile(&int_gen, BIT_SHUFFLE, compression, nrows,
+                    NO_FLAGS, &block_id);
+      TimeReadFile(fs_manager_.get(), block_id, &rdrows);
+      ASSERT_EQ(nrows, rdrows);
+    }
+
+    // Generate a plain-encoded file with random (uncompressible) data.
+    // This exercises the code path which short-circuits compression
+    // when the codec is not able to be effective on the input data.
+    {
+      RandomInt32DataGenerator int_gen;
+      WriteTestFile(&int_gen, PLAIN_ENCODING, compression, nrows,
                     NO_FLAGS, &block_id);
       TimeReadFile(fs_manager_.get(), block_id, &rdrows);
       ASSERT_EQ(nrows, rdrows);
