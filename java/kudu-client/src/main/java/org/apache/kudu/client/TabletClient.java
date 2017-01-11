@@ -680,7 +680,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
                                   final ChannelStateEvent e) throws Exception {
     chan = null;
     super.channelDisconnected(ctx, e);  // Let the ReplayingDecoder cleanup.
-    cleanup(e.getChannel());
+    cleanup("Connection disconnected");
   }
 
   @Override
@@ -691,7 +691,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     // super.channelDisconnected().  If we get here without getting a
     // DISCONNECTED event, then we were never connected in the first place so
     // the ReplayingDecoder has nothing to cleanup.
-    cleanup(e.getChannel());
+    cleanup("Connection closed");
   }
 
   /**
@@ -699,8 +699,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * <p>
    * All RPCs in flight will fail with a {@link RecoverableException} and
    * all edits buffered will be re-scheduled.
+   *
+   * @param errorMessage string to describe the cause of cleanup
    */
-  private void cleanup(final Channel chan) {
+  private void cleanup(final String errorMessage) {
     final ArrayList<KuduRpc<?>> rpcs;
 
     // The timing of this block is critical. If this TabletClient is 'dead' then it means that
@@ -725,8 +727,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
       pendingRpcs = null;
     }
-    Status statusNetworkError =
-        Status.NetworkError(getPeerUuidLoggingString() + "Connection reset");
+    Status statusNetworkError = Status.NetworkError(getPeerUuidLoggingString() +
+        (errorMessage == null ? "Connection reset" : errorMessage));
     RecoverableException exception = new RecoverableException(statusNetworkError);
 
     failOrRetryRpcs(rpcs, exception);
@@ -794,9 +796,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       gotUncaughtException = true;
     }
     if (c.isOpen()) {
-      Channels.close(c);  // Will trigger channelClosed(), which will cleanup()
-    } else {              // else: presumably a connection timeout.
-      cleanup(c);         // => need to cleanup() from here directly.
+      Channels.close(c);        // Will trigger channelClosed(), which will cleanup()
+    } else {                    // else: presumably a connection timeout.
+      cleanup(e.getMessage());  // => need to cleanup() from here directly.
     }
   }
 
