@@ -193,6 +193,8 @@ class CFileReader {
   const gscoped_ptr<fs::ReadableBlock> block_;
   const uint64_t file_size_;
 
+  uint8_t cfile_version_;
+
   gscoped_ptr<CFileHeaderPB> header_;
   gscoped_ptr<CFileFooterPB> footer_;
 

@@ -31,9 +31,12 @@ message FileMetadataPairPB {
 }
 
 message CFileHeaderPB {
-  required int32 major_version = 1;
-  required int32 minor_version = 2;
-
+  // These fields were used in Kudu <= 1.2, for the original header cfile format
+  // corresponding to the 'kuducfil' magic string.
+  // The new format ('kuducfl2' magic) no longer uses them, instead using the
+  // "feature flags" in the CFileFooterPB.
+  // required int32 major_version = 1;
+  // required int32 minor_version = 2;
   repeated FileMetadataPairPB metadata = 3;
 }
 
@@ -72,11 +75,40 @@ message CFileFooterPB {
 
   repeated FileMetadataPairPB metadata = 7;
 
-  optional bool is_type_nullable = 8 [default=false]; // TODO use enum with encoding?
+  optional bool is_type_nullable = 8 [default=false];
 
   // Block pointer for dictionary block if the cfile is dictionary encoded.
   // Only for dictionary encoding.
   optional BlockPointerPB dict_block_ptr = 9;
+
+  // Bitsets of features used by this cfile.
+  //
+  // We use a uint32 bitset instead of a repeated enum in order to save memory since
+  // these footers are kept around in memory for every open CFile. If we ever run out
+  // of bits, we can use the last bit of either list to enable a second bitset.
+  //
+  // We designate each feature as either compatible or incompatible.
+  //
+  // INCOMPATIBLE
+  // ---------------
+  // An incompatible feature is one which must be supported by a reader
+  // in order to properly read the file. If a reader sees an unknown bit set in this list,
+  // it should refuse to read the file.
+  //
+  // Example: an incompatible change to the format of one of the block encodings.
+  // If a reader isn't aware of the flag, it would read incorrect data.
+  //
+  // COMPATIBLE
+  // -----------
+  // A compatible feature is one which may be safely ignored by a reader without
+  // incorrect results. A reader may proceed but may not be taking advantage of
+  // all available index structures, etc.
+  //
+  // An example case here would be something like an additional index structure
+  // or summary statistic which an aware reader could potentially use, but an
+  // old reader could safely ignore.
+  optional uint32 incompatible_features = 10;
+  optional uint32 compatible_features = 11;
 }
 
 

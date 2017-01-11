@@ -68,7 +68,9 @@ TAG_FLAG(cfile_do_on_finish, experimental);
 namespace kudu {
 namespace cfile {
 
-const char kMagicString[] = "kuducfil";
+const char kMagicStringV1[] = "kuducfil";
+const char kMagicStringV2[] = "kuducfl2";
+const int kMagicLength = 8;
 
 static const size_t kMinBlockSize = 512;
 
@@ -157,15 +159,13 @@ Status CFileWriter::Start() {
   }
 
   CFileHeaderPB header;
-  header.set_major_version(kCFileMajorVersion);
-  header.set_minor_version(kCFileMinorVersion);
   FlushMetadataToPB(header.mutable_metadata());
 
   uint32_t pb_size = header.ByteSize();
 
   faststring buf;
   // First the magic.
-  buf.append(kMagicString);
+  buf.append(kMagicStringV2);
   // Then Length-prefixed header.
   PutFixed32(&buf, pb_size);
   pb_util::AppendToString(header, &buf);
@@ -236,7 +236,7 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   faststring footer_str;
   pb_util::SerializeToString(footer, &footer_str);
 
-  footer_str.append(kMagicString);
+  footer_str.append(kMagicStringV2);
   PutFixed32(&footer_str, footer.GetCachedSize());
 
   RETURN_NOT_OK(block_->Append(footer_str));

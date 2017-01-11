@@ -51,10 +51,9 @@ class BTreeInfoPB;
 class IndexTreeBuilder;
 
 // Magic used in header/footer
-extern const char kMagicString[];
-
-const int kCFileMajorVersion = 1;
-const int kCFileMinorVersion = 0;
+extern const char kMagicStringV1[];
+extern const char kMagicStringV2[];
+extern const int kMagicLength;
 
 class NullBitmapBuilder {
  public:

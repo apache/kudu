@@ -527,7 +527,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     SCOPED_TRACE(stdout);
     ASSERT_GE(stdout.size(), 4);
     ASSERT_EQ(stdout[0], "Header:");
-    ASSERT_EQ(stdout[3], "Footer:");
+    ASSERT_EQ(stdout[1], "Footer:");
   }
   {
     NO_FATALS(RunActionStdoutLines(Substitute(
@@ -543,7 +543,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     SCOPED_TRACE(stdout);
     ASSERT_GT(stdout.size(), kNumEntries);
     ASSERT_EQ(stdout[0], "Header:");
-    ASSERT_EQ(stdout[3], "Footer:");
+    ASSERT_EQ(stdout[1], "Footer:");
   }
 }
 
@@ -790,8 +790,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     ASSERT_STR_CONTAINS(stdout, "bloom_block {");
     ASSERT_STR_MATCHES(stdout, "id: .*");
     ASSERT_STR_CONTAINS(stdout, "undo_deltas {");
-    ASSERT_STR_MATCHES(stdout, "CFile Header: "
-                        "major_version: .* minor_version: .*");
+    ASSERT_STR_MATCHES(stdout, "CFile Header: ");
     ASSERT_STR_MATCHES(stdout, "Delta stats:.*");
     ASSERT_STR_MATCHES(stdout, "ts range=.*");
     ASSERT_STR_MATCHES(stdout, "update_counts_by_col_id=.*");

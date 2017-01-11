@@ -26,7 +26,7 @@
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/cfile_writer.h" // for kMagicString
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -62,19 +62,28 @@ static const size_t kMagicAndLengthSize = 12;
 static const size_t kMaxHeaderFooterPBSize = 64*1024;
 
 static Status ParseMagicAndLength(const Slice &data,
+                                  uint8_t* cfile_version,
                                   uint32_t *parsed_len) {
   if (data.size() != kMagicAndLengthSize) {
     return Status::Corruption("Bad size data");
   }
 
-  if (memcmp(kMagicString, data.data(), strlen(kMagicString)) != 0) {
+  uint8_t version;
+  if (memcmp(kMagicStringV1, data.data(), kMagicLength) == 0) {
+    version = 1;
+  } else if (memcmp(kMagicStringV2, data.data(), kMagicLength) == 0) {
+    version = 2;
+  } else {
     return Status::Corruption("bad magic");
   }
 
-  *parsed_len = DecodeFixed32(data.data() + strlen(kMagicString));
-  if (*parsed_len <= 0 || *parsed_len > kMaxHeaderFooterPBSize) {
+  uint32_t len = DecodeFixed32(data.data() + kMagicLength);
+  if (len > kMaxHeaderFooterPBSize) {
     return Status::Corruption("invalid data size");
   }
+
+  *cfile_version = version;
+  *parsed_len = len;
 
   return Status::OK();
 }
@@ -125,7 +134,7 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   RETURN_NOT_OK(block_->Read(offset, kMagicAndLengthSize,
                              &slice, scratch));
 
-  return ParseMagicAndLength(slice, len);
+  return ParseMagicAndLength(slice, &cfile_version_, len);
 }
 
 Status CFileReader::InitOnce() {
@@ -135,6 +144,13 @@ Status CFileReader::InitOnce() {
   RETURN_NOT_OK(ReadAndParseHeader());
 
   RETURN_NOT_OK(ReadAndParseFooter());
+
+  if (PREDICT_FALSE(footer_->incompatible_features() != 0)) {
+    // Currently we do not support any incompatible features.
+    return Status::NotSupported(Substitute(
+        "cfile uses features from an incompatible version: $0",
+        footer_->incompatible_features()));
+  }
 
   type_info_ = GetTypeInfo(footer_->data_type());
 

@@ -27,7 +27,7 @@ EOF
 Header
 ------
 
-<magic>: the string 'kuducfil'
+<magic>: see below
 <header length>: 32-bit unsigned integer length delimiter
 <header>: CFileHeaderPB protobuf
 
@@ -36,9 +36,18 @@ Footer
 ------
 
 <footer>: CFileFooterPB protobuf
-<magic>: the string 'kuducfil'
+<magic>: see below
 <footer length> (length of protobuf)
+
+
+Magic strings
+-------------
+CFile v1: the string 'kuducfil'
+CFile v2: the string 'kuducfl2'
 ```
+
+The two versions are identical except where specifically noted in the source
+code or this document.
 
 ==============================
 
