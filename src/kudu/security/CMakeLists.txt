@@ -30,6 +30,7 @@ if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
 endif()
 
 set(SECURITY_SRCS
+  ca/cert_management.cc
   init.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
@@ -49,7 +50,8 @@ ADD_EXPORTABLE_LIBRARY(security
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
-    test/mini_kdc.cc)
+    test/mini_kdc.cc
+    test/test_certs.cc)
 
   add_library(security-test ${SECURITY_TEST_SRCS})
   target_link_libraries(security-test
@@ -62,6 +64,7 @@ if (NOT NO_TESTS)
     security
     security-test
     ${KUDU_MIN_TEST_LIBS})
-endif()
 
-ADD_KUDU_TEST(test/mini_kdc-test)
+  ADD_KUDU_TEST(test/mini_kdc-test)
+  ADD_KUDU_TEST(test/cert_management-test)
+endif()

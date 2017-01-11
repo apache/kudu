@@ -59,8 +59,8 @@ void ThreadIdCB(CRYPTO_THREADID* tid) {
 }
 
 void DoInitializeOpenSSL() {
-  SSL_library_init();
   SSL_load_error_strings();
+  SSL_library_init();
   OpenSSL_add_all_algorithms();
   RAND_poll();
 
