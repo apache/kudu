@@ -35,6 +35,9 @@ for more details about using Kudu with Cloudera Manager.
 
 == Starting and Stopping Kudu Processes
 
+NOTE: These instructions are relevant only when Kudu is installed using operating system packages
+(e.g. `rpm` or `deb`).
+
 include::installation.adoc[tags=start_stop]
 
 == Kudu Web Interfaces
