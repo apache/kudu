@@ -101,12 +101,6 @@ else ()
   set(SEMAPHORE_CC "semaphore.cc")
 endif()
 
-# Fall back to using the ported functionality if we're using an older version of
-# OpenSSL
-if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
-  set(PORTED_X509_CHECK_HOST_CC "x509_check_host.cc")
-endif()
-
 set(UTIL_SRCS
   async_logger.cc
   atomic.cc
@@ -154,15 +148,12 @@ set(UTIL_SRCS
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
-  net/ssl_factory.cc
-  net/ssl_socket.cc
   oid_generator.cc
   once.cc
   os-util.cc
   path_util.cc
   pb_util.cc
   pb_util-internal.cc
-  ${PORTED_X509_CHECK_HOST_CC}
   random_util.cc
   resettable_heartbeater.cc
   rolling_log.cc
@@ -211,8 +202,6 @@ set(UTIL_LIBS
   histogram_proto
   libev
   maintenance_manager_proto
-  openssl_crypto
-  openssl_ssl
   pb_util_proto
   protobuf
   version_info_proto

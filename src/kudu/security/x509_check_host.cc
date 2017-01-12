@@ -21,7 +21,7 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
 
-#include "kudu/util/x509_check_host.h"
+#include "kudu/security/x509_check_host.h"
 
 // Ported from include/openssl/crypto.h from OpenSSL-1.1.0b
 // Modifed to use __FILE__ and __LINE__ instead of OPENSSL_FILE and OPENSSL_LINE.

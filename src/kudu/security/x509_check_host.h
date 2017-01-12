@@ -10,7 +10,7 @@
 // The following is ported from the OpenSSL-1.1.0b library.
 
 #ifndef X509_CHECK_HOST_H
-# define X509_CHECK_HOST_H
+#define X509_CHECK_HOST_H
 
 #include <stdlib.h>
 

@@ -39,19 +39,19 @@
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_server.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/security/ssl_factory.h"
+#include "kudu/security/ssl_socket.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/threadpool.h"
 #include "kudu/util/thread_restrictions.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
-#include "kudu/util/net/socket.h"
-#include "kudu/util/net/ssl_factory.h"
-#include "kudu/util/net/ssl_socket.h"
 
 // When compiling on Mac OS X, use 'kqueue' instead of the default, 'select', for the event loop.
 // Otherwise we run into problems because 'select' can't handle connections when more than 1024

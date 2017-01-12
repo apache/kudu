@@ -26,7 +26,6 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/net/ssl_socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 

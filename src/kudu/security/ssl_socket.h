@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_NET_SSL_SOCKET_H
-#define KUDU_UTIL_NET_SSL_SOCKET_H
+
+#pragma once
 
 #include <sys/uio.h>
 
@@ -56,5 +56,3 @@ class SSLSocket : public Socket {
 };
 
 } // namespace kudu
-
-#endif

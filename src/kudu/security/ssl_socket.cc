@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/security/ssl_socket.h"
+
 #include <errno.h>
 
 #include <vector>
@@ -24,15 +26,14 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
-#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/security/ssl_factory.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/net/ssl_factory.h"
-#include "kudu/util/net/ssl_socket.h"
 #include "kudu/util/net/sockaddr.h"
 
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
-#include "kudu/util/x509_check_host.h"
+#include "kudu/security/x509_check_host.h"
 #endif // OPENSSL_VERSION_NUMBER
 
 namespace kudu {

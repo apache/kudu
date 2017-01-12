@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/security/ssl_factory.h"
+
 #include <mutex>
 #include <vector>
 
@@ -23,11 +25,10 @@
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
+#include "kudu/security/ssl_socket.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/net/ssl_factory.h"
-#include "kudu/util/net/ssl_socket.h"
 
 namespace kudu {
 

@@ -70,12 +70,13 @@ set(KRPC_SRCS
 )
 
 set(KRPC_LIBS
+  cyrus_sasl
+  gutil
+  kudu_util
+  libev
   rpc_header_proto
   rpc_introspection_proto
-  kudu_util
-  gutil
-  libev
-  cyrus_sasl)
+  security)
 
 ADD_EXPORTABLE_LIBRARY(krpc
   SRCS ${KRPC_SRCS}
