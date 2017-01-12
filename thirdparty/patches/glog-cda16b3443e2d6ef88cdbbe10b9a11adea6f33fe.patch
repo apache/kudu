@@ -1,0 +1,94 @@
+commit cda16b3443e2d6ef88cdbbe10b9a11adea6f33fe
+Author: Yoshisato Yanagisawa <yyanagisawa@google.com>
+Date:   Wed Nov 18 15:40:12 2015 +0900
+
+    Reset SIGABRT action only if FailureSignalHandler is installed.
+    
+    When I set my own signal handler to SIGABRT, it did not executed
+    with CHECK.  That is because SIGABRT handler is reset to default
+    just before glog calls abort.
+    Let me make it reset only if the handler is what glog installed
+    i.e. FailureSignalHandler.
+
+diff --git a/src/glog/logging.h.in b/src/glog/logging.h.in
+index 455bd28..b1de2c9 100644
+--- a/src/glog/logging.h.in
++++ b/src/glog/logging.h.in
+@@ -923,6 +923,9 @@ template <bool>
+ struct CompileAssert {
+ };
+ struct CrashReason;
++
++// Returns true if FailureSignalHandler is installed.
++bool IsFailureSignalHandlerInstalled();
+ }  // namespace glog_internal_namespace_
+ 
+ #define GOOGLE_GLOG_COMPILE_ASSERT(expr, msg) \
+diff --git a/src/signalhandler.cc b/src/signalhandler.cc
+index cccd800..a7aef8b 100644
+--- a/src/signalhandler.cc
++++ b/src/signalhandler.cc
+@@ -335,6 +335,22 @@ void FailureSignalHandler(int signal_number,
+ 
+ #endif  // HAVE_SIGACTION
+ 
++namespace glog_internal_namespace_ {
++
++bool IsFailureSignalHandlerInstalled() {
++#ifdef HAVE_SIGACTION
++  struct sigaction sig_action;
++  memset(&sig_action, 0, sizeof(sig_action));
++  sigemptyset(&sig_action.sa_mask);
++  sigaction(SIGABRT, NULL, &sig_action);
++  if (sig_action.sa_sigaction == &FailureSignalHandler)
++    return true;
++#endif  // HAVE_SIGACTION
++  return false;
++}
++
++}  // namespace glog_internal_namespace_
++
+ void InstallFailureSignalHandler() {
+ #ifdef HAVE_SIGACTION
+   // Build the sigaction struct.
+diff --git a/src/utilities.cc b/src/utilities.cc
+index f31c7c7..5c88e58 100644
+--- a/src/utilities.cc
++++ b/src/utilities.cc
+@@ -138,13 +138,15 @@ static void DumpStackTraceAndExit() {
+ 
+   // TOOD(hamaji): Use signal instead of sigaction?
+ #ifdef HAVE_SIGACTION
+-  // Set the default signal handler for SIGABRT, to avoid invoking our
+-  // own signal handler installed by InstallFailedSignalHandler().
+-  struct sigaction sig_action;
+-  memset(&sig_action, 0, sizeof(sig_action));
+-  sigemptyset(&sig_action.sa_mask);
+-  sig_action.sa_handler = SIG_DFL;
+-  sigaction(SIGABRT, &sig_action, NULL);
++  if (IsFailureSignalHandlerInstalled()) {
++    // Set the default signal handler for SIGABRT, to avoid invoking our
++    // own signal handler installed by InstallFailureSignalHandler().
++    struct sigaction sig_action;
++    memset(&sig_action, 0, sizeof(sig_action));
++    sigemptyset(&sig_action.sa_mask);
++    sig_action.sa_handler = SIG_DFL;
++    sigaction(SIGABRT, &sig_action, NULL);
++  }
+ #endif  // HAVE_SIGACTION
+ 
+   abort();
+diff --git a/src/windows/glog/logging.h b/src/windows/glog/logging.h
+index bab8c61..36107a6 100755
+--- a/src/windows/glog/logging.h
++++ b/src/windows/glog/logging.h
+@@ -910,6 +910,9 @@ template <bool>
+ struct CompileAssert {
+ };
+ struct CrashReason;
++
++// Returns true if FailureSignalHandler is installed.
++bool IsFailureSignalHandlerInstalled();
+ }  // namespace glog_internal_namespace_
+ 
+ #define GOOGLE_GLOG_COMPILE_ASSERT(expr, msg) \
