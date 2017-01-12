@@ -153,10 +153,12 @@ const char* TpchRealWorld::kLineItemBase = "lineitem.tbl";
 Status TpchRealWorld::Init() {
   Env* env = Env::Default();
   if (FLAGS_tpch_use_mini_cluster) {
-    if (env->FileExists(FLAGS_tpch_mini_cluster_base_dir)) {
-      RETURN_NOT_OK(env->DeleteRecursively(FLAGS_tpch_mini_cluster_base_dir));
+    if (FLAGS_tpch_load_data) {
+      if (env->FileExists(FLAGS_tpch_mini_cluster_base_dir)) {
+        RETURN_NOT_OK(env->DeleteRecursively(FLAGS_tpch_mini_cluster_base_dir));
+      }
+      RETURN_NOT_OK(env->CreateDir(FLAGS_tpch_mini_cluster_base_dir));
     }
-    RETURN_NOT_OK(env->CreateDir(FLAGS_tpch_mini_cluster_base_dir));
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 1;
