@@ -88,14 +88,15 @@ inline client::KuduSchema CreateLineItemSchema() {
   b.AddColumn(kExtendedPriceColName)->Type(kDouble)->NotNull();
   b.AddColumn(kDiscountColName)->Type(kDouble)->NotNull();
   b.AddColumn(kTaxColName)->Type(kDouble)->NotNull();
-  b.AddColumn(kReturnFlagColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kLineStatusColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kShipDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kCommitDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kReceiptDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kShipInstructColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kShipModeColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
-  b.AddColumn(kCommentColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kReturnFlagColName)->Type(kString)->NotNull();
+  b.AddColumn(kLineStatusColName)->Type(kString)->NotNull();
+  b.AddColumn(kShipDateColName)->Type(kString)->NotNull();
+  b.AddColumn(kCommitDateColName)->Type(kString)->NotNull();
+  b.AddColumn(kReceiptDateColName)->Type(kString)->NotNull();
+  b.AddColumn(kShipInstructColName)->Type(kString)->NotNull();
+  b.AddColumn(kShipModeColName)->Type(kString)->NotNull();
+  b.AddColumn(kCommentColName)->Type(kString)->NotNull()
+      ->Compression(client::KuduColumnStorageAttributes::LZ4);
 
   b.SetPrimaryKey({ kOrderKeyColName, kLineNumberColName });
 
