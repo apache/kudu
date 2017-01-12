@@ -35,6 +35,12 @@ DEFINE_int32(flush_threshold_mb, 1024,
              "or if the server-wide memory limit has been reached.");
 TAG_FLAG(flush_threshold_mb, experimental);
 
+DEFINE_int32(flush_threshold_secs, 2 * 60,
+             "Number of seconds after which a non-empty MemRowSet will become flushable "
+             "even if it is not large.");
+TAG_FLAG(flush_threshold_secs, experimental);
+
+
 METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,
                            "Log GCs Running",
                            kudu::MetricUnit::kOperations,
@@ -50,8 +56,6 @@ namespace tablet {
 using std::map;
 using strings::Substitute;
 
-// How long we wait before considering a time-based flush.
-const double kFlushDueToTimeMs = 2 * 60 * 1000;
 // Upper bound for how long it takes to reach "full perf improvement" in time-based flushing.
 const double kFlushUpperBoundMs = 60 * 60 * 1000;
 
@@ -71,7 +75,7 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
     double extra_mb =
         static_cast<double>(FLAGS_flush_threshold_mb - (stats->ram_anchored()) / (1024 * 1024));
     stats->set_perf_improvement(extra_mb);
-  } else if (elapsed_ms > kFlushDueToTimeMs) {
+  } else if (elapsed_ms > FLAGS_flush_threshold_secs * 1000) {
     // Even if we aren't over the threshold, consider flushing if we haven't flushed
     // in a long time. But, don't give it a large perf_improvement score. We should
     // only do this if we really don't have much else to do, and if we've already waited a bit.
