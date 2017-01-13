@@ -31,6 +31,7 @@ endif()
 
 set(SECURITY_SRCS
   init.cc
+  openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
   ssl_factory.cc
   ssl_socket.cc)

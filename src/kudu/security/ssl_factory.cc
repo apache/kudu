@@ -21,10 +21,10 @@
 #include <vector>
 
 #include <openssl/err.h>
-#include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
+#include "kudu/security/openssl_util.h"
 #include "kudu/security/ssl_socket.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/mutex.h"
@@ -32,41 +32,8 @@
 
 namespace kudu {
 
-// These non-POD elements will be alive for the lifetime of the process, so don't allocate in
-// static storage.
-static Mutex* g_ssl_mutexes;
-
-// Lock/Unlock the nth lock. Only to be used by OpenSSL.
-static void CryptoLockingCallback(int mode, int n, const char* /*unused*/, int /*unused*/) {
-  if (mode & CRYPTO_LOCK) {
-    g_ssl_mutexes[n].Acquire();
-  } else {
-    g_ssl_mutexes[n].Release();
-  }
-}
-
-// Return the current pthread's tid. Only to be used by OpenSSL.
-static void CryptoThreadIDCallback(CRYPTO_THREADID* id) {
-  return CRYPTO_THREADID_set_numeric(id, Thread::UniqueThreadId());
-}
-
-void DoSSLInit() {
-  SSL_library_init();
-  SSL_load_error_strings();
-  OpenSSL_add_all_algorithms();
-  RAND_poll();
-
-  debug::ScopedLeakCheckDisabler d;
-  g_ssl_mutexes = new Mutex[CRYPTO_num_locks()];
-
-  // Callbacks used by OpenSSL required in a multi-threaded setting.
-  CRYPTO_set_locking_callback(CryptoLockingCallback);
-  CRYPTO_THREADID_set_callback(CryptoThreadIDCallback);
-}
-
 SSLFactory::SSLFactory() : ctx_(nullptr, SSL_CTX_free) {
-  static std::once_flag ssl_once;
-  std::call_once(ssl_once, DoSSLInit);
+  security::InitializeOpenSSL();
 }
 
 SSLFactory::~SSLFactory() {

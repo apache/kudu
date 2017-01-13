@@ -17,40 +17,23 @@
 
 #pragma once
 
-#include <sys/uio.h>
-
 #include <string>
 
-#include "kudu/gutil/macros.h"
-#include "kudu/security/openssl_util.h"
-#include "kudu/util/net/socket.h"
-#include "kudu/util/status.h"
+// Forward declarations for the OpenSSL typedefs.
+typedef struct bio_st BIO;
+typedef struct ssl_ctx_st SSL_CTX;
+typedef struct ssl_st SSL;
 
 namespace kudu {
+namespace security {
 
-class Sockaddr;
+// Initializes static state required by the OpenSSL library.
+//
+// Safe to call multiple times.
+void InitializeOpenSSL();
 
-class SSLSocket : public Socket {
- public:
-  SSLSocket(int fd, SSL* ssl, bool is_server);
+// Fetch the last error message from the OpenSSL library.
+std::string GetOpenSSLErrors();
 
-  ~SSLSocket();
-
-  // Do the SSL handshake as a client or a server and verify that the credentials were correctly
-  // verified.
-  Status DoHandshake();
-
-  Status Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) override;
-
-  Status Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten) override;
-
-  Status Recv(uint8_t *buf, int32_t amt, int32_t *nread) override;
-
-  // Shutdown the connection and free the SSL state for this connection.
-  Status Close() override;
- private:
-  SSL* ssl_; // Owned.
-  bool is_server_;
-};
-
+} // namespace security
 } // namespace kudu
