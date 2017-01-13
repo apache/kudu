@@ -18,8 +18,11 @@
 #define KUDU_UTIL_MUTEX_H
 
 #include <pthread.h>
-#include <glog/logging.h>
 #include <sys/types.h>
+
+#include <string>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -62,6 +65,7 @@ class Mutex {
   // Members and routines taking care of locks assertions.
   void CheckHeldAndUnmark();
   void CheckUnheldAndMark();
+  std::string GetOwnerThreadInfo() const;
 
   // All private data is implicitly protected by native_handle_.
   // Be VERY careful to only access members under that lock.
