@@ -7,6 +7,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <stack>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
