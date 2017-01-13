@@ -47,19 +47,21 @@ ADD_EXPORTABLE_LIBRARY(security
   SRCS ${SECURITY_SRCS}
   DEPS ${SECURITY_LIBS})
 
-set(SECURITY_TEST_SRCS
-  test/mini_kdc.cc)
+if (NOT NO_TESTS)
+  set(SECURITY_TEST_SRCS
+    test/mini_kdc.cc)
 
-add_library(security-test ${SECURITY_TEST_SRCS})
-target_link_libraries(security-test
-  gutil
-  kudu_test_util
-  kudu_util)
+  add_library(security-test ${SECURITY_TEST_SRCS})
+  target_link_libraries(security-test
+    gutil
+    kudu_test_util
+    kudu_util)
 
-# Tests
-set(KUDU_TEST_LINK_LIBS
-  security
-  security-test
-  ${KUDU_MIN_TEST_LIBS})
+  # Tests
+  set(KUDU_TEST_LINK_LIBS
+    security
+    security-test
+    ${KUDU_MIN_TEST_LIBS})
+endif()
 
 ADD_KUDU_TEST(test/mini_kdc-test)
