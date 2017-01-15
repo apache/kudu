@@ -246,6 +246,9 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * Create a table on the cluster with the specified name, schema, and table configurations.
+   * If the primary key columns of the table schema aren't specified first, the deferred result
+   * will be a {@link NonRecoverableException}
+   *
    * @param name the table's name
    * @param schema the table's schema
    * @param builder a builder containing the table's configurations

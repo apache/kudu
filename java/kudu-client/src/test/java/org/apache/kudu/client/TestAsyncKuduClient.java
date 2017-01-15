@@ -34,9 +34,12 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);
@@ -226,5 +229,28 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     OperationResponse response = session.apply(createBasicSchemaInsert(table, 1));
     assertTrue(response.hasRowError());
     assertTrue(response.getRowError().getErrorStatus().isTimedOut());
+  }
+
+
+  /**
+   * Test creating a table with out of order primary keys in the table schema .
+   */
+  @Test(timeout = 100000)
+  public void testCreateTableOutOfOrderPrimaryKeys() throws Exception {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(6);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key_1", Type.INT8).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key_2", Type.INT16).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_i", Type.INT32).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column3_s", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL).build());
+    Schema schema = new Schema(columns);
+    try {
+      client.createTable("testCreateTableOutOfOrderPrimaryKeys-" + System.currentTimeMillis(),
+          schema,
+          getBasicCreateTableOptions()).join();
+    } catch (NonRecoverableException nre) {
+      assertTrue(nre.getMessage().startsWith("Got out-of-order key column"));
+    }
   }
 }

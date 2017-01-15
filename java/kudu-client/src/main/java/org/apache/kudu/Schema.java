@@ -68,8 +68,8 @@ public class Schema {
 
   /**
    * Constructs a schema using the specified columns and does some internal accounting
+   *
    * @param columns the columns in index order
-   * @throws IllegalArgumentException If the key columns aren't specified first
    *
    * See {@code ColumnPBsToSchema()} in {@code src/kudu/common/wire_protocol.cc}
    */
@@ -84,7 +84,6 @@ public class Schema {
    *
    * @param columns the columns in index order
    * @param columnIds the column ids of the provided columns, or null
-   * @throws IllegalArgumentException If the primary key columns aren't specified first
    * @throws IllegalArgumentException If the column ids length does not match the columns length
    *
    * See {@code ColumnPBsToSchema()} in {@code src/kudu/common/wire_protocol.cc}
