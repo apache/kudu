@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Everything in this module depends on test infrastructure.
+if (NO_TESTS)
+  return()
+endif()
+
 # Use pkgconfig to configure the build regarding liboauth. This allows
 # to extract info on include and library paths, etc. The liboauth library
 # is installed at alternative location on MacOS X.
@@ -58,16 +63,13 @@ else()
     # parser-test relies on symlinked data files which we can't currently copy correctly
     # to the cluster.
     ADD_KUDU_TEST(parser-test LABELS no_dist_test)
-    if(NOT "${NO_TESTS}")
-      target_link_libraries(oauth-test
-        twitter_demo)
-      target_link_libraries(parser-test
-        twitter_demo)
-      execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-tweets.txt
-        ${EXECUTABLE_OUTPUT_PATH})
-      execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-deletes.txt
-        ${EXECUTABLE_OUTPUT_PATH})
-    endif()
-
+    target_link_libraries(oauth-test
+      twitter_demo)
+    target_link_libraries(parser-test
+      twitter_demo)
+    execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-tweets.txt
+      ${EXECUTABLE_OUTPUT_PATH})
+    execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/example-deletes.txt
+      ${EXECUTABLE_OUTPUT_PATH})
   endif() # if(NOT LIBOAUTH_LIBRARY) ... else ...
 endif() # if (NOT PKG_CONFIG_FOUND) ... else ...

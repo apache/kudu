@@ -15,8 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# rwlock-perf
-# Disabled on OS X because it relies on sched_getcpu.
+# Everything in this module depends on test infrastructure.
+if (NO_TESTS)
+  return()
+endif()
+
+# Disabled on macOS because it relies on sched_getcpu().
 if(NOT APPLE)
   add_executable(rwlock-perf rwlock-perf.cc)
   target_link_libraries(rwlock-perf

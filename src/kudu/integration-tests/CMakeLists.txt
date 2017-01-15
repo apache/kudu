@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Everything in this module is test-related.
+if (NO_TESTS)
+  return()
+endif()
+
 set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc

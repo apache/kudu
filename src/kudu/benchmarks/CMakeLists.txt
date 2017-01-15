@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Everything in this module depends on test infrastructure.
+if (NO_TESTS)
+  return()
+endif()
+
 set(TPCH_SRCS
   tpch/rpc_line_item_dao.cc
 )
@@ -42,8 +47,7 @@ target_link_libraries(rle
   kudu_util
   ${KUDU_TEST_LINK_LIBS})
 
-# wal_hiccup
-# Disabled on OS X since it relies on fdatasync and sync_file_range.
+# Disabled on macOS since it relies on fdatasync() and sync_file_range().
 if(NOT APPLE)
   add_executable(wal_hiccup wal_hiccup.cc)
   target_link_libraries(wal_hiccup
