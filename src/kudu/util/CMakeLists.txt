@@ -16,6 +16,20 @@
 # under the License.
 
 #######################################
+# util_compression_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  UTIL_COMPRESSION_PROTO_SRCS UTIL_COMPRESSION_PROTO_HDRS UTIL_COMPRESSION_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES compression/compression.proto)
+ADD_EXPORTABLE_LIBRARY(util_compression_proto
+  SRCS ${UTIL_COMPRESSION_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${UTIL_COMPRESSION_PROTO_TGTS})
+
+#######################################
 # histogram_proto
 #######################################
 
@@ -228,6 +242,21 @@ ADD_EXPORTABLE_LIBRARY(kudu_util
   EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
 
 #######################################
+# kudu_util_compression
+#######################################
+set(UTIL_COMPRESSION_SRCS
+  compression/compression_codec.cc)
+set(UTIL_COMPRESSION_LIBS
+  util_compression_proto
+  util
+  lz4
+  snappy
+  zlib)
+ADD_EXPORTABLE_LIBRARY(kudu_util_compression
+  SRCS ${UTIL_COMPRESSION_SRCS}
+  DEPS ${UTIL_COMPRESSION_LIBS})
+
+#######################################
 # kudu_test_util
 #######################################
 
@@ -403,4 +432,13 @@ ADD_KUDU_TEST(pb_util-test)
 if(NOT NO_TESTS)
   target_link_libraries(pb_util-test
     pb_util_test_proto)
+endif()
+
+#######################################
+# util/compression tests
+#######################################
+ADD_KUDU_TEST(compression/compression-test)
+if(NOT NO_TESTS)
+  target_link_libraries(compression-test
+    kudu_util_compression)
 endif()

@@ -19,6 +19,7 @@ package kudu.cfile;
 option java_package = "org.apache.kudu.cfile";
 
 import "kudu/common/common.proto";
+import "kudu/util/compression/compression.proto";
 import "kudu/util/pb_util.proto";
 
 message FileMetadataPairPB {

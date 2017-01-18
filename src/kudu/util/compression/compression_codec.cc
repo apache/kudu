@@ -23,13 +23,12 @@
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/compression_codec.h"
+#include "kudu/util/compression/compression_codec.h"
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/logging.h"
 
 namespace kudu {
-namespace cfile {
 
 using std::vector;
 
@@ -262,5 +261,4 @@ CompressionType GetCompressionCodecType(const std::string& name) {
   return NO_COMPRESSION;
 }
 
-} // namespace cfile
 } // namespace kudu

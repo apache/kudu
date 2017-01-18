@@ -41,7 +41,6 @@ add_library(cfile
   cfile_reader.cc
   cfile_util.cc
   cfile_writer.cc
-  compression_codec.cc
   index_block.cc
   index_btree.cc
   type_encodings.cc)
@@ -50,12 +49,10 @@ target_link_libraries(cfile
   kudu_common
   kudu_fs
   kudu_util
+  kudu_util_compression
   gutil
   cfile_proto
-  lz4
-  bitshuffle
-  snappy
-  zlib)
+  bitshuffle)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS cfile ${KUDU_MIN_TEST_LIBS})
@@ -65,4 +62,3 @@ ADD_KUDU_TEST(encoding-test LABELS no_tsan)
 ADD_KUDU_TEST(bloomfile-test)
 ADD_KUDU_TEST(mt-bloomfile-test)
 ADD_KUDU_TEST(block_cache-test)
-ADD_KUDU_TEST(compression-test)

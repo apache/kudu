@@ -17,8 +17,8 @@
 
 package org.apache.kudu;
 
-import org.apache.kudu.Common.CompressionType;
 import org.apache.kudu.Common.EncodingType;
+import org.apache.kudu.Compression.CompressionType;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 

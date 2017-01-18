@@ -20,10 +20,10 @@
 #include <gflags/gflags.h>
 
 #include "kudu/cfile/block_compression.h"
-#include "kudu/cfile/compression_codec.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 

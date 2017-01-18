@@ -311,6 +311,14 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
   int num_;
 };
 
+// Generator for fully random int32 data.
+class RandomInt32DataGenerator : public DataGenerator<INT32, /* HAS_NULLS= */ false> {
+ public:
+  int32_t BuildTestValue(size_t /*block_index*/, size_t /*value*/) override {
+    return random();
+  }
+};
+
 class CFileTestBase : public KuduTest {
  public:
   void SetUp() OVERRIDE {

@@ -27,6 +27,7 @@ package kudu;
 
 option java_package = "org.apache.kudu";
 
+import "kudu/util/compression/compression.proto";
 import "kudu/util/pb_util.proto";
 
 // If you add a new type keep in mind to add it to the end
@@ -60,15 +61,6 @@ enum EncodingType {
   RLE = 4;
   DICT_ENCODING = 5;
   BIT_SHUFFLE = 6;
-}
-
-enum CompressionType {
-  UNKNOWN_COMPRESSION = 999;
-  DEFAULT_COMPRESSION = 0;
-  NO_COMPRESSION = 1;
-  SNAPPY = 2;
-  LZ4 = 3;
-  ZLIB = 4;
 }
 
 // TODO: Differentiate between the schema attributes

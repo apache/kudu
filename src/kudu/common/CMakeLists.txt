@@ -22,7 +22,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES common.proto)
 ADD_EXPORTABLE_LIBRARY(kudu_common_proto
   SRCS ${COMMON_PROTO_SRCS}
-  DEPS pb_util_proto protobuf
+  DEPS pb_util_proto protobuf util_compression_proto
   NONLINK_DEPS ${COMMON_PROTO_TGTS})
 
 PROTOBUF_GENERATE_CPP(

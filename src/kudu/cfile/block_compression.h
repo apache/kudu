@@ -26,9 +26,10 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace cfile {
 
 class CompressionCodec;
+
+namespace cfile {
 
 // A compressed block has the following format:
 //

@@ -20,13 +20,12 @@
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/cfile.pb.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace cfile {
 
 class CompressionCodec {
  public:
@@ -69,6 +68,5 @@ Status GetCompressionCodec(CompressionType compression,
 // Returns the compression codec type given the name
 CompressionType GetCompressionCodecType(const std::string& name);
 
-} // namespace cfile
 } // namespace kudu
 #endif

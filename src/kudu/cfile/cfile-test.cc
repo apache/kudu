@@ -907,5 +907,31 @@ TEST_P(TestCFileBothCacheTypes, TestNvmAllocationFailure) {
 }
 #endif
 
+class TestCFileDifferentCodecs : public TestCFile,
+                                 public testing::WithParamInterface<CompressionType> {
+};
+
+INSTANTIATE_TEST_CASE_P(Codecs, TestCFileDifferentCodecs,
+                        ::testing::Values(NO_COMPRESSION, SNAPPY, LZ4, ZLIB));
+
+// Read/write a file with uncompressible data (random int32s)
+TEST_P(TestCFileDifferentCodecs, TestUncompressible) {
+  auto codec = GetParam();
+  const size_t nrows = 1000000;
+  BlockId block_id;
+  size_t rdrows;
+
+  // Generate a plain-encoded file with random (uncompressible) data.
+  // This exercises the code path which short-circuits compression
+  // when the codec is not able to be effective on the input data.
+  {
+    RandomInt32DataGenerator int_gen;
+    WriteTestFile(&int_gen, PLAIN_ENCODING, codec, nrows,
+                  NO_FLAGS, &block_id);
+    TimeReadFile(fs_manager_.get(), block_id, &rdrows);
+    ASSERT_EQ(nrows, rdrows);
+  }
+}
+
 } // namespace cfile
 } // namespace kudu
