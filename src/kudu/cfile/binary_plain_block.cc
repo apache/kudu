@@ -184,7 +184,9 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
   const uint8_t *limit = data_.data() + data_.size();
 
   offsets_.clear();
-  offsets_.reserve(num_elems_);
+  // Reserve one extra element, which we'll fill in at the end
+  // with an offset past the last element.
+  offsets_.reserve(num_elems_ + 1);
 
   size_t rem = num_elems_;
   while (rem >= 4) {
