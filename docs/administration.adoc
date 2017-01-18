@@ -227,8 +227,10 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 
 . Perform the following preparatory steps for the existing master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
-  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
-  configuration parameter.
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
+  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
+  other than the value of fs_wal_dir, it should be explicitly included in every command below where
+  fs_wal_dir is also included.
 * Identify and record the port the master is using for RPCs. The default port value is 7051, but it
   may have been customized using the `rpc_bind_addresses` configuration parameter.
 * Identify the master's UUID. It can be fetched using the following command:
@@ -317,6 +319,11 @@ Example::
 $ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/var/lib/kudu/master 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:master-1:7051 f5624e05f40649b79a757629a69d061e:master-2:7051 988d8ac6530f426cbe180be5ba52033d:master-3:7051
 ----
 
+. Modify the value of the `master_addresses` configuration parameter for both existing master and new masters.
+  The new value must be a comma-separated list of all of the masters. Each entry is a string of the form `<hostname>:<port>`
+hostname:: master's previously recorded hostname or alias
+port:: master's previously recorded RPC port number
+
 . Start the existing master.
 
 . Copy the master data to each new master with the following command, executed on each new master
@@ -404,8 +411,10 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 
 . Perform the following preparatory steps for each live master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
-  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
-  configuration parameter.
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
+  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
+  other than the value of fs_wal_dir, it should be explicitly included in every command below where
+  fs_wal_dir is also included.
 * Identify and record the master's UUID. It can be fetched using the following command:
 +
 [source,bash]
@@ -424,8 +433,10 @@ $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
 +
 . Perform the following preparatory steps for the reference master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
-  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir`
-  configuration parameter.
+  the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
+  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
+  other than the value of fs_wal_dir, it should be explicitly included in every command below where
+  fs_wal_dir is also included.
 * Identify and record the UUIDs of every master in the cluster, using the following command:
 +
 [source,bash]
