@@ -81,6 +81,13 @@ Status CreateDirsRecursively(Env* env, const std::string& path);
 Status CopyFile(Env* env, const std::string& source_path, const std::string& dest_path,
                 WritableFileOptions opts);
 
+// Deletes files matching 'pattern' in excess of 'max_matches' files.
+// 'max_matches' must be greater than or equal to 0.
+// The oldest files are deleted first, as determined by last modified time.
+// In the case that multiple files have the same last modified time, it is not
+// defined which file will be deleted first.
+Status DeleteExcessFilesByPattern(Env* env, const std::string& pattern, int max_matches);
+
 // Deletes a file or directory when this object goes out of scope.
 //
 // The deletion may be cancelled by calling .Cancel().

@@ -15,15 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sys/statvfs.h>
+#include <sys/time.h>
 #include <unistd.h>
 
-#include "kudu/util/env_util.h"
+#include <memory>
+#include <unordered_set>
 
 #include <gflags/gflags.h>
-#include <memory>
-#include <sys/statvfs.h>
+#include <glog/stl_logging.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -33,6 +38,7 @@ DECLARE_int64(disk_reserved_bytes_free_for_testing);
 
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using strings::Substitute;
 
 namespace kudu {
@@ -106,6 +112,38 @@ TEST_F(EnvUtilTest, TestCreateDirsRecursively) {
   ASSERT_OK(CreateDirsRecursively(env_, path));
   ASSERT_OK(env_->IsDirectory(path, &is_dir));
   ASSERT_TRUE(is_dir);
+}
+
+// Ensure that DeleteExcessFilesByPattern() works.
+// We ensure that the number of files remaining after running it is the number
+// expected, and we manually set the modification times on the relevant files
+// to allow us to test that files are deleted oldest-first.
+TEST_F(EnvUtilTest, TestDeleteExcessFilesByPattern) {
+  string dir = JoinPathSegments(test_dir_, "excess");
+  ASSERT_OK(env_->CreateDir(dir));
+  vector<string> filenames = {"a", "b", "c", "d"};
+  int now_sec = GetCurrentTimeMicros() / 1000;
+  for (int i = 0; i < filenames.size(); i++) {
+    const string& filename = filenames[i];
+    string path = JoinPathSegments(dir, filename);
+    unique_ptr<WritableFile> file;
+    ASSERT_OK(env_->NewWritableFile(path, &file));
+    ASSERT_OK(file->Close());
+
+    // Set the last-modified time of the file.
+    struct timeval target_time { .tv_sec = now_sec + (i * 2), .tv_usec = 0 };
+    struct timeval times[2] = { target_time, target_time };
+    ASSERT_EQ(0, utimes(path.c_str(), times)) << errno;
+  }
+  vector<string> children;
+  ASSERT_OK(env_->GetChildren(dir, &children));
+  ASSERT_EQ(6, children.size()); // 4 files plus "." and "..".
+  ASSERT_OK(DeleteExcessFilesByPattern(env_, dir + "/*", 2));
+  ASSERT_OK(env_->GetChildren(dir, &children));
+  ASSERT_EQ(4, children.size()); // 2 files plus "." and "..".
+  unordered_set<string> children_set(children.begin(), children.end());
+  unordered_set<string> expected_set({".", "..", "c", "d"});
+  ASSERT_EQ(expected_set, children_set) << children;
 }
 
 } // namespace env_util

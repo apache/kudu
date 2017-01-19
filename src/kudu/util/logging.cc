@@ -38,6 +38,7 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 
@@ -359,23 +360,10 @@ Status DeleteExcessLogFiles(Env* env) {
   if (max_log_files <= 0) return Status::OK();
 
   for (int severity = 0; severity < google::NUM_SEVERITIES; ++severity) {
-    vector<string> logfiles;
     // Build glob pattern for input
     // e.g. /var/log/kudu/kudu-master.*.INFO.*
     string pattern = strings::Substitute("$0/$1.*.$2.*", FLAGS_log_dir, FLAGS_log_filename,
                                          google::GetLogSeverityName(severity));
-    RETURN_NOT_OK(env->Glob(pattern, &logfiles));
-
-    if (logfiles.size() <= max_log_files) {
-      continue;
-    }
-
-    vector<pair<time_t, string>> logfile_mtimes;
-    for (string& logfile : logfiles) {
-      int64_t mtime;
-      RETURN_NOT_OK(env->GetFileModifiedTime(logfile, &mtime));
-      logfile_mtimes.emplace_back(mtime, std::move(logfile));
-    }
 
     // Keep the 'max_log_files' most recent log files, as compared by
     // modification time. Glog files contain a second-granularity timestamp in
@@ -383,16 +371,7 @@ Status DeleteExcessLogFiles(Env* env) {
     // guaranteed by glob, however this code has been adapted from Impala which
     // uses mtime to determine which files to delete, and there haven't been any
     // issues in production settings.
-    std::sort(logfile_mtimes.begin(), logfile_mtimes.end());
-    logfile_mtimes.resize(logfile_mtimes.size() - max_log_files);
-
-    VLOG(2) << "Deleting " << logfile_mtimes.size()
-            << " excess glog files at " << google::GetLogSeverityName(severity)
-            << " severity";
-
-    for (const auto& logfile: logfile_mtimes) {
-      RETURN_NOT_OK(env->DeleteFile(logfile.second));
-    }
+    RETURN_NOT_OK(env_util::DeleteExcessFilesByPattern(env, pattern, max_log_files));
   }
   return Status::OK();
 }

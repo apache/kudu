@@ -236,6 +236,37 @@ Status CopyFile(Env* env, const string& source_path, const string& dest_path,
   return Status::OK();
 }
 
+Status DeleteExcessFilesByPattern(Env* env, const string& pattern, int max_matches) {
+  // Negative numbers don't make sense for our interface.
+  DCHECK_GE(max_matches, 0);
+
+  vector<string> matching_files;
+  RETURN_NOT_OK(env->Glob(pattern, &matching_files));
+
+  if (matching_files.size() <= max_matches) {
+    return Status::OK();
+  }
+
+  vector<pair<time_t, string>> matching_file_mtimes;
+  for (string& matching_file_path : matching_files) {
+    int64_t mtime;
+    RETURN_NOT_OK(env->GetFileModifiedTime(matching_file_path, &mtime));
+    matching_file_mtimes.emplace_back(mtime, std::move(matching_file_path));
+  }
+
+  // Use mtime to determine which matching files to delete. This could
+  // potentially be ambiguous, depending on the resolution of last-modified
+  // timestamp in the filesystem, but that is part of the contract.
+  std::sort(matching_file_mtimes.begin(), matching_file_mtimes.end());
+  matching_file_mtimes.resize(matching_file_mtimes.size() - max_matches);
+
+  for (const auto& matching_file : matching_file_mtimes) {
+    RETURN_NOT_OK(env->DeleteFile(matching_file.second));
+  }
+
+  return Status::OK();
+}
+
 ScopedFileDeleter::ScopedFileDeleter(Env* env, std::string path)
     : env_(DCHECK_NOTNULL(env)), path_(std::move(path)), should_delete_(true) {}
 
