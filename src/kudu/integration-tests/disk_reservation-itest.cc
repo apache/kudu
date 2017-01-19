@@ -115,9 +115,15 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
 // When the WAL disk goes beyond its configured reservation, attempts to write
 // to the WAL should cause a fatal error.
 TEST_F(DiskReservationITest, TestWalWriteToFullDiskAborts) {
-  vector<string> ts_flags;
-  ts_flags.push_back("--log_segment_size_mb=1"); // Encourage log rolling to speed up the test.
-  ts_flags.push_back("--disable_core_dumps");
+  vector<string> ts_flags = {
+    // Encourage log rolling to speed up the test.
+    "--log_segment_size_mb=1",
+    // We crash on purpose, so no need to dump core.
+    "--disable_core_dumps",
+    // Disable compression so that our data being written doesn't end up
+    // compressed away.
+    "--log_compression_codec=none"
+  };
   NO_FATALS(StartCluster(ts_flags, {}, 1));
 
   TestWorkload workload(cluster_.get());

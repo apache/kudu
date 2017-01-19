@@ -403,6 +403,10 @@ void RaftConsensusITest::AddFlagsForLogRolls(vector<string>* extra_tserver_flags
   // allocation -- this ensures that we roll many segments of logs (with async
   // allocation, it's possible that the preallocation is slow and we wouldn't
   // roll deterministically).
+  //
+  // Additionally, we disable log compression, since these tests write a lot of
+  // repetitive data to cause the rolls, and compression would make it all tiny.
+  extra_tserver_flags->push_back("--log_compression_codec=none");
   extra_tserver_flags->push_back("--log_cache_size_limit_mb=1");
   extra_tserver_flags->push_back("--log_segment_size_mb=1");
   extra_tserver_flags->push_back("--log_async_preallocate_segments=false");
@@ -651,7 +655,9 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
     "--maintenance_manager_polling_interval_ms=100",
     "--log_target_replay_size_mb=1",
     // We write 128KB cells in this test, so bump the limit.
-    "--max_cell_size_bytes=1000000"
+    "--max_cell_size_bytes=1000000",
+    // And disable WAL compression so the 128KB cells don't get compressed away.
+    "--log_compression_codec=none"
   };
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;

@@ -42,6 +42,7 @@ DECLARE_int32(log_max_segments_to_retain);
 DECLARE_double(log_inject_io_error_on_preallocate_fraction);
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
+DECLARE_string(log_compression_codec);
 
 namespace kudu {
 namespace log {
@@ -105,8 +106,6 @@ class LogTest : public LogTestBase {
 
     LogSegmentHeaderPB header;
     header.set_sequence_number(sequence_number);
-    header.set_major_version(0);
-    header.set_minor_version(0);
     header.set_tablet_id(kTestTablet);
     SchemaToPB(GetSimpleTestSchema(), header.mutable_schema());
 
@@ -138,9 +137,23 @@ class LogTest : public LogTestBase {
 
 };
 
+// For cases which should run both with and without compression.
+class LogTestOptionalCompression : public LogTest,
+                                   public testing::WithParamInterface<CompressionType> {
+ public:
+  LogTestOptionalCompression() {
+    const auto& name = CompressionType_Name(GetParam());
+    LOG(INFO) << "using compression type: " << name;
+    FLAGS_log_compression_codec = name;
+  }
+};
+INSTANTIATE_TEST_CASE_P(Codecs, LogTestOptionalCompression, ::testing::Values(NO_COMPRESSION, LZ4));
+
+
+
 // If we write more than one entry in a batch, we should be able to
 // read all of those entries back.
-TEST_F(LogTest, TestMultipleEntriesInABatch) {
+TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
   ASSERT_OK(BuildLog());
 
   OpId opid;
@@ -196,7 +209,7 @@ TEST_F(LogTest, TestMultipleEntriesInABatch) {
 // Tests that everything works properly with fsync enabled:
 // This also tests SyncDir() (see KUDU-261), which is called whenever
 // a new log segment is initialized.
-TEST_F(LogTest, TestFsync) {
+TEST_P(LogTestOptionalCompression, TestFsync) {
   options_.force_fsync_all = true;
   ASSERT_OK(BuildLog());
 
@@ -212,7 +225,7 @@ TEST_F(LogTest, TestFsync) {
 // Regression test for part of KUDU-735:
 // if a log is not preallocated, we should properly track its on-disk size as we append to
 // it.
-TEST_F(LogTest, TestSizeIsMaintained) {
+TEST_P(LogTestOptionalCompression, TestSizeIsMaintained) {
   options_.preallocate_segments = false;
   ASSERT_OK(BuildLog());
 
@@ -235,7 +248,7 @@ TEST_F(LogTest, TestSizeIsMaintained) {
 
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
-TEST_F(LogTest, TestLogNotTrimmed) {
+TEST_P(LogTestOptionalCompression, TestLogNotTrimmed) {
   ASSERT_OK(BuildLog());
 
   OpId opid;
@@ -258,7 +271,7 @@ TEST_F(LogTest, TestLogNotTrimmed) {
 // Test that the reader will not fail if a log file is completely blank.
 // This happens when it's opened but nothing has been written.
 // The reader should gracefully handle this situation. See KUDU-140.
-TEST_F(LogTest, TestBlankLogFile) {
+TEST_P(LogTestOptionalCompression, TestBlankLogFile) {
   ASSERT_OK(BuildLog());
 
   // The log's reader will have a segment...
@@ -296,7 +309,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
       offset = entry.offset_in_segment + 1;
       break;
     case IN_ENTRY:
-      offset = entry.offset_in_segment + kEntryHeaderSize + 1;
+      offset = entry.offset_in_segment + kEntryHeaderSizeV2 + 1;
       break;
   }
   ASSERT_OK(CorruptLogFile(env_, log_->ActiveSegmentPathForTests(), type, offset));
@@ -321,30 +334,30 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
 // Tests that the log reader reads up until some truncated entry is found.
 // It should still return OK, since on a crash, it's acceptable to have
 // a partial entry at EOF.
-TEST_F(LogTest, TestTruncateLogInEntry) {
+TEST_P(LogTestOptionalCompression, TestTruncateLogInEntry) {
   DoCorruptionTest(TRUNCATE_FILE, IN_ENTRY, Status::OK(), 3);
 }
 
 // Same, but truncate in the middle of the header of that entry.
-TEST_F(LogTest, TestTruncateLogInHeader) {
+TEST_P(LogTestOptionalCompression, TestTruncateLogInHeader) {
   DoCorruptionTest(TRUNCATE_FILE, IN_HEADER, Status::OK(), 3);
 }
 
 // Similar to the above, except flips a byte. In this case, it should return
 // a Corruption instead of an OK, because we still have a valid footer in
 // the file (indicating that all of the entries should be valid as well).
-TEST_F(LogTest, TestCorruptLogInEntry) {
+TEST_P(LogTestOptionalCompression, TestCorruptLogInEntry) {
   DoCorruptionTest(FLIP_BYTE, IN_ENTRY, Status::Corruption(""), 3);
 }
 
 // Same, but corrupt in the middle of the header of that entry.
-TEST_F(LogTest, TestCorruptLogInHeader) {
+TEST_P(LogTestOptionalCompression, TestCorruptLogInHeader) {
   DoCorruptionTest(FLIP_BYTE, IN_HEADER, Status::Corruption(""), 3);
 }
 
 // Tests that segments roll over when max segment size is reached
 // and that the player plays all entries in the correct order.
-TEST_F(LogTest, TestSegmentRollover) {
+TEST_P(LogTestOptionalCompression, TestSegmentRollover) {
   ASSERT_OK(BuildLog());
   // Set a small segment size so that we have roll overs.
   log_->SetMaxSegmentSizeForTests(990);
@@ -385,6 +398,8 @@ TEST_F(LogTest, TestSegmentRollover) {
 }
 
 TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
+  FLAGS_log_compression_codec = "none";
+
   const int kNumEntries = 4;
   ASSERT_OK(BuildLog());
 
@@ -416,7 +431,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   repl->set_timestamp(0L);
 
   // Entries are prefixed with a header.
-  int64_t single_entry_size = batch.ByteSize() + kEntryHeaderSize;
+  int64_t single_entry_size = batch.ByteSize() + kEntryHeaderSizeV2;
 
   int written_entries_size = header_size;
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries, &written_entries_size));
@@ -465,7 +480,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
 }
 
 // Tests that segments can be GC'd while the log is running.
-TEST_F(LogTest, TestGCWithLogRunning) {
+TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
   ASSERT_OK(BuildLog());
 
   vector<LogAnchor*> anchors;
@@ -556,7 +571,7 @@ TEST_F(LogTest, TestGCWithLogRunning) {
 // Test that, when we are set to retain a given number of log segments,
 // we also retain any relevant log index chunks, even if those operations
 // are not necessary for recovery.
-TEST_F(LogTest, TestGCOfIndexChunks) {
+TEST_P(LogTestOptionalCompression, TestGCOfIndexChunks) {
   FLAGS_log_min_segments_to_retain = 4;
   ASSERT_OK(BuildLog());
 
@@ -597,7 +612,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
 // Tests that we can append FLUSH_MARKER messages to the log queue to make sure
 // all messages up to a certain point were fsync()ed without actually
 // writing them to the log.
-TEST_F(LogTest, TestWaitUntilAllFlushed) {
+TEST_P(LogTestOptionalCompression, TestWaitUntilAllFlushed) {
   ASSERT_OK(BuildLog());
   // Append 2 replicate/commit pairs asynchronously
   AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
@@ -621,7 +636,7 @@ TEST_F(LogTest, TestWaitUntilAllFlushed) {
 }
 
 // Tests log reopening and that GC'ing the old log's segments works.
-TEST_F(LogTest, TestLogReopenAndGC) {
+TEST_P(LogTestOptionalCompression, TestLogReopenAndGC) {
   ASSERT_OK(BuildLog());
 
   SegmentSequence segments;
@@ -692,7 +707,7 @@ TEST_F(LogTest, TestLogReopenAndGC) {
 }
 
 // Helper to measure the performance of the log.
-TEST_F(LogTest, TestWriteManyBatches) {
+TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
   uint64_t num_batches = 10;
   if (AllowSlowTests()) {
     num_batches = FLAGS_num_batches;
@@ -732,7 +747,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
 // seg002: 0.10 through 0.19
 // seg003: 0.20 through 0.29
 // seg004: 0.30 through 0.39
-TEST_F(LogTest, TestLogReader) {
+TEST_P(LogTestOptionalCompression, TestLogReader) {
   LogReader reader(fs_manager_.get(),
                    scoped_refptr<LogIndex>(),
                    kTestTablet,
@@ -762,7 +777,7 @@ TEST_F(LogTest, TestLogReader) {
 // Test that, even if the LogReader's index is empty because no segments
 // have been properly closed, we can still read the entries as the reader
 // returns the current segment.
-TEST_F(LogTest, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
+TEST_P(LogTestOptionalCompression, TestLogReaderReturnsLatestSegmentIfIndexEmpty) {
   ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, 1);
@@ -897,7 +912,7 @@ static int RandInRange(Random* r, int min_inclusive, int max_inclusive) {
 // write it out, and then read random ranges of log indexes, making sure we
 // always see the correct term for each REPLICATE message (i.e whichever term
 // was the last to append it).
-TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
+TEST_P(LogTestOptionalCompression, TestReadLogWithReplacedReplicates) {
   const int kSequenceLength = AllowSlowTests() ? 1000 : 50;
 
   Random rng(SeedRandom());
@@ -987,12 +1002,13 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
 // Test various situations where we expect different segments depending on what the
 // min log index is.
 TEST_F(LogTest, TestGetGCableDataSize) {
+  FLAGS_log_compression_codec = "none";
   FLAGS_log_min_segments_to_retain = 2;
   ASSERT_OK(BuildLog());
 
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
-  const int kSegmentSizeBytes = 315;
+  const int kSegmentSizeBytes = 331;
   OpId op_id = MakeOpId(1, 10);
   // Create 5 segments, starting from log index 10, with 5 ops per segment.
   // [10-14], [15-19], [20-24], [25-29], [30-34]

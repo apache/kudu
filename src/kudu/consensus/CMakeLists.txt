@@ -90,6 +90,7 @@ target_link_libraries(log
   gutil
   kudu_common
   kudu_fs
+  kudu_util_compression
   consensus_proto
   log_proto
   consensus_metadata_proto)

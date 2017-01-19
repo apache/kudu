@@ -101,7 +101,7 @@ struct LogAnchor {
   ~LogAnchor();
 
  private:
-  FRIEND_TEST(LogTest, TestGCWithLogRunning);
+  FRIEND_TEST(LogTestOptionalCompression, TestGCWithLogRunning);
   FRIEND_TEST(LogAnchorRegistryTest, TestUpdateRegistration);
   friend class LogAnchorRegistry;
 

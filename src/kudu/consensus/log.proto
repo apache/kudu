@@ -21,6 +21,7 @@ option java_package = "org.apache.kudu.log";
 import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/util/compression/compression.proto";
 
 // ===========================================================================
 //  Log Entries - Log specific messages + single node messages
@@ -51,11 +52,25 @@ message LogEntryBatchPB {
 
 // A header for a log segment.
 message LogSegmentHeaderPB {
-  // Log format major version.
-  required uint32 major_version = 1;
+  // Log format major/minor version. These were written by Kudu 1.2 and
+  // earlier, and marked as required in those versions, but unfortunately
+  // they were never verified on read. So, in order to make the logs written
+  // by newer versions give a reasonable error if an old version tries to
+  // read them, we no longer write these fields.
+  optional uint32 DEPRECATED_major_version = 1;
+  optional uint32 DEPRECATED_minor_version = 2;
 
-  // Log format minor version.
-  required uint32 minor_version = 2;
+  enum FeatureFlag {
+    UNKNOWN = 999;
+  }
+  // Set of features used in this log segment which would make the segment
+  // unreadable by earlier versions that do not implement them. If a reader
+  // sees a value in this list that doesn't correspond to a known value of
+  // the above enum, then it should avoid opening the WAL segment.
+  //
+  // See KUDU-1850 for details on why we can't just use the FeatureFlag type
+  // directly.
+  repeated int32 incompatible_features = 10;
 
   // The ID of the tablet this WAL segment stores entries for.
   required bytes tablet_id = 5;
@@ -66,6 +81,9 @@ message LogSegmentHeaderPB {
   // Schema used when appending entries to this log, and its version.
   required SchemaPB schema = 7;
   optional uint32 schema_version = 8;
+
+  // Compression codec used for log entries.
+  optional CompressionType compression_codec = 9 [ default = NO_COMPRESSION ];
 }
 
 // A footer for a log segment.

@@ -259,7 +259,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                    index_entry.offset_in_segment));
 
   if (bytes_read_) {
-    bytes_read_->IncrementBy(kEntryHeaderSize + tmp_buf->length());
+    bytes_read_->IncrementBy(segment->entry_header_size() + tmp_buf->length());
     entries_read_->IncrementBy((**batch).entry_size());
   }
 

@@ -55,6 +55,9 @@ class CompressionCodec {
   // Returns the maximal size of the compressed representation of
   // input data that is "source_bytes" bytes in length.
   virtual size_t MaxCompressedLength(size_t source_bytes) const = 0;
+
+  // Return the type of compression implemented by this codec.
+  virtual CompressionType type() const = 0;
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressionCodec);
 };

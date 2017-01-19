@@ -36,6 +36,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
@@ -75,6 +76,13 @@ TAG_FLAG(log_max_segments_to_retain, experimental);
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
 TAG_FLAG(group_commit_queue_size_bytes, advanced);
+
+
+// Compression configuration.
+// -----------------------------
+DEFINE_string(log_compression_codec, "LZ4",
+              "Codec to use for compressing WAL segments.");
+TAG_FLAG(log_compression_codec, experimental);
 
 // Fault/latency injection flags.
 // -----------------------------
@@ -312,6 +320,7 @@ Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
       force_sync_all_(options_.force_fsync_all),
       sync_disabled_(false),
       allocation_state_(kAllocationNotStarted),
+      codec_(nullptr),
       metric_entity_(metric_entity) {
   CHECK_OK(ThreadPoolBuilder("log-alloc").set_max_threads(1).Build(&allocation_pool_));
   if (metric_entity_) {
@@ -322,6 +331,15 @@ Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
 Status Log::Init() {
   std::lock_guard<percpu_rwlock> write_lock(state_lock_);
   CHECK_EQ(kLogInitialized, log_state_);
+
+  // Init the compression codec.
+  if (!FLAGS_log_compression_codec.empty()) {
+    auto codec_type = GetCompressionCodecType(FLAGS_log_compression_codec);
+    if (codec_type != NO_COMPRESSION) {
+      RETURN_NOT_OK_PREPEND(GetCompressionCodec(codec_type, &codec_),
+                            "could not instantiate compression codec");
+    }
+  }
 
   // Init the index
   log_index_.reset(new LogIndex(log_dir_));
@@ -535,7 +553,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch) {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
     SCOPED_WATCH_STACK(500);
 
-    RETURN_NOT_OK(active_segment_->WriteEntryBatch(entry_batch_data));
+    RETURN_NOT_OK(active_segment_->WriteEntryBatch(entry_batch_data, codec_));
 
     // Update the reader on how far it can read the active segment.
     reader_->UpdateLastSegmentOffset(active_segment_->written_offset());
@@ -900,10 +918,12 @@ Status Log::SwitchToAllocatedSegment() {
 
   // Set up the new header and footer.
   LogSegmentHeaderPB header;
-  header.set_major_version(kLogMajorVersion);
-  header.set_minor_version(kLogMinorVersion);
   header.set_sequence_number(active_segment_sequence_number_);
   header.set_tablet_id(tablet_id_);
+
+  if (codec_) {
+    header.set_compression_codec(codec_->type());
+  }
 
   // Set up the new footer. This will be maintained as the segment is written.
   footer_builder_.Clear();

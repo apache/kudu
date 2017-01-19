@@ -39,18 +39,17 @@ DECLARE_bool(log_force_fsync_all);
 
 namespace kudu {
 
+class CompressionCodec;
+
 namespace consensus {
 struct OpIdBiggerThanFunctor;
 } // namespace consensus
 
 namespace log {
 
-// Each log entry is prefixed by its length (4 bytes), CRC (4 bytes),
-// and checksum of the other two fields (see EntryHeader struct below).
-extern const size_t kEntryHeaderSize;
-
-extern const int kLogMajorVersion;
-extern const int kLogMinorVersion;
+// Each log entry is prefixed by a header. See DecodeEntryHeader()
+// implementation for details.
+extern const size_t kEntryHeaderSizeV2;
 
 class ReadableLogSegment;
 
@@ -247,6 +246,10 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // ends.
   const int64_t readable_up_to() const;
 
+  // Return the expected length of entry headers in this log segment.
+  // Versions of Kudu older than 1.3 used a different log entry header format.
+  size_t entry_header_size() const;
+
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
   friend class LogEntryReader;
@@ -254,10 +257,15 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
 
   struct EntryHeader {
-    // The length of the batch data.
+    // The length of the batch data (uncompressed)
     uint32_t msg_length;
 
+    // The compressed length of the entry. If compression is disabled,
+    // equal to msg_length.
+    uint32_t msg_length_compressed;
+
     // The CRC32C of the batch data.
+    // If compression is enabled, this is the checksum of the compressed data.
     uint32_t msg_crc;
 
     // The CRC32C of this EntryHeader.
@@ -269,6 +277,8 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // Helper functions called by Init().
 
   Status ReadFileSize();
+
+  Status InitCompressionCodec();
 
   // Read the log file magic and header protobuf into 'header_'. Sets 'first_entry_offset_'
   // to indicate the start of the actual log data.
@@ -312,8 +322,9 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // Also increments the passed offset* by the length of the entry.
   Status ReadEntryHeader(int64_t *offset, EntryHeader* header);
 
-  // Decode a log entry header from the given slice, which must be kEntryHeaderSize
-  // bytes long. Returns true if successful, false if corrupt.
+  // Decode a log entry header from the given slice. The header length is
+  // determined by 'entry_header_size()'.
+  // Returns true if successful, false if corrupt.
   //
   // NOTE: this is performance-critical since it is used by ScanForValidEntryHeaders
   // and thus returns bool instead of Status.
@@ -347,6 +358,9 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // a readable file for a log segment (used on replay)
   const std::shared_ptr<RandomAccessFile> readable_file_;
+
+  // Compression codec used to decompress entries in this file.
+  const CompressionCodec* codec_;
 
   bool is_initialized_;
 
@@ -385,9 +399,10 @@ class WritableLogSegment {
   }
 
   // Appends the provided batch of data, including a header
-  // and checksum.
+  // and checksum. If 'codec' is not NULL, compresses the batch.
   // Makes sure that the log segment has not been closed.
-  Status WriteEntryBatch(const Slice& data);
+  // Write a compressed entry to the log.
+  Status WriteEntryBatch(const Slice& data, const CompressionCodec* codec);
 
   // Makes sure the I/O buffers in the underlying writable file are flushed.
   Status Sync() {
@@ -451,6 +466,9 @@ class WritableLogSegment {
 
   // The offset where the last written entry ends.
   int64_t written_offset_;
+
+  // Buffer used for output when compressing.
+  faststring compress_buf_;
 
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };

@@ -104,7 +104,7 @@ inline Status AppendNoOpsToLogSync(const scoped_refptr<Clock>& clock,
 
   // Account for the entry batch header and wrapper PB.
   if (size) {
-    *size += log::kEntryHeaderSize + 5;
+    *size += log::kEntryHeaderSizeV2 + 5;
   }
 
   Synchronizer s;

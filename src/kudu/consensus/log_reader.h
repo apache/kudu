@@ -101,10 +101,11 @@ class LogReader {
   std::string ToString() const;
 
  private:
-  FRIEND_TEST(LogTest, TestLogReader);
-  FRIEND_TEST(LogTest, TestReadLogWithReplacedReplicates);
+  FRIEND_TEST(LogTestOptionalCompression, TestLogReader);
+  FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
   friend class Log;
   friend class LogTest;
+  friend class LogTestOptionalCompression;
 
   enum State {
     kLogReaderInitialized,

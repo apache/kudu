@@ -15,18 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <glog/logging.h>
-#include <snappy-sinksource.h>
-#include <snappy.h>
-#include <zlib.h>
-#include <lz4.h>
+#include "kudu/util/compression/compression_codec.h"
+
 #include <string>
 #include <vector>
 
-#include "kudu/util/compression/compression_codec.h"
+#include <glog/logging.h>
+#include <lz4.h>
+#include <snappy-sinksource.h>
+#include <snappy.h>
+#include <zlib.h>
+
+
 #include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/string_case.h"
 
 namespace kudu {
 
@@ -136,6 +140,10 @@ class SnappyCodec : public CompressionCodec {
   size_t MaxCompressedLength(size_t source_bytes) const OVERRIDE {
     return snappy::MaxCompressedLength(source_bytes);
   }
+
+  CompressionType type() const override {
+    return SNAPPY;
+  }
 };
 
 class Lz4Codec : public CompressionCodec {
@@ -180,6 +188,10 @@ class Lz4Codec : public CompressionCodec {
   size_t MaxCompressedLength(size_t source_bytes) const OVERRIDE {
     return LZ4_compressBound(source_bytes);
   }
+
+  CompressionType type() const override {
+    return LZ4;
+  }
 };
 
 /**
@@ -223,6 +235,10 @@ class ZlibCodec : public CompressionCodec {
     // one-time overhead of six bytes for the entire stream plus five bytes per 16 KB block
     return source_bytes + (6 + (5 * ((source_bytes + 16383) >> 14)));
   }
+
+  CompressionType type() const override {
+    return ZLIB;
+  }
 };
 
 Status GetCompressionCodec(CompressionType compression,
@@ -247,13 +263,16 @@ Status GetCompressionCodec(CompressionType compression,
 }
 
 CompressionType GetCompressionCodecType(const std::string& name) {
-  if (name.compare("snappy") == 0)
+  string uname;
+  ToUpperCase(name, &uname);
+
+  if (uname.compare("SNAPPY") == 0)
     return SNAPPY;
-  if (name.compare("lz4") == 0)
+  if (uname.compare("LZ4") == 0)
     return LZ4;
-  if (name.compare("zlib") == 0)
+  if (uname.compare("ZLIB") == 0)
     return ZLIB;
-  if (name.compare("none") == 0)
+  if (uname.compare("NONE") == 0)
     return NO_COMPRESSION;
 
   LOG(WARNING) << "Unable to recognize the compression codec '" << name
