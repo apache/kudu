@@ -32,6 +32,7 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
@@ -42,6 +43,10 @@ DEFINE_int32(deltafile_default_block_size, 32*1024,
             "Block size for delta files. In the future, this may become configurable "
              "on a per-table basis.");
 TAG_FLAG(deltafile_default_block_size, experimental);
+
+DEFINE_string(deltafile_default_compression_codec, "lz4",
+              "The compression codec used when writing deltafiles.");
+TAG_FLAG(deltafile_default_compression_codec, experimental);
 
 using std::shared_ptr;
 using std::unique_ptr;
@@ -74,6 +79,8 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
   opts.write_validx = true;
   opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
+  opts.storage_attributes.compression = GetCompressionCodecType(
+      FLAGS_deltafile_default_compression_codec);
   // No optimization for deltafiles because a deltafile index key must decode into a DeltaKey
   opts.optimize_index_keys = false;
   writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
