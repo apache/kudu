@@ -18,7 +18,7 @@
   "name" : "KUDU",
   "label" : "Kudu (Beta)",
   "description" : "Kudu is a true column store for the Hadoop ecosystem. <span class=\"error\">Kudu is currently in Beta and is not supported. Before adding this service, ensure that you have installed the Kudu binaries, which are not included in CDH.</span>",
-  "version" : "1.2.0",
+  "version" : "1.2.1",
   "compatibility" : {
     "generation" : 1
   },
