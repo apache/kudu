@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_RPC_SASL_CLIENT_H
-#define KUDU_RPC_SASL_CLIENT_H
+#ifndef KUDU_RPC_SASL_SERVER_H
+#define KUDU_RPC_SASL_SERVER_H
 
 #include <set>
 #include <string>
@@ -24,35 +24,35 @@
 
 #include <sasl/sasl.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+class Slice;
+
 namespace rpc {
 
 using std::string;
 
-class NegotiatePB;
-class NegotiatePB_SaslAuth;
-class ResponseHeader;
-
-// Class for doing SASL negotiation with a SaslServer over a bidirectional socket.
+// Class for doing SASL negotiation with a SaslClient over a bidirectional socket.
 // Operations on this class are NOT thread-safe.
-class SaslClient {
+class SaslServer {
  public:
-  // Does not take ownership of the socket indicated by the fd.
-  SaslClient(string app_name, Socket* socket);
+  // Does not take ownership of 'socket'.
+  SaslServer(string app_name, Socket* socket);
 
   // Enable PLAIN authentication.
+  // Despite PLAIN authentication taking a username and password, we disregard
+  // the password and use this as a "unauthenticated" mode.
   // Must be called after Init().
-  Status EnablePlain(const string& user, const string& pass);
+  Status EnablePlain();
 
-  // Enable GSSAPI authentication.
+  // Enable GSSAPI (Kerberos) authentication.
   // Call after Init().
   Status EnableGSSAPI();
 
@@ -60,11 +60,15 @@ class SaslClient {
   // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;
 
-  // Returns the set of RPC system features supported by the remote server.
+  // Returns the set of RPC system features supported by the remote client.
   // Must be called after Negotiate().
-  const std::set<RpcFeatureFlag>& server_features() const {
-    return server_features_;
+  const std::set<RpcFeatureFlag>& client_features() const {
+    return client_features_;
   }
+
+  // Name of the user that was authenticated.
+  // Must be called after a successful Negotiate().
+  const std::string& authenticated_user() const;
 
   // Specify IP:port of local side of connection.
   // Must be called before Init(). Required for some mechanisms.
@@ -84,12 +88,12 @@ class SaslClient {
   // Get deadline for connection negotiation.
   const MonoTime& deadline() const { return deadline_; }
 
-  // Initialize a new SASL client. Must be called before Negotiate().
+  // Initialize a new SASL server. Must be called before Negotiate().
   // Returns OK on success, otherwise RuntimeError.
   Status Init(const string& service_type);
 
-  // Begin negotiation with the SASL server on the other side of the fd socket
-  // that this client was constructed with.
+  // Begin negotiation with the SASL client on the other side of the fd socket
+  // that this server was constructed with.
   // Returns OK on success.
   // Otherwise, it may return NotAuthorized, NotSupported, or another non-OK status.
   Status Negotiate();
@@ -99,50 +103,47 @@ class SaslClient {
   int GetOptionCb(const char* plugin_name, const char* option,
                   const char** result, unsigned* len);
 
-  // SASL callback for SASL_CB_USER, SASL_CB_AUTHNAME, SASL_CB_LANGUAGE
-  int SimpleCb(int id, const char** result, unsigned* len);
+  // SASL callback for PLAIN authentication via SASL_CB_SERVER_USERDB_CHECKPASS.
+  int PlainAuthCb(sasl_conn_t* conn, const char* user, const char* pass,
+                  unsigned passlen, struct propctx* propctx);
 
-  // SASL callback for SASL_CB_PASS
-  int SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecret);
+  // Perform a "pre-flight check" that everything required to act as a Kerberos
+  // server is properly set up.
+  static Status PreflightCheckGSSAPI(const std::string& app_name);
 
  private:
-  // Encode and send the specified negotiate message to the server.
+  // Parse and validate connection header.
+  Status ValidateConnectionHeader(faststring* recv_buf);
+
+  // Parse request body. If malformed, sends an error message to the client.
+  Status ParseNegotiatePB(const RequestHeader& header,
+                          const Slice& param_buf,
+                          NegotiatePB* request);
+
+  // Encode and send the specified SASL message to the client.
   Status SendNegotiatePB(const NegotiatePB& msg);
 
-  // Validate that header does not indicate an error, parse param_buf into response.
-  Status ParseNegotiatePB(const ResponseHeader& header,
-                          const Slice& param_buf,
-                          NegotiatePB* response);
+  // Encode and send the specified RPC error message to the client.
+  // Calls Status.ToString() for the embedded error message.
+  Status SendRpcError(ErrorStatusPB::RpcErrorCodePB code, const Status& err);
 
-  // Send an NEGOTIATE message to the server.
-  Status SendNegotiateMessage();
+  // Handle case when client sends NEGOTIATE request.
+  Status HandleNegotiateRequest(const NegotiatePB& request);
 
-  // Send an SASL_INITIATE message to the server.
-  Status SendInitiateMessage(const NegotiatePB_SaslAuth& auth,
-                             const char* init_msg, unsigned init_msg_len);
+  // Send a NEGOTIATE response to the client with the list of available mechanisms.
+  Status SendNegotiateResponse(const std::set<string>& server_mechs);
 
-  // Send a RESPONSE message to the server.
-  Status SendResponseMessage(const char* resp_msg, unsigned resp_msg_len);
+  // Handle case when client sends INITIATE request.
+  Status HandleInitiateRequest(const NegotiatePB& request);
 
-  // Perform a client-side step of the SASL negotiation.
-  // Input is what came from the server. Output is what we will send back to the server.
-  // Returns:
-  //   Status::OK if sasl_client_step returns SASL_OK.
-  //   Status::Incomplete if sasl_client_step returns SASL_CONTINUE
-  // otherwise returns an appropriate error status.
-  Status DoSaslStep(const string& in, const char** out, unsigned* out_len);
+  // Send a CHALLENGE response to the client with a challenge token.
+  Status SendChallengeResponse(const char* challenge, unsigned clen);
 
-  // Handle case when server sends NEGOTIATE response.
-  Status HandleNegotiateResponse(const NegotiatePB& response);
+  // Send a SUCCESS response to the client with an token (typically empty).
+  Status SendSuccessResponse(const char* token, unsigned tlen);
 
-  // Handle case when server sends CHALLENGE response.
-  Status HandleChallengeResponse(const NegotiatePB& response);
-
-  // Handle case when server sends SUCCESS response.
-  Status HandleSuccessResponse(const NegotiatePB& response);
-
-  // Parse error status message from raw bytes of an ErrorStatusPB.
-  Status ParseError(const Slice& err_data);
+  // Handle case when client sends RESPONSE request.
+  Status HandleResponseRequest(const NegotiatePB& request);
 
   string app_name_;
   Socket* sock_;
@@ -152,29 +153,28 @@ class SaslClient {
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 
-  string plain_auth_user_;
-  string plain_pass_;
-  gscoped_ptr<sasl_secret_t, FreeDeleter> psecret_;
+  // The set of features that the client supports. Filled in
+  // after we receive the NEGOTIATE request from the client.
+  std::set<RpcFeatureFlag> client_features_;
 
-  // The set of features supported by the server.
-  std::set<RpcFeatureFlag> server_features_;
+  // The successfully-authenticated user, if applicable.
+  string authenticated_user_;
 
-  SaslNegotiationState::Type client_state_;
+  SaslNegotiationState::Type server_state_;
 
-  // The mechanism we negotiated with the server.
+  // The mechanism we negotiated with the client.
   SaslMechanism::Type negotiated_mech_;
 
   // Intra-negotiation state.
   bool nego_ok_;  // During negotiation: did we get a SASL_OK response from the SASL library?
-  bool nego_response_expected_;  // During negotiation: Are we waiting for a server response?
 
   // Negotiation timeout deadline.
   MonoTime deadline_;
 
-  DISALLOW_COPY_AND_ASSIGN(SaslClient);
+  DISALLOW_COPY_AND_ASSIGN(SaslServer);
 };
 
 } // namespace rpc
 } // namespace kudu
 
-#endif  // KUDU_RPC_SASL_CLIENT_H
+#endif  // KUDU_RPC_SASL_SERVER_H

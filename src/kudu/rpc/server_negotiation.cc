@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/sasl_server.h"
+#include "kudu/rpc/server_negotiation.h"
 
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
@@ -115,7 +115,7 @@ Status SaslServer::Init(const string& service_type) {
     return Status::IllegalState("Init() may only be called once per SaslServer object.");
   }
 
-  // TODO: Support security flags.
+  // TODO(unknown): Support security flags.
   unsigned secflags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
@@ -159,7 +159,8 @@ Status SaslServer::Negotiate() {
   // Ensure we are called exactly once, and in the right order.
   if (server_state_ == SaslNegotiationState::NEW) {
     return Status::IllegalState("SaslServer: Init() must be called before calling Negotiate()");
-  } else if (server_state_ == SaslNegotiationState::NEGOTIATED) {
+  }
+  if (server_state_ == SaslNegotiationState::NEGOTIATED) {
     return Status::IllegalState("SaslServer: Negotiate() may only be called once per object.");
   }
 

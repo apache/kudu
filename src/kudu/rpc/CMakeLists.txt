@@ -43,12 +43,13 @@ ADD_EXPORTABLE_LIBRARY(rpc_introspection_proto
 set(KRPC_SRCS
     acceptor_pool.cc
     blocking_ops.cc
-    outbound_call.cc
+    client_negotiation.cc
     connection.cc
     constants.cc
     inbound_call.cc
     messenger.cc
     negotiation.cc
+    outbound_call.cc
     proxy.cc
     reactor.cc
     remote_method.cc
@@ -59,10 +60,9 @@ set(KRPC_SRCS
     rpc_controller.cc
     rpcz_store.cc
     sasl_common.cc
-    sasl_client.cc
     sasl_helper.cc
-    sasl_server.cc
     serialization.cc
+    server_negotiation.cc
     service_if.cc
     service_pool.cc
     service_queue.cc
@@ -116,11 +116,11 @@ target_link_libraries(rtest_krpc
 set(KUDU_TEST_LINK_LIBS rtest_krpc krpc rpc_header_proto security-test ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(exactly_once_rpc-test)
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
+ADD_KUDU_TEST(negotiation-test)
 ADD_KUDU_TEST(reactor-test)
 ADD_KUDU_TEST(request_tracker-test)
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
 ADD_KUDU_TEST(rpc-test)
 ADD_KUDU_TEST(rpc_stub-test)
-ADD_KUDU_TEST(sasl_rpc-test)
 ADD_KUDU_TEST(service_queue-test)
 

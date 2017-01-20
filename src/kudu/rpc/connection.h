@@ -30,10 +30,10 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/outbound_call.h"
-#include "kudu/rpc/sasl_client.h"
-#include "kudu/rpc/sasl_server.h"
+#include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"

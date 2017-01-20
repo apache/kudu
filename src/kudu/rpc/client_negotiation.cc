@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/rpc/sasl_client.h"
+#include "kudu/rpc/client_negotiation.h"
 
 #include <string.h>
 
@@ -148,7 +148,7 @@ Status SaslClient::Init(const string& service_type) {
     return Status::IllegalState("Init() may only be called once per SaslClient object.");
   }
 
-  // TODO: Support security flags.
+  // TODO(unknown): Support security flags.
   unsigned secflags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
@@ -187,7 +187,8 @@ Status SaslClient::Negotiate() {
   // Ensure we called exactly once, and in the right order.
   if (client_state_ == SaslNegotiationState::NEW) {
     return Status::IllegalState("SaslClient: Init() must be called before calling Negotiate()");
-  } else if (client_state_ == SaslNegotiationState::NEGOTIATED) {
+  }
+  if (client_state_ == SaslNegotiationState::NEGOTIATED) {
     return Status::IllegalState("SaslClient: Negotiate() may only be called once per object.");
   }
 
@@ -464,7 +465,7 @@ int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
     return SASL_BADPARAM;
   }
   switch (id) {
-    // TODO: Support impersonation?
+    // TODO(unknown): Support impersonation?
     // For impersonation, USER is the impersonated user, AUTHNAME is the "sudoer".
     case SASL_CB_USER:
       TRACE("SASL Client: callback for SASL_CB_USER");
@@ -499,14 +500,14 @@ int SaslClient::SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecret) {
     case SASL_CB_PASS: {
       if (!conn || !psecret) return SASL_BADPARAM;
 
-      int len = plain_pass_.length();
+      size_t len = plain_pass_.length();
       *psecret = reinterpret_cast<sasl_secret_t*>(malloc(sizeof(sasl_secret_t) + len));
       if (!*psecret) {
         return SASL_NOMEM;
       }
       psecret_.reset(*psecret);  // Ensure that we free() this structure later.
       (*psecret)->len = len;
-      memcpy(reinterpret_cast<char *>((*psecret)->data), plain_pass_.c_str(), len + 1);
+      memcpy((*psecret)->data, plain_pass_.c_str(), len + 1);
       break;
     }
     default:
