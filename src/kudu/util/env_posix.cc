@@ -1269,9 +1269,11 @@ class PosixEnv : public Env {
     // rlim_max (this is consistent with Linux).
     // TLDR; OS X 10.11 is wack.
     if (l.rlim_max == RLIM_INFINITY) {
-      uint64_t limit;
+      uint32_t limit;
       size_t len = sizeof(limit);
       PCHECK(sysctlbyname("kern.maxfilesperproc", &limit, &len, nullptr, 0) == 0);
+      // Make sure no uninitialized bits are present in the result.
+      DCHECK_EQ(sizeof(limit), len);
       l.rlim_max = limit;
     }
 #endif
