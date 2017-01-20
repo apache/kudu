@@ -18,16 +18,18 @@
 #include "kudu/rpc/reactor.h"
 
 #include <arpa/inet.h>
-#include <boost/intrusive/list.hpp>
-#include <ev++.h>
-#include <glog/logging.h>
-#include <mutex>
 #include <netinet/in.h>
 #include <stdlib.h>
-#include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <mutex>
+#include <string>
+
+#include <boost/intrusive/list.hpp>
+#include <ev++.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
@@ -85,7 +87,7 @@ Status ShutdownError(bool aborted) {
 }
 } // anonymous namespace
 
-ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
+ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
   : loop_(kDefaultLibEvFlags),
     cur_time_(MonoTime::Now()),
     last_unused_tcp_scan_(cur_time_),
@@ -191,7 +193,7 @@ void ReactorThread::WakeThread() {
 // threads that want to bring something to our attention, like the fact that
 // we're shutting down, or the fact that there is a new outbound Transfer
 // ready to send.
-void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
+void ReactorThread::AsyncHandler(ev::async& /*watcher*/, int /*revents*/) {
   DCHECK(IsCurrentThread());
 
   if (PREDICT_FALSE(reactor_->closing())) {
@@ -204,13 +206,13 @@ void ReactorThread::AsyncHandler(ev::async &watcher, int revents) {
   reactor_->DrainTaskQueue(&tasks);
 
   while (!tasks.empty()) {
-    ReactorTask &task = tasks.front();
+    ReactorTask& task = tasks.front();
     tasks.pop_front();
     task.Run(this);
   }
 }
 
-void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
+void ReactorThread::RegisterConnection(scoped_refptr<Connection> conn) {
   DCHECK(IsCurrentThread());
 
   Status s = StartConnectionNegotiation(conn);
@@ -219,10 +221,10 @@ void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
     DestroyConnection(conn.get(), s);
     return;
   }
-  server_conns_.push_back(conn);
+  server_conns_.emplace_back(std::move(conn));
 }
 
-void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
+void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
   DCHECK(IsCurrentThread());
   scoped_refptr<Connection> conn;
 
@@ -242,7 +244,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall> &call) {
 // 2. every tcp_conn_timeo_ seconds, close down connections older than
 //    tcp_conn_timeo_ seconds.
 //
-void ReactorThread::TimerHandler(ev::timer &watcher, int revents) {
+void ReactorThread::TimerHandler(ev::timer& /*watcher*/, int revents) {
   DCHECK(IsCurrentThread());
   if (EV_ERROR & revents) {
     LOG(WARNING) << "Reactor " << name() << " got an error in "
@@ -293,7 +295,7 @@ void ReactorThread::ScanIdleConnections() {
   VLOG_IF(1, timed_out > 0) << name() << ": timed out " << timed_out << " TCP connections.";
 }
 
-const std::string &ReactorThread::name() const {
+const std::string& ReactorThread::name() const {
   return reactor_->name();
 }
 
@@ -321,7 +323,7 @@ void ReactorThread::RunThread() {
   reactor_->messenger_.reset();
 }
 
-Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
+Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
                                             scoped_refptr<Connection>* conn) {
   DCHECK(IsCurrentThread());
   conn_map_t::const_iterator c = client_conns_.find(conn_id);
@@ -348,7 +350,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId &conn_id,
   }
 
   // Register the new connection in our map.
-  *conn = new Connection(this, conn_id.remote(), new_socket.release(), Connection::CLIENT);
+  *conn = new Connection(this, conn_id.remote(), std::move(new_socket), Connection::CLIENT);
   (*conn)->set_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
@@ -377,12 +379,12 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   ADOPT_TRACE(trace.get());
   TRACE("Submitting negotiation task for $0", conn->ToString());
   RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
-      Bind(&Negotiation::RunNegotiation, conn, deadline)));
+        Bind(&Negotiation::RunNegotiation, conn, deadline)));
   return Status::OK();
 }
 
 void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
-      const Status &status) {
+                                                  const Status& status) {
   DCHECK(IsCurrentThread());
   if (PREDICT_FALSE(!status.ok())) {
     DestroyConnection(conn.get(), status);
@@ -396,6 +398,7 @@ void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection
     DestroyConnection(conn.get(), s);
     return;
   }
+
   conn->MarkNegotiationComplete();
   conn->EpollRegister(loop_);
 }
@@ -405,13 +408,13 @@ Status ReactorThread::CreateClientSocket(Socket *sock) {
   if (ret.ok()) {
     ret = sock->SetNoDelay(true);
   }
-  LOG_IF(WARNING, !ret.ok()) << "failed to create an "
-    "outbound connection because a new socket could not "
-    "be created: " << ret.ToString();
+  LOG_IF(WARNING, !ret.ok())
+      << "failed to create an outbound connection because a new socket could not be created: "
+      << ret.ToString();
   return ret;
 }
 
-Status ReactorThread::StartConnect(Socket *sock, const Sockaddr &remote, bool *in_progress) {
+Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote, bool *in_progress) {
   Status ret = sock->Connect(remote);
   if (ret.ok()) {
     VLOG(3) << "StartConnect: connect finished immediately for " << remote.ToString();
@@ -432,7 +435,7 @@ Status ReactorThread::StartConnect(Socket *sock, const Sockaddr &remote, bool *i
 }
 
 void ReactorThread::DestroyConnection(Connection *conn,
-                                      const Status &conn_status) {
+                                      const Status& conn_status) {
   DCHECK(IsCurrentThread());
 
   conn->Shutdown(conn_status);
@@ -455,9 +458,12 @@ void ReactorThread::DestroyConnection(Connection *conn,
   }
 }
 
-DelayedTask::DelayedTask(boost::function<void(const Status &)> func,
+DelayedTask::DelayedTask(boost::function<void(const Status&)> func,
                          MonoDelta when)
-    : func_(std::move(func)), when_(std::move(when)), thread_(nullptr) {}
+    : func_(std::move(func)),
+      when_(when),
+      thread_(nullptr) {
+}
 
 void DelayedTask::Run(ReactorThread* thread) {
   DCHECK(thread_ == nullptr) << "Task has already been scheduled";
@@ -492,7 +498,7 @@ void DelayedTask::TimerHandler(ev::timer& watcher, int revents) {
 }
 
 Reactor::Reactor(const shared_ptr<Messenger>& messenger,
-                 int index, const MessengerBuilder &bld)
+                 int index, const MessengerBuilder& bld)
   : messenger_(messenger),
     name_(StringPrintf("%s_R%03d", messenger->name().c_str(), index)),
     closing_(false),
@@ -529,7 +535,7 @@ Reactor::~Reactor() {
   Shutdown();
 }
 
-const std::string &Reactor::name() const {
+const std::string& Reactor::name() const {
   return name_;
 }
 
@@ -544,11 +550,11 @@ class RunFunctionTask : public ReactorTask {
   explicit RunFunctionTask(boost::function<Status()> f)
       : function_(std::move(f)), latch_(1) {}
 
-  virtual void Run(ReactorThread *reactor) OVERRIDE {
+  void Run(ReactorThread* /*reactor*/) override {
     status_ = function_();
     latch_.CountDown();
   }
-  virtual void Abort(const Status &status) OVERRIDE {
+  void Abort(const Status& status) override {
     status_ = status;
     latch_.CountDown();
   }
@@ -584,16 +590,16 @@ Status Reactor::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
 
 class RegisterConnectionTask : public ReactorTask {
  public:
-  explicit RegisterConnectionTask(const scoped_refptr<Connection>& conn) :
-    conn_(conn)
-  {}
+  explicit RegisterConnectionTask(scoped_refptr<Connection> conn)
+      : conn_(std::move(conn)) {
+  }
 
-  virtual void Run(ReactorThread *thread) OVERRIDE {
-    thread->RegisterConnection(conn_);
+  void Run(ReactorThread* reactor) override {
+    reactor->RegisterConnection(std::move(conn_));
     delete this;
   }
 
-  virtual void Abort(const Status &status) OVERRIDE {
+  void Abort(const Status& /*status*/) override {
     // We don't need to Shutdown the connection since it was never registered.
     // This is only used for inbound connections, and inbound connections will
     // never have any calls added to them until they've been registered.
@@ -604,7 +610,7 @@ class RegisterConnectionTask : public ReactorTask {
   scoped_refptr<Connection> conn_;
 };
 
-void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
+void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   std::unique_ptr<Socket> new_socket;
   if (messenger()->ssl_enabled()) {
@@ -612,9 +618,8 @@ void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
   } else {
     new_socket.reset(new Socket(socket->Release()));
   }
-  scoped_refptr<Connection> conn(
-    new Connection(&thread_, remote, new_socket.release(), Connection::SERVER));
-  auto task = new RegisterConnectionTask(conn);
+  auto task = new RegisterConnectionTask(
+      new Connection(&thread_, remote, std::move(new_socket), Connection::SERVER));
   ScheduleReactorTask(task);
 }
 
@@ -625,12 +630,12 @@ class AssignOutboundCallTask : public ReactorTask {
   explicit AssignOutboundCallTask(shared_ptr<OutboundCall> call)
       : call_(std::move(call)) {}
 
-  virtual void Run(ReactorThread *reactor) OVERRIDE {
+  void Run(ReactorThread* reactor) override {
     reactor->AssignOutboundCall(call_);
     delete this;
   }
 
-  virtual void Abort(const Status &status) OVERRIDE {
+  void Abort(const Status& status) override {
     call_->SetFailed(status);
     delete this;
   }
@@ -639,7 +644,7 @@ class AssignOutboundCallTask : public ReactorTask {
   shared_ptr<OutboundCall> call_;
 };
 
-void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
+void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall>& call) {
   DVLOG(3) << name_ << ": queueing outbound call "
            << call->ToString() << " to remote " << call->conn_id().remote().ToString();
   AssignOutboundCallTask *task = new AssignOutboundCallTask(call);

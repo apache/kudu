@@ -32,9 +32,10 @@ class Sockaddr;
 
 class SSLSocket : public Socket {
  public:
+
   SSLSocket(int fd, SSL* ssl, bool is_server);
 
-  ~SSLSocket();
+  ~SSLSocket() override;
 
   // Do the SSL handshake as a client or a server and verify that the credentials were correctly
   // verified.

@@ -30,12 +30,15 @@
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/reactor.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
+#include "kudu/security/ssl_socket.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 
@@ -50,62 +53,17 @@ DEFINE_int32(rpc_negotiation_inject_delay_ms, 0,
              "the RPC negotiation process on the server side.");
 TAG_FLAG(rpc_negotiation_inject_delay_ms, unsafe);
 
+DECLARE_bool(server_require_kerberos);
+
+using strings::Substitute;
+
 namespace kudu {
 namespace rpc {
 
-using std::shared_ptr;
-using strings::Substitute;
-
-// Client: Send ConnectionContextPB message based on information stored in the Connection object.
-static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) {
-  TRACE("Sending connection context");
-  RequestHeader header;
-  header.set_call_id(kConnectionContextCallId);
-
-  ConnectionContextPB conn_context;
-  // This field is deprecated but used by servers <Kudu 1.1. Newer server versions ignore
-  // this and use the SASL-provided username instead.
-  conn_context.mutable_deprecated_user_info()->set_real_user(
-      conn->user_credentials().real_user());
-  return SendFramedMessageBlocking(conn->socket(), header, conn_context, deadline);
-}
-
-// Server: Receive ConnectionContextPB message and update the corresponding fields in the
-// associated Connection object. Perform validation against SASL-negotiated information
-// as needed.
-static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) {
-  TRACE("Waiting for connection context");
-  faststring recv_buf(1024); // Should be plenty for a ConnectionContextPB message.
-  RequestHeader header;
-  Slice param_buf;
-  RETURN_NOT_OK(ReceiveFramedMessageBlocking(conn->socket(), &recv_buf,
-                                             &header, &param_buf, deadline));
-  DCHECK(header.IsInitialized());
-
-  if (header.call_id() != kConnectionContextCallId) {
-    return Status::IllegalState("Expected ConnectionContext callid, received",
-        Substitute("$0", header.call_id()));
-  }
-
-  ConnectionContextPB conn_context;
-  if (!conn_context.ParseFromArray(param_buf.data(), param_buf.size())) {
-    return Status::InvalidArgument("Invalid ConnectionContextPB message, missing fields",
-                                   conn_context.InitializationErrorString());
-  }
-
-  if (conn->sasl_server().authenticated_user().empty()) {
-    return Status::NotAuthorized("No user was authenticated");
-  }
-
-  conn->mutable_user_credentials()->set_real_user(conn->sasl_server().authenticated_user());
-
-  return Status::OK();
-}
-
 // Wait for the client connection to be established and become ready for writing.
-static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
+static Status WaitForClientConnect(Socket* socket, const MonoTime& deadline) {
   TRACE("Waiting for socket to connect");
-  int fd = conn->socket()->GetFd();
+  int fd = socket->GetFd();
   struct pollfd poll_fd;
   poll_fd.fd = fd;
   poll_fd.events = POLLOUT;
@@ -164,57 +122,99 @@ static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
 }
 
 // Disable / reset socket timeouts.
-static Status DisableSocketTimeouts(Connection* conn) {
-  RETURN_NOT_OK(conn->socket()->SetSendTimeout(MonoDelta::FromNanoseconds(0L)));
-  RETURN_NOT_OK(conn->socket()->SetRecvTimeout(MonoDelta::FromNanoseconds(0L)));
+static Status DisableSocketTimeouts(Socket* socket) {
+  RETURN_NOT_OK(socket->SetSendTimeout(MonoDelta::FromNanoseconds(0L)));
+  RETURN_NOT_OK(socket->SetRecvTimeout(MonoDelta::FromNanoseconds(0L)));
   return Status::OK();
 }
 
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
-static Status DoClientNegotiation(Connection* conn,
-                                  const MonoTime& deadline) {
-  // The SASL initialization on the client side can be relatively heavy-weight
-  // (it may result in DNS queries in the case of GSSAPI).
-  // So, we do it while the connect() is still in progress to reduce latency.
-  //
-  // TODO(todd): we should consider doing this even before connecting, since as soon
-  // as we connect, we are tying up a negotiation thread on the server side.
+static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
+  ClientNegotiation client_negotiation(conn->release_socket());
 
-  RETURN_NOT_OK(conn->InitSaslClient());
+  // Note that the fqdn is an IP address here: we've already lost whatever DNS
+  // name the client was attempting to use. Unless krb5 is configured with 'rdns
+  // = false', it will automatically take care of reversing this address to its
+  // canonical hostname to determine the expected server principal.
+  client_negotiation.set_server_fqdn(conn->remote().host());
 
-  RETURN_NOT_OK(WaitForClientConnect(conn, deadline));
-  RETURN_NOT_OK(conn->SetNonBlocking(false));
-  RETURN_NOT_OK(conn->InitSSLIfNecessary());
-  conn->sasl_client().set_deadline(deadline);
-  RETURN_NOT_OK(conn->sasl_client().Negotiate());
-  RETURN_NOT_OK(SendConnectionContext(conn, deadline));
-  RETURN_NOT_OK(DisableSocketTimeouts(conn));
+  Status s = client_negotiation.EnableGSSAPI();
+  if (!s.ok()) {
+    // If we can't enable GSSAPI, it's likely the client is just missing the
+    // appropriate SASL plugin. We don't want to require it to be installed
+    // if the user doesn't care about connecting to servers using Kerberos
+    // authentication. So, we'll just VLOG this here. If we try to connect
+    // to a server which requires Kerberos, we'll get a negotiation error
+    // at that point.
+    if (VLOG_IS_ON(1)) {
+      KLOG_FIRST_N(INFO, 1) << "Couldn't enable GSSAPI (Kerberos) SASL plugin: "
+                            << s.message().ToString()
+                            << ". This process will be unable to connect to "
+                            << "servers requiring Kerberos authentication.";
+    }
+  }
+
+  RETURN_NOT_OK(client_negotiation.EnablePlain(conn->user_credentials().real_user(), ""));
+  client_negotiation.set_deadline(deadline);
+
+  RETURN_NOT_OK(WaitForClientConnect(client_negotiation.socket(), deadline));
+  RETURN_NOT_OK(client_negotiation.socket()->SetNonBlocking(false));
+
+  // Do SSL handshake.
+  // TODO(dan): This is a messy place to do this.
+  if (conn->reactor_thread()->reactor()->messenger()->ssl_enabled()) {
+    SSLSocket* ssl_socket = down_cast<SSLSocket*>(client_negotiation.socket());
+    RETURN_NOT_OK(ssl_socket->DoHandshake());
+  }
+
+  RETURN_NOT_OK(client_negotiation.Negotiate());
+  RETURN_NOT_OK(DisableSocketTimeouts(client_negotiation.socket()));
+
+  // Transfer the negotiated socket and state back to the connection.
+  conn->adopt_socket(client_negotiation.release_socket());
+  conn->set_remote_features(client_negotiation.take_server_features());
 
   return Status::OK();
 }
 
 // Perform server negotiation. We don't LOG() anything, we leave that to our caller.
-static Status DoServerNegotiation(Connection* conn,
-                                  const MonoTime& deadline) {
+static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   if (FLAGS_rpc_negotiation_inject_delay_ms > 0) {
     LOG(WARNING) << "Injecting " << FLAGS_rpc_negotiation_inject_delay_ms
                  << "ms delay in negotiation";
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_inject_delay_ms));
   }
-  RETURN_NOT_OK(conn->SetNonBlocking(false));
-  RETURN_NOT_OK(conn->InitSSLIfNecessary());
-  RETURN_NOT_OK(conn->InitSaslServer());
-  conn->sasl_server().set_deadline(deadline);
-  RETURN_NOT_OK(conn->sasl_server().Negotiate());
-  RETURN_NOT_OK(RecvConnectionContext(conn, deadline));
-  RETURN_NOT_OK(DisableSocketTimeouts(conn));
+
+  // Create a new ServerNegotiation to handle the synchronous negotiation.
+  ServerNegotiation server_negotiation(conn->release_socket());
+  if (FLAGS_server_require_kerberos) {
+    RETURN_NOT_OK(server_negotiation.EnableGSSAPI());
+  } else {
+    RETURN_NOT_OK(server_negotiation.EnablePlain());
+  }
+
+  server_negotiation.set_deadline(deadline);
+  RETURN_NOT_OK(server_negotiation.socket()->SetNonBlocking(false));
+
+  // Do SSL handshake.
+  // TODO(dan): This is a messy place to do this.
+  if (conn->reactor_thread()->reactor()->messenger()->ssl_enabled()) {
+    SSLSocket* ssl_socket = down_cast<SSLSocket*>(server_negotiation.socket());
+    RETURN_NOT_OK(ssl_socket->DoHandshake());
+  }
+
+  RETURN_NOT_OK(server_negotiation.Negotiate());
+  RETURN_NOT_OK(DisableSocketTimeouts(server_negotiation.socket()));
+
+  // Transfer the negotiated socket and state back to the connection.
+  conn->adopt_socket(server_negotiation.release_socket());
+  conn->set_remote_features(server_negotiation.take_client_features());
+  conn->mutable_user_credentials()->set_real_user(server_negotiation.authenticated_user());
 
   return Status::OK();
 }
 
-// Perform negotiation for a connection (either server or client)
-void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
-                                 const MonoTime& deadline) {
+void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn, MonoTime deadline) {
   Status s;
   if (conn->direction() == Connection::SERVER) {
     s = DoServerNegotiation(conn.get(), deadline);

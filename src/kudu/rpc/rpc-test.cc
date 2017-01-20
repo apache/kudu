@@ -365,8 +365,8 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
   // Create another thread to accept the connection on the fake server.
   scoped_refptr<Thread> acceptor_thread;
   ASSERT_OK(Thread::Create("test", "acceptor",
-                                  AcceptAndReadForever, &listen_sock,
-                                  &acceptor_thread));
+                           AcceptAndReadForever, &listen_sock,
+                           &acceptor_thread));
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));

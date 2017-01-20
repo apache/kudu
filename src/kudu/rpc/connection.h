@@ -18,22 +18,22 @@
 #ifndef KUDU_RPC_CONNECTION_H
 #define KUDU_RPC_CONNECTION_H
 
-#include <boost/intrusive/list.hpp>
-#include <ev++.h>
-#include <memory>
 #include <stdint.h>
-#include <unordered_map>
 
 #include <limits>
+#include <memory>
+#include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+#include <boost/intrusive/list.hpp>
+#include <ev++.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/outbound_call.h"
-#include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -80,7 +80,9 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // remote: the address of the remote end
   // socket: the socket to take ownership of.
   // direction: whether we are the client or server side
-  Connection(ReactorThread *reactor_thread, Sockaddr remote, Socket* socket,
+  Connection(ReactorThread *reactor_thread,
+             Sockaddr remote,
+             std::unique_ptr<Socket> socket,
              Direction direction);
 
   // Set underlying socket to non-blocking (or blocking) mode.
@@ -143,23 +145,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   Socket* socket() { return socket_.get(); }
 
-  // Return SASL client instance for this connection.
-  SaslClient &sasl_client() { return sasl_client_; }
-
-  // Return SASL server instance for this connection.
-  SaslServer &sasl_server() { return sasl_server_; }
-
-  // Initialize underlying SSLSocket if SSL is enabled.
-  Status InitSSLIfNecessary();
-
-  // Initialize SASL client before negotiation begins.
-  Status InitSaslClient();
-
-  // Initialize SASL server before negotiation begins.
-  Status InitSaslServer();
-
   // Go through the process of transferring control of the underlying socket back to the Reactor.
-  void CompleteNegotiation(const Status &negotiation_status);
+  void CompleteNegotiation(const Status& negotiation_status);
 
   // Indicate that negotiation is complete and that the Reactor is now in control of the socket.
   void MarkNegotiationComplete();
@@ -167,7 +154,19 @@ class Connection : public RefCountedThreadSafe<Connection> {
   Status DumpPB(const DumpRunningRpcsRequestPB& req,
                 RpcConnectionPB* resp);
 
-  ReactorThread *reactor_thread() const { return reactor_thread_; }
+  ReactorThread* reactor_thread() const { return reactor_thread_; }
+
+  std::unique_ptr<Socket> release_socket() {
+    return std::move(socket_);
+  }
+
+  void adopt_socket(std::unique_ptr<Socket> socket) {
+    socket_ = std::move(socket);
+  }
+
+  void set_remote_features(std::set<RpcFeatureFlag> remote_features) {
+    remote_features_ = std::move(remote_features);
+  }
 
  private:
   friend struct CallAwaitingResponse;
@@ -226,7 +225,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   void QueueOutbound(gscoped_ptr<OutboundTransfer> transfer);
 
   // The reactor thread that created this connection.
-  ReactorThread * const reactor_thread_;
+  ReactorThread* const reactor_thread_;
 
   // The remote address we're talking to.
   const Sockaddr remote_;
@@ -277,16 +276,13 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // when serializing calls.
   std::vector<Slice> slices_tmp_;
 
+  // RPC features supported by the remote end of the connection.
+  std::set<RpcFeatureFlag> remote_features_;
+
   // Pool from which CallAwaitingResponse objects are allocated.
   // Also a funny name.
   ObjectPool<CallAwaitingResponse> car_pool_;
   typedef ObjectPool<CallAwaitingResponse>::scoped_ptr scoped_car;
-
-  // SASL client instance used for connection negotiation when Direction == CLIENT.
-  SaslClient sasl_client_;
-
-  // SASL server instance used for connection negotiation when Direction == SERVER.
-  SaslServer sasl_server_;
 
   // Whether we completed connection negotiation.
   bool negotiation_complete_;

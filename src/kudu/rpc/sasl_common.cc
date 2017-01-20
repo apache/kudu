@@ -30,6 +30,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/rpc/constants.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
@@ -46,11 +47,8 @@ const char* const kSaslMechGSSAPI = "GSSAPI";
 static __thread string* g_auth_failure_capture = nullptr;
 
 // Determine whether initialization was ever called
-struct InitializationData {
-  Status status;
-  string app_name;
-};
-static struct InitializationData* sasl_init_data;
+static Status sasl_init_status = Status::OK();
+static bool sasl_is_initialized = false;
 
 // If true, then we expect someone else has initialized SASL.
 static bool g_disable_sasl_init = false;
@@ -203,14 +201,9 @@ static bool SaslMutexImplementationProvided() {
 #endif
 
 // Actually perform the initialization for the SASL subsystem.
-// Meant to be called via GoogleOnceInitArg().
-static void DoSaslInit(void* app_name_char_array) {
-  // Explicitly cast from void* here so GoogleOnce doesn't have to deal with it.
-  // We were getting Clang 3.4 UBSAN errors when letting GoogleOnce cast.
-  const char* const app_name = reinterpret_cast<const char* const>(app_name_char_array);
+// Meant to be called via GoogleOnceInit().
+static void DoSaslInit() {
   VLOG(3) << "Initializing SASL library";
-  sasl_init_data = new InitializationData();
-  sasl_init_data->app_name = app_name;
 
   bool sasl_initialized = SaslIsInitialized();
   if (sasl_initialized && !g_disable_sasl_init) {
@@ -222,7 +215,7 @@ static void DoSaslInit(void* app_name_char_array) {
 
   if (g_disable_sasl_init) {
     if (!sasl_initialized) {
-      sasl_init_data->status = Status::RuntimeError(
+      sasl_init_status = Status::RuntimeError(
           "SASL initialization was disabled, but SASL was not externally initialized.");
       return;
     }
@@ -232,30 +225,29 @@ static void DoSaslInit(void* app_name_char_array) {
           << "but was not provided with a mutex implementation! If "
           << "manually initializing SASL, use sasl_set_mutex(3).";
     }
-    sasl_init_data->status = Status::OK();
     return;
   }
   internal::SaslSetMutex();
   int result = sasl_client_init(&callbacks[0]);
   if (result != SASL_OK) {
-    sasl_init_data->status = Status::RuntimeError("Could not initialize SASL client",
-        sasl_errstring(result, nullptr, nullptr));
+    sasl_init_status = Status::RuntimeError("Could not initialize SASL client",
+                                            sasl_errstring(result, nullptr, nullptr));
     return;
   }
 
-  result = sasl_server_init(&callbacks[0], sasl_init_data->app_name.c_str());
+  result = sasl_server_init(&callbacks[0], kSaslAppName);
   if (result != SASL_OK) {
-    sasl_init_data->status = Status::RuntimeError("Could not initialize SASL server",
-        sasl_errstring(result, nullptr, nullptr));
+    sasl_init_status = Status::RuntimeError("Could not initialize SASL server",
+                                            sasl_errstring(result, nullptr, nullptr));
     return;
   }
 
-  sasl_init_data->status = Status::OK();
+  sasl_is_initialized = true;
 }
 
 Status DisableSaslInitialization() {
   if (g_disable_sasl_init) return Status::OK();
-  if (sasl_init_data != nullptr) {
+  if (sasl_is_initialized) {
     return Status::IllegalState("SASL already initialized. Initialization can only be disabled "
                                 "before first usage.");
   }
@@ -263,18 +255,11 @@ Status DisableSaslInitialization() {
   return Status::OK();
 }
 
-Status SaslInit(const char* app_name) {
+Status SaslInit() {
   // Only execute SASL initialization once
   static GoogleOnceType once = GOOGLE_ONCE_INIT;
-  GoogleOnceInitArg(&once,
-                    &DoSaslInit,
-                    // This is a bit ugly, but Clang 3.4 UBSAN complains otherwise.
-                    reinterpret_cast<void*>(const_cast<char*>(app_name)));
-  if (PREDICT_FALSE(sasl_init_data->app_name != app_name)) {
-    return Status::InvalidArgument("SaslInit called successively with different arguments",
-        StringPrintf("Previous: %s, current: %s", sasl_init_data->app_name.c_str(), app_name));
-  }
-  return sasl_init_data->status;
+  GoogleOnceInit(&once, &DoSaslInit);
+  return sasl_init_status;
 }
 
 static string CleanSaslError(const string& err) {

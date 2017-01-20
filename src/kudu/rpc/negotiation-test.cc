@@ -43,6 +43,7 @@
 
 using std::string;
 using std::thread;
+using std::unique_ptr;
 
 // HACK: MIT Kerberos doesn't have any way of determining its version number,
 // but the error messages in krb5-1.10 and earlier are broken due to
@@ -62,35 +63,25 @@ DEFINE_bool(is_test_child, false,
 namespace kudu {
 namespace rpc {
 
-class TestSaslRpc : public RpcTestBase {
+class TestNegotiation : public RpcTestBase {
  public:
   virtual void SetUp() OVERRIDE {
     RpcTestBase::SetUp();
-    ASSERT_OK(SaslInit(kSaslAppName));
+    ASSERT_OK(SaslInit());
   }
 };
 
-// Test basic initialization of the objects.
-TEST_F(TestSaslRpc, TestBasicInit) {
-  SaslServer server(kSaslAppName, nullptr);
-  server.EnablePlain();
-  ASSERT_OK(server.Init(kSaslAppName));
-  SaslClient client(kSaslAppName, nullptr);
-  client.EnablePlain("test", "test");
-  ASSERT_OK(client.Init(kSaslAppName));
-}
-
-// A "Callable" that takes a Socket* param, for use with starting a thread.
-// Can be used for SaslServer or SaslClient threads.
-typedef std::function<void(Socket*)> SocketCallable;
+// A "Callable" that takes a socket for use with starting a thread.
+// Can be used for ServerNegotiation or ClientNegotiation threads.
+typedef std::function<void(unique_ptr<Socket>)> SocketCallable;
 
 // Call Accept() on the socket, then pass the connection to the server runner
 static void RunAcceptingDelegator(Socket* acceptor,
                                   const SocketCallable& server_runner) {
-  Socket conn;
+  unique_ptr<Socket> conn(new Socket());
   Sockaddr remote;
-  CHECK_OK(acceptor->Accept(&conn, &remote, 0));
-  server_runner(&conn);
+  CHECK_OK(acceptor->Accept(conn.get(), &remote, 0));
+  server_runner(std::move(conn));
 }
 
 // Set up a socket and run a SASL negotiation.
@@ -103,19 +94,14 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
   ASSERT_OK(server_sock.GetSocketAddress(&server_bind_addr));
   thread server(RunAcceptingDelegator, &server_sock, server_runner);
 
-  Socket client_sock;
-  CHECK_OK(client_sock.Init(0));
-  ASSERT_OK(client_sock.Connect(server_bind_addr));
-  thread client(client_runner, &client_sock);
+  unique_ptr<Socket> client_sock(new Socket());
+  CHECK_OK(client_sock->Init(0));
+  ASSERT_OK(client_sock->Connect(server_bind_addr));
+  thread client(client_runner, std::move(client_sock));
 
   LOG(INFO) << "Waiting for test threads to terminate...";
   client.join();
   LOG(INFO) << "Client thread terminated.";
-
-  // TODO(todd): if the client fails to negotiate, it doesn't
-  // always result in sending a nice error message to the
-  // other side.
-  client_sock.Close();
 
   server.join();
   LOG(INFO) << "Server thread terminated.";
@@ -123,25 +109,23 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void RunPlainNegotiationServer(Socket* conn) {
-  SaslServer sasl_server(kSaslAppName, conn);
-  CHECK_OK(sasl_server.EnablePlain());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
-  CHECK_OK(sasl_server.Negotiate());
-  CHECK(ContainsKey(sasl_server.client_features(), APPLICATION_FEATURE_FLAGS));
-  CHECK_EQ("my-username", sasl_server.authenticated_user());
+static void RunPlainNegotiationServer(unique_ptr<Socket> socket) {
+  ServerNegotiation server_negotiation(std::move(socket));
+  CHECK_OK(server_negotiation.EnablePlain());
+  CHECK_OK(server_negotiation.Negotiate());
+  CHECK(ContainsKey(server_negotiation.client_features(), APPLICATION_FEATURE_FLAGS));
+  CHECK_EQ("my-username", server_negotiation.authenticated_user());
 }
 
-static void RunPlainNegotiationClient(Socket* conn) {
-  SaslClient sasl_client(kSaslAppName, conn);
-  CHECK_OK(sasl_client.EnablePlain("my-username", "ignored password"));
-  CHECK_OK(sasl_client.Init(kSaslAppName));
-  CHECK_OK(sasl_client.Negotiate());
-  CHECK(ContainsKey(sasl_client.server_features(), APPLICATION_FEATURE_FLAGS));
+static void RunPlainNegotiationClient(unique_ptr<Socket> socket) {
+  ClientNegotiation client_negotiation(std::move(socket));
+  CHECK_OK(client_negotiation.EnablePlain("my-username", "ignored password"));
+  CHECK_OK(client_negotiation.Negotiate());
+  CHECK(ContainsKey(client_negotiation.server_features(), APPLICATION_FEATURE_FLAGS));
 }
 
 // Test SASL negotiation using the PLAIN mechanism over a socket.
-TEST_F(TestSaslRpc, TestPlainNegotiation) {
+TEST_F(TestNegotiation, TestPlainNegotiation) {
   RunNegotiationTest(RunPlainNegotiationServer, RunPlainNegotiationClient);
 }
 
@@ -153,33 +137,29 @@ using CheckerFunction = std::function<void(const Status&, T&)>;
 
 // Run GSSAPI negotiation from the server side. Runs
 // 'post_check' after negotiation to verify the result.
-static void RunGSSAPINegotiationServer(
-    Socket* conn,
-    const CheckerFunction<SaslServer>& post_check) {
-  SaslServer sasl_server(kSaslAppName, conn);
-  sasl_server.set_server_fqdn("127.0.0.1");
-  CHECK_OK(sasl_server.EnableGSSAPI());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
-  post_check(sasl_server.Negotiate(), sasl_server);
+static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
+                                       const CheckerFunction<ServerNegotiation>& post_check) {
+  ServerNegotiation server_negotiation(std::move(socket));
+  server_negotiation.set_server_fqdn("127.0.0.1");
+  CHECK_OK(server_negotiation.EnableGSSAPI());
+  post_check(server_negotiation.Negotiate(), server_negotiation);
 }
 
 // Run GSSAPI negotiation from the client side. Runs
 // 'post_check' after negotiation to verify the result.
-static void RunGSSAPINegotiationClient(
-    Socket* conn,
-    const CheckerFunction<SaslClient>& post_check) {
-  SaslClient sasl_client(kSaslAppName, conn);
-  sasl_client.set_server_fqdn("127.0.0.1");
-  CHECK_OK(sasl_client.EnableGSSAPI());
-  CHECK_OK(sasl_client.Init(kSaslAppName));
-  post_check(sasl_client.Negotiate(), sasl_client);
+static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
+                                       const CheckerFunction<ClientNegotiation>& post_check) {
+  ClientNegotiation client_negotiation(std::move(conn));
+  client_negotiation.set_server_fqdn("127.0.0.1");
+  CHECK_OK(client_negotiation.EnableGSSAPI());
+  post_check(client_negotiation.Negotiate(), client_negotiation);
 }
 
 // Test configuring a client to allow but not require Kerberos/GSSAPI,
 // and connect to a server which requires Kerberos/GSSAPI.
 //
 // They should negotiate to use Kerberos/GSSAPI.
-TEST_F(TestSaslRpc, TestRestrictiveServer_NonRestrictiveClient) {
+TEST_F(TestNegotiation, TestRestrictiveServer_NonRestrictiveClient) {
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
 
@@ -196,27 +176,26 @@ TEST_F(TestSaslRpc, TestRestrictiveServer_NonRestrictiveClient) {
   // Authentication should now succeed on both sides.
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   CHECK_OK(s);
                   CHECK_EQ(SaslMechanism::GSSAPI, server.negotiated_mechanism());
                   CHECK_EQ("testuser", server.authenticated_user());
                 }),
-      [](Socket* conn) {
-        SaslClient sasl_client(kSaslAppName, conn);
-        sasl_client.set_server_fqdn("127.0.0.1");
+      [](unique_ptr<Socket> socket) {
+        ClientNegotiation client_negotiation(std::move(socket));
+        client_negotiation.set_server_fqdn("127.0.0.1");
         // The client enables both PLAIN and GSSAPI.
-        CHECK_OK(sasl_client.EnablePlain("foo", "bar"));
-        CHECK_OK(sasl_client.EnableGSSAPI());
-        CHECK_OK(sasl_client.Init(kSaslAppName));
-        CHECK_OK(sasl_client.Negotiate());
-        CHECK_EQ(SaslMechanism::GSSAPI, sasl_client.negotiated_mechanism());
+        CHECK_OK(client_negotiation.EnablePlain("foo", "bar"));
+        CHECK_OK(client_negotiation.EnableGSSAPI());
+        CHECK_OK(client_negotiation.Negotiate());
+        CHECK_EQ(SaslMechanism::GSSAPI, client_negotiation.negotiated_mechanism());
       });
 }
 
 // Test configuring a client to only support PLAIN, and a server which
 // only supports GSSAPI. This would happen, for example, if an old Kudu
 // client tries to talk to a secure-only cluster.
-TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
+TEST_F(TestNegotiation, TestNoMatchingMechanisms) {
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
 
@@ -227,7 +206,7 @@ TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
 
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   // The client fails to find a matching mechanism and
                   // doesn't send any failure message to the server.
                   // Instead, it just disconnects.
@@ -235,19 +214,18 @@ TEST_F(TestSaslRpc, TestNoMatchingMechanisms) {
                   // TODO(todd): this could produce a better message!
                   ASSERT_STR_CONTAINS(s.ToString(), "got EOF from remote");
                 }),
-      [](Socket* conn) {
-        SaslClient sasl_client(kSaslAppName, conn);
-        sasl_client.set_server_fqdn("127.0.0.1");
+      [](unique_ptr<Socket> socket) {
+        ClientNegotiation client_negotiation(std::move(socket));
+        client_negotiation.set_server_fqdn("127.0.0.1");
         // The client enables both PLAIN and GSSAPI.
-        CHECK_OK(sasl_client.EnablePlain("foo", "bar"));
-        CHECK_OK(sasl_client.Init(kSaslAppName));
-        Status s = sasl_client.Negotiate();
+        CHECK_OK(client_negotiation.EnablePlain("foo", "bar"));
+        Status s = client_negotiation.Negotiate();
         ASSERT_STR_CONTAINS(s.ToString(), "client was missing the required SASL module");
       });
 }
 
 // Test SASL negotiation using the GSSAPI (kerberos) mechanism over a socket.
-TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
+TEST_F(TestNegotiation, TestGSSAPINegotiation) {
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
 
@@ -264,13 +242,13 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
   // Authentication should succeed on both sides.
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   CHECK_OK(s);
                   CHECK_EQ(SaslMechanism::GSSAPI, server.negotiated_mechanism());
                   CHECK_EQ("testuser", server.authenticated_user());
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
+                [](const Status& s, ClientNegotiation& client) {
                   CHECK_OK(s);
                   CHECK_EQ(SaslMechanism::GSSAPI, client.negotiated_mechanism());
                 }));
@@ -281,7 +259,7 @@ TEST_F(TestSaslRpc, TestGSSAPINegotiation) {
 // This test is ignored on macOS because the system Kerberos implementation
 // (Heimdal) caches the non-existence of client credentials, which causes futher
 // tests to fail.
-TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
+TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
   MiniKdc kdc;
   ASSERT_OK(kdc.Start());
 
@@ -289,7 +267,7 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
   // sides.
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   // The client notices there are no credentials and
                   // doesn't send any failure message to the server.
                   // Instead, it just disconnects.
@@ -299,7 +277,7 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
                   CHECK(s.IsNetworkError());
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
+                [](const Status& s, ClientNegotiation& client) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
                   CHECK_GT(s.ToString().find("No Kerberos credentials available"), 0);
@@ -316,14 +294,14 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
   // sides.
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   // The client notices there are no credentials and
                   // doesn't send any failure message to the server.
                   // Instead, it just disconnects.
                   CHECK(s.IsNetworkError());
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
+                [](const Status& s, ClientNegotiation& client) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
                   CHECK_EQ(s.message().ToString(), "No Kerberos credentials available");
@@ -343,7 +321,7 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
 
   RunNegotiationTest(
       std::bind(RunGSSAPINegotiationServer, std::placeholders::_1,
-                [](const Status& s, SaslServer& server) {
+                [](const Status& s, ServerNegotiation& server) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
                   ASSERT_STR_CONTAINS(s.ToString(),
@@ -351,7 +329,7 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
 #endif
                 }),
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
-                [](const Status& s, SaslClient& client) {
+                [](const Status& s, ClientNegotiation& client) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
                   ASSERT_STR_CONTAINS(s.ToString(),
@@ -368,9 +346,9 @@ TEST_F(TestSaslRpc, TestGSSAPIInvalidNegotiation) {
 // This is ignored on macOS because the system Kerberos implementation does not
 // fail the preflight check when the keytab is inaccessible, probably because
 // the preflight check passes a 0-length token.
-TEST_F(TestSaslRpc, TestPreflight) {
+TEST_F(TestNegotiation, TestPreflight) {
   // Try pre-flight with no keytab.
-  Status s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  Status s = ServerNegotiation::PreflightCheckGSSAPI();
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "Key table file.*not found");
@@ -383,11 +361,11 @@ TEST_F(TestSaslRpc, TestPreflight) {
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
-  ASSERT_OK(SaslServer::PreflightCheckGSSAPI(kSaslAppName));
+  ASSERT_OK(ServerNegotiation::PreflightCheckGSSAPI());
 
   // Try with an inaccessible keytab.
   CHECK_ERR(chmod(kt_path.c_str(), 0000));
-  s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  s = ServerNegotiation::PreflightCheckGSSAPI();
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
@@ -397,7 +375,7 @@ TEST_F(TestSaslRpc, TestPreflight) {
   // Try with a keytab that has the wrong credentials.
   ASSERT_OK(kdc.CreateServiceKeytab("wrong-service/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
-  s = SaslServer::PreflightCheckGSSAPI(kSaslAppName);
+  s = ServerNegotiation::PreflightCheckGSSAPI();
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "No key table entry found matching kudu/.*");
@@ -407,55 +385,51 @@ TEST_F(TestSaslRpc, TestPreflight) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void RunTimeoutExpectingServer(Socket* conn) {
-  SaslServer sasl_server(kSaslAppName, conn);
-  CHECK_OK(sasl_server.EnablePlain());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
-  Status s = sasl_server.Negotiate();
+static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
+  ServerNegotiation server_negotiation(std::move(socket));
+  CHECK_OK(server_negotiation.EnablePlain());
+  Status s = server_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
-      << s.ToString();
+                                  << s.ToString();
 }
 
-static void RunTimeoutNegotiationClient(Socket* sock) {
-  SaslClient sasl_client(kSaslAppName, sock);
-  CHECK_OK(sasl_client.EnablePlain("test", "test"));
-  CHECK_OK(sasl_client.Init(kSaslAppName));
+static void RunTimeoutNegotiationClient(unique_ptr<Socket> sock) {
+  ClientNegotiation client_negotiation(std::move(sock));
+  CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
-  sasl_client.set_deadline(deadline);
-  Status s = sasl_client.Negotiate();
+  client_negotiation.set_deadline(deadline);
+  Status s = client_negotiation.Negotiate();
   ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();
-  CHECK_OK(sock->Shutdown(true, true));
+  CHECK_OK(client_negotiation.socket()->Shutdown(true, true));
 }
 
 // Ensure that the client times out.
-TEST_F(TestSaslRpc, TestClientTimeout) {
+TEST_F(TestNegotiation, TestClientTimeout) {
   RunNegotiationTest(RunTimeoutExpectingServer, RunTimeoutNegotiationClient);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-static void RunTimeoutNegotiationServer(Socket* sock) {
-  SaslServer sasl_server(kSaslAppName, sock);
-  CHECK_OK(sasl_server.EnablePlain());
-  CHECK_OK(sasl_server.Init(kSaslAppName));
+static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
+  ServerNegotiation server_negotiation(std::move(socket));
+  CHECK_OK(server_negotiation.EnablePlain());
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
-  sasl_server.set_deadline(deadline);
-  Status s = sasl_server.Negotiate();
+  server_negotiation.set_deadline(deadline);
+  Status s = server_negotiation.Negotiate();
   ASSERT_TRUE(s.IsTimedOut()) << "Expected timeout! Got: " << s.ToString();
-  CHECK_OK(sock->Close());
+  CHECK_OK(server_negotiation.socket()->Close());
 }
 
-static void RunTimeoutExpectingClient(Socket* conn) {
-  SaslClient sasl_client(kSaslAppName, conn);
-  CHECK_OK(sasl_client.EnablePlain("test", "test"));
-  CHECK_OK(sasl_client.Init(kSaslAppName));
-  Status s = sasl_client.Negotiate();
+static void RunTimeoutExpectingClient(unique_ptr<Socket> socket) {
+  ClientNegotiation client_negotiation(std::move(socket));
+  CHECK_OK(client_negotiation.EnablePlain("test", "test"));
+  Status s = client_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "
       << s.ToString();
 }
 
 // Ensure that the server times out.
-TEST_F(TestSaslRpc, TestServerTimeout) {
+TEST_F(TestNegotiation, TestServerTimeout) {
   RunNegotiationTest(RunTimeoutNegotiationServer, RunTimeoutExpectingClient);
 }
 
@@ -498,7 +472,7 @@ class TestDisableInit : public KuduTest {
 TEST_F(TestDisableInit, TestDisableSasl_NotInitialized) {
   DoTest([]() {
       CHECK_OK(DisableSaslInitialization());
-      Status s = SaslInit("kudu");
+      Status s = SaslInit();
       ASSERT_STR_CONTAINS(s.ToString(), "was disabled, but SASL was not externally initialized");
     });
 }
@@ -509,7 +483,7 @@ TEST_F(TestDisableInit, TestDisableSasl_Good) {
       rpc::internal::SaslSetMutex();
       sasl_client_init(NULL);
       CHECK_OK(DisableSaslInitialization());
-      ASSERT_OK(SaslInit("kudu"));
+      ASSERT_OK(SaslInit());
     });
 }
 
@@ -520,7 +494,7 @@ TEST_F(TestDisableInit, TestMultipleSaslInit) {
   DoTest([]() {
       rpc::internal::SaslSetMutex();
       sasl_client_init(NULL);
-      ASSERT_OK(SaslInit("kudu"));
+      ASSERT_OK(SaslInit());
     }, &stderr);
   // If we are the parent, we should see the warning from the child that it automatically
   // skipped initialization because it detected that it was already initialized.
@@ -538,7 +512,7 @@ TEST_F(TestDisableInit, TestDisableSasl_NoMutexImpl) {
   DoTest([]() {
       sasl_client_init(NULL);
       CHECK_OK(DisableSaslInitialization());
-      ASSERT_OK(SaslInit("kudu"));
+      ASSERT_OK(SaslInit());
     }, &stderr);
   // If we are the parent, we should see the warning from the child.
   if (!FLAGS_is_test_child) {
@@ -552,7 +526,7 @@ TEST_F(TestDisableInit, TestMultipleSaslInit_NoMutexImpl) {
   string stderr;
   DoTest([]() {
       sasl_client_init(NULL);
-      ASSERT_OK(SaslInit("kudu"));
+      ASSERT_OK(SaslInit());
     }, &stderr);
   // If we are the parent, we should see the warning from the child that it automatically
   // skipped initialization because it detected that it was already initialized.

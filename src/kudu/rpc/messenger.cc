@@ -41,6 +41,7 @@
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/rpcz_store.h"
 #include "kudu/rpc/sasl_common.h"
+#include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/security/ssl_factory.h"
 #include "kudu/util/errno.h"
@@ -55,7 +56,6 @@
 using std::string;
 using std::shared_ptr;
 using strings::Substitute;
-
 
 DEFINE_string(rpc_ssl_server_certificate, "", "Path to the SSL certificate to be used for the RPC "
     "layer.");
@@ -130,7 +130,7 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
 }
 
 Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
-  RETURN_NOT_OK(SaslInit(kSaslAppName)); // Initialize SASL library before we start making requests
+  RETURN_NOT_OK(SaslInit()); // Initialize SASL library before we start making requests
   Messenger* new_msgr(new Messenger(*this));
   Status build_status = new_msgr->Init();
   if (!build_status.ok()) {
@@ -192,7 +192,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   // that everything is set up correctly. This way we'll generate errors on
   // startup rather than later on when we first receive a client connection.
   if (FLAGS_server_require_kerberos) {
-    RETURN_NOT_OK_PREPEND(SaslServer::PreflightCheckGSSAPI(kSaslAppName),
+    RETURN_NOT_OK_PREPEND(ServerNegotiation::PreflightCheckGSSAPI(),
                           "GSSAPI/Kerberos not properly configured");
   }
 
@@ -296,11 +296,11 @@ Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {
   return reactors_[reactor_idx];
 }
 
-
 Status Messenger::Init() {
   Status status;
   ssl_enabled_ = !FLAGS_rpc_ssl_server_certificate.empty() || !FLAGS_rpc_ssl_private_key.empty()
                    || !FLAGS_rpc_ssl_certificate_authority.empty();
+
   if (ssl_enabled_) {
     ssl_factory_.reset(new SSLFactory());
     RETURN_NOT_OK(ssl_factory_->Init());

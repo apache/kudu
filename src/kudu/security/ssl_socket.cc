@@ -44,6 +44,7 @@ SSLSocket::SSLSocket(int fd, SSL* ssl, bool is_server) :
 }
 
 SSLSocket::~SSLSocket() {
+  WARN_NOT_OK(Close(), "unable to close SSL socket in destructor");
 }
 
 Status SSLSocket::DoHandshake() {
@@ -154,7 +155,10 @@ Status SSLSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 }
 
 Status SSLSocket::Close() {
-  CHECK(ssl_);
+  if (!ssl_) {
+    // Socket is already closed.
+    return Status::OK();
+  }
   ERR_clear_error();
   errno = 0;
   int32_t ret = SSL_shutdown(ssl_);
