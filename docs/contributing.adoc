@@ -162,12 +162,19 @@ away from `foo.Pass()` in favor of `std::move(foo)`.
 `boost` classes from header-only libraries can be used in cases where a suitable
 replacement does not exist in the Kudu code base. However:
 
-* Do not introduce dependencies on `boost` classes not already depended on. We
-  are actively trying to remove `boost` from the Kudu code base, and new
-  dependencies make that work more difficult.
+* Do not introduce dependencies on `boost` classes where equivalent functionality
+  exists in the standard {cpp} library or in `src/kudu/gutil/`. For example, prefer
+  `strings::Split()` from `gutil` rather than `boost::split`.
+* Prefer using functionality from  `boost` rather than re-implementing the same
+  functionality, _unless_ using the `boost` functionality requires excessive use of
+  {cpp} features which are disallowed by our style guidelines. For example,
+  `boost::spirit` is heavily based on template metaprogramming and should not be used.
 * Do not use `boost` in any public headers for the Kudu {cpp} client, because
   `boost` commonly breaks backward compatibility, and passing data between two
   `boost` versions (one by the user, one by Kudu) causes serious issues.
+
+When in doubt about introducing a new dependency on any `boost` functionality,
+it is best to email `dev@kudu.apache.org` to start a discussion.
 
 === Line length
 
