@@ -16,13 +16,14 @@
 // under the License.
 #pragma once
 
-#include "kudu/gutil/macros.h"
-#include "kudu/util/status.h"
-
 #include <memory>
 #include <string>
 
+#include "kudu/gutil/macros.h"
+
 namespace kudu {
+
+class Status;
 
 namespace security {
 
@@ -36,6 +37,8 @@ class CertSigner;
 
 namespace master {
 
+class MasterCertAuthorityTest;
+
 // Implements the X509 certificate-authority functionality of the Master.
 //
 // This is used in the "built-in PKI" mode of operation. The master generates
@@ -48,11 +51,19 @@ class MasterCertAuthority {
   explicit MasterCertAuthority(std::string server_uuid);
   virtual ~MasterCertAuthority();
 
-  // Initializes the MasterCertAuthority by generating a new private key
-  // and self-signed CA certificate.
-  //
-  // Must be called exactly once before any other functions.
-  Status Init();
+  // Generate a private key and corresponding self-signed root CA certificate
+  // bound to the aggregated server UUID. Does not require Init() to be called.
+  // Calling this method does not have side-effects on the instance, i.e.
+  // even this method has been called on object, it's still necessary
+  // to call Init() prior to calling SignServerCSR() method.
+  Status Generate(security::PrivateKey* key, security::Cert* cert) const;
+
+  // Initializes the MasterCertAuthority with the given private key
+  // and CA certificate. This method is called when the master server
+  // is elected as a leader -- upon that event it initializes the certificate
+  // authority with the information read from the system table.
+  Status Init(std::unique_ptr<security::PrivateKey> key,
+              std::unique_ptr<security::Cert> cert);
 
   // Sign the given CSR 'csr_der' provided by a server in the cluster.
   //
@@ -60,9 +71,14 @@ class MasterCertAuthority {
   // The resulting certificate, also in DER format, is returned in 'cert_der'.
   //
   // REQUIRES: Init() must be called first.
+  //
+  // NOTE:  This method is not going to be called in parallel with Init()
+  //        due to the current design, so there is no internal synchronization
+  //        to keep the internal state consistent.
   Status SignServerCSR(const std::string& csr_der, std::string* cert_der);
 
  private:
+  friend class ::kudu::master::MasterCertAuthorityTest;
   // The UUID of the master. This is used as a field in the certificate.
   const std::string server_uuid_;
 

@@ -17,13 +17,15 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
-#include <boost/optional/optional_fwd.hpp>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <boost/optional/optional_fwd.hpp>
 
 #include "kudu/common/partition.h"
 #include "kudu/gutil/macros.h"
@@ -546,6 +548,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
   // and 'tablet_map_'), loads tables metadata into memory and if successful
   // loads the tablets metadata.
+  Status VisitTablesAndTabletsUnlocked();
+  // This is called by tests only.
   Status VisitTablesAndTablets();
 
   // Helper for initializing 'sys_catalog_'. After calling this
@@ -555,6 +559,11 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   //
   // This method is thread-safe.
   Status InitSysCatalogAsync(bool is_first_run);
+
+  // Load existing root CA information from the system table, if present.
+  // If not, generate new ones, store them into the system table.
+  // After that, use the CA information to initialize the certificate authority.
+  Status CheckInitCertAuthority();
 
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the

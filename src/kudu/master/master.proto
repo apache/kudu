@@ -172,6 +172,19 @@ message SysTablesEntryPB {
   optional bytes state_msg = 7;
 }
 
+// The on-disk entry in the sys.catalog table ("metadata" column) to represent
+// certificate authority (CA) information. Not more than one entry of this type
+// should exist in the sys.catalog table at any time.
+message SysCertAuthorityEntryPB {
+  // Private key body in DER format. This information is sensitive,
+  // that's why the REDACT attribute is present.
+  required bytes private_key = 1 [(kudu.REDACT) = true];
+  // Certificate body in DER format. This information is not sensitive,
+  // but we are redacting most of security-related info anyway
+  // (handshake/SASL tokens, etc.).
+  required bytes certificate = 2 [(kudu.REDACT) = true];
+}
+
 ////////////////////////////////////////////////////////////
 // RPCs
 ////////////////////////////////////////////////////////////

@@ -95,15 +95,12 @@ Status Master::Init() {
 
   RETURN_NOT_OK(ServerBase::Init());
 
-  // TODO(PKI): the CA should not be initialized if built-in PKI is disabled
-  // by some flag.
-  cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
-  // TODO(PKI): master should sign its own cert, but it has to be done
-  // after the catalog manager is loaded. Not clear the right place to
-  // put it, so punting on it at the moment.
-  RETURN_NOT_OK(cert_authority_->Init());
-
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+
+  // The certificate authority object is initialized upon loading
+  // CA private key and certificate from the system table when the server
+  // becomes a leader.
+  cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
 
   state_ = kInitialized;
   return Status::OK();

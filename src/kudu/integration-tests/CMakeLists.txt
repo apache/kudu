@@ -65,6 +65,7 @@ ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(fuzz-itest RUN_SERIAL true)
 ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(log-rolling-itest)
+ADD_KUDU_TEST(master_cert_authority-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(master_migration-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest

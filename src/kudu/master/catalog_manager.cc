@@ -75,11 +75,14 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/master_cert_authority.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -90,8 +93,8 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/threadpool.h"
 #include "kudu/util/thread_restrictions.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(master_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
@@ -672,6 +675,51 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   return Status::OK();
 }
 
+// Check if CA private key and the certificate were loaded into the
+// memory. If not, generate new ones and store them into the system table.
+// Use the CA information to initialize the certificate authority.
+Status CatalogManager::CheckInitCertAuthority() {
+  using security::Cert;
+  using security::DataFormat;
+  using security::PrivateKey;
+
+  leader_lock_.AssertAcquiredForWriting();
+
+  MasterCertAuthority* ca = master_->cert_authority();
+  unique_ptr<PrivateKey> ca_private_key(new PrivateKey);
+  unique_ptr<Cert> ca_cert(new Cert);
+
+  SysCertAuthorityEntryPB info;
+  const Status s = sys_catalog_->GetCertAuthorityEntry(&info);
+  if (!(s.ok() || s.IsNotFound())) {
+    return s;
+  }
+  if (PREDICT_TRUE(s.ok())) {
+    // The loaded data is necessary to initialize master's cert authority.
+    RETURN_NOT_OK(ca_private_key->FromString(
+        info.private_key(), DataFormat::DER));
+    RETURN_NOT_OK(ca_cert->FromString(
+        info.certificate(), DataFormat::DER));
+  } else {
+    // Generate new private key and corresponding CA certificate.
+    RETURN_NOT_OK(ca->Generate(ca_private_key.get(), ca_cert.get()));
+    RETURN_NOT_OK(ca_private_key->ToString(
+        info.mutable_private_key(), DataFormat::DER));
+    RETURN_NOT_OK(ca_cert->ToString(
+        info.mutable_certificate(), DataFormat::DER));
+    // Store the newly generated private key and certificate
+    // in the system table.
+    RETURN_NOT_OK(sys_catalog_->AddCertAuthorityEntry(info));
+    LOG(INFO) << "Wrote cert authority information into the system table.";
+  }
+
+  // Initialize/re-initialize the master's certificate authority component
+  // with the new private key and certificate.
+  RETURN_NOT_OK(ca->Init(std::move(ca_private_key), std::move(ca_cert)));
+
+  return Status::OK();
+}
+
 void CatalogManager::VisitTablesAndTabletsTask() {
   {
     // Hack to block this function until InitSysCatalogAsync() is finished.
@@ -712,17 +760,31 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     return;
   }
 
-  LOG(INFO) << "Loading table and tablet metadata into memory...";
-  LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + "Loading metadata into memory") {
-    CHECK_OK(VisitTablesAndTablets());
+  {
+    // Block new catalog operations, and wait for existing operations to finish.
+    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+
+    LOG(INFO) << "Loading table and tablet metadata into memory...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
+                       "Loading metadata into memory") {
+      CHECK_OK(VisitTablesAndTabletsUnlocked());
+    }
+
+    // TODO(PKI): this should not be done in case of external PKI.
+    // TODO(PKI): should be there a flag to reset already existing CA info?
+    LOG(INFO) << "Loading CA info into memory...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
+                       "Loading CA info into memory") {
+      CHECK_OK(CheckInitCertAuthority());
+    }
   }
+
   std::lock_guard<simple_spinlock> l(state_lock_);
   leader_ready_term_ = term;
 }
 
-Status CatalogManager::VisitTablesAndTablets() {
-  // Block new catalog operations, and wait for existing operations to finish.
-  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+Status CatalogManager::VisitTablesAndTabletsUnlocked() {
+  leader_lock_.AssertAcquiredForWriting();
 
   // This lock is held for the entirety of the function because the calls to
   // VisitTables and VisitTablets mutate global maps.
@@ -748,6 +810,13 @@ Status CatalogManager::VisitTablesAndTablets() {
   RETURN_NOT_OK_PREPEND(sys_catalog_->VisitTablets(&tablet_loader),
                         "Failed while visiting tablets in sys catalog");
   return Status::OK();
+}
+
+// This method is called by tests only.
+Status CatalogManager::VisitTablesAndTablets() {
+  // Block new catalog operations, and wait for existing operations to finish.
+  std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+  return VisitTablesAndTabletsUnlocked();
 }
 
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
@@ -3613,6 +3682,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
     ids_copy = table_ids_map_;
     names_copy = table_names_map_;
     tablets_copy = tablet_map_;
+    // TODO(aserbin): add information about root CA certs, if any
   }
 
   *out << "Tables:\n";

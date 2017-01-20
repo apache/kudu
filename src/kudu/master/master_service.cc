@@ -147,9 +147,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     }
   }
 
-  // 6. If the heartbeat has a CSR, sign their cert.
-  // TODO(PKI): should this be done only by leaders or all masters?
-  if (req->has_csr_der()) {
+  // 6. Only leaders sign CSR from tablet servers (if present).
+  if (is_leader_master && req->has_csr_der()) {
     string cert;
     Status s = server_->cert_authority()->SignServerCSR(req->csr_der(), &cert);
     if (!s.ok()) {
@@ -160,7 +159,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     resp->mutable_signed_cert_der()->swap(cert);
   }
 
-  // 7. Send any active CA certs which the TS doesn't have.
+  // TODO(aserbin): 7. Send any active CA certs which the TS doesn't have.
 
   rpc->RespondSuccess();
 }

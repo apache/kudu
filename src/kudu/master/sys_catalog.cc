@@ -88,6 +88,8 @@ static const char* const kSysCatalogTableColMetadata = "metadata";
 
 const char* const SysCatalogTable::kSysCatalogTabletId =
     "00000000000000000000000000000000";
+const char* const SysCatalogTable::kSysCertAuthorityEntryId =
+    "root-ca-info";
 const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
 
@@ -487,11 +489,11 @@ Status SysCatalogTable::GetEntryFromRow(
       row, schema_.find_column(kSysCatalogTableColId));
   const Slice* data = schema_.ExtractColumnFromRow<STRING>(
       row, schema_.find_column(kSysCatalogTableColMetadata));
-  const string& str_id = id->ToString();
+  string str_id = id->ToString();
   RETURN_NOT_OK_PREPEND(
       pb_util::ParseFromArray(entry_data, data->data(), data->size()),
       "unable to parse metadata field for row " + str_id);
-  *entry_id = str_id;
+  *entry_id = std::move(str_id);
 
   return Status::OK();
 }
@@ -529,6 +531,49 @@ Status SysCatalogTable::ProcessRows(
       RETURN_NOT_OK(processor(entry_id, entry_data));
     }
   }
+  return Status::OK();
+}
+
+Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
+  CHECK(entry);
+  vector<SysCertAuthorityEntryPB> entries;
+  auto processor = [&](
+      const string& entry_id,
+      const SysCertAuthorityEntryPB& entry_data) {
+    CHECK_EQ(entry_id, kSysCertAuthorityEntryId);
+    entries.push_back(entry_data);
+    return Status::OK();
+  };
+  RETURN_NOT_OK((
+      ProcessRows<SysCertAuthorityEntryPB, CERT_AUTHORITY_INFO>(processor)));
+  // There should be no more than one root CA entry in the system table.
+  CHECK_LE(entries.size(), 1);
+  if (entries.empty()) {
+    return Status::NotFound("root CA entry not found");
+  }
+  entries.front().Swap(entry);
+
+  return Status::OK();
+}
+
+Status SysCatalogTable::AddCertAuthorityEntry(
+    const SysCertAuthorityEntryPB& entry) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  req.set_tablet_id(kSysCatalogTabletId);
+  RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  faststring metadata_buf;
+  pb_util::SerializeToString(entry, &metadata_buf);
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, CERT_AUTHORITY_INFO));
+  CHECK_OK(row.SetString(kSysCatalogTableColId, kSysCertAuthorityEntryId));
+  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::INSERT, row);
+  RETURN_NOT_OK(SyncWrite(&req, &resp));
+
   return Status::OK();
 }
 

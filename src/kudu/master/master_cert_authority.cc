@@ -17,15 +17,18 @@
 
 #include "kudu/master/master_cert_authority.h"
 
-#include <gflags/gflags.h>
 #include <memory>
 #include <string>
+#include <utility>
+
+#include <gflags/gflags.h>
 
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/status.h"
 
 using std::string;
 using std::unique_ptr;
@@ -71,18 +74,22 @@ MasterCertAuthority::MasterCertAuthority(string server_uuid)
 MasterCertAuthority::~MasterCertAuthority() {
 }
 
-Status MasterCertAuthority::Init() {
-  CHECK(!ca_private_key_);
-
+// Generate
+Status MasterCertAuthority::Generate(security::PrivateKey* key,
+                                     security::Cert* cert) const {
+  CHECK(key);
+  CHECK(cert);
   // Create a key and cert for the self-signed CA.
-  unique_ptr<PrivateKey> key(new PrivateKey());
-  unique_ptr<Cert> ca_cert(new Cert());
-  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits, key.get()));
-  RETURN_NOT_OK(CertSigner::SelfSignCA(*key, PrepareCaConfig(server_uuid_), ca_cert.get()));
+  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits, key));
+  return CertSigner::SelfSignCA(*key, PrepareCaConfig(server_uuid_), cert);
+}
 
-  // Initialize our signer with the new CA.
-  ca_cert_ = std::move(ca_cert);
+Status MasterCertAuthority::Init(unique_ptr<PrivateKey> key,
+                                 unique_ptr<Cert> cert) {
+  CHECK(key);
+  CHECK(cert);
   ca_private_key_ = std::move(key);
+  ca_cert_ = std::move(cert);
   return Status::OK();
 }
 

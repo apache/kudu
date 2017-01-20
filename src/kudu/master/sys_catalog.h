@@ -58,21 +58,32 @@ class TabletVisitor {
                              const SysTabletsEntryPB& metadata) = 0;
 };
 
-// SysCatalogTable is a Kudu table that keeps track of table and
-// tablet metadata.
-// - SysCatalogTable has only one tablet.
-// - SysCatalogTable is managed by the master and not exposed to the user
-//   as a "normal table", instead we have Master APIs to query the table.
+// SysCatalogTable is a Kudu table that keeps track of the following
+// system information:
+//   * table metadata
+//   * tablet metadata
+//   * root CA (certificate authority) certificates
+//   * corresponding CA private keys
+//
+// The essential properties of the SysCatalogTable are:
+//   * SysCatalogTable has only one tablet.
+//   * SysCatalogTable is managed by the master and not exposed to the user
+//     as a "normal table", instead we have Master APIs to query the table.
 class SysCatalogTable {
  public:
   // Magic ID of the system tablet.
   static const char* const kSysCatalogTabletId;
 
+  // Root certificate authority (CA) entry identifier in the system table.
+  // There should be no more than one entry of this type in the system table.
+  static const char* const kSysCertAuthorityEntryId;
+
   typedef Callback<Status()> ElectedLeaderCallback;
 
   enum CatalogEntryType {
     TABLES_ENTRY = 1,
-    TABLETS_ENTRY = 2
+    TABLETS_ENTRY = 2,
+    CERT_AUTHORITY_INFO = 3,  // Kudu's root certificate authority entry.
   };
 
   // 'leader_cb_' is invoked whenever this node is elected as a leader
@@ -116,6 +127,13 @@ class SysCatalogTable {
 
   // Scan of the tablet-related entries.
   Status VisitTablets(TabletVisitor* visitor);
+
+  // Retrive the CA entry (private key and certificate) from the system table.
+  Status GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry);
+
+  // Add root CA entry (private key and certificate) into the system table.
+  // There should be no more than one CA entry in the system table.
+  Status AddCertAuthorityEntry(const SysCertAuthorityEntryPB& entry);
 
  private:
   FRIEND_TEST(MasterTest, TestMasterMetadataConsistentDespiteFailures);

@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
 
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
@@ -28,8 +30,11 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
-#include "kudu/server/rpc_server.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
+#include "kudu/security/openssl_util.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -39,7 +44,9 @@ using std::string;
 using std::shared_ptr;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
-using kudu::rpc::RpcController;
+using kudu::security::Cert;
+using kudu::security::DataFormat;
+using kudu::security::PrivateKey;
 
 namespace kudu {
 namespace master {
@@ -380,6 +387,44 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
     ASSERT_EQ(SysTabletsEntryPB::RUNNING,
               read_lock.data().pb.state());
   }
+}
+
+// Check loading the auto-generated certificate authority information
+// upon startup.
+TEST_F(SysCatalogTest, LoadCertAuthorityInfo) {
+  // The system catalog should already contain newly generated CA private key
+  // and certificate: the SetUp() method awaits for the catalog manager
+  // becoming leader master, and by that time the certificate authority
+  // information should be loaded.
+  SysCertAuthorityEntryPB ca_entry;
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->
+            GetCertAuthorityEntry(&ca_entry));
+
+  // The CA private key data should be valid (DER format).
+  PrivateKey pkey;
+  EXPECT_OK(pkey.FromString(ca_entry.private_key(), DataFormat::DER));
+
+  // The data should be valid CA certificate in (DER format).
+  Cert cert;
+  EXPECT_OK(cert.FromString(ca_entry.certificate(), DataFormat::DER));
+}
+
+// Check that if the certificate authority information is already present,
+// it cannot be overwritten using SysCatalogTable::AddCertAuthorityInfo().
+// Basically, this is to verify that SysCatalogTable::AddCertAuthorityInfo()
+// can be called just once to store CA information on first cluster startup.
+TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
+  // The system catalog should already contain newly generated CA private key
+  // and certificate: the SetUp() method awaits for the catalog manager
+  // becoming leader master, and by that time the certificate authority
+  // information should be loaded.
+  SysCertAuthorityEntryPB ca_entry;
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->
+            GetCertAuthorityEntry(&ca_entry));
+  const Status s = master_->catalog_manager()->sys_catalog()->
+            AddCertAuthorityEntry(ca_entry);
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+  ASSERT_EQ("Corruption: One or more rows failed to write", s.ToString());
 }
 
 } // namespace master
