@@ -35,7 +35,6 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
-#include "kudu/security/ssl_socket.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -155,18 +154,11 @@ static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
   }
 
   RETURN_NOT_OK(client_negotiation.EnablePlain(conn->user_credentials().real_user(), ""));
+  client_negotiation.EnableTls(&conn->reactor_thread()->reactor()->messenger()->tls_context());
   client_negotiation.set_deadline(deadline);
 
   RETURN_NOT_OK(WaitForClientConnect(client_negotiation.socket(), deadline));
   RETURN_NOT_OK(client_negotiation.socket()->SetNonBlocking(false));
-
-  // Do SSL handshake.
-  // TODO(dan): This is a messy place to do this.
-  if (conn->reactor_thread()->reactor()->messenger()->ssl_enabled()) {
-    SSLSocket* ssl_socket = down_cast<SSLSocket*>(client_negotiation.socket());
-    RETURN_NOT_OK(ssl_socket->DoHandshake());
-  }
-
   RETURN_NOT_OK(client_negotiation.Negotiate());
   RETURN_NOT_OK(DisableSocketTimeouts(client_negotiation.socket()));
 
@@ -192,16 +184,13 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   } else {
     RETURN_NOT_OK(server_negotiation.EnablePlain());
   }
-
+  if (conn->reactor_thread()->reactor()->messenger()->server_tls_enabled()) {
+    server_negotiation.EnableTls(&conn->reactor_thread()->reactor()->messenger()->tls_context());
+  }
   server_negotiation.set_deadline(deadline);
+
   RETURN_NOT_OK(server_negotiation.socket()->SetNonBlocking(false));
 
-  // Do SSL handshake.
-  // TODO(dan): This is a messy place to do this.
-  if (conn->reactor_thread()->reactor()->messenger()->ssl_enabled()) {
-    SSLSocket* ssl_socket = down_cast<SSLSocket*>(server_negotiation.socket());
-    RETURN_NOT_OK(ssl_socket->DoHandshake());
-  }
 
   RETURN_NOT_OK(server_negotiation.Negotiate());
   RETURN_NOT_OK(DisableSocketTimeouts(server_negotiation.socket()));

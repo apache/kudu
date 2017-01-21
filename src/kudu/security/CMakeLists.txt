@@ -34,8 +34,6 @@ set(SECURITY_SRCS
   init.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
-  ssl_factory.cc
-  ssl_socket.cc
   tls_context.cc
   tls_handshake.cc
   tls_socket.cc)

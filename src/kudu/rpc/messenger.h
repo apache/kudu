@@ -17,12 +17,12 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
-#include <memory>
 #include <stdint.h>
-#include <unordered_map>
 
 #include <list>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -39,8 +39,11 @@
 namespace kudu {
 
 class Socket;
-class SSLFactory;
 class ThreadPool;
+
+namespace security {
+class TlsContext;
+}
 
 namespace rpc {
 
@@ -182,7 +185,7 @@ class Messenger {
   void ScheduleOnReactor(const boost::function<void(const Status&)>& func,
                          MonoDelta when);
 
-  SSLFactory* ssl_factory() const { return ssl_factory_.get(); }
+  const security::TlsContext& tls_context() const { return *tls_context_; }
 
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
@@ -194,7 +197,7 @@ class Messenger {
     return name_;
   }
 
-  bool ssl_enabled() const { return ssl_enabled_; }
+  bool server_tls_enabled() const { return server_tls_enabled_; }
 
   bool closing() const {
     shared_lock<rw_spinlock> l(lock_.get_lock());
@@ -226,7 +229,7 @@ class Messenger {
 
   bool closing_;
 
-  bool ssl_enabled_;
+  bool server_tls_enabled_;
 
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these
@@ -241,7 +244,7 @@ class Messenger {
 
   gscoped_ptr<ThreadPool> negotiation_pool_;
 
-  gscoped_ptr<SSLFactory> ssl_factory_;
+  std::unique_ptr<security::TlsContext> tls_context_;
 
   std::unique_ptr<RpczStore> rpcz_store_;
 

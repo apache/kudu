@@ -39,19 +39,21 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/security/tls_context.h"
+#include "kudu/security/tls_handshake.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/trace.h"
 
-namespace kudu {
-namespace rpc {
-
 using std::map;
 using std::set;
 using std::string;
 using std::unique_ptr;
+
+namespace kudu {
+namespace rpc {
 
 static int ClientNegotiationGetoptCb(ClientNegotiation* client_negotiation,
                                      const char* plugin_name,
@@ -95,6 +97,7 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
+      tls_context_(nullptr),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
@@ -133,6 +136,10 @@ void ClientNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
 
+void ClientNegotiation::EnableTls(const security::TlsContext* tls_context) {
+  tls_context_ = DCHECK_NOTNULL(tls_context);
+}
+
 void ClientNegotiation::set_deadline(const MonoTime& deadline) {
   deadline_ = deadline;
 }
@@ -155,7 +162,28 @@ Status ClientNegotiation::Negotiate() {
     RETURN_NOT_OK(HandleNegotiate(response));
   }
 
-  // Step 3: SASL negotiation.
+  // Step 3: if both ends support TLS, do a TLS handshake.
+  // TODO(dan): allow the client to require TLS.
+  if (tls_context_ && ContainsKey(server_features_, TLS)) {
+    RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
+                                                  &tls_handshake_));
+
+    // To initiate the TLS handshake, we pretend as if the server sent us an
+    // empty TLS_HANDSHAKE token.
+    NegotiatePB initial;
+    initial.set_step(NegotiatePB::TLS_HANDSHAKE);
+    initial.set_tls_handshake("");
+    Status s = HandleTlsHandshake(initial);
+
+    while (s.IsIncomplete()) {
+      NegotiatePB response;
+      RETURN_NOT_OK(RecvNegotiatePB(&response, &recv_buf));
+      s = HandleTlsHandshake(response);
+    }
+    RETURN_NOT_OK(s);
+  }
+
+  // Step 4: SASL negotiation.
   RETURN_NOT_OK(InitSaslClient());
   RETURN_NOT_OK(SendSaslInitiate());
   for (bool cont = true; cont; ) {
@@ -177,7 +205,7 @@ Status ClientNegotiation::Negotiate() {
     }
   }
 
-  // Step 4: Send connection context.
+  // Step 5: Send connection context.
   RETURN_NOT_OK(SendConnectionContext());
 
   TRACE("Negotiation successful");
@@ -305,6 +333,41 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   }
 
   return Status::OK();
+}
+
+Status ClientNegotiation::SendTlsHandshake(string tls_token) {
+  TRACE("Sending TLS_HANDSHAKE message to server");
+  NegotiatePB msg;
+  msg.set_step(NegotiatePB::TLS_HANDSHAKE);
+  msg.mutable_tls_handshake()->swap(tls_token);
+  return SendNegotiatePB(msg);
+}
+
+Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
+  if (PREDICT_FALSE(response.step() != NegotiatePB::TLS_HANDSHAKE)) {
+    return Status::NotAuthorized("expected TLS_HANDSHAKE step",
+                                 NegotiatePB::NegotiateStep_Name(response.step()));
+  }
+  TRACE("Received TLS_HANDSHAKE response from server");
+
+  if (PREDICT_FALSE(!response.has_tls_handshake())) {
+    return Status::NotAuthorized("No TLS handshake token in TLS_HANDSHAKE response from server");
+  }
+
+  string token;
+  Status s = tls_handshake_.Continue(response.tls_handshake(), &token);
+  if (s.IsIncomplete()) {
+    // Another roundtrip is required to complete the handshake.
+    RETURN_NOT_OK(SendTlsHandshake(std::move(token)));
+  }
+
+  // Check that the handshake step didn't produce an error. Will also propagate
+  // an Incomplete status.
+  RETURN_NOT_OK(s);
+
+  // TLS handshake is finished.
+  DCHECK(token.empty());
+  return tls_handshake_.Finish(&socket_);
 }
 
 Status ClientNegotiation::SendSaslInitiate() {

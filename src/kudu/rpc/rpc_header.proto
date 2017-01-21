@@ -71,6 +71,11 @@ enum RpcFeatureFlag {
   // The RPC system is required to support application feature flags in the
   // request and response headers.
   APPLICATION_FEATURE_FLAGS = 1;
+
+  // The RPC system supports TLS protected connections. If both sides support
+  // this flag, the connection will automatically be wrapped in a TLS protected
+  // channel following a TLS handshake.
+  TLS = 2;
 };
 
 // Message type passed back & forth for the SASL negotiation.
@@ -82,6 +87,7 @@ message NegotiatePB {
     SASL_INITIATE  = 2;
     SASL_CHALLENGE = 3;
     SASL_RESPONSE  = 4;
+    TLS_HANDSHAKE  = 5;
   }
 
   message SaslAuth {
@@ -95,7 +101,7 @@ message NegotiatePB {
 
   // When the client sends its NEGOTIATE step message, it sends its set of
   // supported RPC system features. In the response to this message, the server
-  // sends back its own.  This allows the two peers to agree on whether newer
+  // sends back its own. This allows the two peers to agree on whether newer
   // extensions of the RPC system may be used on this connection. We use a list
   // of features rather than a simple version number to make it easier for the
   // Java and C++ clients to implement features in different orders while still
@@ -104,15 +110,18 @@ message NegotiatePB {
   repeated RpcFeatureFlag supported_features = 1;
 
   // The current negotiation step.
-  required NegotiateStep step = 2;
+  required NegotiateStep step  = 2;
 
   // The SASL token, containing either the challenge during the SASL_CHALLENGE
   // step, or the response during the SASL_RESPONSE step.
-  optional bytes token        = 3 [(REDACT) = true];
+  optional bytes token         = 3 [(REDACT) = true];
+
+  // During the TLS_HANDSHAKE step, contains the TLS handshake message.
+  optional bytes tls_handshake = 5 [(REDACT) = true];
 
   // During the NEGOTIATE step, contains the supported SASL mechanisms.
   // During the SASL_INITIATE step, contains the single chosen SASL mechanism.
-  repeated SaslAuth auths     = 4;
+  repeated SaslAuth auths      = 4;
 }
 
 message RemoteMethodPB {
@@ -200,7 +209,6 @@ message ResponseHeader {
   // These offsets are counted AFTER the message header, i.e., offset 0
   // is the first byte after the bytes for this protobuf.
   repeated uint32 sidecar_offsets = 3;
-
 }
 
 // Sent as response when is_error == true.

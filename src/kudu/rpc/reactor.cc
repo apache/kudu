@@ -41,8 +41,6 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/security/ssl_factory.h"
-#include "kudu/security/ssl_socket.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/errno.h"
@@ -342,12 +340,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   bool connect_in_progress;
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
 
-  std::unique_ptr<Socket> new_socket;
-  if (reactor()->messenger()->ssl_enabled()) {
-    new_socket = reactor()->messenger()->ssl_factory()->CreateSocket(sock.Release(), false);
-  } else {
-    new_socket.reset(new Socket(sock.Release()));
-  }
+  std::unique_ptr<Socket> new_socket(new Socket(sock.Release()));
 
   // Register the new connection in our map.
   *conn = new Connection(this, conn_id.remote(), std::move(new_socket), Connection::CLIENT);
@@ -612,12 +605,7 @@ class RegisterConnectionTask : public ReactorTask {
 
 void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
-  std::unique_ptr<Socket> new_socket;
-  if (messenger()->ssl_enabled()) {
-    new_socket = messenger()->ssl_factory()->CreateSocket(socket->Release(), true);
-  } else {
-    new_socket.reset(new Socket(socket->Release()));
-  }
+  std::unique_ptr<Socket> new_socket(new Socket(socket->Release()));
   auto task = new RegisterConnectionTask(
       new Connection(&thread_, remote, std::move(new_socket), Connection::SERVER));
   ScheduleReactorTask(task);

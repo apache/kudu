@@ -43,7 +43,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/security/ssl_factory.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
@@ -183,7 +183,7 @@ void Messenger::Shutdown() {
   for (Reactor* reactor : reactors_) {
     reactor->Shutdown();
   }
-  ssl_factory_.reset();
+  tls_context_.reset();
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
@@ -298,15 +298,17 @@ Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {
 
 Status Messenger::Init() {
   Status status;
-  ssl_enabled_ = !FLAGS_rpc_ssl_server_certificate.empty() || !FLAGS_rpc_ssl_private_key.empty()
-                   || !FLAGS_rpc_ssl_certificate_authority.empty();
+  server_tls_enabled_ = !FLAGS_rpc_ssl_server_certificate.empty()
+                     || !FLAGS_rpc_ssl_private_key.empty()
+                     || !FLAGS_rpc_ssl_certificate_authority.empty();
 
-  if (ssl_enabled_) {
-    ssl_factory_.reset(new SSLFactory());
-    RETURN_NOT_OK(ssl_factory_->Init());
-    RETURN_NOT_OK(ssl_factory_->LoadCertificate(FLAGS_rpc_ssl_server_certificate));
-    RETURN_NOT_OK(ssl_factory_->LoadPrivateKey(FLAGS_rpc_ssl_private_key));
-    RETURN_NOT_OK(ssl_factory_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
+  // Enable TLS unconditionally for client connections.
+  tls_context_.reset(new security::TlsContext());
+  RETURN_NOT_OK(tls_context_->Init());
+  if (server_tls_enabled_) {
+    RETURN_NOT_OK(tls_context_->LoadCertificate(FLAGS_rpc_ssl_server_certificate));
+    RETURN_NOT_OK(tls_context_->LoadPrivateKey(FLAGS_rpc_ssl_private_key));
+    RETURN_NOT_OK(tls_context_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
   }
   for (Reactor* r : reactors_) {
     RETURN_NOT_OK(r->Init());

@@ -12,15 +12,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-===============================================================================
-RPC
-===============================================================================
+# RPC
 
--------------------------------------------------------------------------------
-Intro
--------------------------------------------------------------------------------
+## Intro
+
 The RPC layer makes communication with remote processes look like local
-function calls.  You can make either asynchronous calls, in which you provide a
+function calls. You can make either asynchronous calls, in which you provide a
 callback which is invoked later, or synchronous calls, where your thread blocks
 until the remote system responds.
 
@@ -35,9 +32,8 @@ We use protocol buffers for serialization, and libev for non-blocking I/O.
 
 For some code examples, look in rpc-test.cc and rpc_stub-test.
 
--------------------------------------------------------------------------------
-Overview
--------------------------------------------------------------------------------
+## Overview
+
 ```
                                         +------------------------------------+
                                         | AcceptorPool                       |
@@ -70,19 +66,18 @@ Overview
                                         |   handles new inbound RPCs         |
                                         +------------------------------------+
 ```
+
 Each reactor has a thread which uses epoll to handle many sockets using
-non-blocking I/O.  Blocking calls are implemented by the Proxy using
+non-blocking I/O. Blocking calls are implemented by the Proxy using
 non-blocking calls-- from the point of view of the Messenger, all calls are
 non-blocking.
 
-The acceptor pool and the service pool are optional components.  If you don't
+The acceptor pool and the service pool are optional components. If you don't
 expect anyone to be connecting to you, you do not have to start them. If a server
 expects to listen on multiple ports (eg for different protocols), multiple
 AcceptorPools may be attached.
 
--------------------------------------------------------------------------------
-Proxy classes
--------------------------------------------------------------------------------
+## Proxy classes
 
 Proxy classes are used by the client to send calls to a remote service.
 Calls may be made synchronously or asynchronously -- the synchronous calls are simply
@@ -120,9 +115,7 @@ Please see the accompanying documentation in the Proxy and RpcController classes
 for more information on the specific API, as well as the test cases in rpc-test.cc
 for example usage.
 
--------------------------------------------------------------------------------
-Generated Code
--------------------------------------------------------------------------------
+## Generated Code
 
 In general, clients will use auto-generated subclasses of Proxy and ServiceIf to
 get additional type safety and nicer APIs.
@@ -155,19 +148,17 @@ and not much else.
 See rpc/rpc-test-base.h for an example service implementation, as well as the
 documentation comments in rpc/service_if.h.
 
--------------------------------------------------------------------------------
-ServiceIf classes
--------------------------------------------------------------------------------
+## `ServiceIf` classes
+
 ServiceIf classes are abstract interfaces that the server implements to handle
-incoming RPCs.  In general, each generated service has several virtual methods
+incoming RPCs. In general, each generated service has several virtual methods
 which you can override in order to implement the relevant function call.
 
 There is a ServicePool which you can use to coordinate several worker threads
 handling callbacks.
 
--------------------------------------------------------------------------------
-Exactly once semantics
--------------------------------------------------------------------------------
+## Exactly once semantics
+
 Exactly once semantics can be enabled for RPCs that require them by using
 the 'track_rpc_result' option when declaring a service interface method.
 
@@ -193,9 +184,8 @@ the lifetime of the server, making sure that responses survive crashes
 and are also available in replicas (for replicated RPCs, like writes) needs
 that actions be taken outside of the RPC subsystem.
 
--------------------------------------------------------------------------------
-RPC Sidecars
--------------------------------------------------------------------------------
+## RPC Sidecars
+
 RPC sidecars are used to avoid excess copies for large volumes of data.
 Prior to RPC sidecars, the sequence of steps for creating an RPC response
 on the server side would be as follows:
@@ -217,6 +207,7 @@ protobuf), the sidecar's data is directly written to the socket.
 
 The data is appended directly after the main message protobuf. Here's what
 a typical message looks like without sidecars:
+
 ```
 +------------------------------------------------+
 | Total message length (4 bytes)                 |
@@ -230,11 +221,13 @@ a typical message looks like without sidecars:
 | Main message protobuf                          |
 +------------------------------------------------+
 ```
+
 In this case, the main message length is equal to the protobuf's byte size.
 Since there are no sidecars, the header protobuf's sidecar_offsets list
 will will be empty.
 
 Here's what it looks like with the sidecars:
+
 ```
 +------------------------------------------------+
 | Total message length (4 bytes)                 |
@@ -256,6 +249,7 @@ Here's what it looks like with the sidecars:
 | ...                                            |
 +------------------------------------------------+
 ```
+
 When there are sidecars, the sidecar_offsets member in the header will be a
 nonempty list, whose values indicate the offset, measured from the beginning
 of the main message protobuf, of the start of each sidecar. The number
@@ -268,16 +262,14 @@ sidecar array is correct and in-bounds.
 
 More information is available in rpc/rpc_sidecar.h.
 
--------------------------------------------------------------------------------
-Wire Protocol
--------------------------------------------------------------------------------
+## Wire Protocol
 
-Connection establishment and connection header
-----------------------------------------------
+### Connection establishment and connection header
 
 After the client connects to a server, the client first sends a connection header.
 The connection header consists of a magic number "hrpc" and three byte flags,
 for a total of 7 bytes:
+
 ```
 +----------------------------------+
 |  "hrpc" 4 bytes                  |
@@ -292,8 +284,8 @@ for a total of 7 bytes:
 Currently, the RPC version is 9. The ServiceClass and AuthProtocol fields are unused.
 
 
-Message framing and request/response headers
---------------------------------------------
+### Message framing and request/response headers
+
 Aside from the initial connection header described above, all other messages are
 serialized as follows:
 ```
@@ -305,15 +297,15 @@ serialized as follows:
     - server->client messages use the ResponseHeader protobuf
 
   body: varint-prefixed protobuf
-    - for typical RPC calls, this is the user-specified request or response
-      protobuf
+    - for typical RPC calls, this is the user-specified request or response protobuf
     - for RPC calls which caused an error, the response is an ErrorStatusPB
-    - during SASL negotiation, this is a SaslMessagePB
+    - during negotiation, this is a NegotiatePB
 ```
 
-Example packet capture
---------------------------
+### Example packet capture
+
 An example call (captured with strace on rpc-test.cc) follows:
+
 ```
    "\x00\x00\x00\x17"   (total_size: 23 bytes to follow)
    "\x09"  RequestHeader varint: 9 bytes
@@ -330,79 +322,136 @@ An example call (captured with strace on rpc-test.cc) follows:
       y: 1303455736
 ```
 
+## Negotiation
 
-SASL negotiation
-------------------
-After the initial connection header is sent, SASL negotiation begins.
-Kudu always uses SASL regardless of security settings. In the case that
-no strong authentication is required, SASL PLAIN is used with no password.
+After the initial connection header is sent, negotiation begins. Negotiation
+consists of a sequence of request/response messages sent between the client and
+server. Each message is of type `NegotiatePB` and includes a `step` field which
+identifies the negotiation protocol step. Each `NegotiatePB` is framed as usual
+using `RequestHeader` or `ResponseHeader` messages with `call_id` -33.
 
-This SASL negotiation protocol matches the Hadoop protocol.
-The negotiation proceeds as described in this diagram:
-```
-                                CLIENT |        | SERVER
-                                       |        |
-(1) SaslMessagePB }                    |        |
-state=NEGOTIATE   } --------------------------> |
-                                       |        |
-                                       |        | { (2) SaslMessagePB
-                                       |        | { state=NEGOTIATE
-                                       | <------- { auths=<list of supported mechanisms>
-                                       |        |
-(3) SaslMessagePB                  }   |        |
-state=INITIATE                     }   |        |
-auths[0]=<chosen mechanism>        }   |        |
-token=<challenge response, if any> } ---------> |
-                                       |        |
-                                       |        | { (4) SaslMessagePB
-                                       |        | { state=CHALLENGE (or SUCCESS)
-                                       | <------- { token=<challenge token, if applicable>
-                                       |        |
-(5) SaslMessagePB          }           |        |
-state=RESPONSE             }           |        |
-token=<challenge response> } -----------------> |
-                                       |        |
-                                       |        | { GOTO (4) above
-                                       |        |
+The Kudu negotiation protocol allows the client and server to communicate
+supported RPC feature flags and supported SASL authentication mechanisms,
+initiate an optional TLS handshake, and perform SASL negotiation.
+
+#### Step 1: Negotiate
+
+The client and server swap RPC feature flags and supported SASL mechanisms. This
+step always takes exactly one round trip.
 
 ```
-Each of the SaslMessagePBs above is framed as usual using RequestHeader or ResponseHeader
-protobufs. For each SASL message, the CallId should be set to '-33'.
+Client                                                                    Server
+   |                                                                        |
+   | +----NegotiatePB-----------------------------+                         |
+   | | step = NEGOTIATE                           |                         |
+   | | supported_features = <client RPC features> | ----------------------> |
+   | | auths = <client SASL mechanisms>           |                         |
+   | +--------------------------------------------+                         |
+   |                                                                        |
+   |                         +----NegotiatePB-----------------------------+ |
+   |                         | step = NEGOTIATE                           | |
+   | <---------------------- | supported_features = <server RPC features> | |
+   |                         | auths = <server SASL mechanisms>           | |
+   |                         +--------------------------------------------+ |
+```
 
-RPC Feature Flags
------------------
+RPC feature flags allow the client and server to know what optional features the
+other end can support, for example TLS encryption. There are several advantages
+of using feature flags over version numbers for this purpose:
 
-During connection negotiation the client and server exchange the set of RPC
-feature flags, so that subsequent RPCs request and responses are aware of what
-is supported. There are several advantages of feature flags over version numbers:
+* since we have both a Java and C++ client, this allows us to add features in
+  different orders, or decide to not support a feature at all in one client or
+  the other. For example, the C++ client is likely to gain support for a
+  shared-memory transport long before the Java one.
+* this allows much more flexibility in backporting RPC system features across
+  versions. For example, if we introduce feature 'A' in Kudu 2.0, and feature
+  'B' in Kudu 2.1, we are still able to selectively backport 'B' without 'A' to
+  Kudu 1.5.
+* the set of supported features can be determined by code-level support as well
+  as conditionally based on configuration or machine capability.
 
-* since we have both a Java and C++ client, this allows us to add
-  features in different orders, or decide to not support a feature
-  at all in one client or the other. For example, the C++ client
-  is likely to gain support for a shared-memory transport long before
-  the Java one.
-* this allows much more flexibility in backporting RPC system features
-  across versions. For example, if we introduce feature 'A' in Kudu
-  2.0, and feature 'B' in Kudu 2.1, we are still able to selectively
-  backport 'B' without 'A' to Kudu 1.5.
-* currently, the set of supported features is determined only by
-  code-level support, but we could later decide to conditionally
-  enable features based on configuration or machine capability.
+#### Step 2: TLS Handshake
 
-Connection Context:
-------------------
+If both the server and client support the `TLS` RPC feature flag, the client
+initiates a TLS handshake, after which both sides wrap the socket in the TLS
+protected channel. If either the client or server does not support the `TLS`
+flag, then this step is skipped. This step takes as many round trips as
+necessary to complete the TLS handshake.
+
+```
+Client                                                                    Server
+   |                                                                        |
+   | +----NegotiatePB------------------------+                              |
+   | | step = TLS_HANDSHAKE                  |                              |
+   | | tls_handshake = <TLS handshake token> | ---------------------------> |
+   | +---------------------------------------+                              |
+   |                                                                        |
+   |                              +----NegotiatePB------------------------+ |
+   |                              | step = TLS_HANDSHAKE                  | |
+   | <--------------------------- | tls_handshake = <TLS handshake token> | |
+   |                              +---------------------------------------+ |
+   |                                                                        |
+   |            <...repeat until TLS handshake is complete...>              |
+```
+
+The client and server repeat `TLS_HANDSHAKE` round-trips until the TLS handshake
+is complete, at which point both ends wrap their respective TCP socket in the
+new TLS channel. All subsequent messages will be encrypted.
+
+#### Step 3: SASL Negotiation
+
+The client and server now initiate a SASL handshake. The client is responsible
+for choosing which SASL mechanism is used, with the restriction that it must be
+in the set of mutually supported SASL mechanisms exchanged in the `NEGOTIATE`
+step. Depending on the mechanism, SASL negotiation may serve to authenticate the
+client to the server, and vice versa.
+
+SASL negotiation may take one or more round trips. The first and last messages
+are always a `SASL_INITIATE` from the client and a `SASL_SUCCESS` from the
+server, respectively. In between `SASL_INITIATE` and `SASL_SUCCESS`, zero or
+more pairs of `SASL_CHALLENGE` and `SASL_RESPONSE` messages from server and
+client, respectively, may occur depending on the mechanism.
+
+```
+Client                                                                    Server
+   |                                                                        |
+   | +----NegotiatePB----------------+                                      |
+   | | step = SASL_INITIATE          |                                      |
+   | | auths[0] = <chosen mechanism> | -----------------------------------> |
+   | | token = <SASL token>          |                                      |
+   | +-------------------------------+                                      |
+   |                                                                        |
+   |  <...SASL_INITIATE is followed by 0 or more SASL_CHALLENGE +           |
+   |      SASL_RESPONSE steps...>                                           |
+   |                                                                        |
+   |                                              +----NegotiatePB--------+ |
+   |                                              | step = SASL_CHALLENGE | |
+   | <------------------------------------------- | token = <SASL token>  | |
+   |                                              +-----------------------+ |
+   |                                                                        |
+   | +----NegotiatePB-------+                                               |
+   | | step = SASL_RESPONSE |                                               |
+   | | token = <SASL token> | --------------------------------------------> |
+   | +----------------------+                                               |
+   |                                                                        |
+   |                                                +----NegotiatePB------+ |
+   | <--------------------------------------------- | step = SASL_SUCCESS | |
+   |                                                +---------------------+ |
+```
+
+## Connection Context
+
 Once the SASL negotiation is complete, before the first request, the client
-sends the server a special call with call_id -3. The body of this call is a
+sends the server a special call with `call_id` -3. The body of this call is a
 ConnectionContextPB. The server should not respond to this call.
 
+## Steady state
 
-Steady state
-------------
 During steady state operation, the client sends call protobufs prefixed by
-RequestHeader protobufs. The server sends responses prefixed by ResponseHeader
-protobufs.
+`RequestHeader` protobufs. The server sends responses prefixed by
+`ResponseHeader` protobufs.
 
-The client must send calls in strictly increasing 'call_id' order. The server
+The client must send calls in strictly increasing `call_id` order. The server
 may reject repeated calls or calls with lower IDs. The server's responses may
-arrive out-of-order, and use the 'call_id' in the response to associate a response
-with the correct call.
+arrive out-of-order, and use the `call_id` in the response to associate a
+response with the correct call.

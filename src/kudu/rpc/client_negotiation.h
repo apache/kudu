@@ -28,11 +28,16 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
+#include "kudu/security/tls_handshake.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+namespace security {
+class TlsContext;
+}
 
 namespace rpc {
 
@@ -88,6 +93,10 @@ class ClientNegotiation {
   // Must be called before Negotiate(). Required for some mechanisms.
   void set_server_fqdn(const std::string& domain_name);
 
+  // Allow TLS to be used on the connection. 'tls_context' must outlive this
+  // ClientNegotiation.
+  void EnableTls(const security::TlsContext* tls_context);
+
   // Set deadline for connection negotiation.
   void set_deadline(const MonoTime& deadline);
 
@@ -140,6 +149,12 @@ class ClientNegotiation {
   // Handle NEGOTIATE step response from the server.
   Status HandleNegotiate(const NegotiatePB& response) WARN_UNUSED_RESULT;
 
+  // Send a TLS_HANDSHAKE request message to the server with the provided token.
+  Status SendTlsHandshake(std::string tls_token) WARN_UNUSED_RESULT;
+
+  // Handle a TLS_HANDSHAKE response message from the server.
+  Status HandleTlsHandshake(const NegotiatePB& response) WARN_UNUSED_RESULT;
+
   // Send an SASL_INITIATE message to the server.
   Status SendSaslInitiate() WARN_UNUSED_RESULT;
 
@@ -166,6 +181,10 @@ class ClientNegotiation {
   std::vector<sasl_callback_t> callbacks_;
   gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
+
+  // TLS state.
+  const security::TlsContext* tls_context_;
+  security::TlsHandshake tls_handshake_;
 
   // Authentication state.
   std::string plain_auth_user_;
