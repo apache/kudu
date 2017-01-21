@@ -57,8 +57,22 @@ namespace security {
 // Safe to call multiple times.
 void InitializeOpenSSL();
 
-// Fetch the last error message from the OpenSSL library.
+// Fetches errors from the OpenSSL error error queue, and stringifies them.
+//
+// The error queue will be empty after this method returns.
+//
+// See man(3) ERR_get_err for more discussion.
 std::string GetOpenSSLErrors();
+
+// Returns a string representation of the provided error code, which must be
+// from a prior call to the SSL_get_error function.
+//
+// If necessary, the OpenSSL error queue may be inspected and emptied as part of
+// this call, and/or 'errno' may be inspected. As a result, this method should
+// only be used directly after the error occurs, and from the same thread.
+//
+// See man(3) SSL_get_error for more discussion.
+std::string GetSSLErrorDescription(int error_code);
 
 // A generic wrapper for OpenSSL structures.
 template <typename T>

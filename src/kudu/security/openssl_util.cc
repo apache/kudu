@@ -31,6 +31,7 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
+#include "kudu/util/errno.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
@@ -112,6 +113,26 @@ string GetOpenSSLErrors() {
     }
   }
   return serr.str();
+}
+
+string GetSSLErrorDescription(int error_code) {
+  switch (error_code) {
+    case SSL_ERROR_NONE: return "";
+    case SSL_ERROR_ZERO_RETURN: return "SSL_ERROR_ZERO_RETURN";
+    case SSL_ERROR_WANT_READ: return "SSL_ERROR_WANT_READ";
+    case SSL_ERROR_WANT_WRITE: return "SSL_ERROR_WANT_WRITE";
+    case SSL_ERROR_WANT_CONNECT: return "SSL_ERROR_WANT_CONNECT";
+    case SSL_ERROR_WANT_ACCEPT: return "SSL_ERROR_WANT_ACCEPT";
+    case SSL_ERROR_WANT_X509_LOOKUP: return "SSL_ERROR_WANT_X509_LOOKUP";
+    case SSL_ERROR_SYSCALL: {
+      string queued_error = GetOpenSSLErrors();
+      if (!queued_error.empty()) {
+        return queued_error;
+      }
+      return kudu::ErrnoToString(errno);
+    };
+    default: return GetOpenSSLErrors();
+  }
 }
 
 namespace {
