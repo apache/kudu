@@ -131,6 +131,7 @@ target_link_libraries(tserver
   log
   consensus
   krpc
+  security
   server_common
   server_process
   tablet)

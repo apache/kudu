@@ -17,6 +17,7 @@
 
 #include "kudu/tserver/heartbeater.h"
 
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <memory>
@@ -29,6 +30,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master_rpc.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/security/server_cert_manager.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
@@ -362,6 +364,17 @@ Status Heartbeater::Thread::DoHeartbeat() {
                           "Unable to set up registration");
   }
 
+  // Check with the TS cert manager if it has a cert that needs signing.
+  // if so, send the CSR in the heartbeat for the master to sign.
+  boost::optional<string> csr = server_->cert_manager()->GetCSRIfNecessary();
+  if (csr != boost::none) {
+    req.mutable_csr_der()->swap(*csr);
+    VLOG(1) << "Sending a CSR to the master in the next heartbeat";
+  }
+
+  // TODO(PKI): send the version number of the latest CA cert which we know about.
+  // The response should include new CA certs.
+
   if (send_full_tablet_report_) {
     LOG(INFO) << Substitute(
         "Master $0 was elected leader, sending a full tablet report...",
@@ -405,6 +418,13 @@ Status Heartbeater::Thread::DoHeartbeat() {
   }
 
   last_hb_response_.Swap(&resp);
+
+  // If we have a new signed certificate from the master, adopt it.
+  if (last_hb_response_.has_signed_cert_der()) {
+    RETURN_NOT_OK_PREPEND(
+        server_->cert_manager()->AdoptSignedCert(last_hb_response_.signed_cert_der()),
+        "could not adopt master-signed X509 cert");
+  }
 
   MarkTabletReportAcknowledged(req.tablet_report());
   return Status::OK();

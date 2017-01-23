@@ -35,6 +35,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 set(MASTER_SRCS
   catalog_manager.cc
   master.cc
+  master_cert_authority.cc
   master_options.cc
   master_service.cc
   master-path-handlers.cc
@@ -46,17 +47,18 @@ set(MASTER_SRCS
 
 add_library(master ${MASTER_SRCS})
 target_link_libraries(master
+  gutil
+  krpc
   kudu_common
-  tablet
+  kudu_util
+  master_proto
+  rpc_header_proto
+  security
   server_common
   server_process
-  krpc
-  gutil
-  kudu_util
+  tablet
   tserver
-  tserver_service_proto
-  master_proto
-  rpc_header_proto)
+  tserver_service_proto)
 
 set(MASTER_RPC_SRCS
   master_rpc.cc)

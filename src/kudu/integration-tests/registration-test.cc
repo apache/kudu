@@ -25,11 +25,12 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/integration-tests/mini_cluster.h"
-#include "kudu/master/mini_master.h"
+#include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master-test-util.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/security/server_cert_manager.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/curl_util.h"
@@ -196,6 +197,15 @@ TEST_F(RegistrationTest, TestTabletReports) {
   // TODO: KUDU-870: once the master supports detecting failed/lost replicas,
   // we should add a test case here which removes or corrupts metadata, restarts
   // the TS, and verifies that the master notices the issue.
+}
+
+// Check that after the tablet server registers, it gets a signed cert
+// from the master.
+TEST_F(RegistrationTest, TestTSGetsSignedX509Certificate) {
+  MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+  AssertEventually([&](){
+      ASSERT_TRUE(ts->server()->cert_manager()->has_signed_cert());
+    }, MonoDelta::FromSeconds(10));
 }
 
 } // namespace kudu

@@ -25,6 +25,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master_cert_authority.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/rpc_context.h"
@@ -139,6 +140,21 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
       return;
     }
   }
+
+  // 6. If the heartbeat has a CSR, sign their cert.
+  // TODO(PKI): should this be done only by leaders or all masters?
+  if (req->has_csr_der()) {
+    string cert;
+    Status s = server_->cert_authority()->SignServerCSR(req->csr_der(), &cert);
+    if (!s.ok()) {
+      rpc->RespondFailure(s.CloneAndPrepend("invalid CSR"));
+      return;
+    }
+    LOG(INFO) << "Signed X509 certificate for tserver " << rpc->requestor_string();
+    resp->mutable_signed_cert_der()->swap(cert);
+  }
+
+  // 7. Send any active CA certs which the TS doesn't have.
 
   rpc->RespondSuccess();
 }

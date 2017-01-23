@@ -46,6 +46,10 @@ class Messenger;
 class ServiceIf;
 } // namespace rpc
 
+namespace security {
+class ServerCertManager;
+} // namespace security
+
 namespace server {
 class Clock;
 
@@ -71,8 +75,10 @@ class ServerBase {
 
   FsManager* fs_manager() { return fs_manager_.get(); }
 
+  security::ServerCertManager* cert_manager() { return cert_manager_.get(); }
+
   // Return the instance identifier of this server.
-  // This may not be called until after the server is Initted.
+  // This may not be called until after the server is Started.
   const NodeInstancePB& instance_pb() const;
 
   const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
@@ -107,6 +113,11 @@ class ServerBase {
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
+
+  // Manager for the SSL certificate associated with this server, if built-in
+  // PKI is enabled.
+  std::unique_ptr<security::ServerCertManager> cert_manager_;
+
   std::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   bool is_first_run_;

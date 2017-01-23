@@ -47,8 +47,9 @@ class ServicePool;
 namespace master {
 
 class CatalogManager;
-class TSManager;
+class MasterCertAuthority;
 class MasterPathHandlers;
+class TSManager;
 
 class Master : public server::ServerBase {
  public:
@@ -73,6 +74,8 @@ class Master : public server::ServerBase {
   void Shutdown();
 
   std::string ToString() const;
+
+  MasterCertAuthority* cert_authority() { return cert_authority_.get(); }
 
   TSManager* ts_manager() { return ts_manager_.get(); }
 
@@ -118,6 +121,7 @@ class Master : public server::ServerBase {
 
   MasterState state_;
 
+  std::unique_ptr<MasterCertAuthority> cert_authority_;
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;

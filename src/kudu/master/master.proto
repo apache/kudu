@@ -251,6 +251,10 @@ message TSHeartbeatRequestPB {
   // The number of tablets that are BOOTSTRAPPING or RUNNING.
   // Used by the master to determine load when creating new tablet replicas.
   optional int32 num_live_tablets = 4;
+
+  // If the tablet server needs its certificate signed, the CSR
+  // in DER format.
+  optional bytes csr_der = 5;
 }
 
 message TSHeartbeatResponsePB {
@@ -274,6 +278,10 @@ message TSHeartbeatResponsePB {
 
   // Specify whether or not the node is the leader master.
   optional bool leader_master = 6;
+
+  // If the heartbeat request had a CSR, then the successfully
+  // signed certificate will be returned in DER format.
+  optional bytes signed_cert_der = 7;
 }
 
 //////////////////////////////
