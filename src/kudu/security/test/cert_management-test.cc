@@ -112,14 +112,9 @@ class CertManagementTest : public KuduTest {
     if (SINGLE_INIT == init_type) {
       ASSERT_OK(gen_shared.Init());
     }
-    const CertSigner::Config signer_config = {
-      .exp_interval_sec = 24 * 60 * 60,
-      .ca_cert_path = ca_cert_file_,
-      .ca_private_key_path = ca_private_key_file_,
-    };
-    CertSigner signer_shared(signer_config);
+    CertSigner signer_shared;
     if (SINGLE_INIT == init_type) {
-      ASSERT_OK(signer_shared.Init());
+      ASSERT_OK(signer_shared.InitFromFiles(ca_cert_file_, ca_private_key_file_));
     }
 
     vector<thread> threads;
@@ -129,14 +124,14 @@ class CertManagementTest : public KuduTest {
       threads.emplace_back([&, thread_idx]() {
         for (size_t i = 0; i < iter_num; ++i) {
           CertRequestGenerator gen_local(gen_config);
-          CertSigner signer_local(signer_config);
+          CertSigner signer_local;
 
           CertRequestGenerator& gen = (SHARED == sharing_type) ? gen_shared
                                                                : gen_local;
           CertSigner& signer = (SHARED == sharing_type) ? signer_shared
                                                         : signer_local;
 
-          if (DEDICATED == sharing_type || MULTIPLE_INIT == init_type) {
+          if (DEDICATED == sharing_type) {
             CHECK_OK(gen.Init());
           }
           const size_t sel = i % 4;
@@ -145,8 +140,8 @@ class CertManagementTest : public KuduTest {
           CHECK_OK(GeneratePrivateKey(key_bits, &key));
           CertSignRequest req;
           CHECK_OK(gen.GenerateRequest(key, &req));
-          if (DEDICATED == sharing_type || MULTIPLE_INIT == init_type) {
-            CHECK_OK(signer.Init());
+          if (DEDICATED == sharing_type) {
+            CHECK_OK(signer.InitFromFiles(ca_cert_file_, ca_private_key_file_));
           }
           Cert cert;
           CHECK_OK(signer.Sign(req, &cert));
@@ -266,38 +261,23 @@ TEST_F(CertManagementTest, SignerInitWithWrongFiles) {
   // Providing files which guaranteed to exists, but do not contain valid data.
   // This is to make sure the init handles that situation correctly and
   // does not choke on the wrong input data.
-  const CertSigner::Config config = {
-    .exp_interval_sec = 24 * 60 * 60,
-    .ca_cert_path = "/bin/sh",
-    .ca_private_key_path = "/bin/cat",
-  };
-  CertSigner signer(config);
-  ASSERT_FALSE(signer.Init().ok());
+  CertSigner signer;
+  ASSERT_FALSE(signer.InitFromFiles("/bin/sh", "/bin/cat").ok());
 }
 
 // Check that CertSigner behaves in a predictable way if given non-matching
 // CA private key and certificate.
 TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
   {
-    const CertSigner::Config config = {
-      .exp_interval_sec = 24 * 60 * 60,
-      .ca_cert_path = ca_cert_file_,
-      .ca_private_key_path = ca_exp_private_key_file_,
-    };
-    CertSigner signer(config);
-    Status s = signer.Init();
+    CertSigner signer;
+    Status s = signer.InitFromFiles(ca_cert_file_, ca_exp_private_key_file_);
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsRuntimeError()) << err_msg;
     ASSERT_STR_CONTAINS(err_msg, "CA certificate and private key do not match");
   }
   {
-    const CertSigner::Config config = {
-      .exp_interval_sec = 24 * 60 * 60,
-      .ca_cert_path = ca_exp_cert_file_,
-      .ca_private_key_path = ca_private_key_file_,
-    };
-    CertSigner signer(config);
-    Status s = signer.Init();
+    CertSigner signer;
+    Status s = signer.InitFromFiles(ca_exp_cert_file_, ca_private_key_file_);
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsRuntimeError()) << err_msg;
     ASSERT_STR_CONTAINS(err_msg, "CA certificate and private key do not match");
@@ -315,14 +295,9 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
   ASSERT_OK(gen.Init());
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));
-  const CertSigner::Config signer_config = {
-    .exp_interval_sec = 24 * 60 * 60,
-    .ca_cert_path = ca_exp_cert_file_,
-    .ca_private_key_path = ca_exp_private_key_file_,
-  };
-  CertSigner signer(signer_config);
+  CertSigner signer;
   // Even if the certificate is expired, the signer should initialize OK.
-  ASSERT_OK(signer.Init());
+  ASSERT_OK(signer.InitFromFiles(ca_exp_cert_file_, ca_exp_private_key_file_));
   Cert cert;
   // Signer works fine even with expired CA certificate.
   ASSERT_OK(signer.Sign(req, &cert));
@@ -340,13 +315,8 @@ TEST_F(CertManagementTest, SignCert) {
   ASSERT_OK(gen.Init());
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));
-  const CertSigner::Config signer_config = {
-    .exp_interval_sec = 24 * 60 * 60,
-    .ca_cert_path = ca_cert_file_,
-    .ca_private_key_path = ca_private_key_file_,
-  };
-  CertSigner signer(signer_config);
-  ASSERT_OK(signer.Init());
+  CertSigner signer;
+  ASSERT_OK(signer.InitFromFiles(ca_cert_file_, ca_private_key_file_));
   Cert cert;
   ASSERT_OK(signer.Sign(req, &cert));
 }
@@ -361,15 +331,58 @@ TEST_F(CertManagementTest, SignCaCert) {
   ASSERT_OK(gen.Init());
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));
-  const CertSigner::Config signer_config = {
-    .exp_interval_sec = 24 * 60 * 60,
-    .ca_cert_path = ca_cert_file_,
-    .ca_private_key_path = ca_private_key_file_,
-  };
-  CertSigner signer(signer_config);
-  ASSERT_OK(signer.Init());
+  CertSigner signer;
+  ASSERT_OK(signer.InitFromFiles(ca_cert_file_, ca_private_key_file_));
   Cert cert;
   ASSERT_OK(signer.Sign(req, &cert));
+}
+
+// Test the creation and use of a CA which uses a self-signed CA cert
+// generated on the fly.
+TEST_F(CertManagementTest, TestSelfSignedCA) {
+  // Create a key for the self-signed CA.
+  auto ca_key = std::make_shared<Key>();
+  ASSERT_OK(GeneratePrivateKey(2048, ca_key.get()));
+
+  // Generate a CSR for the CA.
+  CertSignRequest ca_csr;
+  {
+    const CertRequestGenerator::Config gen_config(
+        PrepareConfig("8C084CF6-A30B-4F5B-9673-A73E62E29A9D"));
+    CaCertRequestGenerator gen(gen_config);
+    ASSERT_OK(gen.Init());
+    ASSERT_OK(gen.GenerateRequest(*ca_key, &ca_csr));
+  }
+
+  // Self-sign the CA's CSR.
+  auto ca_cert = std::make_shared<Cert>();
+  {
+    CertSigner ca_signer;
+    ASSERT_OK(ca_signer.InitForSelfSigning(ca_key));
+    ASSERT_OK(ca_signer.Sign(ca_csr, ca_cert.get()));
+  }
+
+  // Create a key for the tablet server.
+  auto ts_key = std::make_shared<Key>();
+  ASSERT_OK(GeneratePrivateKey(2048, ts_key.get()));
+
+  // Prepare a CSR for a tablet server that wants signing.
+  CertSignRequest ts_csr;
+  {
+    CertRequestGenerator gen(PrepareConfig(
+        "some-tablet-server",
+        {"localhost"}, {"127.0.0.1", "127.0.10.20"}));
+    ASSERT_OK(gen.Init());
+    ASSERT_OK(gen.GenerateRequest(*ts_key, &ts_csr));
+  }
+
+  // Sign it using the self-signed CA.
+  Cert ts_cert;
+  {
+    CertSigner signer;
+    ASSERT_OK(signer.Init(ca_cert, ca_key));
+    ASSERT_OK(signer.Sign(ts_csr, &ts_cert));
+  }
 }
 
 // Check the transformation chains for keys:
@@ -437,13 +450,8 @@ TEST_F(CertManagementTest, X509FromAndToString) {
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));
 
-  const CertSigner::Config signer_config = {
-    .exp_interval_sec = 24 * 60 * 60,
-    .ca_cert_path = ca_cert_file_,
-    .ca_private_key_path = ca_private_key_file_,
-  };
-  CertSigner signer(signer_config);
-  ASSERT_OK(signer.Init());
+  CertSigner signer;
+  ASSERT_OK(signer.InitFromFiles(ca_cert_file_, ca_private_key_file_));
   Cert cert_ref;
   ASSERT_OK(signer.Sign(req, &cert_ref));
 
@@ -461,8 +469,8 @@ TEST_F(CertManagementTest, X509FromAndToString) {
 
 // Generate CSR and issue corresponding certificate in a multi-threaded fashion:
 // every thread uses its own instances of CertRequestGenerator and CertSigner,
-// which were initialized eariler (i.e. those threads do not call Init()).
-TEST_F(CertManagementTest, SignMultiThreadExclusiveSignleInit) {
+// which were initialized earlier (i.e. those threads do not call Init()).
+TEST_F(CertManagementTest, SignMultiThreadExclusiveSingleInit) {
   ASSERT_NO_FATAL_FAILURE(SignMultiThread(32, 16, DEDICATED, SINGLE_INIT));
 }
 
@@ -475,16 +483,9 @@ TEST_F(CertManagementTest, SignMultiThreadExclusiveMultiInit) {
 
 // Generate CSR and issue corresponding certificate in a multi-thread fashion:
 // all threads use shared instances of CertRequestGenerator and CertSigner,
-// which were initialized eariler (i.e. those threads do not call Init()).
-TEST_F(CertManagementTest, SignMultiThreadSharedSignleInit) {
+// which were initialized earlier (i.e. those threads do not call Init()).
+TEST_F(CertManagementTest, SignMultiThreadSharedSingleInit) {
   ASSERT_NO_FATAL_FAILURE(SignMultiThread(32, 16, SHARED, SINGLE_INIT));
-}
-
-// Generate CSR and issue corresponding certificate in a multi-thread fashion:
-// all threads use shared instances of CertRequestGenerator and CertSigner,
-// where every threads initializes those objects by itself.
-TEST_F(CertManagementTest, SignMultiThreadSharedMultiInit) {
-  ASSERT_NO_FATAL_FAILURE(SignMultiThread(16, 32, SHARED, MULTIPLE_INIT));
 }
 
 } // namespace ca

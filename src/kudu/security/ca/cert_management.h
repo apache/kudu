@@ -20,12 +20,14 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 // Forward declarations for the relevant OpenSSL typedefs
@@ -215,16 +217,34 @@ class CaCertRequestGenerator : public CertRequestGeneratorBase {
 // An utility class for issuing and signing certificates.
 class CertSigner {
  public:
-  struct Config {
-    const int32_t exp_interval_sec;
-    const std::string ca_cert_path;
-    const std::string ca_private_key_path;
-  };
-
-  explicit CertSigner(Config config);
+  // Create a CertSigner.
+  // Exactly one of the following Init*() methods must be called
+  // exactly once before the instance may be used.
+  CertSigner();
   ~CertSigner() = default;
 
-  Status Init();
+  // Initialize the signer from existing Cert/Key objects.
+  // The passed objects must be initialized.
+  Status Init(std::shared_ptr<Cert> ca_cert,
+              std::shared_ptr<Key> ca_private_key);
+
+  // Initialize the signer from a CA cert and private key stored
+  // on disk.
+  Status InitFromFiles(const std::string& ca_cert_path,
+                       const std::string& ca_private_key_path);
+  // Initialize the signer for self-signing using the given private key.
+  //
+  // Any certificates signed by this CertSigner will have the 'issuer' equal
+  // to the signed cert's subject.
+  Status InitForSelfSigning(std::shared_ptr<Key> private_key);
+
+  // Set the expiration interval for certs signed by this signer.
+  // This may be changed at any point.
+  void set_expiration_interval(MonoDelta expiration) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    exp_interval_sec_ = expiration.ToSeconds();
+  }
+
   bool Initialized() const;
 
   const Cert& ca_cert() const;
@@ -240,13 +260,18 @@ class CertSigner {
 
   Status DoSign(const EVP_MD* digest, int32_t exp_seconds, X509 *ret) const;
 
-  const std::string ca_cert_path_;
-  const std::string ca_private_key_path_;
-  const Config config_;
   mutable simple_spinlock lock_;
   bool is_initialized_; // protected by lock_
-  Cert ca_cert_;
-  Key ca_private_key_;
+
+  // The expiration interval of certs signed by this signer.
+  int32_t exp_interval_sec_ = 24 * 60 * 60;
+
+  // The CA cert. null if this CertSigner is configured for self-signing.
+  std::shared_ptr<Cert> ca_cert_;
+
+  // The CA private key. If configured for self-signing, this is the
+  // private key associated with the target cert.
+  std::shared_ptr<Key> ca_private_key_;
 
   DISALLOW_COPY_AND_ASSIGN(CertSigner);
 };

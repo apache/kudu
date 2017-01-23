@@ -43,6 +43,7 @@
 using std::lock_guard;
 using std::move;
 using std::ostringstream;
+using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 
@@ -341,9 +342,7 @@ Status CertRequestGenerator::Init() {
   InitializeOpenSSL();
 
   lock_guard<simple_spinlock> guard(lock_);
-  if (is_initialized_) {
-    return Status::OK();
-  }
+  CHECK(!is_initialized_);
   if (config_.uuid.empty()) {
     return Status::InvalidArgument("missing end-entity UUID/name");
   }
@@ -482,26 +481,55 @@ Status CaCertRequestGenerator::SetExtensions(X509_REQ* req) const {
   return Status::OK();
 }
 
-CertSigner::CertSigner(Config config)
-    : config_(move(config)),
-      is_initialized_(false) {
+CertSigner::CertSigner()
+    : is_initialized_(false) {
 }
 
-Status CertSigner::Init() {
+Status CertSigner::Init(shared_ptr<Cert> ca_cert,
+                        shared_ptr<Key> ca_private_key) {
+  CHECK(ca_cert && ca_cert->GetRawData());
+  CHECK(ca_private_key && ca_private_key->GetRawData());
   InitializeOpenSSL();
 
-  lock_guard<simple_spinlock> guard(lock_);
-  if (is_initialized_) {
-    return Status::OK();
-  }
-  RETURN_NOT_OK(ca_cert_.FromFile(config_.ca_cert_path, DataFormat::PEM));
-  RETURN_NOT_OK(ca_private_key_.FromFile(config_.ca_private_key_path,
-                DataFormat::PEM));
-  CERT_RET_NOT_OK(X509_check_private_key(ca_cert_.GetRawData(),
-                                         ca_private_key_.GetRawData()),
+  std::lock_guard<simple_spinlock> guard(lock_);
+  CHECK(!is_initialized_);
+
+  ca_cert_ = std::move(ca_cert);
+  ca_private_key_ = std::move(ca_private_key);
+  is_initialized_ = true;
+  return Status::OK();
+}
+
+Status CertSigner::InitForSelfSigning(shared_ptr<Key> private_key) {
+  CHECK(private_key);
+  InitializeOpenSSL();
+
+  std::lock_guard<simple_spinlock> guard(lock_);
+  CHECK(!is_initialized_);
+
+  ca_private_key_ = std::move(private_key);
+  is_initialized_ = true;
+  return Status::OK();
+}
+
+Status CertSigner::InitFromFiles(const string& ca_cert_path,
+                                 const string& ca_private_key_path) {
+  InitializeOpenSSL();
+
+  std::lock_guard<simple_spinlock> guard(lock_);
+  CHECK(!is_initialized_);
+  auto cert = std::make_shared<Cert>();
+  auto key = std::make_shared<Key>();
+  RETURN_NOT_OK(cert->FromFile(ca_cert_path, DataFormat::PEM));
+  RETURN_NOT_OK(key->FromFile(ca_private_key_path,
+                              DataFormat::PEM));
+  CERT_RET_NOT_OK(X509_check_private_key(cert->GetRawData(),
+                                         key->GetRawData()),
                   Substitute("$0, $1: CA certificate and private key "
                              "do not match",
-                             config_.ca_cert_path, config_.ca_private_key_path));
+                             ca_cert_path, ca_private_key_path));
+  ca_cert_ = std::move(cert);
+  ca_private_key_ = std::move(key);
   is_initialized_ = true;
   return Status::OK();
 }
@@ -514,13 +542,13 @@ bool CertSigner::Initialized() const {
 const Cert& CertSigner::ca_cert() const {
   lock_guard<simple_spinlock> guard(lock_);
   DCHECK(is_initialized_);
-  return ca_cert_;
+  return *CHECK_NOTNULL(ca_cert_.get());
 }
 
 const Key& CertSigner::ca_private_key() const {
   lock_guard<simple_spinlock> guard(lock_);
   DCHECK(is_initialized_);
-  return ca_private_key_;
+  return *ca_private_key_;
 }
 
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
@@ -528,7 +556,7 @@ Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
   CHECK(Initialized());
   auto x509 = make_ssl_unique(X509_new());
   RETURN_NOT_OK(FillCertTemplateFromRequest(req.GetRawData(), x509.get()));
-  RETURN_NOT_OK(DoSign(EVP_sha256(), config_.exp_interval_sec, x509.get()));
+  RETURN_NOT_OK(DoSign(EVP_sha256(), exp_interval_sec_, x509.get()));
   ret->AdoptRawData(x509.release());
 
   return Status::OK();
@@ -608,14 +636,18 @@ Status CertSigner::GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret) {
 
 Status CertSigner::DoSign(const EVP_MD* digest, int32_t exp_seconds,
                           X509* ret) const {
+  CHECK(ret);
+
   // Version 3 (v3) of X509 certificates. The integer value is one less
   // than the version it represents. This is not a typo. :)
   static const int kX509V3 = 2;
 
-  CERT_RET_NOT_OK(
-      X509_set_issuer_name(CHECK_NOTNULL(ret),
-                           X509_get_subject_name(ca_cert_.GetRawData())),
-      "error setting issuer name");
+  // If we have a CA cert, then the CA is the issuer.
+  // Otherwise, we are self-signing so the target cert is also the issuer.
+  X509* issuer_cert = ca_cert_ ? ca_cert_->GetRawData() : ret;
+  X509_NAME* issuer_name = X509_get_subject_name(issuer_cert);
+  CERT_RET_NOT_OK(X509_set_issuer_name(ret, issuer_name),
+                  "error setting issuer name");
   c_unique_ptr<ASN1_INTEGER> serial;
   RETURN_NOT_OK(GenerateSerial(&serial));
   // set version to v3
@@ -626,7 +658,7 @@ Status CertSigner::DoSign(const EVP_MD* digest, int32_t exp_seconds,
                    "error setting cert validity time");
   CERT_RET_IF_NULL(X509_gmtime_adj(X509_get_notAfter(ret), exp_seconds),
                    "error setting cert expiration time");
-  RETURN_NOT_OK(DigestSign(digest, ca_private_key_.GetRawData(), ret));
+  RETURN_NOT_OK(DigestSign(digest, ca_private_key_->GetRawData(), ret));
 
   return Status::OK();
 }
