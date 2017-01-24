@@ -56,6 +56,7 @@ class PartitionSchema;
 namespace client {
 
 class KuduLoggingCallback;
+class KuduPartitioner;
 class KuduScanToken;
 class KuduSession;
 class KuduStatusCallback;
@@ -511,6 +512,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::WriteRpc;
   friend class ClientTest;
   friend class KuduClientBuilder;
+  friend class KuduPartitionerBuilder;
   friend class KuduScanner;
   friend class KuduScanToken;
   friend class KuduScanTokenBuilder;
@@ -977,6 +979,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
+  friend class KuduPartitioner;
 
   KuduTable(const sp::shared_ptr<KuduClient>& client,
             const std::string& name,
@@ -2213,6 +2216,85 @@ class KUDU_EXPORT KuduScanTokenBuilder {
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanTokenBuilder);
 };
+
+/// @brief Builder for Partitioner instances.
+class KUDU_EXPORT KuduPartitionerBuilder {
+ public:
+  /// Construct an instance of the class.
+  ///
+  /// @param [in] table
+  ///   The table whose rows should be partitioned.
+  explicit KuduPartitionerBuilder(sp::shared_ptr<KuduTable> table);
+  ~KuduPartitionerBuilder();
+
+  /// Set the timeout used for building the Partitioner object.
+  KuduPartitionerBuilder* SetBuildTimeout(MonoDelta timeout);
+
+  /// Create a KuduPartitioner object for the specified table.
+  ///
+  /// This fetches all of the partitioning information up front if it
+  /// is not already cached by the associated KuduClient object. Thus,
+  /// it may time out or have an error if the Kudu master is not accessible.
+  ///
+  /// @param [out] partitioner
+  ///   The resulting KuduPartitioner instance; caller gets ownership.
+  ///
+  /// @note If the KuduClient object associated with the table already has
+  /// some partition information cached (e.g. due to the construction of
+  /// other Partitioners, or due to normal read/write activity), the
+  /// resulting Partitioner will make use of that cached information.
+  /// This means that the resulting partitioner is not guaranteed to have
+  /// up-to-date partition information in the case that there has been
+  /// a recent change to the partitioning of the target table.
+  Status Build(KuduPartitioner** partitioner);
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  // Owned.
+  Data* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduPartitionerBuilder);
+};
+
+/// A KuduPartitioner allows clients to determine the target partition of a
+/// row without actually performing a write. The set of partitions is eagerly
+/// fetched when the KuduPartitioner is constructed so that the actual partitioning
+/// step can be performed synchronously without any network trips.
+///
+/// @note Because this operates on a metadata snapshot retrieved at construction
+/// time, it will not reflect any metadata changes to the table that have occurred
+/// since its creation.
+///
+/// @warning This class is not thread-safe.
+class KUDU_EXPORT KuduPartitioner {
+ public:
+  ~KuduPartitioner();
+
+  /// Return the number of partitions known by this partitioner.
+  /// The partition indices returned by @c PartitionRow are guaranteed
+  /// to be less than this value.
+  int NumPartitions() const;
+
+  /// Determine the partition index that the given row falls into.
+  ///
+  /// @param [in] row
+  ///   The row to be partitioned.
+  /// @param [out] partition
+  ///   The resulting partition index, or -1 if the row falls into a
+  ///   non-covered range. The result will be less than @c NumPartitioons().
+  ///
+  /// @return Status OK if successful. May return a bad Status if the
+  /// provided row does not have all columns of the partition key
+  /// set.
+  Status PartitionRow(const KuduPartialRow& row, int* partition);
+ private:
+  class KUDU_NO_EXPORT Data;
+  friend class KuduPartitionerBuilder;
+
+  explicit KuduPartitioner(Data* data);
+  Data* data_; // Owned.
+};
+
 
 } // namespace client
 } // namespace kudu

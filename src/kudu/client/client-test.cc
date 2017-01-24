@@ -4870,5 +4870,115 @@ INSTANTIATE_TEST_CASE_P(
     , ServiceUnavailableRetryClientTest,
     ::testing::ValuesIn(service_unavailable_retry_cases));
 
+TEST_F(ClientTest, TestPartitioner) {
+  // Create a table with the following 9 partitions:
+  //
+  //             hash bucket
+  //   key     0      1     2
+  //         -----------------
+  //  <3000    x      x     x
+  // 3000-7000 x      x     x
+  //  >=7000   x      x     x
+  int num_ranges = 3;
+  const int kNumHashPartitions = 3;
+  const char* kTableName = "TestPartitioner";
+
+  vector<unique_ptr<KuduPartialRow>> split_rows;
+  for (int32_t split : {3333, 6666}) {
+    unique_ptr<KuduPartialRow> row(schema_.NewRow());
+    ASSERT_OK(row->SetInt32("key", split));
+    split_rows.emplace_back(std::move(row));
+  }
+
+  shared_ptr<KuduTable> table;
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->table_name(kTableName)
+      .schema(&schema_)
+      .num_replicas(1)
+      .add_hash_partitions({ "key" }, kNumHashPartitions)
+      .set_range_partition_columns({ "key" });
+
+  for (const auto& row : split_rows) {
+    table_creator->add_range_partition_split(new KuduPartialRow(*row));
+  }
+  ASSERT_OK(table_creator->Create());
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  // Build a partitioner on the table.
+  unique_ptr<KuduPartitioner> part;
+  {
+    KuduPartitioner* part_raw;
+    ASSERT_OK(KuduPartitionerBuilder(table)
+              .Build(&part_raw));
+    part.reset(part_raw);
+  }
+
+  ASSERT_EQ(num_ranges * kNumHashPartitions, part->NumPartitions());
+
+  // Partition a bunch of rows, counting how many fall into each partition.
+  unique_ptr<KuduPartialRow> row(table->schema().NewRow());
+  vector<int> counts_by_partition(part->NumPartitions());
+  const int kNumRowsToPartition = 10000;
+  for (int i = 0; i < kNumRowsToPartition; i++) {
+    ASSERT_OK(row->SetInt32(0, i));
+    int part_index;
+    ASSERT_OK(part->PartitionRow(*row, &part_index));
+    counts_by_partition.at(part_index)++;
+  }
+
+  // We don't expect a completely even division of rows into partitions, but
+  // we should be within 10% of that.
+  int expected_per_partition = kNumRowsToPartition / part->NumPartitions();
+  int fuzziness = expected_per_partition / 10;
+  for (int i = 0; i < part->NumPartitions(); i++) {
+    ASSERT_NEAR(counts_by_partition[i], expected_per_partition, fuzziness);
+  }
+
+  // Drop the first and third range partition.
+  unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kTableName));
+  alterer->DropRangePartition(schema_.NewRow(), new KuduPartialRow(*split_rows[0]));
+  alterer->DropRangePartition(new KuduPartialRow(*split_rows[1]), schema_.NewRow());
+  ASSERT_OK(alterer->Alter());
+
+  // The existing partitioner should still return results based on the table
+  // state at the time it was created, and successfully return partitions
+  // for rows in the now-dropped range.
+  ASSERT_EQ(num_ranges * kNumHashPartitions, part->NumPartitions());
+  ASSERT_OK(row->SetInt32(0, 1000));
+  int part_index;
+  ASSERT_OK(part->PartitionRow(*row, &part_index));
+  ASSERT_GE(part_index, 0);
+
+  // If we recreate the partitioner, it should get the new partitioning info.
+  {
+    KuduPartitioner* part_raw;
+    ASSERT_OK(KuduPartitionerBuilder(table)
+              .Build(&part_raw));
+    part.reset(part_raw);
+  }
+  num_ranges = 1;
+  ASSERT_EQ(num_ranges * kNumHashPartitions, part->NumPartitions());
+
+  // ... and it should return -1 for non-covered ranges.
+  ASSERT_OK(row->SetInt32(0, 1000));
+  ASSERT_OK(part->PartitionRow(*row, &part_index));
+  ASSERT_EQ(-1, part_index);
+  ASSERT_OK(row->SetInt32(0, 8000));
+  ASSERT_OK(part->PartitionRow(*row, &part_index));
+  ASSERT_EQ(-1, part_index);
+}
+
+TEST_F(ClientTest, TestInvalidPartitionerBuilder) {
+  KuduPartitioner* part;
+  Status s = KuduPartitionerBuilder(client_table_)
+      .SetBuildTimeout(MonoDelta())
+      ->Build(&part);
+  ASSERT_EQ("Invalid argument: uninitialized timeout", s.ToString());
+
+  s = KuduPartitionerBuilder(sp::shared_ptr<KuduTable>())
+      .Build(&part);
+  ASSERT_EQ("Invalid argument: null table", s.ToString());
+}
+
 } // namespace client
 } // namespace kudu

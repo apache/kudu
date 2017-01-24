@@ -35,6 +35,7 @@
 #include "kudu/client/error-internal.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/partitioner-internal.h"
 #include "kudu/client/replica-internal.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_predicate-internal.h"
@@ -1608,6 +1609,45 @@ const string& KuduTabletServer::hostname() const {
 
 uint16_t KuduTabletServer::port() const {
   return data_->hp_.port();
+}
+
+////////////////////////////////////////////////////////////
+// KuduPartitionerBuilder
+////////////////////////////////////////////////////////////
+KuduPartitionerBuilder::KuduPartitionerBuilder(sp::shared_ptr<KuduTable> table)
+    : data_(new Data(std::move(table))) {
+}
+
+KuduPartitionerBuilder::~KuduPartitionerBuilder() {
+  delete data_;
+}
+
+KuduPartitionerBuilder* KuduPartitionerBuilder::SetBuildTimeout(MonoDelta timeout) {
+  data_->SetBuildTimeout(timeout);
+  return this;
+}
+
+Status KuduPartitionerBuilder::Build(KuduPartitioner** partitioner) {
+  return data_->Build(partitioner);
+}
+
+////////////////////////////////////////////////////////////
+// KuduPartitioner
+////////////////////////////////////////////////////////////
+KuduPartitioner::KuduPartitioner(Data* data)
+    : data_(CHECK_NOTNULL(data)) {
+}
+
+KuduPartitioner::~KuduPartitioner() {
+  delete data_;
+}
+
+int KuduPartitioner::NumPartitions() const {
+  return data_->num_partitions_;
+}
+
+Status KuduPartitioner::PartitionRow(const KuduPartialRow& row, int* partition) {
+  return data_->PartitionRow(row, partition);
 }
 
 } // namespace client
