@@ -69,10 +69,9 @@ struct ChecksumOptions {
 // Representation of a tablet replica on a tablet server.
 class KsckTabletReplica {
  public:
-  KsckTabletReplica(const std::string ts_uuid, const bool is_leader)
+  KsckTabletReplica(std::string ts_uuid, bool is_leader)
       : is_leader_(is_leader),
-        is_running_(false),
-        ts_uuid_(ts_uuid) {
+        ts_uuid_(std::move(ts_uuid)) {
   }
 
   const bool& is_leader() const {
@@ -85,7 +84,6 @@ class KsckTabletReplica {
 
  private:
   const bool is_leader_;
-  bool is_running_;
   const std::string ts_uuid_;
   DISALLOW_COPY_AND_ASSIGN(KsckTabletReplica);
 };

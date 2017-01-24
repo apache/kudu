@@ -376,8 +376,6 @@ class MemRowSet : public RowSet,
 
   std::mutex compact_flush_lock_;
 
-  Atomic32 has_logged_throttling_;
-
   log::MinLogIndexAnchorer anchorer_;
 
   DISALLOW_COPY_AND_ASSIGN(MemRowSet);
@@ -503,8 +501,6 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   // Temporary buffer used for RowChangeList projection.
   faststring delta_buf_;
-
-  size_t prepared_count_;
 
   // Temporary local buffer used for seeking to hold the encoded
   // seek target.

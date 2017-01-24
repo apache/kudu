@@ -253,7 +253,7 @@ namespace {
 // the memory can be released using 'release()'.
 class ScratchMemory {
  public:
-  ScratchMemory() : cache_(nullptr), ptr_(nullptr), size_(-1) {}
+  ScratchMemory() : ptr_(nullptr), size_(-1) {}
   ~ScratchMemory() {
     if (!ptr_) return;
     if (!from_cache_.valid()) {
@@ -316,7 +316,6 @@ class ScratchMemory {
   }
 
  private:
-  BlockCache* cache_;
   BlockCache::PendingEntry from_cache_;
   uint8_t* ptr_;
   int size_;

@@ -110,7 +110,6 @@ MemRowSet::MemRowSet(int64_t id,
     tree_(arena_),
     debug_insert_count_(0),
     debug_update_count_(0),
-    has_logged_throttling_(false),
     anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)) {
   CHECK(schema.has_column_ids());
   ANNOTATE_BENIGN_RACE(&debug_insert_count_, "insert count isnt accurate");
