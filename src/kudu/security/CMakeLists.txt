@@ -56,6 +56,8 @@ endif()
 
 set(SECURITY_SRCS
   ca/cert_management.cc
+  cert.cc
+  crypto.cc
   init.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
@@ -103,7 +105,7 @@ if (NOT NO_TESTS)
     security-test
     ${KUDU_MIN_TEST_LIBS})
 
-  ADD_KUDU_TEST(test/cert_management-test)
+  ADD_KUDU_TEST(ca/cert_management-test)
   ADD_KUDU_TEST(test/mini_kdc-test)
   ADD_KUDU_TEST(tls_handshake-test)
   ADD_KUDU_TEST(token-test)

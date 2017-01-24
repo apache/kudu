@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"

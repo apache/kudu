@@ -17,10 +17,14 @@
 
 #include "kudu/security/token_signing_key.h"
 
+#include <memory>
+
 #include <glog/logging.h>
 
 #include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
+
+using std::unique_ptr;
 
 namespace kudu {
 namespace security {
@@ -39,7 +43,7 @@ bool TokenSigningPublicKey::VerifySignature(const SignedTokenPB& token) const {
 }
 
 TokenSigningPrivateKey::TokenSigningPrivateKey(
-    int64_t key_seq_num, int64_t expire_time, Key key)
+    int64_t key_seq_num, int64_t expire_time, unique_ptr<PrivateKey> key)
     : key_(std::move(key)),
       key_seq_num_(key_seq_num),
       expire_time_(expire_time) {

@@ -34,12 +34,16 @@ extern const char kCaCert[];
 // The private key (RSA, 2048 bits) for the certificate above.
 // This is 2048 bit RSA key, in PEM format.
 extern const char kCaPrivateKey[];
+// The public part of the abovementioned private key.
+extern const char kCaPublicKey[];
 
 // Expired root CA certificate (PEM format).
 extern const char kCaExpiredCert[];
 // The private key for the expired CA certificate described above.
 // This is 2048 bit RSA key, in PEM format.
 extern const char kCaExpiredPrivateKey[];
+// The public part of the abovementioned private key.
+extern const char kCaExpiredPublicKey[];
 
 } // namespace ca
 

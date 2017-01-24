@@ -25,8 +25,10 @@
 namespace kudu {
 
 namespace security {
+
 class Cert;
-class Key;
+class PrivateKey;
+
 namespace ca {
 class CertSigner;
 } // namespace ca
@@ -65,7 +67,7 @@ class MasterCertAuthority {
   const std::string server_uuid_;
 
   std::shared_ptr<security::ca::CertSigner> cert_signer_;
-  std::shared_ptr<security::Key> ca_private_key_;
+  std::shared_ptr<security::PrivateKey> ca_private_key_;
   std::shared_ptr<security::Cert> ca_cert_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterCertAuthority);

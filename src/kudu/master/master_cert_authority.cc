@@ -22,15 +22,18 @@
 #include <string>
 
 #include "kudu/security/ca/cert_management.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/flag_tags.h"
 
 using std::make_shared;
+using std::shared_ptr;
 using std::string;
 
 using kudu::security::Cert;
 using kudu::security::CertSignRequest;
-using kudu::security::Key;
+using kudu::security::PrivateKey;
 using kudu::security::ca::CaCertRequestGenerator;
 using kudu::security::ca::CertSigner;
 
@@ -73,7 +76,7 @@ Status MasterCertAuthority::Init() {
   CHECK(!ca_private_key_);
 
   // Create a key for the self-signed CA.
-  auto key = make_shared<Key>();
+  shared_ptr<PrivateKey> key(make_shared<PrivateKey>());
   RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits,
                                    key.get()));
 

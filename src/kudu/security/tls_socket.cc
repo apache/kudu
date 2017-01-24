@@ -20,6 +20,7 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/security/openssl_util.h"
 
 namespace kudu {

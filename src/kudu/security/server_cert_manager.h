@@ -28,9 +28,9 @@
 namespace kudu {
 namespace security {
 
-class Key;
 class Cert;
 class CertSignRequest;
+class PrivateKey;
 
 // Manages the X509 certificate used by a server when the built-in
 // PKI infrastructure is enabled.
@@ -85,7 +85,7 @@ class ServerCertManager {
   std::unique_ptr<Cert> signed_cert_;
 
   // The keypair associated with this server's cert.
-  std::unique_ptr<Key> key_;
+  std::unique_ptr<PrivateKey> key_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerCertManager);
 };

@@ -25,6 +25,8 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+
 namespace kudu {
 namespace security {
 

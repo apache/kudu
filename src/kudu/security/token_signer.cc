@@ -19,11 +19,12 @@
 
 #include <map>
 #include <memory>
-#include <string>
+#include <vector>
 
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/walltime.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signing_key.h"
@@ -39,8 +40,8 @@ DEFINE_int64(token_signing_key_validity_seconds, 60 * 60 * 24 * 7,
 // TODO(PKI): add flag tags
 
 using std::lock_guard;
-using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace security {
@@ -53,14 +54,15 @@ TokenSigner::~TokenSigner() {
 }
 
 Status TokenSigner::RotateSigningKey() {
-  Key key;
-  RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_token_signing_key_num_rsa_bits, &key),
-                        "could not generate new RSA token-signing key");
+  unique_ptr<PrivateKey> key(new PrivateKey());
+  RETURN_NOT_OK_PREPEND(
+      GeneratePrivateKey(FLAGS_token_signing_key_num_rsa_bits, key.get()),
+      "could not generate new RSA token-signing key");
   int64_t expire = WallTime_Now() + FLAGS_token_signing_key_validity_seconds;
   lock_guard<RWMutex> l(lock_);
   int64_t seq = next_seq_num_++;
-  unique_ptr<TokenSigningPrivateKey> new_tsk(
-      new TokenSigningPrivateKey(seq, expire, std::move(key)));
+  unique_ptr<TokenSigningPrivateKey> new_tsk(new TokenSigningPrivateKey(
+        seq, expire, unique_ptr<PrivateKey>(key.release())));
   keys_by_seq_[seq] = std::move(new_tsk);
   return Status::OK();
 }

@@ -16,7 +16,10 @@
 // under the License.
 #pragma once
 
+#include <memory>
+
 #include "kudu/gutil/macros.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
@@ -56,7 +59,9 @@ class TokenSigningPublicKey {
 // number and expiration date.
 class TokenSigningPrivateKey {
  public:
-  TokenSigningPrivateKey(int64_t key_seq_num, int64_t expire_time, Key key);
+  TokenSigningPrivateKey(int64_t key_seq_num,
+                         int64_t expire_time,
+                         std::unique_ptr<PrivateKey> key);
   ~TokenSigningPrivateKey();
 
   // Sign a token, and store the signature and signing key's sequence number.
@@ -65,7 +70,7 @@ class TokenSigningPrivateKey {
   // Export the public-key portion of this signing key.
   void ExportPublicKeyPB(TokenSigningPublicKeyPB* pb);
  private:
-  Key key_;
+  std::unique_ptr<PrivateKey> key_;
   int64_t key_seq_num_;
   int64_t expire_time_;
 

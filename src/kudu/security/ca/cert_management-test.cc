@@ -17,8 +17,6 @@
 
 #include "kudu/security/ca/cert_management.h"
 
-#include <functional>
-#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -26,6 +24,7 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/env.h"
@@ -49,17 +48,23 @@ class CertManagementTest : public KuduTest {
       pem_dir_(GetTestPath("pem")),
       ca_cert_file_(JoinPathSegments(pem_dir_, "ca.cert.pem")),
       ca_private_key_file_(JoinPathSegments(pem_dir_, "ca.pkey.pem")),
+      ca_public_key_file_(JoinPathSegments(pem_dir_, "ca.pubkey.pem")),
       ca_exp_cert_file_(JoinPathSegments(pem_dir_, "ca.exp.cert.pem")),
-      ca_exp_private_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pkey.pem")) {
+      ca_exp_private_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pkey.pem")),
+      ca_exp_public_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pubkey.pem")) {
   }
 
   void SetUp() override {
     ASSERT_OK(env_->CreateDir(pem_dir_));
     ASSERT_OK(WriteStringToFile(env_, kCaCert, ca_cert_file_));
     ASSERT_OK(WriteStringToFile(env_, kCaPrivateKey, ca_private_key_file_));
+    ASSERT_OK(WriteStringToFile(env_, kCaPublicKey, ca_public_key_file_));
+
     ASSERT_OK(WriteStringToFile(env_, kCaExpiredCert, ca_exp_cert_file_));
     ASSERT_OK(WriteStringToFile(env_, kCaExpiredPrivateKey,
         ca_exp_private_key_file_));
+    ASSERT_OK(WriteStringToFile(env_, kCaExpiredPublicKey,
+        ca_exp_public_key_file_));
   }
 
  protected:
@@ -136,7 +141,7 @@ class CertManagementTest : public KuduTest {
           }
           const size_t sel = i % 4;
           const size_t key_bits = (sel + 1) * 512;
-          Key key;
+          PrivateKey key;
           CHECK_OK(GeneratePrivateKey(key_bits, &key));
           CertSignRequest req;
           CHECK_OK(gen.GenerateRequest(key, &req));
@@ -154,16 +159,19 @@ class CertManagementTest : public KuduTest {
   }
 
   const string pem_dir_;
+
   const string ca_cert_file_;
   const string ca_private_key_file_;
+  const string ca_public_key_file_;
 
   const string ca_exp_cert_file_;
   const string ca_exp_private_key_file_;
+  const string ca_exp_public_key_file_;
 };
 
-// Check input/output of the keys in PEM format.
-TEST_F(CertManagementTest, KeyInputOutputPEM) {
-  Key key;
+// Check input/output of RSA private keys in PEM format.
+TEST_F(CertManagementTest, RsaPrivateKeyInputOutputPEM) {
+  PrivateKey key;
   ASSERT_OK(key.FromFile(ca_private_key_file_, DataFormat::PEM));
   string key_str;
   key.ToString(&key_str, DataFormat::PEM);
@@ -172,6 +180,36 @@ TEST_F(CertManagementTest, KeyInputOutputPEM) {
   string ca_input_key(kCaPrivateKey);
   RemoveExtraWhitespace(&ca_input_key);
   EXPECT_EQ(ca_input_key, key_str);
+}
+
+// Check input/output of RSA public keys in PEM format.
+TEST_F(CertManagementTest, RsaPublicKeyInputOutputPEM) {
+  PublicKey key;
+  ASSERT_OK(key.FromFile(ca_public_key_file_, DataFormat::PEM));
+  string str_key;
+  key.ToString(&str_key, DataFormat::PEM);
+  RemoveExtraWhitespace(&str_key);
+
+  string ref_str_key(kCaPublicKey);
+  RemoveExtraWhitespace(&ref_str_key);
+  EXPECT_EQ(ref_str_key, str_key);
+}
+
+// Check extraction of the public part out from RSA private keys par.
+TEST_F(CertManagementTest, RSAExtractPublicPartFromPrivateKey) {
+  // Load the reference RSA private key.
+  PrivateKey private_key;
+  ASSERT_OK(private_key.FromString(kCaPrivateKey, DataFormat::PEM));
+
+  PublicKey public_key;
+  ASSERT_OK(private_key.GetPublicKey(&public_key));
+  string str_public_key;
+  public_key.ToString(&str_public_key, DataFormat::PEM);
+  RemoveExtraWhitespace(&str_public_key);
+
+  string ref_str_public_key(kCaPublicKey);
+  RemoveExtraWhitespace(&ref_str_public_key);
+  EXPECT_EQ(ref_str_public_key, str_public_key);
 }
 
 // Check input/output of the X509 certificates in PEM format.
@@ -243,7 +281,7 @@ TEST_F(CertManagementTest, RequestGeneratorBasics) {
   const CertRequestGenerator::Config gen_config =
       PrepareConfig("702C1C5E-CF02-4EDC-8883-07ECDEC8CE97", {"localhost"});
 
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
   ASSERT_OK(GeneratePrivateKey(2048, &key));
   CertRequestGenerator gen(gen_config);
@@ -289,7 +327,7 @@ TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
 TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
   const CertRequestGenerator::Config gen_config(
       PrepareConfig("F4466090-BBF8-4042-B72F-BB257500C45A", {"localhost"}));
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(2048, &key));
   CertRequestGenerator gen(gen_config);
   ASSERT_OK(gen.Init());
@@ -309,7 +347,7 @@ TEST_F(CertManagementTest, SignCert) {
   const CertRequestGenerator::Config gen_config(
       PrepareConfig("904A97F9-545A-4746-86D1-85D433FF3F9C",
                     {"localhost"}, {"127.0.0.1", "127.0.10.20"}));
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(2048, &key));
   CertRequestGenerator gen(gen_config);
   ASSERT_OK(gen.Init());
@@ -325,7 +363,7 @@ TEST_F(CertManagementTest, SignCert) {
 TEST_F(CertManagementTest, SignCaCert) {
   const CertRequestGenerator::Config gen_config(
       PrepareConfig("8C084CF6-A30B-4F5B-9673-A73E62E29A9D"));
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(2048, &key));
   CaCertRequestGenerator gen(gen_config);
   ASSERT_OK(gen.Init());
@@ -341,7 +379,7 @@ TEST_F(CertManagementTest, SignCaCert) {
 // generated on the fly.
 TEST_F(CertManagementTest, TestSelfSignedCA) {
   // Create a key for the self-signed CA.
-  auto ca_key = std::make_shared<Key>();
+  auto ca_key = std::make_shared<PrivateKey>();
   ASSERT_OK(GeneratePrivateKey(2048, ca_key.get()));
 
   // Generate a CSR for the CA.
@@ -363,7 +401,7 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
   }
 
   // Create a key for the tablet server.
-  auto ts_key = std::make_shared<Key>();
+  auto ts_key = std::make_shared<PrivateKey>();
   ASSERT_OK(GeneratePrivateKey(2048, ts_key.get()));
 
   // Prepare a CSR for a tablet server that wants signing.
@@ -385,10 +423,10 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
   }
 }
 
-// Check the transformation chains for keys:
+// Check the transformation chains for RSA private keys:
 //   internal -> PEM -> internal -> PEM
 //   internal -> DER -> internal -> DER
-TEST_F(CertManagementTest, KeyFromAndToString) {
+TEST_F(CertManagementTest, RsaPrivateKeyFromAndToString) {
   static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
   static const uint16_t kKeyBits[] = { 256, 512, 1024, 2048, 3072, 4096 };
 
@@ -397,11 +435,42 @@ TEST_F(CertManagementTest, KeyFromAndToString) {
       SCOPED_TRACE(Substitute("key format: $0, key bits: $1",
                               format == DataFormat::PEM ? "PEM"
                                                         : "DER", key_bits));
-      Key key_ref;
+      PrivateKey key_ref;
       ASSERT_OK(GeneratePrivateKey(key_bits, &key_ref));
       string str_key_ref;
       ASSERT_OK(key_ref.ToString(&str_key_ref, format));
-      Key key;
+      PrivateKey key;
+      ASSERT_OK(key.FromString(str_key_ref, format));
+      string str_key;
+      ASSERT_OK(key.ToString(&str_key, format));
+      ASSERT_EQ(str_key_ref, str_key);
+    }
+  }
+}
+
+// Check the transformation chains for RSA public keys:
+//   internal -> PEM -> internal -> PEM
+//   internal -> DER -> internal -> DER
+TEST_F(CertManagementTest, RsaPublicKeyFromAndToString) {
+  static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
+  static const uint16_t kKeyBits[] = { 256, 512, 1024, 2048, 3072, 4096 };
+
+  for (auto format : kFormats) {
+    for (auto key_bits : kKeyBits) {
+      SCOPED_TRACE(Substitute("key format: $0, key bits: $1",
+                              format == DataFormat::PEM ? "PEM"
+                                                        : "DER", key_bits));
+      // Generate private RSA key.
+      PrivateKey private_key;
+      ASSERT_OK(GeneratePrivateKey(key_bits, &private_key));
+
+      // Extract public part of the key
+      PublicKey key_ref;
+      ASSERT_OK(private_key.GetPublicKey(&key_ref));
+
+      string str_key_ref;
+      ASSERT_OK(key_ref.ToString(&str_key_ref, format));
+      PublicKey key;
       ASSERT_OK(key.FromString(str_key_ref, format));
       string str_key;
       ASSERT_OK(key.ToString(&str_key, format));
@@ -416,7 +485,7 @@ TEST_F(CertManagementTest, KeyFromAndToString) {
 TEST_F(CertManagementTest, X509CsrFromAndToString) {
   static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
 
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
   CertRequestGenerator gen(PrepareConfig(
       "4C931ADC-3945-4E05-8DB2-447327BF8F62", {"localhost"}));
@@ -442,7 +511,7 @@ TEST_F(CertManagementTest, X509CsrFromAndToString) {
 TEST_F(CertManagementTest, X509FromAndToString) {
   static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
 
-  Key key;
+  PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
   CertRequestGenerator gen(PrepareConfig(
       "86F676E9-4E77-4DDC-B15C-596E74B03D90", {"localhost"}));

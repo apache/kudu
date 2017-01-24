@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -35,10 +36,16 @@
 typedef struct asn1_string_st ASN1_INTEGER;
 typedef struct env_md_st EVP_MD;
 typedef struct rsa_st RSA;
+typedef struct x509_st X509;
+typedef struct X509_req_st X509_REQ;
 struct stack_st_X509_EXTENSION; // STACK_OF(X509_EXTENSION)
 
 namespace kudu {
 namespace security {
+
+class Cert;
+class CertSignRequest;
+
 namespace ca {
 
 // Base utility class for issuing X509 CSRs.
@@ -66,7 +73,7 @@ class CertRequestGeneratorBase {
 
   // Generate X509 CSR using the specified key. To obtain the key,
   // call the GeneratePrivateKey() function.
-  Status GenerateRequest(const Key& key, CertSignRequest* ret) const;
+  Status GenerateRequest(const PrivateKey& key, CertSignRequest* ret) const;
 
  protected:
   // Push the specified extension into the stack provided.
@@ -136,7 +143,7 @@ class CertSigner {
   // Initialize the signer from existing Cert/Key objects.
   // The passed objects must be initialized.
   Status Init(std::shared_ptr<Cert> ca_cert,
-              std::shared_ptr<Key> ca_private_key);
+              std::shared_ptr<PrivateKey> ca_private_key);
 
   // Initialize the signer from a CA cert and private key stored
   // on disk.
@@ -146,7 +153,7 @@ class CertSigner {
   //
   // Any certificates signed by this CertSigner will have the 'issuer' equal
   // to the signed cert's subject.
-  Status InitForSelfSigning(std::shared_ptr<Key> private_key);
+  Status InitForSelfSigning(std::shared_ptr<PrivateKey> private_key);
 
   // Set the expiration interval for certs signed by this signer.
   // This may be changed at any point.
@@ -158,7 +165,7 @@ class CertSigner {
   bool Initialized() const;
 
   const Cert& ca_cert() const;
-  const Key& ca_private_key() const;
+  const PrivateKey& ca_private_key() const;
 
   Status Sign(const CertSignRequest& req, Cert* ret) const;
 
@@ -181,7 +188,7 @@ class CertSigner {
 
   // The CA private key. If configured for self-signing, this is the
   // private key associated with the target cert.
-  std::shared_ptr<Key> ca_private_key_;
+  std::shared_ptr<PrivateKey> ca_private_key_;
 
   DISALLOW_COPY_AND_ASSIGN(CertSigner);
 };

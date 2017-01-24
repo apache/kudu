@@ -25,6 +25,7 @@
 
 #include "kudu/util/flag_tags.h"
 #include "kudu/security/ca/cert_management.h"
+#include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
 
 using std::string;
@@ -51,8 +52,9 @@ Status ServerCertManager::Init() {
   MutexLock lock(lock_);
   CHECK(!key_);
 
-  unique_ptr<Key> key(new Key());
-  RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_server_rsa_key_length_bits, key.get()),
+  unique_ptr<PrivateKey> key(new PrivateKey());
+  RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_server_rsa_key_length_bits,
+                        key.get()),
                         "could not generate private key");
 
   // TODO(aserbin): do these fields actually have to be set?
@@ -74,7 +76,7 @@ Status ServerCertManager::Init() {
   RETURN_NOT_OK_PREPEND(gen.GenerateRequest(*key, &csr), "could not generate CSR");
   RETURN_NOT_OK_PREPEND(csr.ToString(&csr_der_, DataFormat::DER),
                         "unable to output DER format CSR");
-  key_.swap(key);
+  key_ = std::move(key);
   return Status::OK();
 }
 
