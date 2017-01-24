@@ -34,102 +34,12 @@
 // in addition to openssl_util.h.
 typedef struct asn1_string_st ASN1_INTEGER;
 typedef struct env_md_st EVP_MD;
-typedef struct evp_pkey_st EVP_PKEY;
 typedef struct rsa_st RSA;
-typedef struct x509_st X509;
-typedef struct X509_req_st X509_REQ;
 struct stack_st_X509_EXTENSION; // STACK_OF(X509_EXTENSION)
 
 namespace kudu {
 namespace security {
 namespace ca {
-
-template <typename T>
-using c_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;
-
-// Acceptable formats for X509 certificates, X509 CSRs, and private keys.
-enum class DataFormat {
-  DER = 0,    // DER/ASN1 format (binary)
-  PEM = 1,    // PEM format (ASCII)
-};
-
-// Data format representation as a string.
-const std::string& DataFormatToString(DataFormat fmt);
-
-// Basic wrapper for objects of xxx_st type in the OpenSSL crypto library.
-class BasicWrapper {
- public:
-  virtual ~BasicWrapper() = default;
-
-  Status FromFile(const std::string& fpath, DataFormat format);
-  Status FromString(const std::string& data, DataFormat format);
-
-  Status ToString(std::string* data, DataFormat format) const;
-
- protected:
-  virtual Status FromBIO(BIO* bio, DataFormat format) = 0;
-  virtual Status ToBIO(BIO* bio, DataFormat format) const = 0;
-};
-
-// A wrapper for a private key.
-class Key : public BasicWrapper {
- public:
-  typedef EVP_PKEY RawDataType;
-
-  RawDataType* GetRawData() const {
-    return data_.get();
-  }
-
-  void AdoptRawData(RawDataType* data);
-
- protected:
-  Status FromBIO(BIO* bio, DataFormat format) override;
-  Status ToBIO(BIO* bio, DataFormat format) const override;
-
- private:
-  c_unique_ptr<RawDataType> data_;
-};
-
-// A wrapper for a X509 certificate.
-class Cert : public BasicWrapper {
- public:
-  typedef X509 RawDataType;
-
-  RawDataType* GetRawData() const {
-    return data_.get();
-  }
-
-  void AdoptRawData(RawDataType* data);
-
- protected:
-  Status FromBIO(BIO* bio, DataFormat format) override;
-  Status ToBIO(BIO* bio, DataFormat format) const override;
-
- private:
-  c_unique_ptr<RawDataType> data_;
-};
-
-// A wrapper for a X509 CSR (certificate signing request).
-class CertSignRequest : public BasicWrapper {
- public:
-  typedef X509_REQ RawDataType;
-
-  RawDataType* GetRawData() const {
-    return data_.get();
-  }
-
-  void AdoptRawData(RawDataType* data);
-
- protected:
-  Status FromBIO(BIO* bio, DataFormat format) override;
-  Status ToBIO(BIO* bio, DataFormat format) const override;
-
- private:
-  c_unique_ptr<RawDataType> data_;
-};
-
-// Utility method to generate private RSA keys.
-Status GeneratePrivateKey(int num_bits, Key* ret);
 
 // Base utility class for issuing X509 CSRs.
 class CertRequestGeneratorBase {

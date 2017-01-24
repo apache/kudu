@@ -47,231 +47,29 @@ using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 
-#define CERT_CHECK_OK(call) \
-  CHECK_GT((call), 0)
-
-#define CERT_RET_NOT_OK(call, msg) \
-  if ((call) <= 0) { \
-    return Status::RuntimeError(Substitute("$0: $1", \
-        (msg), GetOpenSSLErrors())); \
-  }
-
-#define CERT_RET_IF_NULL(call, msg) \
-  if ((call) == nullptr) { \
-    return Status::RuntimeError(Substitute("$0: $1", \
-        (msg), GetOpenSSLErrors())); \
-  }
-
 namespace kudu {
 namespace security {
-namespace ca {
 
-
-namespace {
-
-// Writing the private key from an EVP_PKEY has a different
-// signature than the rest of the write functions, so we
-// have to provide this wrapper.
-int PemWritePrivateKey(BIO* bio, EVP_PKEY* key);
-
-// For each SSL type, the Traits class provides the important OpenSSL
-// API functions.
-template<class SSL_TYPE>
-struct SslTypeTraits {};
-
-template<> struct SslTypeTraits<X509> {
-  static constexpr auto free = &X509_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509;
-  static constexpr auto read_der = &d2i_X509_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509;
-  static constexpr auto write_der = &i2d_X509_bio;
-};
-template<> struct SslTypeTraits<X509_REQ> {
-  static constexpr auto free = &X509_REQ_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509_REQ;
-  static constexpr auto read_der = &d2i_X509_REQ_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509_REQ;
-  static constexpr auto write_der = &i2d_X509_REQ_bio;
-};
-template<> struct SslTypeTraits<EVP_PKEY> {
-  static constexpr auto free = &EVP_PKEY_free;
-  static constexpr auto read_pem = &PEM_read_bio_PrivateKey;
-  static constexpr auto read_der = &d2i_PrivateKey_bio;
-  static constexpr auto write_pem = &PemWritePrivateKey;
-  static constexpr auto write_der = &i2d_PrivateKey_bio;
-};
 template<> struct SslTypeTraits<ASN1_INTEGER> {
   static constexpr auto free = &ASN1_INTEGER_free;
-};
-template<> struct SslTypeTraits<BIO> {
-  static constexpr auto free = &BIO_free;
 };
 template<> struct SslTypeTraits<BIGNUM> {
   static constexpr auto free = &BN_free;
 };
-template<> struct SslTypeTraits<RSA> {
-  static constexpr auto free = &RSA_free;
+template<> struct SslTypeTraits<X509> {
+  static constexpr auto free = &X509_free;
+};
+template<> struct SslTypeTraits<X509_REQ> {
+  static constexpr auto free = &X509_REQ_free;
 };
 template<> struct SslTypeTraits<X509_EXTENSION> {
   static constexpr auto free = &X509_EXTENSION_free;
 };
+template<> struct SslTypeTraits<EVP_PKEY> {
+  static constexpr auto free = &EVP_PKEY_free;
+};
 
-template<class SSL_TYPE>
-static c_unique_ptr<SSL_TYPE> make_ssl_unique(SSL_TYPE* d) {
-  return {d, SslTypeTraits<SSL_TYPE>::free};
-}
-
-int PemWritePrivateKey(BIO* bio, EVP_PKEY* key) {
-  auto rsa = make_ssl_unique(EVP_PKEY_get1_RSA(key));
-  return PEM_write_bio_RSAPrivateKey(
-      bio, rsa.get(), nullptr, nullptr, 0, nullptr, nullptr);
-}
-
-template<class TYPE>
-Status ToBIO(BIO* bio, DataFormat format, TYPE* obj) {
-  using Traits = SslTypeTraits<TYPE>;
-  CHECK(bio);
-  CHECK(obj);
-  switch (format) {
-    case DataFormat::DER:
-      CERT_RET_NOT_OK(Traits::write_der(bio, obj), "error exporting DER format");
-      break;
-    case DataFormat::PEM:
-      CERT_RET_NOT_OK(Traits::write_pem(bio, obj), "error exporting PEM format");
-      break;
-  }
-  CERT_RET_NOT_OK(BIO_flush(bio), "error flushing BIO");
-  return Status::OK();
-}
-
-template<class TYPE>
-Status FromBIO(BIO* bio, DataFormat format, c_unique_ptr<TYPE>* ret) {
-  using Traits = SslTypeTraits<TYPE>;
-  CHECK(bio);
-  switch (format) {
-    case DataFormat::DER:
-      *ret = make_ssl_unique(Traits::read_der(bio, nullptr));
-      break;
-    case DataFormat::PEM:
-      *ret = make_ssl_unique(Traits::read_pem(bio, nullptr, nullptr, nullptr));
-      break;
-  }
-  if (PREDICT_FALSE(!*ret)) {
-    return Status::RuntimeError(GetOpenSSLErrors());
-  }
-  return Status::OK();
-}
-} // anonymous namespace
-
-
-const string& DataFormatToString(DataFormat fmt) {
-  static const string kStrFormatUnknown = "UNKNOWN";
-  static const string kStrFormatDer = "DER";
-  static const string kStrFormatPem = "PEM";
-  switch (fmt) {
-    case DataFormat::DER:
-      return kStrFormatDer;
-    case DataFormat::PEM:
-      return kStrFormatPem;
-    default:
-      return kStrFormatUnknown;
-  }
-}
-
-Status BasicWrapper::FromFile(const string& fpath, DataFormat format) {
-  auto bio = make_ssl_unique(BIO_new(BIO_s_file()));
-  CERT_RET_NOT_OK(BIO_read_filename(bio.get(), fpath.c_str()),
-                  Substitute("$0: could not read from file", fpath));
-  RETURN_NOT_OK_PREPEND(FromBIO(bio.get(), format),
-                        Substitute("$0: unable to load data key from file",
-                                   fpath));
-  return Status::OK();
-}
-
-Status BasicWrapper::FromString(const string& data, DataFormat format) {
-  const void* mdata = reinterpret_cast<const void*>(data.data());
-  auto bio = make_ssl_unique(BIO_new_mem_buf(
-#if OPENSSL_VERSION_NUMBER < 0x10002000L
-      const_cast<void*>(mdata),
-#else
-      mdata,
-#endif
-      data.size()));
-  RETURN_NOT_OK_PREPEND(FromBIO(bio.get(), format),
-                        "unable to load data from memory");
-  return Status::OK();
-}
-
-Status BasicWrapper::ToString(std::string* data, DataFormat format) const {
-  CHECK(data);
-  auto bio = make_ssl_unique(BIO_new(BIO_s_mem()));
-  RETURN_NOT_OK_PREPEND(ToBIO(bio.get(), format), "error serializing data");
-  BUF_MEM* membuf;
-  CERT_CHECK_OK(BIO_get_mem_ptr(bio.get(), &membuf));
-  data->assign(membuf->data, membuf->length);
-  return Status::OK();
-}
-
-void Key::AdoptRawData(RawDataType* data) {
-  data_ = make_ssl_unique(data);
-}
-
-Status Key::FromBIO(BIO* bio, DataFormat format) {
-  RETURN_NOT_OK_PREPEND(ca::FromBIO(bio, format, &data_),
-                        "unable to read private key");
-  return Status::OK();
-}
-
-Status Key::ToBIO(BIO* bio, DataFormat format) const {
-  RETURN_NOT_OK_PREPEND(ca::ToBIO(bio, format, data_.get()), "could not export cert");
-  return Status::OK();
-}
-
-void Cert::AdoptRawData(RawDataType* data) {
-  data_ = make_ssl_unique(data);
-}
-
-Status Cert::FromBIO(BIO* bio, DataFormat format) {
-  RETURN_NOT_OK_PREPEND(ca::FromBIO(bio, format, &data_), "could not read cert");
-  return Status::OK();
-}
-
-Status Cert::ToBIO(BIO* bio, DataFormat format) const {
-  RETURN_NOT_OK_PREPEND(ca::ToBIO(bio, format, data_.get()), "could not export cert");
-  return Status::OK();
-}
-
-void CertSignRequest::AdoptRawData(RawDataType* data) {
-  data_ = make_ssl_unique(data);
-}
-
-Status CertSignRequest::FromBIO(BIO* bio, DataFormat format) {
-  RETURN_NOT_OK_PREPEND(ca::FromBIO(bio, format, &data_), "could not read X509 CSR");
-  return Status::OK();
-}
-
-Status CertSignRequest::ToBIO(BIO* bio, DataFormat format) const {
-  RETURN_NOT_OK_PREPEND(ca::ToBIO(bio, format, data_.get()), "could not export X509 CSR");
-  return Status::OK();
-}
-
-Status GeneratePrivateKey(int num_bits, Key* ret) {
-  CHECK(ret);
-  InitializeOpenSSL();
-  auto key = make_ssl_unique(EVP_PKEY_new());
-  {
-    auto bn = make_ssl_unique(BN_new());
-    CERT_CHECK_OK(BN_set_word(bn.get(), RSA_F4));
-    auto rsa = make_ssl_unique(RSA_new());
-    CERT_RET_NOT_OK(RSA_generate_key_ex(rsa.get(), num_bits, bn.get(), nullptr),
-                    "error generating RSA key");
-    CERT_RET_NOT_OK(EVP_PKEY_set1_RSA(key.get(), rsa.get()),
-                    "error assigning RSA key");
-  }
-  ret->AdoptRawData(key.release());
-
-  return Status::OK();
-}
+namespace ca {
 
 CertRequestGeneratorBase::CertRequestGeneratorBase(Config config)
     : config_(move(config)) {
@@ -285,7 +83,7 @@ Status CertRequestGeneratorBase::GenerateRequest(const Key& key,
                                                  CertSignRequest* ret) const {
   CHECK(ret);
   CHECK(Initialized());
-  auto req = make_ssl_unique(X509_REQ_new());
+  auto req = ssl_make_unique(X509_REQ_new());
   CERT_RET_NOT_OK(X509_REQ_set_pubkey(req.get(), key.GetRawData()),
                   "error setting X509 public key");
   X509_NAME* name = X509_REQ_get_subject_name(req.get());
@@ -322,7 +120,7 @@ Status CertRequestGeneratorBase::GenerateRequest(const Key& key,
 
 Status CertRequestGeneratorBase::PushExtension(stack_st_X509_EXTENSION* st,
                                                int32_t nid, const char* value) {
-  auto ex = make_ssl_unique(
+  auto ex = ssl_make_unique(
       X509V3_EXT_conf_nid(nullptr, nullptr, nid, const_cast<char*>(value)));
   if (!ex) {
     return Status::RuntimeError("error configuring extension");
@@ -554,7 +352,7 @@ const Key& CertSigner::ca_private_key() const {
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
   CHECK(ret);
   CHECK(Initialized());
-  auto x509 = make_ssl_unique(X509_new());
+  auto x509 = ssl_make_unique(X509_new());
   RETURN_NOT_OK(FillCertTemplateFromRequest(req.GetRawData(), x509.get()));
   RETURN_NOT_OK(DoSign(EVP_sha256(), exp_interval_sec_, x509.get()));
   ret->AdoptRawData(x509.release());
@@ -578,7 +376,7 @@ Status CertSigner::CopyExtensions(X509_REQ* req, X509* x) {
     if (idx != -1) {
       // If extension exits, delete all extensions of same type.
       do {
-        auto tmpext = make_ssl_unique(X509_get_ext(x, idx));
+        auto tmpext = ssl_make_unique(X509_get_ext(x, idx));
         X509_delete_ext(x, idx);
         idx = X509_get_ext_by_OBJ(x, obj, -1);
       } while (idx != -1);
@@ -597,7 +395,7 @@ Status CertSigner::FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl) {
       !req->req_info->pubkey->public_key->data) {
     return Status::RuntimeError("corrupted CSR: no public key");
   }
-  auto pub_key = make_ssl_unique(X509_REQ_get_pubkey(req));
+  auto pub_key = ssl_make_unique(X509_REQ_get_pubkey(req));
   if (!pub_key) {
     return Status::RuntimeError("error unpacking public key from CSR");
   }
@@ -622,10 +420,10 @@ Status CertSigner::DigestSign(const EVP_MD* md, EVP_PKEY* pkey, X509* x) {
 }
 
 Status CertSigner::GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret) {
-  auto btmp = make_ssl_unique(BN_new());
+  auto btmp = ssl_make_unique(BN_new());
   CERT_RET_NOT_OK(BN_pseudo_rand(btmp.get(), 64, 0, 0),
                   "error generating random number");
-  auto serial = make_ssl_unique(ASN1_INTEGER_new());
+  auto serial = ssl_make_unique(ASN1_INTEGER_new());
   CERT_RET_IF_NULL(BN_to_ASN1_INTEGER(btmp.get(), serial.get()),
                    "error converting number into ASN1 representation");
   if (ret) {
