@@ -93,21 +93,10 @@ struct CompileAssert {
 // Note, that most uses of DISALLOW_ASSIGN and DISALLOW_COPY are broken
 // semantically, one should either use disallow both or neither. Try to
 // avoid these in new code.
-//
-// The LANG_CXX11 branch is a workaround for
-// http://gcc.gnu.org/PR51213 in gcc-4.7 / Crosstool v16.
-// TODO(user): Remove "&& !defined(__clang_)" when =delete is
-// gcc-4.7 before =delete is allowed, go back to the C++98 definition.
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#if LANG_CXX11 && !defined(__clang__)
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName&) = delete;      \
   void operator=(const TypeName&) = delete
-#else
-#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
-  TypeName(const TypeName&);               \
-  void operator=(const TypeName&)
-#endif
 #endif
 
 // An older, politically incorrect name for the above.
@@ -121,7 +110,7 @@ struct CompileAssert {
 // that wants to prevent anyone from instantiating it. This is
 // especially useful for classes containing only static methods.
 #define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
-  TypeName();                                    \
+  TypeName() = delete;                           \
   DISALLOW_COPY_AND_ASSIGN(TypeName)
 
 // The arraysize(arr) macro returns the # of elements in an array arr.
