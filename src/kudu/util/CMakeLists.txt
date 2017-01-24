@@ -247,8 +247,11 @@ ADD_EXPORTABLE_LIBRARY(kudu_util
 set(UTIL_COMPRESSION_SRCS
   compression/compression_codec.cc)
 set(UTIL_COMPRESSION_LIBS
+  kudu_util
   util_compression_proto
-  util
+
+  glog
+  gutil
   lz4
   snappy
   zlib)
