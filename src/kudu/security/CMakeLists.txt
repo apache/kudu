@@ -18,11 +18,36 @@
 # See the comment in krb5_realm_override.cc for details on this library's usage.
 # The top-level CMakeLists sets a ${KRB5_REALM_OVERRIDE} variable which should
 # be linked first into all Kudu binaries.
+
+##############################
+# krb5_realm_override
+##############################
+
 add_library(krb5_realm_override STATIC krb5_realm_override.cc)
 target_link_libraries(krb5_realm_override glog)
 if(NOT APPLE)
   target_link_libraries(krb5_realm_override dl)
 endif()
+
+##############################
+# token_proto
+##############################
+
+KRPC_GENERATE(
+  TOKEN_PROTO_SRCS TOKEN_PROTO_HDRS TOKEN_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES token.proto)
+set(TOKEN_PROTO_LIBS protobuf)
+ADD_EXPORTABLE_LIBRARY(token_proto
+  SRCS ${TOKEN_PROTO_SRCS}
+  DEPS ${TOKEN_PROTO_LIBS}
+  NONLINK_DEPS ${TOKEN_PROTO_TGTS})
+
+
+##############################
+# security
+##############################
 
 # Fall back to using the ported functionality if we're using an older version of OpenSSL.
 if (${OPENSSL_VERSION} VERSION_LESS "1.0.2")
@@ -37,18 +62,29 @@ set(SECURITY_SRCS
   server_cert_manager.cc
   tls_context.cc
   tls_handshake.cc
-  tls_socket.cc)
+  tls_socket.cc
+  token_verifier.cc
+  token_signer.cc
+  token_signing_key.cc
+  )
 
 set(SECURITY_LIBS
   gutil
-  krb5
   kudu_util
+  token_proto
+
+  krb5
   openssl_crypto
   openssl_ssl)
 
 ADD_EXPORTABLE_LIBRARY(security
   SRCS ${SECURITY_SRCS}
   DEPS ${SECURITY_LIBS})
+
+
+##############################
+# security-test
+##############################
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
@@ -70,4 +106,5 @@ if (NOT NO_TESTS)
   ADD_KUDU_TEST(test/cert_management-test)
   ADD_KUDU_TEST(test/mini_kdc-test)
   ADD_KUDU_TEST(tls_handshake-test)
+  ADD_KUDU_TEST(token-test)
 endif()
