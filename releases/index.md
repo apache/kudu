@@ -9,7 +9,7 @@ single_col_extra_classes: releases
 
 ### Latest release
 
-* **[Kudu 1.2.0](1.2.0/)** was released on January 18, 2016.
+* **[Kudu 1.2.0](1.2.0/)** was released on January 18, 2017.
 
 ### Previous releases
 
