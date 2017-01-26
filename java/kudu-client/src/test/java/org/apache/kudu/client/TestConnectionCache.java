@@ -38,12 +38,17 @@ public class TestConnectionCache {
 
       List<HostAndPort> addresses = cluster.getMasterHostPorts();
 
+      // Below we ping the masters directly using TabletClient, so if they aren't ready to process
+      // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
+      // it won't return until a master leader is found.
+      client.getTablesList().join();
+
       ConnectionCache cache = new ConnectionCache(client);
       int i = 0;
       for (HostAndPort hp : addresses) {
+        // Ping the process so we go through the whole connection process.
         TabletClient conn =
             cache.newClient(new ServerInfo(i + "", hp.getHostText(), hp.getPort(), false));
-        // Ping the process so we go through the whole connection process.
         pingConnection(conn);
         i++;
       }
