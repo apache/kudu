@@ -60,11 +60,17 @@ class TabletCopyTest : public TabletServerTestBase {
 
  protected:
   // Grab the first column block we find in the SuperBlock.
-  static BlockId FirstColumnBlockId(const tablet::TabletSuperBlockPB& superblock) {
-    const tablet::RowSetDataPB& rowset = superblock.rowsets(0);
-    const tablet::ColumnDataPB& column = rowset.columns(0);
-    const BlockIdPB& block_id_pb = column.block();
-    return BlockId::FromPB(block_id_pb);
+  static BlockIdPB* FirstColumnBlockIdPB(tablet::TabletSuperBlockPB* superblock) {
+    DCHECK(superblock);
+    tablet::RowSetDataPB* rowset = DCHECK_NOTNULL(superblock->mutable_rowsets(0));
+    tablet::ColumnDataPB* column = DCHECK_NOTNULL(rowset->mutable_columns(0));
+    BlockIdPB* block_id_pb = DCHECK_NOTNULL(column->mutable_block());
+    return block_id_pb;
+  }
+
+  // Grab the first column block we find in the SuperBlock.
+  static BlockId FirstColumnBlockId(tablet::TabletSuperBlockPB* superblock) {
+    return BlockId::FromPB(*FirstColumnBlockIdPB(superblock));
   }
 
   // Check that the contents and CRC32C of a DataChunkPB are equal to a local buffer.

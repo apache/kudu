@@ -43,8 +43,8 @@ class TabletCopyClientTest : public TabletCopyTest {
     tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new TabletCopyClient(GetTabletId(),
-                                            fs_manager_.get(),
-                                            messenger_));
+                                       fs_manager_.get(),
+                                       messenger_));
     ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()
         ->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED), &leader_));
 
@@ -97,7 +97,7 @@ TEST_F(TabletCopyClientTest, TestBeginEndSession) {
 
 // Basic data block download unit test.
 TEST_F(TabletCopyClientTest, TestDownloadBlock) {
-  BlockId block_id = FirstColumnBlockId(*client_->superblock_);
+  BlockId block_id = FirstColumnBlockId(client_->superblock_.get());
   Slice slice;
   faststring scratch;
 
@@ -210,8 +210,8 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // As long as block IDs are generated with UUIDs or something equally
   // unique, there's no danger of a block in the new superblock somehow
   // being assigned the same ID as a block in the existing superblock.
-  vector<BlockId> old_data_blocks = GetAllSortedBlocks(*client_->superblock_.get());
-  vector<BlockId> new_data_blocks = GetAllSortedBlocks(*client_->new_superblock_.get());
+  vector<BlockId> old_data_blocks = GetAllSortedBlocks(*client_->old_superblock_);
+  vector<BlockId> new_data_blocks = GetAllSortedBlocks(*client_->superblock_);
   vector<BlockId> result;
   std::set_intersection(old_data_blocks.begin(), old_data_blocks.end(),
                         new_data_blocks.begin(), new_data_blocks.end(),
@@ -233,6 +233,69 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   }
 }
+
+enum DeleteTrigger {
+  kAbortMethod, // Delete blocks via Abort().
+  kDestructor,  // Delete blocks via destructor.
+  kNoDelete     // Don't delete blocks.
+};
+
+class TabletCopyClientAbortTest : public TabletCopyClientTest,
+                                  public ::testing::WithParamInterface<DeleteTrigger> {
+};
+
+// Test that we can clean up our downloaded blocks either explicitly using
+// Abort() or implicitly by destroying the TabletCopyClient instance before
+// calling Finish().
+TEST_P(TabletCopyClientAbortTest, TestAbort) {
+  // Download a block.
+  BlockIdPB* block_id_pb = FirstColumnBlockIdPB(client_->superblock_.get());
+  int block_id_count = 0;
+  int num_blocks = client_->CountBlocks();
+  ASSERT_OK(client_->DownloadAndRewriteBlock(block_id_pb, &block_id_count, num_blocks));
+  BlockId new_block_id = BlockId::FromPB(*block_id_pb);
+  ASSERT_TRUE(fs_manager_->BlockExists(new_block_id));
+
+  // Download a WAL segment.
+  ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
+  uint64_t seqno = client_->wal_seqnos_[0];
+  ASSERT_OK(client_->DownloadWAL(seqno));
+  string wal_path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
+  ASSERT_TRUE(fs_manager_->Exists(wal_path));
+
+  scoped_refptr<TabletMetadata> meta = client_->meta_;
+
+  DeleteTrigger trigger = GetParam();
+  switch (trigger) {
+    case kAbortMethod:
+      ASSERT_OK(client_->Abort());
+      break;
+    case kDestructor:
+      client_.reset();
+      break;
+    case kNoDelete:
+      // Call Finish() and then destroy the object.
+      // It should not delete its downloaded blocks.
+      ASSERT_OK(client_->Finish());
+      client_.reset();
+      break;
+    default:
+      FAIL();
+  }
+
+  if (trigger == kNoDelete) {
+    ASSERT_TRUE(fs_manager_->BlockExists(new_block_id));
+    ASSERT_TRUE(fs_manager_->Exists(wal_path));
+  } else {
+    ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta->tablet_data_state());
+    ASSERT_FALSE(fs_manager_->BlockExists(new_block_id));
+    ASSERT_FALSE(fs_manager_->Exists(wal_path));
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(BlockDeleteTriggers,
+                        TabletCopyClientAbortTest,
+                        ::testing::Values(kAbortMethod, kDestructor, kNoDelete));
 
 } // namespace tserver
 } // namespace kudu

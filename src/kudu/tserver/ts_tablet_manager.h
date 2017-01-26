@@ -270,13 +270,6 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                                  int64_t leader_term,
                                  int64_t last_logged_term);
 
-  // Print a log message using the given info and tombstone the specified
-  // tablet. If tombstoning the tablet fails, a FATAL error is logged, resulting
-  // in a crash.
-  void LogAndTombstone(const scoped_refptr<tablet::TabletPeer>& peer,
-                       const std::string& msg,
-                       const Status& s);
-
   TSTabletManagerStatePB state() const {
     shared_lock<rw_spinlock> l(lock_);
     return state_;

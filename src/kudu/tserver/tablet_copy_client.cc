@@ -27,6 +27,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
@@ -38,6 +39,7 @@
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -95,14 +97,12 @@ using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
 
 TabletCopyClient::TabletCopyClient(std::string tablet_id,
-                                             FsManager* fs_manager,
-                                             shared_ptr<Messenger> messenger)
+                                   FsManager* fs_manager,
+                                   shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
       messenger_(std::move(messenger)),
-      started_(false),
-      downloaded_wal_(false),
-      downloaded_blocks_(false),
+      state_(kInitialized),
       replace_tombstoned_tablet_(false),
       status_listener_(nullptr),
       session_idle_timeout_millis_(0),
@@ -110,11 +110,14 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
 
 TabletCopyClient::~TabletCopyClient() {
   // Note: Ending the tablet copy session releases anchors on the remote.
-  WARN_NOT_OK(EndRemoteSession(), "Unable to close tablet copy session");
+  WARN_NOT_OK(EndRemoteSession(), Substitute("$0Unable to close tablet copy session",
+                                             LogPrefix()));
+  WARN_NOT_OK(Abort(), Substitute("$0Failed to fully clean up tablet after aborted copy",
+                                  LogPrefix()));
 }
 
 Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>& meta,
-                                                 int64_t caller_term) {
+                                            int64_t caller_term) {
   CHECK_EQ(tablet_id_, meta->tablet_id());
   TabletDataState data_state = meta->tablet_data_state();
   if (data_state != tablet::TABLET_DATA_TOMBSTONED) {
@@ -150,8 +153,8 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
 }
 
 Status TabletCopyClient::Start(const HostPort& copy_source_addr,
-                                    scoped_refptr<TabletMetadata>* meta) {
-  CHECK(!started_);
+                               scoped_refptr<TabletMetadata>* meta) {
+  CHECK_EQ(kInitialized, state_);
   start_time_micros_ = GetCurrentTimeMicros();
 
   Sockaddr addr;
@@ -192,8 +195,22 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
 
   session_id_ = resp.session_id();
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
-  superblock_.reset(resp.release_superblock());
+
+  // Store a copy of the remote (old) superblock for testing purposes.
+  old_superblock_.reset(resp.release_superblock());
+
+  // Make a copy of the remote superblock. We will modify this
+  // TabletSuperBlockPB in place as we download blocks and assign local block
+  // ids to replace their remote ids.
+  superblock_.reset(new TabletSuperBlockPB(*old_superblock_));
+
+  // The orphaned physical block ids at the remote have no meaning to us.
+  superblock_->clear_orphaned_blocks();
+
+  // Set the data state to COPYING to indicate that, on crash, this replica
+  // should be discarded.
   superblock_->set_tablet_data_state(tablet::TABLET_DATA_COPYING);
+
   wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
   remote_committed_cstate_.reset(resp.release_initial_committed_cstate());
 
@@ -212,19 +229,19 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
       return Status::InvalidArgument(
           Substitute("Tablet $0: source peer has term $1 but "
                      "tombstoned replica has last-logged opid with higher term $2. "
-                      "Refusing tablet copy from source peer $3",
-                      tablet_id_,
-                      remote_committed_cstate_->current_term(),
-                      last_logged_term,
-                      copy_peer_uuid));
+                     "Refusing tablet copy from source peer $3",
+                     tablet_id_,
+                     remote_committed_cstate_->current_term(),
+                     last_logged_term,
+                     copy_peer_uuid));
     }
 
-    // Remove any existing orphaned blocks from the tablet, and
+    // Remove any existing orphaned blocks and WALs from the tablet, and
     // set the data state to 'COPYING'.
-    RETURN_NOT_OK_PREPEND(meta_->DeleteTabletData(tablet::TABLET_DATA_COPYING, boost::none),
-                          "Couldn't replace superblock with COPYING data state");
+    RETURN_NOT_OK_PREPEND(
+        TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_COPYING, boost::none),
+        "Could not replace superblock with COPYING data state");
   } else {
-
     Partition partition;
     Partition::FromPB(superblock_->partition(), &partition);
     PartitionSchema partition_schema;
@@ -242,7 +259,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             &meta_));
   }
 
-  started_ = true;
+  state_ = kStarted;
   if (meta) {
     *meta = meta_;
   }
@@ -250,7 +267,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
 }
 
 Status TabletCopyClient::FetchAll(TabletStatusListener* status_listener) {
-  CHECK(started_);
+  CHECK_EQ(kStarted, state_);
+
   status_listener_ = status_listener;
 
   // Download all the files (serially, for now, but in parallel in the future).
@@ -262,9 +280,8 @@ Status TabletCopyClient::FetchAll(TabletStatusListener* status_listener) {
 
 Status TabletCopyClient::Finish() {
   CHECK(meta_);
-  CHECK(started_);
-  CHECK(downloaded_wal_);
-  CHECK(downloaded_blocks_);
+  CHECK_EQ(kStarted, state_);
+  state_ = kFinished;
 
   RETURN_NOT_OK(WriteConsensusMetadata());
 
@@ -273,8 +290,8 @@ Status TabletCopyClient::Finish() {
   // superblock is in a valid state to bootstrap from.
   LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
-  new_superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
-  RETURN_NOT_OK(meta_->ReplaceSuperBlock(*new_superblock_));
+  superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
+  RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {
     string meta_path = fs_manager_->GetTabletMetadataPath(tablet_id_);
@@ -284,6 +301,27 @@ Status TabletCopyClient::Finish() {
                           "Unable to make copy of tablet metadata");
   }
 
+  return Status::OK();
+}
+
+Status TabletCopyClient::Abort() {
+  if (state_ != kStarted) {
+    return Status::OK();
+  }
+  state_ = kFinished;
+  CHECK(meta_);
+
+  // Write the in-progress superblock to disk so that when we delete the tablet
+  // data all the partial blocks we have persisted will be deleted.
+  DCHECK_EQ(tablet::TABLET_DATA_COPYING, superblock_->tablet_data_state());
+  RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
+
+  // Delete all of the tablet data, including blocks and WALs.
+  RETURN_NOT_OK_PREPEND(
+      TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_TOMBSTONED, boost::none),
+      LogPrefix() + "Failed to tombstone tablet after aborting tablet copy");
+
+  UpdateStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));
   return Status::OK();
 }
 
@@ -302,7 +340,7 @@ Status TabletCopyClient::ExtractRemoteError(const rpc::ErrorStatusPB& remote_err
 
 // Enhance a RemoteError Status message with additional details from the remote.
 Status TabletCopyClient::UnwindRemoteError(const Status& status,
-                                                const rpc::RpcController& controller) {
+                                           const rpc::RpcController& controller) {
   if (!status.IsRemoteError()) {
     return status;
   }
@@ -312,18 +350,17 @@ Status TabletCopyClient::UnwindRemoteError(const Status& status,
 
 void TabletCopyClient::UpdateStatusMessage(const string& message) {
   if (status_listener_ != nullptr) {
-    status_listener_->StatusMessage("TabletCopy: " + message);
+    status_listener_->StatusMessage(Substitute("Tablet Copy: $0", message));
   }
 }
 
 Status TabletCopyClient::EndRemoteSession() {
-  if (!started_) {
+  if (state_ == kInitialized) {
     return Status::OK();
   }
 
   rpc::RpcController controller;
-  controller.set_timeout(MonoDelta::FromMilliseconds(
-        FLAGS_tablet_copy_begin_session_timeout_ms));
+  controller.set_timeout(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_begin_session_timeout_ms));
 
   EndTabletCopySessionRequestPB req;
   req.set_session_id(session_id_);
@@ -337,7 +374,7 @@ Status TabletCopyClient::EndRemoteSession() {
 }
 
 Status TabletCopyClient::DownloadWALs() {
-  CHECK(started_);
+  CHECK_EQ(kStarted, state_);
 
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
   // not kept from previous copies and runs.
@@ -359,14 +396,10 @@ Status TabletCopyClient::DownloadWALs() {
     ++counter;
   }
 
-  downloaded_wal_ = true;
   return Status::OK();
 }
 
-Status TabletCopyClient::DownloadBlocks() {
-  CHECK(started_);
-
-  // Count up the total number of blocks to download.
+int TabletCopyClient::CountBlocks() const {
   int num_blocks = 0;
   for (const RowSetDataPB& rowset : superblock_->rowsets()) {
     num_blocks += rowset.columns_size();
@@ -379,14 +412,20 @@ Status TabletCopyClient::DownloadBlocks() {
       num_blocks++;
     }
   }
+  return num_blocks;
+}
+
+Status TabletCopyClient::DownloadBlocks() {
+  CHECK_EQ(kStarted, state_);
+
+  // Count up the total number of blocks to download.
+  int num_blocks = CountBlocks();
 
   // Download each block, writing the new block IDs into the new superblock
   // as each block downloads.
-  gscoped_ptr<TabletSuperBlockPB> new_sb(new TabletSuperBlockPB());
-  new_sb->CopyFrom(*superblock_);
   int block_count = 0;
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_blocks << " data blocks...";
-  for (RowSetDataPB& rowset : *new_sb->mutable_rowsets()) {
+  for (RowSetDataPB& rowset : *superblock_->mutable_rowsets()) {
     for (ColumnDataPB& col : *rowset.mutable_columns()) {
       RETURN_NOT_OK(DownloadAndRewriteBlock(col.mutable_block(),
                                             &block_count, num_blocks));
@@ -408,12 +447,6 @@ Status TabletCopyClient::DownloadBlocks() {
                                             &block_count, num_blocks));
     }
   }
-
-  // The orphaned physical block ids at the remote have no meaning to us.
-  new_sb->clear_orphaned_blocks();
-  new_superblock_.swap(new_sb);
-
-  downloaded_blocks_ = true;
 
   return Status::OK();
 }
@@ -463,11 +496,11 @@ Status TabletCopyClient::WriteConsensusMetadata() {
 }
 
 Status TabletCopyClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
-                                                      int* block_count, int num_blocks) {
+                                                 int* block_count, int num_blocks) {
   BlockId old_block_id(BlockId::FromPB(*block_id));
   UpdateStatusMessage(Substitute("Downloading block $0 ($1/$2)",
-                                 old_block_id.ToString(), *block_count,
-                                 num_blocks));
+                                 old_block_id.ToString(),
+                                 *block_count + 1, num_blocks));
   BlockId new_block_id;
   RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id),
       "Unable to download block with id " + old_block_id.ToString());
@@ -478,7 +511,7 @@ Status TabletCopyClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
 }
 
 Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
-                                            BlockId* new_block_id) {
+                                       BlockId* new_block_id) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
 
   gscoped_ptr<WritableBlock> block;
@@ -499,7 +532,7 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
 
 template<class Appendable>
 Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
-                                           Appendable* appendable) {
+                                      Appendable* appendable) {
   uint64_t offset = 0;
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(session_idle_timeout_millis_));
