@@ -1502,6 +1502,13 @@ TEST_F(AlterTableTest, TestAlterRangePartitioningInvalid) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "No range partition found for drop range partition step");
   ASSERT_EQ(100, CountTableRows(table.get()));
+
+  // Bad arguments (null ranges)
+  table_alterer.reset(client_->NewTableAlterer(table_name));
+  table_alterer->DropRangePartition(nullptr, nullptr);
+  s = table_alterer->Alter();
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "range partition bounds may not be null");
 }
 
 // Attempts to exhaustively check all cases of single-column range partition
