@@ -44,6 +44,15 @@ extern const char kCaExpiredPrivateKey[];
 // The public part of the abovementioned private key.
 extern const char kCaExpiredPublicKey[];
 
+extern const char kDataTiny[];
+extern const char kSignatureTinySHA512[];
+
+extern const char kDataShort[];
+extern const char kSignatureShortSHA512[];
+
+extern const char kDataLong[];
+extern const char kSignatureLongSHA512[];
+
 // Creates a matching SSL certificate and private key file in 'dir', returning
 // their paths in '*cert_file' and '*key_file'. The password associated with
 // the private key is stored in '*key_password'.

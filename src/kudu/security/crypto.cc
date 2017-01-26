@@ -81,9 +81,39 @@ struct RsaPublicKeyTraits : public SslTypeTraits<EVP_PKEY> {
 template<> struct SslTypeTraits<RSA> {
   static constexpr auto free = &RSA_free;
 };
-template<> struct SslTypeTraits<void> {
-    static constexpr auto free = &CRYPTO_free;
-};
+
+namespace {
+
+const char* GetDigestName(DigestType digest_type) {
+  switch (digest_type) {
+    case DigestType::SHA256:
+      return "SHA256";
+    case DigestType::SHA512:
+      return "SHA512";
+  }
+  return "UNKNOWN_DIGEST";
+}
+
+Status PrepareDigest(DigestType digest,
+                     const EVP_MD** md,
+                     EVP_MD_CTX** mctx,
+                     c_unique_ptr<BIO>* bmd_out) {
+  InitializeOpenSSL();
+  const char* md_name = GetDigestName(digest);
+  *md = EVP_get_digestbyname(md_name);
+  if (!*md) {
+    return Status::InvalidArgument(Substitute("error getting digest '$0': $1",
+                                              md_name, GetOpenSSLErrors()));
+  }
+  auto bmd = ssl_make_unique(BIO_new(BIO_f_md()));
+  OPENSSL_RET_NOT_OK(BIO_get_md_ctx(bmd.get(), mctx),
+                     "error initializing message digest context");
+  bmd_out->swap(bmd);
+
+  return Status::OK();
+}
+
+} // anonymous namespace
 
 
 Status PublicKey::FromString(const std::string& data, DataFormat format) {
@@ -104,6 +134,43 @@ Status PublicKey::FromFile(const std::string& fpath, DataFormat format) {
 Status PublicKey::FromBIO(BIO* bio, DataFormat format) {
   return ::kudu::security::FromBIO<RawDataType, RsaPublicKeyTraits>(
       bio, format, &data_);
+}
+
+// Modeled after code in $OPENSSL_ROOT/apps/dgst.c
+Status PublicKey::VerifySignature(DigestType digest,
+                                  const std::string& data,
+                                  const std::string& signature) const {
+  const EVP_MD* md = nullptr;
+  EVP_MD_CTX* mctx = nullptr;
+  c_unique_ptr<BIO> bmd;
+  RETURN_NOT_OK(PrepareDigest(digest, &md, &mctx, &bmd));
+
+  OPENSSL_RET_NOT_OK(
+      EVP_DigestVerifyInit(mctx, nullptr, md, nullptr, GetRawData()),
+      "error initializing verification digest");
+  OPENSSL_RET_NOT_OK(
+      EVP_DigestVerifyUpdate(mctx, data.data(), data.size()),
+      "error verifying data signature");
+#if OPENSSL_VERSION_NUMBER < 0x10002000L
+  unsigned char* sig_data = reinterpret_cast<unsigned char*>(
+      const_cast<char*>(signature.data()));
+#else
+  const unsigned char* sig_data = reinterpret_cast<const unsigned char*>(
+      signature.data());
+#endif
+  // The success is indicated by return code 1. All other values means
+  // either wrong signature or error while performing signature verification.
+  const int rc = EVP_DigestVerifyFinal(mctx, sig_data, signature.size());
+  if (rc < 0 || rc > 1) {
+    return Status::RuntimeError(
+        Substitute("error verifying data signature: $0",
+                   GetOpenSSLErrors()));
+  }
+  if (rc == 0) {
+    return Status::Corruption("data signature verification failed");
+  }
+
+  return Status::OK();
 }
 
 Status PrivateKey::FromString(const std::string& data, DataFormat format) {
@@ -141,6 +208,29 @@ Status PrivateKey::GetPublicKey(PublicKey* public_key) {
   return Status::OK();
 }
 
+// Modeled after code in $OPENSSL_ROOT/apps/dgst.c
+Status PrivateKey::MakeSignature(DigestType digest,
+                                 const std::string& data,
+                                 std::string* signature) const {
+  CHECK(signature);
+  const EVP_MD* md = nullptr;
+  EVP_MD_CTX* mctx = nullptr;
+  c_unique_ptr<BIO> bmd;
+  RETURN_NOT_OK(PrepareDigest(digest, &md, &mctx, &bmd));
+  OPENSSL_RET_NOT_OK(
+      EVP_DigestSignInit(mctx, nullptr, md, nullptr, GetRawData()),
+      "error initializing signing digest");
+  OPENSSL_RET_NOT_OK(EVP_DigestSignUpdate(mctx, data.data(), data.size()),
+                     "error signing data");
+  size_t sig_len = EVP_PKEY_size(GetRawData());
+  unsigned char buf[4 * 1024];
+  OPENSSL_RET_NOT_OK(EVP_DigestSignFinal(mctx, buf, &sig_len),
+                     "error finalizing data signature");
+  *signature = string(reinterpret_cast<char*>(buf), sig_len);
+
+  return Status::OK();
+}
+
 Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
   CHECK(ret);
   InitializeOpenSSL();
@@ -152,8 +242,8 @@ Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
     OPENSSL_RET_NOT_OK(
         RSA_generate_key_ex(rsa.get(), num_bits, bn.get(), nullptr),
         "error generating RSA key");
-    OPENSSL_RET_NOT_OK(EVP_PKEY_set1_RSA(key.get(), rsa.get()),
-        "error assigning RSA key");
+    OPENSSL_RET_NOT_OK(
+        EVP_PKEY_set1_RSA(key.get(), rsa.get()), "error assigning RSA key");
   }
   ret->AdoptRawData(key.release());
 

@@ -31,6 +31,12 @@ class Status;
 
 namespace security {
 
+// Supported message digests for data signing and signature verification.
+enum class DigestType {
+  SHA256,
+  SHA512,
+};
+
 // A class with generic public key interface, but actually it represents
 // an RSA key.
 class PublicKey : public RawDataWrapper<EVP_PKEY> {
@@ -42,6 +48,13 @@ class PublicKey : public RawDataWrapper<EVP_PKEY> {
   Status FromFile(const std::string& fpath, DataFormat format);
 
   Status FromBIO(BIO* bio, DataFormat format);
+
+  // Using the key, verify data signature using the specified message
+  // digest algorithm for signature verification.
+  // The input signature should be in in raw format (i.e. no base64 encoding).
+  Status VerifySignature(DigestType digest,
+                         const std::string& data,
+                         const std::string& signature) const;
 };
 
 // A class with generic private key interface, but actually it represents
@@ -57,6 +70,13 @@ class PrivateKey : public RawDataWrapper<EVP_PKEY> {
 
   // Output the public part of the keypair into the specified placeholder.
   Status GetPublicKey(PublicKey* public_key);
+
+  // Using the key, generate data signature using the specified
+  // message digest algorithm. The result signature is in raw format
+  // (i.e. no base64 encoding).
+  Status MakeSignature(DigestType digest,
+                       const std::string& data,
+                       std::string* signature) const;
 };
 
 // Utility method to generate private keys.

@@ -19,6 +19,7 @@
 #include <functional>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -31,8 +32,11 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/url-coding.h"
 
+using std::pair;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -141,8 +145,8 @@ TEST_F(CryptoTest, CorruptedRsaPublicKeyInputPEM) {
   }
 }
 
-// Check extraction of the public part out from RSA private keys par.
-TEST_F(CryptoTest, RSAExtractPublicPartFromPrivateKey) {
+// Check extraction of the public part from RSA private keys par.
+TEST_F(CryptoTest, RsaExtractPublicPartFromPrivateKey) {
   // Load the reference RSA private key.
   PrivateKey private_key;
   ASSERT_OK(private_key.FromString(kCaPrivateKey, DataFormat::PEM));
@@ -183,6 +187,57 @@ TEST_P(CryptoKeySerDesTest, ToAndFromString) {
 INSTANTIATE_TEST_CASE_P(
     DataFormats, CryptoKeySerDesTest,
     ::testing::Values(DataFormat::DER, DataFormat::PEM));
+
+// Check making crypto signatures against the reference data.
+TEST_F(CryptoTest, MakeVerifySignatureRef) {
+  static const vector<pair<string, string>> kRefElements = {
+    { kDataTiny,    kSignatureTinySHA512 },
+    { kDataShort,   kSignatureShortSHA512 },
+    { kDataLong,    kSignatureLongSHA512 },
+  };
+
+  // Load the reference RSA private key.
+  PrivateKey private_key;
+  ASSERT_OK(private_key.FromString(kCaPrivateKey, DataFormat::PEM));
+
+  // Load the reference RSA public key.
+  PublicKey public_key;
+  ASSERT_OK(public_key.FromString(kCaPublicKey, DataFormat::PEM));
+
+  for (const auto& e : kRefElements) {
+    string sig;
+    ASSERT_OK(private_key.MakeSignature(DigestType::SHA512, e.first, &sig));
+
+    // Ad-hoc verification: check the produced signature matches the reference.
+    string sig_base64;
+    Base64Encode(sig, &sig_base64);
+    EXPECT_EQ(e.second, sig_base64);
+
+    // Verify the signature cryptographically.
+    EXPECT_OK(public_key.VerifySignature(DigestType::SHA512, e.first, sig));
+  }
+}
+
+TEST_F(CryptoTest, VerifySignatureWrongData) {
+  static const vector<string> kRefSignatures = {
+    kSignatureTinySHA512,
+    kSignatureShortSHA512,
+    kSignatureLongSHA512,
+  };
+
+  // Load the reference RSA public key.
+  PublicKey key;
+  ASSERT_OK(key.FromString(kCaPublicKey, DataFormat::PEM));
+
+  for (const auto& e : kRefSignatures) {
+    string signature;
+    ASSERT_TRUE(Base64Decode(e, &signature));
+    Status s = key.VerifySignature(DigestType::SHA512,
+        "non-expected-data", signature);
+    EXPECT_TRUE(s.IsCorruption()) << s.ToString();
+  }
+}
+
 
 } // namespace security
 } // namespace kudu
