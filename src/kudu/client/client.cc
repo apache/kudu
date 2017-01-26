@@ -920,14 +920,17 @@ KuduTableAlterer* KuduTableAlterer::AddRangePartition(
 
   if (lower_bound == nullptr || upper_bound == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
+    return this;
   }
   if (!lower_bound->schema()->Equals(*upper_bound->schema())) {
     data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
   }
   if (data_->schema_ == nullptr) {
     data_->schema_ = lower_bound->schema();
   } else if (!lower_bound->schema()->Equals(*data_->schema_)) {
     data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
   }
 
   Data::Step s { AlterTableRequestPB::ADD_RANGE_PARTITION,
@@ -948,14 +951,17 @@ KuduTableAlterer* KuduTableAlterer::DropRangePartition(
     KuduTableCreator::RangePartitionBound upper_bound_type) {
   if (lower_bound == nullptr || upper_bound == nullptr) {
     data_->status_ = Status::InvalidArgument("range partition bounds may not be null");
+    return this;
   }
   if (!lower_bound->schema()->Equals(*upper_bound->schema())) {
     data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
   }
   if (data_->schema_ == nullptr) {
     data_->schema_ = lower_bound->schema();
   } else if (!lower_bound->schema()->Equals(*data_->schema_)) {
     data_->status_ = Status::InvalidArgument("range partition bounds must have matching schemas");
+    return this;
   }
 
   Data::Step s { AlterTableRequestPB::DROP_RANGE_PARTITION,
