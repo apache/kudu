@@ -22,7 +22,6 @@ namespace kudu {
 class Status;
 
 namespace security {
-namespace ca {
 
 //
 // Set of certificates and private keys used for certificate generation
@@ -44,8 +43,6 @@ extern const char kCaExpiredCert[];
 extern const char kCaExpiredPrivateKey[];
 // The public part of the abovementioned private key.
 extern const char kCaExpiredPublicKey[];
-
-} // namespace ca
 
 // Creates a matching SSL certificate and private key file in 'dir', returning
 // their paths in '*cert_file' and '*key_file'. The password associated with

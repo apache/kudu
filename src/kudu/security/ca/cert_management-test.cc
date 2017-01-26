@@ -50,8 +50,7 @@ class CertManagementTest : public KuduTest {
       ca_private_key_file_(JoinPathSegments(pem_dir_, "ca.pkey.pem")),
       ca_public_key_file_(JoinPathSegments(pem_dir_, "ca.pubkey.pem")),
       ca_exp_cert_file_(JoinPathSegments(pem_dir_, "ca.exp.cert.pem")),
-      ca_exp_private_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pkey.pem")),
-      ca_exp_public_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pubkey.pem")) {
+      ca_exp_private_key_file_(JoinPathSegments(pem_dir_, "ca.exp.pkey.pem")) {
   }
 
   void SetUp() override {
@@ -59,12 +58,9 @@ class CertManagementTest : public KuduTest {
     ASSERT_OK(WriteStringToFile(env_, kCaCert, ca_cert_file_));
     ASSERT_OK(WriteStringToFile(env_, kCaPrivateKey, ca_private_key_file_));
     ASSERT_OK(WriteStringToFile(env_, kCaPublicKey, ca_public_key_file_));
-
     ASSERT_OK(WriteStringToFile(env_, kCaExpiredCert, ca_exp_cert_file_));
     ASSERT_OK(WriteStringToFile(env_, kCaExpiredPrivateKey,
         ca_exp_private_key_file_));
-    ASSERT_OK(WriteStringToFile(env_, kCaExpiredPublicKey,
-        ca_exp_public_key_file_));
   }
 
  protected:
@@ -88,7 +84,7 @@ class CertManagementTest : public KuduTest {
         ::testing::UnitTest::GetInstance()->current_test_info();
     const string comment = string(test_info->test_case_name()) + "." +
       test_info->name();
-    const CertRequestGenerator::Config config = {
+    return {
       "US",               // country
       "CA",               // state
       "San Francisco",    // locality
@@ -99,7 +95,6 @@ class CertManagementTest : public KuduTest {
       hostnames,          // hostnames
       ips,                // ips
     };
-    return config;
   }
 
   // Run multiple threads which do certificate signing request generation
@@ -166,7 +161,6 @@ class CertManagementTest : public KuduTest {
 
   const string ca_exp_cert_file_;
   const string ca_exp_private_key_file_;
-  const string ca_exp_public_key_file_;
 };
 
 // Check input/output of RSA private keys in PEM format.
@@ -196,7 +190,7 @@ TEST_F(CertManagementTest, RsaPublicKeyInputOutputPEM) {
 }
 
 // Check extraction of the public part out from RSA private keys par.
-TEST_F(CertManagementTest, RSAExtractPublicPartFromPrivateKey) {
+TEST_F(CertManagementTest, RsaExtractPublicPartFromPrivateKey) {
   // Load the reference RSA private key.
   PrivateKey private_key;
   ASSERT_OK(private_key.FromString(kCaPrivateKey, DataFormat::PEM));
@@ -420,62 +414,6 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
     CertSigner signer;
     ASSERT_OK(signer.Init(ca_cert, ca_key));
     ASSERT_OK(signer.Sign(ts_csr, &ts_cert));
-  }
-}
-
-// Check the transformation chains for RSA private keys:
-//   internal -> PEM -> internal -> PEM
-//   internal -> DER -> internal -> DER
-TEST_F(CertManagementTest, RsaPrivateKeyFromAndToString) {
-  static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
-  static const uint16_t kKeyBits[] = { 256, 512, 1024, 2048, 3072, 4096 };
-
-  for (auto format : kFormats) {
-    for (auto key_bits : kKeyBits) {
-      SCOPED_TRACE(Substitute("key format: $0, key bits: $1",
-                              format == DataFormat::PEM ? "PEM"
-                                                        : "DER", key_bits));
-      PrivateKey key_ref;
-      ASSERT_OK(GeneratePrivateKey(key_bits, &key_ref));
-      string str_key_ref;
-      ASSERT_OK(key_ref.ToString(&str_key_ref, format));
-      PrivateKey key;
-      ASSERT_OK(key.FromString(str_key_ref, format));
-      string str_key;
-      ASSERT_OK(key.ToString(&str_key, format));
-      ASSERT_EQ(str_key_ref, str_key);
-    }
-  }
-}
-
-// Check the transformation chains for RSA public keys:
-//   internal -> PEM -> internal -> PEM
-//   internal -> DER -> internal -> DER
-TEST_F(CertManagementTest, RsaPublicKeyFromAndToString) {
-  static const DataFormat kFormats[] = { DataFormat::PEM, DataFormat::DER };
-  static const uint16_t kKeyBits[] = { 256, 512, 1024, 2048, 3072, 4096 };
-
-  for (auto format : kFormats) {
-    for (auto key_bits : kKeyBits) {
-      SCOPED_TRACE(Substitute("key format: $0, key bits: $1",
-                              format == DataFormat::PEM ? "PEM"
-                                                        : "DER", key_bits));
-      // Generate private RSA key.
-      PrivateKey private_key;
-      ASSERT_OK(GeneratePrivateKey(key_bits, &private_key));
-
-      // Extract public part of the key
-      PublicKey key_ref;
-      ASSERT_OK(private_key.GetPublicKey(&key_ref));
-
-      string str_key_ref;
-      ASSERT_OK(key_ref.ToString(&str_key_ref, format));
-      PublicKey key;
-      ASSERT_OK(key.FromString(str_key_ref, format));
-      string str_key;
-      ASSERT_OK(key.ToString(&str_key, format));
-      ASSERT_EQ(str_key_ref, str_key);
-    }
   }
 }
 

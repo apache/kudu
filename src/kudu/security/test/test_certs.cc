@@ -27,7 +27,6 @@ using std::string;
 
 namespace kudu {
 namespace security {
-namespace ca {
 
 //
 // The easiest way to create RSA private key and CA self-signed certificate pair
@@ -241,7 +240,6 @@ OwIDAQAB
 -----END PUBLIC KEY-----
 )***";
 
-} // namespace ca
 
 Status CreateTestSSLCerts(const string& dir,
                           string* cert_file,
