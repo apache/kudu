@@ -8,6 +8,10 @@ dir_resolve()
   echo "`pwd -P`"
 }
 
+: ${VIRTUALBOX_NAME:=cloudera-quickstart-vm-5.8.0-kudu-virtualbox}
+OVF=${VIRTUALBOX_NAME}.ova
+: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/${OVF}}
+
 # VM Settings default.
 : ${VM_NAME:=kudu-demo}
 : ${VM_NUM_CPUS:=2}
@@ -19,28 +23,9 @@ if ! which VBoxManage >/dev/null ; then
   exit 1
 fi
 
-OVF=cloudera-quickstart-vm-5.8.0-kudu-virtualbox.ova
-if [ $# -gt 2 ]; then
-    echo "$0 [--image|-i VM image file]"
-  exit 1
-elif [ $# -gt 0 ]; then
-  case $1 in
-    --image|-i)
-      OVF=$2
-      if [ ! -e $OVF ]; then
-        echo "Specified VM image file doesn't exist"
-        exit 1
-      fi
-      ;;
-    *)
-      echo "$0 [--image|-i VM image file]"
-      exit 1
-  esac
-fi
-
-# Use/download quickstart VM image
+# Download quickstart VM appliance
 if [ -e ${OVF} ]; then
-  echo Using image $OVF
+  echo Using previously downloaded image
 else
   echo "Downloading Virtualbox Image file: ${VIRTUALBOX_URL}"
   if ! curl -fLSs ${VIRTUALBOX_URL} --output ${OVF}; then
@@ -50,7 +35,7 @@ else
 fi
 
 # Set up the VM for the first time if it doesn't already exist.
-if ! VBoxManage list vms | grep -q '{$VM_NAME}'; then
+if ! VBoxManage list vms | grep -q '"kudu-demo"'; then
   # Create a host only network interface
   VBoxManage hostonlyif create
 
