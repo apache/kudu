@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/util/test_util.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -32,9 +33,6 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/spinlock_profiling.h"
-
-DECLARE_bool(log_redact_user_data);
-DECLARE_bool(never_fsync);
 
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
@@ -67,12 +65,21 @@ bool g_is_gtest = true;
 KuduTest::KuduTest()
   : env_(Env::Default()),
     test_dir_(GetTestDataDirectory()) {
-  // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
-  // tests rely on cutting power to a machine or equivalent.
-  FLAGS_never_fsync = true;
-
-  // Disable log redaction.
-  FLAGS_log_redact_user_data = false;
+  std::map<const char*, const char*> flags_for_tests = {
+    // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
+    // tests rely on cutting power to a machine or equivalent.
+    {"never_fsync", "true"},
+    // Disable log redaction.
+    {"log_redact_user_data", "false"},
+    // Reduce default RSA key length for faster tests.
+    {"server_rsa_key_length_bits", "512"},
+    {"master_ca_rsa_key_length_bits", "512"}
+  };
+  for (const auto& e : flags_for_tests) {
+    // We don't check for errors here, because we have some default flags that
+    // only apply to certain tests.
+    google::SetCommandLineOptionWithMode(e.first, e.second, google::SET_FLAGS_DEFAULT);
+  }
 }
 
 KuduTest::~KuduTest() {

@@ -38,15 +38,7 @@ DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 
-class FlagsTest : public KuduTest {
- public:
-  FlagsTest() {
-    // Set by KuduTest, and set back to the default value here as this test
-    // deals with unsafe and experimental flags.
-    FLAGS_never_fsync = false;
-    FLAGS_log_redact_user_data = true;
-  }
-};
+class FlagsTest : public KuduTest {};
 
 TEST_F(FlagsTest, TestNonDefaultFlags) {
   // Memorize the default flags

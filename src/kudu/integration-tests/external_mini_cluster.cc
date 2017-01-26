@@ -630,6 +630,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // rely on forcefully cutting power to a machine or equivalent.
   argv.push_back("--never_fsync");
 
+  // Generate smaller RSA keys -- generating a 512-bit key is >15x faster
+  // than generating the default 2048-bit key, and we don't care about
+  // strong encryption in tests.
+  argv.push_back("--server_rsa_key_length_bits=512");
+
   // Disable log redaction.
   argv.push_back("--log_redact_user_data=false");
 
@@ -1003,6 +1008,10 @@ ExternalMaster::~ExternalMaster() {
 
 Status ExternalMaster::Start() {
   vector<string> flags;
+
+  // Generate smaller RSA keys. See note above for server_rsa_key_length_bits.
+  flags.push_back("--master_ca_rsa_key_length_bits=512");
+
   flags.push_back("--fs_wal_dir=" + data_dir_);
   flags.push_back("--fs_data_dirs=" + data_dir_);
   flags.push_back("--rpc_bind_addresses=" + get_rpc_bind_address());
