@@ -16,6 +16,10 @@
 // under the License.
 #include "kudu/tserver/tablet_copy-test-base.h"
 
+#include <tuple>
+
+#include <glog/stl_logging.h>
+
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -29,6 +33,7 @@ namespace tserver {
 
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
+using std::tuple;
 using std::unique_ptr;
 using tablet::TabletMetadata;
 
@@ -44,8 +49,8 @@ class TabletCopyClientTest : public TabletCopyTest {
     tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new TabletCopyClient(GetTabletId(),
-                                            fs_manager_.get(),
-                                            messenger_));
+                                       fs_manager_.get(),
+                                       messenger_));
     ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()
         ->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED), &leader_));
 
@@ -91,6 +96,12 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   return Status::OK();
 }
 
+// Implementation test that no blocks exist in the new superblock before fetching.
+TEST_F(TabletCopyClientTest, TestNoBlocksAtStart) {
+  ASSERT_GT(ListBlocks(*client_->remote_superblock_).size(), 0);
+  ASSERT_EQ(0, ListBlocks(*client_->superblock_).size());
+}
+
 // Basic begin / end tablet copy session.
 TEST_F(TabletCopyClientTest, TestBeginEndSession) {
   ASSERT_OK(client_->FetchAll(nullptr /* no listener */));
@@ -99,7 +110,7 @@ TEST_F(TabletCopyClientTest, TestBeginEndSession) {
 
 // Basic data block download unit test.
 TEST_F(TabletCopyClientTest, TestDownloadBlock) {
-  BlockId block_id = FirstColumnBlockId(*client_->superblock_);
+  BlockId block_id = FirstColumnBlockId(*client_->remote_superblock_);
   Slice slice;
   faststring scratch;
 
@@ -113,8 +124,6 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
   ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
 
   // Ensure it placed the block where we expected it to.
-  s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
-  ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
 }
 
@@ -174,65 +183,138 @@ TEST_F(TabletCopyClientTest, TestVerifyData) {
   LOG(INFO) << "Expected error returned: " << s.ToString();
 }
 
-namespace {
-
-vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
-  vector<BlockId> data_blocks;
-
-  for (const tablet::RowSetDataPB& rowset : sb.rowsets()) {
-    for (const tablet::DeltaDataPB& redo : rowset.redo_deltas()) {
-      data_blocks.push_back(BlockId::FromPB(redo.block()));
-    }
-    for (const tablet::DeltaDataPB& undo : rowset.undo_deltas()) {
-      data_blocks.push_back(BlockId::FromPB(undo.block()));
-    }
-    for (const tablet::ColumnDataPB& column : rowset.columns()) {
-      data_blocks.push_back(BlockId::FromPB(column.block()));
-    }
-    if (rowset.has_bloom_block()) {
-      data_blocks.push_back(BlockId::FromPB(rowset.bloom_block()));
-    }
-    if (rowset.has_adhoc_index_block()) {
-      data_blocks.push_back(BlockId::FromPB(rowset.adhoc_index_block()));
-    }
-  }
-
-  std::sort(data_blocks.begin(), data_blocks.end(), BlockIdCompare());
-  return data_blocks;
-}
-
-} // anonymous namespace
-
 TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
 
-  // Verify that the new superblock reflects the changes in block IDs.
-  //
-  // As long as block IDs are generated with UUIDs or something equally
-  // unique, there's no danger of a block in the new superblock somehow
-  // being assigned the same ID as a block in the existing superblock.
-  vector<BlockId> old_data_blocks = GetAllSortedBlocks(*client_->superblock_.get());
-  vector<BlockId> new_data_blocks = GetAllSortedBlocks(*client_->new_superblock_.get());
-  vector<BlockId> result;
-  std::set_intersection(old_data_blocks.begin(), old_data_blocks.end(),
-                        new_data_blocks.begin(), new_data_blocks.end(),
-                        std::back_inserter(result), BlockIdCompare());
-  ASSERT_TRUE(result.empty());
+  // After downloading blocks, verify that the old and remote and local
+  // superblock point to the same number of blocks.
+  vector<BlockId> old_data_blocks = ListBlocks(*client_->remote_superblock_);
+  vector<BlockId> new_data_blocks = ListBlocks(*client_->superblock_);
   ASSERT_EQ(old_data_blocks.size(), new_data_blocks.size());
 
-  // Verify that the old blocks aren't found. We're using a different
-  // FsManager than 'tablet_peer', so the only way an old block could end
-  // up in ours is due to a tablet copy client bug.
-  for (const BlockId& block_id : old_data_blocks) {
-    unique_ptr<fs::ReadableBlock> block;
-    Status s = fs_manager_->OpenBlock(block_id, &block);
-    ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
-  }
-  // And the new blocks are all present.
+  // Verify that the new blocks are all present.
   for (const BlockId& block_id : new_data_blocks) {
     unique_ptr<fs::ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
+  }
+}
+
+enum DownloadBlocks {
+  kDownloadBlocks,    // Fetch blocks from remote.
+  kNoDownloadBlocks,  // Do not fetch blocks from remote.
+};
+enum DeleteTrigger {
+  kAbortMethod, // Delete data via Abort().
+  kDestructor,  // Delete data via destructor.
+  kNoDelete     // Don't delete data.
+};
+
+struct AbortTestParams {
+  DownloadBlocks download_blocks;
+  DeleteTrigger delete_type;
+};
+
+class TabletCopyClientAbortTest : public TabletCopyClientTest,
+                                  public ::testing::WithParamInterface<
+                                      tuple<DownloadBlocks, DeleteTrigger>> {
+ protected:
+  // Create the specified number of blocks with junk data for testing purposes.
+  void CreateTestBlocks(int num_blocks);
+};
+
+INSTANTIATE_TEST_CASE_P(BlockDeleteTriggers,
+                        TabletCopyClientAbortTest,
+                        ::testing::Combine(
+                            ::testing::Values(kDownloadBlocks, kNoDownloadBlocks),
+                            ::testing::Values(kAbortMethod, kDestructor, kNoDelete)));
+
+void TabletCopyClientAbortTest::CreateTestBlocks(int num_blocks) {
+  for (int i = 0; i < num_blocks; i++) {
+    unique_ptr<fs::WritableBlock> block;
+    ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+    block->Append("Test");
+    ASSERT_OK(block->Close());
+  }
+}
+
+// Test that we can clean up our downloaded blocks either explicitly using
+// Abort() or implicitly by destroying the TabletCopyClient instance before
+// calling Finish(). Also ensure that no data loss occurs.
+TEST_P(TabletCopyClientAbortTest, TestAbort) {
+  tuple<DownloadBlocks, DeleteTrigger> param = GetParam();
+  DownloadBlocks download_blocks = std::get<0>(param);
+  DeleteTrigger trigger = std::get<1>(param);
+
+  // Check that there are remote blocks.
+  vector<BlockId> remote_block_ids = ListBlocks(*client_->remote_superblock_);
+  ASSERT_FALSE(remote_block_ids.empty());
+  int num_remote_blocks = client_->CountRemoteBlocks();
+  ASSERT_GT(num_remote_blocks, 0);
+  ASSERT_EQ(num_remote_blocks, remote_block_ids.size());
+
+  // Create some local blocks so we can check that we didn't lose any existing
+  // data on abort. TODO(mpercy): The data loss check here will likely never
+  // trigger until we fix KUDU-1980 because there is a workaround / hack in the
+  // LBM that randomizes the starting block id for each BlockManager instance.
+  // Therefore the block ids will never overlap.
+  const int kNumBlocksToCreate = 100;
+  NO_FATALS(CreateTestBlocks(kNumBlocksToCreate));
+
+  vector<BlockId> local_block_ids;
+  ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&local_block_ids));
+  ASSERT_EQ(kNumBlocksToCreate, local_block_ids.size());
+  VLOG(1) << "Local blocks: " << local_block_ids;
+
+  int num_blocks_downloaded = 0;
+  if (download_blocks == kDownloadBlocks) {
+    ASSERT_OK(client_->DownloadBlocks());
+    num_blocks_downloaded = num_remote_blocks;
+  }
+
+  vector<BlockId> new_local_block_ids;
+  ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
+  ASSERT_EQ(kNumBlocksToCreate + num_blocks_downloaded, new_local_block_ids.size());
+
+  // Download a WAL segment.
+  ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
+  uint64_t seqno = client_->wal_seqnos_[0];
+  ASSERT_OK(client_->DownloadWAL(seqno));
+  string wal_path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
+  ASSERT_TRUE(fs_manager_->Exists(wal_path));
+
+  scoped_refptr<TabletMetadata> meta = client_->meta_;
+
+  switch (trigger) {
+    case kAbortMethod:
+      ASSERT_OK(client_->Abort());
+      break;
+    case kDestructor:
+      client_.reset();
+      break;
+    case kNoDelete:
+      // Call Finish() and then destroy the object.
+      // It should not delete its downloaded blocks.
+      ASSERT_OK(client_->Finish());
+      client_.reset();
+      break;
+    default:
+      FAIL();
+  }
+
+  if (trigger == kNoDelete) {
+    vector<BlockId> new_local_block_ids;
+    ASSERT_OK(fs_manager_->block_manager()->GetAllBlockIds(&new_local_block_ids));
+    ASSERT_EQ(kNumBlocksToCreate + num_blocks_downloaded, new_local_block_ids.size());
+  } else {
+    ASSERT_EQ(tablet::TABLET_DATA_TOMBSTONED, meta->tablet_data_state());
+    ASSERT_FALSE(fs_manager_->Exists(wal_path));
+    vector<BlockId> latest_blocks;
+    fs_manager_->block_manager()->GetAllBlockIds(&latest_blocks);
+    ASSERT_EQ(local_block_ids.size(), latest_blocks.size());
+  }
+  for (const auto& block_id : local_block_ids) {
+    ASSERT_TRUE(fs_manager_->BlockExists(block_id)) << "Missing block: " << block_id;
   }
 }
 

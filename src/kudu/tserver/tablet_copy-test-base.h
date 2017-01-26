@@ -20,6 +20,7 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 
 #include <string>
+#include <vector>
 
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
@@ -34,8 +35,6 @@
 namespace kudu {
 namespace tserver {
 
-using consensus::MinimumOpId;
-
 // Number of times to roll the log.
 static const int kNumLogRolls = 2;
 
@@ -49,7 +48,7 @@ class TabletCopyTest : public TabletServerTestBase {
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a tablet copy session.
     tablet_peer_->log_anchor_registry()->Register(
-      MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
+        consensus::MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     NO_FATALS(GenerateTestData());
   }
 
@@ -61,10 +60,35 @@ class TabletCopyTest : public TabletServerTestBase {
  protected:
   // Grab the first column block we find in the SuperBlock.
   static BlockId FirstColumnBlockId(const tablet::TabletSuperBlockPB& superblock) {
+    DCHECK_GT(superblock.rowsets_size(), 0);
     const tablet::RowSetDataPB& rowset = superblock.rowsets(0);
+    DCHECK_GT(rowset.columns_size(), 0);
     const tablet::ColumnDataPB& column = rowset.columns(0);
-    const BlockIdPB& block_id_pb = column.block();
-    return BlockId::FromPB(block_id_pb);
+    return BlockId::FromPB(column.block());
+  }
+
+  // Return a vector of the blocks contained in the specified superblock (not
+  // including orphaned blocks).
+  static vector<BlockId> ListBlocks(const tablet::TabletSuperBlockPB& superblock) {
+    vector<BlockId> block_ids;
+    for (const auto& rowset : superblock.rowsets()) {
+      for (const auto& col : rowset.columns()) {
+        block_ids.emplace_back(col.block().id());
+      }
+      for (const auto& redos : rowset.redo_deltas()) {
+        block_ids.emplace_back(redos.block().id());
+      }
+      for (const auto& undos : rowset.undo_deltas()) {
+        block_ids.emplace_back(undos.block().id());
+      }
+      if (rowset.has_bloom_block()) {
+        block_ids.emplace_back(rowset.bloom_block().id());
+      }
+      if (rowset.has_adhoc_index_block()) {
+        block_ids.emplace_back(rowset.adhoc_index_block().id());
+      }
+    }
+    return block_ids;
   }
 
   // Check that the contents and CRC32C of a DataChunkPB are equal to a local buffer.

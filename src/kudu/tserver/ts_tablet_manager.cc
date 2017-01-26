@@ -317,16 +317,6 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   return Status::OK();
 }
 
-// If 'expr' fails, log a message, tombstone the given tablet, and return.
-#define TOMBSTONE_NOT_OK(expr, peer, msg) \
-  do { \
-    const Status& _s = (expr); \
-    if (PREDICT_FALSE(!_s.ok())) { \
-      LogAndTombstone((peer), (msg), _s); \
-      return; \
-    } \
-  } while (0)
-
 Status TSTabletManager::CheckLeaderTermNotLower(const string& tablet_id,
                                                 int64_t leader_term,
                                                 int64_t last_logged_term) {
@@ -424,8 +414,9 @@ void TSTabletManager::RunTabletCopy(
 
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
 
-  const string& tablet_id = req->tablet_id();
-  const string& copy_source_uuid = req->copy_peer_uuid();
+  // Copy these strings so they stay valid even after responding to the request.
+  string tablet_id = req->tablet_id(); // NOLINT(*)
+  string copy_source_uuid = req->copy_peer_uuid(); // NOLINT(*)
   HostPort copy_source_addr;
   CALLBACK_RETURN_NOT_OK(HostPortFromPB(req->copy_peer_addr(), &copy_source_addr));
   int64_t leader_term = req->caller_term();
@@ -454,7 +445,7 @@ void TSTabletManager::RunTabletCopy(
     switch (data_state) {
       case TABLET_DATA_COPYING:
         // This should not be possible due to the transition_in_progress_ "lock".
-        LOG(FATAL) << LogPrefix(tablet_id) << " Tablet Copy: "
+        LOG(FATAL) << LogPrefix(tablet_id) << "Tablet Copy: "
                    << "Found tablet in TABLET_DATA_COPYING state during StartTabletCopy()";
       case TABLET_DATA_TOMBSTONED: {
         int64_t last_logged_term = meta->tombstone_last_logged_opid().term();
@@ -474,10 +465,10 @@ void TSTabletManager::RunTabletCopy(
 
         // Tombstone the tablet and store the last-logged OpId.
         old_tablet_peer->Shutdown();
-        // TODO: Because we begin shutdown of the tablet after we check our
+        // TODO(mpercy): Because we begin shutdown of the tablet after we check our
         // last-logged term against the leader's term, there may be operations
-        // in flight and it may be possible for the same check in the remote
-        // bootstrap client Start() method to fail. This will leave the replica in
+        // in flight and it may be possible for the same check in the tablet
+        // copy client Start() method to fail. This will leave the replica in
         // a tombstoned state, and then the leader with the latest log entries
         // will simply tablet copy this replica again. We could try to
         // check again after calling Shutdown(), and if the check fails, try to
@@ -531,15 +522,22 @@ void TSTabletManager::RunTabletCopy(
 
   // Download all of the remote files.
   Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(tablet_peer.get()));
-  TOMBSTONE_NOT_OK(s, tablet_peer,
-                   Substitute("Tablet Copy: Unable to fetch data from remote peer $0",
-                              kSrcPeerInfo));
+  if (!s.ok()) {
+    LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
+                                         << kSrcPeerInfo << ": " << s.ToString();
+    return;
+  }
 
   MAYBE_FAULT(FLAGS_fault_crash_after_tc_files_fetched);
 
   // Write out the last files to make the new replica visible and update the
   // TabletDataState in the superblock to TABLET_DATA_READY.
-  TOMBSTONE_NOT_OK(tc_client.Finish(), tablet_peer, "Tablet Copy: Failure calling Finish()");
+  s = tc_client.Finish();
+  if (!s.ok()) {
+    LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Failure calling Finish(): "
+                                         << s.ToString();
+    return;
+  }
 
   // We don't tombstone the tablet if opening the tablet fails, because on next
   // startup it's still in a valid, fully-copied state.
@@ -698,7 +696,7 @@ Status TSTabletManager::StartTabletStateTransitionUnlocked(
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        scoped_refptr<TabletMetadata>* metadata) {
-  LOG(INFO) << "Loading metadata for tablet " << tablet_id;
+  LOG(INFO) << LogPrefix(tablet_id) << "Loading tablet metadata";
   TRACE("Loading metadata...");
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, tablet_id, &meta),
@@ -860,7 +858,9 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
     LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
   }
 
-  LOG(INFO) << "Registered tablet " << tablet_id;
+  TabletDataState data_state = tablet_peer->tablet_metadata()->tablet_data_state();
+  LOG(INFO) << LogPrefix(tablet_id) << Substitute("Registered tablet (data state: $0)",
+                                                  TabletDataState_Name(data_state));
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
@@ -1021,7 +1021,8 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
             << "Deleting tablet data with delete state "
             << TabletDataState_Name(data_state);
   CHECK(data_state == TABLET_DATA_DELETED ||
-        data_state == TABLET_DATA_TOMBSTONED)
+        data_state == TABLET_DATA_TOMBSTONED ||
+        data_state == TABLET_DATA_COPYING)
       << "Unexpected data_state to delete tablet " << meta->tablet_id() << ": "
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
@@ -1037,31 +1038,17 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   MAYBE_FAULT(FLAGS_fault_crash_after_wal_deleted);
 
   // We do not delete the superblock or the consensus metadata when tombstoning
-  // a tablet.
-  if (data_state == TABLET_DATA_TOMBSTONED) {
+  // a tablet or marking it as entering the tablet copy process.
+  if (data_state == TABLET_DATA_COPYING ||
+      data_state == TABLET_DATA_TOMBSTONED) {
     return Status::OK();
   }
 
   // Only TABLET_DATA_DELETED tablets get this far.
+  DCHECK_EQ(TABLET_DATA_DELETED, data_state);
   RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
   return meta->DeleteSuperBlock();
-}
-
-void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletPeer>& peer,
-                                      const std::string& msg,
-                                      const Status& s) {
-  const string& tablet_id = peer->tablet_id();
-  LOG(WARNING) << LogPrefix(tablet_id) << msg << ": " << s.ToString();
-
-  Status delete_status = DeleteTabletData(
-      peer->tablet_metadata(), TABLET_DATA_TOMBSTONED, boost::optional<OpId>());
-  if (PREDICT_FALSE(!delete_status.ok())) {
-    // This failure should only either indicate a bug or an IO error.
-    LOG(FATAL) << LogPrefix(tablet_id) << "Failed to tombstone tablet after tablet copy: "
-               << delete_status.ToString();
-  }
-  peer->StatusMessage(Substitute("Tombstoned tablet: $0 ($1)", msg, s.ToString()));
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(
