@@ -27,18 +27,30 @@ typedef ssl_st SSL;
 namespace kudu {
 namespace security {
 
+class Cert;
+
 class TlsSocket : public Socket {
  public:
 
   ~TlsSocket() override;
 
-  Status Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) override;
+  // Retrieve the local certificate. This will return an error status if there
+  // is no local certificate.
+  Status GetLocalCert(Cert* cert) const WARN_UNUSED_RESULT;
 
-  Status Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten) override;
+  // Retrieve the remote peer's certificate. This will return an error status if
+  // there is no remote certificate.
+  Status GetRemoteCert(Cert* cert) const WARN_UNUSED_RESULT;
 
-  Status Recv(uint8_t *buf, int32_t amt, int32_t *nread) override;
+  Status Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) override WARN_UNUSED_RESULT;
 
-  Status Close() override;
+  Status Writev(const struct ::iovec *iov,
+                int iov_len,
+                int32_t *nwritten) override WARN_UNUSED_RESULT;
+
+  Status Recv(uint8_t *buf, int32_t amt, int32_t *nread) override WARN_UNUSED_RESULT;
+
+  Status Close() override WARN_UNUSED_RESULT;
 
  private:
 

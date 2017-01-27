@@ -164,6 +164,9 @@ class ClientNegotiation {
   // Handle case when server sends SASL_CHALLENGE response.
   Status HandleSaslChallenge(const NegotiatePB& response) WARN_UNUSED_RESULT;
 
+  // Handle case when server sends SASL_SUCCESS response.
+  Status HandleSaslSuccess(const NegotiatePB& response) WARN_UNUSED_RESULT;
+
   // Perform a client-side step of the SASL negotiation.
   // Input is what came from the server. Output is what we will send back to the server.
   // Returns:
@@ -171,6 +174,9 @@ class ClientNegotiation {
   //   Status::Incomplete if sasl_client_step returns SASL_CONTINUE
   // otherwise returns an appropriate error status.
   Status DoSaslStep(const std::string& in, const char** out, unsigned* out_len) WARN_UNUSED_RESULT;
+
+  // Decode the provided SASL-encoded data and append it to 'plaintext'.
+  Status SaslDecode(const std::string& encoded, std::string* plaintext) WARN_UNUSED_RESULT;
 
   Status SendConnectionContext() WARN_UNUSED_RESULT;
 
@@ -185,6 +191,7 @@ class ClientNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
+  bool tls_negotiated_;
 
   // Authentication state.
   std::string plain_auth_user_;

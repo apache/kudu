@@ -38,6 +38,7 @@ using std::string;
 // Constants
 extern const char* const kSaslMechPlain;
 extern const char* const kSaslMechGSSAPI;
+extern const size_t kSaslMaxOutBufLen;
 
 struct SaslMechanism {
   enum Type {
@@ -63,10 +64,10 @@ struct SaslMechanism {
 //
 // This function is thread safe and uses a static lock.
 // This function should NOT be called during static initialization.
-Status SaslInit();
+Status SaslInit() WARN_UNUSED_RESULT;
 
 // Disable Kudu's initialization of SASL. See equivalent method in client.h.
-Status DisableSaslInitialization();
+Status DisableSaslInitialization() WARN_UNUSED_RESULT;
 
 // Wrap a call into the SASL library. 'call' should be a lambda which
 // returns a SASL error code.
@@ -79,7 +80,7 @@ Status DisableSaslInitialization();
 //
 // The Status message is beautified to be more user-friendly compared
 // to the underlying sasl_errdetails() call.
-Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call);
+Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) WARN_UNUSED_RESULT;
 
 // Return <ip>;<port> string formatted for SASL library use.
 string SaslIpPortString(const Sockaddr& addr);
@@ -92,6 +93,10 @@ std::set<SaslMechanism::Type> SaslListAvailableMechs();
 // proc: A C-style callback with appropriate signature based on the callback id, or NULL.
 // context: An object to pass to the callback as the context pointer, or NULL.
 sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context);
+
+// Require integrity protection on the SASL connection. Should be called before
+// initiating the SASL negotiation.
+Status EnableIntegrityProtection(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
 
 // Deleter for sasl_conn_t instances, for use with gscoped_ptr after calling sasl_*_new()
 struct SaslDeleter {

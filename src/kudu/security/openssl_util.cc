@@ -28,7 +28,6 @@
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/mutex.h"
@@ -37,7 +36,6 @@
 
 using std::ostringstream;
 using std::string;
-using strings::Substitute;
 
 namespace kudu {
 namespace security {

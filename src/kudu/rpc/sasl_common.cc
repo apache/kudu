@@ -17,10 +17,13 @@
 
 #include "kudu/rpc/sasl_common.h"
 
-#include <boost/algorithm/string/predicate.hpp>
+#include <string.h>
+
+#include <limits>
 #include <mutex>
 #include <string>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <regex.h>
@@ -42,6 +45,7 @@ namespace rpc {
 
 const char* const kSaslMechPlain = "PLAIN";
 const char* const kSaslMechGSSAPI = "GSSAPI";
+extern const size_t kSaslMaxOutBufLen = 1024;
 
 // See WrapSaslCall().
 static __thread string* g_auth_failure_capture = nullptr;
@@ -318,6 +322,7 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
       return Status::Incomplete("");
     case SASL_FAIL:      // Generic failure (encompasses missing krb5 credentials).
     case SASL_BADAUTH:   // Authentication failure.
+    case SASL_BADMAC:    // Decode failure.
     case SASL_NOAUTHZ:   // Authorization failure.
     case SASL_NOUSER:    // User not found.
     case SASL_WRONGMECH: // Server doesn't support requested mechanism.
@@ -364,6 +369,19 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
   callback.proc = proc;
   callback.context = context;
   return callback;
+}
+
+Status EnableIntegrityProtection(sasl_conn_t* sasl_conn) {
+  sasl_security_properties_t sec_props;
+  memset(&sec_props, 0, sizeof(sec_props));
+  sec_props.min_ssf = 1;
+  sec_props.max_ssf = std::numeric_limits<sasl_ssf_t>::max();
+  sec_props.maxbufsize = kSaslMaxOutBufLen;
+
+  RETURN_NOT_OK_PREPEND(WrapSaslCall(sasl_conn, [&] () {
+    return sasl_setprop(sasl_conn, SASL_SEC_PROPS, &sec_props);
+  }), "failed to set SASL security properties");
+  return Status::OK();
 }
 
 SaslMechanism::Type SaslMechanism::value_of(const string& mech) {

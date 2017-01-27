@@ -172,8 +172,11 @@ class ServerNegotiation {
   // Send a SASL_CHALLENGE response to the client with a challenge token.
   Status SendSaslChallenge(const char* challenge, unsigned clen) WARN_UNUSED_RESULT;
 
-  // Send a SASL_SUCCESS response to the client with an token (typically empty).
-  Status SendSaslSuccess(const char* token, unsigned tlen) WARN_UNUSED_RESULT;
+  // Send a SASL_SUCCESS response to the client.
+  Status SendSaslSuccess() WARN_UNUSED_RESULT;
+
+  // Encode the provided data and append it to 'encoded'.
+  Status SaslEncode(const std::string& plaintext, std::string* encoded) WARN_UNUSED_RESULT;
 
   // Receive and validate the ConnectionContextPB.
   Status RecvConnectionContext(faststring* recv_buf) WARN_UNUSED_RESULT;
@@ -189,6 +192,7 @@ class ServerNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
+  bool tls_negotiated_;
 
   // The set of features supported by the client. Filled in during negotiation.
   std::set<RpcFeatureFlag> client_features_;

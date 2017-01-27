@@ -487,6 +487,59 @@ Client                                                                    Server
    |                                                +---------------------+ |
 ```
 
+### Authentication
+
+When security is enabled, the negotiation process is responsible for mutually
+authenticating the client and server to each other. There are three distinct
+methods of mutual authentication, one of which will be chosen during
+negotiation. Which method is chosen for a particular connection depends on the
+configuration of the client and server. All authentication methods require the
+connection to be protected with TLS encryption.
+
+| server authentication of client | client authentication of server | notes |
+|---|---|---|
+| Kerberos | Kerberos | Kerberos provides strong mutual authentication, channel binding ties the Kerberos authentication to the TLS channel |
+| Certificate | Certificate | client and server authenticate via certs signed by mutually trusted CA |
+| Token | Certificate | client authenticates by passing a token signed by a key which is trusted by the server |
+
+#### Kerberos Authentication
+
+Kerberos authentication requires the client and server to be configured with
+Kerberos principal credentials. Typically the client must have an active TGT
+acquired from the `kinit` command, and the server must be configured with a
+keytab. Kerberos authentication is handled through the SASL `GSSAPI` mechanism.
+When using Kerberos authentication TLS certificates are not verified.
+
+When the SASL `GSSAPI` negotiation is complete, the server returns a special
+channel binding token to the client as part of the `SASL_SUCCESS` message. The
+channel binding token contains a hash of the server's certificate, wrapped in a
+SASL integrity protected envelope. The client must check the channel binding
+token against the certificate presented by the server during the TLS handshake
+before continuing to use the connection. See RFC 5056 for more information on
+channel binding and why it is necessary, and RFC 5929 for a description of the
+specific 'tls-server-end-point' channel binding type used.
+
+#### Certificate Authentication
+
+When the client and server are configured with certificates signed by a mutually
+trusted certificate authority (CA), certificate authentication can be used
+to authenticate the client and server.
+
+TODO(dan): explain how the two sides decide on certificate authentication.
+           Probably via a special SASL mechanism (`KUDU_CERTIFICATE`) which
+           short-circuits any actual SASL messages.
+
+#### Token Authentication
+
+Token authentication requires the server to be configured with a certificate,
+and the client to be configured with a token. The server's certificate must be
+signed by a CA trusted by the client, and the client's token must be signed by a
+token-signing-key which is trusted by the server.
+
+TODO(dan): explain how the two sides decide on token authentication.
+           Probably via a special SASL mechanism (`KUDU_TOKEN`) which sends a
+           single round of SASL messages containing the token and a reply ack.
+
 ## Connection Context
 
 Once the SASL negotiation is complete, before the first request, the client

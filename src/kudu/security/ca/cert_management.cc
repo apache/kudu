@@ -56,15 +56,6 @@ template<> struct SslTypeTraits<ASN1_INTEGER> {
 template<> struct SslTypeTraits<BIGNUM> {
   static constexpr auto free = &BN_free;
 };
-template<> struct SslTypeTraits<X509> {
-  static constexpr auto free = &X509_free;
-};
-template<> struct SslTypeTraits<X509_REQ> {
-  static constexpr auto free = &X509_REQ_free;
-};
-template<> struct SslTypeTraits<X509_EXTENSION> {
-  static constexpr auto free = &X509_EXTENSION_free;
-};
 template<> struct SslTypeTraits<EVP_PKEY> {
   static constexpr auto free = &EVP_PKEY_free;
 };

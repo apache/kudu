@@ -21,11 +21,6 @@
 
 #include "kudu/security/openssl_util.h"
 
-// Forward declarations for the OpenSSL typedefs.
-typedef struct x509_st X509;
-typedef struct X509_req_st X509_REQ;
-typedef struct X509_name_st X509_NAME;
-
 namespace kudu {
 
 class Status;
@@ -43,6 +38,13 @@ class Cert : public RawDataWrapper<X509> {
 
   std::string SubjectName() const;
   std::string IssuerName() const;
+
+  // Returns the 'tls-server-end-point' channel bindings for the certificate as
+  // specified in RFC 5929.
+  Status GetServerEndPointChannelBindings(std::string* channel_bindings) const;
+
+  // Adopts the provided X509 certificate, and increments the reference count.
+  void AdoptAndAddRefRawData(X509* data);
 };
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {

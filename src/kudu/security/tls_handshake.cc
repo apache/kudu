@@ -40,11 +40,6 @@ using std::unique_ptr;
 namespace kudu {
 namespace security {
 
-template<> struct SslTypeTraits<X509> {
-  static constexpr auto free = &X509_free;
-};
-
-
 void TlsHandshake::SetSSLVerify() {
   CHECK(ssl_);
   CHECK(!has_started_);

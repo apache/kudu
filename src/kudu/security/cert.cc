@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
@@ -30,21 +31,6 @@ using std::string;
 
 namespace kudu {
 namespace security {
-
-template<> struct SslTypeTraits<X509> {
-  static constexpr auto free = &X509_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509;
-  static constexpr auto read_der = &d2i_X509_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509;
-  static constexpr auto write_der = &i2d_X509_bio;
-};
-template<> struct SslTypeTraits<X509_REQ> {
-  static constexpr auto free = &X509_REQ_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509_REQ;
-  static constexpr auto read_der = &d2i_X509_REQ_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509_REQ;
-  static constexpr auto write_der = &i2d_X509_REQ_bio;
-};
 
 string X509NameToString(X509_NAME* name) {
   CHECK(name);
@@ -76,6 +62,70 @@ string Cert::IssuerName() const {
   return X509NameToString(X509_get_issuer_name(data_.get()));
 }
 
+Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
+  // Find the signature type of the certificate. This corresponds to the digest
+  // (hash) algorithm, and the public key type which signed the cert.
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  int signature_nid = X509_get_signature_nid(data_.get());
+#else
+  // Older version of OpenSSL appear not to have a public way to get the
+  // signature digest method from a certificate. Instead, we reach into the
+  // 'private' internals.
+  int signature_nid = OBJ_obj2nid(data_->sig_alg->algorithm);
+#endif
+
+  // Retrieve the digest algorithm type.
+  int digest_nid;
+  OBJ_find_sigid_algs(signature_nid, &digest_nid, nullptr /* public_key_nid */);
+
+  // RFC 5929: if the certificate's signatureAlgorithm uses no hash functions or
+  // uses multiple hash functions, then this channel binding type's channel
+  // bindings are undefined at this time (updates to is channel binding type may
+  // occur to address this issue if it ever arises).
+  //
+  // TODO(dan): can the multiple hash function scenario actually happen? What
+  // does OBJ_find_sigid_algs do in that scenario?
+  if (digest_nid == NID_undef) {
+    return Status::NotSupported("server certificate has no signature digest (hash) algorithm");
+  }
+
+  // RFC 5929: if the certificate's signatureAlgorithm uses a single hash
+  // function, and that hash function is either MD5 [RFC1321] or SHA-1
+  // [RFC3174], then use SHA-256 [FIPS-180-3];
+  if (digest_nid == NID_md5 || digest_nid == NID_sha1) {
+    digest_nid = NID_sha256;
+  }
+
+  const EVP_MD* md = EVP_get_digestbynid(digest_nid);
+  OPENSSL_RET_IF_NULL(md, "digest for nid not found");
+
+  // Create a digest BIO. All data written to the BIO will be sent through the
+  // digest (hash) function. The digest BIO requires a null BIO to writethrough to.
+  auto null_bio = ssl_make_unique(BIO_new(BIO_s_null()));
+  auto md_bio = ssl_make_unique(BIO_new(BIO_f_md()));
+  OPENSSL_RET_NOT_OK(BIO_set_md(md_bio.get(), md), "failed to set digest for BIO");
+  BIO_push(md_bio.get(), null_bio.get());
+
+  // Write the cert to the digest BIO.
+  RETURN_NOT_OK(ToBIO(md_bio.get(), DataFormat::DER, data_.get()));
+
+  // Read the digest from the BIO and append it to 'channel_bindings'.
+  char buf[EVP_MAX_MD_SIZE];
+  int digest_len = BIO_gets(md_bio.get(), buf, sizeof(buf));
+  OPENSSL_RET_NOT_OK(digest_len, "failed to get cert digest from BIO");
+  channel_bindings->assign(buf, digest_len);
+  return Status::OK();
+}
+
+void Cert::AdoptAndAddRefRawData(X509* data) {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  CHECK_GT(CRYPTO_add(&data->references, 1, CRYPTO_LOCK_X509), 1) << "X509 use-after-free detected";
+#else
+  OPENSSL_CHECK_OK(X509_up_ref(data)) << "X509 use-after-free detected: " << GetOpenSSLErrors();
+#endif
+  AdoptRawData(data);
+}
 
 Status CertSignRequest::FromString(const std::string& data, DataFormat format) {
   return ::kudu::security::FromString(data, format, &data_);

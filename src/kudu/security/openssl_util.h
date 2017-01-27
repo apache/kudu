@@ -21,28 +21,31 @@
 #include <memory>
 #include <string>
 
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 // Forward declarations for the OpenSSL typedefs.
+typedef struct X509_req_st X509_REQ;
 typedef struct bio_st BIO;
 typedef struct evp_pkey_st EVP_PKEY;
 typedef struct ssl_ctx_st SSL_CTX;
 typedef struct ssl_st SSL;
+typedef struct x509_st X509;
 
 #define OPENSSL_CHECK_OK(call) \
   CHECK_GT((call), 0)
 
 #define OPENSSL_RET_NOT_OK(call, msg) \
   if ((call) <= 0) { \
-    return Status::RuntimeError(::strings::Substitute("$0: $1", \
-        (msg), GetOpenSSLErrors())); \
+    return Status::RuntimeError((msg), GetOpenSSLErrors()); \
   }
 
 #define OPENSSL_RET_IF_NULL(call, msg) \
   if ((call) == nullptr) { \
-    return Status::RuntimeError(::strings::Substitute("$0: $1", \
-        (msg), GetOpenSSLErrors())); \
+    return Status::RuntimeError((msg), GetOpenSSLErrors()); \
   }
 
 namespace kudu {
@@ -79,6 +82,24 @@ using c_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;
 // API functions.
 template<typename SSL_TYPE>
 struct SslTypeTraits {};
+
+template<> struct SslTypeTraits<X509> {
+  static constexpr auto free = &X509_free;
+  static constexpr auto read_pem = &PEM_read_bio_X509;
+  static constexpr auto read_der = &d2i_X509_bio;
+  static constexpr auto write_pem = &PEM_write_bio_X509;
+  static constexpr auto write_der = &i2d_X509_bio;
+};
+template<> struct SslTypeTraits<X509_EXTENSION> {
+  static constexpr auto free = &X509_EXTENSION_free;
+};
+template<> struct SslTypeTraits<X509_REQ> {
+  static constexpr auto free = &X509_REQ_free;
+  static constexpr auto read_pem = &PEM_read_bio_X509_REQ;
+  static constexpr auto read_der = &d2i_X509_REQ_bio;
+  static constexpr auto write_pem = &PEM_write_bio_X509_REQ;
+  static constexpr auto write_der = &i2d_X509_REQ_bio;
+};
 
 template<typename SSL_TYPE, typename Traits = SslTypeTraits<SSL_TYPE>>
 c_unique_ptr<SSL_TYPE> ssl_make_unique(SSL_TYPE* d) {

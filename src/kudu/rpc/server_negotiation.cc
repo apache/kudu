@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/server_negotiation.h"
 
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <set>
@@ -26,14 +27,17 @@
 #include <google/protobuf/message_lite.h>
 #include <sasl/sasl.h>
 
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/security/cert.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
+#include "kudu/security/tls_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -67,6 +71,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
       tls_context_(nullptr),
+      tls_negotiated_(false),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
@@ -148,6 +153,7 @@ Status ServerNegotiation::Negotiate() {
       if (s.ok()) break;
       if (!s.IsIncomplete()) return s;
     }
+    tls_negotiated_ = true;
   }
 
   // Step 4: SASL negotiation.
@@ -426,6 +432,15 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
   const NegotiatePB::SaslAuth& auth = request.auths(0);
   TRACE("Client requested to use mechanism: $0", auth.mechanism());
 
+  negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
+
+  // If we are speaking TLS and the negotiated mechanism is GSSAPI (Kerberos),
+  // configure SASL to use integrity protection so that the channel bindings
+  // can be verified.
+  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::GSSAPI) {
+    RETURN_NOT_OK(EnableIntegrityProtection(sasl_conn_.get()));
+  }
+
   const char* server_out = nullptr;
   uint32_t server_out_len = 0;
   TRACE("Calling sasl_server_start()");
@@ -445,15 +460,35 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
     return s;
   }
 
-  negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
-
   // We have a valid mechanism match
   if (s.ok()) {
-    RETURN_NOT_OK(SendSaslSuccess(server_out, server_out_len));
+    DCHECK(server_out_len == 0);
+    RETURN_NOT_OK(SendSaslSuccess());
   } else { // s.IsIncomplete() (equivalent to SASL_CONTINUE)
     RETURN_NOT_OK(SendSaslChallenge(server_out, server_out_len));
   }
   return s;
+}
+
+Status ServerNegotiation::SaslEncode(const std::string& plaintext, std::string* encoded) {
+  size_t offset = 0;
+  const char* out;
+  unsigned out_len;
+
+  // The SASL library can only encode up to a maximum amount at a time, so we
+  // have to call encode multiple times if our input is larger than this max.
+  while (offset < plaintext.size()) {
+    size_t len = std::min(kSaslMaxOutBufLen, plaintext.size() - offset);
+
+    RETURN_NOT_OK(WrapSaslCall(sasl_conn_.get(), [&]() {
+        return sasl_encode(sasl_conn_.get(), plaintext.data() + offset, len, &out, &out_len);
+    }));
+
+    encoded->append(out, out_len);
+    offset += len;
+  }
+
+  return Status::OK();
 }
 
 Status ServerNegotiation::HandleSaslResponse(const NegotiatePB& request) {
@@ -484,7 +519,8 @@ Status ServerNegotiation::HandleSaslResponse(const NegotiatePB& request) {
     });
 
   if (s.ok()) {
-    return SendSaslSuccess(server_out, server_out_len);
+    DCHECK(server_out_len == 0);
+    return SendSaslSuccess();
   }
   if (s.IsIncomplete()) {
     return SendSaslChallenge(server_out, server_out_len);
@@ -501,12 +537,21 @@ Status ServerNegotiation::SendSaslChallenge(const char* challenge, unsigned clen
   return Status::Incomplete("");
 }
 
-Status ServerNegotiation::SendSaslSuccess(const char* token, unsigned tlen) {
+Status ServerNegotiation::SendSaslSuccess() {
   NegotiatePB response;
   response.set_step(NegotiatePB::SASL_SUCCESS);
-  if (PREDICT_FALSE(tlen > 0)) {
-    response.mutable_token()->assign(token, tlen);
+
+  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::Type::GSSAPI) {
+    // Send the channel bindings to the client.
+    security::TlsSocket* tls_socket = down_cast<security::TlsSocket*>(socket_.get());
+    security::Cert cert;
+    RETURN_NOT_OK(tls_socket->GetLocalCert(&cert));
+
+    string plaintext_channel_bindings;
+    RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));
+    RETURN_NOT_OK(SaslEncode(plaintext_channel_bindings, response.mutable_channel_bindings()));
   }
+
   RETURN_NOT_OK(SendNegotiatePB(response));
   return Status::OK();
 }

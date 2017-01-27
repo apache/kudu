@@ -37,13 +37,11 @@ message UserInformationPB {
   required string real_user = 2;
 }
 
-/**
- * The connection context is sent as part of the connection establishment.
- * It establishes the context for ALL RPC calls within the connection.
- * This is sent on connection setup after the connection preamble is sent
- * and SASL has been negotiated.
- * No response is sent from the server to the client.
- */
+// The connection context is sent as part of the connection establishment.
+// It establishes the context for ALL RPC calls within the connection.
+// This is sent on connection setup after the connection preamble is sent
+// and SASL has been negotiated.
+// No response is sent from the server to the client.
 message ConnectionContextPB {
   // UserInfo beyond what is determined as part of security handshake
   // at connection time (kerberos, tokens etc).
@@ -118,6 +116,14 @@ message NegotiatePB {
 
   // During the TLS_HANDSHAKE step, contains the TLS handshake message.
   optional bytes tls_handshake = 5 [(REDACT) = true];
+
+  // The tls-server-end-point channel bindings as specified in RFC 5929.  Sent
+  // from the server to the client during the SASL_SUCCESS step when the
+  // Kerberos (GSSAPI) SASL mechanism is used with TLS, in order to bind the
+  // Kerberos authenticated channel to the TLS channel. The value is integrity
+  // protected through SASL. The client is responsible for validating that the
+  // value matches the expected value.
+  optional bytes channel_bindings = 6 [(REDACT) = true];
 
   // During the NEGOTIATE step, contains the supported SASL mechanisms.
   // During the SASL_INITIATE step, contains the single chosen SASL mechanism.
