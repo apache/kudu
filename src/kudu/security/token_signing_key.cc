@@ -18,13 +18,17 @@
 #include "kudu/security/token_signing_key.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
+#include "kudu/security/crypto.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
 
 using std::unique_ptr;
+using std::string;
 
 namespace kudu {
 namespace security {
@@ -36,10 +40,19 @@ TokenSigningPublicKey::TokenSigningPublicKey(const TokenSigningPublicKeyPB& pb)
 TokenSigningPublicKey::~TokenSigningPublicKey() {
 }
 
+Status TokenSigningPublicKey::Init() {
+  // This should be called only once.
+  CHECK(!key_.GetRawData());
+  if (!pb_.has_rsa_key_der()) {
+    return Status::RuntimeError("no key for token signing helper");
+  }
+  RETURN_NOT_OK(key_.FromString(pb_.rsa_key_der(), DataFormat::DER));
+  return Status::OK();
+}
+
 bool TokenSigningPublicKey::VerifySignature(const SignedTokenPB& token) const {
-  CHECK(pb_.has_rsa_key_der());
-  // TODO(PKI): add real signatures!
-  return token.signature() == "signed:" + token.token_data();
+  return key_.VerifySignature(DigestType::SHA256,
+      token.token_data(), token.signature()).ok();
 }
 
 TokenSigningPrivateKey::TokenSigningPrivateKey(
@@ -47,24 +60,27 @@ TokenSigningPrivateKey::TokenSigningPrivateKey(
     : key_(std::move(key)),
       key_seq_num_(key_seq_num),
       expire_time_(expire_time) {
+  PublicKey public_key;
+  CHECK_OK(key_->GetPublicKey(&public_key));
+  CHECK_OK(public_key.ToString(&public_key_der_, DataFormat::DER));
 }
 
 TokenSigningPrivateKey::~TokenSigningPrivateKey() {
 }
 
 Status TokenSigningPrivateKey::Sign(SignedTokenPB* token) const {
-  token->set_signature("signed:" + token->token_data());
+  string signature;
+  RETURN_NOT_OK(key_->MakeSignature(DigestType::SHA256,
+      token->token_data(), &signature));
+  token->mutable_signature()->assign(std::move(signature));
   token->set_signing_key_seq_num(key_seq_num_);
   return Status::OK();
 }
 
 void TokenSigningPrivateKey::ExportPublicKeyPB(TokenSigningPublicKeyPB* pb) {
   pb->Clear();
-  // TODO(PKI): implement me! depends on https://gerrit.cloudera.org/#/c/5783/
-  // though we probably would want to export this once and cache it in DER
-  // format.
   pb->set_key_seq_num(key_seq_num_);
-  pb->set_rsa_key_der("TODO");
+  pb->set_rsa_key_der(public_key_der_);
   pb->set_expire_unix_epoch_seconds(expire_time_);
 }
 

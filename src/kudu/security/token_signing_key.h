@@ -17,6 +17,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/security/crypto.h"
@@ -28,13 +29,9 @@ namespace kudu {
 namespace security {
 
 // Wrapper around a TokenSigningPublicKeyPB that provides useful functionality
-// verify tokens.
+// to verify tokens.
 //
-// Like the underlying OpenSSL types, this can either represent a
-// public/private keypair, or a standalone public key. Attempts to
-// call Sign() without a private key present will result in an error.
-//
-// This class is thread-safe.
+// This represents a standalone public key useful for token verification.
 class TokenSigningPublicKey {
  public:
   explicit TokenSigningPublicKey(const TokenSigningPublicKeyPB& pb);
@@ -44,14 +41,20 @@ class TokenSigningPublicKey {
     return pb_;
   }
 
+  // Initialize the object. Should be called only once.
+  Status Init() WARN_UNUSED_RESULT;
+
   // Verify the signature in a given token.
+  // This method is thread-safe.
   // NOTE: this does _not_ verify the expiration.
   bool VerifySignature(const SignedTokenPB& token) const;
- private:
-  TokenSigningPublicKeyPB pb_;
 
-  // TODO(PKI): parse the underlying PB DER data into an EVP_PKEY
-  // and store that instead.
+ private:
+  const TokenSigningPublicKeyPB pb_;
+  // The 'key_' member is a parsed version of rsa_key_der() from pb_.
+  // In essence, the 'key_' is a public key for message signature verification.
+  PublicKey key_;
+
   DISALLOW_COPY_AND_ASSIGN(TokenSigningPublicKey);
 };
 
@@ -69,14 +72,16 @@ class TokenSigningPrivateKey {
 
   // Export the public-key portion of this signing key.
   void ExportPublicKeyPB(TokenSigningPublicKeyPB* pb);
+
  private:
   std::unique_ptr<PrivateKey> key_;
+  // The 'public_key_der_' is a serialized 'key_' in DER format: just a cache.
+  std::string public_key_der_;
   int64_t key_seq_num_;
   int64_t expire_time_;
 
   DISALLOW_COPY_AND_ASSIGN(TokenSigningPrivateKey);
 };
-
 
 } // namespace security
 } // namespace kudu

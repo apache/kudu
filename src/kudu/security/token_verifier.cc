@@ -53,7 +53,7 @@ int64_t TokenVerifier::GetMaxKnownKeySequenceNumber() const {
 // Import a set of public keys provided by the token signer (typically
 // running on another node).
 Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& public_keys) {
-  // Do the copy construction outside of the lock, to avoid holding the
+  // Do the construction outside of the lock, to avoid holding the
   // lock while doing lots of allocation.
   vector<unique_ptr<TokenSigningPublicKey>> tsks;
   for (const auto& pb : public_keys) {
@@ -71,6 +71,7 @@ Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& pu
           "token-signing public key message must include an expiration time");
     }
     tsks.emplace_back(new TokenSigningPublicKey { pb });
+    RETURN_NOT_OK(tsks.back()->Init());
   }
 
   lock_guard<RWMutex> l(lock_);
