@@ -29,6 +29,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/mini_cluster_base.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -41,7 +42,6 @@ class ExternalTabletServer;
 class HostPort;
 class MetricPrototype;
 class MetricEntityPrototype;
-class MiniKdc;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
@@ -128,6 +128,10 @@ struct ExternalMiniClusterOptions {
   // masters in a consensus configuration. Port at index 0 is used for the leader
   // master.
   std::vector<uint16_t> master_rpc_ports;
+
+  // Options to configure the MiniKdc before starting it up.
+  // Only used when 'enable_kerberos' is 'true'.
+  MiniKdcOptions mini_kdc_options;
 
   // If true, set up a KDC as part of this MiniCluster, generate keytabs for
   // the servers, and require Kerberos authentication from clients.

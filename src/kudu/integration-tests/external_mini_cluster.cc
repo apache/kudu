@@ -33,7 +33,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -147,7 +146,7 @@ Status ExternalMiniCluster::Start() {
   }
 
   if (opts_.enable_kerberos) {
-    kdc_.reset(new MiniKdc());
+    kdc_.reset(new MiniKdc(opts_.mini_kdc_options));
     RETURN_NOT_OK(kdc_->Start());
     RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("testuser"),
                           "could not create client principal");

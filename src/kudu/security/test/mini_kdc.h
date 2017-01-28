@@ -46,6 +46,12 @@ struct MiniKdcOptions {
   // Default: 0 (ephemeral port).
   uint16_t port = 0;
 
+  // The default lifetime for initial ticket requests.
+  std::string ticket_lifetime;
+
+  // The default renewable lifetime for initial ticket requests.
+  std::string renew_lifetime;
+
   // Returns a string representation of the options suitable for debug printing.
   std::string ToString() const;
 };

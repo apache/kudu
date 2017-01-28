@@ -61,6 +61,12 @@ MiniKdc::MiniKdc(const MiniKdcOptions& options)
   if (options_.data_root.empty()) {
     options_.data_root = JoinPathSegments(GetTestDataDirectory(), "krb5kdc");
   }
+  if (options_.renew_lifetime.empty()) {
+    options_.renew_lifetime = "7d";
+  }
+  if (options_.ticket_lifetime.empty()) {
+    options_.ticket_lifetime = "24h";
+  }
 }
 
 MiniKdc::~MiniKdc() {
@@ -219,8 +225,8 @@ Status MiniKdc::CreateKrb5Conf() const {
     dns_lookup_kdc = false
     dns_lookup_realm = false
     forwardable = true
-    renew_lifetime = 7d
-    ticket_lifetime = 24h
+    renew_lifetime = $2
+    ticket_lifetime = $3
 
     # In miniclusters, we start daemons on local loopback IPs that
     # have no reverse DNS entries. So, disable reverse DNS.
@@ -236,7 +242,8 @@ Status MiniKdc::CreateKrb5Conf() const {
         kdc = 127.0.0.1:$0
     }
   )";
-  string file_contents = strings::Substitute(kFileTemplate, options_.port, options_.realm);
+  string file_contents = strings::Substitute(kFileTemplate, options_.port, options_.realm,
+                                             options_.renew_lifetime, options_.ticket_lifetime);
   return WriteStringToFile(Env::Default(), file_contents,
                            JoinPathSegments(options_.data_root, "krb5.conf"));
 }

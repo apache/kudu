@@ -37,8 +37,12 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/rw_mutex.h"
+#include "kudu/security/init.h"
 
 using std::set;
+
+DECLARE_bool(server_require_kerberos);
 
 namespace kudu {
 namespace rpc {
@@ -312,7 +316,11 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
   // is set globally rather than on a per-connection basis.
   string err;
   g_auth_failure_capture = &err;
+
+  // Take the 'kerberos_reinit_lock' here to avoid a possible race with ticket renewal.
+  if (FLAGS_server_require_kerberos) kudu::security::KerberosReinitLock()->ReadLock();
   int rc = call();
+  if (FLAGS_server_require_kerberos) kudu::security::KerberosReinitLock()->ReadUnlock();
   g_auth_failure_capture = nullptr;
 
   switch (rc) {
