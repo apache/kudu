@@ -68,6 +68,9 @@ else
       "uninstrumented") F_UNINSTRUMENTED=1 ;;
       "tsan")           F_TSAN=1 ;;
 
+      # User requested a specific package to be built.
+      *) F_SPECIFIC_PACKAGE=1 ;& # Fall through to below cases.
+
       # Dependencies.
       "cmake")        F_CMAKE=1 ;;
       "gflags")       F_GFLAGS=1 ;;
@@ -98,19 +101,39 @@ fi
 
 ################################################################################
 
-for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
-  mkdir -p $PREFIX_DIR/include
+init_prefix() {
+  local PREFIX_DIR=$1
+  local MAKE_LIBDIR=$2
 
-  # PREFIX_COMMON is for header-only libraries.
-  if [ "$PREFIX_DIR" != "$PREFIX_COMMON" ]; then
-    mkdir -p $PREFIX_DIR/lib
+  if [ -z "$PREFIX_DIR" ]; then
+    echo "Unspecified prefix dir in init_prefix()"
+    exit 1
+  fi
+
+  rm -rf "$PREFIX_DIR"
+  mkdir -p "$PREFIX_DIR"
+  mkdir -p "$PREFIX_DIR/include"
+
+  # Some prefixes (such as common) are for non-library tools and header-only
+  # libraries. If the caller doesn't pass the second argument, we don't create
+  # and link the prefix lib dir.
+  if [ -n "$MAKE_LIBDIR" ]; then
+    mkdir -p "$PREFIX_DIR/lib"
 
     # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
     # this by setting up lib64 as a symlink to lib.  We have to do this step first
     # to handle cases where one third-party library depends on another.
     ln -sf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
   fi
-done
+}
+
+# If we are installing to a prefix for the first time, or are installing all
+# dependencies under a given prefix, initialize the whole prefix (including
+# wiping out existing files in that path) to ensure nothing remains from the
+# installation of a previous build.
+[ -n "$F_COMMON" ] && init_prefix $PREFIX_COMMON
+[ -n "$F_UNINSTRUMENTED" ] && init_prefix $PREFIX_UNINSTRUMENTED libdir
+[ -n "$F_TSAN" ] && init_prefix $PREFIX_TSAN libdir
 
 # Incorporate the value of these standard compilation environment variables into
 # the EXTRA_* environment variables.
@@ -193,7 +216,7 @@ fi
 
 ### Build C dependencies without instrumentation
 
-PREFIX=$PREFIX_DEPS
+PREFIX=$PREFIX_UNINSTRUMENTED
 MODE_SUFFIX=""
 
 save_env
@@ -239,7 +262,7 @@ restore_env
 ### Build C++ dependencies without instrumentation
 
 # Clang is used by all builds so it is part of the 'common' library group even
-# though its LLVM libraries are installed to $PREFIX_DEPS.
+# though its LLVM libraries are installed to $PREFIX_UNINSTRUMENTED.
 if [ -n "$F_COMMON" -o -n "$F_LLVM" ]; then
   build_llvm normal
 fi
@@ -317,7 +340,7 @@ fi
 export CC=$CLANG
 export CXX=$CLANGXX
 
-PREFIX=$PREFIX_DEPS_TSAN
+PREFIX=$PREFIX_TSAN
 MODE_SUFFIX=".tsan"
 
 save_env
@@ -434,7 +457,12 @@ fi
 restore_env
 
 # Now run the post-flight checks.
-$TP_DIR/postflight.py
+POST_FLIGHT_FLAGS=""
+if [[ -n "$F_TSAN" || -n "$F_SPECIFIC_PACKAGE" ]]; then
+  # Do the tsan postflight check any time a tsan dep might be updated.
+  POST_FLIGHT_FLAGS="$POST_FLIGHT_FLAGS tsan"
+fi
+$TP_DIR/postflight.py $POST_FLIGHT_FLAGS
 
 echo "---------------------"
 echo "Thirdparty dependencies '$ARGS_TO_PRINT' built and installed successfully"

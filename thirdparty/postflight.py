@@ -17,7 +17,7 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-Simple script which performs some sanity checks on the built thirdparty/.
+Script which performs some sanity checks on the built thirdparty/.
 """
 
 import os
@@ -83,11 +83,11 @@ done
 echo All TSAN dependencies checked
 """.format(tp_dir=TP_DIR))
 
-
 def main():
   print("Running post-flight checks")
   print("-------------------------")
-  check_tsan_dependencies()
+  if "tsan" in sys.argv:
+    check_tsan_dependencies()
   print("-------------------------")
   print("Post-flight checks succeeded.")
   return 0
