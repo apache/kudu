@@ -345,6 +345,27 @@ class TestClient(KuduTestBase, unittest.TestCase):
         with self.assertRaises(KeyError):
             col = table['added-column']
 
+    def test_alter_table_direct_instantiation(self):
+        # Run the add_drop_column test with direct instantiation of
+        # the TableAlterer
+        table = self.client.table(self.ex_table)
+        alterer = kudu.client.TableAlterer(table)
+        alterer.add_column('added-column', type_='int64', default=0)
+        table = alterer.alter()
+
+        # Confirm column was added
+        expected_repr = 'Column(added-column, parent={0}, type=int64)' \
+            .format(self.ex_table)
+        self.assertEqual(expected_repr, repr(table['added-column']))
+
+        alterer = self.client.new_table_alterer(table)
+        alterer.drop_column('added-column')
+        table = alterer.alter()
+
+        # Confirm column has been dropped.
+        with self.assertRaises(KeyError):
+            col = table['added-column']
+
     def test_alter_table_add_drop_partition(self):
         # Add Range Partition
         table = self.client.table(self.ex_table)

@@ -544,11 +544,7 @@ cdef class Client:
         -------
         alterer : TableAlterer
         """
-        cdef:
-            TableAlterer alterer = TableAlterer(table)
-
-        alterer._init(self.cp.NewTableAlterer(tobytes(table.name)))
-        return alterer
+        return TableAlterer(table)
 
 
 #----------------------------------------------------------------------
@@ -2563,6 +2559,8 @@ cdef class TableAlterer:
     def __cinit__(self, Table table):
         self._table = table
         self._new_name = None
+        self._init(self._table.parent.cp
+                   .NewTableAlterer(tobytes(self._table.name)))
 
     def __dealloc__(self):
         if self._alterer != NULL:
