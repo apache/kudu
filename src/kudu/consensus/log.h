@@ -333,6 +333,8 @@ class Log : public RefCountedThreadSafe<Log> {
     return allocation_state_;
   }
 
+  std::string LogPrefix() const;
+
   LogOptions options_;
   FsManager *fs_manager_;
   std::string log_dir_;
