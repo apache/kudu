@@ -17,6 +17,7 @@
 
 #include "kudu/security/ca/cert_management.h"
 
+#include <memory>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/security/security-test-util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
@@ -33,6 +35,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::shared_ptr;
 using std::string;
 using std::vector;
 using std::thread;
@@ -372,27 +375,9 @@ TEST_F(CertManagementTest, SignCaCert) {
 // Test the creation and use of a CA which uses a self-signed CA cert
 // generated on the fly.
 TEST_F(CertManagementTest, TestSelfSignedCA) {
-  // Create a key for the self-signed CA.
-  auto ca_key = std::make_shared<PrivateKey>();
-  ASSERT_OK(GeneratePrivateKey(2048, ca_key.get()));
-
-  // Generate a CSR for the CA.
-  CertSignRequest ca_csr;
-  {
-    const CertRequestGenerator::Config gen_config(
-        PrepareConfig("8C084CF6-A30B-4F5B-9673-A73E62E29A9D"));
-    CaCertRequestGenerator gen(gen_config);
-    ASSERT_OK(gen.Init());
-    ASSERT_OK(gen.GenerateRequest(*ca_key, &ca_csr));
-  }
-
-  // Self-sign the CA's CSR.
-  auto ca_cert = std::make_shared<Cert>();
-  {
-    CertSigner ca_signer;
-    ASSERT_OK(ca_signer.InitForSelfSigning(ca_key));
-    ASSERT_OK(ca_signer.Sign(ca_csr, ca_cert.get()));
-  }
+  shared_ptr<PrivateKey> ca_key;
+  shared_ptr<Cert> ca_cert;
+  ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
   // Create a key for the tablet server.
   auto ts_key = std::make_shared<PrivateKey>();

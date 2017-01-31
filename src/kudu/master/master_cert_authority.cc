@@ -75,26 +75,13 @@ MasterCertAuthority::~MasterCertAuthority() {
 Status MasterCertAuthority::Init() {
   CHECK(!ca_private_key_);
 
-  // Create a key for the self-signed CA.
-  shared_ptr<PrivateKey> key(make_shared<PrivateKey>());
+  // Create a key and cert for the self-signed CA.
+  auto key = make_shared<PrivateKey>();
+  auto ca_cert = make_shared<Cert>();
   RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits,
                                    key.get()));
 
-  // Generate a CSR for the CA.
-  CertSignRequest ca_csr;
-  {
-    CaCertRequestGenerator gen(PrepareCaConfig(server_uuid_));
-    RETURN_NOT_OK(gen.Init());
-    RETURN_NOT_OK(gen.GenerateRequest(*key, &ca_csr));
-  }
-
-  // Self-sign the CA's CSR.
-  auto ca_cert = make_shared<Cert>();
-  {
-    CertSigner ca_signer;
-    RETURN_NOT_OK(ca_signer.InitForSelfSigning(key));
-    RETURN_NOT_OK(ca_signer.Sign(ca_csr, ca_cert.get()));
-  }
+  RETURN_NOT_OK(CertSigner::SelfSignCA(key, PrepareCaConfig(server_uuid_), ca_cert.get()));
 
   // Initialize our signer with the new CA.
   auto signer = make_shared<CertSigner>();

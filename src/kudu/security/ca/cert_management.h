@@ -54,15 +54,15 @@ class CertRequestGeneratorBase {
   // Properties for the generated X509 CSR.  Using server UUID for the common
   // name field.
   struct Config {
-    const std::string country;  // subject field: C
-    const std::string state;    // subject field: ST
-    const std::string locality; // subject field: L
-    const std::string org;      // subject field: O
-    const std::string unit;     // subject field: OU
-    const std::string uuid;     // subject field: CN
-    const std::string comment;  // custom extension: Netscape Comment
-    const std::vector<std::string> hostnames; // subjectAltName extension (DNS:)
-    const std::vector<std::string> ips;       // subjectAltName extension (IP:)
+    std::string country;  // subject field: C
+    std::string state;    // subject field: ST
+    std::string locality; // subject field: L
+    std::string org;      // subject field: O
+    std::string unit;     // subject field: OU
+    std::string uuid;     // subject field: CN
+    std::string comment;  // custom extension: Netscape Comment
+    std::vector<std::string> hostnames; // subjectAltName extension (DNS:)
+    std::vector<std::string> ips;       // subjectAltName extension (IP:)
   };
 
   explicit CertRequestGeneratorBase(Config config);
@@ -134,6 +134,11 @@ class CaCertRequestGenerator : public CertRequestGeneratorBase {
 // An utility class for issuing and signing certificates.
 class CertSigner {
  public:
+  // Generate a self-signed certificate authority using the given key
+  // and CSR configuration.
+  static Status SelfSignCA(const std::shared_ptr<PrivateKey>& key,
+                           CaCertRequestGenerator::Config config,
+                           Cert* cert);
   // Create a CertSigner.
   // Exactly one of the following Init*() methods must be called
   // exactly once before the instance may be used.
@@ -149,11 +154,6 @@ class CertSigner {
   // on disk.
   Status InitFromFiles(const std::string& ca_cert_path,
                        const std::string& ca_private_key_path);
-  // Initialize the signer for self-signing using the given private key.
-  //
-  // Any certificates signed by this CertSigner will have the 'issuer' equal
-  // to the signed cert's subject.
-  Status InitForSelfSigning(std::shared_ptr<PrivateKey> private_key);
 
   // Set the expiration interval for certs signed by this signer.
   // This may be changed at any point.
@@ -174,6 +174,12 @@ class CertSigner {
   static Status FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl);
   static Status DigestSign(const EVP_MD* md, EVP_PKEY* pkey, X509* x);
   static Status GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret);
+
+  // Initialize the signer for self-signing using the given private key.
+  //
+  // Any certificates signed by this CertSigner will have the 'issuer' equal
+  // to the signed cert's subject.
+  Status InitForSelfSigning(std::shared_ptr<PrivateKey> private_key);
 
   Status DoSign(const EVP_MD* digest, int32_t exp_seconds, X509 *ret) const;
 

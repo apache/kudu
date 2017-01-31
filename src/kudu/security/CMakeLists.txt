@@ -90,6 +90,7 @@ ADD_EXPORTABLE_LIBRARY(security
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
+    security-test-util.cc
     test/mini_kdc.cc
     test/test_certs.cc)
 

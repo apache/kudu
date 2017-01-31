@@ -25,10 +25,13 @@
 namespace kudu {
 namespace security {
 
+class Cert;
+class PrivateKey;
+
 // TODO(todd): consolidate these certs with those in
 // security/test/test_certs.h once we support configuring a password
 // for the RPC cert.
-static Status CreateSSLServerCert(const std::string& file_path) {
+inline static Status CreateSSLServerCert(const std::string& file_path) {
   static const char* test_server_cert = R"(
 -----BEGIN CERTIFICATE-----
 MIIEejCCA2KgAwIBAgIJAKMdvDR5PL82MA0GCSqGSIb3DQEBBQUAMIGEMQswCQYD
@@ -62,7 +65,7 @@ seCrQwgi1Fer9Ekd5XNjWjigC3VC3SjMqWaxeKbZ2/AuABJMz5xSiRkgwphXEQ==
 }
 
 // Writes the test SSL private key into a temporary file.
-static Status CreateSSLPrivateKey(const std::string& file_path) {
+inline static Status CreateSSLPrivateKey(const std::string& file_path) {
   static const char* test_private_key = R"(
 -----BEGIN RSA PRIVATE KEY-----
 MIIEpAIBAAKCAQEAqFI96TENhC5K886vpKIsZY1RQQBBKsFFkowPhhCsHxW/1D0Y
@@ -95,6 +98,10 @@ dc+JVPKL8Fe4a8fmsI6ndcZQ9qpOdZM5WOD0ldKRc+SsrYKkTmOOJQ==
   RETURN_NOT_OK(WriteStringToFile(Env::Default(), test_private_key, file_path));
   return Status::OK();
 }
+
+// TODO(todd): change these from shared_ptrs to unique_ptrs
+Status GenerateSelfSignedCAForTests(std::shared_ptr<PrivateKey>* ca_key,
+                                    std::shared_ptr<Cert>* ca_cert);
 
 } // namespace security
 } // namespace kudu

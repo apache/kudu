@@ -281,6 +281,26 @@ Status CaCertRequestGenerator::SetExtensions(X509_REQ* req) const {
   return Status::OK();
 }
 
+Status CertSigner::SelfSignCA(const shared_ptr<PrivateKey>& key,
+                              CaCertRequestGenerator::Config config,
+                              Cert* cert) {
+  // Generate a CSR for the CA.
+  CertSignRequest ca_csr;
+  {
+    CaCertRequestGenerator gen(std::move(config));
+    RETURN_NOT_OK(gen.Init());
+    RETURN_NOT_OK(gen.GenerateRequest(*key, &ca_csr));
+  }
+
+  // Self-sign the CA's CSR.
+  {
+    CertSigner ca_signer;
+    RETURN_NOT_OK(ca_signer.InitForSelfSigning(key));
+    RETURN_NOT_OK(ca_signer.Sign(ca_csr, cert));
+  }
+  return Status::OK();
+}
+
 CertSigner::CertSigner()
     : is_initialized_(false) {
 }
