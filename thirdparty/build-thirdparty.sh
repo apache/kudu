@@ -64,13 +64,18 @@ else
   for arg in $*; do
     case $arg in
       # Dependency groups.
-      "common")         F_COMMON=1 ;;
-      "uninstrumented") F_UNINSTRUMENTED=1 ;;
-      "tsan")           F_TSAN=1 ;;
+      "common")         F_COMMON=1
+        continue 1;;
+      "uninstrumented") F_UNINSTRUMENTED=1
+        continue 1;;
+      "tsan")           F_TSAN=1
+        continue 1;;
 
       # User requested a specific package to be built.
-      *) F_SPECIFIC_PACKAGE=1 ;& # Fall through to below cases.
+      *) F_SPECIFIC_PACKAGE=1 ;; # Go through to the switch below.
+    esac
 
+    case $arg in
       # Dependencies.
       "cmake")        F_CMAKE=1 ;;
       "gflags")       F_GFLAGS=1 ;;
