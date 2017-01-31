@@ -68,8 +68,10 @@ Status TlsContext::Init() {
   SSL_CTX_set_options(ctx_.get(),
                       SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
                       SSL_OP_NO_COMPRESSION);
-  SSL_CTX_set_verify(ctx_.get(),
-      SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT | SSL_VERIFY_CLIENT_ONCE, nullptr);
+
+  // TODO(PKI): is it possible to disable client-side renegotiation? it seems there
+  // have been various CVEs related to this feature that we don't need.
+  // TODO(PKI): set desired cipher suites?
   return Status::OK();
 }
 

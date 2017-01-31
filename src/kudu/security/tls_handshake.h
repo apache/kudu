@@ -20,7 +20,8 @@
 #include <memory>
 #include <string>
 
-#include "kudu/security/crypto.h"
+#include <glog/logging.h>
+
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
@@ -38,6 +39,26 @@ enum class TlsHandshakeType {
   SERVER,
 };
 
+// Mode for performing verification of the remote peer's identity during a handshake.
+enum class TlsVerificationMode {
+  // SERVER:
+  //    No certificate will be requested from the client, and no verification
+  //    will be done.
+  // CLIENT:
+  //    The server's certificate will be obtained but no verification will be done.
+  //    (the server still requires a certificate, even if it is self-signed).
+  VERIFY_NONE,
+
+  // BOTH:
+  // The remote peer is required to have a signed certificate. The certificate will
+  // be verified in two ways:
+  //  1) The certificate must be signed by a trusted CA (or chain of CAs).
+  //  2) Second, the hostname of the remote peer (as determined by reverse DNS of the
+  //    socket address) must match the common name or one of the Subject Alternative
+  //    Names stored in the certificate.
+  VERIFY_REMOTE_CERT_AND_HOST
+};
+
 // TlsHandshake manages an ongoing TLS handshake between a client and server.
 //
 // TlsHandshake instances are default constructed, but must be initialized
@@ -47,6 +68,15 @@ class TlsHandshake {
 
    TlsHandshake() = default;
    ~TlsHandshake() = default;
+
+  // Set the verification mode for this handshake. The default verification mode
+  // is VERIFY_REMOTE_CERT_AND_HOST.
+  //
+  // This must be not be called after the first call to Continue()
+  void set_verification_mode(TlsVerificationMode mode) {
+    DCHECK(!has_started_);
+    verification_mode_ = mode;
+  }
 
   // Continue or start a new handshake.
   //
@@ -76,6 +106,12 @@ class TlsHandshake {
 
  private:
   friend class TlsContext;
+
+  bool has_started_ = false;
+  TlsVerificationMode verification_mode_ = TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST;
+
+  // Set the verification mode on the underlying SSL object.
+  void SetSSLVerify();
 
   // Set the SSL to use during the handshake. Called once by
   // TlsContext::InitiateHandshake before starting the handshake processes.
