@@ -1010,8 +1010,10 @@ TEST_F(DeleteTableTest, TestWebPageForTombstonedTablet) {
 
   // Tombstone the tablet.
   ExternalTabletServer* ets = cluster_->tablet_server(0);
-  ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
-                                tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  AssertEventually([&]() {
+    ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
+                                  tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  });
 
   // Check the various web pages associated with the tablet, ensuring
   // they don't crash and at least have the tablet ID within them.
