@@ -30,7 +30,7 @@
 
 NOTE: Kudu is easier to manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager]
 than in a standalone installation. See Cloudera's
-link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/latest/topics/kudu_installation.html[Kudu documentation]
+link:http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html[Kudu documentation]
 for more details about using Kudu with Cloudera Manager.
 
 == Starting and Stopping Kudu Processes
