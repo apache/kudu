@@ -552,8 +552,7 @@ static void RunTlsGssapiNegotiationServer(unique_ptr<Socket> socket) {
 
   security::TlsContext tls_context;
   ASSERT_OK(tls_context.Init());
-  ASSERT_OK(tls_context.LoadCertificate(server_cert_path));
-  ASSERT_OK(tls_context.LoadPrivateKey(private_key_path));
+  ASSERT_OK(tls_context.LoadCertificateAndKey(server_cert_path, private_key_path));
   server_negotiation.EnableTls(&tls_context);
 
   server_negotiation.set_server_fqdn("127.0.0.1");

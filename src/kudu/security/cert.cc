@@ -46,6 +46,16 @@ template<> struct SslTypeTraits<X509_REQ> {
   static constexpr auto write_der = &i2d_X509_REQ_bio;
 };
 
+string X509NameToString(X509_NAME* name) {
+  CHECK(name);
+  auto bio = ssl_make_unique(BIO_new(BIO_s_mem()));
+  OPENSSL_CHECK_OK(X509_NAME_print_ex(bio.get(), name, 0, XN_FLAG_ONELINE));
+
+  BUF_MEM* membuf;
+  OPENSSL_CHECK_OK(BIO_get_mem_ptr(bio.get(), &membuf));
+  return string(membuf->data, membuf->length);
+}
+
 Status Cert::FromString(const std::string& data, DataFormat format) {
   return ::kudu::security::FromString(data, format, &data_);
 }
@@ -57,6 +67,15 @@ Status Cert::ToString(std::string* data, DataFormat format) const {
 Status Cert::FromFile(const std::string& fpath, DataFormat format) {
   return ::kudu::security::FromFile(fpath, format, &data_);
 }
+
+string Cert::SubjectName() const {
+  return X509NameToString(X509_get_subject_name(data_.get()));
+}
+
+string Cert::IssuerName() const {
+  return X509NameToString(X509_get_issuer_name(data_.get()));
+}
+
 
 Status CertSignRequest::FromString(const std::string& data, DataFormat format) {
   return ::kudu::security::FromString(data, format, &data_);

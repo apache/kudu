@@ -20,12 +20,15 @@
 #include <functional>
 #include <string>
 
-#include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_handshake.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace security {
+
+class Cert;
+class PrivateKey;
 
 // TlsContext wraps data required by the OpenSSL library for creating TLS
 // protected channels. A single TlsContext instance should be used per server or
@@ -40,19 +43,41 @@ class TlsContext {
 
   Status Init();
 
-  // Load the server certificate.
-  Status LoadCertificate(const std::string& certificate_path);
+  // Return true if this TlsContext has been configured with a cert and key to
+  // accept TLS connections.
+  bool has_cert() const { return has_cert_.Load(); }
 
-  // Load the private key for the server certificate.
-  Status LoadPrivateKey(const std::string& key_path);
+  // Use 'cert' and 'key' as the cert/key for this server/client.
+  //
+  // If the cert is not self-signed, checks that the CA that issued
+  // the signature on 'cert' is already trusted by this context
+  // (e.g. by AddTrustedCertificate).
+  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key);
 
-  // Load the certificate authority.
+  // Add 'cert' as a trusted certificate for this server/client.
+  //
+  // This determines whether other peers are trusted. It also must
+  // be called for any CA certificates that are part of the certificate
+  // chain for the cert passed in 'UseCertificate' above.
+  Status AddTrustedCertificate(const Cert& cert);
+
+  // Convenience functions for loading cert/CA/key from file paths.
+  // -------------------------------------------------------------
+
+  // Load the server certificate and key (PEM encoded).
+  Status LoadCertificateAndKey(const std::string& certificate_path,
+                               const std::string& key_path);
+
+  // Load the certificate authority (PEM encoded).
   Status LoadCertificateAuthority(const std::string& certificate_path);
 
   // Initiates a new TlsHandshake instance.
   Status InitiateHandshake(TlsHandshakeType handshake_type, TlsHandshake* handshake) const;
 
  private:
+  Status VerifyCertChain(const Cert& cert);
+
+  AtomicBool has_cert_;
 
   // Owned SSL context.
   c_unique_ptr<SSL_CTX> ctx_;

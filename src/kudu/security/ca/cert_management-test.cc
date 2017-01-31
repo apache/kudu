@@ -342,8 +342,7 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
 // in a single-threaded fashion.
 TEST_F(CertManagementTest, SignCert) {
   const CertRequestGenerator::Config gen_config(
-      PrepareConfig("904A97F9-545A-4746-86D1-85D433FF3F9C",
-                    {"localhost"}, {"127.0.0.1", "127.0.10.20"}));
+      PrepareConfig("test-uuid", {"localhost"}, {"127.0.0.1", "127.0.10.20"}));
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(2048, &key));
   CertRequestGenerator gen(gen_config);
@@ -354,6 +353,11 @@ TEST_F(CertManagementTest, SignCert) {
   ASSERT_OK(signer.InitFromFiles(ca_cert_file_, ca_private_key_file_));
   Cert cert;
   ASSERT_OK(signer.Sign(req, &cert));
+
+  EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
+            cert.IssuerName());
+  EXPECT_EQ("C = US, ST = CA, L = San Francisco, O = ASF, OU = The Kudu Project, "
+            "CN = test-uuid", cert.SubjectName());
 }
 
 // Generate X509 CA CSR and sign the result certificate.

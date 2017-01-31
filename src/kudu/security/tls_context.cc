@@ -21,8 +21,11 @@
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/status.h"
@@ -39,8 +42,13 @@ template<> struct SslTypeTraits<SSL> {
 template<> struct SslTypeTraits<SSL_CTX> {
   static constexpr auto free = &SSL_CTX_free;
 };
+template<> struct SslTypeTraits<X509_STORE_CTX> {
+  static constexpr auto free = &X509_STORE_CTX_free;
+};
 
-TlsContext::TlsContext() {
+
+TlsContext::TlsContext()
+    : has_cert_(false) {
   security::InitializeOpenSSL();
 }
 
@@ -75,35 +83,79 @@ Status TlsContext::Init() {
   return Status::OK();
 }
 
-Status TlsContext::LoadCertificate(const string& certificate_path) {
-  ERR_clear_error();
-  errno = 0;
-  if (SSL_CTX_use_certificate_file(ctx_.get(), certificate_path.c_str(), SSL_FILETYPE_PEM) != 1) {
-    return Status::NotFound(Substitute("failed to load certificate file: '$0'", certificate_path),
-                            GetOpenSSLErrors());
+Status TlsContext::VerifyCertChain(const Cert& cert) {
+  X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
+  auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
+
+  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetRawData(), nullptr),
+                     "could not init X509_STORE_CTX");
+  int rc = X509_verify_cert(store_ctx.get());
+  if (rc != 1) {
+    int err = X509_STORE_CTX_get_error(store_ctx.get());
+    if (err == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
+      // It's OK to provide a self-signed cert.
+      return Status::OK();
+    }
+
+    // Get the cert that failed to verify.
+    X509* cur_cert = X509_STORE_CTX_get_current_cert(store_ctx.get());
+    string cert_details;
+    if (cur_cert) {
+      cert_details = Substitute(" (error with cert: subject=$0, issuer=$1)",
+                                X509NameToString(X509_get_subject_name(cur_cert)),
+                                X509NameToString(X509_get_issuer_name(cur_cert)));
+    }
+
+    return Status::RuntimeError(
+        Substitute("could not verify cert chain$0", cert_details),
+        X509_verify_cert_error_string(err));
   }
   return Status::OK();
 }
 
-Status TlsContext::LoadPrivateKey(const string& key_path) {
+Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key) {
   ERR_clear_error();
-  errno = 0;
-  if (SSL_CTX_use_PrivateKey_file(ctx_.get(), key_path.c_str(), SSL_FILETYPE_PEM) != 1) {
-    return Status::NotFound(Substitute("failed to load private key file: '$0'", key_path),
-                            GetOpenSSLErrors());
-  }
+
+  // Verify that the cert and key match.
+  OPENSSL_RET_NOT_OK(X509_check_private_key(cert.GetRawData(), key.GetRawData()),
+                     "cert and private key do not match");
+
+  // Verify that the appropriate CA certs have been loaded into the context
+  // before we adopt a cert. Otherwise, client connections without the CA cert
+  // available would fail.
+  RETURN_NOT_OK(VerifyCertChain(cert));
+
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
+                     "failed to use private key");
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetRawData()),
+                     "failed to use certificate");
+  has_cert_.Store(true);
   return Status::OK();
+}
+
+Status TlsContext::AddTrustedCertificate(const Cert& cert) {
+  VLOG(2) << "Trusting certificate " << cert.SubjectName();
+
+  ERR_clear_error();
+  auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
+  OPENSSL_RET_NOT_OK(X509_STORE_add_cert(cert_store, cert.GetRawData()),
+                     "failed to add trusted certificate");
+  return Status::OK();
+}
+
+Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
+                                         const string& key_path) {
+  Cert c;
+  RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
+  PrivateKey k;
+  RETURN_NOT_OK(k.FromFile(key_path, DataFormat::PEM));
+  return UseCertificateAndKey(c, k);
 }
 
 Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
-  ERR_clear_error();
-  errno = 0;
-  if (SSL_CTX_load_verify_locations(ctx_.get(), certificate_path.c_str(), nullptr) != 1) {
-    return Status::NotFound(Substitute("failed to load certificate authority file: '$0'",
-                                       certificate_path),
-                            GetOpenSSLErrors());
-  }
-  return Status::OK();
+  Cert c;
+  RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
+  return AddTrustedCertificate(c);
 }
 
 Status TlsContext::InitiateHandshake(TlsHandshakeType handshake_type,

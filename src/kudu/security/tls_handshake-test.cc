@@ -95,12 +95,10 @@ class TestTlsHandshake : public KuduTest {
 
 TEST_F(TestTlsHandshake, TestSuccessfulHandshake) {
   // Both client and server have certs and CA.
-  ASSERT_OK(client_tls_.LoadCertificate(cert_path_));
-  ASSERT_OK(client_tls_.LoadPrivateKey(key_path_));
   ASSERT_OK(client_tls_.LoadCertificateAuthority(cert_path_));
-  ASSERT_OK(server_tls_.LoadCertificate(cert_path_));
-  ASSERT_OK(server_tls_.LoadPrivateKey(key_path_));
+  ASSERT_OK(client_tls_.LoadCertificateAndKey(cert_path_, key_path_));
   ASSERT_OK(server_tls_.LoadCertificateAuthority(cert_path_));
+  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
 
   TlsHandshake server;
   TlsHandshake client;
@@ -134,8 +132,7 @@ TEST_F(TestTlsHandshake, TestSuccessfulHandshake) {
 // Client has no cert.
 // Server has self-signed cert.
 TEST_F(TestTlsHandshake, Test_ClientNone_ServerSelfSigned) {
-  ASSERT_OK(server_tls_.LoadCertificate(cert_path_));
-  ASSERT_OK(server_tls_.LoadPrivateKey(key_path_));
+  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
 
   // If the client wants to verify the server, it should fail because
   // the server cert is self-signed.
@@ -165,11 +162,9 @@ TEST_F(TestTlsHandshake, Test_ClientNone_ServerSelfSigned) {
 // which isn't very realistic. We should have this generate self-signed certs
 // on the fly.
 TEST_F(TestTlsHandshake, Test_ClientSelfSigned_ServerSelfSigned) {
-  ASSERT_OK(client_tls_.LoadCertificate(cert_path_));
-  ASSERT_OK(client_tls_.LoadPrivateKey(key_path_));
+  ASSERT_OK(client_tls_.LoadCertificateAndKey(cert_path_, key_path_));
   ASSERT_OK(client_tls_.LoadCertificateAuthority(cert_path_));
-  ASSERT_OK(server_tls_.LoadCertificate(cert_path_));
-  ASSERT_OK(server_tls_.LoadPrivateKey(key_path_));
+  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
   ASSERT_OK(server_tls_.LoadCertificateAuthority(cert_path_));
 
   // This scenario should succeed in all cases.

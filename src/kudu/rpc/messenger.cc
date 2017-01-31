@@ -306,8 +306,8 @@ Status Messenger::Init() {
   tls_context_.reset(new security::TlsContext());
   RETURN_NOT_OK(tls_context_->Init());
   if (server_tls_enabled_) {
-    RETURN_NOT_OK(tls_context_->LoadCertificate(FLAGS_rpc_ssl_server_certificate));
-    RETURN_NOT_OK(tls_context_->LoadPrivateKey(FLAGS_rpc_ssl_private_key));
+    RETURN_NOT_OK(tls_context_->LoadCertificateAndKey(FLAGS_rpc_ssl_server_certificate,
+                                                      FLAGS_rpc_ssl_private_key));
     RETURN_NOT_OK(tls_context_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
   }
   for (Reactor* r : reactors_) {

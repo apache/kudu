@@ -24,6 +24,7 @@
 // Forward declarations for the OpenSSL typedefs.
 typedef struct x509_st X509;
 typedef struct X509_req_st X509_REQ;
+typedef struct X509_name_st X509_NAME;
 
 namespace kudu {
 
@@ -31,11 +32,17 @@ class Status;
 
 namespace security {
 
+// Convert an X509_NAME object to a human-readable string.
+std::string X509NameToString(X509_NAME* name);
+
 class Cert : public RawDataWrapper<X509> {
  public:
   Status FromString(const std::string& data, DataFormat format);
   Status ToString(std::string* data, DataFormat format) const;
   Status FromFile(const std::string& fpath, DataFormat format);
+
+  std::string SubjectName() const;
+  std::string IssuerName() const;
 };
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {
