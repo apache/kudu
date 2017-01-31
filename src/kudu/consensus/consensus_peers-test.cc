@@ -57,8 +57,9 @@ class ConsensusPeersTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
-    CHECK_OK(fs_manager_->CreateInitialFileSystemLayout());
-    CHECK_OK(Log::Open(options_,
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
+    ASSERT_OK(Log::Open(options_,
                        fs_manager_.get(),
                        kTabletId,
                        schema_,
@@ -78,7 +79,7 @@ class ConsensusPeersTest : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    CHECK_OK(log_->WaitUntilAllFlushed());
+    ASSERT_OK(log_->WaitUntilAllFlushed());
   }
 
   DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
