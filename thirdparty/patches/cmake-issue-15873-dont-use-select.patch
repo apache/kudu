@@ -1,0 +1,14 @@
+diff --git a/Source/kwsys/ProcessUNIX.c b/Source/kwsys/ProcessUNIX.c
+index 1be6d02..525217a 100644
+--- a/Source/kwsys/ProcessUNIX.c
++++ b/Source/kwsys/ProcessUNIX.c
+@@ -110,7 +110,8 @@ static inline void kwsysProcess_usleep(unsigned int msec)
+  * without select().
+  */
+ #if !defined(__BEOS__) && !defined(__VMS) && !defined(__MINT__)
+-# define KWSYSPE_USE_SELECT 1
++// Don't use select() due to https://cmake.org/Bug/view.php?id=15873
++# define KWSYSPE_USE_SELECT 0
+ #endif
+ 
+ /* Some platforms do not have siginfo on their signal handlers.  */

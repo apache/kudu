@@ -147,8 +147,39 @@ if [ ! -d $PROTOBUF_SOURCE ]; then
   popd
 fi
 
+# Returns 0 if cmake should be patched to work around this bug [1].
+#
+# Currently only SLES 12 SP0 is known to be vulnerable, and since the workaround
+# hurts cmake performance, we apply it only if absolutely necessary.
+#
+# 1. https://gitlab.kitware.com/cmake/cmake/issues/15873.
+needs_patched_cmake() {
+  if [ ! -e /etc/SuSE-release ]; then
+    # Not a SUSE distro.
+    return 1
+  fi
+  if ! grep -q "SUSE Linux Enterprise Server 12" /etc/SuSE-release; then
+    # Not SLES 12.
+    return 1
+  fi
+  if ! grep -q "PATCHLEVEL = 0" /etc/SuSE-release; then
+    # Not SLES 12 SP0.
+    return 1
+  fi
+  return 0
+}
+
+CMAKE_PATCHLEVEL=1
+delete_if_wrong_patchlevel $CMAKE_SOURCE $CMAKE_PATCHLEVEL
 if [ ! -d $CMAKE_SOURCE ]; then
   fetch_and_expand cmake-${CMAKE_VERSION}.tar.gz
+  pushd $CMAKE_SOURCE
+  if needs_patched_cmake; then
+    patch -p1 < $TP_DIR/patches/cmake-issue-15873-dont-use-select.patch
+  fi
+  # Write the patchlevel file even if the patch was skipped, so as to simplify
+  # future patch numbering.
+  touch patchlevel-$CMAKE_PATCHLEVEL
 fi
 
 if [ ! -d $SNAPPY_SOURCE ]; then
