@@ -69,7 +69,7 @@ class PrivateKey : public RawDataWrapper<EVP_PKEY> {
   Status FromFile(const std::string& fpath, DataFormat format);
 
   // Output the public part of the keypair into the specified placeholder.
-  Status GetPublicKey(PublicKey* public_key);
+  Status GetPublicKey(PublicKey* public_key) const;
 
   // Using the key, generate data signature using the specified
   // message digest algorithm. The result signature is in raw format

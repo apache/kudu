@@ -132,69 +132,59 @@ class CaCertRequestGenerator : public CertRequestGeneratorBase {
 };
 
 // An utility class for issuing and signing certificates.
+//
+// This is used in "fluent" style. For example:
+//
+//    CHECK_OK(CertSigner(&my_ca_cert, &my_ca_key)
+//      .set_expiration_interval(MonoDelta::FromSeconds(3600))
+//      .Sign(csr, &cert));
+//
+// As such, this class is not guaranteed thread-safe.
 class CertSigner {
  public:
   // Generate a self-signed certificate authority using the given key
   // and CSR configuration.
-  static Status SelfSignCA(const std::shared_ptr<PrivateKey>& key,
+  static Status SelfSignCA(const PrivateKey& key,
                            CaCertRequestGenerator::Config config,
                            Cert* cert);
+
   // Create a CertSigner.
-  // Exactly one of the following Init*() methods must be called
-  // exactly once before the instance may be used.
-  CertSigner();
+  //
+  // The given cert and key must stay valid for the lifetime of the
+  // cert signer. See class documentation above for recommended usage.
+  //
+  // 'ca_cert' may be nullptr in order to perform self-signing (though
+  // the SelfSignCA() static method above is recommended).
+  CertSigner(const Cert* ca_cert, const PrivateKey* ca_private_key);
   ~CertSigner() = default;
-
-  // Initialize the signer from existing Cert/Key objects.
-  // The passed objects must be initialized.
-  Status Init(std::shared_ptr<Cert> ca_cert,
-              std::shared_ptr<PrivateKey> ca_private_key);
-
-  // Initialize the signer from a CA cert and private key stored
-  // on disk.
-  Status InitFromFiles(const std::string& ca_cert_path,
-                       const std::string& ca_private_key_path);
 
   // Set the expiration interval for certs signed by this signer.
   // This may be changed at any point.
-  void set_expiration_interval(MonoDelta expiration) {
-    std::lock_guard<simple_spinlock> l(lock_);
+  CertSigner& set_expiration_interval(MonoDelta expiration) {
     exp_interval_sec_ = expiration.ToSeconds();
+    return *this;
   }
-
-  bool Initialized() const;
-
-  const Cert& ca_cert() const;
-  const PrivateKey& ca_private_key() const;
 
   Status Sign(const CertSignRequest& req, Cert* ret) const;
 
  private:
+
   static Status CopyExtensions(X509_REQ* req, X509* x);
   static Status FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl);
   static Status DigestSign(const EVP_MD* md, EVP_PKEY* pkey, X509* x);
   static Status GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret);
 
-  // Initialize the signer for self-signing using the given private key.
-  //
-  // Any certificates signed by this CertSigner will have the 'issuer' equal
-  // to the signed cert's subject.
-  Status InitForSelfSigning(std::shared_ptr<PrivateKey> private_key);
-
   Status DoSign(const EVP_MD* digest, int32_t exp_seconds, X509 *ret) const;
-
-  mutable simple_spinlock lock_;
-  bool is_initialized_; // protected by lock_
 
   // The expiration interval of certs signed by this signer.
   int32_t exp_interval_sec_ = 24 * 60 * 60;
 
   // The CA cert. null if this CertSigner is configured for self-signing.
-  std::shared_ptr<Cert> ca_cert_;
+  const Cert* const ca_cert_;
 
   // The CA private key. If configured for self-signing, this is the
   // private key associated with the target cert.
-  std::shared_ptr<PrivateKey> ca_private_key_;
+  const PrivateKey* const ca_private_key_;
 
   DISALLOW_COPY_AND_ASSIGN(CertSigner);
 };

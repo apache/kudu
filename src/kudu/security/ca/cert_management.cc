@@ -44,7 +44,6 @@
 using std::lock_guard;
 using std::move;
 using std::ostringstream;
-using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 
@@ -281,7 +280,7 @@ Status CaCertRequestGenerator::SetExtensions(X509_REQ* req) const {
   return Status::OK();
 }
 
-Status CertSigner::SelfSignCA(const shared_ptr<PrivateKey>& key,
+Status CertSigner::SelfSignCA(const PrivateKey& key,
                               CaCertRequestGenerator::Config config,
                               Cert* cert) {
   // Generate a CSR for the CA.
@@ -289,90 +288,37 @@ Status CertSigner::SelfSignCA(const shared_ptr<PrivateKey>& key,
   {
     CaCertRequestGenerator gen(std::move(config));
     RETURN_NOT_OK(gen.Init());
-    RETURN_NOT_OK(gen.GenerateRequest(*key, &ca_csr));
+    RETURN_NOT_OK(gen.GenerateRequest(key, &ca_csr));
   }
 
   // Self-sign the CA's CSR.
-  {
-    CertSigner ca_signer;
-    RETURN_NOT_OK(ca_signer.InitForSelfSigning(key));
-    RETURN_NOT_OK(ca_signer.Sign(ca_csr, cert));
-  }
+  RETURN_NOT_OK(CertSigner(nullptr, &key).Sign(ca_csr, cert));
   return Status::OK();
 }
 
-CertSigner::CertSigner()
-    : is_initialized_(false) {
-}
-
-Status CertSigner::Init(shared_ptr<Cert> ca_cert,
-                        shared_ptr<PrivateKey> ca_private_key) {
-  CHECK(ca_cert && ca_cert->GetRawData());
+CertSigner::CertSigner(const Cert* ca_cert,
+                       const PrivateKey* ca_private_key)
+    : ca_cert_(ca_cert),
+      ca_private_key_(ca_private_key) {
+  // Private key is required.
   CHECK(ca_private_key && ca_private_key->GetRawData());
-  InitializeOpenSSL();
-
-  std::lock_guard<simple_spinlock> guard(lock_);
-  CHECK(!is_initialized_);
-
-  ca_cert_ = std::move(ca_cert);
-  ca_private_key_ = std::move(ca_private_key);
-  is_initialized_ = true;
-  return Status::OK();
-}
-
-Status CertSigner::InitForSelfSigning(shared_ptr<PrivateKey> private_key) {
-  CHECK(private_key);
-  InitializeOpenSSL();
-
-  std::lock_guard<simple_spinlock> guard(lock_);
-  CHECK(!is_initialized_);
-
-  ca_private_key_ = std::move(private_key);
-  is_initialized_ = true;
-  return Status::OK();
-}
-
-Status CertSigner::InitFromFiles(const string& ca_cert_path,
-                                 const string& ca_private_key_path) {
-  InitializeOpenSSL();
-
-  std::lock_guard<simple_spinlock> guard(lock_);
-  CHECK(!is_initialized_);
-  auto cert = std::make_shared<Cert>();
-  std::shared_ptr<PrivateKey> key = std::make_shared<PrivateKey>();
-  RETURN_NOT_OK(cert->FromFile(ca_cert_path, DataFormat::PEM));
-  RETURN_NOT_OK(key->FromFile(ca_private_key_path,
-                              DataFormat::PEM));
-  OPENSSL_RET_NOT_OK(
-      X509_check_private_key(cert->GetRawData(), key->GetRawData()),
-      Substitute("$0, $1: CA certificate and private key do not match",
-          ca_cert_path, ca_private_key_path));
-  ca_cert_ = std::move(cert);
-  ca_private_key_ = std::move(key);
-  is_initialized_ = true;
-  return Status::OK();
-}
-
-bool CertSigner::Initialized() const {
-  lock_guard<simple_spinlock> guard(lock_);
-  return is_initialized_;
-}
-
-const Cert& CertSigner::ca_cert() const {
-  lock_guard<simple_spinlock> guard(lock_);
-  DCHECK(is_initialized_);
-  return *CHECK_NOTNULL(ca_cert_.get());
-}
-
-const PrivateKey& CertSigner::ca_private_key() const {
-  lock_guard<simple_spinlock> guard(lock_);
-  DCHECK(is_initialized_);
-  return *ca_private_key_;
+  // The cert is optional, but if we have it, it should be initialized.
+  CHECK(!ca_cert || ca_cert->GetRawData());
 }
 
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
+  InitializeOpenSSL();
   CHECK(ret);
-  CHECK(Initialized());
+
+  // If we are not self-signing, then make sure that the provided CA
+  // cert and key match each other. Technically this would be programmer
+  // error since we're always using internally-generated CA certs, but
+  // this isn't a hot path so we'll keep the extra safety.
+  if (ca_cert_) {
+    OPENSSL_RET_NOT_OK(
+        X509_check_private_key(ca_cert_->GetRawData(), ca_private_key_->GetRawData()),
+        "CA certificate and private key do not match");
+  }
   auto x509 = ssl_make_unique(X509_new());
   RETURN_NOT_OK(FillCertTemplateFromRequest(req.GetRawData(), x509.get()));
   RETURN_NOT_OK(DoSign(EVP_sha256(), exp_interval_sec_, x509.get()));

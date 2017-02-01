@@ -169,7 +169,7 @@ Status PrivateKey::FromFile(const std::string& fpath, DataFormat format) {
 // The code is modeled after $OPENSSL_ROOT/apps/rsa.c code: there is
 // corresponding functionality to read public part from RSA private/public
 // keypair.
-Status PrivateKey::GetPublicKey(PublicKey* public_key) {
+Status PrivateKey::GetPublicKey(PublicKey* public_key) const {
   CHECK(public_key);
   auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(CHECK_NOTNULL(data_.get())));
   if (PREDICT_FALSE(!rsa)) {

@@ -99,9 +99,7 @@ dc+JVPKL8Fe4a8fmsI6ndcZQ9qpOdZM5WOD0ldKRc+SsrYKkTmOOJQ==
   return Status::OK();
 }
 
-// TODO(todd): change these from shared_ptrs to unique_ptrs
-Status GenerateSelfSignedCAForTests(std::shared_ptr<PrivateKey>* ca_key,
-                                    std::shared_ptr<Cert>* ca_cert);
+Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert);
 
 } // namespace security
 } // namespace kudu

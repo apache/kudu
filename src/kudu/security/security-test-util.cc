@@ -17,8 +17,6 @@
 
 #include "kudu/security/security-test-util.h"
 
-#include <memory>
-
 #include <glog/logging.h>
 
 #include "kudu/security/ca/cert_management.h"
@@ -31,19 +29,13 @@ namespace security {
 using ca::CaCertRequestGenerator;
 using ca::CertSigner;
 
-Status GenerateSelfSignedCAForTests(std::shared_ptr<PrivateKey>* ca_key,
-                                    std::shared_ptr<Cert>* ca_cert) {
+Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
   // Create a key for the self-signed CA.
-  auto ret_ca_key = std::make_shared<PrivateKey>();
-  auto ret_ca_cert = std::make_shared<Cert>();
-  RETURN_NOT_OK(GeneratePrivateKey(512, ret_ca_key.get()));
+  RETURN_NOT_OK(GeneratePrivateKey(512, ca_key));
 
   CaCertRequestGenerator::Config config;
   config.uuid = "test-ca-uuid";
-  RETURN_NOT_OK(CertSigner::SelfSignCA(ret_ca_key, config, ret_ca_cert.get()));
-
-  *ca_key = std::move(ret_ca_key);
-  *ca_cert = std::move(ret_ca_cert);
+  RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key, config, ca_cert));
   return Status::OK();
 }
 

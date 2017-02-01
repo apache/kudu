@@ -27,9 +27,8 @@
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/flag_tags.h"
 
-using std::make_shared;
-using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 
 using kudu::security::Cert;
 using kudu::security::CertSignRequest;
@@ -76,25 +75,19 @@ Status MasterCertAuthority::Init() {
   CHECK(!ca_private_key_);
 
   // Create a key and cert for the self-signed CA.
-  auto key = make_shared<PrivateKey>();
-  auto ca_cert = make_shared<Cert>();
-  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits,
-                                   key.get()));
-
-  RETURN_NOT_OK(CertSigner::SelfSignCA(key, PrepareCaConfig(server_uuid_), ca_cert.get()));
+  unique_ptr<PrivateKey> key(new PrivateKey());
+  unique_ptr<Cert> ca_cert(new Cert());
+  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits, key.get()));
+  RETURN_NOT_OK(CertSigner::SelfSignCA(*key, PrepareCaConfig(server_uuid_), ca_cert.get()));
 
   // Initialize our signer with the new CA.
-  auto signer = make_shared<CertSigner>();
-  RETURN_NOT_OK(signer->Init(ca_cert, key));
-
-  cert_signer_ = std::move(signer);
   ca_cert_ = std::move(ca_cert);
   ca_private_key_ = std::move(key);
   return Status::OK();
 }
 
 Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_der) {
-  CHECK(cert_signer_) << "not initialized";
+  CHECK(ca_cert_ && ca_private_key_) << "not initialized";
 
   // TODO(PKI): before signing, should we somehow verify the CSR's
   // hostname/server_uuid matches what we think is the hostname? can the signer
@@ -104,8 +97,10 @@ Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_de
   CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(csr.FromString(csr_der, security::DataFormat::DER),
                         "could not parse CSR");
+  // TODO(PKI): need to set expiration interval on the signed CA cert!
   Cert cert;
-  RETURN_NOT_OK_PREPEND(cert_signer_->Sign(csr, &cert),
+  RETURN_NOT_OK_PREPEND(CertSigner(ca_cert_.get(), ca_private_key_.get())
+                        .Sign(csr, &cert),
                         "failed to sign cert");
 
   RETURN_NOT_OK_PREPEND(cert.ToString(cert_der, security::DataFormat::DER),

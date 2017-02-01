@@ -66,9 +66,8 @@ class MasterCertAuthority {
   // The UUID of the master. This is used as a field in the certificate.
   const std::string server_uuid_;
 
-  std::shared_ptr<security::ca::CertSigner> cert_signer_;
-  std::shared_ptr<security::PrivateKey> ca_private_key_;
-  std::shared_ptr<security::Cert> ca_cert_;
+  std::unique_ptr<security::PrivateKey> ca_private_key_;
+  std::unique_ptr<security::Cert> ca_cert_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterCertAuthority);
 };
