@@ -136,7 +136,7 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
 
   // Try to verify it.
   TokenVerifier verifier;
-  verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0));
+  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0)));
   ASSERT_EQ(VerificationResult::VALID, verifier.VerifyTokenSignature(token));
 }
 
@@ -147,7 +147,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   ASSERT_OK(signer.RotateSigningKey());
 
   TokenVerifier verifier;
-  verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0));
+  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0)));
 
   // Make and sign a token, but corrupt the data in it.
   {
@@ -195,8 +195,8 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   FLAGS_token_signing_key_validity_seconds = -10;
   ASSERT_OK(signer.RotateSigningKey());
   ASSERT_OK(signer.RotateSigningKey());
-  verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(
-      verifier.GetMaxKnownKeySequenceNumber()));
+  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(
+      verifier.GetMaxKnownKeySequenceNumber())));
   {
     SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
     ASSERT_OK(signer.SignToken(&token));

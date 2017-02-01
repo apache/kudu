@@ -61,7 +61,8 @@ class TokenVerifier {
   // Import a set of public keys provided by a TokenSigner instance (which might
   // be running on a remote node). If any public keys already exist with matching key
   // sequence numbers, they are replaced by the new keys.
-  void ImportPublicKeys(const std::vector<TokenSigningPublicKeyPB>& public_keys);
+  Status ImportPublicKeys(const std::vector<TokenSigningPublicKeyPB>& public_keys)
+    WARN_UNUSED_RESULT;
 
   // Verify the signature on the given token.
   VerificationResult VerifyTokenSignature(const SignedTokenPB& signed_token) const;

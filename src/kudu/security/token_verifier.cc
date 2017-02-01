@@ -52,15 +52,24 @@ int64_t TokenVerifier::GetMaxKnownKeySequenceNumber() const {
 
 // Import a set of public keys provided by the token signer (typically
 // running on another node).
-void TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& public_keys) {
+Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& public_keys) {
   // Do the copy construction outside of the lock, to avoid holding the
   // lock while doing lots of allocation.
   vector<unique_ptr<TokenSigningPublicKey>> tsks;
   for (const auto& pb : public_keys) {
     // Sanity check the key.
-    CHECK(pb.has_rsa_key_der());
-    CHECK(pb.has_key_seq_num());
-    CHECK(pb.has_expire_unix_epoch_seconds());
+    if (!pb.has_rsa_key_der()) {
+      return Status::RuntimeError(
+          "token-signing public key message must include the signing key");
+    }
+    if (!pb.has_key_seq_num()) {
+      return Status::RuntimeError(
+          "token-signing public key message must include the signing key sequence number");
+    }
+    if (!pb.has_expire_unix_epoch_seconds()) {
+      return Status::RuntimeError(
+          "token-signing public key message must include an expiration time");
+    }
     tsks.emplace_back(new TokenSigningPublicKey { pb });
   }
 
@@ -68,6 +77,7 @@ void TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& publ
   for (auto&& tsk_ptr : tsks) {
     keys_by_seq_.emplace(tsk_ptr->pb().key_seq_num(), std::move(tsk_ptr));
   }
+  return Status::OK();
 }
 
 // Verify the signature on the given token.
