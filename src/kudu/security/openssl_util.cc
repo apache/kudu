@@ -22,7 +22,6 @@
 #include <mutex>
 #include <sstream>
 #include <string>
-#include <vector>
 
 #include <glog/logging.h>
 #include <openssl/err.h>
@@ -38,7 +37,6 @@
 
 using std::ostringstream;
 using std::string;
-using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -46,13 +44,14 @@ namespace security {
 
 namespace {
 
-vector<Mutex*> kCryptoLocks;
+// Array of locks used by OpenSSL.
+// We use an intentionally-leaked C-style array here to avoid non-POD static data.
+Mutex* kCryptoLocks = nullptr;
 
 // Lock/Unlock the nth lock. Only to be used by OpenSSL.
 void LockingCB(int mode, int type, const char* /*file*/, int /*line*/) {
-  DCHECK(!kCryptoLocks.empty());
-  Mutex* m = kCryptoLocks[type];
-  DCHECK(m);
+  DCHECK(kCryptoLocks);
+  Mutex* m = &kCryptoLocks[type];
   if (mode & CRYPTO_LOCK) {
     m->lock();
   } else {
@@ -75,10 +74,8 @@ void DoInitializeOpenSSL() {
   // LSAN warnings.
   debug::ScopedLeakCheckDisabler d;
   int num_locks = CRYPTO_num_locks();
-  kCryptoLocks.reserve(num_locks);
-  for (int i = 0; i < num_locks; i++) {
-    kCryptoLocks.emplace_back(new Mutex());
-  }
+  CHECK(!kCryptoLocks);
+  kCryptoLocks = new Mutex[num_locks];
 
   // Callbacks used by OpenSSL required in a multi-threaded setting.
   CRYPTO_set_locking_callback(LockingCB);
