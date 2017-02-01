@@ -109,7 +109,7 @@ Status CheckHolePunch(Env* env, const string& path) {
 
   // Preallocate it, making sure the file's size is what we'd expect.
   uint64_t sz;
-  RETURN_NOT_OK(file->PreAllocate(0, kFileSize));
+  RETURN_NOT_OK(file->PreAllocate(0, kFileSize, RWFile::CHANGE_FILE_SIZE));
   RETURN_NOT_OK(env->GetFileSizeOnDisk(filename, &sz));
   if (sz != kFileSize) {
     return Status::IOError(Substitute(

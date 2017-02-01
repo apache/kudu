@@ -219,10 +219,10 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->Write(offset, data);
   }
 
-  Status PreAllocate(uint64_t offset, size_t length) override {
+  Status PreAllocate(uint64_t offset, size_t length, PreAllocateMode mode) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
-    return opened.file()->PreAllocate(offset, length);
+    return opened.file()->PreAllocate(offset, length, mode);
   }
 
   Status Truncate(uint64_t length) override {

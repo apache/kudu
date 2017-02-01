@@ -515,7 +515,16 @@ class RWFile {
   // using Truncate() to increase the file size.
   //
   // In no case is the file truncated by this operation.
-  virtual Status PreAllocate(uint64_t offset, size_t length) = 0;
+  //
+  // 'mode' controls whether the file's logical size grows to include the
+  // preallocated space, or whether it remains the same.
+  enum PreAllocateMode {
+    CHANGE_FILE_SIZE,
+    DONT_CHANGE_FILE_SIZE
+  };
+  virtual Status PreAllocate(uint64_t offset,
+                             size_t length,
+                             PreAllocateMode mode) = 0;
 
   // Truncate the file. If 'new_size' is less than the previous file size, the
   // extra data will be lost. If 'new_size' is greater than the previous file

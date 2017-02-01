@@ -134,7 +134,7 @@ namespace {
 #if defined(__APPLE__)
 // Simulates Linux's fallocate file preallocation API on OS X.
 int fallocate(int fd, int mode, off_t offset, off_t len) {
-  CHECK(mode == 0);
+  CHECK_EQ(mode, 0);
   off_t size = offset + len;
 
   struct stat stat;
@@ -601,13 +601,19 @@ class PosixRWFile : public RWFile {
     return Status::OK();
   }
 
-  virtual Status PreAllocate(uint64_t offset, size_t length) OVERRIDE {
+  virtual Status PreAllocate(uint64_t offset,
+                             size_t length,
+                             PreAllocateMode mode) OVERRIDE {
     MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error_on_write_or_preallocate,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
 
     TRACE_EVENT1("io", "PosixRWFile::PreAllocate", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
-    if (fallocate(fd_, 0, offset, length) < 0) {
+    int falloc_mode = 0;
+    if (mode == DONT_CHANGE_FILE_SIZE) {
+      falloc_mode = FALLOC_FL_KEEP_SIZE;
+    }
+    if (fallocate(fd_, falloc_mode, offset, length) < 0) {
       if (errno == EOPNOTSUPP) {
         KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
       } else if (errno == ENOSYS) {

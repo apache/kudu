@@ -48,6 +48,7 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/stopwatch.h"
 
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
@@ -247,7 +248,9 @@ Status FsManager::Open() {
     }
   }
 
-  RETURN_NOT_OK(block_manager_->Open());
+  LOG_TIMING(INFO, "opening block manager") {
+    RETURN_NOT_OK(block_manager_->Open());
+  }
   LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
             << std::endl << SecureDebugString(*metadata_);
   return Status::OK();

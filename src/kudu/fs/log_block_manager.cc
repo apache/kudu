@@ -512,7 +512,13 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::TruncateDataToTotalBytesWritten() {
-  if (full() && preallocated_offset_ > total_bytes_written_) {
+  // Truncation is performed even if the container's logical file size
+  // (available by proxy via preallocated_offset_) and total_bytes_written_
+  // agree, because XFS's speculative preallocation feature may artificially
+  // enlarge the file without updating its file size.
+  //
+  // See KUDU-1856 for more details.
+  if (full()) {
     VLOG(2) << Substitute("Truncating container $0 to offset $1",
                           ToString(), total_bytes_written_);
     RETURN_NOT_OK(data_file_->Truncate(total_bytes_written_));
@@ -745,7 +751,7 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
       next_append_length > preallocated_offset_ - block_start_offset) {
     int64_t off = std::max(preallocated_offset_, block_start_offset);
     int64_t len = FLAGS_log_container_preallocate_bytes;
-    RETURN_NOT_OK(data_file_->PreAllocate(off, len));
+    RETURN_NOT_OK(data_file_->PreAllocate(off, len, RWFile::CHANGE_FILE_SIZE));
     RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
                           len, off, ToString());

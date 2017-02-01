@@ -1053,34 +1053,54 @@ TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
   string fname;
   NO_FATALS(GetOnlyContainerDataFile(&fname));
   uint64_t size_after_append;
-  ASSERT_OK(env_->GetFileSize(fname, &size_after_append));
+  ASSERT_OK(env_->GetFileSizeOnDisk(fname, &size_after_append));
   ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size_after_append);
 
   // Close it. The extra preallocated space should be truncated off the file.
   ASSERT_OK(writer->Close());
   uint64_t size_after_close;
-  ASSERT_OK(env_->GetFileSize(fname, &size_after_close));
+  ASSERT_OK(env_->GetFileSizeOnDisk(fname, &size_after_close));
   ASSERT_EQ(FLAGS_log_container_max_size, size_after_close);
 
-  // For the sake of testing, artificially double the file's size.
-  unique_ptr<RWFile> data_file;
-  RWFileOptions opts;
-  opts.mode = Env::OPEN_EXISTING;
-  ASSERT_OK(env_->NewRWFile(opts, fname, &data_file));
-  ASSERT_OK(data_file->PreAllocate(size_after_close, size_after_close));
-  uint64_t size_after_preallocate;
-  ASSERT_OK(env_->GetFileSize(fname, &size_after_preallocate));
-  ASSERT_EQ(size_after_close * 2, size_after_preallocate);
+  // Now test the same startup behavior by artificially growing the file
+  // and reopening the block manager.
+  //
+  // Try preallocating in two ways: once with a change to the file size and
+  // once without. The second way serves as a proxy for XFS's speculative
+  // preallocation behavior, described in KUDU-1856.
+  for (RWFile::PreAllocateMode mode : {RWFile::CHANGE_FILE_SIZE,
+                                       RWFile::DONT_CHANGE_FILE_SIZE}) {
+    LOG(INFO) << "Pass " << mode;
+    unique_ptr<RWFile> data_file;
+    RWFileOptions opts;
+    opts.mode = Env::OPEN_EXISTING;
+    ASSERT_OK(env_->NewRWFile(opts, fname, &data_file));
+    ASSERT_OK(data_file->PreAllocate(size_after_close, size_after_close, mode));
+    uint64_t size_after_preallocate;
+    ASSERT_OK(env_->GetFileSizeOnDisk(fname, &size_after_preallocate));
+    ASSERT_EQ(size_after_close * 2, size_after_preallocate);
 
-  // Now reopen the block manager. It should notice that the container grew
-  // and truncate the extra preallocated space off again.
-  ASSERT_OK(ReopenBlockManager(scoped_refptr<MetricEntity>(),
-                               shared_ptr<MemTracker>(),
-                               { this->test_dir_ },
-                               false));
-  uint64_t size_after_reopen;
-  ASSERT_OK(env_->GetFileSize(fname, &size_after_reopen));
-  ASSERT_EQ(FLAGS_log_container_max_size, size_after_reopen);
+    if (mode == RWFile::DONT_CHANGE_FILE_SIZE) {
+      // Some older versions of ext4 (such as on el6) do not appear to truncate
+      // unwritten preallocated space that extends beyond the file size. Let's
+      // coax them by writing a single byte into that space.
+      //
+      // Note: this doesn't invalidate the usefulness of this test, as it's
+      // quite possible for us to have written a little bit of data into XFS's
+      // speculative preallocated area.
+      ASSERT_OK(data_file->Write(size_after_close, "a"));
+    }
+
+    // Now reopen the block manager. It should notice that the container grew
+    // and truncate the extra preallocated space off again.
+    ASSERT_OK(ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                 shared_ptr<MemTracker>(),
+                                 { this->test_dir_ },
+                                 false));
+    uint64_t size_after_reopen;
+    ASSERT_OK(env_->GetFileSizeOnDisk(fname, &size_after_reopen));
+    ASSERT_EQ(FLAGS_log_container_max_size, size_after_reopen);
+  }
 }
 
 TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
