@@ -717,8 +717,7 @@ KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
   auto cleanup = MakeScopedCleanup([&]() {
     delete value;
   });
-  const Schema& schema = *data_->schema_.schema_;
-  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
     // Ownership of value is passed to the valid returned predicate.
     cleanup.cancel();
     return new KuduPredicate(new ComparisonPredicateData(col_schema, op, value));
@@ -731,8 +730,7 @@ KuduPredicate* KuduTable::NewInListPredicate(const Slice& col_name,
   auto cleanup = MakeScopedCleanup([&]() {
     STLDeleteElements(values);
   });
-  const Schema& schema = *data_->schema_.schema_;
-  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
     // Ownership of values is passed to the valid returned predicate.
     cleanup.cancel();
     return new KuduPredicate(new InListPredicateData(col_schema, values));
@@ -740,15 +738,13 @@ KuduPredicate* KuduTable::NewInListPredicate(const Slice& col_name,
 }
 
 KuduPredicate* KuduTable::NewIsNotNullPredicate(const Slice& col_name) {
-  const Schema& schema = *data_->schema_.schema_;
-  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
     return new KuduPredicate(new IsNotNullPredicateData(col_schema));
   });
 }
 
 KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
-  const Schema& schema = *data_->schema_.schema_;
-  return data_->MakePredicate(col_name, schema, [&](const ColumnSchema& col_schema) {
+  return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
     return new KuduPredicate(new IsNullPredicateData(col_schema));
   });
 }
