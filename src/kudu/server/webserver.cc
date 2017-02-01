@@ -40,6 +40,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -141,6 +142,13 @@ Status Webserver::Start() {
 
   if (IsSecure()) {
     LOG(INFO) << "Webserver: Enabling HTTPS support";
+
+    // Initialize OpenSSL, and prevent Squeasel from also performing global OpenSSL
+    // initialization.
+    security::InitializeOpenSSL();
+    options.push_back("ssl_global_init");
+    options.push_back("false");
+
     options.push_back("ssl_certificate");
     options.push_back(opts_.certificate_file);
 

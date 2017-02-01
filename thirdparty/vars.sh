@@ -91,9 +91,7 @@ RAPIDJSON_SOURCE=$TP_SOURCE_DIR/$RAPIDJSON_NAME
 #  export NAME=squeasel-$(git rev-parse HEAD)
 #  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
 #  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
-#
-# File a HD ticket for access to the cloudera-dev AWS instance to push to S3.
-SQUEASEL_VERSION=8ac777a122fccf0358cb8562e900f8e9edd9ed11
+SQUEASEL_VERSION=c304d3f3481b07bf153979155f02e0aab24d01de
 SQUEASEL_NAME=squeasel-$SQUEASEL_VERSION
 SQUEASEL_SOURCE=$TP_SOURCE_DIR/$SQUEASEL_NAME
 
