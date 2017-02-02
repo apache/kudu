@@ -56,6 +56,8 @@ class MiniMaster {
 
   void Shutdown();
 
+  bool is_running() const { return running_; }
+
   // Restart the master on the same ports as it was previously bound.
   // Requires that the master is currently started.
   Status Restart();

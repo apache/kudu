@@ -149,8 +149,14 @@ class MiniCluster : public MiniClusterBase {
   Status CreateClient(client::KuduClientBuilder* builder,
                       client::sp::shared_ptr<client::KuduClient>* client) const override;
 
-  // Determine the leader master of the cluster. Sets 'idx' to the leader
-  // master's index (for calls to to mini_master()).
+  // Determine the leader master of the cluster. Upon successful completion,
+  // sets 'idx' to the leader master's index. The result index index can be used
+  // as an argument for calls to mini_master().
+  //
+  // It's possible to use 'nullptr' instead of providing a valid placeholder
+  // for the result master index. That's for use cases when it's enough
+  // to determine if the cluster has established leader master
+  // without intent to get the actual index.
   //
   // Note: if a leader election occurs after this method is executed, the
   // last result may not be valid.

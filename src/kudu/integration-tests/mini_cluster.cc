@@ -297,11 +297,11 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
   int leader_idx = -1;
   while (MonoTime::Now() < kDeadline) {
     for (int i = 0; i < num_masters(); i++) {
-      if (mini_master(i)->master()->IsShutdown()) {
+      master::MiniMaster* mm = mini_master(i);
+      if (!mm->is_running() || mm->master()->IsShutdown()) {
         continue;
       }
-      master::CatalogManager* catalog =
-          mini_master(i)->master()->catalog_manager();
+      master::CatalogManager* catalog = mm->master()->catalog_manager();
       master::CatalogManager::ScopedLeaderSharedLock l(catalog);
       if (l.first_failed_status().ok()) {
         leader_idx = i;
@@ -318,7 +318,9 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
     return Status::NotFound("Leader master was not found within deadline");
   }
 
-  *idx = leader_idx;
+  if (idx) {
+    *idx = leader_idx;
+  }
   return Status::OK();
 }
 
