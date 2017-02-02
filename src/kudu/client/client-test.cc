@@ -4248,8 +4248,8 @@ TEST_P(IntEncodingNullPredicatesTest, TestIntEncodings) {
   // Insert rows.
   shared_ptr<KuduSession> session = table->client()->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  session->SetTimeoutMillis(5000);
-  const size_t kNumRows = AllowSlowTests() ? 10000 : 10000;
+  session->SetTimeoutMillis(10000);
+  const size_t kNumRows = AllowSlowTests() ? 10000 : 1000;
   for (int i = 0; i < kNumRows; i++) {
     KuduInsert* insert = table->NewInsert();
     KuduPartialRow* row = insert->mutable_row();
@@ -4260,7 +4260,7 @@ TEST_P(IntEncodingNullPredicatesTest, TestIntEncodings) {
       ASSERT_OK(row->SetNull("int_val"));
     }
     ASSERT_OK(session->Apply(insert));
-    if (i % 10001 == 0) {
+    if (i + 1 % 1000 == 0) {
       ASSERT_OK(session->Flush());
     }
   }
@@ -4345,7 +4345,7 @@ TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
   // Insert rows.
   shared_ptr<KuduSession> session = table->client()->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  session->SetTimeoutMillis(5000);
+  session->SetTimeoutMillis(10000);
   const size_t kNumRows = AllowSlowTests() ? 10000 : 1000;
   for (int i = 0; i < kNumRows; i++) {
     KuduInsert* insert = table->NewInsert();
@@ -4357,7 +4357,7 @@ TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
       ASSERT_OK(row->SetNull("string_val"));
     }
     ASSERT_OK(session->Apply(insert));
-    if (i % 10001 == 0) {
+    if (i + 1 % 1000 == 0) {
       ASSERT_OK(session->Flush());
     }
   }
