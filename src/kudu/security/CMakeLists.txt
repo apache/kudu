@@ -98,7 +98,8 @@ if (NOT NO_TESTS)
   target_link_libraries(security-test
     gutil
     kudu_test_util
-    kudu_util)
+    kudu_util
+    security)
 
   # Tests
   set(KUDU_TEST_LINK_LIBS
