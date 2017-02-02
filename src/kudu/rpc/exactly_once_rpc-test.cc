@@ -179,7 +179,8 @@ class ExactlyOnceRpcTest : public RpcTestBase {
                                       now,
                                       std::move(messenger),
                                       value,
-                                      &latch_);
+                                      &latch_,
+                                      server_sleep);
     }
 
     void Start() {
