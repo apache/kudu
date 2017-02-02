@@ -36,18 +36,12 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 
-// Note, this macro assumes the existence of a local var named 'context'.
-#define RPC_RETURN_APP_ERROR(app_err, message, s) \
+#define RPC_RETURN_NOT_OK(expr, app_err, message, context) \
   do { \
-    SetupErrorAndRespond(context, app_err, message, s); \
-    return; \
-  } while (false)
-
-#define RPC_RETURN_NOT_OK(expr, app_err, message) \
-  do { \
-    Status s = (expr); \
-    if (!s.ok()) { \
-      RPC_RETURN_APP_ERROR(app_err, message, s); \
+    const Status& s = (expr); \
+    if (PREDICT_FALSE(!s.ok())) { \
+      SetupErrorAndRespond(context, app_err, message, s); \
+      return; \
     } \
   } while (false)
 
@@ -74,20 +68,6 @@ using crc::Crc32c;
 using strings::Substitute;
 using tablet::TabletPeer;
 
-static void SetupErrorAndRespond(rpc::RpcContext* context,
-                                 TabletCopyErrorPB::Code code,
-                                 const string& message,
-                                 const Status& s) {
-  LOG(WARNING) << "Error handling TabletCopyService RPC request from "
-               << context->requestor_string() << ": " << message << ": "
-               << s.ToString();
-  TabletCopyErrorPB error;
-  StatusToPB(s, error.mutable_status());
-  error.set_code(code);
-  context->RespondApplicationError(TabletCopyErrorPB::tablet_copy_error_ext.number(),
-                                   message, error);
-}
-
 TabletCopyServiceImpl::TabletCopyServiceImpl(
     FsManager* fs_manager,
     TabletPeerLookupIf* tablet_peer_lookup,
@@ -109,6 +89,10 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   const string& requestor_uuid = req->requestor_uuid();
   const string& tablet_id = req->tablet_id();
 
+  LOG_WITH_PREFIX(INFO) << Substitute(
+      "Received BeginTabletCopySession request for tablet $0 from peer $1 ($2)",
+      tablet_id, requestor_uuid, context->requestor_string());
+
   // For now, we use the requestor_uuid with the tablet id as the session id,
   // but there is no guarantee this will not change in the future.
   const string session_id = Substitute("$0-$1", requestor_uuid, tablet_id);
@@ -116,13 +100,14 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   scoped_refptr<TabletPeer> tablet_peer;
   RPC_RETURN_NOT_OK(tablet_peer_lookup_->GetTabletPeer(tablet_id, &tablet_peer),
                     TabletCopyErrorPB::TABLET_NOT_FOUND,
-                    Substitute("Unable to find specified tablet: $0", tablet_id));
+                    Substitute("Unable to find specified tablet: $0", tablet_id),
+                    context);
 
   scoped_refptr<TabletCopySourceSession> session;
   {
     MutexLock l(sessions_lock_);
     if (!FindCopy(sessions_, session_id, &session)) {
-      LOG(INFO) << Substitute(
+      LOG_WITH_PREFIX(INFO) << Substitute(
           "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
@@ -130,11 +115,11 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
                         TabletCopyErrorPB::UNKNOWN_ERROR,
-                        Substitute("Error beginning tablet copy session for tablet $0",
-                                   tablet_id));
+                        Substitute("Error beginning tablet copy session for tablet $0", tablet_id),
+                        context);
       InsertOrDie(&sessions_, session_id, session);
     } else {
-      LOG(INFO) << Substitute(
+      LOG_WITH_PREFIX(INFO) << Substitute(
           "Re-sending initialization info for existing tablet copy session on tablet $0"
           " from peer $1 at $2: session_id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
@@ -179,7 +164,8 @@ void TabletCopyServiceImpl::CheckSessionActive(
     return;
   } else {
     RPC_RETURN_NOT_OK(status, app_error,
-                      Substitute("Error trying to check whether session $0 is active", session_id));
+                      Substitute("Error trying to check whether session $0 is active", session_id),
+                      context);
   }
 }
 
@@ -194,7 +180,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
     MutexLock l(sessions_lock_);
     TabletCopyErrorPB::Code app_error;
     RPC_RETURN_NOT_OK(FindSessionUnlocked(session_id, &app_error, &session),
-                      app_error, "No such session");
+                      app_error, "No such session", context);
     ResetSessionExpirationUnlocked(session_id);
   }
 
@@ -206,7 +192,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
   const DataIdPB& data_id = req->data_id();
   TabletCopyErrorPB::Code error_code = TabletCopyErrorPB::UNKNOWN_ERROR;
   RPC_RETURN_NOT_OK(ValidateFetchRequestDataId(data_id, &error_code, session),
-                    error_code, "Invalid DataId");
+                    error_code, "Invalid DataId", context);
 
   DataChunkPB* data_chunk = resp->mutable_chunk();
   string* data = data_chunk->mutable_data();
@@ -216,13 +202,13 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
     const BlockId& block_id = BlockId::FromPB(data_id.block_id());
     RPC_RETURN_NOT_OK(session->GetBlockPiece(block_id, offset, client_maxlen,
                                              data, &total_data_length, &error_code),
-                      error_code, "Unable to get piece of data block");
+                      error_code, "Unable to get piece of data block", context);
   } else {
     // Fetching a log segment chunk.
     uint64_t segment_seqno = data_id.wal_segment_seqno();
     RPC_RETURN_NOT_OK(session->GetLogSegmentPiece(segment_seqno, offset, client_maxlen,
                                                   data, &total_data_length, &error_code),
-                      error_code, "Unable to get piece of log segment");
+                      error_code, "Unable to get piece of log segment", context);
   }
 
   data_chunk->set_total_data_length(total_data_length);
@@ -242,10 +228,10 @@ void TabletCopyServiceImpl::EndTabletCopySession(
   {
     MutexLock l(sessions_lock_);
     TabletCopyErrorPB::Code app_error;
-    LOG(INFO) << "Request end of tablet copy session " << req->session_id()
-      << " received from " << context->requestor_string();
+    LOG_WITH_PREFIX(INFO) << "Request end of tablet copy session " << req->session_id()
+                          << " received from " << context->requestor_string();
     RPC_RETURN_NOT_OK(DoEndTabletCopySessionUnlocked(req->session_id(), &app_error),
-                      app_error, "No such session");
+                      app_error, "No such session", context);
   }
   context->RespondSuccess();
 }
@@ -260,7 +246,8 @@ void TabletCopyServiceImpl::Shutdown() {
     session_ids.push_back(entry.first);
   }
   for (const string& session_id : session_ids) {
-    LOG(INFO) << "Destroying tablet copy session " << session_id << " due to service shutdown";
+    LOG_WITH_PREFIX(INFO) << "Destroying tablet copy session " << session_id
+                          << " due to service shutdown";
     TabletCopyErrorPB::Code app_error;
     CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
   }
@@ -323,8 +310,8 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
   RETURN_NOT_OK(FindSessionUnlocked(session_id, app_error, &session));
   // Remove the session from the map.
   // It will get destroyed once there are no outstanding refs.
-  LOG(INFO) << "Ending tablet copy session " << session_id << " on tablet "
-    << session->tablet_id() << " with peer " << session->requestor_uuid();
+  LOG_WITH_PREFIX(INFO) << "Ending tablet copy session " << session_id << " on tablet "
+                        << session->tablet_id() << " with peer " << session->requestor_uuid();
   CHECK_EQ(1, sessions_.erase(session_id));
   CHECK_EQ(1, session_expirations_.erase(session_id));
 
@@ -345,13 +332,35 @@ void TabletCopyServiceImpl::EndExpiredSessions() {
       }
     }
     for (const string& session_id : expired_session_ids) {
-      LOG(INFO) << "Tablet Copy session " << session_id
-                << " has expired. Terminating session.";
+      LOG_WITH_PREFIX(INFO) << "Tablet Copy session " << session_id
+                            << " has expired. Terminating session.";
       TabletCopyErrorPB::Code app_error;
       CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
     }
   } while (!shutdown_latch_.WaitFor(MonoDelta::FromMilliseconds(
                                     FLAGS_tablet_copy_timeout_poll_period_ms)));
+}
+
+string TabletCopyServiceImpl::LogPrefix() const {
+  // We use a truncated form of the "T xxxx P yyyy" prefix here, with only the
+  // "P" part, because we don't want it to appear that tablet 'foo' is running
+  // when logging error messages like "Can't find tablet 'foo'".
+  return Substitute("P $0: ", fs_manager_->uuid());
+}
+
+void TabletCopyServiceImpl::SetupErrorAndRespond(
+    rpc::RpcContext* context,
+    TabletCopyErrorPB::Code code,
+    const string& message,
+    const Status& s) {
+  LOG_WITH_PREFIX(WARNING) << "Error handling TabletCopyService RPC request from "
+                           << context->requestor_string()
+                           << ": " << message << ": " << s.ToString();
+  TabletCopyErrorPB error;
+  StatusToPB(s, error.mutable_status());
+  error.set_code(code);
+  context->RespondApplicationError(TabletCopyErrorPB::tablet_copy_error_ext.number(),
+                                   message, error);
 }
 
 } // namespace tserver

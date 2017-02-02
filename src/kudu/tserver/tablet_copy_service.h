@@ -92,6 +92,13 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   // removes them from the map.
   void EndExpiredSessions();
 
+  std::string LogPrefix() const;
+
+  void SetupErrorAndRespond(rpc::RpcContext* context,
+                            TabletCopyErrorPB::Code code,
+                            const string& message,
+                            const Status& s);
+
   FsManager* fs_manager_;
   TabletPeerLookupIf* tablet_peer_lookup_;
 
