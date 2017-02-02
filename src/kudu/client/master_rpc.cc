@@ -17,7 +17,7 @@
 //
 // This module is internal to the client and not a public API.
 
-#include "kudu/master/master_rpc.h"
+#include "kudu/client/master_rpc.h"
 
 #include <boost/bind.hpp>
 #include <mutex>
@@ -37,15 +37,53 @@ using std::string;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;
+using kudu::master::GetMasterRegistrationRequestPB;
+using kudu::master::GetMasterRegistrationResponsePB;
+using kudu::master::MasterErrorPB;
+using kudu::master::MasterServiceProxy;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
 
 namespace kudu {
-namespace master {
+namespace client {
+namespace internal {
 
 ////////////////////////////////////////////////////////////
 // GetMasterRegistrationRpc
 ////////////////////////////////////////////////////////////
+namespace {
+
+// An RPC for getting a Master server's registration.
+class GetMasterRegistrationRpc : public rpc::Rpc {
+ public:
+
+  // Create a wrapper object for a retriable GetMasterRegistration RPC
+  // to 'addr'. The result is stored in 'out', which must be a valid
+  // pointer for the lifetime of this object.
+  //
+  // Invokes 'user_cb' upon failure or success of the RPC call.
+  GetMasterRegistrationRpc(StatusCallback user_cb, Sockaddr addr,
+                           const MonoTime& deadline,
+                           const std::shared_ptr<rpc::Messenger>& messenger,
+                           ServerEntryPB* out);
+
+  ~GetMasterRegistrationRpc();
+
+  virtual void SendRpc() OVERRIDE;
+
+  virtual std::string ToString() const OVERRIDE;
+
+ private:
+  virtual void SendRpcCb(const Status& status) OVERRIDE;
+
+  StatusCallback user_cb_;
+  Sockaddr addr_;
+
+  ServerEntryPB* out_;
+
+  GetMasterRegistrationResponsePB resp_;
+};
+
 
 GetMasterRegistrationRpc::GetMasterRegistrationRpc(
     StatusCallback user_cb, Sockaddr addr, const MonoTime& deadline,
@@ -100,6 +138,8 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
   }
   user_cb_.Run(new_status);
 }
+
+} // anonymous namespace
 
 ////////////////////////////////////////////////////////////
 // GetLeaderMasterRpc
@@ -238,6 +278,6 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_
   SendRpcCb(new_status);
 }
 
-
-} // namespace master
+} // namespace internal
+} // namespace client
 } // namespace kudu

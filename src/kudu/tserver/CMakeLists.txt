@@ -124,7 +124,6 @@ target_link_libraries(tserver
   tserver_proto
   tserver_admin_proto
   tserver_service_proto
-  master_rpc
   master_proto
   consensus_proto
   log_proto

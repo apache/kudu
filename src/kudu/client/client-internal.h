@@ -40,7 +40,6 @@ class HostPort;
 namespace master {
 class AlterTableRequestPB;
 class CreateTableRequestPB;
-class GetLeaderMasterRpc;
 class MasterServiceProxy;
 } // namespace master
 
@@ -51,6 +50,10 @@ class RpcController;
 } // namespace rpc
 
 namespace client {
+
+namespace internal {
+class GetLeaderMasterRpc;
+} // namespace internal
 
 class KuduClient::Data {
  public:
@@ -154,8 +157,7 @@ class KuduClient::Data {
   // NOTE: since this uses a Synchronizer, this may not be invoked by
   // a method that's on a reactor thread.
   //
-  // TODO (KUDU-492): Get rid of this method and re-factor the client
-  // to lazily initialize 'master_proxy_'.
+  // TODO(todd): rename to ReconnectToMasters or something
   Status SetMasterServerProxy(KuduClient* client,
                               const MonoTime& deadline);
 
@@ -228,7 +230,7 @@ class KuduClient::Data {
   // Ref-counted RPC instance: since 'SetMasterServerProxyAsync' call
   // is asynchronous, we need to hold a reference in this class
   // itself, as to avoid a "use-after-free" scenario.
-  scoped_refptr<master::GetLeaderMasterRpc> leader_master_rpc_;
+  scoped_refptr<internal::GetLeaderMasterRpc> leader_master_rpc_;
   std::vector<StatusCallback> leader_master_callbacks_;
 
   // Protects 'leader_master_rpc_', 'leader_master_hostport_',

@@ -34,6 +34,7 @@ set(CLIENT_SRCS
   client-internal.cc
   error_collector.cc
   error-internal.cc
+  master_rpc.cc
   meta_cache.cc
   scan_batch.cc
   scan_configuration.cc
@@ -60,7 +61,6 @@ set(CLIENT_LIBS
   kudu_common
   kudu_util
   master_proto
-  master_rpc
   tserver_proto
   tserver_service_proto)
 

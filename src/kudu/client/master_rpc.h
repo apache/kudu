@@ -16,8 +16,7 @@
 // under the License.
 //
 // This module is internal to the client and not a public API.
-#ifndef KUDU_MASTER_MASTER_RPC_H
-#define KUDU_MASTER_MASTER_RPC_H
+#pragma once
 
 #include <vector>
 #include <string>
@@ -29,44 +28,13 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
-
 namespace kudu {
 
 class ServerEntryPB;
 class HostPort;
 
-namespace master {
-
-// An RPC for getting a Master server's registration.
-class GetMasterRegistrationRpc : public rpc::Rpc {
- public:
-
-  // Create a wrapper object for a retriable GetMasterRegistration RPC
-  // to 'addr'. The result is stored in 'out', which must be a valid
-  // pointer for the lifetime of this object.
-  //
-  // Invokes 'user_cb' upon failure or success of the RPC call.
-  GetMasterRegistrationRpc(StatusCallback user_cb, Sockaddr addr,
-                           const MonoTime& deadline,
-                           const std::shared_ptr<rpc::Messenger>& messenger,
-                           ServerEntryPB* out);
-
-  ~GetMasterRegistrationRpc();
-
-  virtual void SendRpc() OVERRIDE;
-
-  virtual std::string ToString() const OVERRIDE;
-
- private:
-  virtual void SendRpcCb(const Status& status) OVERRIDE;
-
-  StatusCallback user_cb_;
-  Sockaddr addr_;
-
-  ServerEntryPB* out_;
-
-  GetMasterRegistrationResponsePB resp_;
-};
+namespace client {
+namespace internal {
 
 // In parallel, send requests to the specified Master servers until a
 // response comes back from the leader of the Master consensus configuration.
@@ -146,7 +114,6 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   mutable simple_spinlock lock_;
 };
 
-} // namespace master
+} // namespace internal
+} // namespace client
 } // namespace kudu
-
-#endif /* KUDU_MASTER_MASTER_RPC_H */

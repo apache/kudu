@@ -60,19 +60,6 @@ target_link_libraries(master
   tserver
   tserver_service_proto)
 
-set(MASTER_RPC_SRCS
-  master_rpc.cc)
-set(MASTER_RPC_LIBS
-  kudu_common
-  krpc
-  gutil
-  kudu_util
-  master_proto
-  rpc_header_proto)
-ADD_EXPORTABLE_LIBRARY(master_rpc
-  SRCS ${MASTER_RPC_SRCS}
-  DEPS ${MASTER_RPC_LIBS})
-
 # Tests
 set(KUDU_TEST_LINK_LIBS master master_proto kudu_client ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(catalog_manager-test)

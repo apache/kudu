@@ -25,13 +25,13 @@
 #include <unordered_set>
 
 #include "kudu/client/client.h"
+#include "kudu/client/master_rpc.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/master/master_rpc.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
@@ -51,7 +51,7 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
-using kudu::master::GetLeaderMasterRpc;
+using kudu::client::internal::GetLeaderMasterRpc;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;

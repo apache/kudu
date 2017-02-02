@@ -17,18 +17,18 @@
 
 #include "kudu/tserver/heartbeater.h"
 
-#include <boost/optional.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <boost/optional.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.h"
-#include "kudu/master/master_rpc.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/security/server_cert_manager.h"
 #include "kudu/server/webserver.h"
@@ -57,12 +57,6 @@ DEFINE_int32(heartbeat_max_failures_before_backoff, 3,
              "rather than retrying.");
 TAG_FLAG(heartbeat_max_failures_before_backoff, advanced);
 
-using google::protobuf::RepeatedPtrField;
-using kudu::HostPortPB;
-using kudu::consensus::RaftPeerPB;
-using kudu::master::GetLeaderMasterRpc;
-using kudu::master::ListMastersResponsePB;
-using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
 using kudu::rpc::RpcController;

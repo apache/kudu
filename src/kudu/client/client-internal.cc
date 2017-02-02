@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/client/master_rpc.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
@@ -33,7 +34,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/master/master.h"
-#include "kudu/master/master_rpc.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/request_tracker.h"
@@ -61,7 +61,6 @@ using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
 using master::DeleteTableRequestPB;
 using master::DeleteTableResponsePB;
-using master::GetLeaderMasterRpc;
 using master::GetTableSchemaRequestPB;
 using master::GetTableSchemaResponsePB;
 using master::GetTabletLocationsRequestPB;
@@ -84,6 +83,7 @@ using strings::Substitute;
 
 namespace client {
 
+using internal::GetLeaderMasterRpc;
 using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
@@ -669,7 +669,7 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
   leader_master_callbacks_.push_back(cb);
   if (!leader_master_rpc_) {
     // No one is sending a request yet - we need to be the one to do it.
-    leader_master_rpc_.reset(new GetLeaderMasterRpc(
+    leader_master_rpc_.reset(new internal::GetLeaderMasterRpc(
                                Bind(&KuduClient::Data::LeaderMasterDetermined,
                                     Unretained(this)),
                                std::move(master_sockaddrs),
