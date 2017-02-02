@@ -39,6 +39,16 @@ using std::string;
 extern const char* const kSaslMechPlain;
 extern const char* const kSaslMechGSSAPI;
 
+struct SaslMechanism {
+  enum Type {
+    INVALID,
+    PLAIN,
+    GSSAPI
+  };
+  static Type value_of(const std::string& mech);
+  static const char* name_of(Type val);
+};
+
 // Initialize the SASL library.
 // appname: Name of the application for logging messages & sasl plugin configuration.
 //          Note that this string must remain allocated for the lifetime of the program.
@@ -75,7 +85,7 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call);
 string SaslIpPortString(const Sockaddr& addr);
 
 // Return available plugin mechanisms for the given connection.
-std::set<string> SaslListAvailableMechs();
+std::set<SaslMechanism::Type> SaslListAvailableMechs();
 
 // Initialize and return a libsasl2 callback data structure based on the passed args.
 // id: A SASL callback identifier (e.g., SASL_CB_GETOPT).
@@ -88,24 +98,6 @@ struct SaslDeleter {
   inline void operator()(sasl_conn_t* conn) {
     sasl_dispose(&conn);
   }
-};
-
-struct SaslNegotiationState {
-  enum Type {
-    NEW,
-    INITIALIZED,
-    NEGOTIATED
-  };
-};
-
-struct SaslMechanism {
-  enum Type {
-    INVALID,
-    PLAIN,
-    GSSAPI
-  };
-  static Type value_of(const std::string& mech);
-  static const char* name_of(Type val);
 };
 
 // Internals exposed in the header for test purposes.

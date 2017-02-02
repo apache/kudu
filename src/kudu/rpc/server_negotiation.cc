@@ -135,6 +135,12 @@ Status ServerNegotiation::Negotiate() {
   if (tls_context_ && ContainsKey(client_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::SERVER,
                                                   &tls_handshake_));
+
+    // The server does not verify the client's certificate.
+    // TODO(PKI): Add client-certificate authn support, which will verify the
+    // client cert.
+    tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+
     while (true) {
       NegotiatePB request;
       RETURN_NOT_OK(RecvNegotiatePB(&request, &recv_buf));
@@ -326,7 +332,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     }
   }
 
-  set<string> server_mechs = helper_.EnabledMechs();
+  set<SaslMechanism::Type> server_mechs = helper_.EnabledMechs();
   if (PREDICT_FALSE(server_mechs.empty())) {
     // This will happen if no mechanisms are enabled before calling Init()
     Status s = Status::NotAuthorized("SASL server mechanism list is empty!");
@@ -340,12 +346,12 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
   return Status::OK();
 }
 
-Status ServerNegotiation::SendNegotiate(const set<string>& server_mechs) {
+Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_mechs) {
   NegotiatePB response;
   response.set_step(NegotiatePB::NEGOTIATE);
 
-  for (const string& mech : server_mechs) {
-    response.add_auths()->set_mechanism(mech);
+  for (auto mech : server_mechs) {
+    response.add_auths()->set_mechanism(SaslMechanism::name_of(mech));
   }
 
   // Tell the client which features we support.

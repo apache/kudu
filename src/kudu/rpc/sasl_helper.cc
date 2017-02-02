@@ -70,7 +70,7 @@ const char* SaslHelper::server_fqdn() const {
 }
 
 const char* SaslHelper::EnabledMechsString() const {
-  JoinStrings(enabled_mechs_, " ", &enabled_mechs_string_);
+  enabled_mechs_string_ = JoinMapped(enabled_mechs_, SaslMechanism::name_of, " ");
   return enabled_mechs_string_.c_str();
 }
 
@@ -102,20 +102,20 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
 }
 
 Status SaslHelper::EnablePlain() {
-  RETURN_NOT_OK(EnableMechanism(kSaslMechPlain));
+  RETURN_NOT_OK(EnableMechanism(SaslMechanism::PLAIN));
   plain_enabled_ = true;
   return Status::OK();
 }
 
 Status SaslHelper::EnableGSSAPI() {
-  RETURN_NOT_OK(EnableMechanism(kSaslMechGSSAPI));
+  RETURN_NOT_OK(EnableMechanism(SaslMechanism::GSSAPI));
   gssapi_enabled_ = true;
   return Status::OK();
 }
 
-Status SaslHelper::EnableMechanism(const string& mech) {
+Status SaslHelper::EnableMechanism(SaslMechanism::Type mech) {
   if (PREDICT_FALSE(!ContainsKey(global_mechs_, mech))) {
-    return Status::InvalidArgument("unable to find SASL plugin", mech);
+    return Status::InvalidArgument("unable to find SASL plugin", SaslMechanism::name_of(mech));
   }
   enabled_mechs_.insert(mech);
   return Status::OK();

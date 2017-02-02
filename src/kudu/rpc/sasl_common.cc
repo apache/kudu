@@ -343,14 +343,17 @@ string SaslIpPortString(const Sockaddr& addr) {
   return addr_str;
 }
 
-set<string> SaslListAvailableMechs() {
-  set<string> mechs;
+set<SaslMechanism::Type> SaslListAvailableMechs() {
+  set<SaslMechanism::Type> mechs;
 
   // Array of NULL-terminated strings. Array terminated with NULL.
-  const char** mech_strings = sasl_global_listmech();
-  while (mech_strings != nullptr && *mech_strings != nullptr) {
-    mechs.insert(*mech_strings);
-    mech_strings++;
+  for (const char** mech_strings = sasl_global_listmech();
+       mech_strings != nullptr && *mech_strings != nullptr;
+       mech_strings++) {
+    auto mech = SaslMechanism::value_of(*mech_strings);
+    if (mech != SaslMechanism::INVALID) {
+      mechs.insert(mech);
+    }
   }
   return mechs;
 }

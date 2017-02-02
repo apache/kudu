@@ -52,6 +52,8 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 
+using strings::Substitute;
+
 namespace kudu {
 namespace rpc {
 
@@ -167,6 +169,14 @@ Status ClientNegotiation::Negotiate() {
   if (tls_context_ && ContainsKey(server_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
+
+    if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+      // When using GSSAPI, we don't verify the server's certificate. Instead,
+      // we rely on Kerberos authentication, and use channel binding to tie the
+      // SASL authentication to the TLS channel.
+      // TODO(PKI): implement channel binding when TLS and GSSAPI are used.
+      tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+    }
 
     // To initiate the TLS handshake, we pretend as if the server sent us an
     // empty TLS_HANDSHAKE token.
@@ -310,26 +320,53 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   }
 
   // Build a map of the SASL mechanisms offered by the server.
-  const set<string>& enabled_mechs = helper_.EnabledMechs();
-  set<string> server_mechs;
-  map<string, NegotiatePB::SaslAuth> server_mech_map;
+  const set<SaslMechanism::Type>& client_mechs = helper_.EnabledMechs();
+  set<SaslMechanism::Type> server_mechs;
+  map<SaslMechanism::Type, NegotiatePB::SaslAuth> server_mech_map;
   for (const NegotiatePB::SaslAuth& auth : response.auths()) {
-    const auto& mech = auth.mechanism();
+    auto mech = SaslMechanism::value_of(auth.mechanism());
+    if (mech == SaslMechanism::INVALID) {
+      continue;
+    }
     server_mech_map[mech] = auth;
     server_mechs.insert(mech);
   }
 
-  // Determine which server mechs are also enabled by the client.
-  // Cyrus SASL 2.1.25 and later supports doing this set intersection via
-  // the 'client_mech_list' option, but that version is not available on
-  // RHEL 6, so we have to do it manually.
-  common_mechs_ = STLSetIntersection(enabled_mechs, server_mechs);
+  // Determine which SASL mechanism to use for authenticating the connection.
+  // We pick the most preferred mechanism which is supported by both parties.
+  // The preference list in order of most to least preferred:
+  //  * GSSAPI
+  //  * PLAIN
+  set<SaslMechanism::Type> common_mechs = STLSetIntersection(client_mechs, server_mechs);
 
-  if (common_mechs_.empty() &&
-      ContainsKey(server_mechs, kSaslMechGSSAPI) &&
-      !ContainsKey(enabled_mechs, kSaslMechGSSAPI)) {
-    return Status::NotAuthorized("server requires GSSAPI (Kerberos) authentication and "
-                                 "client was missing the required SASL module");
+  if (common_mechs.empty()) {
+    if (ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
+        !ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
+      return Status::NotAuthorized("server requires authentication, "
+                                   "but client does not have Kerberos enabled");
+    }
+    if (!ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
+               ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
+      return Status::NotAuthorized("client requires authentication, "
+                                   "but server does not have Kerberos enabled");
+    }
+    string msg = Substitute("client/server supported SASL mechanism mismatch; "
+                            "client mechanisms: [$0], server mechanisms: [$1]",
+                            JoinMapped(client_mechs, SaslMechanism::name_of, ", "),
+                            JoinMapped(server_mechs, SaslMechanism::name_of, ", "));
+
+    // For now, there should never be a SASL mechanism mismatch that isn't due
+    // to one of the sides requiring Kerberos and the other not having it, so
+    // lets sanity check that.
+    DLOG(FATAL) << msg;
+    return Status::NotAuthorized(msg);
+  }
+
+  if (ContainsKey(common_mechs, SaslMechanism::GSSAPI)) {
+    negotiated_mech_ = SaslMechanism::GSSAPI;
+  } else {
+    DCHECK(ContainsKey(common_mechs, SaslMechanism::PLAIN));
+    negotiated_mech_ = SaslMechanism::PLAIN;
   }
 
   return Status::OK();
@@ -371,8 +408,12 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
 }
 
 Status ClientNegotiation::SendSaslInitiate() {
-  string matching_mechs_str = JoinElements(common_mechs_, " ");
-  TRACE("Matching mech list: $0", matching_mechs_str);
+  TRACE("Initiating SASL $0 handshake", negotiated_mech_);
+
+  // At this point we've already chosen the SASL mechanism to use
+  // (negotiated_mech_), but we need to let the SASL library know. SASL likes to
+  // choose the mechanism from among a list of possible options, so we simply
+  // provide it one option, and then check that it picks that option.
 
   const char* init_msg = nullptr;
   unsigned init_msg_len = 0;
@@ -395,20 +436,20 @@ Status ClientNegotiation::SendSaslInitiate() {
   TRACE("Calling sasl_client_start()");
   Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_client_start(
-          sasl_conn_.get(),           // The SASL connection context created by init()
-          matching_mechs_str.c_str(), // The list of mechanisms to negotiate.
-          nullptr,                    // Disables INTERACT return if NULL.
-          &init_msg,                  // Filled in on success.
-          &init_msg_len,              // Filled in on success.
-          &negotiated_mech);          // Filled in on success.
+          sasl_conn_.get(),                         // The SASL connection context created by init()
+          SaslMechanism::name_of(negotiated_mech_), // The list of mechanisms to negotiate.
+          nullptr,                                  // Disables INTERACT return if NULL.
+          &init_msg,                                // Filled in on success.
+          &init_msg_len,                            // Filled in on success.
+          &negotiated_mech);                        // Filled in on success.
   });
 
   if (PREDICT_FALSE(!s.IsIncomplete() && !s.ok())) {
     return s;
   }
 
-  // The server matched one of our mechanisms.
-  negotiated_mech_ = SaslMechanism::value_of(negotiated_mech);
+  // Check that the SASL library is using the mechanism that we picked.
+  DCHECK_EQ(SaslMechanism::value_of(negotiated_mech), negotiated_mech_);
 
   NegotiatePB msg;
   msg.set_step(NegotiatePB::SASL_INITIATE);

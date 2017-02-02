@@ -23,6 +23,7 @@
 
 #include <sasl/sasl.h>
 
+#include "kudu/rpc/sasl_common.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -59,12 +60,12 @@ class SaslHelper {
   const char* server_fqdn() const;
 
   // Globally-registered available SASL plugins.
-  const std::set<std::string>& GlobalMechs() const {
+  const std::set<SaslMechanism::Type>& GlobalMechs() const {
     return global_mechs_;
   }
 
   // Helper functions for managing the list of active SASL mechanisms.
-  const std::set<std::string>& EnabledMechs() const {
+  const std::set<SaslMechanism::Type>& EnabledMechs() const {
     return enabled_mechs_;
   }
 
@@ -88,7 +89,7 @@ class SaslHelper {
   Status ParseNegotiatePB(const Slice& param_buf, NegotiatePB* msg);
 
  private:
-  Status EnableMechanism(const std::string& mech);
+  Status EnableMechanism(SaslMechanism::Type mech);
 
   // Returns space-delimited local mechanism list string suitable for passing
   // to libsasl2, such as via "mech_list" callbacks.
@@ -102,8 +103,8 @@ class SaslHelper {
   // Authentication types and data.
   const PeerType peer_type_;
   std::string tag_;
-  std::set<std::string> global_mechs_;       // Cache of global mechanisms.
-  std::set<std::string> enabled_mechs_;      // Active mechanisms.
+  std::set<SaslMechanism::Type> global_mechs_;       // Cache of global mechanisms.
+  std::set<SaslMechanism::Type> enabled_mechs_;      // Active mechanisms.
   mutable std::string enabled_mechs_string_; // Mechanism list string returned by callbacks.
 
   bool plain_enabled_;

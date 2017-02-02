@@ -194,10 +194,6 @@ class ClientNegotiation {
   // The set of features supported by the server. Filled in during negotiation.
   std::set<RpcFeatureFlag> server_features_;
 
-  // The set of SASL mechanisms supported by the server and the client. Filled
-  // in during negotiation.
-  std::set<std::string> common_mechs_;
-
   // The SASL mechanism used by the connection. Filled in during negotiation.
   SaslMechanism::Type negotiated_mech_;
 

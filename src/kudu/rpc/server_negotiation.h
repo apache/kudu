@@ -153,7 +153,7 @@ class ServerNegotiation {
   Status HandleNegotiate(const NegotiatePB& request) WARN_UNUSED_RESULT;
 
   // Send a NEGOTIATE response to the client with the list of available mechanisms.
-  Status SendNegotiate(const std::set<std::string>& server_mechs) WARN_UNUSED_RESULT;
+  Status SendNegotiate(const std::set<SaslMechanism::Type>& server_mechs) WARN_UNUSED_RESULT;
 
   // Handle a TLS_HANDSHAKE request message from the server.
   Status HandleTlsHandshake(const NegotiatePB& request) WARN_UNUSED_RESULT;

@@ -36,6 +36,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -65,7 +66,7 @@ namespace rpc {
 
 class TestNegotiation : public RpcTestBase {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RpcTestBase::SetUp();
     ASSERT_OK(SaslInit());
   }
@@ -84,7 +85,7 @@ static void RunAcceptingDelegator(Socket* acceptor,
   server_runner(std::move(conn));
 }
 
-// Set up a socket and run a SASL negotiation.
+// Set up a socket and run a negotiation sequence.
 static void RunNegotiationTest(const SocketCallable& server_runner,
                                const SocketCallable& client_runner) {
   Socket server_sock;
@@ -220,7 +221,7 @@ TEST_F(TestNegotiation, TestNoMatchingMechanisms) {
         // The client enables both PLAIN and GSSAPI.
         CHECK_OK(client_negotiation.EnablePlain("foo", "bar"));
         Status s = client_negotiation.Negotiate();
-        ASSERT_STR_CONTAINS(s.ToString(), "client was missing the required SASL module");
+        ASSERT_STR_CONTAINS(s.ToString(), "client does not have Kerberos enabled");
       });
 }
 
@@ -536,6 +537,74 @@ TEST_F(TestDisableInit, TestMultipleSaslInit_NoMutexImpl) {
   }
 }
 #endif
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Server which has TLS and SASL GSSAPI enabled.
+static void RunTlsGssapiNegotiationServer(unique_ptr<Socket> socket) {
+  ServerNegotiation server_negotiation(std::move(socket));
+
+  // TODO(PKI): switch this to use an in-memory cert and key.
+  std::string server_cert_path = JoinPathSegments(GetTestDataDirectory(), "server-cert.pem");
+  std::string private_key_path = JoinPathSegments(GetTestDataDirectory(), "server-key.pem");
+  ASSERT_OK(security::CreateSSLServerCert(server_cert_path));
+  ASSERT_OK(security::CreateSSLPrivateKey(private_key_path));
+
+  security::TlsContext tls_context;
+  ASSERT_OK(tls_context.Init());
+  ASSERT_OK(tls_context.LoadCertificate(server_cert_path));
+  ASSERT_OK(tls_context.LoadPrivateKey(private_key_path));
+  server_negotiation.EnableTls(&tls_context);
+
+  server_negotiation.set_server_fqdn("127.0.0.1");
+  ASSERT_OK(server_negotiation.EnableGSSAPI());
+
+  ASSERT_OK(server_negotiation.Negotiate());
+  ASSERT_TRUE(ContainsKey(server_negotiation.client_features(), APPLICATION_FEATURE_FLAGS));
+  ASSERT_TRUE(ContainsKey(server_negotiation.client_features(), TLS));
+
+  ASSERT_EQ(SaslMechanism::GSSAPI, server_negotiation.negotiated_mechanism());
+  ASSERT_EQ("testuser", server_negotiation.authenticated_user());
+
+  // TODO(PKI): assert that TLS is actually negotiated.
+}
+
+static void RunTlsGssapiNegotiationClient(unique_ptr<Socket> socket) {
+  ClientNegotiation client_negotiation(std::move(socket));
+
+  security::TlsContext tls_context;
+  ASSERT_OK(tls_context.Init());
+  client_negotiation.EnableTls(&tls_context);
+
+  client_negotiation.set_server_fqdn("127.0.0.1");
+  CHECK_OK(client_negotiation.EnableGSSAPI());
+  CHECK_OK(client_negotiation.Negotiate());
+  CHECK(ContainsKey(client_negotiation.server_features(), APPLICATION_FEATURE_FLAGS));
+  CHECK(ContainsKey(client_negotiation.server_features(), TLS));
+
+  // TODO(PKI): assert that TLS is actually negotiated.
+}
+
+// Test TLS and GSSAPI (kerberos) SASL negotiation.
+TEST_F(TestNegotiation, TestTlsWithGssapiNegotiation) {
+  MiniKdc kdc;
+  ASSERT_OK(kdc.Start());
+
+  // Create the server principal and keytab.
+  string kt_path;
+  ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
+  CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
+
+  // Create and kinit as a client user.
+  ASSERT_OK(kdc.CreateUserPrincipal("testuser"));
+  ASSERT_OK(kdc.Kinit("testuser"));
+  ASSERT_OK(kdc.SetKrb5Environment());
+
+  // Authentication should succeed on both sides.
+  RunNegotiationTest(RunTlsGssapiNegotiationServer, RunTlsGssapiNegotiationClient);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 } // namespace rpc
 } // namespace kudu

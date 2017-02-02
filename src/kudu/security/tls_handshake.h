@@ -72,7 +72,7 @@ class TlsHandshake {
   // Set the verification mode for this handshake. The default verification mode
   // is VERIFY_REMOTE_CERT_AND_HOST.
   //
-  // This must be not be called after the first call to Continue()
+  // This must be called before the first call to Continue().
   void set_verification_mode(TlsVerificationMode mode) {
     DCHECK(!has_started_);
     verification_mode_ = mode;
