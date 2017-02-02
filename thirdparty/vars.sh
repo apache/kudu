@@ -31,8 +31,8 @@ TP_BUILD_DIR="$TP_DIR/build"
 CLOUDFRONT_URL_PREFIX=http://d3dr9sfxru4sde.cloudfront.net
 
 PREFIX_COMMON=$TP_DIR/installed/common
-PREFIX_UNINSTRUMENTED=$TP_DIR/installed/uninstrumented
-PREFIX_TSAN=$TP_DIR/installed/tsan
+PREFIX_DEPS=$TP_DIR/installed/uninstrumented
+PREFIX_DEPS_TSAN=$TP_DIR/installed/tsan
 
 GFLAGS_VERSION=2.1.2
 GFLAGS_NAME=gflags-$GFLAGS_VERSION
