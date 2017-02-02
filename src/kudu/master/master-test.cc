@@ -1285,5 +1285,26 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
   ASSERT_OK(verifier.Verify());
 }
 
+// Unit tests for the ConnectToMaster() RPC:
+// should issue authentication tokens and the master CA cert.
+TEST_F(MasterTest, TestConnectToMaster) {
+  ConnectToMasterRequestPB req;
+  ConnectToMasterResponsePB resp;
+  RpcController rpc;
+  ASSERT_OK(proxy_->ConnectToMaster(req, &resp, &rpc));
+  SCOPED_TRACE(resp.DebugString());
+
+  EXPECT_EQ(consensus::LEADER, resp.role()) << "should be leader";
+  ASSERT_EQ(1, resp.ca_cert_der_size()) << "should have one cert";
+  EXPECT_GT(resp.ca_cert_der(0).size(), 100) << "CA cert should be at least 100 bytes";
+  ASSERT_TRUE(resp.has_authn_token()) << "should return an authn token";
+  EXPECT_EQ(256, resp.authn_token().signature().size());
+  EXPECT_EQ(1, resp.authn_token().signing_key_seq_num());
+
+  security::TokenPB token;
+  ASSERT_TRUE(token.ParseFromString(resp.authn_token().token_data()));
+  ASSERT_TRUE(token.authn().has_username());
+}
+
 } // namespace master
 } // namespace kudu

@@ -27,6 +27,7 @@
 #include "kudu/cfile/block_cache.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/authn_token_manager.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/master_service.h"
@@ -101,6 +102,12 @@ Status Master::Init() {
   // CA private key and certificate from the system table when the server
   // becomes a leader.
   cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
+
+  // TODO(PKI): this also will need to be wired together with CatalogManager
+  // soon, including initializing the token manager with the proper next
+  // sequence number.
+  authn_token_manager_.reset(new AuthnTokenManager());
+  RETURN_NOT_OK(authn_token_manager_->Init(1));
 
   state_ = kInitialized;
   return Status::OK();

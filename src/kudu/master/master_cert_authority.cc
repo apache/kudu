@@ -88,8 +88,14 @@ Status MasterCertAuthority::Init(unique_ptr<PrivateKey> key,
                                  unique_ptr<Cert> cert) {
   CHECK(key);
   CHECK(cert);
+
+  // Cache the exported DER-format cert.
+  string ca_cert_der;
+  RETURN_NOT_OK(cert->ToString(&ca_cert_der, security::DataFormat::DER));
+
   ca_private_key_ = std::move(key);
   ca_cert_ = std::move(cert);
+  ca_cert_der_ = std::move(ca_cert_der);
   return Status::OK();
 }
 
@@ -114,7 +120,6 @@ Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_de
                         "failed to signed cert as DER format");
   return Status::OK();
 }
-
 
 } // namespace master
 } // namespace kudu

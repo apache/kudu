@@ -57,6 +57,7 @@ class RpcController;
 //
 // TODO(mpercy): this is actually used server side too -- should
 // we instead introduce a RemoteUser class or something?
+// TODO(todd): this should move into a standalone header.
 class UserCredentials {
  public:
    UserCredentials();

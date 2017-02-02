@@ -19,7 +19,10 @@
 #include <memory>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -77,6 +80,14 @@ class MasterCertAuthority {
   //        to keep the internal state consistent.
   Status SignServerCSR(const std::string& csr_der, std::string* cert_der);
 
+  // Export the current CA certificate in DER format.
+  //
+  // This can be sent to participants in the cluster so they can add it to
+  // their trust stores.
+  const std::string& ca_cert_der() const {
+    CHECK(ca_cert_) << "must Init()";
+    return ca_cert_der_;
+  }
  private:
   friend class ::kudu::master::MasterCertAuthorityTest;
   // The UUID of the master. This is used as a field in the certificate.
@@ -84,6 +95,10 @@ class MasterCertAuthority {
 
   std::unique_ptr<security::PrivateKey> ca_private_key_;
   std::unique_ptr<security::Cert> ca_cert_;
+
+  // Cached copy of the CA cert encoded in DER format. This is requested
+  // by any connecting client, so the cache avoids conversion overhead.
+  std::string ca_cert_der_;
 
   DISALLOW_COPY_AND_ASSIGN(MasterCertAuthority);
 };

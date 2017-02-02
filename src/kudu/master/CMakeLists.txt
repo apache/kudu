@@ -33,6 +33,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
   NONLINK_DEPS ${MASTER_KRPC_TGTS})
 
 set(MASTER_SRCS
+  authn_token_manager.cc
   catalog_manager.cc
   master.cc
   master_cert_authority.cc
@@ -57,6 +58,7 @@ target_link_libraries(master
   server_common
   server_process
   tablet
+  token_proto
   tserver
   tserver_service_proto)
 

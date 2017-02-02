@@ -23,12 +23,14 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/master/authn_token_manager.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/outbound_call.h" // for UserCredentials
 #include "kudu/server/webserver.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
@@ -45,6 +47,8 @@ DEFINE_bool(master_support_connect_to_master_rpc, true,
             "version compatibility fallback in the client.");
 TAG_FLAG(master_support_connect_to_master_rpc, unsafe);
 TAG_FLAG(master_support_connect_to_master_rpc, hidden);
+
+using kudu::security::SignedTokenPB;
 
 namespace kudu {
 namespace master {
@@ -355,8 +359,36 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   if (!l.CheckIsInitializedOrRespond(resp, rpc)) {
     return;
   }
-  resp->set_role(server_->catalog_manager()->Role());
+  auto role = server_->catalog_manager()->Role();
+  resp->set_role(role);
 
+  if (l.leader_status().ok()) {
+    // TODO(PKI): it seems there is some window when 'role' is LEADER but
+    // in fact we aren't done initializing (and we don't have a CA cert).
+    // In that case, if we respond with the 'LEADER' role to a client, but
+    // don't pass back the CA cert, then the client won't be able to trust
+    // anyone... seems like a potential race bug for clients who connect
+    // exactly as the leader is changing.
+    resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
+
+    // Issue an authentication token for the caller.
+    // TODO(PKI): we should probably only issue a token if the client is
+    // authenticated by kerberos, and not by another token. Otherwise we're
+    // essentially allowing unlimited renewal, which is probably not what
+    // we want.
+    SignedTokenPB authn_token;
+    Status s = server_->authn_token_manager()->GenerateToken(
+        rpc->user_credentials().real_user(),
+        &authn_token);
+    if (!s.ok()) {
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << "Unable to generate signed token for " << rpc->requestor_string()
+          << ": " << s.ToString();
+    } else {
+      // TODO(todd): this might be a good spot for some auditing code?
+      resp->mutable_authn_token()->Swap(&authn_token);
+    }
+  }
   rpc->RespondSuccess();
 }
 

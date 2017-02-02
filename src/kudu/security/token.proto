@@ -18,7 +18,10 @@ package kudu.security;
 
 option java_package = "org.apache.kudu.security";
 
+import "kudu/util/pb_util.proto";
+
 message AuthnTokenPB {
+  optional string username = 1;
 };
 
 message AuthzTokenPB {
@@ -63,7 +66,7 @@ message SignedTokenPB {
   optional bytes token_data = 1;
 
   // The cryptographic signature of 'token_contents'.
-  optional bytes signature = 2;
+  optional bytes signature = 2 [ (kudu.REDACT) = true ];
 
   // The sequence number of the key which produced 'signature'.
   optional int64 signing_key_seq_num = 3;
