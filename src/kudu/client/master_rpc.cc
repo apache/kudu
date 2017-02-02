@@ -37,6 +37,8 @@ using std::string;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;
+using kudu::master::ConnectToMasterRequestPB;
+using kudu::master::ConnectToMasterResponsePB;
 using kudu::master::GetMasterRegistrationRequestPB;
 using kudu::master::GetMasterRegistrationResponsePB;
 using kudu::master::MasterErrorPB;
@@ -53,22 +55,22 @@ namespace internal {
 ////////////////////////////////////////////////////////////
 namespace {
 
-// An RPC for getting a Master server's registration.
-class GetMasterRegistrationRpc : public rpc::Rpc {
+// An RPC for trying to connect via a particular Master.
+class ConnectToMasterRpc : public rpc::Rpc {
  public:
 
-  // Create a wrapper object for a retriable GetMasterRegistration RPC
+  // Create a wrapper object for a retriable ConnectToMaster RPC
   // to 'addr'. The result is stored in 'out', which must be a valid
   // pointer for the lifetime of this object.
   //
   // Invokes 'user_cb' upon failure or success of the RPC call.
-  GetMasterRegistrationRpc(StatusCallback user_cb,
-                           const Sockaddr& addr,
-                           const MonoTime& deadline,
-                           std::shared_ptr<rpc::Messenger> messenger,
-                           ServerEntryPB* out);
+  ConnectToMasterRpc(StatusCallback user_cb,
+                     const Sockaddr& addr,
+                     const MonoTime& deadline,
+                     std::shared_ptr<rpc::Messenger> messenger,
+                     ConnectToMasterResponsePB* out);
 
-  ~GetMasterRegistrationRpc();
+  ~ConnectToMasterRpc();
 
   virtual void SendRpc() OVERRIDE;
 
@@ -77,65 +79,106 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  StatusCallback user_cb_;
-  Sockaddr addr_;
+  const StatusCallback user_cb_;
+  const Sockaddr addr_;
 
-  ServerEntryPB* out_;
+  // Owned by the caller of this RPC, not this instance.
+  ConnectToMasterResponsePB* out_;
 
-  GetMasterRegistrationResponsePB resp_;
+  // When connecting to Kudu <1.3 masters, the ConnectToMaster
+  // RPC is not supported. Instead we use GetMasterRegistration(),
+  // store the response here, and convert it to look like the new
+  // style response.
+  GetMasterRegistrationResponsePB old_rpc_resp_;
+  bool trying_old_rpc_ = false;
 };
 
 
-GetMasterRegistrationRpc::GetMasterRegistrationRpc(
-    StatusCallback user_cb, const Sockaddr& addr, const MonoTime& deadline,
-    shared_ptr<Messenger> messenger, ServerEntryPB* out)
+ConnectToMasterRpc::ConnectToMasterRpc(
+    StatusCallback user_cb, const Sockaddr& addr,const MonoTime& deadline,
+    shared_ptr<Messenger> messenger, ConnectToMasterResponsePB* out)
     : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
       addr_(addr),
       out_(DCHECK_NOTNULL(out)) {}
 
-GetMasterRegistrationRpc::~GetMasterRegistrationRpc() {
+ConnectToMasterRpc::~ConnectToMasterRpc() {
 }
 
-void GetMasterRegistrationRpc::SendRpc() {
+void ConnectToMasterRpc::SendRpc() {
   MasterServiceProxy proxy(retrier().messenger(),
                            addr_);
-  GetMasterRegistrationRequestPB req;
-  proxy.GetMasterRegistrationAsync(req, &resp_,
-                                   mutable_retrier()->mutable_controller(),
-                                   boost::bind(&GetMasterRegistrationRpc::SendRpcCb,
-                                               this,
-                                               Status::OK()));
+  rpc::RpcController* rpc = mutable_retrier()->mutable_controller();
+  // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
+  // it doesn't seem to be.
+  if (!trying_old_rpc_) {
+    ConnectToMasterRequestPB req;
+    rpc->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
+    proxy.ConnectToMasterAsync(req, out_, rpc,
+                               boost::bind(&ConnectToMasterRpc::SendRpcCb,
+                                           this,
+                                           Status::OK()));
+  } else {
+    GetMasterRegistrationRequestPB req;
+    proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, rpc,
+                                     boost::bind(&ConnectToMasterRpc::SendRpcCb,
+                                                 this,
+                                                 Status::OK()));
+  }
 }
 
-string GetMasterRegistrationRpc::ToString() const {
-  return strings::Substitute("GetMasterRegistrationRpc(address: $0, num_attempts: $1)",
+string ConnectToMasterRpc::ToString() const {
+  return strings::Substitute("ConnectToMasterRpc(address: $0, num_attempts: $1)",
                              addr_.ToString(), num_attempts());
 }
 
-void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
-  gscoped_ptr<GetMasterRegistrationRpc> deleter(this);
+void ConnectToMasterRpc::SendRpcCb(const Status& status) {
+  // NOTE: 'status' here is actually coming from the RpcRetrier. If we successfully
+  // send an RPC, it will be 'Status::OK'.
+  // TODO(todd): this is the most confusing code I've ever seen...
+  gscoped_ptr<ConnectToMasterRpc> deleter(this);
   Status new_status = status;
   if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     ignore_result(deleter.release());
     return;
   }
-  if (new_status.ok() && resp_.has_error()) {
-    if (resp_.error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
+
+  rpc::RpcController* rpc = mutable_retrier()->mutable_controller();
+  if (!trying_old_rpc_ &&
+      new_status.IsRemoteError() &&
+      rpc->error_response()->unsupported_feature_flags_size() > 0) {
+    VLOG(1) << "Connecting to an old-version cluster which does not support ConnectToCluster(). "
+            << "Falling back to GetMasterRegistration().";
+    trying_old_rpc_ = true;
+    // retry immediately.
+    ignore_result(deleter.release());
+    rpc->Reset();
+    SendRpc();
+    return;
+  }
+
+  // If we sent the old RPC, then translate its response to the new RPC.
+  if (trying_old_rpc_) {
+    out_->Clear();
+    if (old_rpc_resp_.has_error()) {
+      out_->set_allocated_error(old_rpc_resp_.release_error());
+    }
+    if (old_rpc_resp_.has_role()) {
+      out_->set_role(old_rpc_resp_.role());
+    }
+  }
+
+  if (new_status.ok() && out_->has_error()) {
+    if (out_->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
       // If CatalogManager is not initialized, treat the node as a
       // FOLLOWER for the time being, as currently this RPC is only
       // used for the purposes of finding the leader master.
-      resp_.set_role(RaftPeerPB::FOLLOWER);
+      out_->set_role(RaftPeerPB::FOLLOWER);
       new_status = Status::OK();
     } else {
-      out_->mutable_error()->CopyFrom(resp_.error().status());
-      new_status = StatusFromPB(resp_.error().status());
+      out_->mutable_error()->CopyFrom(out_->error().status());
+      new_status = StatusFromPB(out_->error().status());
     }
-  }
-  if (new_status.ok()) {
-    out_->mutable_instance_id()->CopyFrom(resp_.instance_id());
-    out_->mutable_registration()->CopyFrom(resp_.registration());
-    out_->set_role(resp_.role());
   }
   user_cb_.Run(new_status);
 }
@@ -184,7 +227,7 @@ void ConnectToClusterRpc::SendRpc() {
 
   std::lock_guard<simple_spinlock> l(lock_);
   for (int i = 0; i < addrs_.size(); i++) {
-    GetMasterRegistrationRpc* rpc = new GetMasterRegistrationRpc(
+    ConnectToMasterRpc* rpc = new ConnectToMasterRpc(
         Bind(&ConnectToClusterRpc::SingleNodeCallback,
              this, ConstRef(addrs_[i]), ConstRef(responses_[i])),
         addrs_[i],
@@ -229,7 +272,7 @@ void ConnectToClusterRpc::SendRpcCb(const Status& status) {
 }
 
 void ConnectToClusterRpc::SingleNodeCallback(const Sockaddr& node_addr,
-                                             const ServerEntryPB& resp,
+                                             const ConnectToMasterResponsePB& resp,
                                              const Status& status) {
   // TODO(todd): handle the situation where one Master is partitioned from
   // the rest of the Master consensus configuration, all are reachable by the client,

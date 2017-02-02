@@ -71,6 +71,7 @@
 
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
+DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
@@ -4627,6 +4628,26 @@ TEST_F(ClientTest, TestErrorCollector) {
       EXPECT_EQ(1, errors.size());
       EXPECT_FALSE(overflowed);
     }
+}
+
+// Test that, when connecting to an old-version master which doesn't support
+// the 'ConnectToCluster' RPC, we still fall back to the old 'GetMasterRegistration'
+// RPC.
+TEST_F(ClientTest, TestConnectToClusterCompatibility) {
+  FLAGS_master_support_connect_to_master_rpc = false;
+
+  const auto& ent = cluster_->mini_master()->master()->metric_entity();
+  const auto& metric = METRIC_handler_latency_kudu_master_MasterService_GetMasterRegistration
+      .Instantiate(ent);
+  int initial_val = metric->TotalCount();
+
+  // Reconnect the client. Since we disabled 'ConnectToCluster', the client should
+  // fall back to using GetMasterRegistration instead.
+  ASSERT_OK(KuduClientBuilder()
+            .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+            .Build(&client_));
+  int final_val = metric->TotalCount();
+  ASSERT_EQ(initial_val + 1, final_val);
 }
 
 } // namespace client

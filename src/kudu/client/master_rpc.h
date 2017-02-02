@@ -30,7 +30,9 @@
 
 namespace kudu {
 
-class ServerEntryPB;
+namespace master {
+class ConnectToMasterResponsePB;
+} // namespace master
 class HostPort;
 
 namespace client {
@@ -38,6 +40,10 @@ namespace internal {
 
 // In parallel, send requests to the specified Master servers until a
 // response comes back from the leader of the Master consensus configuration.
+//
+// In addition to locating the leader, this fetches cluster-wide details
+// such as an authentication token for the current user, the cluster's
+// CA cert, etc.
 //
 // If queries have been made to all of the specified servers, but no
 // leader has been found, we re-try again (with an increasing delay,
@@ -87,7 +93,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
   // master is a leader, or if responses have been received from all
   // of the Masters.
   void SingleNodeCallback(const Sockaddr& node_addr,
-                          const ServerEntryPB& resp,
+                          const master::ConnectToMasterResponsePB& resp,
                           const Status& status);
 
   LeaderCallback user_cb_;
@@ -99,9 +105,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
   MonoDelta rpc_timeout_;
 
   // The received responses.
-  //
-  // See also: GetMasterRegistrationRpc above.
-  std::vector<ServerEntryPB> responses_;
+  std::vector<master::ConnectToMasterResponsePB> responses_;
 
   // Number of pending responses.
   int pending_responses_;

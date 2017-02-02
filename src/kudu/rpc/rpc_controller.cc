@@ -53,6 +53,7 @@ void RpcController::Reset() {
     CHECK(finished());
   }
   call_.reset();
+  required_server_features_.clear();
 }
 
 bool RpcController::finished() const {

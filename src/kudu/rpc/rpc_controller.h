@@ -53,6 +53,7 @@ class RpcController {
   void Swap(RpcController* other);
 
   // Reset this controller so it may be used with another call.
+  // Note that this resets the required server features.
   void Reset();
 
   // Return true if the call has finished.

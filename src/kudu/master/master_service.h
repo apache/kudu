@@ -84,6 +84,10 @@ class MasterServiceImpl : public MasterServiceIf {
                                      GetMasterRegistrationResponsePB* resp,
                                      rpc::RpcContext* rpc) OVERRIDE;
 
+  virtual void ConnectToMaster(const ConnectToMasterRequestPB* req,
+                               ConnectToMasterResponsePB* resp,
+                               rpc::RpcContext* rpc) OVERRIDE;
+
   bool SupportsFeature(uint32_t feature) const override;
 
  private:

@@ -40,6 +40,12 @@ DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
 TAG_FLAG(master_inject_latency_on_tablet_lookups_ms, unsafe);
 TAG_FLAG(master_inject_latency_on_tablet_lookups_ms, hidden);
 
+DEFINE_bool(master_support_connect_to_master_rpc, true,
+            "Whether to support the ConnectToMaster() RPC. Used for testing "
+            "version compatibility fallback in the client.");
+TAG_FLAG(master_support_connect_to_master_rpc, unsafe);
+TAG_FLAG(master_support_connect_to_master_rpc, hidden);
+
 namespace kudu {
 namespace master {
 
@@ -343,10 +349,24 @@ void MasterServiceImpl::GetMasterRegistration(const GetMasterRegistrationRequest
   rpc->RespondSuccess();
 }
 
+void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
+                                        ConnectToMasterResponsePB* resp,
+                                        rpc::RpcContext* rpc) {
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedOrRespond(resp, rpc)) {
+    return;
+  }
+  resp->set_role(server_->catalog_manager()->Role());
+
+  rpc->RespondSuccess();
+}
+
 bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
   switch (feature) {
     case MasterFeatures::RANGE_PARTITION_BOUNDS:
     case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: return true;
+    case MasterFeatures::CONNECT_TO_MASTER:
+      return FLAGS_master_support_connect_to_master_rpc;
     default: return false;
   }
 }
