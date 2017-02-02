@@ -267,7 +267,7 @@ class MetaCacheEntry {
   MetaCacheEntry(MonoTime expiration_time,
                  std::string lower_bound_partition_key,
                  std::string upper_bound_partition_key)
-      : expiration_time_(std::move(expiration_time)),
+      : expiration_time_(expiration_time),
         lower_bound_partition_key_(std::move(lower_bound_partition_key)),
         upper_bound_partition_key_(std::move(upper_bound_partition_key)) {
   }

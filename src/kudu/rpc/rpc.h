@@ -99,7 +99,7 @@ class RpcRetrier {
  public:
   RpcRetrier(MonoTime deadline, std::shared_ptr<rpc::Messenger> messenger)
       : attempt_num_(1),
-        deadline_(std::move(deadline)),
+        deadline_(deadline),
         messenger_(std::move(messenger)) {
     if (deadline_.Initialized()) {
       controller_.set_deadline(deadline_);
@@ -168,8 +168,8 @@ class RpcRetrier {
 class Rpc {
  public:
   Rpc(const MonoTime& deadline,
-      const std::shared_ptr<rpc::Messenger>& messenger)
-  : retrier_(deadline, messenger) {
+      std::shared_ptr<rpc::Messenger> messenger)
+      : retrier_(deadline, std::move(messenger)) {
   }
 
   virtual ~Rpc() {}

@@ -105,7 +105,7 @@ ChecksumOptions::ChecksumOptions()
 
 ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency,
                                  bool use_snapshot, uint64_t snapshot_timestamp)
-    : timeout(std::move(timeout)),
+    : timeout(timeout),
       scan_concurrency(scan_concurrency),
       use_snapshot(use_snapshot),
       snapshot_timestamp(snapshot_timestamp) {}

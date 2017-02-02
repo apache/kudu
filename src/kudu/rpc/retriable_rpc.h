@@ -52,12 +52,12 @@ class RetriableRpc : public Rpc {
   RetriableRpc(const scoped_refptr<ServerPicker<Server>>& server_picker,
                const scoped_refptr<RequestTracker>& request_tracker,
                const MonoTime& deadline,
-               const std::shared_ptr<Messenger>& messenger)
-   : Rpc(deadline, messenger),
-     server_picker_(server_picker),
-     request_tracker_(request_tracker),
-     sequence_number_(RequestTracker::NO_SEQ_NO),
-     num_attempts_(0) {}
+               std::shared_ptr<Messenger> messenger)
+      : Rpc(deadline, std::move(messenger)),
+        server_picker_(server_picker),
+        request_tracker_(request_tracker),
+        sequence_number_(RequestTracker::NO_SEQ_NO),
+        num_attempts_(0) {}
 
   virtual ~RetriableRpc() {
     DCHECK_EQ(sequence_number_, RequestTracker::NO_SEQ_NO);

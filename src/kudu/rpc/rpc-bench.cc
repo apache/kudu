@@ -174,7 +174,7 @@ class ClientAsyncWorkload {
  public:
   ClientAsyncWorkload(RpcBench *bench, shared_ptr<Messenger> messenger)
     : bench_(bench),
-      messenger_(messenger),
+      messenger_(std::move(messenger)),
       request_count_(0) {
     controller_.set_timeout(MonoDelta::FromSeconds(10));
     proxy_.reset(new CalculatorServiceProxy(messenger_, bench_->server_addr_));

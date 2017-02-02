@@ -91,9 +91,9 @@ class RemoteKsckMaster : public KsckMaster {
  private:
 
   RemoteKsckMaster(const std::vector<std::string>& master_addresses,
-                   const std::shared_ptr<rpc::Messenger>& messenger)
+                   std::shared_ptr<rpc::Messenger> messenger)
       : master_addresses_(master_addresses),
-        messenger_(messenger) {
+        messenger_(std::move(messenger)) {
   }
 
   const std::vector<std::string> master_addresses_;

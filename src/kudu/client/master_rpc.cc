@@ -62,9 +62,10 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
   // pointer for the lifetime of this object.
   //
   // Invokes 'user_cb' upon failure or success of the RPC call.
-  GetMasterRegistrationRpc(StatusCallback user_cb, Sockaddr addr,
+  GetMasterRegistrationRpc(StatusCallback user_cb,
+                           const Sockaddr& addr,
                            const MonoTime& deadline,
-                           const std::shared_ptr<rpc::Messenger>& messenger,
+                           std::shared_ptr<rpc::Messenger> messenger,
                            ServerEntryPB* out);
 
   ~GetMasterRegistrationRpc();
@@ -86,11 +87,11 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
 
 
 GetMasterRegistrationRpc::GetMasterRegistrationRpc(
-    StatusCallback user_cb, Sockaddr addr, const MonoTime& deadline,
-    const shared_ptr<Messenger>& messenger, ServerEntryPB* out)
-    : Rpc(deadline, messenger),
+    StatusCallback user_cb, const Sockaddr& addr, const MonoTime& deadline,
+    shared_ptr<Messenger> messenger, ServerEntryPB* out)
+    : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
-      addr_(std::move(addr)),
+      addr_(addr),
       out_(DCHECK_NOTNULL(out)) {}
 
 GetMasterRegistrationRpc::~GetMasterRegistrationRpc() {
@@ -150,10 +151,10 @@ GetLeaderMasterRpc::GetLeaderMasterRpc(LeaderCallback user_cb,
                                        MonoTime deadline,
                                        MonoDelta rpc_timeout,
                                        shared_ptr<Messenger> messenger)
-    : Rpc(std::move(deadline), std::move(messenger)),
+    : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
       addrs_(std::move(addrs)),
-      rpc_timeout_(std::move(rpc_timeout)),
+      rpc_timeout_(rpc_timeout),
       pending_responses_(0),
       completed_(false) {
   DCHECK(deadline.Initialized());
@@ -230,7 +231,7 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
 void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
                                                            const ServerEntryPB& resp,
                                                            const Status& status) {
-  // TODO: handle the situation where one Master is partitioned from
+  // TODO(todd): handle the situation where one Master is partitioned from
   // the rest of the Master consensus configuration, all are reachable by the client,
   // and the partitioned node "thinks" it's the leader.
   //
@@ -268,9 +269,8 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_
         // a delayed re-try, which don't need to do unless we've
         // been unable to find a leader so far.
         return;
-      } else {
-        completed_ = true;
       }
+      completed_ = true;
     }
   }
   // Called if the leader has been determined, or if we've received

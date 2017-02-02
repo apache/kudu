@@ -84,7 +84,6 @@ using strings::Substitute;
 namespace client {
 
 using internal::GetLeaderMasterRpc;
-using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
 

@@ -47,12 +47,12 @@ using std::shared_ptr;
 namespace kudu {
 namespace rpc {
 
-Proxy::Proxy(const std::shared_ptr<Messenger>& messenger,
+Proxy::Proxy(std::shared_ptr<Messenger> messenger,
              const Sockaddr& remote, string service_name)
     : service_name_(std::move(service_name)),
-      messenger_(messenger),
+      messenger_(std::move(messenger)),
       is_started_(false) {
-  CHECK(messenger != nullptr);
+  CHECK(messenger_ != nullptr);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
 
   // By default, we set the real user to the currently logged-in user.

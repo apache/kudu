@@ -269,7 +269,7 @@ class ReactorThread {
 // A Reactor manages a ReactorThread
 class Reactor {
  public:
-  Reactor(const std::shared_ptr<Messenger>& messenger,
+  Reactor(std::shared_ptr<Messenger> messenger,
           int index,
           const MessengerBuilder &bld);
   Status Init();

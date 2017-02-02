@@ -199,7 +199,7 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
            const scoped_refptr<RequestTracker>& request_tracker,
            vector<InFlightOp*> ops,
            const MonoTime& deadline,
-           const shared_ptr<Messenger>& messenger,
+           shared_ptr<Messenger> messenger,
            const string& tablet_id,
            uint64_t propagated_timestamp);
   virtual ~WriteRpc();
@@ -237,10 +237,10 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
                    const scoped_refptr<RequestTracker>& request_tracker,
                    vector<InFlightOp*> ops,
                    const MonoTime& deadline,
-                   const shared_ptr<Messenger>& messenger,
+                   shared_ptr<Messenger> messenger,
                    const string& tablet_id,
                    uint64_t propagated_timestamp)
-    : RetriableRpc(replica_picker, request_tracker, deadline, messenger),
+    : RetriableRpc(replica_picker, request_tracker, deadline, std::move(messenger)),
       batcher_(batcher),
       ops_(std::move(ops)),
       tablet_id_(tablet_id) {

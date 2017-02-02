@@ -516,7 +516,7 @@ class LookupRpc : public Rpc {
             string partition_key,
             scoped_refptr<RemoteTablet>* remote_tablet,
             const MonoTime& deadline,
-            const shared_ptr<Messenger>& messenger,
+            shared_ptr<Messenger> messenger,
             bool is_exact_lookup);
   virtual ~LookupRpc();
   virtual void SendRpc() OVERRIDE;
@@ -583,9 +583,9 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
                      string partition_key,
                      scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
-                     const shared_ptr<Messenger>& messenger,
+                     shared_ptr<Messenger> messenger,
                      bool is_exact_lookup)
-    : Rpc(deadline, messenger),
+    : Rpc(deadline, std::move(messenger)),
       meta_cache_(meta_cache),
       user_cb_(std::move(user_cb)),
       table_(table),

@@ -72,11 +72,12 @@ class CalculatorServiceRpc : public RetriableRpc<CalculatorServiceProxy,
   CalculatorServiceRpc(const scoped_refptr<TestServerPicker>& server_picker,
                        const scoped_refptr<RequestTracker>& request_tracker,
                        const MonoTime& deadline,
-                       const shared_ptr<Messenger>& messenger,
+                       shared_ptr<Messenger> messenger,
                        int value,
                        CountDownLatch* latch,
                        int server_sleep = 0)
-      : RetriableRpc(server_picker, request_tracker, deadline, messenger), latch_(latch) {
+      : RetriableRpc(server_picker, request_tracker, deadline, std::move(messenger)),
+        latch_(latch) {
     req_.set_value_to_add(value);
     req_.set_randomly_fail(true);
     req_.set_sleep_for_ms(server_sleep);
@@ -168,7 +169,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
   struct RetriableRpcExactlyOnceAdder {
     RetriableRpcExactlyOnceAdder(const scoped_refptr<TestServerPicker>& server_picker,
                      const scoped_refptr<RequestTracker>& request_tracker,
-                     const shared_ptr<Messenger>& messenger,
+                     shared_ptr<Messenger> messenger,
                      int value,
                      int server_sleep = 0) : latch_(1) {
       MonoTime now = MonoTime::Now();
@@ -176,7 +177,7 @@ class ExactlyOnceRpcTest : public RpcTestBase {
       rpc_ = new CalculatorServiceRpc(server_picker,
                                       request_tracker,
                                       now,
-                                      messenger,
+                                      std::move(messenger),
                                       value,
                                       &latch_);
     }

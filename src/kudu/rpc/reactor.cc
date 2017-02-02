@@ -490,12 +490,12 @@ void DelayedTask::TimerHandler(ev::timer& watcher, int revents) {
   }
 }
 
-Reactor::Reactor(const shared_ptr<Messenger>& messenger,
+Reactor::Reactor(shared_ptr<Messenger> messenger,
                  int index, const MessengerBuilder& bld)
-  : messenger_(messenger),
-    name_(StringPrintf("%s_R%03d", messenger->name().c_str(), index)),
-    closing_(false),
-    thread_(this, bld) {
+    : messenger_(std::move(messenger)),
+      name_(StringPrintf("%s_R%03d", messenger_->name().c_str(), index)),
+      closing_(false),
+      thread_(this, bld) {
 }
 
 Status Reactor::Init() {
