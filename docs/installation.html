@@ -2,7 +2,7 @@
 title: Installing Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-01-12 12:48:06 PST'
+last_updated: 'Last updated 2017-02-02 13:49:37 PST'
 ---
 <!--
 
@@ -40,7 +40,7 @@ from source. To run Kudu without installing anything, use the <a href="quickstar
 <td class="content">
 Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html">Cloudera Manager</a>,
 version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera&#8217;s
-<a href="http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/latest/topics/kudu_installation.html">Kudu documentation</a>.
+<a href="http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html">Kudu documentation</a>.
 </td>
 </tr>
 </table>
@@ -158,27 +158,27 @@ Cloudera Manager 5.4.7 and newer provide better monitoring and administration op
 <tbody>
 <tr>
 <td class="tableblock halign-right valign-top"><p class="tableblock"><strong>RHEL or CentOS</strong></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6 or CentOS 6</a>,
-                   <a href="http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo">RHEL 7 or CentOS 7</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0/RPMS/x86_64/">RHEL 6 or CentOS 6</a>,
-                   <a href="http://archive.cloudera.com/beta/kudu/redhat/7/x86_64/kudu/0/RPMS/x86_64/">RHEL 7 or CentOS 7</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6 or CentOS 6</a>,
+                   <a href="http://archive.cloudera.com/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo">RHEL 7 or CentOS 7</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/redhat/6/x86_64/kudu/5/RPMS/x86_64/">RHEL 6 or CentOS 6</a>,
+                   <a href="http://archive.cloudera.com/kudu/redhat/7/x86_64/kudu/5/RPMS/x86_64/">RHEL 7 or CentOS 7</a></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-right valign-top"><p class="tableblock"><strong>SLES</strong></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/sles/12/x86_64/kudu/cloudera-kudu.repo">SLES 12</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/sles/12/x86_64/kudu/0/RPMS/x86_64/">SLES 12</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/sles/12/x86_64/kudu/cloudera-kudu.repo">SLES 12</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/sles/12/x86_64/kudu/5/RPMS/x86_64/">SLES 12</a></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Ubuntu</strong></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a>,
-           <a href="http://archive.cloudera.com/beta/kudu/ubuntu/xenial/amd64/kudu/cloudera.list">Xenial</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/">Trusty</a>,
-           <a href="http://archive.cloudera.com/beta/kudu/ubuntu/xenial/amd64/kudu/pool/contrib/k/kudu/">Xenial</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a>,
+           <a href="http://archive.cloudera.com/kudu/ubuntu/xenial/amd64/kudu/cloudera.list">Xenial</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/">Trusty</a>,
+           <a href="http://archive.cloudera.com/kudu/ubuntu/xenial/amd64/kudu/pool/contrib/k/kudu/">Xenial</a></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Debian</strong></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/debian/jessie/amd64/kudu/cloudera.list">Jessie</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/debian/jessie/amd64/kudu/pool/contrib/k/kudu/">Jessie</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/debian/jessie/amd64/kudu/cloudera.list">Jessie</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/kudu/debian/jessie/amd64/kudu/pool/contrib/k/kudu/">Jessie</a></p></td>
 </tr>
 </tbody>
 </table>
