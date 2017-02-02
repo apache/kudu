@@ -672,7 +672,7 @@ string LookupRpc::ToString() const {
 }
 
 void LookupRpc::ResetMasterLeaderAndRetry() {
-  table_->client()->data_->SetMasterServerProxyAsync(
+  table_->client()->data_->ConnectToClusterAsync(
       table_->client(),
       retrier().deadline(),
       Bind(&LookupRpc::NewLeaderMasterDeterminedCb,

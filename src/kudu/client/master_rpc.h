@@ -54,8 +54,8 @@ namespace internal {
 // The class is reference counted to avoid a "use-after-free"
 // scenario, when responses to the RPC return to the caller _after_ a
 // leader has already been found.
-class GetLeaderMasterRpc : public rpc::Rpc,
-                           public RefCountedThreadSafe<GetLeaderMasterRpc> {
+class ConnectToClusterRpc : public rpc::Rpc,
+                            public RefCountedThreadSafe<ConnectToClusterRpc> {
  public:
   typedef Callback<void(const Status&, const HostPort&)> LeaderCallback;
   // The host and port of the leader master server is stored in
@@ -65,18 +65,18 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   // Calls 'user_cb' when the leader is found, or if no leader can be found
   // until 'deadline' passes. Each RPC has 'rpc_timeout' time to complete
   // before it times out and may be retried if 'deadline' has not yet passed.
-  GetLeaderMasterRpc(LeaderCallback user_cb,
-                     std::vector<Sockaddr> addrs,
-                     MonoTime deadline,
-                     MonoDelta rpc_timeout,
-                     std::shared_ptr<rpc::Messenger> messenger);
+  ConnectToClusterRpc(LeaderCallback user_cb,
+                      std::vector<Sockaddr> addrs,
+                      MonoTime deadline,
+                      MonoDelta rpc_timeout,
+                      std::shared_ptr<rpc::Messenger> messenger);
 
   virtual void SendRpc() OVERRIDE;
 
   virtual std::string ToString() const OVERRIDE;
  private:
-  friend class RefCountedThreadSafe<GetLeaderMasterRpc>;
-  ~GetLeaderMasterRpc();
+  friend class RefCountedThreadSafe<ConnectToClusterRpc>;
+  ~ConnectToClusterRpc();
 
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
@@ -86,9 +86,9 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   // Invokes SendRpcCb if the response indicates that the specified
   // master is a leader, or if responses have been received from all
   // of the Masters.
-  void GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
-                                         const ServerEntryPB& resp,
-                                         const Status& status);
+  void SingleNodeCallback(const Sockaddr& node_addr,
+                          const ServerEntryPB& resp,
+                          const Status& status);
 
   LeaderCallback user_cb_;
   std::vector<Sockaddr> addrs_;

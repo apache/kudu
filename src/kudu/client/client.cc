@@ -244,8 +244,8 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   // Let's allow for plenty of time for discovering the master the first
   // time around.
   MonoTime deadline = MonoTime::Now() + c->default_admin_operation_timeout();
-  RETURN_NOT_OK_PREPEND(c->data_->SetMasterServerProxy(c.get(), deadline),
-                        "Could not locate the leader master");
+  RETURN_NOT_OK_PREPEND(c->data_->ConnectToCluster(c.get(), deadline),
+                        "Could not connect to the cluster");
 
   c->data_->meta_cache_.reset(new MetaCache(c.get()));
   c->data_->dns_resolver_.reset(new DnsResolver());

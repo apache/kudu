@@ -83,7 +83,7 @@ using strings::Substitute;
 
 namespace client {
 
-using internal::GetLeaderMasterRpc;
+using internal::ConnectToClusterRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
 
@@ -192,7 +192,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           << s.ToString();
       if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
-        WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+        WARN_NOT_OK(ConnectToCluster(client, deadline),
                     "Unable to determine the new leader Master");
         continue;
       }
@@ -206,7 +206,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
             << "): " << s.ToString();
         if (client->IsMultiMaster()) {
           LOG(INFO) << "Determining the new leader Master and retrying...";
-          WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+          WARN_NOT_OK(ConnectToCluster(client, deadline),
                       "Unable to determine the new leader Master");
         }
         continue;
@@ -222,7 +222,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         if (client->IsMultiMaster()) {
           KLOG_EVERY_N_SECS(INFO, 1) << "Determining the new leader Master and retrying...";
-          WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+          WARN_NOT_OK(ConnectToCluster(client, deadline),
                       "Unable to determine the new leader Master");
           continue;
         }
@@ -599,8 +599,8 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   return Status::OK();
 }
 
-void KuduClient::Data::LeaderMasterDetermined(const Status& status,
-                                              const HostPort& host_port) {
+void KuduClient::Data::ConnectedToClusterCb(const Status& status,
+                                            const HostPort& host_port) {
   Sockaddr leader_sock_addr;
   Status new_status = status;
   if (new_status.ok()) {
@@ -624,16 +624,16 @@ void KuduClient::Data::LeaderMasterDetermined(const Status& status,
   }
 }
 
-Status KuduClient::Data::SetMasterServerProxy(KuduClient* client,
-                                              const MonoTime& deadline) {
+Status KuduClient::Data::ConnectToCluster(KuduClient* client,
+                                          const MonoTime& deadline) {
   Synchronizer sync;
-  SetMasterServerProxyAsync(client, deadline, sync.AsStatusCallback());
+  ConnectToClusterAsync(client, deadline, sync.AsStatusCallback());
   return sync.Wait();
 }
 
-void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
-                                                 const MonoTime& deadline,
-                                                 const StatusCallback& cb) {
+void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
+                                             const MonoTime& deadline,
+                                             const StatusCallback& cb) {
   DCHECK(deadline.Initialized());
 
   vector<Sockaddr> master_sockaddrs;
@@ -659,7 +659,7 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
     master_sockaddrs.push_back(addrs[0]);
   }
 
-  // This ensures that no more than one GetLeaderMasterRpc is in
+  // This ensures that no more than one ConnectToClusterRpc is in
   // flight at a time -- there isn't much sense in requesting this information
   // in parallel, since the requests should end up with the same result.
   // Instead, we simply piggy-back onto the existing request by adding our own
@@ -668,8 +668,8 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
   leader_master_callbacks_.push_back(cb);
   if (!leader_master_rpc_) {
     // No one is sending a request yet - we need to be the one to do it.
-    leader_master_rpc_.reset(new internal::GetLeaderMasterRpc(
-                               Bind(&KuduClient::Data::LeaderMasterDetermined,
+    leader_master_rpc_.reset(new internal::ConnectToClusterRpc(
+                               Bind(&KuduClient::Data::ConnectedToClusterCb,
                                     Unretained(this)),
                                std::move(master_sockaddrs),
                                deadline,

@@ -51,7 +51,7 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
-using kudu::client::internal::GetLeaderMasterRpc;
+using kudu::client::internal::ConnectToClusterRpc;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
@@ -474,7 +474,7 @@ void LeaderMasterCallback(HostPort* dst_hostport,
 } // anonymous namespace
 
 Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
-  scoped_refptr<GetLeaderMasterRpc> rpc;
+  scoped_refptr<ConnectToClusterRpc> rpc;
   Synchronizer sync;
   vector<Sockaddr> addrs;
   HostPort leader_master_hp;
@@ -483,13 +483,13 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
     addrs.push_back(master->bound_rpc_addr());
   }
-  rpc.reset(new GetLeaderMasterRpc(Bind(&LeaderMasterCallback,
-                                        &leader_master_hp,
-                                        &sync),
-                                   std::move(addrs),
-                                   deadline,
-                                   MonoDelta::FromSeconds(5),
-                                   messenger_));
+  rpc.reset(new ConnectToClusterRpc(Bind(&LeaderMasterCallback,
+                                         &leader_master_hp,
+                                         &sync),
+                                    std::move(addrs),
+                                    deadline,
+                                    MonoDelta::FromSeconds(5),
+                                    messenger_));
   rpc->SendRpc();
   RETURN_NOT_OK(sync.Wait());
   bool found = false;

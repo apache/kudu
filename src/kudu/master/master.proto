@@ -627,6 +627,12 @@ service MasterService {
   // Administrative/monitoring RPCs
   rpc ListTabletServers(ListTabletServersRequestPB) returns (ListTabletServersResponsePB);
   rpc ListMasters(ListMastersRequestPB) returns (ListMastersResponsePB);
+
+  // TODO(todd): rename this RPC to ConnectToCluster() or somesuch. It's only used by
+  // the client. However, we need to keep in mind compatibility. We'll probably have to
+  // do this by adding a new RPC which use the existing protos, and having the server
+  // implement it, but the client not send it. After it's been out for a few releases,
+  // we can start sending it from clients?
   rpc GetMasterRegistration(GetMasterRegistrationRequestPB) returns
     (GetMasterRegistrationResponsePB);
 }

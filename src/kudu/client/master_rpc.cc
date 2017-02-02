@@ -143,14 +143,14 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
 } // anonymous namespace
 
 ////////////////////////////////////////////////////////////
-// GetLeaderMasterRpc
+// ConnectToClusterRpc
 ////////////////////////////////////////////////////////////
 
-GetLeaderMasterRpc::GetLeaderMasterRpc(LeaderCallback user_cb,
-                                       vector<Sockaddr> addrs,
-                                       MonoTime deadline,
-                                       MonoDelta rpc_timeout,
-                                       shared_ptr<Messenger> messenger)
+ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
+                                         vector<Sockaddr> addrs,
+                                         MonoTime deadline,
+                                         MonoDelta rpc_timeout,
+                                         shared_ptr<Messenger> messenger)
     : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
       addrs_(std::move(addrs)),
@@ -163,20 +163,20 @@ GetLeaderMasterRpc::GetLeaderMasterRpc(LeaderCallback user_cb,
   responses_.resize(addrs_.size());
 }
 
-GetLeaderMasterRpc::~GetLeaderMasterRpc() {
+ConnectToClusterRpc::~ConnectToClusterRpc() {
 }
 
-string GetLeaderMasterRpc::ToString() const {
+string ConnectToClusterRpc::ToString() const {
   vector<string> sockaddr_str;
   for (const Sockaddr& addr : addrs_) {
     sockaddr_str.push_back(addr.ToString());
   }
-  return strings::Substitute("GetLeaderMasterRpc(addrs: $0, num_attempts: $1)",
+  return strings::Substitute("ConnectToClusterRpc(addrs: $0, num_attempts: $1)",
                              JoinStrings(sockaddr_str, ","),
                              num_attempts());
 }
 
-void GetLeaderMasterRpc::SendRpc() {
+void ConnectToClusterRpc::SendRpc() {
   // Compute the actual deadline to use for each RPC.
   MonoTime rpc_deadline = MonoTime::Now() + rpc_timeout_;
   MonoTime actual_deadline = MonoTime::Earliest(retrier().deadline(),
@@ -185,7 +185,7 @@ void GetLeaderMasterRpc::SendRpc() {
   std::lock_guard<simple_spinlock> l(lock_);
   for (int i = 0; i < addrs_.size(); i++) {
     GetMasterRegistrationRpc* rpc = new GetMasterRegistrationRpc(
-        Bind(&GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode,
+        Bind(&ConnectToClusterRpc::SingleNodeCallback,
              this, ConstRef(addrs_[i]), ConstRef(responses_[i])),
         addrs_[i],
         actual_deadline,
@@ -196,11 +196,11 @@ void GetLeaderMasterRpc::SendRpc() {
   }
 }
 
-void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
+void ConnectToClusterRpc::SendRpcCb(const Status& status) {
   // To safely retry, we must reset completed_ so that it can be reused in the
   // next round of RPCs.
   //
-  // The SendRpcCb invariant (see GetMasterRegistrationRpcCbForNode comments)
+  // The SendRpcCb invariant (see SingleNodeCallback comments)
   // implies that if we're to retry, we must be the last response. Thus, it is
   // safe to reset completed_ in this case; there's no danger of a late
   // response reading it and entering SendRpcCb inadvertently.
@@ -228,9 +228,9 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
   user_cb_.Run(status, leader_master_);
 }
 
-void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
-                                                           const ServerEntryPB& resp,
-                                                           const Status& status) {
+void ConnectToClusterRpc::SingleNodeCallback(const Sockaddr& node_addr,
+                                             const ServerEntryPB& resp,
+                                             const Status& status) {
   // TODO(todd): handle the situation where one Master is partitioned from
   // the rest of the Master consensus configuration, all are reachable by the client,
   // and the partitioned node "thinks" it's the leader.
