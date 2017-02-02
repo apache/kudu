@@ -37,6 +37,15 @@ TlsSocket::~TlsSocket() {
 
 Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   CHECK(ssl_);
+
+  if (PREDICT_FALSE(amt == 0)) {
+    // Writing an empty buffer is a no-op. This happens occasionally, eg in the
+    // case where the response has an empty sidecar. We have to special case
+    // it, because SSL_write can return '0' to indicate certain types of errors.
+    *nwritten = 0;
+    return Status::OK();
+  }
+
   ERR_clear_error();
   errno = 0;
   int32_t bytes_written = SSL_write(ssl_.get(), buf, amt);

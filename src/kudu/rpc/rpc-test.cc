@@ -285,6 +285,9 @@ TEST_P(TestRpc, TestRpcSidecar) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, GetParam()));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
+  // Test a zero-length sidecar
+  DoTestSidecar(p, 0, 0);
+
   // Test some small sidecars
   DoTestSidecar(p, 123, 456);
 
