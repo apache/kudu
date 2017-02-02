@@ -81,36 +81,18 @@ struct RsaPublicKeyTraits : public SslTypeTraits<EVP_PKEY> {
 template<> struct SslTypeTraits<RSA> {
   static constexpr auto free = &RSA_free;
 };
+template<> struct SslTypeTraits<EVP_MD_CTX> {
+  static constexpr auto free = &EVP_MD_CTX_destroy;
+};
 
 namespace {
 
-const char* GetDigestName(DigestType digest_type) {
+const EVP_MD* GetMessageDigest(DigestType digest_type) {
   switch (digest_type) {
-    case DigestType::SHA256:
-      return "SHA256";
-    case DigestType::SHA512:
-      return "SHA512";
+    case DigestType::SHA256: return EVP_sha256();
+    case DigestType::SHA512: return EVP_sha512();
   }
-  return "UNKNOWN_DIGEST";
-}
-
-Status PrepareDigest(DigestType digest,
-                     const EVP_MD** md,
-                     EVP_MD_CTX** mctx,
-                     c_unique_ptr<BIO>* bmd_out) {
-  InitializeOpenSSL();
-  const char* md_name = GetDigestName(digest);
-  *md = EVP_get_digestbyname(md_name);
-  if (!*md) {
-    return Status::InvalidArgument(Substitute("error getting digest '$0': $1",
-                                              md_name, GetOpenSSLErrors()));
-  }
-  auto bmd = ssl_make_unique(BIO_new(BIO_f_md()));
-  OPENSSL_RET_NOT_OK(BIO_get_md_ctx(bmd.get(), mctx),
-                     "error initializing message digest context");
-  bmd_out->swap(bmd);
-
-  return Status::OK();
+  LOG(FATAL) << "unknown digest type";
 }
 
 } // anonymous namespace
@@ -140,17 +122,13 @@ Status PublicKey::FromBIO(BIO* bio, DataFormat format) {
 Status PublicKey::VerifySignature(DigestType digest,
                                   const std::string& data,
                                   const std::string& signature) const {
-  const EVP_MD* md = nullptr;
-  EVP_MD_CTX* mctx = nullptr;
-  c_unique_ptr<BIO> bmd;
-  RETURN_NOT_OK(PrepareDigest(digest, &md, &mctx, &bmd));
+  const EVP_MD* md = GetMessageDigest(digest);
+  auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
 
-  OPENSSL_RET_NOT_OK(
-      EVP_DigestVerifyInit(mctx, nullptr, md, nullptr, GetRawData()),
-      "error initializing verification digest");
-  OPENSSL_RET_NOT_OK(
-      EVP_DigestVerifyUpdate(mctx, data.data(), data.size()),
-      "error verifying data signature");
+  OPENSSL_RET_NOT_OK(EVP_DigestVerifyInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
+                     "error initializing verification digest");
+  OPENSSL_RET_NOT_OK(EVP_DigestVerifyUpdate(md_ctx.get(), data.data(), data.size()),
+                     "error verifying data signature");
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
   unsigned char* sig_data = reinterpret_cast<unsigned char*>(
       const_cast<char*>(signature.data()));
@@ -160,7 +138,7 @@ Status PublicKey::VerifySignature(DigestType digest,
 #endif
   // The success is indicated by return code 1. All other values means
   // either wrong signature or error while performing signature verification.
-  const int rc = EVP_DigestVerifyFinal(mctx, sig_data, signature.size());
+  const int rc = EVP_DigestVerifyFinal(md_ctx.get(), sig_data, signature.size());
   if (rc < 0 || rc > 1) {
     return Status::RuntimeError(
         Substitute("error verifying data signature: $0",
@@ -213,18 +191,18 @@ Status PrivateKey::MakeSignature(DigestType digest,
                                  const std::string& data,
                                  std::string* signature) const {
   CHECK(signature);
-  const EVP_MD* md = nullptr;
-  EVP_MD_CTX* mctx = nullptr;
-  c_unique_ptr<BIO> bmd;
-  RETURN_NOT_OK(PrepareDigest(digest, &md, &mctx, &bmd));
-  OPENSSL_RET_NOT_OK(
-      EVP_DigestSignInit(mctx, nullptr, md, nullptr, GetRawData()),
-      "error initializing signing digest");
-  OPENSSL_RET_NOT_OK(EVP_DigestSignUpdate(mctx, data.data(), data.size()),
+  const EVP_MD* md = GetMessageDigest(digest);
+  auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
+
+  OPENSSL_RET_NOT_OK(EVP_DigestSignInit(md_ctx.get(), nullptr, md, nullptr, GetRawData()),
+                     "error initializing signing digest");
+  OPENSSL_RET_NOT_OK(EVP_DigestSignUpdate(md_ctx.get(), data.data(), data.size()),
                      "error signing data");
   size_t sig_len = EVP_PKEY_size(GetRawData());
-  unsigned char buf[4 * 1024];
-  OPENSSL_RET_NOT_OK(EVP_DigestSignFinal(mctx, buf, &sig_len),
+  static const size_t kSigBufSize = 4 * 1024;
+  CHECK(sig_len <= kSigBufSize);
+  unsigned char buf[kSigBufSize];
+  OPENSSL_RET_NOT_OK(EVP_DigestSignFinal(md_ctx.get(), buf, &sig_len),
                      "error finalizing data signature");
   *signature = string(reinterpret_cast<char*>(buf), sig_len);
 
