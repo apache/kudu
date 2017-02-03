@@ -17,50 +17,48 @@
 #ifndef KUDU_RPC_RPC_SIDECAR_H
 #define KUDU_RPC_RPC_SIDECAR_H
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include <google/protobuf/repeated_field.h>
+#include <memory>
+
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
 namespace rpc {
 
-// An RpcSidecar is a mechanism which allows replies to RPCs
-// to reference blocks of data without extra copies. In other words,
-// whenever a protobuf would have a large field where additional copies
-// become expensive, one may opt instead to use an RpcSidecar.
+// An RpcSidecar is a mechanism which allows replies to RPCs to reference blocks of data
+// without extra copies. In other words, whenever a protobuf would have a large field
+// where additional copies become expensive, one may opt instead to use an RpcSidecar.
 //
-// The RpcSidecar saves on an additional copy to/from the protobuf on both the
-// server and client side. The InboundCall class accepts RpcSidecars, ignorant
-// of the form that the sidecar's data is kept in, requiring only that it can
-// be represented as a Slice. Data is then immediately copied from the
-// Slice returned from AsSlice() to the socket that is responding to the original
-// RPC.
+// The RpcSidecar saves on an additional copy to/from the protobuf on both the server and
+// client side. Both Inbound- and OutboundCall classes accept sidecars to be sent to the
+// client and server respectively. They are ignorant of the sidecar's format, requiring
+// only that it can be represented as a Slice. Data is copied from the Slice returned from
+// AsSlice() to the socket that is responding to the original RPC. The slice should remain
+// valid for as long as the call it is attached to takes to complete.
 //
-// In order to distinguish between separate sidecars, whenever a sidecar is
-// added to the RPC response on the server side, an index for that sidecar is
-// returned. This index must then in some way (i.e., via protobuf) be
-// communicated to the client side.
+// In order to distinguish between separate sidecars, whenever a sidecar is added to the
+// RPC response on the server side, an index for that sidecar is returned. This index must
+// then in some way (i.e., via protobuf) be communicated to the recipient.
 //
-// After receiving the RPC response on the client side, OutboundCall decodes
-// the original message along with the separate sidecars by using a list
-// of sidecar byte offsets that was sent in the message header.
-//
-// After reconstructing the array of sidecars, the OutboundCall (through
-// RpcController's interface) is able to offer retrieval of the sidecar data
-// through the same indices that were returned by InboundCall (or indirectly
-// through the RpcContext wrapper) on the client side.
+// After reconstructing the array of sidecars, servers and clients may retrieve the
+// sidecar data through the RpcContext or RpcController interfaces respectively.
 class RpcSidecar {
  public:
-  // Generates a sidecar with the parameter faststring as its data.
-  explicit RpcSidecar(gscoped_ptr<faststring> data) : data_(std::move(data)) {}
+  static std::unique_ptr<RpcSidecar> FromFaststring(std::unique_ptr<faststring> data);
+  static std::unique_ptr<RpcSidecar> FromSlice(Slice slice);
+
+  // Utility method to parse a series of sidecar slices into 'sidecars' from 'buffer' and
+  // a set of offsets. 'sidecars' must have length >= TransferLimits::kMaxSidecars, and
+  // will be filled from index 0.
+  // TODO(henryr): Consider a vector instead here if there's no perf. impact.
+  static Status ParseSidecars(
+      const ::google::protobuf::RepeatedField<::google::protobuf::uint32>& offsets,
+      Slice buffer, Slice* sidecars);
 
   // Returns a Slice representation of the sidecar's data.
-  Slice AsSlice() const { return *data_; }
-
- private:
-  const gscoped_ptr<faststring> data_;
-
-  DISALLOW_COPY_AND_ASSIGN(RpcSidecar);
+  virtual Slice AsSlice() const = 0;
+  virtual ~RpcSidecar() { }
 };
 
 } // namespace rpc

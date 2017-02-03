@@ -21,11 +21,20 @@
 #include <glog/logging.h>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+
+namespace google {
+namespace protobuf {
+class Message;
+} // namespace protobuf
+} // namespace google
+
 namespace kudu {
 
 namespace rpc {
@@ -33,6 +42,7 @@ namespace rpc {
 class ErrorStatusPB;
 class OutboundCall;
 class RequestIdPB;
+class RpcSidecar;
 
 // Controller for managing properties of a single RPC call, on the client side.
 //
@@ -177,11 +187,20 @@ class RpcController {
   // been Reset().
   //
   // May fail if index is invalid.
-  Status GetSidecar(int idx, Slice* sidecar) const;
+  Status GetInboundSidecar(int idx, Slice* sidecar) const;
+
+  // Adds a sidecar to the outbound request. The index of the sidecar is written to
+  // 'idx'. Returns an error if TransferLimits::kMaxSidecars have already been added
+  // to this request.
+  Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);
 
  private:
   friend class OutboundCall;
   friend class Proxy;
+
+  // Set the outbound call_'s request parameter, and transfer ownership of
+  // outbound_sidecars_ to call_ in preparation for serialization.
+  void SetRequestParam(const google::protobuf::Message& req);
 
   MonoDelta timeout_;
   std::unordered_set<uint32_t> required_server_features_;
@@ -194,6 +213,8 @@ class RpcController {
 
   // Once the call is sent, it is tracked here.
   std::shared_ptr<OutboundCall> call_;
+
+  std::vector<std::unique_ptr<RpcSidecar>> outbound_sidecars_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcController);
 };

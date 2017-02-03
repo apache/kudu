@@ -27,6 +27,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/transfer.h"
@@ -52,6 +53,7 @@ class DumpRunningRpcsRequestPB;
 class InboundTransfer;
 class RpcCallInProgressPB;
 class RpcController;
+class RpcSidecar;
 
 
 // Used to key on Connection information.
@@ -124,11 +126,13 @@ class OutboundCall {
 
   ~OutboundCall();
 
-  // Serialize the given request PB into this call's internal storage.
+  // Serialize the given request PB into this call's internal storage, and assume
+  // ownership of any sidecars that should accompany this request.
   //
-  // Because the data is fully serialized by this call, 'req' may be
-  // subsequently mutated with no ill effects.
-  void SetRequestParam(const google::protobuf::Message& req);
+  // Because the request data is fully serialized by this call, 'req' may be subsequently
+  // mutated with no ill effects.
+  void SetRequestPayload(const google::protobuf::Message& req,
+      std::vector<std::unique_ptr<RpcSidecar>>&& sidecars);
 
   // Assign the call ID for this call. This is called from the reactor
   // thread once a connection has been assigned. Must only be called once.
@@ -137,7 +141,7 @@ class OutboundCall {
     header_.set_call_id(call_id);
   }
 
-  // Serialize the call for the wire. Requires that SetRequestParam()
+  // Serialize the call for the wire. Requires that SetRequestPayload()
   // is called first. This is called from the Reactor thread.
   Status SerializeTo(std::vector<Slice>* slices);
 
@@ -269,6 +273,12 @@ class OutboundCall {
   // Otherwise NULL.
   gscoped_ptr<CallResponse> call_response_;
 
+  // All sidecars to be sent with this call.
+  std::vector<std::unique_ptr<RpcSidecar>> sidecars_;
+
+  // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
+  int64_t sidecar_byte_size_ = -1;
+
   DISALLOW_COPY_AND_ASSIGN(OutboundCall);
 };
 
@@ -322,7 +332,7 @@ class CallResponse {
   Slice serialized_response_;
 
   // Slices of data for rpc sidecars. They point into memory owned by transfer_.
-  Slice sidecar_slices_[OutboundTransfer::kMaxPayloadSlices];
+  Slice sidecar_slices_[TransferLimits::kMaxSidecars];
 
   // The incoming transfer data - retained because serialized_response_
   // and sidecar_slices_ refer into its data.

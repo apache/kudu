@@ -46,6 +46,16 @@ namespace rpc {
 class Messenger;
 struct TransferCallbacks;
 
+class TransferLimits {
+ public:
+  enum {
+    kMaxSidecars = 10,
+    kMaxPayloadSlices = kMaxSidecars + 2 // (header + msg)
+  };
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(TransferLimits);
+};
+
 // This class is used internally by the RPC layer to represent an inbound
 // transfer in progress.
 //
@@ -94,8 +104,6 @@ class InboundTransfer {
 // Upon completion of the transfer, a callback is triggered.
 class OutboundTransfer : public boost::intrusive::list_base_hook<> {
  public:
-  enum { kMaxPayloadSlices = 10 };
-
   // Factory methods for creating transfers associated with call requests
   // or responses. The 'payload' slices will be concatenated and
   // written to the socket. When the transfer completes or errors, the
@@ -159,7 +167,7 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
 
   // Slices to send. Uses an array here instead of a vector to avoid an expensive
   // vector construction (improved performance a couple percent).
-  Slice payload_slices_[kMaxPayloadSlices];
+  Slice payload_slices_[TransferLimits::kMaxPayloadSlices];
   size_t n_payload_slices_;
 
   // The current slice that is being sent.

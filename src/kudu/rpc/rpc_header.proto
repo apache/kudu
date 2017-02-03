@@ -257,6 +257,11 @@ message RequestHeader {
   // Optional for requests that are naturally idempotent or to maintain compatibility with
   // older clients for requests that are not.
   optional RequestIdPB request_id = 15;
+
+  // Byte offsets for side cars in the main body of the request message.
+  // These offsets are counted AFTER the message header, i.e., offset 0
+  // is the first byte after the bytes for this protobuf.
+  repeated uint32 sidecar_offsets = 16;
 }
 
 message ResponseHeader {

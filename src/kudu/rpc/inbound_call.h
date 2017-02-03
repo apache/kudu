@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/remote_method.h"
@@ -124,7 +123,7 @@ class InboundCall {
   void SerializeResponseTo(std::vector<Slice>* slices) const;
 
   // See RpcContext::AddRpcSidecar()
-  Status AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx);
+  Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);
 
   std::string ToString() const;
 
@@ -187,6 +186,10 @@ class InboundCall {
   // the RPC.
   std::vector<uint32_t> GetRequiredFeatures() const;
 
+  // Get a sidecar sent as part of the request. If idx < 0 || idx > num sidecars - 1,
+  // returns an error.
+  Status GetInboundSidecar(int idx, Slice* sidecar) const;
+
  private:
   friend class RpczStore;
 
@@ -227,8 +230,11 @@ class InboundCall {
 
   // Vector of additional sidecars that are tacked on to the call's response
   // after serialization of the protobuf. See rpc/rpc_sidecar.h for more info.
-  std::vector<RpcSidecar*> sidecars_;
-  ElementDeleter sidecars_deleter_;
+  std::vector<std::unique_ptr<RpcSidecar>> outbound_sidecars_;
+
+  // Inbound sidecars from the request. The slices are views onto transfer_. There are as
+  // many slices as header_.sidecar_offsets_size().
+  Slice inbound_sidecar_slices_[TransferLimits::kMaxSidecars];
 
   // The trace buffer.
   scoped_refptr<Trace> trace_;

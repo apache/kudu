@@ -65,6 +65,19 @@ message SendTwoStringsResponsePB {
   required uint32 sidecar2 = 2;
 }
 
+// Push two strings to the server as part of the request, in sidecars.
+message PushTwoStringsRequestPB {
+  required uint32 sidecar1_idx = 1;
+  required uint32 sidecar2_idx = 2;
+}
+
+message PushTwoStringsResponsePB {
+  required uint32 size1 = 1;
+  required string data1 = 2;
+  required uint32 size2 = 3;
+  required string data2 = 4;
+}
+
 message EchoRequestPB {
   required string data = 1;
 }

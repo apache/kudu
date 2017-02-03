@@ -505,16 +505,16 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
   // First, rewrite the relative addresses into absolute ones.
   if (PREDICT_FALSE(!resp_data_.has_rows_sidecar())) {
     return Status::Corruption("Server sent invalid response: no row data");
-  } else {
-    Status s = controller_.GetSidecar(resp_data_.rows_sidecar(), &direct_data_);
-    if (!s.ok()) {
-      return Status::Corruption("Server sent invalid response: row data "
-                                "sidecar index corrupt", s.ToString());
-    }
+  }
+
+  Status s = controller_.GetInboundSidecar(resp_data_.rows_sidecar(), &direct_data_);
+  if (!s.ok()) {
+    return Status::Corruption("Server sent invalid response: row data "
+        "sidecar index corrupt", s.ToString());
   }
 
   if (resp_data_.has_indirect_data_sidecar()) {
-    Status s = controller_.GetSidecar(resp_data_.indirect_data_sidecar(),
+    Status s = controller_.GetInboundSidecar(resp_data_.indirect_data_sidecar(),
                                       &indirect_data_);
     if (!s.ok()) {
       return Status::Corruption("Server sent invalid response: indirect data "

@@ -118,6 +118,7 @@ using kudu::consensus::StartTabletCopyResponsePB;
 using kudu::consensus::VoteRequestPB;
 using kudu::consensus::VoteResponsePB;
 using kudu::rpc::RpcContext;
+using kudu::rpc::RpcSidecar;
 using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaTransactionState;
 using kudu::tablet::Tablet;
@@ -1073,8 +1074,8 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   }
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
-  gscoped_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
-  gscoped_ptr<faststring> indirect_data(new faststring(batch_size_bytes * 11 / 10));
+  unique_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
+  unique_ptr<faststring> indirect_data(new faststring(batch_size_bytes * 11 / 10));
   RowwiseRowBlockPB data;
   ScanResultCopier collector(&data, rows_data.get(), indirect_data.get());
 
@@ -1123,15 +1124,15 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
 
     // Add sidecar data to context and record the returned indices.
     int rows_idx;
-    CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(std::move(rows_data))), &rows_idx));
+    CHECK_OK(context->AddOutboundSidecar(RpcSidecar::FromFaststring((std::move(rows_data))),
+            &rows_idx));
     resp->mutable_data()->set_rows_sidecar(rows_idx);
 
     // Add indirect data as a sidecar, if applicable.
     if (indirect_data->size() > 0) {
       int indirect_idx;
-      CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
-          new rpc::RpcSidecar(std::move(indirect_data))), &indirect_idx));
+      CHECK_OK(context->AddOutboundSidecar(RpcSidecar::FromFaststring(
+          std::move(indirect_data)), &indirect_idx));
       resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
     }
 

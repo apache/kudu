@@ -19,10 +19,13 @@
 
 #include <algorithm>
 #include <glog/logging.h>
+#include <memory>
 #include <mutex>
 
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/outbound_call.h"
+
+using std::unique_ptr;
 
 namespace kudu { namespace rpc {
 
@@ -43,6 +46,7 @@ void RpcController::Swap(RpcController* other) {
     CHECK(other->finished());
   }
 
+  std::swap(outbound_sidecars_, other->outbound_sidecars_);
   std::swap(timeout_, other->timeout_);
   std::swap(call_, other->call_);
 }
@@ -77,7 +81,7 @@ const ErrorStatusPB* RpcController::error_response() const {
   return nullptr;
 }
 
-Status RpcController::GetSidecar(int idx, Slice* sidecar) const {
+Status RpcController::GetInboundSidecar(int idx, Slice* sidecar) const {
   return call_->call_response_->GetSidecar(idx, sidecar);
 }
 
@@ -112,6 +116,20 @@ void RpcController::RequireServerFeature(uint32_t feature) {
 MonoDelta RpcController::timeout() const {
   std::lock_guard<simple_spinlock> l(lock_);
   return timeout_;
+}
+
+Status RpcController::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
+  if (outbound_sidecars_.size() >= TransferLimits::kMaxSidecars) {
+    return Status::RuntimeError("All available sidecars already used");
+  }
+  outbound_sidecars_.emplace_back(std::move(car));
+  *idx = outbound_sidecars_.size() - 1;
+  return Status::OK();
+}
+
+void RpcController::SetRequestParam(const google::protobuf::Message& req) {
+  DCHECK(call_ != nullptr);
+  call_->SetRequestPayload(req, std::move(outbound_sidecars_));
 }
 
 } // namespace rpc

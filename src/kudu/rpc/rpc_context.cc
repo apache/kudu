@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/rpc_context.h"
 
+#include <memory>
 #include <ostream>
 #include <sstream>
 
@@ -32,6 +33,7 @@
 #include "kudu/util/trace.h"
 
 using google::protobuf::Message;
+using std::unique_ptr;
 
 namespace kudu {
 namespace rpc {
@@ -141,8 +143,12 @@ const rpc::RequestIdPB* RpcContext::request_id() const {
   return call_->header().has_request_id() ? &call_->header().request_id() : nullptr;
 }
 
-Status RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
-  return call_->AddRpcSidecar(std::move(car), idx);
+Status RpcContext::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
+  return call_->AddOutboundSidecar(std::move(car), idx);
+}
+
+Status RpcContext::GetInboundSidecar(int idx, Slice* slice) {
+  return call_->GetInboundSidecar(idx, slice);
 }
 
 const RemoteUser& RpcContext::remote_user() const {

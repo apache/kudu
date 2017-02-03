@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <boost/functional/hash.hpp>
 #include <gflags/gflags.h>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -29,6 +30,7 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
+#include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/flag_tags.h"
@@ -43,6 +45,8 @@ DEFINE_int64(rpc_callback_max_cycles, 100 * 1000 * 1000,
              " (Advanced debugging option)");
 TAG_FLAG(rpc_callback_max_cycles, advanced);
 TAG_FLAG(rpc_callback_max_cycles, runtime);
+
+using std::unique_ptr;
 
 namespace kudu {
 namespace rpc {
@@ -88,10 +92,8 @@ OutboundCall::~OutboundCall() {
 }
 
 Status OutboundCall::SerializeTo(vector<Slice>* slices) {
-  size_t param_len = request_buf_.size();
-  if (PREDICT_FALSE(param_len == 0)) {
-    return Status::InvalidArgument("Must call SetRequestParam() before SerializeTo()");
-  }
+  DCHECK_LT(0, request_buf_.size())
+      << "Must call SetRequestPayload() before SerializeTo()";
 
   const MonoDelta &timeout = controller_->timeout();
   if (timeout.Initialized()) {
@@ -102,16 +104,32 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
     header_.add_required_feature_flags(feature);
   }
 
-  serialization::SerializeHeader(header_, param_len, &header_buf_);
+  DCHECK_LE(0, sidecar_byte_size_);
+  serialization::SerializeHeader(
+      header_, sidecar_byte_size_ + request_buf_.size(), &header_buf_);
 
-  // Return the concatenated packet.
   slices->push_back(Slice(header_buf_));
   slices->push_back(Slice(request_buf_));
+  for (const unique_ptr<RpcSidecar>& car : sidecars_) slices->push_back(car->AsSlice());
   return Status::OK();
 }
 
-void OutboundCall::SetRequestParam(const Message& message) {
-  serialization::SerializeMessage(message, &request_buf_);
+void OutboundCall::SetRequestPayload(const Message& req,
+    vector<unique_ptr<RpcSidecar>>&& sidecars) {
+  DCHECK_EQ(-1, sidecar_byte_size_);
+
+  sidecars_ = move(sidecars);
+
+  // Compute total size of sidecar payload so that extra space can be reserved as part of
+  // the request body.
+  uint32_t message_size = req.ByteSize();
+  sidecar_byte_size_ = 0;
+  for (const unique_ptr<RpcSidecar>& car: sidecars_) {
+    header_.add_sidecar_offsets(sidecar_byte_size_ + message_size);
+    sidecar_byte_size_ += car->AsSlice().size();
+  }
+
+  serialization::SerializeMessage(req, &request_buf_, sidecar_byte_size_, true);
 }
 
 Status OutboundCall::status() const {
@@ -432,44 +450,16 @@ Status CallResponse::GetSidecar(int idx, Slice* sidecar) const {
 
 Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);
-  Slice entire_message;
   RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_,
-                                            &entire_message));
+                                            &serialized_response_));
 
   // Use information from header to extract the payload slices.
-  int last = header_.sidecar_offsets_size() - 1;
+  RETURN_NOT_OK(RpcSidecar::ParseSidecars(header_.sidecar_offsets(),
+          serialized_response_, sidecar_slices_));
 
-  if (last >= OutboundTransfer::kMaxPayloadSlices) {
-    return Status::Corruption(strings::Substitute(
-        "Received $0 additional payload slices, expected at most %d",
-        last, OutboundTransfer::kMaxPayloadSlices));
-  }
-
-  if (last >= 0) {
-    serialized_response_ = Slice(entire_message.data(),
-                                 header_.sidecar_offsets(0));
-    for (int i = 0; i < last; ++i) {
-      uint32_t next_offset = header_.sidecar_offsets(i);
-      int32_t len = header_.sidecar_offsets(i + 1) - next_offset;
-      if (next_offset + len > entire_message.size() || len < 0) {
-        return Status::Corruption(strings::Substitute(
-            "Invalid sidecar offsets; sidecar $0 apparently starts at $1,"
-            " has length $2, but the entire message has length $3",
-            i, next_offset, len, entire_message.size()));
-      }
-      sidecar_slices_[i] = Slice(entire_message.data() + next_offset, len);
-    }
-    uint32_t next_offset = header_.sidecar_offsets(last);
-    if (next_offset > entire_message.size()) {
-        return Status::Corruption(strings::Substitute(
-            "Invalid sidecar offsets; the last sidecar ($0) apparently starts "
-            "at $1, but the entire message has length $3",
-            last, next_offset, entire_message.size()));
-    }
-    sidecar_slices_[last] = Slice(entire_message.data() + next_offset,
-                                  entire_message.size() - next_offset);
-  } else {
-    serialized_response_ = entire_message;
+  if (header_.sidecar_offsets_size() > 0) {
+    serialized_response_ =
+        Slice(serialized_response_.data(), header_.sidecar_offsets(0));
   }
 
   transfer_.swap(transfer);

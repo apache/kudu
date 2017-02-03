@@ -294,6 +294,51 @@ TEST_P(TestRpc, TestRpcSidecar) {
   // Test some larger sidecars to verify that we properly handle the case where
   // we can't write the whole response to the socket in a single call.
   DoTestSidecar(p, 3000 * 1024, 2000 * 1024);
+
+  DoTestOutgoingSidecar(p, 0, 0);
+  DoTestOutgoingSidecar(p, 123, 456);
+  DoTestOutgoingSidecar(p, 3000 * 1024, 2000 * 1024);
+}
+
+TEST_P(TestRpc, TestRpcSidecarLimits) {
+  {
+    // Test that the limits on the number of sidecars is respected.
+    RpcController controller;
+    string s = "foo";
+    int idx;
+    for (int i = 0; i < TransferLimits::kMaxSidecars; ++i) {
+      CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx));
+    }
+
+    CHECK(!controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx).ok());
+  }
+
+  {
+    // Test that the payload may not exceed --rpc_max_message_size.
+    // Set up server.
+    Sockaddr server_addr;
+    bool enable_ssl = GetParam();
+    StartTestServer(&server_addr, enable_ssl);
+
+    // Set up client.
+    shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, GetParam()));
+    Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+    RpcController controller;
+    string s(FLAGS_rpc_max_message_size + 1, 'a');
+    int idx;
+    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx));
+
+    PushTwoStringsRequestPB request;
+    request.set_sidecar1_idx(idx);
+    request.set_sidecar2_idx(idx);
+    PushTwoStringsResponsePB resp;
+    Status status = p.SyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+        request, &resp, &controller);
+    ASSERT_TRUE(status.IsNetworkError()) << "Unexpected error: " << status.ToString();
+    // Remote responds to extra-large payloads by closing the connection.
+    ASSERT_STR_CONTAINS(status.ToString(), "Connection reset by peer");
+  }
 }
 
 // Test that timeouts are properly handled.

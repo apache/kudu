@@ -33,9 +33,8 @@
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::io::CodedOutputStream;
-using google::protobuf::Message;
 using google::protobuf::MessageLite;
-using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -44,7 +43,6 @@ namespace rpc {
 
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
-    sidecars_deleter_(&sidecars_),
     trace_(new Trace),
     method_info_(nullptr) {
   RecordCallReceived();
@@ -66,6 +64,19 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
                               header_.remote_method().InitializationErrorString());
   }
   remote_method_.FromPB(header_.remote_method());
+
+  if (header_.sidecar_offsets_size() > TransferLimits::kMaxSidecars) {
+    return Status::Corruption(strings::Substitute(
+            "Received $0 additional payload slices, expected at most %d",
+            header_.sidecar_offsets_size(), TransferLimits::kMaxSidecars));
+  }
+
+  RETURN_NOT_OK(RpcSidecar::ParseSidecars(
+          header_.sidecar_offsets(), serialized_request_, inbound_sidecar_slices_));
+  if (header_.sidecar_offsets_size() > 0) {
+    // Trim the request to just the message
+    serialized_request_ = Slice(serialized_request_.data(), header_.sidecar_offsets(0));
+  }
 
   // Retain the buffer that we have a view into.
   transfer_.swap(transfer);
@@ -151,7 +162,7 @@ void InboundCall::SerializeResponseBuffer(const MessageLite& response,
   resp_hdr.set_call_id(header_.call_id());
   resp_hdr.set_is_error(!is_success);
   uint32_t absolute_sidecar_offset = protobuf_msg_size;
-  for (RpcSidecar* car : sidecars_) {
+  for (const unique_ptr<RpcSidecar>& car : outbound_sidecars_) {
     resp_hdr.add_sidecar_offsets(absolute_sidecar_offset);
     absolute_sidecar_offset += car->AsSlice().size();
   }
@@ -168,23 +179,23 @@ void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   TRACE_EVENT0("rpc", "InboundCall::SerializeResponseTo");
   CHECK_GT(response_hdr_buf_.size(), 0);
   CHECK_GT(response_msg_buf_.size(), 0);
-  slices->reserve(slices->size() + 2 + sidecars_.size());
+  slices->reserve(slices->size() + 2 + outbound_sidecars_.size());
   slices->push_back(Slice(response_hdr_buf_));
   slices->push_back(Slice(response_msg_buf_));
-  for (RpcSidecar* car : sidecars_) {
+  for (const unique_ptr<RpcSidecar>& car : outbound_sidecars_) {
     slices->push_back(car->AsSlice());
   }
 }
 
-Status InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
+Status InboundCall::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   // Check that the number of sidecars does not exceed the number of payload
   // slices that are free (two are used up by the header and main message
   // protobufs).
-  if (sidecars_.size() + 2 > OutboundTransfer::kMaxPayloadSlices) {
+  if (outbound_sidecars_.size() > TransferLimits::kMaxSidecars) {
     return Status::ServiceUnavailable("All available sidecars already used");
   }
-  sidecars_.push_back(car.release());
-  *idx = sidecars_.size() - 1;
+  outbound_sidecars_.emplace_back(std::move(car));
+  *idx = outbound_sidecars_.size() - 1;
   return Status::OK();
 }
 
@@ -286,6 +297,15 @@ vector<uint32_t> InboundCall::GetRequiredFeatures() const {
     features.push_back(feature);
   }
   return features;
+}
+
+Status InboundCall::GetInboundSidecar(int idx, Slice* sidecar) const {
+  if (idx < 0 || idx >= header_.sidecar_offsets_size()) {
+    return Status::InvalidArgument(strings::Substitute(
+            "Index $0 does not reference a valid sidecar", idx));
+  }
+  *sidecar = inbound_sidecar_slices_[idx];
+  return Status::OK();
 }
 
 } // namespace rpc

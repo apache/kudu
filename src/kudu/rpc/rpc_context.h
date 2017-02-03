@@ -153,7 +153,11 @@ class RpcContext {
   // Upon success, writes the index of the sidecar (necessary to be retrieved
   // later) to 'idx'. Call may fail if all sidecars have already been used
   // by the RPC response.
-  Status AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx);
+  Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);
+
+  // Fills 'sidecar' with a sidecar sent by the client. Returns an error if 'idx' is out
+  // of bounds.
+  Status GetInboundSidecar(int idx, Slice* slice);
 
   // Return the identity of remote user who made this call.
   const RemoteUser& remote_user() const;

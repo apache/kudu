@@ -312,10 +312,10 @@ class TabletServerTestBase : public KuduTest {
                                  vector<string>* results) {
     RowwiseRowBlockPB* rrpb = resp.mutable_data();
     Slice direct, indirect; // sidecar data buffers
-    ASSERT_OK(rpc.GetSidecar(rrpb->rows_sidecar(), &direct));
+    ASSERT_OK(rpc.GetInboundSidecar(rrpb->rows_sidecar(), &direct));
     if (rrpb->has_indirect_data_sidecar()) {
-      ASSERT_OK(rpc.GetSidecar(rrpb->indirect_data_sidecar(),
-                               &indirect));
+      ASSERT_OK(rpc.GetInboundSidecar(rrpb->indirect_data_sidecar(),
+              &indirect));
     }
     vector<const uint8_t*> rows;
     ASSERT_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
