@@ -353,6 +353,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kSrcAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kDstAddressArg, kTServerAddressDesc })
+      .AddOptionalParameter("force_copy")
       .Build();
 
   unique_ptr<Action> delete_replica =

@@ -615,6 +615,7 @@ unique_ptr<Mode> BuildTestMode() {
       .AddOptionalParameter("num_threads")
       .AddOptionalParameter("run_scan")
       .AddOptionalParameter("seq_start")
+      .AddOptionalParameter("show_first_n_errors")
       .AddOptionalParameter("string_fixed")
       .AddOptionalParameter("string_len")
       .AddOptionalParameter("table_name")

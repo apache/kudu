@@ -130,6 +130,7 @@ unique_ptr<Mode> BuildClusterMode() {
       .Description(desc)
       .ExtraDescription(extra_desc)
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddOptionalParameter("checksum_cache_blocks")
       .AddOptionalParameter("checksum_scan")
       .AddOptionalParameter("checksum_scan_concurrency")
       .AddOptionalParameter("checksum_snapshot")
