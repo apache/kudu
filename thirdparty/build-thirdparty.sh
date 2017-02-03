@@ -196,10 +196,6 @@ if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
   build_trace_viewer
 fi
 
-if [ -n "$F_COMMON" -o -n "$F_BOOST" ]; then
-  build_boost
-fi
-
 ### Build C dependencies without instrumentation
 
 PREFIX=$PREFIX_DEPS
@@ -287,6 +283,10 @@ fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CRCUTIL" ]; then
   build_crcutil
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BOOST" ]; then
+  build_boost normal
 fi
 
 restore_env
@@ -446,6 +446,10 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_CRCUTIL" ]; then
   build_crcutil
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
+  build_boost tsan
 fi
 
 restore_env

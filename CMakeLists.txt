@@ -126,17 +126,24 @@ endif()
 
 # compiler flags that are common across debug/release builds
 #  - msse4.2: Enable sse4.2 compiler intrinsics.
+set(CXX_COMMON_FLAGS "-msse4.2")
 #  - Wall: Enable all warnings.
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
 #  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned
 #    integers
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
 #  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated")
 #  - pthread: enable multithreaded malloc
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing
 #     Assume programs do not follow strict aliasing rules.
 #     GCC cannot always verify whether strict aliasing rules are indeed followed due to
 #     fundamental limitations in escape analysis, which can result in subtle bad code generation.
 #     This has a small perf hit but worth it to avoid hard to debug crashes.
-set(CXX_COMMON_FLAGS "-fno-strict-aliasing -msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread")
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -fno-strict-aliasing")
+#  -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG: enable nanosecond precision for boost
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG")
 
 # We want access to the PRI* print format macros.
 add_definitions(-D__STDC_FORMAT_MACROS)
@@ -459,6 +466,7 @@ file(MAKE_DIRECTORY "${EXECUTABLE_OUTPUT_PATH}")
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
+include_directories(SYSTEM ${THIRDPARTY_INSTALL_COMMON_DIR}/include)
 
 ############################################################
 # Visibility
@@ -956,28 +964,14 @@ endif()
 
 ## Boost
 
-# The boost-cmake project hasn't been maintained for years. Let's make sure we
-# don't accidentally use it if it can be found.
-set(Boost_NO_BOOST_CMAKE ON)
+# We use a custom cmake module and not cmake's FindBoost.
+# see: cmake_modules/FindKuduBoost.cmake
+find_package(KuduBoost REQUIRED)
+include_directories(SYSTEM ${BOOST_INCLUDE_DIR})
 
-# Look for Boost in thirdparty only.
-set(BOOST_ROOT ${THIRDPARTY_INSTALL_COMMON_DIR})
-
-# As of cmake 3.5, there's still no way to force FindBoost.cmake to omit system
-# paths from its search. No combination of Boost_NO_SYSTEM_PATHS, BOOST_ROOT, or
-# BOOST_INCLUDEDIR does the trick; the best they can do is ensure the system
-# paths are searched last.
-#
-# To prevent system boost installations from being picked up, we'll work around
-# this ourselves by checking the prefix of Boost_INCLUDE_DIR.
-find_package(Boost REQUIRED)
-string(FIND ${Boost_INCLUDE_DIR} ${BOOST_ROOT} BOOST_ROOT_IDX_FOUND)
-if(${BOOST_ROOT_IDX_FOUND} EQUAL 0)
-  message(STATUS "Boost location: ${Boost_INCLUDE_DIR}")
-else()
-  message(FATAL_ERROR "Error: chose Boost outside ${BOOST_ROOT}: ${Boost_INCLUDE_DIR}")
-endif()
-include_directories(SYSTEM ${Boost_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(boost_date_time
+    STATIC_LIB "${BOOST_DATE_TIME_STATIC_LIB}"
+    SHARED_LIB "${BOOST_DATE_TIME_SHARED_LIB}")
 
 ############################################################
 # Linker setup
