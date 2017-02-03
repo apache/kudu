@@ -18,6 +18,7 @@
 // This module is internal to the client and not a public API.
 #pragma once
 
+#include <functional>
 #include <vector>
 #include <string>
 
@@ -63,7 +64,10 @@ namespace internal {
 class ConnectToClusterRpc : public rpc::Rpc,
                             public RefCountedThreadSafe<ConnectToClusterRpc> {
  public:
-  typedef Callback<void(const Status&, const HostPort&)> LeaderCallback;
+  typedef std::function<void(
+      const Status& status,
+      const Sockaddr& leader_master,
+      const master::ConnectToMasterResponsePB& connect_response)> LeaderCallback;
   // The host and port of the leader master server is stored in
   // 'leader_master', which must remain valid for the lifetime of this
   // object.
@@ -86,25 +90,23 @@ class ConnectToClusterRpc : public rpc::Rpc,
 
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  // Invoked when a response comes back from a Master with address
-  // 'node_addr'.
+  // Invoked when a response comes back from the master with index
+  // 'master_idx'.
   //
   // Invokes SendRpcCb if the response indicates that the specified
   // master is a leader, or if responses have been received from all
   // of the Masters.
-  void SingleNodeCallback(const Sockaddr& node_addr,
-                          const master::ConnectToMasterResponsePB& resp,
-                          const Status& status);
+  void SingleNodeCallback(int master_idx, const Status& status);
 
-  LeaderCallback user_cb_;
-  std::vector<Sockaddr> addrs_;
+  const LeaderCallback user_cb_;
 
-  HostPort leader_master_;
+  // The addresses of the masters.
+  const std::vector<Sockaddr> addrs_;
 
   // The amount of time alloted to each GetMasterRegistration RPC.
-  MonoDelta rpc_timeout_;
+  const MonoDelta rpc_timeout_;
 
-  // The received responses.
+  // The received responses. The indexes correspond to 'addrs_'.
   std::vector<master::ConnectToMasterResponsePB> responses_;
 
   // Number of pending responses.
@@ -113,6 +115,11 @@ class ConnectToClusterRpc : public rpc::Rpc,
   // If true, then we've already executed the user callback and the
   // RPC can be deallocated.
   bool completed_;
+
+  // The index of the master that was determined to be the leader.
+  // This corresponds to entries in 'responses_' and 'addrs_'.
+  // -1 indicates no leader found.
+  int leader_idx_ = -1;
 
   // Protects 'pending_responses_' and 'completed_'.
   mutable simple_spinlock lock_;

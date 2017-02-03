@@ -228,8 +228,7 @@ void ConnectToClusterRpc::SendRpc() {
   std::lock_guard<simple_spinlock> l(lock_);
   for (int i = 0; i < addrs_.size(); i++) {
     ConnectToMasterRpc* rpc = new ConnectToMasterRpc(
-        Bind(&ConnectToClusterRpc::SingleNodeCallback,
-             this, ConstRef(addrs_[i]), ConstRef(responses_[i])),
+        Bind(&ConnectToClusterRpc::SingleNodeCallback, this, i),
         addrs_[i],
         actual_deadline,
         retrier().messenger(),
@@ -268,12 +267,17 @@ void ConnectToClusterRpc::SendRpcCb(const Status& status) {
 
   // We are not retrying.
   undo_completed.cancel();
-  user_cb_.Run(status, leader_master_);
+  if (leader_idx_ != -1) {
+    user_cb_(status, addrs_[leader_idx_], responses_[leader_idx_]);
+  } else {
+    user_cb_(status, {}, {});
+  }
 }
 
-void ConnectToClusterRpc::SingleNodeCallback(const Sockaddr& node_addr,
-                                             const ConnectToMasterResponsePB& resp,
+void ConnectToClusterRpc::SingleNodeCallback(int master_idx,
                                              const Status& status) {
+  const ConnectToMasterResponsePB& resp = responses_[master_idx];
+
   // TODO(todd): handle the situation where one Master is partitioned from
   // the rest of the Master consensus configuration, all are reachable by the client,
   // and the partitioned node "thinks" it's the leader.
@@ -300,7 +304,7 @@ void ConnectToClusterRpc::SingleNodeCallback(const Sockaddr& node_addr,
         new_status = Status::NotFound("no leader found: " + ToString());
       } else {
         // We've found a leader.
-        leader_master_ = HostPort(node_addr);
+        leader_idx_ = master_idx;
         completed_ = true;
       }
     }

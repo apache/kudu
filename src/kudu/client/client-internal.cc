@@ -18,6 +18,7 @@
 #include "kudu/client/client-internal.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -599,28 +600,24 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   return Status::OK();
 }
 
-void KuduClient::Data::ConnectedToClusterCb(const Status& status,
-                                            const HostPort& host_port) {
-  Sockaddr leader_sock_addr;
-  Status new_status = status;
-  if (new_status.ok()) {
-    new_status = SockaddrFromHostPort(host_port, &leader_sock_addr);
-  }
-
+void KuduClient::Data::ConnectedToClusterCb(
+    const Status& status,
+    const Sockaddr& leader_addr,
+    const master::ConnectToMasterResponsePB& /*connect_response*/) {
   vector<StatusCallback> cbs;
   {
     std::lock_guard<simple_spinlock> l(leader_master_lock_);
     cbs.swap(leader_master_callbacks_);
     leader_master_rpc_.reset();
 
-    if (new_status.ok()) {
-      leader_master_hostport_ = host_port;
-      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
+    if (status.ok()) {
+      leader_master_hostport_ = HostPort(leader_addr);
+      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr));
     }
   }
 
   for (const StatusCallback& cb : cbs) {
-    cb.Run(new_status);
+    cb.Run(status);
   }
 }
 
@@ -669,12 +666,14 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
   if (!leader_master_rpc_) {
     // No one is sending a request yet - we need to be the one to do it.
     leader_master_rpc_.reset(new internal::ConnectToClusterRpc(
-                               Bind(&KuduClient::Data::ConnectedToClusterCb,
-                                    Unretained(this)),
-                               std::move(master_sockaddrs),
-                               deadline,
-                               client->default_rpc_timeout(),
-                               messenger_));
+        std::bind(&KuduClient::Data::ConnectedToClusterCb, this,
+                  std::placeholders::_1,
+                  std::placeholders::_2,
+                  std::placeholders::_3),
+        std::move(master_sockaddrs),
+        deadline,
+        client->default_rpc_timeout(),
+        messenger_));
     l.unlock();
     leader_master_rpc_->SendRpc();
   }

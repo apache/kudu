@@ -39,6 +39,7 @@ class HostPort;
 
 namespace master {
 class AlterTableRequestPB;
+class ConnectToMasterResponsePB;
 class CreateTableRequestPB;
 class MasterServiceProxy;
 } // namespace master
@@ -132,12 +133,13 @@ class KuduClient::Data {
       const std::set<std::string>& blacklist,
       std::vector<internal::RemoteTabletServer*>* candidates) const;
 
-  // Sets 'master_proxy_' from the address specified by
-  // 'leader_master_hostport_'.  Called by
-  // ConnectToClusterRpc::SendRpcCb() upon successful completion.
+  // Sets 'master_proxy_' from the address specified by 'leader_addr'.
+  // Called by ConnectToClusterRpc::SendRpcCb() upon successful completion.
   //
   // See also: ConnectToClusterAsync.
-  void ConnectedToClusterCb(const Status& status, const HostPort& host_port);
+  void ConnectedToClusterCb(const Status& status,
+                            const Sockaddr& leader_addr,
+                            const master::ConnectToMasterResponsePB& connect_response);
 
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until

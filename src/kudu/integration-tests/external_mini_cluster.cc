@@ -18,6 +18,7 @@
 #include "kudu/integration-tests/external_mini_cluster.h"
 
 #include <algorithm>
+#include <functional>
 #include <gtest/gtest.h>
 #include <memory>
 #include <rapidjson/document.h>
@@ -461,31 +462,25 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
   return Status::TimedOut(SecureDebugString(resp));
 }
 
-namespace {
-void LeaderMasterCallback(HostPort* dst_hostport,
-                          Synchronizer* sync,
-                          const Status& status,
-                          const HostPort& result) {
-  if (status.ok()) {
-    *dst_hostport = result;
-  }
-  sync->StatusCB(status);
-}
-} // anonymous namespace
-
 Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   scoped_refptr<ConnectToClusterRpc> rpc;
   Synchronizer sync;
   vector<Sockaddr> addrs;
-  HostPort leader_master_hp;
+  Sockaddr leader_master_addr;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
 
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
     addrs.push_back(master->bound_rpc_addr());
   }
-  rpc.reset(new ConnectToClusterRpc(Bind(&LeaderMasterCallback,
-                                         &leader_master_hp,
-                                         &sync),
+  const auto& cb = [&](const Status& status,
+                       const Sockaddr& leader_master,
+                       const master::ConnectToMasterResponsePB& resp) {
+    if (status.ok()) {
+      leader_master_addr = leader_master;
+    }
+    sync.StatusCB(status);
+  };
+  rpc.reset(new ConnectToClusterRpc(cb,
                                     std::move(addrs),
                                     deadline,
                                     MonoDelta::FromSeconds(5),
@@ -494,7 +489,7 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   RETURN_NOT_OK(sync.Wait());
   bool found = false;
   for (int i = 0; i < masters_.size(); i++) {
-    if (masters_[i]->bound_rpc_hostport().port() == leader_master_hp.port()) {
+    if (masters_[i]->bound_rpc_hostport().port() == leader_master_addr.port()) {
       found = true;
       *idx = i;
       break;
