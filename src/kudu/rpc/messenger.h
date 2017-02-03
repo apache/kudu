@@ -186,6 +186,7 @@ class Messenger {
                          MonoDelta when);
 
   const security::TlsContext& tls_context() const { return *tls_context_; }
+  security::TlsContext* mutable_tls_context() { return tls_context_.get(); }
 
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 

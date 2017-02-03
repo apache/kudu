@@ -574,6 +574,10 @@ message ConnectToMasterResponsePB {
   // Any CA certs used by the cluster. Currently the master only uses
   // one cert, but we may support rolling this cert in the future, so
   // clients should add all returned certs to their trusted CA list.
+  //
+  // NOTE: this is not necessarily a "certificate chain" but rather a set of
+  // independent certs to be trusted. They may or may not have any signing
+  // relationship between them.
   repeated bytes ca_cert_der = 3;
 
   // If the client requested an authentication token, and security is

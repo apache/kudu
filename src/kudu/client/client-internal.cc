@@ -37,10 +37,13 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
@@ -603,12 +606,40 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
 void KuduClient::Data::ConnectedToClusterCb(
     const Status& status,
     const Sockaddr& leader_addr,
-    const master::ConnectToMasterResponsePB& /*connect_response*/) {
+    const master::ConnectToMasterResponsePB& connect_response) {
+
+  // Ensure that all of the CAs reported by the master are trusted
+  // in our local TLS configuration.
+  if (status.ok()) {
+    for (const string& cert_der : connect_response.ca_cert_der()) {
+      security::Cert cert;
+      Status s = cert.FromString(cert_der, security::DataFormat::DER);
+      if (!s.ok()) {
+        KLOG_EVERY_N_SECS(WARNING, 5) << "Master " << leader_addr.ToString()
+                                     << " provided an unparseable CA cert: "
+                                     << s.ToString();
+        continue;
+      }
+      s = messenger_->mutable_tls_context()->AddTrustedCertificate(cert);
+      // In the case that we are just re-connecting, then the attempt to trust the cert
+      // will return AlreadyPresent, since we already have the cert trusted.
+      if (!s.ok() && !s.IsAlreadyPresent()) {
+        KLOG_EVERY_N_SECS(WARNING, 5) << "Master " << leader_addr.ToString()
+                                     << " provided a cert that could not be trusted: "
+                                     << s.ToString();
+        continue;
+      }
+    }
+  }
+
   vector<StatusCallback> cbs;
   {
     std::lock_guard<simple_spinlock> l(leader_master_lock_);
     cbs.swap(leader_master_callbacks_);
     leader_master_rpc_.reset();
+    if (connect_response.has_authn_token()) {
+      authn_token_ = connect_response.authn_token();
+    }
 
     if (status.ok()) {
       leader_master_hostport_ = HostPort(leader_addr);

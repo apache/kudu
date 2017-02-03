@@ -59,6 +59,9 @@ class TlsContext {
   // This determines whether other peers are trusted. It also must
   // be called for any CA certificates that are part of the certificate
   // chain for the cert passed in 'UseCertificate' above.
+  //
+  // Returns AlreadyPresent if the cert is already marked as trusted. Other
+  // OpenSSL errors will be RuntimeError.
   Status AddTrustedCertificate(const Cert& cert);
 
   // Convenience functions for loading cert/CA/key from file paths.
@@ -74,10 +77,18 @@ class TlsContext {
   // Initiates a new TlsHandshake instance.
   Status InitiateHandshake(TlsHandshakeType handshake_type, TlsHandshake* handshake) const;
 
+  // Return the number of certs that have been marked as trusted.
+  // Used by tests.
+  int trusted_cert_count_for_tests() const {
+    return trusted_cert_count_.Load();
+  }
+
  private:
   Status VerifyCertChain(const Cert& cert);
 
   AtomicBool has_cert_;
+
+  AtomicInt<int32> trusted_cert_count_;
 
   // Owned SSL context.
   c_unique_ptr<SSL_CTX> ctx_;

@@ -54,6 +54,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -4648,6 +4649,14 @@ TEST_F(ClientTest, TestConnectToClusterCompatibility) {
             .Build(&client_));
   int final_val = metric->TotalCount();
   ASSERT_EQ(initial_val + 1, final_val);
+}
+
+// Test that, when the client connects to a cluster, that it gets the relevant
+// certificate authority and authentication token from the master.
+TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
+  // Client is already connected when the test starts.
+  ASSERT_TRUE(client_->data_->authn_token_ != boost::none);
+  ASSERT_EQ(1, client_->data_->messenger_->tls_context().trusted_cert_count_for_tests());
 }
 
 } // namespace client

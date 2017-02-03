@@ -48,7 +48,8 @@ template<> struct SslTypeTraits<X509_STORE_CTX> {
 
 
 TlsContext::TlsContext()
-    : has_cert_(false) {
+    : has_cert_(false),
+      trusted_cert_count_(0) {
   security::InitializeOpenSSL();
 }
 
@@ -138,8 +139,19 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
 
   ERR_clear_error();
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
-  OPENSSL_RET_NOT_OK(X509_STORE_add_cert(cert_store, cert.GetRawData()),
-                     "failed to add trusted certificate");
+  int rc = X509_STORE_add_cert(cert_store, cert.GetRawData());
+  if (rc <= 0) {
+    // Translate the common case of re-adding a cert that is already in the
+    // trust store into an AlreadyPresent status.
+    auto err = ERR_peek_error();
+    if (ERR_GET_LIB(err) == ERR_LIB_X509 &&
+        ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+      ERR_clear_error();
+      return Status::AlreadyPresent("cert already trusted");
+    }
+    OPENSSL_RET_NOT_OK(rc, "failed to add trusted certificate");
+  }
+  trusted_cert_count_.Increment();
   return Status::OK();
 }
 

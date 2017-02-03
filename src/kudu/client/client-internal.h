@@ -25,8 +25,10 @@
 #include <vector>
 
 #include <boost/function.hpp>
+#include <boost/optional.hpp>
 
 #include "kudu/client/client.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -230,6 +232,10 @@ class KuduClient::Data {
   // itself, as to avoid a "use-after-free" scenario.
   scoped_refptr<internal::ConnectToClusterRpc> leader_master_rpc_;
   std::vector<StatusCallback> leader_master_callbacks_;
+
+  // The latest authentication token that this client should use to talk
+  // to the cluster.
+  boost::optional<security::SignedTokenPB> authn_token_;
 
   // Protects 'leader_master_rpc_', 'leader_master_hostport_',
   // and master_proxy_
