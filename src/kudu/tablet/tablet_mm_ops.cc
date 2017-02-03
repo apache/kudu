@@ -23,21 +23,30 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 
+using std::string;
 using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
+
+TabletOpBase::TabletOpBase(string name, IOUsage io_usage, Tablet* tablet)
+    : MaintenanceOp(std::move(name), io_usage),
+      tablet_(tablet) {
+}
+
+string TabletOpBase::LogPrefix() const {
+  return tablet_->LogPrefix();
+}
 
 ////////////////////////////////////////////////////////////
 // CompactRowSetsOp
 ////////////////////////////////////////////////////////////
 
 CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
-  : MaintenanceOp(Substitute("CompactRowSetsOp($0)", tablet->tablet_id()),
-                  MaintenanceOp::HIGH_IO_USAGE),
+  : TabletOpBase(Substitute("CompactRowSetsOp($0)", tablet->tablet_id()),
+                 MaintenanceOp::HIGH_IO_USAGE, tablet),
     last_num_mrs_flushed_(0),
-    last_num_rs_compacted_(0),
-    tablet_(tablet) {
+    last_num_rs_compacted_(0) {
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
@@ -79,7 +88,8 @@ bool CompactRowSetsOp::Prepare() {
 
 void CompactRowSetsOp::Perform() {
   WARN_NOT_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS),
-              Substitute("Compaction failed on $0", tablet_->tablet_id()));
+              Substitute("$0Compaction failed on $1",
+                         LogPrefix(), tablet_->tablet_id()));
 }
 
 scoped_refptr<Histogram> CompactRowSetsOp::DurationHistogram() const {
@@ -95,13 +105,12 @@ scoped_refptr<AtomicGauge<uint32_t> > CompactRowSetsOp::RunningGauge() const {
 ////////////////////////////////////////////////////////////
 
 MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
-  : MaintenanceOp(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id()),
-                  MaintenanceOp::HIGH_IO_USAGE),
+  : TabletOpBase(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id()),
+                 MaintenanceOp::HIGH_IO_USAGE, tablet),
     last_num_mrs_flushed_(0),
     last_num_dms_flushed_(0),
     last_num_rs_compacted_(0),
-    last_num_rs_minor_delta_compacted_(0),
-    tablet_(tablet) {
+    last_num_rs_minor_delta_compacted_(0) {
 }
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
@@ -150,7 +159,8 @@ bool MinorDeltaCompactionOp::Prepare() {
 
 void MinorDeltaCompactionOp::Perform() {
   WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION),
-              Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
+              Substitute("$0Minor delta compaction failed on $1",
+                         LogPrefix(), tablet_->tablet_id()));
 }
 
 scoped_refptr<Histogram> MinorDeltaCompactionOp::DurationHistogram() const {
@@ -166,14 +176,13 @@ scoped_refptr<AtomicGauge<uint32_t> > MinorDeltaCompactionOp::RunningGauge() con
 ////////////////////////////////////////////////////////////
 
 MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
-  : MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id()),
-                  MaintenanceOp::HIGH_IO_USAGE),
+  : TabletOpBase(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id()),
+                 MaintenanceOp::HIGH_IO_USAGE, tablet),
     last_num_mrs_flushed_(0),
     last_num_dms_flushed_(0),
     last_num_rs_compacted_(0),
     last_num_rs_minor_delta_compacted_(0),
-    last_num_rs_major_delta_compacted_(0),
-    tablet_(tablet) {
+    last_num_rs_major_delta_compacted_(0) {
 }
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
@@ -226,7 +235,8 @@ bool MajorDeltaCompactionOp::Prepare() {
 
 void MajorDeltaCompactionOp::Perform() {
   WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION),
-              Substitute("Major delta compaction failed on $0", tablet_->tablet_id()));
+              Substitute("$0Major delta compaction failed on $1",
+                         LogPrefix(), tablet_->tablet_id()));
 }
 
 scoped_refptr<Histogram> MajorDeltaCompactionOp::DurationHistogram() const {

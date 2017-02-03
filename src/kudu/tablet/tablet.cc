@@ -890,7 +890,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
     // waiting until the check at the end of DoCompactionAndFlush(). This avoids
     // the need to create cfiles and write their headers only to later delete
     // them.
-    LOG(INFO) << "MemRowSet was empty: no flush needed.";
+    LOG_WITH_PREFIX(INFO) << "MemRowSet was empty: no flush needed.";
     return HandleEmptyCompactionOrFlush(input.rowsets(), mrs_being_flushed);
   }
 
@@ -1744,7 +1744,7 @@ void Tablet::PrintRSLayout(ostream* o) {
 }
 
 string Tablet::LogPrefix() const {
-  return Substitute("T $0 ", tablet_id());
+  return Substitute("T $0 P $1: ", tablet_id(), metadata_->fs_manager()->uuid());
 }
 
 ////////////////////////////////////////////////////////////

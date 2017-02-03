@@ -360,6 +360,8 @@ class Tablet {
 
   scoped_refptr<server::Clock> clock() const { return clock_; }
 
+  std::string LogPrefix() const;
+
  private:
   friend class Iterator;
   friend class TabletPeerTest;
@@ -482,8 +484,6 @@ class Tablet {
   // state from this index.
   static int64_t GetReplaySizeForIndex(int64_t min_log_index,
                                        const ReplaySizeMap& size_map);
-
-  std::string LogPrefix() const;
 
   // Test-only lock that synchronizes access to AssignTimestampAndStartTransactionForTests().
   // Tests that use LocalTabletWriter take this lock to synchronize timestamp assignment,
