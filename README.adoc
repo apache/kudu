@@ -173,7 +173,7 @@ $ mkdir -p build/tsan
 $ cd build/tsan
 $ CC=../../thirdparty/clang-toolchain/bin/clang \
     CXX=../../thirdparty/clang-toolchain/bin/clang++ \
-    cmake -DKUDU_USE_TSAN=1 .
+    cmake -DKUDU_USE_TSAN=1 ../..
 $ make -j8
 $ ctest -j8
 ----
