@@ -98,6 +98,15 @@ fi
 
 ################################################################################
 
+finish() {
+  # Run the post-flight checks.
+  $TP_DIR/postflight.py
+
+  echo "---------------------"
+  echo "Thirdparty dependencies '$ARGS_TO_PRINT' built and installed successfully"
+  exit 0
+}
+
 for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
   mkdir -p $PREFIX_DIR/include
 
@@ -282,6 +291,14 @@ fi
 
 restore_env
 
+# If we're on MacOs best to exit here, otherwise single dependency builds will try to
+# build the tsan version of the dependency (and fail).
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "Not building tsan dependencies on MacOs."
+  finish
+fi
+
 ### Build dependencies with TSAN instrumentation
 
 # Achieving good results with TSAN requires that:
@@ -433,8 +450,4 @@ fi
 
 restore_env
 
-# Now run the post-flight checks.
-$TP_DIR/postflight.py
-
-echo "---------------------"
-echo "Thirdparty dependencies '$ARGS_TO_PRINT' built and installed successfully"
+finish
