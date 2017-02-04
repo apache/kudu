@@ -473,6 +473,23 @@ build_rapidjson() {
 }
 
 build_squeasel() {
+  # Determine location of OpenSSL header files if building on OS X.
+  # On OS X 10.11.x and newer, OpenSSL headers are not in /usr/include
+  # anymore.
+  if [ -n "$OS_OSX" ]; then
+    local openssl_cflags=
+    if openssl_cflags=$(pkg-config --cflags openssl) ; then
+      # Using pkg-config works if OpenSSL is built via MacPorts.
+      EXTRA_CFLAGS="$EXTRA_CFLAGS $openssl_cflags"
+    fi
+    if [ -z $openssl_cflags ]; then
+      # If OpenSSL is built via brew, pkg-config does not report on cflags.
+      local brew_openssl_include_dir=/usr/local/opt/openssl/include
+      if [ -d $brew_openssl_include_dir ]; then
+        EXTRA_CFLAGS="$EXTRA_CFLAGS -I$brew_openssl_include_dir"
+      fi
+    fi
+  fi
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
   SQUEASEL_BDIR=$TP_BUILD_DIR/$SQUEASEL_NAME$MODE_SUFFIX
