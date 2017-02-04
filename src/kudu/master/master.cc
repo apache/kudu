@@ -18,7 +18,6 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
-#include <list>
 #include <memory>
 #include <vector>
 
@@ -119,19 +118,9 @@ Status Master::Init() {
   // becomes a leader.
   cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
 
+  // The TokenSigner loads its keys during catalog manager initialization.
   token_signer_.reset(new TokenSigner(FLAGS_tsk_validity_seconds,
                                       FLAGS_tsk_rotation_seconds));
-  // TODO(PKI): this also will need to be wired together with CatalogManager
-  // soon, including initializing the token manager with the proper next
-  // sequence number.
-  {
-    unique_ptr<TokenSigningPrivateKey> key;
-    RETURN_NOT_OK(token_signer_->CheckNeedKey(&key));
-    if (key) {
-      RETURN_NOT_OK(token_signer_->AddKey(std::move(key)));
-    }
-  }
-
   state_ = kInitialized;
   return Status::OK();
 }

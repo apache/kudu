@@ -18,6 +18,7 @@
 #define KUDU_MASTER_SYS_CATALOG_H_
 
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -58,12 +59,23 @@ class TabletVisitor {
                              const SysTabletsEntryPB& metadata) = 0;
 };
 
+// Visitor for TSK-related (Token Signing Key) entries. Actually, only the
+// public part of those are stored in the system catalog table. That information
+// is preserved to allow any master to verify token which might be signed
+// by current or former master leader.
+class TskEntryVisitor {
+ public:
+  virtual Status Visit(const std::string& entry_id,
+                       const SysTskEntryPB& metadata) = 0;
+};
+
 // SysCatalogTable is a Kudu table that keeps track of the following
 // system information:
 //   * table metadata
 //   * tablet metadata
-//   * root CA (certificate authority) certificates
-//   * corresponding CA private keys
+//   * root CA (certificate authority) certificate of the Kudu IPKI
+//   * Kudu IPKI root CA cert's private key
+//   * TSK (Token Signing Key) entries
 //
 // The essential properties of the SysCatalogTable are:
 //   * SysCatalogTable has only one tablet.
@@ -84,6 +96,7 @@ class SysCatalogTable {
     TABLES_ENTRY = 1,
     TABLETS_ENTRY = 2,
     CERT_AUTHORITY_INFO = 3,  // Kudu's root certificate authority entry.
+    TSK_ENTRY = 4,            // Token Signing Key entry.
   };
 
   // 'leader_cb_' is invoked whenever this node is elected as a leader
@@ -128,12 +141,22 @@ class SysCatalogTable {
   // Scan of the tablet-related entries.
   Status VisitTablets(TabletVisitor* visitor);
 
+  // Scan for TSK-related entries in the system table.
+  Status VisitTskEntries(TskEntryVisitor* visitor);
+
   // Retrive the CA entry (private key and certificate) from the system table.
   Status GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry);
 
   // Add root CA entry (private key and certificate) into the system table.
   // There should be no more than one CA entry in the system table.
   Status AddCertAuthorityEntry(const SysCertAuthorityEntryPB& entry);
+
+  // Add TSK (Token Signing Key) entry into the system table.
+  Status AddTskEntry(const SysTskEntryPB& entry);
+
+  // Remove TSK (Token Signing Key) entries with the specified entry identifiers
+  // (as in 'entry_id' column) from the system table.
+  Status RemoveTskEntries(const std::set<std::string>& entry_ids);
 
  private:
   FRIEND_TEST(MasterTest, TestMasterMetadataConsistentDespiteFailures);
@@ -208,6 +231,8 @@ class SysCatalogTable {
                         const std::vector<TabletInfo*>& tablets);
   void ReqDeleteTablets(tserver::WriteRequestPB* req,
                         const std::vector<TabletInfo*>& tablets);
+
+  static string TskSeqNumberToEntryId(int64_t seq_number);
 
   // Special string injected into SyncWrite() random failures (if enabled).
   //

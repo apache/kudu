@@ -83,6 +83,9 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/token.pb.h"
+#include "kudu/security/token_signer.h"
+#include "kudu/security/token_signing_key.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -197,6 +200,7 @@ DEFINE_bool(catalog_manager_delete_orphaned_tablets, false,
 TAG_FLAG(catalog_manager_delete_orphaned_tablets, advanced);
 
 using std::pair;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -205,19 +209,24 @@ using std::vector;
 namespace kudu {
 namespace master {
 
-using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_CompareAndSwap;
+using base::subtle::NoBarrier_Load;
 using cfile::TypeEncodingInfo;
-using consensus::kMinimumTerm;
 using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::Consensus;
 using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
-using consensus::OpId;
 using consensus::RaftPeerPB;
 using consensus::StartTabletCopyRequestPB;
+using consensus::kMinimumTerm;
 using rpc::RpcContext;
+using security::Cert;
+using security::DataFormat;
+using security::PrivateKey;
+using security::TokenSigner;
+using security::TokenSigningPrivateKey;
+using security::TokenSigningPrivateKeyPB;
 using strings::Substitute;
 using tablet::TABLET_DATA_DELETED;
 using tablet::TABLET_DATA_TOMBSTONED;
@@ -317,6 +326,48 @@ class TabletLoader : public TabletVisitor {
 };
 
 ////////////////////////////////////////////////////////////
+// TSK (Token Signing Key) Entry Loader
+////////////////////////////////////////////////////////////
+
+class TskEntryLoader : public TskEntryVisitor {
+ public:
+  TskEntryLoader()
+      : entry_expiration_seconds_(WallTime_Now()) {
+  }
+
+  Status Visit(const string& entry_id,
+               const SysTskEntryPB& metadata) override {
+    TokenSigningPrivateKeyPB tsk(metadata.tsk());
+    CHECK(tsk.has_key_seq_num());
+    CHECK(tsk.has_expire_unix_epoch_seconds());
+    CHECK(tsk.has_rsa_key_der());
+
+    // Expired entries are useful as well: they are needed for correct tracking
+    // of TSK sequence numbers.
+    entries_.emplace_back(std::move(tsk));
+    if (tsk.expire_unix_epoch_seconds() <= entry_expiration_seconds_) {
+      expired_entry_ids_.insert(entry_id);
+    }
+    return Status::OK();
+  }
+
+  const vector<TokenSigningPrivateKeyPB>& entries() const {
+    return entries_;
+  }
+
+  const set<string>& expired_entry_ids() const {
+    return expired_entry_ids_;
+  }
+
+ private:
+  const int64_t entry_expiration_seconds_;
+  vector<TokenSigningPrivateKeyPB> entries_;
+  set<string> expired_entry_ids_;
+
+  DISALLOW_COPY_AND_ASSIGN(TskEntryLoader);
+};
+
+////////////////////////////////////////////////////////////
 // Background Tasks
 ////////////////////////////////////////////////////////////
 
@@ -400,9 +451,16 @@ void CatalogManagerBgTasks::Run() {
                        << l.catalog_status().ToString();
         }
       } else if (l.leader_status().ok()) {
-        std::vector<scoped_refptr<TabletInfo>> to_process;
+        // If this is the leader master, check if it's time to generate
+        // and store a new TSK (Token Signing Key).
+        Status s = catalog_manager_->CheckGenerateNewTskUnlocked();
+        if (!s.ok()) {
+          LOG(ERROR) << "Error processing TSK entry (will try next time): "
+                     << s.ToString();
+        }
 
         // Get list of tablets not yet running.
+        std::vector<scoped_refptr<TabletInfo>> to_process;
         catalog_manager_->ExtractTabletsToProcess(&to_process);
 
         if (!to_process.empty()) {
@@ -413,15 +471,14 @@ void CatalogManagerBgTasks::Run() {
             // If there is an error (e.g., we are not the leader) abort this task
             // and wait until we're woken up again.
             //
-            // TODO Add tests for this in the revision that makes
+            // TODO(unknown): Add tests for this in the revision that makes
             // create/alter fault tolerant.
-            LOG(ERROR) << "Error processing pending assignments, aborting the current task: "
-                       << s.ToString();
+            LOG(ERROR) << "Error processing pending assignments, "
+                "aborting the current task: " << s.ToString();
           }
         }
       }
     }
-
     // Wait for a notification or a timeout expiration.
     //  - CreateTable will call Wake() to notify about the tablets to add
     //  - HandleReportedTablet/ProcessPendingAssignments will call WakeIfHasPendingUpdates()
@@ -675,9 +732,54 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   return Status::OK();
 }
 
+Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
+                                             unique_ptr<Cert>* cert) {
+  leader_lock_.AssertAcquiredForWriting();
+
+  SysCertAuthorityEntryPB info;
+  RETURN_NOT_OK(sys_catalog_->GetCertAuthorityEntry(&info));
+
+  unique_ptr<PrivateKey> ca_private_key(new PrivateKey);
+  unique_ptr<Cert> ca_cert(new Cert);
+  RETURN_NOT_OK(ca_private_key->FromString(
+      info.private_key(), DataFormat::DER));
+  RETURN_NOT_OK(ca_cert->FromString(
+      info.certificate(), DataFormat::DER));
+  // Extra sanity check.
+  RETURN_NOT_OK(ca_cert->CheckKeyMatch(*ca_private_key));
+
+  key->swap(ca_private_key);
+  cert->swap(ca_cert);
+
+  return Status::OK();
+}
+
+// Initialize the master's certificate authority component with the specified
+// private key and certificate.
+Status CatalogManager::InitCertAuthority(unique_ptr<PrivateKey> key,
+                                         unique_ptr<Cert> cert) {
+  leader_lock_.AssertAcquiredForWriting();
+  return master_->cert_authority()->Init(std::move(key), std::move(cert));
+}
+
+// Store internal Kudu CA cert authority information into the system table.
+Status CatalogManager::StoreCertAuthorityInfo(const PrivateKey& key,
+                                              const Cert& cert) {
+  leader_lock_.AssertAcquiredForWriting();
+
+  SysCertAuthorityEntryPB info;
+  RETURN_NOT_OK(key.ToString(info.mutable_private_key(), DataFormat::DER));
+  RETURN_NOT_OK(cert.ToString(info.mutable_certificate(), DataFormat::DER));
+  RETURN_NOT_OK(sys_catalog_->AddCertAuthorityEntry(info));
+  LOG(INFO) << "Successfully stored the newly generated cert authority "
+               "information into the system table.";
+
+  return Status::OK();
+}
+
 // Check if CA private key and the certificate were loaded into the
-// memory. If not, generate new ones and store them into the system table.
-// Use the CA information to initialize the certificate authority.
+// memory. If not, generate new ones and store them into the system table
+// and then load into the memory.
 Status CatalogManager::CheckInitCertAuthority() {
   using security::Cert;
   using security::DataFormat;
@@ -777,7 +879,64 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     LOG(INFO) << "Loading CA info into memory...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
                        "Loading CA info into memory") {
-      CHECK_OK(CheckInitCertAuthority());
+      unique_ptr<PrivateKey> key;
+      unique_ptr<Cert> cert;
+      const Status& s = LoadCertAuthorityInfo(&key, &cert);
+      if (s.ok()) {
+        // Once succesfully loaded, the CA information is supposed to be valid:
+        // the leader master should not be run without CA certificate.
+        CHECK_OK(InitCertAuthority(std::move(key), std::move(cert)));
+      } else if (s.IsNotFound()) {
+        LOG(WARNING) << "Did not find CA certificate and key for Kudu IPKI, "
+                        "will generate new ones";
+        // No CA information record has been found in the table -- generate
+        // a new one. The subtlety here is that first it's necessary to store
+        // the newly generated information into the system table and only after
+        // that initialize master certificate authority. The reason is:
+        // if the master server loses its leadership role by that time, there
+        // will be an error on an attempt to write into the system table.
+        // If that happens, skip the rest of the sequence: when this callback
+        // is invoked next time, the system table should already contain
+        // CA certificate information written by other master.
+        unique_ptr<PrivateKey> private_key(new PrivateKey);
+        unique_ptr<Cert> cert(new Cert);
+
+        // Generate new private key and corresponding CA certificate.
+        CHECK_OK(master_->cert_authority()->Generate(private_key.get(),
+                                                     cert.get()));
+        // It the leadership role is lost at this moment, writing into the
+        // system table will fail.
+        const Status& s = StoreCertAuthorityInfo(*private_key, *cert);
+        if (s.ok()) {
+          // The leader master should not run without CA certificate.
+          CHECK_OK(InitCertAuthority(std::move(private_key), std::move(cert)));
+        } else {
+          LOG(WARNING) << "Failed to write newly generated CA information into "
+                          "the system table, assuming change of leadership: "
+                       << s.ToString();
+        }
+      } else {
+        CHECK_OK(s);
+      }
+    }
+
+    LOG(INFO) << "Loading token signing keys...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
+                       "Loading token signing keys...") {
+      set<string> expired_tsk_entry_ids;
+      CHECK_OK(LoadTskEntries(&expired_tsk_entry_ids));
+      Status s = CheckGenerateNewTskUnlocked();
+      if (!s.ok()) {
+        LOG(WARNING) << "Failed to generate and persist new TSK, "
+                        "assuming change of leadership: " << s.ToString();
+        return;
+      }
+      s = DeleteTskEntries(expired_tsk_entry_ids);
+      if (!s.ok()) {
+        LOG(WARNING) << "Failed to purge expired TSK entries from system table, "
+                        "assuming change of leadership: " << s.ToString();
+        return;
+      }
     }
   }
 
@@ -3175,6 +3334,47 @@ void CatalogManager::ExtractTabletsToProcess(
       tablets_to_process->push_back(tablet);
     }
   }
+}
+
+// Check if it's time to roll TokenSigner's key. There's a bit of subtlety here:
+// we shouldn't start exporting a key until it is properly persisted.
+// So, the protocol is:
+//   1) Generate a new TSK.
+//   2) Try to write it to the system table.
+//   3) Pass it back to the TokenSigner on success.
+//   4) Check and switch TokenSigner to the new key if it's time to do so.
+Status CatalogManager::CheckGenerateNewTskUnlocked() {
+  TokenSigner* signer = master_->token_signer();
+  unique_ptr<security::TokenSigningPrivateKey> tsk;
+  RETURN_NOT_OK(signer->CheckNeedKey(&tsk));
+  if (tsk) {
+    // First save the new TSK into the system table.
+    TokenSigningPrivateKeyPB tsk_pb;
+    tsk->ExportPB(&tsk_pb);
+    SysTskEntryPB sys_entry;
+    sys_entry.mutable_tsk()->Swap(&tsk_pb);
+    RETURN_NOT_OK(sys_catalog_->AddTskEntry(sys_entry));
+    LOG(INFO) << "Saved newly generated TSK " << tsk->key_seq_num()
+              << " into the system table.";
+    // Then add the new TSK into the signer.
+    RETURN_NOT_OK(signer->AddKey(std::move(tsk)));
+  }
+  return signer->TryRotateKey();
+}
+
+Status CatalogManager::LoadTskEntries(set<string>* expired_entry_ids) {
+  TskEntryLoader loader;
+  RETURN_NOT_OK(sys_catalog_->VisitTskEntries(&loader));
+  if (expired_entry_ids) {
+    set<string> ref(loader.expired_entry_ids());
+    expired_entry_ids->swap(ref);
+  }
+  return master_->token_signer()->ImportKeys(loader.entries());
+}
+
+Status CatalogManager::DeleteTskEntries(const set<string>& entry_ids) {
+  leader_lock_.AssertAcquiredForWriting();
+  return sys_catalog_->RemoveTskEntries(entry_ids);
 }
 
 struct DeferredAssignmentActions {

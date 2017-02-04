@@ -97,21 +97,27 @@ class RegistrationTest : public KuduTest {
     }
   }
 
-
-  Status WaitForReplicaCount(const string& tablet_id, int expected_count,
+  Status WaitForReplicaCount(const string& tablet_id,
+                             int expected_count,
                              TabletLocationsPB* locations) {
     while (true) {
-      master::CatalogManager* catalog = cluster_->mini_master()->master()->catalog_manager();
+      master::CatalogManager* catalog =
+          cluster_->mini_master()->master()->catalog_manager();
       Status s;
-      {
+      do {
         master::CatalogManager::ScopedLeaderSharedLock l(catalog);
-        RETURN_NOT_OK(l.first_failed_status());
+        const Status& ls = l.first_failed_status();
+        if (ls.IsServiceUnavailable()) {
+          // ServiceUnavailable means catalog manager is not yet ready
+          // to serve requests -- try again later.
+          break;  // exiting out of the 'do {...} while (false)' scope
+        }
+        RETURN_NOT_OK(ls);
         s = catalog->GetTabletLocations(tablet_id, locations);
-      }
+      } while (false);
       if (s.ok() && locations->replicas_size() == expected_count) {
         return Status::OK();
       }
-
       SleepFor(MonoDelta::FromMilliseconds(1));
     }
   }

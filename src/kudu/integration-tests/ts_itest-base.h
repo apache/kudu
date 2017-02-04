@@ -147,12 +147,23 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
       CHECK_OK(controller.status());
       if (resp.has_error()) {
-        if (resp.error().code() == master::MasterErrorPB::TABLET_NOT_RUNNING) {
-          LOG(WARNING)<< "At least one tablet is not yet running";
-          SleepFor(MonoDelta::FromSeconds(1));
-          continue;
+        switch (resp.error().code()) {
+          case master::MasterErrorPB::TABLET_NOT_RUNNING:
+            LOG(WARNING)<< "At least one tablet is not yet running";
+            break;
+
+          case master::MasterErrorPB::NOT_THE_LEADER:   // fallthrough
+          case master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED:
+            LOG(WARNING)<< "CatalogManager is not yet ready to serve requests";
+            break;
+
+          default:
+            FAIL() << "Response had a fatal error: "
+                   << SecureShortDebugString(resp.error());
+            break;  // unreachable
         }
-        FAIL() << "Response had a fatal error: " << SecureShortDebugString(resp.error());
+        SleepFor(MonoDelta::FromSeconds(1));
+        continue;
       }
 
       for (const master::TabletLocationsPB& location : resp.tablet_locations()) {

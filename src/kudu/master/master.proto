@@ -186,6 +186,14 @@ message SysCertAuthorityEntryPB {
   required bytes certificate = 2 [(kudu.REDACT) = true];
 }
 
+// The on-disk entry in the sys.catalog table ("metadata" column) to represent
+// a Token Signing Key (TSK) object. Multiple entries of this type
+// can simultaneously co-exist in the sys.catalog table.
+message SysTskEntryPB {
+  // TokenSigningPrivateKeyPB message representing a TSK.
+  required security.TokenSigningPrivateKeyPB tsk = 1;
+}
+
 ////////////////////////////////////////////////////////////
 // RPCs
 ////////////////////////////////////////////////////////////

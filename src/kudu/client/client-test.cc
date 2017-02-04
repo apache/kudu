@@ -674,7 +674,7 @@ TEST_F(ClientTest, TestMasterDown) {
   shared_ptr<KuduTable> t;
   client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   Status s = client_->OpenTable("other-tablet", &t);
-  ASSERT_TRUE(s.IsNetworkError());
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 }
 
 TEST_F(ClientTest, TestScan) {

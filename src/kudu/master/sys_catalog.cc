@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iomanip>
 #include <iterator>
 #include <memory>
 #include <set>
@@ -27,6 +28,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
@@ -45,6 +47,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/transactions/write_transaction.h"
@@ -66,7 +69,6 @@ using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
-using kudu::log::LogAnchorRegistry;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
@@ -472,6 +474,14 @@ void SysCatalogTable::ReqDeleteTable(WriteRequestPB* req, const TableInfo* table
   enc.Add(RowOperationsPB::DELETE, row);
 }
 
+// Convert the sequence number into string padded with zeroes in the
+// beginning -- that's the key for the new TSK record.
+string SysCatalogTable::TskSeqNumberToEntryId(int64_t seq_number) {
+  string entry_id;
+  KeyEncoderTraits<DataType::INT64, string>::Encode(seq_number, &entry_id);
+  return entry_id;
+}
+
 Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
   TRACE_EVENT0("master", "SysCatalogTable::VisitTables");
   auto processor = [&](
@@ -508,8 +518,9 @@ Status SysCatalogTable::ProcessRows(
       << "cannot find sys catalog table column " << kSysCatalogTableColType
       << " in schema: " << schema_.ToString();
 
-  const int8_t et = entry_type;
-  auto pred = ColumnPredicate::Equality(schema_.column(type_col_idx), &et);
+  static const int8_t kEntryType = entry_type;
+  auto pred = ColumnPredicate::Equality(schema_.column(type_col_idx),
+                                        &kEntryType);
   ScanSpec spec;
   spec.AddPredicate(pred);
 
@@ -521,7 +532,8 @@ Status SysCatalogTable::ProcessRows(
   RowBlock block(iter->schema(), 512, &arena);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
-    for (size_t i = 0; i < block.nrows(); ++i) {
+    const size_t nrows = block.nrows();
+    for (size_t i = 0; i < nrows; ++i) {
       if (!block.selection_vector()->IsRowSelected(i)) {
         continue;
       }
@@ -532,6 +544,16 @@ Status SysCatalogTable::ProcessRows(
     }
   }
   return Status::OK();
+}
+
+Status SysCatalogTable::VisitTskEntries(TskEntryVisitor* visitor) {
+  TRACE_EVENT0("master", "SysCatalogTable::VisitTskEntries");
+  auto processor = [&](
+      const string& entry_id,
+      const SysTskEntryPB& entry_data) {
+    return visitor->Visit(entry_id, entry_data);
+  };
+  return ProcessRows<SysTskEntryPB, TSK_ENTRY>(processor);
 }
 
 Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
@@ -575,6 +597,48 @@ Status SysCatalogTable::AddCertAuthorityEntry(
   RETURN_NOT_OK(SyncWrite(&req, &resp));
 
   return Status::OK();
+}
+
+Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+
+  req.set_tablet_id(kSysCatalogTabletId);
+  CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+  CHECK(entry.tsk().has_key_seq_num());
+  CHECK(entry.tsk().has_expire_unix_epoch_seconds());
+  CHECK(entry.tsk().has_rsa_key_der());
+
+  faststring metadata_buf;
+  pb_util::SerializeToString(entry, &metadata_buf);
+
+  KuduPartialRow row(&schema_);
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, TSK_ENTRY));
+  CHECK_OK(row.SetString(kSysCatalogTableColId,
+                         TskSeqNumberToEntryId(entry.tsk().key_seq_num())));
+  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
+  enc.Add(RowOperationsPB::INSERT, row);
+
+  return SyncWrite(&req, &resp);
+}
+
+Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+
+  req.set_tablet_id(kSysCatalogTabletId);
+  CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
+  for (const auto& id : entry_ids) {
+    KuduPartialRow row(&schema_);
+    CHECK_OK(row.SetInt8(kSysCatalogTableColType, TSK_ENTRY));
+    CHECK_OK(row.SetString(kSysCatalogTableColId, id));
+    RowOperationsPBEncoder enc(req.mutable_row_operations());
+    enc.Add(RowOperationsPB::DELETE, row);
+  }
+
+  return SyncWrite(&req, &resp);
 }
 
 // ==================================================================

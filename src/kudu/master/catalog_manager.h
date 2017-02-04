@@ -59,6 +59,13 @@ namespace rpc {
 class RpcContext;
 } // namespace rpc
 
+namespace security {
+class Cert;
+class PrivateKey;
+class TokenSigner;
+class TokenSigningPrivateKey;
+} // namespace security
+
 namespace master {
 
 class CatalogManagerBgTasks;
@@ -569,6 +576,21 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // This method is thread-safe.
   Status InitSysCatalogAsync(bool is_first_run);
 
+  // Load the internal Kudu certficate authority information from the system
+  // table: the private key and the certificate. If the CA info entry is not
+  // found in the table, return Status::NotFound.
+  Status LoadCertAuthorityInfo(std::unique_ptr<security::PrivateKey>* key,
+                               std::unique_ptr<security::Cert>* cert);
+
+  // Initialize master's certificate authority with the specified private key
+  // and certificate.
+  Status InitCertAuthority(std::unique_ptr<security::PrivateKey> key,
+                           std::unique_ptr<security::Cert> cert);
+
+  // Store CA certificate information into the system table.
+  Status StoreCertAuthorityInfo(const security::PrivateKey& key,
+                                const security::Cert& cert);
+
   // Load existing root CA information from the system table, if present.
   // If not, generate new ones, store them into the system table.
   // After that, use the CA information to initialize the certificate authority.
@@ -609,6 +631,18 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
+
+  // Check if it's time to generate new Token Signing Key for TokenSigner.
+  // If so, generate one and persist it into the system table.
+  Status CheckGenerateNewTskUnlocked();
+
+  // Load non-expired TSK entries from the system table.
+  // Once done, initialize TokenSigner with the loaded entries.
+  Status LoadTskEntries(std::set<std::string>* expired_entry_ids);
+
+  // Delete TSK entries with the specified entry identifiers
+  // (identifiers correspond to the 'entry_id' column).
+  Status DeleteTskEntries(const std::set<std::string>& entry_ids);
 
   Status ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
                                std::vector<AlterTableRequestPB::Step> steps,
