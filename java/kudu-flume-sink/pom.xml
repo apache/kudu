@@ -23,7 +23,6 @@
   <properties>
     <avro.version>1.8.1</avro.version>
     <flume.version>1.6.0</flume.version>
-    <hadoop.version>2.7.0</hadoop.version>
   </properties>
 
   <build>
