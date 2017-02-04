@@ -356,8 +356,8 @@ Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_m
   NegotiatePB response;
   response.set_step(NegotiatePB::NEGOTIATE);
 
-  for (auto mech : server_mechs) {
-    response.add_auths()->set_mechanism(SaslMechanism::name_of(mech));
+  for (auto mechanism : server_mechs) {
+    response.add_sasl_mechanisms()->set_mechanism(SaslMechanism::name_of(mechanism));
   }
 
   // Tell the client which features we support.
@@ -421,18 +421,18 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
   }
   TRACE("Received SASL_INITIATE request from client");
 
-  if (request.auths_size() != 1) {
+  if (request.sasl_mechanisms_size() != 1) {
     Status s = Status::NotAuthorized(
-        "SASL_INITIATE request must include exactly one SaslAuth section, found",
-        std::to_string(request.auths_size()));
+        "SASL_INITIATE request must include exactly one SASL mechanism, found",
+        std::to_string(request.sasl_mechanisms_size()));
     RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
     return s;
   }
 
-  const NegotiatePB::SaslAuth& auth = request.auths(0);
-  TRACE("Client requested to use mechanism: $0", auth.mechanism());
+  const string& mechanism = request.sasl_mechanisms(0).mechanism();
+  TRACE("Client requested to use mechanism: $0", mechanism);
 
-  negotiated_mech_ = SaslMechanism::value_of(auth.mechanism());
+  negotiated_mech_ = SaslMechanism::value_of(mechanism);
 
   // If we are speaking TLS and the negotiated mechanism is GSSAPI (Kerberos),
   // configure SASL to use integrity protection so that the channel bindings
@@ -448,7 +448,7 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
   Status s = WrapSaslCall(sasl_conn_.get(), [&]() {
       return sasl_server_start(
           sasl_conn_.get(),         // The SASL connection context created by init()
-          auth.mechanism().c_str(), // The mechanism requested by the client.
+          mechanism.c_str(),        // The mechanism requested by the client.
           request.token().c_str(),  // Optional string the client gave us.
           request.token().length(), // Client string len.
           &server_out,              // The output of the SASL library, might not be NULL terminated

@@ -88,13 +88,13 @@ message NegotiatePB {
     TLS_HANDSHAKE  = 5;
   }
 
-  message SaslAuth {
+  message SaslMechanism {
     // The SASL mechanism, i.e. 'PLAIN' or 'GSSAPI'.
     required string mechanism = 2;
 
     // Deprecated: no longer used.
-    optional string DEPRECATED_method = 1;
-    optional bytes DEPRECATED_challenge = 5 [(REDACT) = true];
+    // optional string method = 1;
+    // optional bytes challenge = 5 [(REDACT) = true];
   }
 
   // When the client sends its NEGOTIATE step message, it sends its set of
@@ -127,7 +127,7 @@ message NegotiatePB {
 
   // During the NEGOTIATE step, contains the supported SASL mechanisms.
   // During the SASL_INITIATE step, contains the single chosen SASL mechanism.
-  repeated SaslAuth auths      = 4;
+  repeated SaslMechanism sasl_mechanisms = 4;
 }
 
 message RemoteMethodPB {

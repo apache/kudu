@@ -202,10 +202,9 @@ public class SecureRpcHelper {
   }
 
 
-  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
-      SaslException {
-    RpcHeader.NegotiatePB.SaslAuth negotiatedAuth = null;
-    for (RpcHeader.NegotiatePB.SaslAuth auth : response.getAuthsList()) {
+  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws SaslException {
+    RpcHeader.NegotiatePB.SaslMechanism negotiatedAuth = null;
+    for (RpcHeader.NegotiatePB.SaslMechanism auth : response.getSaslMechanismsList()) {
       negotiatedAuth = auth;
     }
 
@@ -227,7 +226,7 @@ public class SecureRpcHelper {
       builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
     }
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
-    builder.addAuths(negotiatedAuth);
+    builder.addSaslMechanisms(negotiatedAuth);
     sendSaslMessage(chan, builder.build());
   }
 

@@ -329,13 +329,11 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   // Build a map of the SASL mechanisms offered by the server.
   const set<SaslMechanism::Type>& client_mechs = helper_.EnabledMechs();
   set<SaslMechanism::Type> server_mechs;
-  map<SaslMechanism::Type, NegotiatePB::SaslAuth> server_mech_map;
-  for (const NegotiatePB::SaslAuth& auth : response.auths()) {
-    auto mech = SaslMechanism::value_of(auth.mechanism());
+  for (const NegotiatePB::SaslMechanism& sasl_mech : response.sasl_mechanisms()) {
+    auto mech = SaslMechanism::value_of(sasl_mech.mechanism());
     if (mech == SaslMechanism::INVALID) {
       continue;
     }
-    server_mech_map[mech] = auth;
     server_mechs.insert(mech);
   }
 
@@ -468,7 +466,7 @@ Status ClientNegotiation::SendSaslInitiate() {
   NegotiatePB msg;
   msg.set_step(NegotiatePB::SASL_INITIATE);
   msg.mutable_token()->assign(init_msg, init_msg_len);
-  msg.add_auths()->set_mechanism(negotiated_mech);
+  msg.add_sasl_mechanisms()->set_mechanism(negotiated_mech);
   return SendNegotiatePB(msg);
 }
 

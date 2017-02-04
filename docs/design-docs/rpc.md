@@ -393,13 +393,13 @@ Client                                                                    Server
    | +----NegotiatePB-----------------------------+                         |
    | | step = NEGOTIATE                           |                         |
    | | supported_features = <client RPC features> | ----------------------> |
-   | | auths = <client SASL mechanisms>           |                         |
+   | | mechanisms = <client SASL mechanisms>      |                         |
    | +--------------------------------------------+                         |
    |                                                                        |
    |                         +----NegotiatePB-----------------------------+ |
    |                         | step = NEGOTIATE                           | |
    | <---------------------- | supported_features = <server RPC features> | |
-   |                         | auths = <server SASL mechanisms>           | |
+   |                         | mechanisms = <server SASL mechanisms>      | |
    |                         +--------------------------------------------+ |
 ```
 
@@ -463,11 +463,11 @@ client, respectively, may occur depending on the mechanism.
 ```
 Client                                                                    Server
    |                                                                        |
-   | +----NegotiatePB----------------+                                      |
-   | | step = SASL_INITIATE          |                                      |
-   | | auths[0] = <chosen mechanism> | -----------------------------------> |
-   | | token = <SASL token>          |                                      |
-   | +-------------------------------+                                      |
+   | +----NegotiatePB---------------------+                                 |
+   | | step = SASL_INITIATE               |                                 |
+   | | mechanisms[0] = <chosen mechanism> | ------------------------------> |
+   | | token = <SASL token>               |                                 |
+   | +------------------------------------+                                 |
    |                                                                        |
    |  <...SASL_INITIATE is followed by 0 or more SASL_CHALLENGE +           |
    |      SASL_RESPONSE steps...>                                           |
