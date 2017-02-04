@@ -17,6 +17,7 @@
 #ifndef KUDU_MASTER_SYS_CATALOG_H_
 #define KUDU_MASTER_SYS_CATALOG_H_
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -36,10 +37,11 @@ class WriteResponsePB;
 }
 
 namespace master {
+
 class Master;
-struct MasterOptions;
 class TableInfo;
 class TabletInfo;
+struct MasterOptions;
 
 // The SysCatalogTable has two separate visitors because the tables
 // data must be loaded into memory before the tablets data.
@@ -160,8 +162,12 @@ class SysCatalogTable {
   // tablets.
   Status WaitUntilRunning();
 
-  // Table related private methods.
-  Status VisitTableFromRow(const RowBlockRow& row, TableVisitor* visitor);
+  template<typename T>
+  Status GetEntryFromRow(const RowBlockRow& row,
+                         std::string* entry_id, T* entry_data) const;
+
+  template<typename T, CatalogEntryType entry_type>
+  Status ProcessRows(std::function<Status(const std::string&, const T&)>) const;
 
   // Tablet related private methods.
 
@@ -169,7 +175,6 @@ class SysCatalogTable {
   Status AddTabletsToPB(const std::vector<TabletInfo*>& tablets,
                         RowOperationsPB::Type op_type,
                         RowOperationsPB* ops) const;
-  Status VisitTabletFromRow(const RowBlockRow& row, TabletVisitor* visitor);
 
   // Initializes the RaftPeerPB for the local peer.
   // Crashes due to an invariant check if the rpc server is not running.
