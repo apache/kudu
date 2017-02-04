@@ -149,7 +149,8 @@ class DeltaFileReader : public DeltaStore,
   }
 
   virtual std::string ToString() const OVERRIDE {
-    return reader_->ToString();
+    if (!init_once_.initted()) return reader_->ToString();
+    return strings::Substitute("$0 ($1)", reader_->ToString(), delta_stats_->ToString());
   }
 
   // Returns true if this delta file may include any deltas which need to be

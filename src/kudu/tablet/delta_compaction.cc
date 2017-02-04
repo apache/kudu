@@ -355,12 +355,11 @@ Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
   if (undo_delta_mutations_written_ > 0) {
     vector<BlockId> new_undo_blocks;
     new_undo_blocks.push_back(new_undo_delta_block_);
-    return tracker->AtomicUpdateStores(SharedDeltaStoreVector(),
+    return tracker->AtomicUpdateStores({},
                                        new_undo_blocks,
                                        UNDO);
-  } else {
-    return Status::OK();
   }
+  return Status::OK();
 }
 
 } // namespace tablet

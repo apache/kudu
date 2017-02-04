@@ -82,6 +82,15 @@
 ///   logged message.
 #define KUDU_CHECK_OK(s) KUDU_CHECK_OK_PREPEND(s, "Bad status")
 
+/// @brief If @c to_call returns a bad status, DCHECK immediately with
+///   a logged message of @c msg followed by the status.
+#define KUDU_DCHECK_OK_PREPEND(to_call, msg) do { \
+    const ::kudu::Status& _s = (to_call);                   \
+    KUDU_DCHECK(_s.ok()) << (msg) << ": " << _s.ToString();  \
+  } while (0);
+
+#define KUDU_DCHECK_OK(s) KUDU_DCHECK_OK_PREPEND(s, "Bad status")
+
 /// @file status.h
 ///
 /// This header is used in both the Kudu build as well as in builds of
@@ -104,10 +113,13 @@
 #define RETURN_NOT_OK_LOG     KUDU_RETURN_NOT_OK_LOG
 #define CHECK_OK_PREPEND      KUDU_CHECK_OK_PREPEND
 #define CHECK_OK              KUDU_CHECK_OK
+#define DCHECK_OK_PREPEND     KUDU_DCHECK_OK_PREPEND
+#define DCHECK_OK             KUDU_DCHECK_OK
 
 // These are standard glog macros.
 #define KUDU_LOG              LOG
 #define KUDU_CHECK            CHECK
+#define KUDU_DCHECK           DCHECK
 #endif
 
 namespace kudu {

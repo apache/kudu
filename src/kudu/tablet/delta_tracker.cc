@@ -169,9 +169,37 @@ string JoinDeltaStoreStrings(const SharedDeltaStoreVector& stores) {
   return ::JoinStrings(strings, ",");
 }
 
+// Validate that 'first' may precede 'second' in an ordered list of deltas,
+// given a delta type of 'type'.
+void ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
+                        const std::shared_ptr<DeltaStore>& second,
+                        DeltaType type) {
+  DCHECK_OK(first->Init());
+  DCHECK_OK(second->Init());
+  switch (type) {
+    case REDO:
+      DCHECK_LE(first->delta_stats().min_timestamp(), second->delta_stats().min_timestamp())
+          << "Found out-of-order deltas: [{" << first->ToString() << "}, {"
+          << second->ToString() << "}]: type = " << type;
+      break;
+    case UNDO:
+      DCHECK_GE(first->delta_stats().min_timestamp(), second->delta_stats().min_timestamp())
+          << "Found out-of-order deltas: [{" << first->ToString() << "}, {"
+          << second->ToString() << "}]: type = " << type;
+      break;
+  }
+}
+
+// Validate the relative ordering of the deltas in the specified list.
+void ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type) {
+  for (size_t i = 0; i < list.size() - 1; i++) {
+    ValidateDeltaOrder(list[i], list[i + 1], type);
+  }
+}
+
 } // anonymous namespace
 
-Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
+Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
                                         const vector<BlockId>& new_delta_blocks,
                                         DeltaType type) {
   SharedDeltaStoreVector new_stores;
@@ -182,30 +210,59 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
   SharedDeltaStoreVector* stores_to_update =
       type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
   SharedDeltaStoreVector::iterator start_it;
-  // TODO this is hacky, we do this because UNDOs don't currently get replaced and we need to
-  // front-load them. When we start GCing UNDO files (KUDU-236) we'll need to be able to atomically
-  // replace them too, and in their right order.
-  if (!to_remove.empty()) {
+
+  // We only support two scenarios in this function:
+  //
+  // 1. Prepending deltas to the specified list.
+  //    In the case of prepending REDO deltas, that means we should only be
+  //    prepending older-timestamped data because REDOs are stored in ascending
+  //    timestamp order, and in the case of UNDO deltas, that means we should
+  //    only be prepending newer-timestamped data because UNDOs are stored in
+  //    descending timestamp order.
+  //
+  // 2. Replacing a range of deltas with a replacement range.
+  //    In the case of major REDO delta compaction, we are simply compacting a
+  //    range of REDOs into a smaller set of REDOs.
+  //
+  // We validate these assumptions (in DEBUG mode only) below.
+
+  if (stores_to_replace.empty()) {
+    // With nothing to remove, we always prepend to the front of the list.
+    start_it = stores_to_update->begin();
+
+  } else {
+    // With something to remove, we do a range-replace.
     start_it =
-        std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
+        std::find(stores_to_update->begin(), stores_to_update->end(), stores_to_replace[0]);
 
     auto end_it = start_it;
-    for (const shared_ptr<DeltaStore>& ds : to_remove) {
+    for (const shared_ptr<DeltaStore>& ds : stores_to_replace) {
       if (end_it == stores_to_update->end() || *end_it != ds) {
         return Status::InvalidArgument(
             strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
-                                JoinDeltaStoreStrings(to_remove),
+                                JoinDeltaStoreStrings(stores_to_replace),
                                 JoinDeltaStoreStrings(*stores_to_update)));
       }
       ++end_it;
     }
-    // Remove the old stores
+    // Remove the old stores.
     stores_to_update->erase(start_it, end_it);
-  } else {
-    start_it = stores_to_update->begin();
   }
 
-  // Insert the new store
+#ifndef NDEBUG
+  // Perform validation checks to ensure callers do not violate our contract.
+  if (!new_stores.empty()) {
+    // Make sure the new stores are already ordered.
+    ValidateDeltasOrdered(new_stores, type);
+    if (start_it != stores_to_update->end()) {
+      // Sanity check that the last store we are adding would logically appear
+      // before the first store that would follow it.
+      ValidateDeltaOrder(*new_stores.rbegin(), *start_it, type);
+    }
+  }
+#endif // NDEBUG
+
+  // Insert the new stores.
   stores_to_update->insert(start_it, new_stores.begin(), new_stores.end());
 
   VLOG(1) << "New " << DeltaType_Name(type) << " stores: "

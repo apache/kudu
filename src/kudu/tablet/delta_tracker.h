@@ -152,6 +152,8 @@ class DeltaTracker {
 
   // Replace the subsequence of stores that matches 'stores_to_replace' with
   // delta file readers corresponding to 'new_delta_blocks', which may be empty.
+  // If 'stores_to_replace' is empty then the stores represented by
+  // 'new_delta_blocks' are prepended to the relevant delta stores list.
   Status AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
                             const std::vector<BlockId>& new_delta_blocks,
                             DeltaType type);
