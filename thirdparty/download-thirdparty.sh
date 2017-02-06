@@ -180,6 +180,7 @@ if [ ! -d $CMAKE_SOURCE ]; then
   # Write the patchlevel file even if the patch was skipped, so as to simplify
   # future patch numbering.
   touch patchlevel-$CMAKE_PATCHLEVEL
+  popd
 fi
 
 if [ ! -d $SNAPPY_SOURCE ]; then
