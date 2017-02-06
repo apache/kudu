@@ -176,6 +176,8 @@ with InsertableRelation {
             Array(comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix),
                   comparisonPredicate(column, ComparisonOp.LESS, inf))
         }
+      case IsNull(column) => Array(isNullPredicate(column))
+      case IsNotNull(column) => Array(isNotNullPredicate(column))
       case And(left, right) => filterToPredicate(left) ++ filterToPredicate(right)
       case _ => Array()
     }
@@ -233,6 +235,26 @@ with InsertableRelation {
   }
 
   /**
+    * Creates a new `IS NULL` predicate for the column.
+    *
+    * @param column the column name
+    * @return the `IS NULL` predicate
+    */
+  private def isNullPredicate(column: String): KuduPredicate = {
+    KuduPredicate.newIsNullPredicate(table.getSchema.getColumn(column))
+  }
+
+  /**
+    * Creates a new `IS NULL` predicate for the column.
+    *
+    * @param column the column name
+    * @return the `IS NULL` predicate
+    */
+  private def isNotNullPredicate(column: String): KuduPredicate = {
+    KuduPredicate.newIsNotNullPredicate(table.getSchema.getColumn(column))
+  }
+
+  /**
     * Writes data into an existing Kudu table.
     *
     * If the `kudu.operation` parameter is set, the data will use that operation
@@ -281,7 +303,9 @@ private[spark] object KuduRelation {
        | LessThan(_, _)
        | LessThanOrEqual(_, _)
        | In(_, _)
-       | StringStartsWith(_, _) => true
+       | StringStartsWith(_, _)
+       | IsNull(_)
+       | IsNotNull(_) => true
     case And(left, right) => supportsFilter(left) && supportsFilter(right)
     case _ => false
   }

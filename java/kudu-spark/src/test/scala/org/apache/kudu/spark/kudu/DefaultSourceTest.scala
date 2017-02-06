@@ -373,6 +373,21 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter {
     }
   }
 
+  test("Test SparkSQL IS NULL predicate") {
+    var results = sqlContext.sql("SELECT key FROM " + tableName + " where c2_s IS NULL").collectAsList()
+    assert(results.size() == 5)
+
+    results = sqlContext.sql("SELECT key FROM " + tableName + " where key IS NULL").collectAsList()
+    assert(results.isEmpty())
+  }
+
+  test("Test SparkSQL IS NOT NULL predicate") {
+    var results = sqlContext.sql("SELECT key FROM " + tableName + " where c2_s IS NOT NULL").collectAsList()
+    assert(results.size() == 5)
+
+    results = sqlContext.sql("SELECT key FROM " + tableName + " where key IS NOT NULL").collectAsList()
+    assert(results.size() == 10)
+  }
 
   test("Test SQL: insert into") {
     val insertTable = "insertintotest"
