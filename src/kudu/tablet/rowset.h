@@ -143,6 +143,56 @@ class RowSet {
   // Compact delta stores if more than one.
   virtual Status MinorCompactDeltaStores() = 0;
 
+  // Estimate the number of bytes in ancient undo delta stores. This may be an
+  // overestimate. The argument 'ancient_history_mark' must be valid (it may
+  // not be equal to Timestamp::kInvalidTimestamp).
+  virtual Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
+                                                             int64_t* bytes) = 0;
+
+  // Initialize undo delta blocks until the given 'deadline' is passed, or
+  // until all undo delta blocks with a max timestamp older than
+  // 'ancient_history_mark' have been initialized.
+  //
+  // Invoking this method may also improve the estimate given by
+  // EstimateBytesInPotentiallyAncientUndoDeltas().
+  //
+  // If this method returns OK, it returns the number of blocks actually
+  // initialized in the out-param 'delta_blocks_initialized' and the number of
+  // bytes that can be freed from disk in 'bytes_in_ancient_undos'.
+  //
+  // If 'ancient_history_mark' is set to Timestamp::kInvalidTimestamp then the
+  // 'max_timestamp' of the blocks being initialized is ignored and no
+  // age-based short-circuiting takes place.
+  // If 'deadline' is not Initialized() then no deadline is enforced.
+  //
+  // The out-parameters, 'delta_blocks_initialized' and 'bytes_in_ancient_undos',
+  // may be passed in as nullptr.
+  virtual Status InitUndoDeltas(Timestamp ancient_history_mark,
+                                MonoTime deadline,
+                                int64_t* delta_blocks_initialized,
+                                int64_t* bytes_in_ancient_undos) = 0;
+
+  // Delete all initialized undo delta blocks with a max timestamp earlier than
+  // the specified 'ancient_history_mark'.
+  //
+  // Note: This method does not flush updates to the rowset metadata. If this
+  // method returns OK, the caller is responsible for persisting changes to the
+  // rowset metadata by explicity flushing it.
+  //
+  // Note also: Blocks are not actually deleted until the rowset metadata is
+  // flushed, because that invokes tablet metadata flush, which iterates over
+  // and deletes the blocks present in the metadata orphans list.
+  //
+  // If this method returns OK, it also returns the number of delta blocks
+  // deleted and the number of bytes deleted in the out-params 'blocks_deleted'
+  // and 'bytes_deleted', respectively.
+  //
+  // The out-parameters, 'blocks_deleted' and 'bytes_deleted', may be passed in
+  // as nullptr.
+  virtual Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                         int64_t* blocks_deleted,
+                                         int64_t* bytes_deleted) = 0;
+
   virtual ~RowSet() {}
 
   // Return true if this RowSet is available for compaction, based on
@@ -310,6 +360,29 @@ class DuplicatingRowSet : public RowSet {
     // It's important that DuplicatingRowSet does not FlushDeltas. This prevents
     // a bug where we might end up with out-of-order deltas. See the long
     // comment in Tablet::Flush(...)
+    return Status::OK();
+  }
+
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                                     int64_t* bytes) OVERRIDE {
+    DCHECK(bytes);
+    *bytes = 0;
+    return Status::OK();
+  }
+
+  Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
+                        MonoTime /*deadline*/,
+                        int64_t* delta_blocks_initialized,
+                        int64_t* bytes_in_ancient_undos) OVERRIDE {
+    if (delta_blocks_initialized) *delta_blocks_initialized = 0;
+    if (bytes_in_ancient_undos) *bytes_in_ancient_undos = 0;
+    return Status::OK();
+  }
+
+  Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                 int64_t* blocks_deleted, int64_t* bytes_deleted) OVERRIDE {
+    if (blocks_deleted) *blocks_deleted = 0;
+    if (bytes_deleted) *bytes_deleted = 0;
     return Status::OK();
   }
 

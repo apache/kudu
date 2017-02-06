@@ -144,11 +144,46 @@ class DeltaTracker {
   // and if so, compact the stores.
   Status Compact();
 
+  // Persist the given delta updates to disk and then make them visible via the
+  // DeltaTracker. The 'compact_flush_lock_' should be acquired before calling
+  // this method. This method should only be used for compactions or ancient
+  // history data GC, not when adding mutations, since it makes the updated
+  // stores visible before attempting to flush the metadata to disk.
+  Status CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& update,
+                                        const SharedDeltaStoreVector& to_remove,
+                                        const vector<BlockId>& new_delta_blocks,
+                                        DeltaType type,
+                                        MetadataFlushType flush_type);
+
   // Performs minor compaction on all REDO delta files between index
   // "start_idx" and "end_idx" (inclusive) and writes this to a
   // new REDO delta block. If "end_idx" is set to -1, then delta files at
   // all indexes starting with "start_idx" will be compacted.
   Status CompactStores(int start_idx, int end_idx);
+
+  // See RowSet::EstimateBytesInPotentiallyAncientUndoDeltas().
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
+                                                     int64_t* bytes);
+
+  // See RowSet::InitUndoDeltas().
+  Status InitUndoDeltas(Timestamp ancient_history_mark,
+                        MonoTime deadline,
+                        int64_t* delta_blocks_initialized,
+                        int64_t* bytes_in_ancient_undos);
+
+  // See RowSet::DeleteAncientUndoDeltas().
+  Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                 int64_t* blocks_deleted, int64_t* bytes_deleted);
+
+  // Validate that 'first' may precede 'second' in an ordered list of deltas,
+  // given a delta type of 'type'. This should only be run in DEBUG mode.
+  void ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
+                          const std::shared_ptr<DeltaStore>& second,
+                          DeltaType type);
+
+  // Validate the relative ordering of the deltas in the specified list. This
+  // should only be run in DEBUG mode.
+  void ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type);
 
   // Replace the subsequence of stores that matches 'stores_to_replace' with
   // delta file readers corresponding to 'new_delta_blocks', which may be empty.
@@ -175,6 +210,9 @@ class DeltaTracker {
   // Get the minimum log index for this tracker's DMS, -1 if it wasn't set.
   int64_t MinUnflushedLogIndex() const;
 
+  // Return the number of undo delta stores.
+  size_t CountUndoDeltaStores() const;
+
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;
 
@@ -186,6 +224,9 @@ class DeltaTracker {
   Mutex* compact_flush_lock() {
     return &compact_flush_lock_;
   }
+
+  // Init() all of the specified delta stores. For tests only.
+  Status InitAllDeltaStoresForTests(WhichStores stores);
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
@@ -239,6 +280,8 @@ class DeltaTracker {
                                          vector<BlockId> *target_blocks,
                                          std::unique_ptr<DeltaIterator> *out);
 
+  std::string LogPrefix() const;
+
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.
@@ -274,9 +317,10 @@ class DeltaTracker {
   mutable rw_spinlock component_lock_;
 
   // Exclusive lock that ensures that only one flush or compaction can run
-  // at a time. Protects delta_stores_. NOTE: this lock cannot be acquired
-  // while component_lock is held: otherwise, Flush and Compaction threads
-  // (that both first acquire this lock and then component_lock) will deadlock.
+  // at a time. Protects redo_delta_stores_ and undo_delta_stores_.
+  // NOTE: this lock cannot be acquired while component_lock is held:
+  // otherwise, Flush and Compaction threads (that both first acquire this lock
+  // and then component_lock) will deadlock.
   //
   // TODO(perf): this needs to be more fine grained
   mutable Mutex compact_flush_lock_;

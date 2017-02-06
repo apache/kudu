@@ -28,10 +28,11 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/countdown_latch.h"
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/countdown_latch.h"
+#include "kudu/util/random.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 
@@ -80,6 +81,16 @@ class MaintenanceOpStats {
     logs_retained_bytes_ = logs_retained_bytes;
   }
 
+  int64_t data_retained_bytes() const {
+    DCHECK(valid_);
+    return data_retained_bytes_;
+  }
+
+  void set_data_retained_bytes(int64_t data_retained_bytes) {
+    UpdateLastModified();
+    data_retained_bytes_ = data_retained_bytes;
+  }
+
   double perf_improvement() const {
     DCHECK(valid_);
     return perf_improvement_;
@@ -105,6 +116,8 @@ class MaintenanceOpStats {
     last_modified_ = MonoTime::Now();
   }
 
+  // Important: Update Clear() when adding fields to this class.
+
   // True if these stats are valid.
   bool valid_;
 
@@ -116,9 +129,13 @@ class MaintenanceOpStats {
   // should be fairly accurate.  May be 0.
   uint64_t ram_anchored_;
 
-  // The approximate amount of disk space that not doing this operation keeps us from GCing from
-  // the logs. May be 0.
+  // Approximate amount of disk space in WAL files that would be freed if this
+  // operation ran. May be 0.
   int64_t logs_retained_bytes_;
+
+  // Approximate amount of disk space in data blocks that would be freed if
+  // this operation ran. May be 0.
+  int64_t data_retained_bytes_;
 
   // The estimated performance improvement-- how good it is to do this on some
   // absolute scale (yet TBD).
@@ -248,7 +265,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   explicit MaintenanceManager(const Options& options);
   ~MaintenanceManager();
 
-  Status Init();
+  Status Init(std::string server_uuid);
   void Shutdown();
 
   // Register an op with the manager.
@@ -275,6 +292,8 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   void LaunchOp(MaintenanceOp* op);
 
+  std::string LogPrefix() const;
+
   const int32_t num_threads_;
   OpMapTy ops_; // registered operations
   Mutex lock_;
@@ -289,6 +308,8 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   std::vector<CompletedOp> completed_ops_;
   int64_t completed_ops_count_;
   std::shared_ptr<MemTracker> parent_mem_tracker_;
+  std::string server_uuid_;
+  Random rand_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };

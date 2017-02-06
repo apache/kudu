@@ -230,6 +230,9 @@ class RowSetMetadataUpdate {
   RowSetMetadataUpdate& ReplaceRedoDeltaBlocks(const std::vector<BlockId>& to_remove,
                                                const std::vector<BlockId>& to_add);
 
+  // Remove the specified undo delta blocks.
+  RowSetMetadataUpdate& RemoveUndoDeltaBlocks(const std::vector<BlockId>& to_remove);
+
   // Replace the CFile for the given column ID.
   RowSetMetadataUpdate& ReplaceColumnId(ColumnId col_id, const BlockId& block_id);
 
@@ -251,6 +254,8 @@ class RowSetMetadataUpdate {
     std::vector<BlockId> to_add;
   };
   std::vector<ReplaceDeltaBlocks> replace_redo_blocks_;
+
+  std::vector<BlockId> remove_undo_blocks_;
   BlockId new_undo_block_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadataUpdate);

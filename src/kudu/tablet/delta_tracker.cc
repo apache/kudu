@@ -17,6 +17,8 @@
 
 #include "kudu/tablet/delta_tracker.h"
 
+#include <boost/range/adaptor/reversed.hpp>
+#include <glog/stl_logging.h>
 #include <mutex>
 #include <set>
 
@@ -77,9 +79,9 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     gscoped_ptr<ReadableBlock> block;
     Status s = fs->OpenBlock(block_id, &block);
     if (!s.ok()) {
-      LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
-                 << " delta file " << block_id.ToString() << ": "
-                 << s.ToString();
+      LOG_WITH_PREFIX(ERROR) << "Failed to open " << DeltaType_Name(type)
+                             << " delta file " << block_id.ToString() << ": "
+                             << s.ToString();
       return s;
     }
 
@@ -91,14 +93,14 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                     std::move(options),
                                     &dfr);
     if (!s.ok()) {
-      LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
-                 << " delta file reader " << block_id.ToString() << ": "
-                 << s.ToString();
+      LOG_WITH_PREFIX(ERROR) << "Failed to open " << DeltaType_Name(type)
+                             << " delta file reader " << block_id.ToString() << ": "
+                             << s.ToString();
       return s;
     }
 
-    VLOG(1) << "Successfully opened " << DeltaType_Name(type)
-            << " delta file " << block_id.ToString();
+    VLOG_WITH_PREFIX(1) << "Successfully opened " << DeltaType_Name(type)
+                        << " delta file " << block_id.ToString();
     stores->push_back(dfr);
   }
   return Status::OK();
@@ -147,7 +149,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
     shared_ptr<DeltaFileReader> dfr = std::static_pointer_cast<DeltaFileReader>(delta_store);
 
-    LOG(INFO) << "Preparing to minor compact delta file: " << dfr->ToString();
+    LOG_WITH_PREFIX(INFO) << "Preparing to minor compact delta file: " << dfr->ToString();
 
     inputs.push_back(delta_store);
     target_stores->push_back(delta_store);
@@ -169,35 +171,52 @@ string JoinDeltaStoreStrings(const SharedDeltaStoreVector& stores) {
   return ::JoinStrings(strings, ",");
 }
 
-// Validate that 'first' may precede 'second' in an ordered list of deltas,
-// given a delta type of 'type'.
-void ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
-                        const std::shared_ptr<DeltaStore>& second,
-                        DeltaType type) {
-  DCHECK_OK(first->Init());
-  DCHECK_OK(second->Init());
+} // anonymous namespace
+
+void DeltaTracker::ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
+                                      const std::shared_ptr<DeltaStore>& second,
+                                      DeltaType type) {
+  shared_ptr<DeltaStore> first_copy = first;
+  shared_ptr<DeltaStore> second_copy = second;
+
+  // Make clones so we don't leave the original ones initted. That can affect
+  // tests. We know it's a DeltaFileReader if it's not Initted().
+  if (!first_copy->Initted()) {
+    shared_ptr<DeltaFileReader> first_clone;
+    DCHECK_OK(down_cast<DeltaFileReader*>(first.get())->CloneForDebugging(
+        rowset_metadata_->fs_manager(), mem_trackers_.tablet_tracker, &first_clone));
+    DCHECK_OK(first_clone->Init());
+    first_copy = first_clone;
+  }
+  if (!second_copy->Initted()) {
+    shared_ptr<DeltaFileReader> second_clone;
+    DCHECK_OK(down_cast<DeltaFileReader*>(second.get())->CloneForDebugging(
+        rowset_metadata_->fs_manager(), mem_trackers_.tablet_tracker, &second_clone));
+    DCHECK_OK(second_clone->Init());
+    second_copy = second_clone;
+  }
+
   switch (type) {
     case REDO:
-      DCHECK_LE(first->delta_stats().min_timestamp(), second->delta_stats().min_timestamp())
-          << "Found out-of-order deltas: [{" << first->ToString() << "}, {"
-          << second->ToString() << "}]: type = " << type;
+      DCHECK_LE(first_copy->delta_stats().min_timestamp(),
+                second_copy->delta_stats().min_timestamp())
+          << "Found out-of-order deltas: [{" << first_copy->ToString() << "}, {"
+          << second_copy->ToString() << "}]: type = " << type;
       break;
     case UNDO:
-      DCHECK_GE(first->delta_stats().min_timestamp(), second->delta_stats().min_timestamp())
-          << "Found out-of-order deltas: [{" << first->ToString() << "}, {"
-          << second->ToString() << "}]: type = " << type;
+      DCHECK_GE(first_copy->delta_stats().min_timestamp(),
+                second_copy->delta_stats().min_timestamp())
+          << "Found out-of-order deltas: [{" << first_copy->ToString() << "}, {"
+          << second_copy->ToString() << "}]: type = " << type;
       break;
   }
 }
 
-// Validate the relative ordering of the deltas in the specified list.
-void ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type) {
+void DeltaTracker::ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type) {
   for (size_t i = 0; i < list.size() - 1; i++) {
     ValidateDeltaOrder(list[i], list[i + 1], type);
   }
 }
-
-} // anonymous namespace
 
 Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
                                         const vector<BlockId>& new_delta_blocks,
@@ -239,7 +258,8 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_
     for (const shared_ptr<DeltaStore>& ds : stores_to_replace) {
       if (end_it == stores_to_update->end() || *end_it != ds) {
         return Status::InvalidArgument(
-            strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
+            strings::Substitute("Cannot find $0 deltastore sequence <$1> in <$2>",
+                                DeltaType_Name(type),
                                 JoinDeltaStoreStrings(stores_to_replace),
                                 JoinDeltaStoreStrings(*stores_to_update)));
       }
@@ -265,13 +285,43 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_
   // Insert the new stores.
   stores_to_update->insert(start_it, new_stores.begin(), new_stores.end());
 
-  VLOG(1) << "New " << DeltaType_Name(type) << " stores: "
-          << JoinDeltaStoreStrings(*stores_to_update);
+  VLOG_WITH_PREFIX(1) << "New " << DeltaType_Name(type) << " stores: "
+                      << JoinDeltaStoreStrings(*stores_to_update);
   return Status::OK();
 }
 
 Status DeltaTracker::Compact() {
   return CompactStores(0, -1);
+}
+
+Status DeltaTracker::CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& update,
+                                                    const SharedDeltaStoreVector& to_remove,
+                                                    const vector<BlockId>& new_delta_blocks,
+                                                    DeltaType type,
+                                                    MetadataFlushType flush_type) {
+  compact_flush_lock_.AssertAcquired();
+
+  // This method is only used for compactions and GC, not data modifications.
+  // Therefore, flushing is not required for safety.
+  // We enforce that with this DCHECK.
+  DCHECK(!to_remove.empty());
+
+  // Update the in-memory metadata.
+  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+  // Once we successfully commit to the rowset metadata, let's ensure we update
+  // the delta stores to maintain consistency between the two. We enforce this
+  // with a CHECK_OK here.
+  CHECK_OK(AtomicUpdateStores(to_remove, new_delta_blocks, type));
+  if (flush_type == FLUSH_METADATA) {
+    // Flushing the metadata is considered best-effort in this function.
+    // No consistency problems will be visible if we don't successfully
+    // Flush(), so no need to CHECK_OK here, because this function is specified
+    // only to be used for compactions or ancient history data GC, which do not
+    // add or subtract any user-visible ops. Compactions only swap the location
+    // of ops on disk, and ancient history data GC has no user-visible effects.
+    RETURN_NOT_OK(rowset_metadata_->Flush());
+  }
+  return Status::OK();
 }
 
 Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
@@ -301,32 +351,129 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
                         "Could not allocate delta block");
   BlockId new_block_id(block->id());
 
-  // Merge and compact the stores and write and output to "data_writer"
+  // Merge and compact the stores.
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   RETURN_NOT_OK(DoCompactStores(start_idx, end_idx, std::move(block),
-                &compacted_stores, &compacted_blocks));
+                                &compacted_stores, &compacted_blocks));
 
-  // Update delta_stores_, removing the compacted delta files and inserted the new
-  RETURN_NOT_OK(AtomicUpdateStores(compacted_stores, { new_block_id }, REDO));
-  LOG(INFO) << "Opened delta block for read: " << new_block_id.ToString();
-
-  // Update the metadata accordingly
+  vector<BlockId> new_blocks = { new_block_id };
   RowSetMetadataUpdate update;
-  update.ReplaceRedoDeltaBlocks(compacted_blocks, { new_block_id });
-  // TODO: need to have some error handling here -- if we somehow can't persist the
-  // metadata, do we end up losing data on recovery?
-  CHECK_OK(rowset_metadata_->CommitUpdate(update));
+  update.ReplaceRedoDeltaBlocks(compacted_blocks, new_blocks);
 
-  Status s = rowset_metadata_->Flush();
-  if (!s.ok()) {
-    // TODO: again need to figure out some way of making this safe. Should we be
-    // writing the metadata _ahead_ of the actual store swap? Probably.
-    LOG(FATAL) << "Unable to commit delta data block metadata for "
-               << new_block_id.ToString() << ": " << s.ToString();
-    return s;
+  LOG_WITH_PREFIX(INFO) << "Flushing compaction of redo delta blocks { " << compacted_blocks
+                        << " } into block " << new_block_id;
+  RETURN_NOT_OK_PREPEND(CommitDeltaStoreMetadataUpdate(update, compacted_stores, new_blocks, REDO,
+                                                       FLUSH_METADATA),
+                        "DeltaTracker: CompactStores: Unable to commit delta update");
+  return Status::OK();
+}
+
+Status DeltaTracker::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
+                                                                 int64_t* bytes) {
+  DCHECK_NE(Timestamp::kInvalidTimestamp, ancient_history_mark);
+  DCHECK(bytes);
+  SharedDeltaStoreVector undos_newest_first;
+  CollectStores(&undos_newest_first, UNDOS_ONLY);
+
+  int64_t tmp_bytes = 0;
+  for (const auto& undo : boost::adaptors::reverse(undos_newest_first)) {
+    // Short-circuit once we hit an initialized delta block with 'max_timestamp' > AHM.
+    if (undo->Initted() &&
+        undo->delta_stats().max_timestamp() >= ancient_history_mark) {
+      break;
+    }
+    tmp_bytes += undo->EstimateSize(); // Can be called before Init().
   }
 
+  *bytes = tmp_bytes;
+  return Status::OK();
+}
+
+Status DeltaTracker::InitUndoDeltas(Timestamp ancient_history_mark,
+                                    MonoTime deadline,
+                                    int64_t* delta_blocks_initialized,
+                                    int64_t* bytes_in_ancient_undos) {
+  SharedDeltaStoreVector undos_newest_first;
+  CollectStores(&undos_newest_first, UNDOS_ONLY);
+  int64_t tmp_blocks_initialized = 0;
+  int64_t tmp_bytes_in_ancient_undos = 0;
+
+  // Traverse oldest-first, initializing delta stores as we go.
+  for (auto& undo : boost::adaptors::reverse(undos_newest_first)) {
+    if (deadline.Initialized() && MonoTime::Now() >= deadline) break;
+
+    if (!undo->Initted()) {
+      RETURN_NOT_OK(undo->Init());
+      tmp_blocks_initialized++;
+    }
+
+    // Stop initializing delta files once we start hitting newer deltas that
+    // are not GC'able.
+    if (ancient_history_mark != Timestamp::kInvalidTimestamp &&
+        undo->delta_stats().max_timestamp() >= ancient_history_mark) break;
+
+    // We only want to count the bytes in the ancient undos so this needs to
+    // come after the short-circuit above.
+    tmp_bytes_in_ancient_undos += undo->EstimateSize();
+  }
+
+  if (delta_blocks_initialized) *delta_blocks_initialized = tmp_blocks_initialized;
+  if (bytes_in_ancient_undos) *bytes_in_ancient_undos = tmp_bytes_in_ancient_undos;
+  return Status::OK();
+}
+
+Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                             int64_t* blocks_deleted, int64_t* bytes_deleted) {
+  DCHECK_NE(Timestamp::kInvalidTimestamp, ancient_history_mark);
+
+  // Performing data GC is similar is many ways to a compaction. We are
+  // updating both the rowset metadata and the delta stores in this method, so
+  // we need to be the only thread doing a flush or a compaction on this RowSet
+  // while we do our work.
+  std::lock_guard<Mutex> l(compact_flush_lock_);
+
+  // Get the list of undo deltas.
+  SharedDeltaStoreVector undos_newest_first;
+  CollectStores(&undos_newest_first, UNDOS_ONLY);
+
+  if (undos_newest_first.empty()) {
+    *blocks_deleted = 0;
+    *bytes_deleted = 0;
+    return Status::OK();
+  }
+
+  SharedDeltaStoreVector undos_to_remove;
+  vector<BlockId> block_ids_to_remove;
+
+  int64_t tmp_blocks_deleted = 0;
+  int64_t tmp_bytes_deleted = 0;
+
+  // Traverse oldest-first.
+  for (auto& undo : boost::adaptors::reverse(undos_newest_first)) {
+    if (!undo->Initted()) break; // Never initialize the deltas in this code path (it's slow).
+    if (undo->delta_stats().max_timestamp() >= ancient_history_mark) break;
+    tmp_blocks_deleted++;
+    tmp_bytes_deleted += undo->EstimateSize();
+    // This is always a safe downcast because UNDO deltas are always on disk.
+    block_ids_to_remove.push_back(down_cast<DeltaFileReader*>(undo.get())->block_id());
+    undos_to_remove.push_back(std::move(undo));
+  }
+  undos_newest_first.clear(); // We did a std::move() on some elements from this vector above.
+
+  // Only flush the rowset metadata if we are going to modify it.
+  if (!undos_to_remove.empty()) {
+    // We iterated in reverse order and CommitDeltaStoreMetadataUpdate() requires storage order.
+    std::reverse(undos_to_remove.begin(), undos_to_remove.end());
+    RowSetMetadataUpdate update;
+    update.RemoveUndoDeltaBlocks(block_ids_to_remove);
+    // We do not flush the tablet metadata - that is the caller's responsibility.
+    RETURN_NOT_OK(CommitDeltaStoreMetadataUpdate(update, undos_to_remove, {}, UNDO,
+                                                 NO_FLUSH_METADATA));
+  }
+
+  if (blocks_deleted) *blocks_deleted = tmp_blocks_deleted;
+  if (bytes_deleted) *bytes_deleted = tmp_bytes_deleted;
   return Status::OK();
 }
 
@@ -343,14 +490,14 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   Schema empty_schema;
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &empty_schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
-  LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
+  LOG_WITH_PREFIX(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
   DeltaFileWriter dfw(std::move(block));
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
                                                ITERATE_OVER_ALL_ROWS,
                                                &dfw));
   RETURN_NOT_OK(dfw.Finish());
-  LOG(INFO) << "Succesfully compacted the specified delta files.";
+  LOG_WITH_PREFIX(INFO) << "Succesfully compacted the specified delta files.";
   return Status::OK();
 }
 
@@ -390,7 +537,7 @@ Status DeltaTracker::NewDeltaFileIterator(
     } else if (type == REDO) {
       *included_stores = redo_delta_stores_;
     } else {
-      LOG(FATAL);
+      LOG_WITH_PREFIX(FATAL);
     }
   }
 
@@ -414,7 +561,6 @@ Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
   out->reset(new DeltaApplier(base, std::move(iter)));
   return Status::OK();
 }
-
 
 Status DeltaTracker::Update(Timestamp timestamp,
                             rowid_t row_idx,
@@ -479,8 +625,9 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   gscoped_ptr<DeltaStats> stats;
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
-  LOG(INFO) << "Flushed delta block: " << block_id.ToString()
-            << " ts range: [" << stats->min_timestamp() << ", " << stats->max_timestamp() << "]";
+  LOG_WITH_PREFIX(INFO) << "Flushed delta block: " << block_id.ToString()
+                        << " ts range: [" << stats->min_timestamp()
+                        << ", " << stats->max_timestamp() << "]";
 
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;
@@ -491,7 +638,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                                             REDO,
                                             std::move(options),
                                             dfr));
-  LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
+  LOG_WITH_PREFIX(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
   if (flush_type == FLUSH_METADATA) {
@@ -536,10 +683,10 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
     redo_delta_stores_.push_back(old_dms);
   }
 
-  LOG(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
+  LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
 
   // Now, actually flush the contents of the old DMS.
-  // TODO: need another lock to prevent concurrent flushers
+  // TODO(todd): need another lock to prevent concurrent flushers
   // at some point.
   shared_ptr<DeltaFileReader> dfr;
   Status s = FlushDMS(old_dms.get(), &dfr, flush_type);
@@ -577,6 +724,11 @@ int64_t DeltaTracker::MinUnflushedLogIndex() const {
   return dms_->MinLogIndex();
 }
 
+size_t DeltaTracker::CountUndoDeltaStores() const {
+  shared_lock<rw_spinlock> lock(component_lock_);
+  return undo_delta_stores_.size();
+}
+
 size_t DeltaTracker::CountRedoDeltaStores() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   return redo_delta_stores_.size();
@@ -604,6 +756,27 @@ void DeltaTracker::GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const
     ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_with_updates);
   }
   col_ids->assign(column_ids_with_updates.begin(), column_ids_with_updates.end());
+}
+
+Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {
+  shared_lock<rw_spinlock> lock(component_lock_);
+  if (stores == UNDOS_AND_REDOS || stores == UNDOS_ONLY) {
+    for (const shared_ptr<DeltaStore>& ds : undo_delta_stores_) {
+      RETURN_NOT_OK(ds->Init());
+    }
+  }
+  if (stores == UNDOS_AND_REDOS || stores == REDOS_ONLY) {
+    for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
+      RETURN_NOT_OK(ds->Init());
+    }
+  }
+  return Status::OK();
+}
+
+string DeltaTracker::LogPrefix() const {
+  return Substitute("T $0 P $1: ",
+                    rowset_metadata_->tablet_metadata()->tablet_id(),
+                    rowset_metadata_->fs_manager()->uuid());
 }
 
 } // namespace tablet

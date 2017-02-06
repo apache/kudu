@@ -125,6 +125,36 @@ class MajorDeltaCompactionOp : public TabletOpBase {
   uint64_t last_num_rs_major_delta_compacted_;
 };
 
+// MaintenanceOp to garbage-collect undo delta blocks that are older than the
+// ancient history mark.
+class UndoDeltaBlockGCOp : public TabletOpBase {
+ public:
+  explicit UndoDeltaBlockGCOp(Tablet* tablet);
+
+  // Estimates the number of bytes that may potentially be in ancient delta
+  // undo blocks. Over time, as Perform() is invoked, this estimate gets more
+  // accurate.
+  void UpdateStats(MaintenanceOpStats* stats) override;
+
+  bool Prepare() override;
+
+  // Deletes ancient history data from disk. This also initializes undo delta
+  // blocks greedily (in a budgeted manner controlled by the
+  // --undo_delta_block_gc_init_budget_millis gflag) that makes the estimate
+  // performed in UpdateStats() more accurate.
+  void Perform() override;
+
+  scoped_refptr<Histogram> DurationHistogram() const override;
+
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
+
+ private:
+  std::string LogPrefix() const;
+
+  DISALLOW_COPY_AND_ASSIGN(UndoDeltaBlockGCOp);
+};
+
+
 } // namespace tablet
 } // namespace kudu
 

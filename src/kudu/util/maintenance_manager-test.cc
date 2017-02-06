@@ -47,11 +47,12 @@ DECLARE_int64(log_target_replay_size_mb);
 
 namespace kudu {
 
-const int kHistorySize = 4;
+static const int kHistorySize = 4;
+static const char kFakeUuid[] = "12345";
 
 class MaintenanceManagerTest : public KuduTest {
  public:
-  MaintenanceManagerTest() {
+  void SetUp() override {
     test_tracker_ = MemTracker::CreateTracker(1000, "test");
     MaintenanceManager::Options options;
     options.num_threads = 2;
@@ -59,9 +60,10 @@ class MaintenanceManagerTest : public KuduTest {
     options.history_size = kHistorySize;
     options.parent_mem_tracker = test_tracker_;
     manager_.reset(new MaintenanceManager(options));
-    manager_->Init();
+    ASSERT_OK(manager_->Init(kFakeUuid));
   }
-  ~MaintenanceManagerTest() {
+
+  void TearDown() override {
     manager_->Shutdown();
   }
 

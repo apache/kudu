@@ -39,6 +39,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/hybrid_clock.h"
@@ -64,6 +65,7 @@
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
@@ -130,6 +132,13 @@ DEFINE_int32(max_encoded_key_size_bytes, 16 * 1024,
              "Attempting to insert a row with a larger encoded composite key will "
              "result in an error.");
 TAG_FLAG(max_encoded_key_size_bytes, unsafe);
+
+DEFINE_bool(enable_undo_delta_block_gc, true,
+    "Whether to enable undo delta block garbage collection. "
+    "This only affects the undo delta block deletion background task, and "
+    "doesn't control whether compactions delete ancient history. "
+    "To change what is considered ancient history use --tablet_history_max_age_sec");
+TAG_FLAG(enable_undo_delta_block_gc, evolving);
 
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
@@ -1117,6 +1126,12 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   gscoped_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
   maint_mgr->RegisterOp(major_delta_compact_op.get());
   maintenance_ops_.push_back(major_delta_compact_op.release());
+
+  if (FLAGS_enable_undo_delta_block_gc) {
+    gscoped_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
+    maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
+    maintenance_ops_.push_back(undo_delta_block_gc_op.release());
+  }
 }
 
 void Tablet::UnregisterMaintenanceOps() {
@@ -1637,6 +1652,31 @@ Status Tablet::FlushBiggestDMS() {
   return max_size > 0 ? biggest_drs->FlushDeltas() : Status::OK();
 }
 
+Status Tablet::FlushAllDMSForTests() {
+  CHECK_EQ(state_, kOpen);
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
+    RETURN_NOT_OK(rowset->FlushDeltas());
+  }
+  return Status::OK();
+}
+
+Status Tablet::MajorCompactAllDeltaStoresForTests() {
+  LOG_WITH_PREFIX(INFO) << "Major compacting all delta stores, for tests";
+  CHECK_EQ(state_, kOpen);
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  for (const auto& rs : comps->rowsets->all_rowsets()) {
+    if (!rs->IsAvailableForCompaction()) continue;
+    DiskRowSet* drs = down_cast<DiskRowSet*>(rs.get());
+    RETURN_NOT_OK(drs->delta_tracker()->InitAllDeltaStoresForTests(DeltaTracker::REDOS_ONLY));
+    RETURN_NOT_OK_PREPEND(drs->MajorCompactDeltaStores(
+        GetHistoryGcOpts()), "Failed major delta compaction on " + rs->ToString());
+  }
+  return Status::OK();
+}
+
 Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
   CHECK_EQ(state_, kOpen);
   shared_ptr<RowSet> rs;
@@ -1698,6 +1738,172 @@ double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompac
     *rs = worst_rs;
   }
   return worst_delta_perf;
+}
+
+Status Tablet::EstimateBytesInPotentiallyAncientUndoDeltas(int64_t* bytes) {
+  DCHECK(bytes);
+
+  Timestamp ancient_history_mark;
+  if (!Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
+    VLOG_WITH_PREFIX(1) << "Cannot get ancient history mark. "
+                           "The clock is likely not a hybrid clock";
+    return Status::OK();
+  }
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  int64_t tablet_bytes = 0;
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
+    int64_t rowset_bytes;
+    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark,
+                                                                      &rowset_bytes));
+    tablet_bytes += rowset_bytes;
+  }
+
+  metrics_->undo_delta_block_estimated_retained_bytes->set_value(tablet_bytes);
+  *bytes = tablet_bytes;
+  return Status::OK();
+}
+
+Status Tablet::InitAncientUndoDeltas(MonoDelta time_budget, int64_t* bytes_in_ancient_undos) {
+  MonoTime tablet_init_start = MonoTime::Now();
+
+  Timestamp ancient_history_mark;
+  if (!Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) {
+    VLOG_WITH_PREFIX(1) << "Cannot get ancient history mark. "
+                           "The clock is likely not a hybrid clock";
+    return Status::OK();
+  }
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  RowSetVector rowsets = comps->rowsets->all_rowsets();
+
+  // Estimate the size of the ancient undos in each rowset so that we can
+  // initialize them greedily.
+  vector<pair<size_t, int64_t>> rowset_ancient_undos_est_sizes; // index, bytes
+  rowset_ancient_undos_est_sizes.reserve(rowsets.size());
+  for (size_t i = 0; i < rowsets.size(); i++) {
+    const auto& rowset = rowsets[i];
+    int64_t bytes;
+    RETURN_NOT_OK(rowset->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark,
+                                                                      &bytes));
+    rowset_ancient_undos_est_sizes.emplace_back(i, bytes);
+  }
+
+  // Sort the rowsets in descending size order to optimize for the worst offenders.
+  std::sort(rowset_ancient_undos_est_sizes.begin(), rowset_ancient_undos_est_sizes.end(),
+            [&](const pair<size_t, int64_t>& a, const pair<size_t, int64_t>& b) {
+              return a.second > b.second; // Descending order.
+            });
+
+  // Begin timeout / deadline countdown here in case the above takes some time.
+  MonoTime deadline = time_budget.Initialized() ? MonoTime::Now() + time_budget : MonoTime();
+
+  // Initialize the rowsets largest-first.
+  int64_t tablet_bytes_in_ancient_undos = 0;
+  for (const auto& rs_est_size : rowset_ancient_undos_est_sizes) {
+    size_t index = rs_est_size.first;
+    const auto& rowset = rowsets[index];
+    int64_t rowset_blocks_initialized;
+    int64_t rowset_bytes_in_ancient_undos;
+    RETURN_NOT_OK(rowset->InitUndoDeltas(ancient_history_mark, deadline,
+                                         &rowset_blocks_initialized,
+                                         &rowset_bytes_in_ancient_undos));
+    tablet_bytes_in_ancient_undos += rowset_bytes_in_ancient_undos;
+  }
+
+  MonoDelta tablet_init_duration = MonoTime::Now() - tablet_init_start;
+  metrics_->undo_delta_block_gc_init_duration->Increment(
+      tablet_init_duration.ToMilliseconds());
+
+  VLOG_WITH_PREFIX(2) << Substitute("Bytes in ancient undos: $0. Init duration: $1",
+                                    HumanReadableNumBytes::ToString(tablet_bytes_in_ancient_undos),
+                                    tablet_init_duration.ToString());
+
+  if (bytes_in_ancient_undos) *bytes_in_ancient_undos = tablet_bytes_in_ancient_undos;
+  return Status::OK();
+}
+
+Status Tablet::DeleteAncientUndoDeltas(int64_t* blocks_deleted, int64_t* bytes_deleted) {
+  MonoTime tablet_delete_start = MonoTime::Now();
+
+  Timestamp ancient_history_mark;
+  if (!Tablet::GetTabletAncientHistoryMark(&ancient_history_mark)) return Status::OK();
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  // We need to hold the compact_flush_lock for each rowset we GC undos from.
+  RowSetVector rowsets_to_gc_undos;
+  vector<std::unique_lock<std::mutex>> rowset_locks;
+  {
+    // We hold the selection lock so other threads will not attempt to select the
+    // same rowsets for compaction while we delete old undos.
+    std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
+    for (const auto& rowset : comps->rowsets->all_rowsets()) {
+      if (!rowset->IsAvailableForCompaction()) {
+        continue;
+      }
+      std::unique_lock<std::mutex> lock(*rowset->compact_flush_lock(), std::try_to_lock);
+      CHECK(lock.owns_lock()) << rowset->ToString() << " unable to lock compact_flush_lock";
+      rowsets_to_gc_undos.push_back(rowset);
+      rowset_locks.push_back(std::move(lock));
+    }
+  }
+
+  int64_t tablet_blocks_deleted = 0;
+  int64_t tablet_bytes_deleted = 0;
+  for (const auto& rowset : rowsets_to_gc_undos) {
+    int64_t rowset_blocks_deleted;
+    int64_t rowset_bytes_deleted;
+    RETURN_NOT_OK(rowset->DeleteAncientUndoDeltas(ancient_history_mark,
+                                                  &rowset_blocks_deleted, &rowset_bytes_deleted));
+    tablet_blocks_deleted += rowset_blocks_deleted;
+    tablet_bytes_deleted += rowset_bytes_deleted;
+  }
+  // We flush the tablet metadata at the end because we don't flush per-RowSet
+  // for performance reasons.
+  if (tablet_blocks_deleted > 0) {
+    RETURN_NOT_OK(metadata_->Flush());
+  }
+
+  MonoDelta tablet_delete_duration = MonoTime::Now() - tablet_delete_start;
+  metrics_->undo_delta_block_gc_bytes_deleted->IncrementBy(tablet_bytes_deleted);
+  metrics_->undo_delta_block_gc_delete_duration->Increment(
+      tablet_delete_duration.ToMilliseconds());
+
+  if (blocks_deleted) *blocks_deleted = tablet_blocks_deleted;
+  if (bytes_deleted) *bytes_deleted = tablet_bytes_deleted;
+  return Status::OK();
+}
+
+int64_t Tablet::CountUndoDeltasForTests() const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  int64_t sum = 0;
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
+    shared_ptr<RowSetMetadata> metadata = rowset->metadata();
+    if (metadata) {
+      sum += metadata->undo_delta_blocks().size();
+    }
+  }
+  return sum;
+}
+
+int64_t Tablet::CountRedoDeltasForTests() const {
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  int64_t sum = 0;
+  for (const auto& rowset : comps->rowsets->all_rowsets()) {
+    shared_ptr<RowSetMetadata> metadata = rowset->metadata();
+    if (metadata) {
+      sum += metadata->redo_delta_blocks().size();
+    }
+  }
+  return sum;
 }
 
 size_t Tablet::num_rowsets() const {

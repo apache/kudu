@@ -19,9 +19,20 @@
 
 #include <mutex>
 
-#include "kudu/util/locks.h"
+#include <gflags/gflags.h>
+
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
+
+DEFINE_int32(undo_delta_block_gc_init_budget_millis, 1000,
+    "The maximum number of milliseconds we will spend initializing "
+    "UNDO delta blocks per invocation of UndoDeltaBlockGCOp. Existing delta "
+    "blocks must be initialized once per process startup to determine "
+    "when they can be deleted.");
+TAG_FLAG(undo_delta_block_gc_init_budget_millis, evolving);
+TAG_FLAG(undo_delta_block_gc_init_budget_millis, advanced);
 
 using std::string;
 using strings::Substitute;
@@ -245,6 +256,56 @@ scoped_refptr<Histogram> MajorDeltaCompactionOp::DurationHistogram() const {
 
 scoped_refptr<AtomicGauge<uint32_t> > MajorDeltaCompactionOp::RunningGauge() const {
   return tablet_->metrics()->delta_major_compact_rs_running;
+}
+
+////////////////////////////////////////////////////////////
+// UndoDeltaBlockGCOp
+////////////////////////////////////////////////////////////
+
+UndoDeltaBlockGCOp::UndoDeltaBlockGCOp(Tablet* tablet)
+  : TabletOpBase(Substitute("UndoDeltaBlockGCOp($0)", tablet->tablet_id()),
+                 MaintenanceOp::HIGH_IO_USAGE, tablet) {
+}
+
+void UndoDeltaBlockGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  int64_t max_estimated_retained_bytes = 0;
+  WARN_NOT_OK(tablet_->EstimateBytesInPotentiallyAncientUndoDeltas(&max_estimated_retained_bytes),
+              "Unable to count bytes in potentially ancient undo deltas");
+  stats->set_data_retained_bytes(max_estimated_retained_bytes);
+  stats->set_runnable(max_estimated_retained_bytes > 0);
+}
+
+bool UndoDeltaBlockGCOp::Prepare() {
+  // Nothing for us to do.
+  return true;
+}
+
+void UndoDeltaBlockGCOp::Perform() {
+  MonoDelta time_budget = MonoDelta::FromMilliseconds(FLAGS_undo_delta_block_gc_init_budget_millis);
+  int64_t bytes_in_ancient_undos = 0;
+  Status s = tablet_->InitAncientUndoDeltas(time_budget, &bytes_in_ancient_undos);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(WARNING) << s.ToString();
+    return;
+  }
+
+  // Return early if it turns out that we have nothing to GC.
+  if (bytes_in_ancient_undos == 0) return;
+
+  CHECK_OK_PREPEND(tablet_->DeleteAncientUndoDeltas(),
+                   Substitute("$0GC of undo delta blocks failed", LogPrefix()));
+}
+
+scoped_refptr<Histogram> UndoDeltaBlockGCOp::DurationHistogram() const {
+  return tablet_->metrics()->undo_delta_block_gc_perform_duration;
+}
+
+scoped_refptr<AtomicGauge<uint32_t>> UndoDeltaBlockGCOp::RunningGauge() const {
+  return tablet_->metrics()->undo_delta_block_gc_running;
+}
+
+std::string UndoDeltaBlockGCOp::LogPrefix() const {
+  return tablet_->LogPrefix();
 }
 
 } // namespace tablet

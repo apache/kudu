@@ -124,7 +124,7 @@ Status TabletServer::Start() {
   RETURN_NOT_OK(ServerBase::Start());
 
   RETURN_NOT_OK(heartbeater_->Start());
-  RETURN_NOT_OK(maintenance_manager_->Init());
+  RETURN_NOT_OK(maintenance_manager_->Init(fs_manager_->uuid()));
 
   google::FlushLogFiles(google::INFO); // Flush the startup messages.
 

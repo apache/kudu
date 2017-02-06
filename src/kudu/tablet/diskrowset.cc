@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <mutex>
 #include <vector>
 
@@ -515,6 +516,7 @@ Status DiskRowSet::MajorCompactDeltaStores(HistoryGcOpts history_gc_opts) {
   delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
 
   if (col_ids.empty()) {
+    VLOG_WITH_PREFIX(2) << "There are no column ids with updates";
     return Status::OK();
   }
 
@@ -523,33 +525,39 @@ Status DiskRowSet::MajorCompactDeltaStores(HistoryGcOpts history_gc_opts) {
 
 Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& col_ids,
                                                         HistoryGcOpts history_gc_opts) {
-  TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
+  LOG_WITH_PREFIX(INFO) << "Major compacting REDO delta stores (cols: " << col_ids << ")";
+  TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStoresWithColumnIds");
   std::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
 
-  // TODO: do we need to lock schema or anything here?
+  // TODO(todd): do we need to lock schema or anything here?
   gscoped_ptr<MajorDeltaCompaction> compaction;
   RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, std::move(history_gc_opts), &compaction));
 
   RETURN_NOT_OK(compaction->Compact());
 
-  // Update and flush the metadata. This needs to happen before we make the new files visible to
-  // prevent inconsistencies after a server crash.
+  // Update the metadata.
   RowSetMetadataUpdate update;
   RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
   RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
-  RETURN_NOT_OK(rowset_metadata_->Flush());
 
-  // Make the new base data and delta files visible.
+  // Since we've already updated the metadata in memory, now we update the
+  // delta tracker's stores. Those stores should match the blocks in the
+  // metadata so, since we've already updated the metadata, we use CHECK_OK
+  // here.
   shared_ptr<CFileSet> new_base;
   RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
                                mem_trackers_.tablet_tracker,
                                &new_base));
   {
     std::lock_guard<percpu_rwlock> lock(component_lock_);
-    RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
+    CHECK_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
     base_data_.swap(new_base);
   }
-  return Status::OK();
+
+  // We don't CHECK_OK on Flush here because if we don't successfully flush we
+  // don't have consistency problems in the case of major delta compaction --
+  // we are not adding additional mutations that weren't already present.
+  return rowset_metadata_->Flush();
 }
 
 Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
@@ -735,9 +743,31 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
       perf_improv = static_cast<double>(store_count) / FLAGS_tablet_delta_store_minor_compact_max;
     }
   } else {
-    LOG(FATAL) << "Unknown delta compaction type " << type;
+    LOG_WITH_PREFIX(FATAL) << "Unknown delta compaction type " << type;
   }
   return std::min(1.0, perf_improv);
+}
+
+Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
+                                                               int64_t* bytes) {
+  TRACE_EVENT0("tablet", "DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas");
+  return delta_tracker_->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark, bytes);
+}
+
+Status DiskRowSet::InitUndoDeltas(Timestamp ancient_history_mark,
+                                  MonoTime deadline,
+                                  int64_t* delta_blocks_initialized,
+                                  int64_t* bytes_in_ancient_undos) {
+  TRACE_EVENT0("tablet", "DiskRowSet::InitUndoDeltas");
+  return delta_tracker_->InitUndoDeltas(ancient_history_mark, deadline,
+                                        delta_blocks_initialized, bytes_in_ancient_undos);
+}
+
+Status DiskRowSet::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                           int64_t* blocks_deleted, int64_t* bytes_deleted) {
+  TRACE_EVENT0("tablet", "DiskRowSet::DeleteAncientUndoDeltas");
+  return delta_tracker_->DeleteAncientUndoDeltas(ancient_history_mark,
+                                                 blocks_deleted, bytes_deleted);
 }
 
 Status DiskRowSet::DebugDump(vector<string> *lines) {

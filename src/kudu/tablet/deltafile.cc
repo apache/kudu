@@ -260,6 +260,16 @@ bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
   return false;
 }
 
+Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
+                                          const shared_ptr<MemTracker>& parent_mem_tracker,
+                                          shared_ptr<DeltaFileReader>* out) const {
+  gscoped_ptr<ReadableBlock> block;
+  RETURN_NOT_OK(fs_manager->OpenBlock(reader_->block_id(), &block));
+  ReaderOptions options;
+  options.parent_mem_tracker = parent_mem_tracker;
+  return DeltaFileReader::OpenNoInit(std::move(block), delta_type_, options, out);
+}
+
 Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {

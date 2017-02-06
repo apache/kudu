@@ -17,6 +17,7 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
+#include <condition_variable>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -254,6 +255,13 @@ class Tablet {
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
 
+  // Flush all delta memstores. Only used for tests.
+  Status FlushAllDMSForTests();
+
+  // Run a major compaction on all delta stores. Initializes any un-initialized
+  // redo delta stores. Only used for tests.
+  Status MajorCompactAllDeltaStoresForTests();
+
   // Finds the RowSet which has the most separate delta files and
   // issues a delta compaction.
   Status CompactWorstDeltas(RowSet::DeltaCompactionType type);
@@ -269,6 +277,26 @@ class Tablet {
   // compact_select_lock_.
   double GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
                                                        std::shared_ptr<RowSet>* rs) const;
+
+  // Estimate the number of bytes in ancient undo delta stores. This may be an
+  // overestimate.
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(int64_t* bytes);
+
+  // Initialize undo delta blocks for up to 'time_budget' amount of time.
+  // If 'time_budget' is not Initialized() then there is no time limit.
+  // If this method returns OK, the number of bytes found in ancient undo files
+  // is returned in the out-param 'bytes_in_ancient_undos'.
+  Status InitAncientUndoDeltas(MonoDelta time_budget, int64_t* bytes_in_ancient_undos);
+
+  // Find and delete all undo delta blocks that have a maximum op timestamp
+  // prior to the current ancient history mark. If this method returns OK, the
+  // number of blocks and bytes deleted are returned in the out-parameters.
+  Status DeleteAncientUndoDeltas(int64_t* blocks_deleted = nullptr,
+                                 int64_t* bytes_deleted = nullptr);
+
+  // Count the number of deltas in the tablet. Only used for tests.
+  int64_t CountUndoDeltasForTests() const;
+  int64_t CountRedoDeltasForTests() const;
 
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
@@ -549,7 +577,6 @@ class Tablet {
   LockManager lock_manager_;
 
   gscoped_ptr<CompactionPolicy> compaction_policy_;
-
 
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time

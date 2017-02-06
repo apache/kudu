@@ -30,6 +30,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -39,7 +40,7 @@
 using kudu::client::KuduScanner;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
-using kudu::server::Clock;
+using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::MiniTabletServer;
@@ -50,22 +51,30 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(use_mock_wall_clock);
+DECLARE_double(missed_heartbeats_before_rejecting_snapshot_scans);
+DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(maintenance_manager_num_threads);
+DECLARE_int32(maintenance_manager_polling_interval_ms);
+DECLARE_int32(safe_time_max_lag_ms);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(tablet_history_max_age_sec);
+DECLARE_int32(undo_delta_block_gc_init_budget_millis);
 DECLARE_string(block_manager);
-DECLARE_bool(enable_maintenance_manager);
-DECLARE_double(missed_heartbeats_before_rejecting_snapshot_scans);
-DECLARE_int32(safe_time_max_lag_ms);
 
 DEFINE_int32(test_num_rounds, 200, "Number of rounds to loop "
                                    "RandomizedTabletHistoryGcITest.TestRandomHistoryGCWorkload");
 
-using kudu::server::HybridClock;
-
 namespace kudu {
 
 class TabletHistoryGcITest : public MiniClusterITestBase {
+ protected:
+  void AddTimeToHybridClock(HybridClock* clock, MonoDelta delta) {
+    uint64_t now = HybridClock::GetPhysicalValueMicros(clock->Now());
+    uint64_t new_time = now + delta.ToMicroseconds();
+    clock->SetMockClockWallTimeForTests(new_time);
+  }
 };
 
 // Check that attempts to scan prior to the ancient history mark fail.
@@ -90,6 +99,123 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   Status s = scanner.Open();
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Snapshot timestamp is earlier than the ancient history mark");
+}
+
+// Check that the maintenance manager op to delete undo deltas actually deletes them.
+TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
+  FLAGS_use_mock_wall_clock = true; // Allow moving the clock.
+  FLAGS_tablet_history_max_age_sec = 1000;
+  FLAGS_flush_threshold_secs = 0; // Flush as aggressively as possible.
+  FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.
+  FLAGS_maintenance_manager_num_threads = 4; // Encourage concurrency.
+
+  NO_FATALS(StartCluster(1)); // Single-node cluster.
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
+  client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+
+  // Find the tablet.
+  tserver::MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+  vector<scoped_refptr<TabletPeer>> tablet_peers;
+  mts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
+  ASSERT_EQ(1, tablet_peers.size());
+  std::shared_ptr<Tablet> tablet = tablet_peers[0]->shared_tablet();
+
+  const int32_t kNumRows = AllowSlowTests() ? 100 : 10;
+
+  // Insert a few rows.
+  for (int32_t row_key = 0; row_key < kNumRows; row_key++) {
+    unique_ptr<client::KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    ASSERT_OK_FAST(row->SetInt32(0, row_key));
+    ASSERT_OK_FAST(row->SetInt32(1, 0));
+    ASSERT_OK_FAST(row->SetString(2, ""));
+    ASSERT_OK_FAST(session->Apply(insert.release()));
+  }
+  ASSERT_OK_FAST(session->Flush());
+
+  // Update rows in a loop; wait until some undo deltas are generated.
+  int32_t row_value = 0;
+  while (true) {
+    for (int32_t row_key = 0; row_key < kNumRows; row_key++) {
+      unique_ptr<client::KuduUpdate> update(table->NewUpdate());
+      KuduPartialRow* row = update->mutable_row();
+      ASSERT_OK_FAST(row->SetInt32(0, row_key));
+      ASSERT_OK_FAST(row->SetInt32(1, row_value));
+      ASSERT_OK_FAST(session->Apply(update.release()));
+    }
+    ASSERT_OK_FAST(session->Flush());
+
+    VLOG(1) << "Number of undo deltas: " << tablet->CountUndoDeltasForTests();
+    VLOG(1) << "Number of redo deltas: " << tablet->CountRedoDeltasForTests();
+
+    // Only break out of the loop once we have undos.
+    if (tablet->CountUndoDeltasForTests() > 0) break;
+
+    SleepFor(MonoDelta::FromMilliseconds(5));
+    row_value++;
+  }
+
+  // Manually flush all mem stores so that we can measure the maximum disk
+  // size before moving the AHM. This ensures the test isn't flaky.
+  ASSERT_OK(tablet->Flush());
+  ASSERT_OK(tablet->FlushAllDMSForTests());
+
+  uint64_t measured_size_before_gc = 0;
+  ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
+                                                         &measured_size_before_gc));
+
+  // Move the clock so all operations are in the past. Then wait until we have
+  // no more undo deltas.
+  HybridClock* c = down_cast<HybridClock*>(tablet->clock().get());
+  AddTimeToHybridClock(c, MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
+  AssertEventually([&] {
+    ASSERT_EQ(0, tablet->CountUndoDeltasForTests());
+  });
+
+  // Verify that the latest values are still there.
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  ASSERT_OK(scanner.Open());
+  int num_rows_scanned = 0;
+  while (scanner.HasMoreRows()) {
+    client::KuduScanBatch batch;
+    ASSERT_OK(scanner.NextBatch(&batch));
+    for (const auto& row : batch) {
+      int32_t key;
+      int32_t value;
+      ASSERT_OK(row.GetInt32("key", &key));
+      ASSERT_OK(row.GetInt32("int_val", &value));
+      ASSERT_LT(key, kNumRows);
+      ASSERT_EQ(row_value, value) << "key=" << key << ", int_val=" << value;
+      num_rows_scanned++;
+    }
+  }
+  ASSERT_EQ(kNumRows, num_rows_scanned);
+
+  // Check that the tablet metrics have reasonable values.
+  AssertEventually([&] {
+    ASSERT_GT(tablet->metrics()->undo_delta_block_gc_init_duration->TotalCount(), 0);
+    ASSERT_GT(tablet->metrics()->undo_delta_block_gc_delete_duration->TotalCount(), 0);
+    ASSERT_GT(tablet->metrics()->undo_delta_block_gc_perform_duration->TotalCount(), 0);
+    ASSERT_EQ(0, tablet->metrics()->undo_delta_block_gc_running->value());
+    ASSERT_GT(tablet->metrics()->undo_delta_block_gc_bytes_deleted->value(), 0);
+    ASSERT_EQ(0, tablet->metrics()->undo_delta_block_estimated_retained_bytes->value());
+
+    // Check that we are now using less space.
+    // We manually flush the tablet metadata here because the list of orphaned
+    // blocks may take up space.
+    ASSERT_OK(tablet->metadata()->Flush());
+    uint64_t measured_size_after_gc = 0;
+    ASSERT_OK(Env::Default()->GetFileSizeOnDiskRecursively(cluster_->GetTabletServerFsRoot(0),
+                                                           &measured_size_after_gc));
+    ASSERT_LT(measured_size_after_gc, measured_size_before_gc);
+  });
 }
 
 // Whether a MaterializedTestRow is deleted or not.
@@ -130,6 +256,7 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
     kFlush,
     kMergeCompaction,
     kRedoDeltaCompaction,
+    kUndoDeltaBlockGc,
     kMoveTimeForward,
     kStartScan,
     kNumActions, // Count of items in this enum. Keep as last entry.
@@ -175,12 +302,6 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
     VLOG(2) << "Saving snapshot at ts = " << StringifyTimestamp(ts);
     snapshots_[ts.ToUint64()] = std::move(snapshot);
     latest_snapshot_ts_ = ts;
-  }
-
-  void AddTimeToClock(MonoDelta delta) {
-    uint64_t now = HybridClock::GetPhysicalValueMicros(clock_->Now());
-    uint64_t new_time = now + delta.ToMicroseconds();
-    clock_->SetMockClockWallTimeForTests(new_time);
   }
 
   void RegisterScanner(unique_ptr<client::KuduScanner> scanner, Timestamp snap_ts,
@@ -646,9 +767,25 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
                                                      tablet::RowSet::MINOR_DELTA_COMPACTION));
         break;
       }
+      case kUndoDeltaBlockGc: {
+        VLOG(1) << "Running UNDO delta block GC";
+        ASSERT_OK(tablet->InitAncientUndoDeltas(
+            MonoDelta::FromMilliseconds(FLAGS_undo_delta_block_gc_init_budget_millis), nullptr));
+        int64_t blocks_deleted;
+        int64_t bytes_deleted;
+        ASSERT_OK(tablet->DeleteAncientUndoDeltas(&blocks_deleted, &bytes_deleted));
+        // If one of these equals zero, both should equal zero.
+        if (blocks_deleted == 0 || bytes_deleted == 0) {
+          ASSERT_EQ(0, blocks_deleted);
+          ASSERT_EQ(0, bytes_deleted);
+        }
+        VLOG(1) << "UNDO delta block GC deleted " << blocks_deleted
+                << " blocks and " << bytes_deleted << " bytes";
+        break;
+      }
       case kMoveTimeForward: {
         VLOG(1) << "Moving clock forward";
-        AddTimeToClock(MonoDelta::FromSeconds(200));
+        AddTimeToHybridClock(clock_, MonoDelta::FromSeconds(200));
         break;
       }
       case kStartScan: {

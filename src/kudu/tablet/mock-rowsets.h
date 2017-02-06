@@ -118,6 +118,27 @@ class MockRowSet : public RowSet {
     return Status::OK();
   }
 
+  virtual Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                                             int64_t* /*bytes*/) OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
+
+  virtual Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                MonoTime /*deadline*/,
+                                int64_t* /*delta_blocks_initialized*/,
+                                int64_t* /*bytes_in_ancient_undos*/) OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
+
+  virtual Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                         int64_t* /*blocks_deleted*/,
+                                         int64_t* /*bytes_deleted*/) OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
+
   virtual bool IsAvailableForCompaction() OVERRIDE {
     return true;
   }

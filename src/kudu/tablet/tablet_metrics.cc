@@ -111,6 +111,13 @@ METRIC_DEFINE_counter(tablet, bytes_flushed, "Bytes Flushed",
                       kudu::MetricUnit::kBytes,
                       "Amount of data that has been flushed to disk by this tablet.");
 
+METRIC_DEFINE_counter(tablet, undo_delta_block_gc_bytes_deleted,
+                      "Undo Delta Block GC Bytes Deleted",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes deleted by garbage-collecting old UNDO delta blocks "
+                      "on this tablet since this server was restarted. "
+                      "Does not include bytes garbage collected during compactions.");
+
 METRIC_DEFINE_histogram(tablet, bloom_lookups_per_op, "Bloom Lookups per Operation",
                         kudu::MetricUnit::kProbes,
                         "Tracks the number of bloom filter lookups performed by each "
@@ -182,6 +189,17 @@ METRIC_DEFINE_gauge_uint32(tablet, delta_major_compact_rs_running,
   kudu::MetricUnit::kMaintenanceOperations,
   "Number of delta major compactions currently running.");
 
+METRIC_DEFINE_gauge_uint32(tablet, undo_delta_block_gc_running,
+  "Undo Delta Block GC Running",
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of UNDO delta block GC operations currently running.");
+
+METRIC_DEFINE_gauge_int64(tablet, undo_delta_block_estimated_retained_bytes,
+  "Estimated Deletable Bytes Retained in Undo Delta Blocks",
+  kudu::MetricUnit::kBytes,
+  "Estimated bytes of deletable data in undo delta blocks for this tablet. "
+  "May be an overestimate.");
+
 METRIC_DEFINE_histogram(tablet, flush_dms_duration,
   "DeltaMemStore Flush Duration",
   kudu::MetricUnit::kMilliseconds,
@@ -206,6 +224,21 @@ METRIC_DEFINE_histogram(tablet, delta_major_compact_rs_duration,
   "Major Delta Compaction Duration",
   kudu::MetricUnit::kSeconds,
   "Seconds spent major delta compacting.", 60000000LU, 2);
+
+METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_init_duration,
+  "Undo Delta Block GC Init Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent initializing ancient UNDO delta blocks.", 60000LU, 1);
+
+METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_delete_duration,
+  "Undo Delta Block GC Delete Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent deleting ancient UNDO delta blocks.", 60000LU, 1);
+
+METRIC_DEFINE_histogram(tablet, undo_delta_block_gc_perform_duration,
+  "Undo Delta Block GC Perform Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent running the maintenance operation to GC ancient UNDO delta blocks.", 60000LU, 1);
 
 METRIC_DEFINE_counter(tablet, leader_memory_pressure_rejections,
   "Leader Memory Pressure Rejections",
@@ -239,6 +272,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(delta_file_lookups),
     MINIT(mrs_lookups),
     MINIT(bytes_flushed),
+    MINIT(undo_delta_block_gc_bytes_deleted),
     MINIT(bloom_lookups_per_op),
     MINIT(key_file_lookups_per_op),
     MINIT(delta_file_lookups_per_op),
@@ -251,11 +285,16 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     GINIT(compact_rs_running),
     GINIT(delta_minor_compact_rs_running),
     GINIT(delta_major_compact_rs_running),
+    GINIT(undo_delta_block_gc_running),
+    GINIT(undo_delta_block_estimated_retained_bytes),
     MINIT(flush_dms_duration),
     MINIT(flush_mrs_duration),
     MINIT(compact_rs_duration),
     MINIT(delta_minor_compact_rs_duration),
     MINIT(delta_major_compact_rs_duration),
+    MINIT(undo_delta_block_gc_init_duration),
+    MINIT(undo_delta_block_gc_delete_duration),
+    MINIT(undo_delta_block_gc_perform_duration),
     MINIT(leader_memory_pressure_rejections) {
 }
 #undef MINIT

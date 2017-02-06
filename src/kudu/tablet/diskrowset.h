@@ -348,6 +348,17 @@ class DiskRowSet : public RowSet {
 
   double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const OVERRIDE;
 
+  Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
+                                                     int64_t* bytes) OVERRIDE;
+
+  Status InitUndoDeltas(Timestamp ancient_history_mark,
+                        MonoTime deadline,
+                        int64_t* delta_blocks_initialized,
+                        int64_t* bytes_in_ancient_undos) OVERRIDE;
+
+  Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                 int64_t* blocks_deleted, int64_t* bytes_deleted) OVERRIDE;
+
   // Major compacts all the delta files for all the columns.
   Status MajorCompactDeltaStores(HistoryGcOpts history_gc_opts);
 
@@ -367,7 +378,14 @@ class DiskRowSet : public RowSet {
     return rowset_metadata_->ToString();
   }
 
-  virtual Status DebugDump(std::vector<std::string> *out = NULL) OVERRIDE;
+  std::string LogPrefix() const {
+    return strings::Substitute("T $0 P $1: $2: ",
+        rowset_metadata_->tablet_metadata()->tablet_id(),
+        rowset_metadata_->fs_manager()->uuid(),
+        ToString());
+  }
+
+  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
 
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);

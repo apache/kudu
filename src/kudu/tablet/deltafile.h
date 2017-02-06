@@ -158,6 +158,12 @@ class DeltaFileReader : public DeltaStore,
   // been fully initialized.
   bool IsRelevantForSnapshot(const MvccSnapshot& snap) const;
 
+  // Clone this DeltaFileReader for testing and validation purposes (such as
+  // while in DEBUG mode). The resulting object will not be Initted().
+  Status CloneForDebugging(FsManager* fs_manager,
+                           const std::shared_ptr<MemTracker>& parent_mem_tracker,
+                           std::shared_ptr<DeltaFileReader>* out) const;
+
  private:
   friend class DeltaFileIterator;
 
