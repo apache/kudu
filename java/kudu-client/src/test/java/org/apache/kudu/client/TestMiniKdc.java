@@ -18,7 +18,11 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.*;
 
+import javax.security.auth.Subject;
+
+import org.apache.kudu.util.SecurityUtil;
 import org.junit.Test;
+import static org.hamcrest.CoreMatchers.containsString;
 
 public class TestMiniKdc {
 
@@ -43,6 +47,24 @@ public class TestMiniKdc {
       assertFalse(klist.contains("alice@KRBTEST.COM"));
       assertTrue(klist.contains("bob@KRBTEST.COM"));
       assertTrue(klist.contains("krbtgt/KRBTEST.COM@KRBTEST.COM"));
+    }
+  }
+
+  /**
+   * Test that we can initialize a JAAS Subject from a user-provided TicketCache.
+   */
+  @Test
+  public void testGetKerberosSubject() throws Exception {
+    try (MiniKdc kdc = MiniKdc.withDefaults()) {
+      kdc.start();
+      kdc.createUserPrincipal("alice");
+      kdc.kinit("alice");
+      // Typically this would be picked up from the $KRB5CCNAME environment
+      // variable, or use a default. However, it's not easy to modify the
+      // environment in Java, so instead we override a system property.
+      System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, kdc.getTicketCachePath());
+      Subject subj = SecurityUtil.getSubjectOrLogin();
+      assertThat(subj.toString(), containsString("alice"));
     }
   }
 

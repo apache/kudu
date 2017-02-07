@@ -26,23 +26,29 @@
 
 package org.apache.kudu.client;
 
+import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.Set;
+
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
-import javax.security.auth.kerberos.KerberosPrincipal;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -60,8 +66,13 @@ public class SecureRpcHelper {
 
   private static final Map<String, String> SASL_PROPS = ImmutableMap.of();
   private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
-  private static final String[] MECHS = new String[] { "GSSAPI", "PLAIN" };
-  private static final String[] INSECURE_MECHS = new String[] { "PLAIN" };
+
+  /**
+   * List of SASL mechanisms supported by the client, in descending priority order.
+   * The client will pick the first of these mechanisms that is supported by
+   * the server and also succeeds to initialize.
+   */
+  private static final String[] PRIORITIZED_MECHS = new String[] { "GSSAPI", "PLAIN" };
 
   static final String USER_AND_PASSWORD = "java_client";
 
@@ -76,22 +87,6 @@ public class SecureRpcHelper {
 
   public SecureRpcHelper(final TabletClient client) {
     this.client = client;
-
-    Subject subject = client.getSubject();
-    boolean tryKerberos = subject != null &&
-                          !subject.getPrincipals(KerberosPrincipal.class).isEmpty();
-    String[] mechanisms = tryKerberos ? MECHS : INSECURE_MECHS;
-
-    try {
-      saslClient = Sasl.createSaslClient(mechanisms,
-                                         null,
-                                         "kudu",
-                                         client.getServerInfo().getHostname(),
-                                         SASL_PROPS,
-                                         SASL_CALLBACK);
-    } catch (Exception e) {
-      throw new RuntimeException("Could not create the SASL client", e);
-    }
   }
 
   public Set<RpcHeader.RpcFeatureFlag> getServerFeatures() {
@@ -126,7 +121,7 @@ public class SecureRpcHelper {
   }
 
   public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) throws SaslException {
-    if (!saslClient.isComplete() || negoUnderway) {
+    if (negoUnderway) {
       RpcHeader.NegotiatePB response = parseSaslMsgResponse(buf);
       switch (response.getStep()) {
         case NEGOTIATE:
@@ -201,13 +196,10 @@ public class SecureRpcHelper {
     return saslBuilder.build();
   }
 
+  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
+      SaslException {
 
-  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws SaslException {
-    RpcHeader.NegotiatePB.SaslMechanism negotiatedAuth = null;
-    for (RpcHeader.NegotiatePB.SaslMechanism auth : response.getSaslMechanismsList()) {
-      negotiatedAuth = auth;
-    }
-
+    // Store the supported features advertised by the server.
     ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
     for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
       if (SUPPORTED_RPC_FEATURES.contains(feature)) {
@@ -216,23 +208,60 @@ public class SecureRpcHelper {
     }
     serverFeatures = features.build();
 
-    byte[] saslToken = new byte[0];
-    if (saslClient.hasInitialResponse()) {
-      saslToken = saslClient.evaluateChallenge(saslToken);
+    // Gather the set of server-supported mechanisms.
+    Set<String> serverMechs = Sets.newHashSet();
+    for (RpcHeader.NegotiatePB.SaslMechanism mech : response.getSaslMechanismsList()) {
+      serverMechs.add(mech.getMechanism());
+    }
+
+    // For each of our own mechanisms, in descending priority, check if
+    // the server also supports them. If so, try to initialize saslClient.
+    // If we find a common mechanism that also can be successfully initialized,
+    // choose that mech.
+    byte[] initialResponse = null;
+    String chosenMech = null;
+    Map<String, String> errorsByMech = Maps.newHashMap();
+    for (String clientMech : PRIORITIZED_MECHS) {
+      if (!serverMechs.contains(clientMech)) {
+        errorsByMech.put(clientMech, "not advertised by server");
+        continue;
+      }
+      try {
+        saslClient = Sasl.createSaslClient(new String[]{ clientMech },
+                                           null,
+                                           "kudu",
+                                           client.getServerInfo().getHostname(),
+                                           SASL_PROPS,
+                                           SASL_CALLBACK);
+        if (saslClient.hasInitialResponse()) {
+          initialResponse = evaluateChallenge(new byte[0]);
+        }
+        chosenMech = clientMech;
+        break;
+      } catch (SaslException e) {
+        errorsByMech.put(clientMech, e.getMessage());
+        saslClient = null;
+      }
+    }
+
+    if (chosenMech == null) {
+      throw new SaslException("unable to negotiate a matching mechanism. Errors: [" +
+                              Joiner.on(",").withKeyValueSeparator(": ").join(errorsByMech) +
+                              "]");
     }
 
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
-    if (saslToken != null) {
-      builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
+    if (initialResponse != null) {
+      builder.setToken(ZeroCopyLiteralByteString.wrap(initialResponse));
     }
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
-    builder.addSaslMechanisms(negotiatedAuth);
+    builder.addSaslMechanismsBuilder().setMechanism(chosenMech);
     sendSaslMessage(chan, builder.build());
   }
 
   private void handleChallengeResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException {
-    byte[] saslToken = saslClient.evaluateChallenge(response.getToken().toByteArray());
+    byte[] saslToken = evaluateChallenge(response.getToken().toByteArray());
     if (saslToken == null) {
       throw new IllegalStateException("Not expecting an empty token");
     }
@@ -246,6 +275,21 @@ public class SecureRpcHelper {
     LOG.debug("nego finished");
     negoUnderway = false;
     client.sendContext(chan);
+  }
+
+  private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
+    final Subject subject = client.getSubject();
+    try {
+      return Subject.doAs(subject, new PrivilegedExceptionAction<byte[]>() {
+          @Override
+          public byte[] run() throws Exception {
+            return saslClient.evaluateChallenge(challenge);
+          }
+        });
+    } catch (Exception e) {
+      Throwables.propagateIfInstanceOf(e, SaslException.class);
+      throw Throwables.propagate(e);
+    }
   }
 
   private static class SaslClientCallbackHandler implements CallbackHandler {

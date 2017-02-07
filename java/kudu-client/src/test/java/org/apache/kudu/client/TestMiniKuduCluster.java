@@ -76,11 +76,7 @@ public class TestMiniKuduCluster {
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .enableKerberos()
                                                       .build()) {
-      try {
-        assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
-      } catch (RuntimeException e) {
-        assertTrue(e.getMessage().contains("incompatible RPC?"));
-      }
+      assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
     }
   }
 

@@ -27,13 +27,9 @@
 package org.apache.kudu.client;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
-import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -46,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+
 import javax.annotation.concurrent.GuardedBy;
 import javax.security.auth.Subject;
 
@@ -57,6 +54,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
@@ -75,6 +73,7 @@ import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.Pair;
+import org.apache.kudu.util.SecurityUtil;
 
 /**
  * A fully asynchronous and thread-safe client for Kudu.
@@ -1516,17 +1515,13 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A live and initialized client for the specified master server.
    */
   TabletClient newMasterClient(HostAndPort masterHostPort) {
-    InetAddress inetAddress = NetUtil.getInetAddress((masterHostPort.getHostText()));
-    if (inetAddress == null) {
-      return null;
-    }
     // We should pass a UUID here but we have a chicken and egg problem, we first need to
     // communicate with the masters to find out about them, and that's what we're trying to do.
     // The UUID is used for logging, so instead we're passing the "master table name" followed by
     // host and port which is enough to identify the node we're connecting to.
     return connectionCache.newClient(
         MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
-        inetAddress, masterHostPort.getPort());
+        masterHostPort);
   }
 
   /**
@@ -1830,8 +1825,7 @@ public class AsyncKuduClient implements AutoCloseable {
      * @return a new asynchronous Kudu client
      */
     public AsyncKuduClient build() {
-      AccessControlContext context = AccessController.getContext();
-      subject = Subject.getSubject(context);
+      subject = SecurityUtil.getSubjectOrLogin();
       return new AsyncKuduClient(this);
     }
   }

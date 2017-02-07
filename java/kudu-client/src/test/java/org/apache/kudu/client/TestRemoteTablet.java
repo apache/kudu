@@ -21,9 +21,12 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import org.junit.Test;
 
@@ -124,8 +127,21 @@ public class TestRemoteTablet {
     tabletPb.setTabletId(ByteString.copyFromUtf8("fake tablet"));
     List<ServerInfo> servers = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
+      InetAddress addr;
+      try {
+        if (i == localReplicaIndex) {
+          addr = InetAddress.getByName("127.0.0.1");
+        } else {
+          addr = InetAddress.getByName("1.2.3.4");
+        }
+      } catch (UnknownHostException e) {
+        throw new RuntimeException(e);
+      }
+
       String uuid = i + "";
-      servers.add(new ServerInfo(uuid, "host", i, i == localReplicaIndex));
+      servers.add(new ServerInfo(uuid,
+                                 HostAndPort.fromParts("host", i),
+                                 addr));
       tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
           uuid, "host", i,
           leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER : Metadata.RaftPeerPB.Role.FOLLOWER));

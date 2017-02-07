@@ -17,7 +17,12 @@
 
 package org.apache.kudu.client;
 
+import java.net.InetAddress;
+
+import com.google.common.net.HostAndPort;
+
 import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.util.NetUtil;
 
 /**
  * Container class for server information that never changes, like UUID and hostname.
@@ -25,8 +30,8 @@ import org.apache.kudu.annotations.InterfaceAudience;
 @InterfaceAudience.Private
 public class ServerInfo {
   private final String uuid;
-  private final String hostname;
-  private final int port;
+  private final HostAndPort hostPort;
+  private final InetAddress resolvedAddr;
   private final boolean local;
 
   /**
@@ -37,11 +42,11 @@ public class ServerInfo {
    * @param port server's port
    * @param local if the server is hosted on the same machine where this client is running
    */
-  public ServerInfo(String uuid, String hostname, int port, boolean local) {
+  public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr) {
     this.uuid = uuid;
-    this.hostname = hostname;
-    this.port = port;
-    this.local = local;
+    this.hostPort = hostPort;
+    this.resolvedAddr = resolvedAddr;
+    this.local = NetUtil.isLocalAddress(resolvedAddr);
   }
 
   /**
@@ -58,7 +63,7 @@ public class ServerInfo {
    * @return a string that contains this server's hostname
    */
   public String getHostname() {
-    return hostname;
+    return hostPort.getHostText();
   }
 
   /**
@@ -66,7 +71,7 @@ public class ServerInfo {
    * @return a port number that this server is bound to
    */
   public int getPort() {
-    return port;
+    return hostPort.getPort();
   }
 
   /**
@@ -75,5 +80,12 @@ public class ServerInfo {
    */
   public boolean isLocal() {
     return local;
+  }
+
+  /**
+   * @return the cached resolved address for this server
+   */
+  public InetAddress getResolvedAddress() {
+    return resolvedAddr;
   }
 }

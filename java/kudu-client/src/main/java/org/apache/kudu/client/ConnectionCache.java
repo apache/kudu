@@ -31,6 +31,7 @@ import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.channel.DefaultChannelPipeline;
 import org.jboss.netty.channel.socket.SocketChannel;
@@ -108,18 +109,23 @@ class ConnectionCache {
     // from meta_cache.cc
     // TODO: if the TS advertises multiple host/ports, pick the right one
     // based on some kind of policy. For now just use the first always.
-    InetAddress inetAddress = NetUtil.getInetAddress(addresses.get(0).getHost());
+    HostAndPort hostPort = ProtobufHelper.hostAndPortFromPB(addresses.get(0));
+    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHostText());
     if (inetAddress == null) {
       throw new UnknownHostException(
           "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
     }
-    return newClient(uuid, inetAddress, addresses.get(0).getPort()).getServerInfo();
+    return newClient(new ServerInfo(uuid, hostPort, inetAddress)).getServerInfo();
   }
 
-  TabletClient newClient(String uuid, InetAddress inetAddress, int port) {
-    String host = inetAddress.getHostAddress();
-    boolean isLocal = NetUtil.isLocalAddress(inetAddress);
-    ServerInfo serverInfo = new ServerInfo(uuid, host, port, isLocal);
+  TabletClient newClient(String uuid, HostAndPort hostPort) {
+    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHostText());
+    if (inetAddress == null) {
+      // TODO(todd): should we log the resolution failure? throw an exception?
+      return null;
+    }
+
+    ServerInfo serverInfo = new ServerInfo(uuid, hostPort, inetAddress);
     return newClient(serverInfo);
   }
 
@@ -148,8 +154,8 @@ class ConnectionCache {
     // Java since the JRE doesn't expose any way to call setsockopt() with
     // TCP_KEEPIDLE. And of course the default timeout is >2h. Sigh.
     config.setKeepAlive(true);
-    chan.connect(
-        new InetSocketAddress(serverInfo.getHostname(), serverInfo.getPort()));  // Won't block.
+    chan.connect(new InetSocketAddress(serverInfo.getResolvedAddress(),
+                                       serverInfo.getPort())); // Won't block.
     return client;
   }
 

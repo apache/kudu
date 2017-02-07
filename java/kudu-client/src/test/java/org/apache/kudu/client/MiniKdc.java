@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+
 import javax.annotation.concurrent.NotThreadSafe;
 
 import com.google.common.base.Charsets;
@@ -36,10 +37,10 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.CharStreams;
+
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
@@ -318,9 +319,16 @@ public class MiniKdc implements Closeable {
     return ImmutableMap.of(
         "KRB5_CONFIG", options.dataRoot.resolve("krb5.conf").toString(),
         "KRB5_KDC_PROFILE", options.dataRoot.resolve("kdc.conf").toString(),
-        "KRB5CCNAME", options.dataRoot.resolve("krb5cc").toString(),
+        "KRB5CCNAME", getTicketCachePath(),
         "KUDU_ENABLE_KRB5_REALM_FIX", "yes"
     );
+  }
+
+  /**
+   * @return the path of the Kerberos ticket/credential cache
+   */
+  public String getTicketCachePath() {
+    return options.dataRoot.resolve("krb5cc").toString();
   }
 
   private Process startProcessWithKrbEnv(String... argv) throws IOException {

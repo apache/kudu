@@ -20,8 +20,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.net.InetAddress;
 import java.util.List;
 
+import org.apache.kudu.util.NetUtil;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.junit.Test;
@@ -47,8 +49,9 @@ public class TestConnectionCache {
       int i = 0;
       for (HostAndPort hp : addresses) {
         // Ping the process so we go through the whole connection process.
+        InetAddress addr = NetUtil.getInetAddress(hp.getHostText());
         TabletClient conn =
-            cache.newClient(new ServerInfo(i + "", hp.getHostText(), hp.getPort(), false));
+            cache.newClient(new ServerInfo(i + "", hp, addr));
         pingConnection(conn);
         i++;
       }

@@ -20,19 +20,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import javax.security.auth.Subject;
-import javax.security.auth.login.AppConfigurationEntry;
-import javax.security.auth.login.Configuration;
-import javax.security.auth.login.LoginContext;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -42,11 +36,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
+
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.kudu.util.NetUtil;
+import org.apache.kudu.util.SecurityUtil;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Relies on being IN the Kudu source code with
@@ -87,7 +82,6 @@ public class MiniKuduCluster implements AutoCloseable {
   private final String bindHost = TestUtils.getUniqueLocalhost();
   private Path keytab;
   private MiniKdc miniKdc;
-  private Subject subject;
 
   private MiniKuduCluster(final int defaultTimeoutMs,
                           final List<String> extraTserverFlags,
@@ -109,33 +103,10 @@ public class MiniKuduCluster implements AutoCloseable {
 
     miniKdc.createUserPrincipal("testuser");
     miniKdc.kinit("testuser");
-    System.setProperty("java.security.krb5.conf", miniKdc.getEnvVars().get("KRB5_CONFIG"));
-
-    Configuration conf = new Configuration() {
-      @Override
-      public AppConfigurationEntry[] getAppConfigurationEntry(String name) {
-        Map<String, String> options = new HashMap<>();
-        options.put("useKeyTab", "true");
-        options.put("useTicketCache", "true");
-        options.put("ticketCache", miniKdc.getEnvVars().get("KRB5CCNAME"));
-        options.put("principal", "testuser");
-        options.put("doNotPrompt", "true");
-        options.put("renewTGT", "true");
-        options.put("debug", "true");
-
-        return new AppConfigurationEntry[] {
-          new AppConfigurationEntry("com.sun.security.auth.module.Krb5LoginModule",
-                                    AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
-                                    options)
-        };
-      }
-    };
-
-    LoginContext context = new LoginContext("com.sun.security.auth.module.Krb5LoginModule",
-                                            new Subject(), null, conf);
-    context.login();
-    context.getSubject();
-    subject = context.getSubject();
+    System.setProperty("java.security.krb5.conf",
+        miniKdc.getEnvVars().get("KRB5_CONFIG"));
+    System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY,
+        miniKdc.getEnvVars().get("KRB5CCNAME"));
   }
 
   /**
@@ -146,22 +117,11 @@ public class MiniKuduCluster implements AutoCloseable {
   private void start(int numMasters, int numTservers) throws Exception {
     startCluster(numMasters, numTservers);
 
-    PrivilegedAction<KuduClient> createClient = new PrivilegedAction<KuduClient>() {
-      @Override
-      public KuduClient run() {
-        KuduClient.KuduClientBuilder kuduClientBuilder =
-            new KuduClient.KuduClientBuilder(getMasterAddresses());
-        kuduClientBuilder.defaultAdminOperationTimeoutMs(defaultTimeoutMs);
-        kuduClientBuilder.defaultOperationTimeoutMs(defaultTimeoutMs);
-        return kuduClientBuilder.build();
-      }
-    };
-
-    if (subject != null) {
-      syncClient = Subject.doAs(subject, createClient);
-    } else {
-      syncClient = createClient.run();
-    }
+    KuduClient.KuduClientBuilder kuduClientBuilder =
+        new KuduClient.KuduClientBuilder(getMasterAddresses());
+    kuduClientBuilder.defaultAdminOperationTimeoutMs(defaultTimeoutMs);
+    kuduClientBuilder.defaultOperationTimeoutMs(defaultTimeoutMs);
+    syncClient = kuduClientBuilder.build();
   }
 
   /**
@@ -530,14 +490,6 @@ public class MiniKuduCluster implements AutoCloseable {
   @VisibleForTesting
   Map<Integer, Process> getMasterProcesses() {
     return Collections.unmodifiableMap(masterProcesses);
-  }
-
-  /**
-   * @return authenticated user credentials for this cluster,
-   *         or {@code null} if it is not a secure cluster.
-   */
-  public Subject getLoggedInSubject() {
-    return subject;
   }
 
   /**
