@@ -77,7 +77,8 @@ Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
 
   // Retrieve the digest algorithm type.
   int digest_nid;
-  OBJ_find_sigid_algs(signature_nid, &digest_nid, nullptr /* public_key_nid */);
+  int public_key_nid;
+  OBJ_find_sigid_algs(signature_nid, &digest_nid, &public_key_nid);
 
   // RFC 5929: if the certificate's signatureAlgorithm uses no hash functions or
   // uses multiple hash functions, then this channel binding type's channel
