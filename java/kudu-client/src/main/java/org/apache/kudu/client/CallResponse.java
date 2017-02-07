@@ -19,7 +19,12 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
+import com.google.protobuf.Message;
+
 import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.handler.codec.oneone.OneToOneDecoder;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
@@ -48,7 +53,7 @@ final class CallResponse {
    * @throws IndexOutOfBoundsException if any length prefix inside the
    * response points outside the bounds of the buffer.
    */
-  public CallResponse(final ChannelBuffer buf) {
+  private CallResponse(final ChannelBuffer buf) {
     this.buf = buf;
 
     this.totalResponseSize = buf.readableBytes();
@@ -72,6 +77,12 @@ final class CallResponse {
    */
   public int getTotalResponseSize() {
     return this.totalResponseSize;
+  }
+
+  public <T extends Message> T parseResponse(T prototypeInstance) {
+    prototypeInstance.newBuilderForType();
+    return prototypeInstance;
+
   }
 
   /**
@@ -153,4 +164,20 @@ final class CallResponse {
     }
     return new Slice(payload, offset, length);
   }
+
+  /**
+   * Netty channel handler which receives incoming frames (ChannelBuffers)
+   * and constructs CallResponse objects.
+   */
+  static class Decoder extends OneToOneDecoder {
+    @Override
+    protected Object decode(ChannelHandlerContext ctx, Channel channel, Object message)
+        throws Exception {
+      if (!(message instanceof ChannelBuffer)) {
+        return message;
+      }
+      return new CallResponse((ChannelBuffer)message);
+    }
+  }
+
 }

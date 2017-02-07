@@ -34,7 +34,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.security.auth.Subject;
-import javax.security.sasl.SaslException;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
@@ -57,6 +56,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.kudu.client.SecureRpcHelper.NegotiationResult;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.tserver.Tserver;
@@ -95,7 +95,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       0,
       0
   };
-  public static final int CONNECTION_CTX_CALL_ID = -3;
 
   /**
    * A monotonically increasing counter for RPC IDs.
@@ -136,8 +135,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
 
   private final long socketReadTimeoutMs;
 
-  private SecureRpcHelper secureRpcHelper;
-
   private final RequestTracker requestTracker;
 
   private final ServerInfo serverInfo;
@@ -145,6 +142,8 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   // If an uncaught exception forced us to shutdown this TabletClient, we'll handle the retry
   // differently by also clearing the caches.
   private volatile boolean gotUncaughtException = false;
+
+  private NegotiationResult negotiationResult;
 
   public TabletClient(AsyncKuduClient client, ServerInfo serverInfo) {
     this.kuduClient = client;
@@ -167,7 +166,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     Pair<ChannelBuffer, Integer> encodedRpcAndId = null;
     if (chan != null) {
       if (!rpc.getRequiredFeatures().isEmpty() &&
-          !secureRpcHelper.getServerFeatures().contains(
+          !negotiationResult.serverFeatures.contains(
               RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS)) {
         Status statusNotSupported = Status.NotSupported("the server does not support the" +
             "APPLICATION_FEATURE_FLAGS RPC feature");
@@ -379,29 +378,18 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   @SuppressWarnings("unchecked")
   public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
     Object m = evt.getMessage();
-    if (!(m instanceof ChannelBuffer)) {
+    if (m instanceof SecureRpcHelper.NegotiationResult) {
+      this.negotiationResult = (NegotiationResult) m;
+      this.chan = ctx.getChannel();
+      sendQueuedRpcs();
+      return;
+    }
+    if (!(m instanceof CallResponse)) {
       ctx.sendUpstream(evt);
       return;
     }
-    Channel chan = ctx.getChannel();
-    ChannelBuffer buf = (ChannelBuffer)m;
+    CallResponse response = (CallResponse)m;
     final long start = System.nanoTime();
-    final int rdx = buf.readerIndex();
-    LOG.debug("------------------>> ENTERING DECODE >>------------------");
-
-    try {
-      buf = secureRpcHelper.handleResponse(buf, chan);
-    } catch (SaslException e) {
-      String message = getPeerUuidLoggingString() + "Couldn't complete the SASL handshake";
-      LOG.error(message);
-      Status statusIOE = Status.IOError(message);
-      throw new NonRecoverableException(statusIOE, e);
-    }
-    if (buf == null) {
-      return;
-    }
-
-    CallResponse response = new CallResponse(buf);
 
     RpcHeader.ResponseHeader header = response.getHeader();
     if (!header.hasCallId()) {
@@ -465,7 +453,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     }
     if (LOG.isDebugEnabled()) {
       LOG.debug(getPeerUuidLoggingString() + "rpcid=" + rpcid +
-          ", response size=" + (buf.readerIndex() - rdx) + " bytes" +
+          ", response size=" + response.getTotalResponseSize() +
           ", rpc=" + rpc);
     }
 
@@ -615,7 +603,8 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     final Channel chan = e.getChannel();
     Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
 
-    secureRpcHelper = new SecureRpcHelper(this);
+    SecureRpcHelper secureRpcHelper = new SecureRpcHelper(getSubject(), serverInfo.getHostname());
+    ctx.getPipeline().addBefore(ctx.getName(), "negotiation", secureRpcHelper);
     secureRpcHelper.sendHello(chan);
   }
 
@@ -773,26 +762,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         sendRpc(rpc);
       }
     }
-  }
-
-  void sendContext(Channel channel) {
-    Channels.write(channel,  header());
-    this.chan = channel;
-    sendQueuedRpcs();
-  }
-
-  private ChannelBuffer header() {
-    RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
-
-    // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
-    RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
-    userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD);
-    userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
-    builder.setDEPRECATEDUserInfo(userBuilder.build());
-    RpcHeader.ConnectionContextPB pb = builder.build();
-    RpcHeader.RequestHeader header =
-        RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID).build();
-    return KuduRpc.toChannelBuffer(header, pb);
   }
 
   private String getPeerUuidLoggingString() {

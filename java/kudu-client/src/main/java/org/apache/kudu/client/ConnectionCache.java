@@ -255,6 +255,7 @@ class ConnectionCache {
           4, // length prefix is 4 bytes long
           0, // no "length adjustment"
           4 /* strip the length prefix */));
+      super.addLast("decode-responses", new CallResponse.Decoder());
       AsyncKuduClient kuduClient = ConnectionCache.this.kuduClient;
       final TabletClient client = new TabletClient(kuduClient, serverInfo);
       if (kuduClient.getDefaultSocketReadTimeoutMs() > 0) {

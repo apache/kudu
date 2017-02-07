@@ -51,15 +51,19 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
+import org.jboss.netty.channel.MessageEvent;
+import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
+import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 
 @InterfaceAudience.Private
-public class SecureRpcHelper {
+public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
@@ -75,22 +79,20 @@ public class SecureRpcHelper {
 
   static final String USER_AND_PASSWORD = "java_client";
 
-  private final TabletClient client;
+  private boolean finished;
   private SaslClient saslClient;
+  public static final int CONNECTION_CTX_CALL_ID = -3;
   private static final int SASL_CALL_ID = -33;
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
-  private volatile boolean negoUnderway = true;
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
 
-  public SecureRpcHelper(final TabletClient client) {
-    this.client = client;
-  }
+  private final Subject subject;
+  private final String remoteHostname;
 
-  public Set<RpcHeader.RpcFeatureFlag> getServerFeatures() {
-    Preconditions.checkState(!negoUnderway);
-    Preconditions.checkNotNull(serverFeatures);
-    return serverFeatures;
+  public SecureRpcHelper(Subject subject, String remoteHostname) {
+    this.subject = subject;
+    this.remoteHostname = remoteHostname;
   }
 
   public void sendHello(Channel channel) {
@@ -119,30 +121,38 @@ public class SecureRpcHelper {
     Channels.write(channel, buffer);
   }
 
-  public ChannelBuffer handleResponse(ChannelBuffer buf, Channel chan) throws SaslException {
-    if (negoUnderway) {
-      RpcHeader.NegotiatePB response = parseSaslMsgResponse(buf);
-      switch (response.getStep()) {
-        case NEGOTIATE:
-          handleNegotiateResponse(chan, response);
-          break;
-        case SASL_CHALLENGE:
-          handleChallengeResponse(chan, response);
-          break;
-        case SASL_SUCCESS:
-          handleSuccessResponse(chan);
-          break;
-        default:
-          LOG.error(String.format("Wrong negotiation step: %s", response.getStep()));
-      }
-      return null;
+  @Override
+  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt)
+      throws Exception {
+    Object m = evt.getMessage();
+    if (!(m instanceof CallResponse)) {
+      ctx.sendUpstream(evt);
+      return;
     }
-    return buf;
+    handleResponse(ctx.getChannel(), (CallResponse)m);
+  }
+
+  private void handleResponse(Channel chan, CallResponse callResponse) throws SaslException {
+    // TODO(todd): this needs to handle error responses, not just success responses.
+    Preconditions.checkState(!finished, "received a response after negotiation was complete");
+    RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
+    switch (response.getStep()) {
+      case NEGOTIATE:
+        handleNegotiateResponse(chan, response);
+        break;
+      case SASL_CHALLENGE:
+        handleChallengeResponse(chan, response);
+        break;
+      case SASL_SUCCESS:
+        handleSuccessResponse(chan);
+        break;
+      default:
+        LOG.error(String.format("Wrong negotiation step: %s", response.getStep()));
+    }
   }
 
 
-  private RpcHeader.NegotiatePB parseSaslMsgResponse(ChannelBuffer buf) {
-    CallResponse response = new CallResponse(buf);
+  private RpcHeader.NegotiatePB parseSaslMsgResponse(CallResponse response) {
     RpcHeader.ResponseHeader responseHeader = response.getHeader();
     int id = responseHeader.getCallId();
     if (id != SASL_CALL_ID) {
@@ -156,7 +166,6 @@ public class SecureRpcHelper {
 
   private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException {
-    Preconditions.checkNotNull(chan);
     // Store the supported features advertised by the server.
     ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
     for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
@@ -188,7 +197,7 @@ public class SecureRpcHelper {
         saslClient = Sasl.createSaslClient(new String[]{ clientMech },
                                            null,
                                            "kudu",
-                                           client.getServerInfo().getHostname(),
+                                           remoteHostname,
                                            SASL_PROPS,
                                            SASL_CALLBACK);
         if (saslClient.hasInitialResponse()) {
@@ -230,13 +239,28 @@ public class SecureRpcHelper {
   }
 
   private void handleSuccessResponse(Channel chan) {
-    LOG.debug("nego finished");
-    negoUnderway = false;
-    client.sendContext(chan);
+    finished = true;
+    chan.getPipeline().remove(this);
+
+    Channels.write(chan, makeConnectionContext());
+    Channels.fireMessageReceived(chan, new NegotiationResult(serverFeatures));
+  }
+
+  private ChannelBuffer makeConnectionContext() {
+    RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
+
+    // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
+    RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
+    userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD);
+    userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
+    builder.setDEPRECATEDUserInfo(userBuilder.build());
+    RpcHeader.ConnectionContextPB pb = builder.build();
+    RpcHeader.RequestHeader header =
+        RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID).build();
+    return KuduRpc.toChannelBuffer(header, pb);
   }
 
   private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
-    final Subject subject = client.getSubject();
     try {
       return Subject.doAs(subject, new PrivilegedExceptionAction<byte[]>() {
           @Override
@@ -262,6 +286,18 @@ public class SecureRpcHelper {
                                                  "Unrecognized SASL client callback");
         }
       }
+    }
+  }
+
+  /**
+   * The results of a successful negotiation. This is sent to upstream handlers in the
+   * Netty pipeline after negotiation completes.
+   */
+  static class NegotiationResult {
+    final Set<RpcFeatureFlag> serverFeatures;
+
+    public NegotiationResult(Set<RpcFeatureFlag> serverFeatures) {
+      this.serverFeatures = serverFeatures;
     }
   }
 }
