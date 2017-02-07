@@ -18,16 +18,16 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
-#include <glog/logging.h>
 #include <list>
 #include <memory>
 #include <vector>
 
+#include <boost/bind.hpp>
+#include <glog/logging.h>
+
 #include "kudu/cfile/block_cache.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/authn_token_manager.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/master_service.h"
@@ -37,6 +37,8 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
+#include "kudu/security/token_signer.h"
+#include "kudu/security/token_signing_key.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
@@ -52,12 +54,26 @@ DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
 TAG_FLAG(master_registration_rpc_timeout_ms, experimental);
 
+DEFINE_int64(tsk_validity_seconds, 60 * 60 * 24 * 7,
+             "Number of seconds that a TSK (Token Signing Key) is valid for.");
+TAG_FLAG(tsk_validity_seconds, advanced);
+TAG_FLAG(tsk_validity_seconds, experimental);
+
+DEFINE_int64(tsk_rotation_seconds, 60 * 60 * 24 * 1,
+             "Number of seconds between consecutive activations of newly "
+             "generated TSKs (Token Signing Keys).");
+TAG_FLAG(tsk_rotation_seconds, advanced);
+TAG_FLAG(tsk_rotation_seconds, experimental);
+
 using std::min;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::ServiceIf;
+using kudu::security::TokenSigner;
+using kudu::security::TokenSigningPrivateKey;
 using kudu::tserver::ConsensusServiceImpl;
 using kudu::tserver::TabletCopyServiceImpl;
 using strings::Substitute;
@@ -103,11 +119,18 @@ Status Master::Init() {
   // becomes a leader.
   cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
 
+  token_signer_.reset(new TokenSigner(FLAGS_tsk_validity_seconds,
+                                      FLAGS_tsk_rotation_seconds));
   // TODO(PKI): this also will need to be wired together with CatalogManager
   // soon, including initializing the token manager with the proper next
   // sequence number.
-  authn_token_manager_.reset(new AuthnTokenManager());
-  RETURN_NOT_OK(authn_token_manager_->Init(1));
+  {
+    unique_ptr<TokenSigningPrivateKey> key;
+    RETURN_NOT_OK(token_signer_->CheckNeedKey(&key));
+    if (key) {
+      RETURN_NOT_OK(token_signer_->AddKey(std::move(key)));
+    }
+  }
 
   state_ = kInitialized;
   return Status::OK();

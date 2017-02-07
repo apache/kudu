@@ -23,7 +23,6 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/master/authn_token_manager.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master_cert_authority.h"
@@ -32,6 +31,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/server/webserver.h"
+#include "kudu/security/token_signer.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 
@@ -378,7 +378,7 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     // essentially allowing unlimited renewal, which is probably not what
     // we want.
     SignedTokenPB authn_token;
-    Status s = server_->authn_token_manager()->GenerateToken(
+    Status s = server_->token_signer()->GenerateAuthnToken(
         rpc->user_credentials().real_user(),
         &authn_token);
     if (!s.ok()) {

@@ -45,6 +45,7 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_socket.h"
 #include "kudu/security/token_signer.h"
+#include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -78,6 +79,7 @@ using kudu::security::PrivateKey;
 using kudu::security::SignedTokenPB;
 using kudu::security::TlsContext;
 using kudu::security::TokenSigner;
+using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenVerifier;
 
 namespace kudu {
@@ -160,9 +162,15 @@ TEST_P(TestNegotiation, TestNegotiation) {
   FLAGS_rpc_encrypt_loopback_connections = desc.rpc_encrypt_loopback;
 
   // Generate an optional client token and server token verifier.
-  TokenSigner token_signer(1);
+  TokenSigner token_signer(60, 20);
+  {
+    unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(token_signer.CheckNeedKey(&key));
+    // No keys are available yet, so should be able to add.
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(token_signer.AddKey(std::move(key)));
+  }
   TokenVerifier token_verifier;
-  ASSERT_OK(token_signer.RotateSigningKey());
   boost::optional<SignedTokenPB> authn_token;
   if (desc.client.token) {
     authn_token = SignedTokenPB();
@@ -173,7 +181,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
     ASSERT_OK(token_signer.SignToken(&*authn_token));
   }
   if (desc.server.token) {
-    ASSERT_OK(token_verifier.ImportPublicKeys(token_signer.GetTokenSigningPublicKeys(0)));
+    ASSERT_OK(token_verifier.ImportKeys(token_signer.verifier().ExportKeys()));
   }
 
   // Create the listening socket, client socket, and server socket.

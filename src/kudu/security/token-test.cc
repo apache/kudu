@@ -15,16 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/util/test_util.h"
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "kudu/gutil/walltime.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
+#include "kudu/security/token_signing_key.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/util/test_util.h"
 
-DECLARE_int32(token_signing_key_num_rsa_bits);
-DECLARE_int64(token_signing_key_validity_seconds);
+DECLARE_int32(tsk_num_rsa_bits);
 
+using std::unique_ptr;
 
 namespace kudu {
 namespace security {
@@ -48,87 +55,229 @@ SignedTokenPB MakeIncompatibleToken() {
   return ret;
 }
 
+// Generate public key as a string in DER format for tests.
+Status GeneratePublicKeyStrDer(string* ret) {
+  PrivateKey private_key;
+  RETURN_NOT_OK(GeneratePrivateKey(512, &private_key));
+  PublicKey public_key;
+  RETURN_NOT_OK(private_key.GetPublicKey(&public_key));
+  string public_key_str_der;
+  RETURN_NOT_OK(public_key.ToString(&public_key_str_der, DataFormat::DER));
+  *ret = public_key_str_der;
+  return Status::OK();
+}
+
+// Generate token signing key with the specified parameters.
+Status GenerateTokenSigningKey(int64_t seq_num,
+                               int64_t expire_time_seconds,
+                               unique_ptr<TokenSigningPrivateKey>* tsk) {
+  {
+    unique_ptr<PrivateKey> private_key(new PrivateKey);
+    RETURN_NOT_OK(GeneratePrivateKey(512, private_key.get()));
+    tsk->reset(new TokenSigningPrivateKey(
+        seq_num, expire_time_seconds, std::move(private_key)));
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 class TokenTest : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
     // Set the keylength smaller to make tests run faster.
-    FLAGS_token_signing_key_num_rsa_bits = 512;
+    FLAGS_tsk_num_rsa_bits = 512;
   }
 };
 
-TEST_F(TokenTest, TestSigner) {
-  SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+TEST_F(TokenTest, TestInit) {
+  TokenSigner signer(60, 20);
+  const TokenVerifier& verifier(signer.verifier());
 
-  const int kStartingSeqNum = 123;
-  TokenSigner signer(kStartingSeqNum);
+  SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+  Status s = signer.SignToken(&token);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  static const int64_t kKeySeqNum = 100;
+  PrivateKey private_key;
+  ASSERT_OK(GeneratePrivateKey(512, &private_key));
+  string private_key_str_der;
+  ASSERT_OK(private_key.ToString(&private_key_str_der, DataFormat::DER));
+  TokenSigningPrivateKeyPB pb;
+  pb.set_rsa_key_der(private_key_str_der);
+  pb.set_key_seq_num(kKeySeqNum);
+  pb.set_expire_unix_epoch_seconds(WallTime_Now() + 120);
+
+  ASSERT_OK(signer.ImportKeys({pb}));
+  vector<TokenSigningPublicKeyPB> public_keys(verifier.ExportKeys());
+  ASSERT_EQ(1, public_keys.size());
+  ASSERT_EQ(kKeySeqNum, public_keys[0].key_seq_num());
+
+  // It should be possible to sign tokens once the signer is initialized.
+  ASSERT_OK(signer.SignToken(&token));
+  ASSERT_TRUE(token.has_signature());
+}
+
+TEST_F(TokenTest, TestTokenSignerAddKeys) {
+  {
+    TokenSigner signer(60, 20);
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    // No keys are available yet, so should be able to add.
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    // It's not time to add next key yet.
+    ASSERT_EQ(nullptr, key.get());
+  }
+
+  {
+    // Special configuration for TokenSigner: rotation interval is zero,
+    // so should be able to add two keys right away.
+    TokenSigner signer(60, 0);
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    // No keys are available yet, so should be able to add.
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+
+    // Should be able to add next key right away.
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+
+    // Active key and next key are already in place: no need for a new key.
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_EQ(nullptr, key.get());
+  }
+
+  {
+    // Special configuration for TokenSigner: key rotation interval
+    // just one second shorter than the validity interval. It should not
+    // need next key right away, but should need next key after 1 second.
+    TokenSigner signer(60, 1);
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    // No keys are available yet, so should be able to add.
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+
+    // Should not need next key right away.
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_EQ(nullptr, key.get());
+
+    SleepFor(MonoDelta::FromMilliseconds(1001));
+
+    // Should need next key after 1 second.
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+
+    // Active key and next key are already in place: no need for a new key.
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_EQ(nullptr, key.get());
+  }
+}
+
+// Test how test rotation works.
+TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
+  // Key rotation interval 0 allows adding 2 keys in a row with no delay.
+  TokenSigner signer(60, 0);
+  const TokenVerifier& verifier(signer.verifier());
 
   // Should start off with no signing keys.
-  ASSERT_TRUE(signer.GetTokenSigningPublicKeys(0).empty());
+  ASSERT_TRUE(verifier.ExportKeys().empty());
 
-  // Trying to sign a token when there is no TSK should give
-  // an error.
+  // Trying to sign a token when there is no TSK should give an error.
+  SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
   Status s = signer.SignToken(&token);
-  ASSERT_TRUE(s.IsIllegalState());
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
-  // Rotate the TSK once.
-  ASSERT_OK(signer.RotateSigningKey());
+  // Generate and set a new key.
+  int64_t signing_key_seq_num;
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    signing_key_seq_num = key->key_seq_num();
+    ASSERT_GT(signing_key_seq_num, -1);
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
 
   // We should see the key now if we request TSKs starting at a
   // lower sequence number.
-  ASSERT_EQ(signer.GetTokenSigningPublicKeys(0).size(), 1);
+  ASSERT_EQ(1, verifier.ExportKeys().size());
   // We should not see the key if we ask for the sequence number
   // that it is assigned.
-  ASSERT_EQ(signer.GetTokenSigningPublicKeys(kStartingSeqNum).size(), 0);
+  ASSERT_EQ(0, verifier.ExportKeys(signing_key_seq_num).size());
 
-  // We should be able to sign a token, even though we have
-  // just one key.
+  // We should be able to sign a token now.
   ASSERT_OK(signer.SignToken(&token));
   ASSERT_TRUE(token.has_signature());
-  ASSERT_EQ(token.signing_key_seq_num(), kStartingSeqNum);
+  ASSERT_EQ(signing_key_seq_num, token.signing_key_seq_num());
 
-  // Rotate again and check that we return the right keys.
-  ASSERT_OK(signer.RotateSigningKey());
-  ASSERT_EQ(signer.GetTokenSigningPublicKeys(0).size(), 2);
-  ASSERT_EQ(signer.GetTokenSigningPublicKeys(kStartingSeqNum).size(), 1);
-  ASSERT_EQ(signer.GetTokenSigningPublicKeys(kStartingSeqNum + 1).size(), 0);
+  // Set next key and check that we return the right keys.
+  int64_t next_signing_key_seq_num;
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    next_signing_key_seq_num = key->key_seq_num();
+    ASSERT_GT(next_signing_key_seq_num, signing_key_seq_num);
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
+  ASSERT_EQ(2, verifier.ExportKeys().size());
+  ASSERT_EQ(1, verifier.ExportKeys(signing_key_seq_num).size());
+  ASSERT_EQ(0, verifier.ExportKeys(next_signing_key_seq_num).size());
 
-  // We still use the original key for signing (we always use the second-to-latest
-  // key).
-  token = MakeUnsignedToken(WallTime_Now());
-  ASSERT_OK(signer.SignToken(&token));
-  ASSERT_TRUE(token.has_signature());
-  ASSERT_EQ(token.signing_key_seq_num(), kStartingSeqNum);
-
-  // If we rotate one more time, we should start using the second key.
-  ASSERT_OK(signer.RotateSigningKey());
-  token = MakeUnsignedToken(WallTime_Now());
-  ASSERT_OK(signer.SignToken(&token));
-  ASSERT_TRUE(token.has_signature());
-  ASSERT_EQ(token.signing_key_seq_num(), kStartingSeqNum + 1);
+  // The first key should be used for signing: the next one is saved
+  // for the next round.
+  {
+    SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+    ASSERT_OK(signer.SignToken(&token));
+    ASSERT_TRUE(token.has_signature());
+    ASSERT_EQ(signing_key_seq_num, token.signing_key_seq_num());
+  }
 }
 
-// Test that the TokenSigner can export its public keys in protobuf form.
+// Test that the TokenSigner can export its public keys in protobuf form
+// via bound TokenVerifier.
 TEST_F(TokenTest, TestExportKeys) {
   // Test that the exported public keys don't contain private key material,
   // and have an appropriate expiration.
-  TokenSigner signer(1);
-  ASSERT_OK(signer.RotateSigningKey());
-  auto keys = signer.GetTokenSigningPublicKeys(0);
-  ASSERT_EQ(keys.size(), 1);
+  const int64_t key_exp_seconds = 60;
+  TokenSigner signer(key_exp_seconds, 30);
+  int64_t key_seq_num;
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    key_seq_num = key->key_seq_num();
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
+  const TokenVerifier& verifier(signer.verifier());
+  auto keys = verifier.ExportKeys();
+  ASSERT_EQ(1, keys.size());
   const TokenSigningPublicKeyPB& key = keys[0];
   ASSERT_TRUE(key.has_rsa_key_der());
-  ASSERT_EQ(key.key_seq_num(), 1);
+  ASSERT_EQ(key_seq_num, key.key_seq_num());
   ASSERT_TRUE(key.has_expire_unix_epoch_seconds());
-  ASSERT_GT(key.expire_unix_epoch_seconds(), WallTime_Now());
+  const int64_t now = WallTime_Now();
+  ASSERT_GT(key.expire_unix_epoch_seconds(), now);
+  ASSERT_LE(key.expire_unix_epoch_seconds(), now + key_exp_seconds);
 }
 
 // Test that the TokenVerifier can import keys exported by the TokenSigner
 // and then verify tokens signed by it.
 TEST_F(TokenTest, TestEndToEnd_Valid) {
-  TokenSigner signer(1);
-  ASSERT_OK(signer.RotateSigningKey());
+  TokenSigner signer(60, 20);
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
 
   // Make and sign a token.
   SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
@@ -136,7 +285,7 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
 
   // Try to verify it.
   TokenVerifier verifier;
-  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0)));
+  ASSERT_OK(verifier.ImportKeys(signer.verifier().ExportKeys()));
   TokenPB token;
   ASSERT_EQ(VerificationResult::VALID, verifier.VerifyTokenSignature(signed_token, &token));
 }
@@ -144,11 +293,17 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
 // Test all of the possible cases covered by token verification.
 // See VerificationResult.
 TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
-  TokenSigner signer(1);
-  ASSERT_OK(signer.RotateSigningKey());
+  // Key rotation interval 0 allows adding 2 keys in a row with no delay.
+  TokenSigner signer(60, 0);
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
 
   TokenVerifier verifier;
-  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0)));
+  ASSERT_OK(verifier.ImportKeys(signer.verifier().ExportKeys()));
 
   // Make and sign a token, but corrupt the data in it.
   {
@@ -188,11 +343,18 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
-  // Rotate to a new key, but don't inform the verifier of it yet. When we
+  // Set a new signing key, but don't inform the verifier of it yet. When we
   // verify, we expect the verifier to complain the key is unknown.
-  ASSERT_OK(signer.RotateSigningKey());
-  ASSERT_OK(signer.RotateSigningKey());
   {
+    {
+      std::unique_ptr<TokenSigningPrivateKey> key;
+      ASSERT_OK(signer.CheckNeedKey(&key));
+      ASSERT_NE(nullptr, key.get());
+      ASSERT_OK(signer.AddKey(std::move(key)));
+      bool has_rotated = false;
+      ASSERT_OK(signer.TryRotateKey(&has_rotated));
+      ASSERT_TRUE(has_rotated);
+    }
     SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
@@ -200,20 +362,61 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
               verifier.VerifyTokenSignature(signed_token, &token));
   }
 
-  // Rotate to a signing key which is already expired, and inform the verifier
+  // Set a new signing key which is already expired, and inform the verifier
   // of all of the current keys. The verifier should recognize the key but
   // know that it's expired.
-  FLAGS_token_signing_key_validity_seconds = -10;
-  ASSERT_OK(signer.RotateSigningKey());
-  ASSERT_OK(signer.RotateSigningKey());
-  ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(
-      verifier.GetMaxKnownKeySequenceNumber())));
   {
+    {
+      unique_ptr<TokenSigningPrivateKey> tsk;
+      ASSERT_OK(GenerateTokenSigningKey(100, WallTime_Now() - 1, &tsk));
+      // This direct access is necessary because AddKey() does not allow to add
+      // an expired key.
+      TokenSigningPublicKeyPB tsk_public_pb;
+      tsk->ExportPublicKeyPB(&tsk_public_pb);
+      ASSERT_OK(verifier.ImportKeys({tsk_public_pb}));
+      signer.tsk_deque_.push_front(std::move(tsk));
+    }
+
     SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
     ASSERT_EQ(VerificationResult::EXPIRED_SIGNING_KEY,
               verifier.VerifyTokenSignature(signed_token, &token));
+  }
+}
+
+// Test functionality of the TokenVerifier::ImportKeys() method.
+TEST_F(TokenTest, TestTokenVerifierImportKeys) {
+  TokenVerifier verifier;
+
+  // An attempt to import no keys is fine.
+  ASSERT_OK(verifier.ImportKeys({}));
+  ASSERT_TRUE(verifier.ExportKeys().empty());
+
+  TokenSigningPublicKeyPB tsk_public_pb;
+  const auto exp_time = WallTime_Now() + 600;
+  tsk_public_pb.set_key_seq_num(100500);
+  tsk_public_pb.set_expire_unix_epoch_seconds(exp_time);
+  string public_key_str_der;
+  ASSERT_OK(GeneratePublicKeyStrDer(&public_key_str_der));
+  tsk_public_pb.set_rsa_key_der(public_key_str_der);
+
+  ASSERT_OK(verifier.ImportKeys({ tsk_public_pb }));
+  {
+    const auto& exported_tsks_public_pb = verifier.ExportKeys();
+    ASSERT_EQ(1, exported_tsks_public_pb.size());
+    EXPECT_EQ(tsk_public_pb.SerializeAsString(),
+              exported_tsks_public_pb[0].SerializeAsString());
+  }
+
+  // Re-importing the same key again is fine, and the total number
+  // of exported keys should not increase.
+  ASSERT_OK(verifier.ImportKeys({ tsk_public_pb }));
+  {
+    const auto& exported_tsks_public_pb = verifier.ExportKeys();
+    ASSERT_EQ(1, exported_tsks_public_pb.size());
+    EXPECT_EQ(tsk_public_pb.SerializeAsString(),
+              exported_tsks_public_pb[0].SerializeAsString());
   }
 }
 

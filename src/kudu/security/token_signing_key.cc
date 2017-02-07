@@ -56,10 +56,24 @@ bool TokenSigningPublicKey::VerifySignature(const SignedTokenPB& token) const {
 }
 
 TokenSigningPrivateKey::TokenSigningPrivateKey(
+    const TokenSigningPrivateKeyPB& pb)
+    : key_(new PrivateKey) {
+  CHECK_OK(key_->FromString(pb.rsa_key_der(), DataFormat::DER));
+  private_key_der_ = pb.rsa_key_der();
+  key_seq_num_ = pb.key_seq_num();
+  expire_time_ = pb.expire_unix_epoch_seconds();
+
+  PublicKey public_key;
+  CHECK_OK(key_->GetPublicKey(&public_key));
+  CHECK_OK(public_key.ToString(&public_key_der_, DataFormat::DER));
+}
+
+TokenSigningPrivateKey::TokenSigningPrivateKey(
     int64_t key_seq_num, int64_t expire_time, unique_ptr<PrivateKey> key)
     : key_(std::move(key)),
       key_seq_num_(key_seq_num),
       expire_time_(expire_time) {
+  CHECK_OK(key_->ToString(&private_key_der_, DataFormat::DER));
   PublicKey public_key;
   CHECK_OK(key_->GetPublicKey(&public_key));
   CHECK_OK(public_key.ToString(&public_key_der_, DataFormat::DER));
@@ -77,7 +91,14 @@ Status TokenSigningPrivateKey::Sign(SignedTokenPB* token) const {
   return Status::OK();
 }
 
-void TokenSigningPrivateKey::ExportPublicKeyPB(TokenSigningPublicKeyPB* pb) {
+void TokenSigningPrivateKey::ExportPB(TokenSigningPrivateKeyPB* pb) const {
+  pb->Clear();
+  pb->set_key_seq_num(key_seq_num_);
+  pb->set_rsa_key_der(private_key_der_);
+  pb->set_expire_unix_epoch_seconds(expire_time_);
+}
+
+void TokenSigningPrivateKey::ExportPublicKeyPB(TokenSigningPublicKeyPB* pb) const {
   pb->Clear();
   pb->set_key_seq_num(key_seq_num_);
   pb->set_rsa_key_der(public_key_der_);

@@ -62,6 +62,7 @@ class TokenSigningPublicKey {
 // number and expiration date.
 class TokenSigningPrivateKey {
  public:
+  explicit TokenSigningPrivateKey(const TokenSigningPrivateKeyPB& pb);
   TokenSigningPrivateKey(int64_t key_seq_num,
                          int64_t expire_time,
                          std::unique_ptr<PrivateKey> key);
@@ -70,13 +71,23 @@ class TokenSigningPrivateKey {
   // Sign a token, and store the signature and signing key's sequence number.
   Status Sign(SignedTokenPB* token) const;
 
+  // Export data into corresponding PB structure.
+  void ExportPB(TokenSigningPrivateKeyPB* pb) const;
+
   // Export the public-key portion of this signing key.
-  void ExportPublicKeyPB(TokenSigningPublicKeyPB* pb);
+  void ExportPublicKeyPB(TokenSigningPublicKeyPB* pb) const;
+
+  int64_t key_seq_num() const { return key_seq_num_; }
+  int64_t expire_time() const { return expire_time_; }
 
  private:
   std::unique_ptr<PrivateKey> key_;
-  // The 'public_key_der_' is a serialized 'key_' in DER format: just a cache.
+  // The 'private_key_der_' is a serialized 'key_' in DER format: just a cache.
+  std::string private_key_der_;
+  // The 'public_key_der_' is serialized public part of 'key_' in DER format;
+  // just a cache.
   std::string public_key_der_;
+
   int64_t key_seq_num_;
   int64_t expire_time_;
 

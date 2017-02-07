@@ -42,7 +42,11 @@ class ThreadPool;
 namespace rpc {
 class Messenger;
 class ServicePool;
-}
+} // namespace rpc
+
+namespace security {
+class TokenSigner;
+} // namespace security
 
 namespace master {
 
@@ -78,7 +82,7 @@ class Master : public server::ServerBase {
 
   MasterCertAuthority* cert_authority() { return cert_authority_.get(); }
 
-  AuthnTokenManager* authn_token_manager() { return authn_token_manager_.get(); }
+  security::TokenSigner* token_signer() { return token_signer_.get(); }
 
   TSManager* ts_manager() { return ts_manager_.get(); }
 
@@ -125,7 +129,7 @@ class Master : public server::ServerBase {
   MasterState state_;
 
   std::unique_ptr<MasterCertAuthority> cert_authority_;
-  std::unique_ptr<AuthnTokenManager> authn_token_manager_;
+  std::unique_ptr<security::TokenSigner> token_signer_;
   gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;

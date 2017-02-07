@@ -447,7 +447,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
     vector<security::TokenSigningPublicKeyPB> tsks(last_hb_response_.tsks().begin(),
                                                    last_hb_response_.tsks().end());
     RETURN_NOT_OK_PREPEND(
-        server_->mutable_token_verifier()->ImportPublicKeys(tsks),
+        server_->mutable_token_verifier()->ImportKeys(tsks),
         "failed to import token signing public keys from master heartbeat");
   }
 

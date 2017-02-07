@@ -1325,7 +1325,8 @@ TEST_F(MasterTest, TestConnectToMaster) {
   EXPECT_GT(resp.ca_cert_der(0).size(), 100) << "CA cert should be at least 100 bytes";
   ASSERT_TRUE(resp.has_authn_token()) << "should return an authn token";
   EXPECT_EQ(256, resp.authn_token().signature().size());
-  EXPECT_EQ(1, resp.authn_token().signing_key_seq_num());
+  ASSERT_TRUE(resp.authn_token().has_signing_key_seq_num());
+  EXPECT_GT(resp.authn_token().signing_key_seq_num(), -1);
 
   security::TokenPB token;
   ASSERT_TRUE(token.ParseFromString(resp.authn_token().token_data()));

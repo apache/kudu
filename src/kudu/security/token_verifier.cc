@@ -17,6 +17,7 @@
 
 #include "kudu/security/token_verifier.h"
 
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -29,6 +30,7 @@
 
 using std::lock_guard;
 using std::string;
+using std::transform;
 using std::unique_ptr;
 using std::vector;
 
@@ -52,11 +54,11 @@ int64_t TokenVerifier::GetMaxKnownKeySequenceNumber() const {
 
 // Import a set of public keys provided by the token signer (typically
 // running on another node).
-Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& public_keys) {
+Status TokenVerifier::ImportKeys(const vector<TokenSigningPublicKeyPB>& keys) {
   // Do the construction outside of the lock, to avoid holding the
   // lock while doing lots of allocation.
   vector<unique_ptr<TokenSigningPublicKey>> tsks;
-  for (const auto& pb : public_keys) {
+  for (const auto& pb : keys) {
     // Sanity check the key.
     if (!pb.has_rsa_key_der()) {
       return Status::RuntimeError(
@@ -79,6 +81,18 @@ Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& pu
     keys_by_seq_.emplace(tsk_ptr->pb().key_seq_num(), std::move(tsk_ptr));
   }
   return Status::OK();
+}
+
+std::vector<TokenSigningPublicKeyPB> TokenVerifier::ExportKeys(
+    int64_t after_sequence_number) const {
+  vector<TokenSigningPublicKeyPB> ret;
+  shared_lock<RWMutex> l(lock_);
+  ret.reserve(keys_by_seq_.size());
+  transform(keys_by_seq_.upper_bound(after_sequence_number),
+            keys_by_seq_.end(),
+            back_inserter(ret),
+            [](const KeysMap::value_type& e) { return e.second->pb(); });
+  return ret;
 }
 
 // Verify the signature on the given token.

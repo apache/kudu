@@ -72,14 +72,25 @@ message SignedTokenPB {
   optional int64 signing_key_seq_num = 3;
 };
 
-// A public key corresponding to the private key used to sign tokens.
+// A private key used to sign tokens.
+message TokenSigningPrivateKeyPB {
+  optional int64 key_seq_num = 1;
+
+  // The private key material, in DER format.
+  optional bytes rsa_key_der = 2 [ (kudu.REDACT) = true ];
+
+  // The time at which signatures made by this key should no longer be valid.
+  optional int64 expire_unix_epoch_seconds = 3;
+};
+
+// A public key corresponding to the private key used to sign tokens. Only
+// this part is necessary for token verification.
 message TokenSigningPublicKeyPB {
   optional int64 key_seq_num = 1;
 
   // The public key material, in DER format.
   optional bytes rsa_key_der = 2;
 
-  // The time at which signatures made by this key should no longer
-  // be valid.
+  // The time at which signatures made by this key should no longer be valid.
   optional int64 expire_unix_epoch_seconds = 3;
 };
