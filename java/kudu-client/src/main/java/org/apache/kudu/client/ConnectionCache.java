@@ -27,15 +27,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
+
 import org.jboss.netty.channel.DefaultChannelPipeline;
 import org.jboss.netty.channel.socket.SocketChannel;
 import org.jboss.netty.channel.socket.SocketChannelConfig;
+import org.jboss.netty.handler.codec.frame.LengthFieldBasedFrameDecoder;
 import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -245,8 +248,13 @@ class ConnectionCache {
   }
 
   private final class TabletClientPipeline extends DefaultChannelPipeline {
-
     TabletClient init(ServerInfo serverInfo) {
+      super.addFirst("decode-frames", new LengthFieldBasedFrameDecoder(
+          KuduRpc.MAX_RPC_SIZE,
+          0, // length comes at offset 0
+          4, // length prefix is 4 bytes long
+          0, // no "length adjustment"
+          4 /* strip the length prefix */));
       AsyncKuduClient kuduClient = ConnectionCache.this.kuduClient;
       final TabletClient client = new TabletClient(kuduClient, serverInfo);
       if (kuduClient.getDefaultSocketReadTimeoutMs() > 0) {

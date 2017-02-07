@@ -110,6 +110,7 @@ public class SecureRpcHelper {
   }
 
   private void sendSaslMessage(Channel channel, RpcHeader.NegotiatePB msg) {
+    Preconditions.checkNotNull(channel);
     RpcHeader.RequestHeader.Builder builder = RpcHeader.RequestHeader.newBuilder();
     builder.setCallId(SASL_CALL_ID);
     RpcHeader.RequestHeader header = builder.build();
@@ -155,7 +156,7 @@ public class SecureRpcHelper {
 
   private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException {
-
+    Preconditions.checkNotNull(chan);
     // Store the supported features advertised by the server.
     ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
     for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {

@@ -32,11 +32,13 @@ import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import javax.security.auth.Subject;
 import javax.security.sasl.SaslException;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
+
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -47,8 +49,8 @@ import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.ExceptionEvent;
-import org.jboss.netty.handler.codec.replay.ReplayingDecoder;
-import org.jboss.netty.handler.codec.replay.VoidEnum;
+import org.jboss.netty.channel.MessageEvent;
+import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,15 +82,15 @@ import org.apache.kudu.util.Pair;
  * channel isn't connected.
  */
 @InterfaceAudience.Private
-public class TabletClient extends ReplayingDecoder<VoidEnum> {
+public class TabletClient extends SimpleChannelUpstreamHandler {
 
   public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
   private ArrayList<KuduRpc<?>> pendingRpcs;
 
   public static final byte RPC_CURRENT_VERSION = 9;
-  /** Initial part of the header for 0.95 and up.  */
-  private static final byte[] RPC_HEADER = new byte[] { 'h', 'r', 'p', 'c',
+  /** Initial header sent by the client upon connection establishment */
+  private static final byte[] CONNECTION_HEADER = new byte[] { 'h', 'r', 'p', 'c',
       RPC_CURRENT_VERSION,     // RPC version.
       0,
       0
@@ -170,6 +172,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         Status statusNotSupported = Status.NotSupported("the server does not support the" +
             "APPLICATION_FEATURE_FLAGS RPC feature");
         rpc.errback(new NonRecoverableException(statusNotSupported));
+        // TODO(todd): this should return here. We seem to lack test coverage!
       }
 
       encodedRpcAndId = encode(rpc);
@@ -374,8 +377,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   @Override
   @SuppressWarnings("unchecked")
-  protected Object decode(ChannelHandlerContext ctx, Channel chan, ChannelBuffer buf,
-                              VoidEnum voidEnum) throws NonRecoverableException {
+  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
+    Object m = evt.getMessage();
+    if (!(m instanceof ChannelBuffer)) {
+      ctx.sendUpstream(evt);
+      return;
+    }
+    Channel chan = ctx.getChannel();
+    ChannelBuffer buf = (ChannelBuffer)m;
     final long start = System.nanoTime();
     final int rdx = buf.readerIndex();
     LOG.debug("------------------>> ENTERING DECODE >>------------------");
@@ -389,7 +398,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       throw new NonRecoverableException(statusIOE, e);
     }
     if (buf == null) {
-      return null;
+      return;
     }
 
     CallResponse response = new CallResponse(buf);
@@ -457,7 +466,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (LOG.isDebugEnabled()) {
       LOG.debug(getPeerUuidLoggingString() + "rpcid=" + rpcid +
           ", response size=" + (buf.readerIndex() - rdx) + " bytes" +
-          ", " + actualReadableBytes() + " readable bytes left" +
           ", rpc=" + rpc);
     }
 
@@ -474,7 +482,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (!retryableHeaderError.ok()) {
       rpc.addTrace(traceBuilder.callStatus(retryableHeaderError).build());
       kuduClient.handleRetryableError(rpc, new RecoverableException(retryableHeaderError));
-      return null;
+      return;
     }
 
     // We can get this Message from within the RPC's expected type,
@@ -486,7 +494,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         exception = dispatchTSErrorOrReturnException(rpc, error, traceBuilder);
         if (exception == null) {
           // It was taken care of.
-          return null;
+          return;
         } else {
           // We're going to errback.
           decoded = null;
@@ -497,7 +505,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         exception = dispatchMasterErrorOrReturnException(rpc, error, traceBuilder);
         if (exception == null) {
           // Exception was taken care of.
-          return null;
+          return;
         } else {
           decoded = null;
         }
@@ -527,7 +535,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       LOG.debug("------------------<< LEAVING  DECODE <<------------------" +
           " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
     }
-    return null;  // Stop processing here.  The Deferred does everything else.
   }
 
   /**
@@ -590,42 +597,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   /**
-   * Decodes the response of an RPC and triggers its {@link Deferred}.
-   * <p>
-   * This method is used by FrameDecoder when the channel gets
-   * disconnected.  The buffer for that channel is passed to this method in
-   * case there's anything left in it.
-   * @param ctx Unused.
-   * @param chan The channel on which the response came.
-   * @param buf The buffer containing the raw RPC response.
-   * @return {@code null}, always.
-   */
-  @Override
-  protected Object decodeLast(final ChannelHandlerContext ctx,
-                              final Channel chan,
-                              final ChannelBuffer buf,
-                              final VoidEnum unused) throws NonRecoverableException {
-    // When we disconnect, decodeLast is called instead of decode.
-    // We simply check whether there's any data left in the buffer, in which
-    // case we attempt to process it.  But if there's no data left, then we
-    // don't even bother calling decode() as it'll complain that the buffer
-    // doesn't contain enough data, which unnecessarily pollutes the logs.
-    if (buf.readable()) {
-      try {
-        return decode(ctx, chan, buf, unused);
-      } finally {
-        if (buf.readable()) {
-          LOG.error(getPeerUuidLoggingString() + "After decoding the last message on " + chan +
-              ", there was still some undecoded bytes in the channel's" +
-              " buffer (which are going to be lost)");
-        }
-      }
-    } else {
-      return null;
-    }
-  }
-
-  /**
    * Tells whether or not this handler should be used.
    * <p>
    * @return true if this instance can be used, else false if this handler is known to have been
@@ -638,27 +609,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
   }
 
-  /**
-   * Ensures that at least a {@code nbytes} are readable from the given buffer.
-   * If there aren't enough bytes in the buffer this will raise an exception
-   * and cause the {@link ReplayingDecoder} to undo whatever we did thus far
-   * so we can wait until we read more from the socket.
-   * @param buf Buffer to check.
-   * @param nbytes Number of bytes desired.
-   */
-  static void ensureReadable(final ChannelBuffer buf, final int nbytes) {
-    buf.markReaderIndex();
-    buf.skipBytes(nbytes); // can puke with Throwable
-    buf.resetReaderIndex();
-  }
-
   @Override
   public void channelConnected(final ChannelHandlerContext ctx,
                                final ChannelStateEvent e) {
     final Channel chan = e.getChannel();
-    ChannelBuffer header = connectionHeaderPreamble();
-    header.writerIndex(RPC_HEADER.length);
-    Channels.write(chan, header);
+    Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
 
     secureRpcHelper = new SecureRpcHelper(this);
     secureRpcHelper.sendHello(chan);
@@ -800,10 +755,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
   }
 
-
-  private ChannelBuffer connectionHeaderPreamble() {
-    return ChannelBuffers.wrappedBuffer(RPC_HEADER);
-  }
 
   /**
    * Sends the queued RPCs to the server, once we're connected to it.

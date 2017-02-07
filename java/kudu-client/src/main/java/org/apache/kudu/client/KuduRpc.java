@@ -70,6 +70,16 @@ public abstract class KuduRpc<R> {
   @VisibleForTesting
   public static final int MAX_TRACES_SIZE = 100;
 
+  /**
+   * Upper bound on the size of a byte array we de-serialize.
+   * This is to prevent Kudu from OOM'ing us, should there be a bug or
+   * undetected corruption of an RPC on the network, which would turn a
+   * an innocuous RPC into something allocating a ton of memory.
+   * The Hadoop RPC protocol doesn't do any checksumming as they probably
+   * assumed that TCP checksums would be sufficient (they're not).
+   */
+  static final int MAX_RPC_SIZE = 256 * 1024 * 1024; // 256MB
+
   // Service names.
   protected static final String MASTER_SERVICE_NAME = "kudu.master.MasterService";
   protected static final String TABLET_SERVER_SERVICE_NAME = "kudu.tserver.TabletServerService";
@@ -387,38 +397,5 @@ public abstract class KuduRpc<R> {
     }
     chanBuf.writerIndex(buf.length);
     return chanBuf;
-  }
-
-  /**
-   * Upper bound on the size of a byte array we de-serialize.
-   * This is to prevent Kudu from OOM'ing us, should there be a bug or
-   * undetected corruption of an RPC on the network, which would turn a
-   * an innocuous RPC into something allocating a ton of memory.
-   * The Hadoop RPC protocol doesn't do any checksumming as they probably
-   * assumed that TCP checksums would be sufficient (they're not).
-   */
-  static final long MAX_BYTE_ARRAY_MASK =
-      0xFFFFFFFFF0000000L;  // => max = 256MB
-
-  /**
-   * Verifies that the given length looks like a reasonable array length.
-   * This method accepts 0 as a valid length.
-   * @param buf The buffer from which the length was read.
-   * @param length The length to validate.
-   * @throws IllegalArgumentException if the length is negative or
-   * suspiciously large.
-   */
-  static void checkArrayLength(final ChannelBuffer buf, final long length) {
-    // 2 checks in 1.  If any of the high bits are set, we know the value is
-    // either too large, or is negative (if the most-significant bit is set).
-    if ((length & MAX_BYTE_ARRAY_MASK) != 0) {
-      if (length < 0) {
-        throw new IllegalArgumentException("Read negative byte array length: " +
-            length + " in buf=" + buf);
-      } else {
-        throw new IllegalArgumentException("Read byte array length that's too" +
-            " large: " + length + " > " + ~MAX_BYTE_ARRAY_MASK + " in buf=" + buf);
-      }
-    }
   }
 }

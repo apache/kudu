@@ -45,20 +45,15 @@ final class CallResponse {
    *
    * Afterwards, this constructs the RpcHeader from the buffer.
    * @param buf Channel buffer which call response reads from.
-   * @throws IllegalArgumentException If either the entire recorded packet
-   * size or recorded response header PB size are not within reasonable
-   * limits as defined by {@link KuduRpc#checkArrayLength(ChannelBuffer, long)}.
-   * @throws IndexOutOfBoundsException if the ChannelBuffer does not contain
-   * the amount of bytes specified by its length prefix.
+   * @throws IndexOutOfBoundsException if any length prefix inside the
+   * response points outside the bounds of the buffer.
    */
   public CallResponse(final ChannelBuffer buf) {
     this.buf = buf;
 
-    this.totalResponseSize = buf.readInt();
-    KuduRpc.checkArrayLength(buf, this.totalResponseSize);
-    TabletClient.ensureReadable(buf, this.totalResponseSize);
-
+    this.totalResponseSize = buf.readableBytes();
     final int headerSize = Bytes.readVarInt32(buf);
+    // No needs to bounds-check the size since 'buf' is already sized appropriately.
     final Slice headerSlice = nextBytes(buf, headerSize);
     RpcHeader.ResponseHeader.Builder builder = RpcHeader.ResponseHeader.newBuilder();
     KuduRpc.readProtobuf(headerSlice, builder);
@@ -82,9 +77,6 @@ final class CallResponse {
   /**
    * @return A slice pointing to the section of the packet reserved for the main
    * protobuf message.
-   * @throws IllegalArgumentException If the recorded size for the main message
-   * is not within reasonable limits as defined by
-   * {@link KuduRpc#checkArrayLength(ChannelBuffer, long)}.
    * @throws IllegalStateException If the offset for the main protobuf message
    * is not valid.
    */
@@ -107,9 +99,6 @@ final class CallResponse {
    * header response PB are not valid offsets for the array.
    * @throws IllegalArgumentException If the sidecar with the specified index
    * does not exist.
-   * @throws IllegalArgumentException If the recorded size for the main message
-   * is not within reasonable limits as defined by
-   * {@link KuduRpc#checkArrayLength(ChannelBuffer, long)}.
    */
   public Slice getSidecar(int sidecar) {
     cacheMessage();
@@ -149,14 +138,14 @@ final class CallResponse {
   }
 
   // After checking the length, generates a slice for the next 'length'
-  // bytes of 'buf'.
+  // bytes of 'buf'. Advances the buffer's read index by 'length' bytes.
   private static Slice nextBytes(final ChannelBuffer buf, final int length) {
-    KuduRpc.checkArrayLength(buf, length);
     byte[] payload;
     int offset;
     if (buf.hasArray()) {  // Zero copy.
       payload = buf.array();
       offset = buf.arrayOffset() + buf.readerIndex();
+      buf.skipBytes(length);
     } else {  // We have to copy the entire payload out of the buffer :(
       payload = new byte[length];
       buf.readBytes(payload);
