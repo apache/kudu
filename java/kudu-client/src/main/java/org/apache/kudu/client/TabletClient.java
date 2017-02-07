@@ -283,8 +283,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           ", payload=" + payload);
     }
 
-    payload = secureRpcHelper.wrap(payload);
-
     return new Pair<>(payload, rpcid);
   }
 
@@ -807,11 +805,6 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return ChannelBuffers.wrappedBuffer(RPC_HEADER);
   }
 
-  public void becomeReady(Channel chan) {
-    this.chan = chan;
-    sendQueuedRpcs();
-  }
-
   /**
    * Sends the queued RPCs to the server, once we're connected to it.
    * This gets called after {@link #channelConnected}, once we were able to
@@ -833,7 +826,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   void sendContext(Channel channel) {
     Channels.write(channel,  header());
-    becomeReady(channel);
+    this.chan = channel;
+    sendQueuedRpcs();
   }
 
   private ChannelBuffer header() {

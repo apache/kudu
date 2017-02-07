@@ -50,7 +50,6 @@ import com.google.common.collect.Sets;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.Channels;
 import org.slf4j.Logger;
@@ -82,7 +81,6 @@ public class SecureRpcHelper {
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
   private volatile boolean negoUnderway = true;
-  private boolean useWrap = false; // no QOP at the moment
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
 
   public SecureRpcHelper(final TabletClient client) {
@@ -138,50 +136,9 @@ public class SecureRpcHelper {
       }
       return null;
     }
-    return unwrap(buf);
+    return buf;
   }
 
-  /**
-   * When QOP of auth-int or auth-conf is selected
-   * This is used to unwrap the contents from the passed
-   * buffer payload.
-   */
-  public ChannelBuffer unwrap(ChannelBuffer payload) {
-    if (!useWrap) {
-      return payload;
-    }
-    int len = payload.readInt();
-    try {
-      payload =
-          ChannelBuffers.wrappedBuffer(saslClient.unwrap(payload.readBytes(len).array(), 0, len));
-      return payload;
-    } catch (SaslException e) {
-      throw new IllegalStateException("Failed to unwrap payload", e);
-    }
-  }
-
-  /**
-   * When QOP of auth-int or auth-conf is selected
-   * This is used to wrap the contents
-   * into the proper payload (ie encryption, signature, etc)
-   */
-  public ChannelBuffer wrap(ChannelBuffer content) {
-    if (!useWrap) {
-      return content;
-    }
-    try {
-      byte[] payload = new byte[content.writerIndex()];
-      content.readBytes(payload);
-      byte[] wrapped = saslClient.wrap(payload, 0, payload.length);
-      ChannelBuffer ret = ChannelBuffers.wrappedBuffer(new byte[4 + wrapped.length]);
-      ret.clear();
-      ret.writeInt(wrapped.length);
-      ret.writeBytes(wrapped);
-      return ret;
-    } catch (SaslException e) {
-      throw new IllegalStateException("Failed to wrap payload", e);
-    }
-  }
 
   private RpcHeader.NegotiatePB parseSaslMsgResponse(ChannelBuffer buf) {
     CallResponse response = new CallResponse(buf);
