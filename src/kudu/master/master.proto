@@ -269,6 +269,10 @@ message TSHeartbeatRequestPB {
   // If the tablet server needs its certificate signed, the CSR
   // in DER format.
   optional bytes csr_der = 5;
+
+  // The most recently known TSK sequence number. Allows the master to
+  // selectively notify the tablet server of more recent TSKs.
+  optional int64 latest_tsk_seq_num = 6;
 }
 
 message TSHeartbeatResponsePB {
@@ -307,6 +311,9 @@ message TSHeartbeatResponsePB {
   // independent certs to be trusted. They may or may not have any signing
   // relationship between them.
   repeated bytes ca_cert_der = 8;
+
+  // Token signing keys which the tablet server should begin trusting.
+  repeated security.TokenSigningPublicKeyPB tsks = 9;
 }
 
 //////////////////////////////

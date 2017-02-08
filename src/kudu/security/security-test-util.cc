@@ -22,6 +22,7 @@
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/tls_context.h"
 
 namespace kudu {
 namespace security {
@@ -39,6 +40,39 @@ Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
   return Status::OK();
 }
 
+std::ostream& operator<<(std::ostream& o, PkiConfig c) {
+    switch (c) {
+      case PkiConfig::NONE: o << "NONE"; break;
+      case PkiConfig::SELF_SIGNED: o << "SELF_SIGNED"; break;
+      case PkiConfig::TRUSTED: o << "TRUSTED"; break;
+      case PkiConfig::SIGNED: o << "SIGNED"; break;
+    }
+    return o;
+}
+
+Status ConfigureTlsContext(PkiConfig config,
+                           const Cert& ca_cert,
+                           const PrivateKey& ca_key,
+                           TlsContext* tls_context) {
+  switch (config) {
+    case PkiConfig::NONE: break;
+    case PkiConfig::SELF_SIGNED:
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      break;
+    case PkiConfig::TRUSTED:
+      RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
+      break;
+    case PkiConfig::SIGNED: {
+      RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      Cert cert;
+      RETURN_NOT_OK(CertSigner(&ca_cert, &ca_key).Sign(*tls_context->GetCsrIfNecessary(), &cert));
+      RETURN_NOT_OK(tls_context->AdoptSignedCert(cert));
+      break;
+    };
+  }
+  return Status::OK();
+}
 
 } // namespace security
 } // namespace kudu

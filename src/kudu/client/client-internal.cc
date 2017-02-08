@@ -618,14 +618,16 @@ void KuduClient::Data::ConnectedToClusterCb(
     }
   }
 
+  // Adopt the authentication token from the response, if it's been set.
+  if (connect_response.has_authn_token()) {
+    messenger_->set_authn_token(connect_response.authn_token());
+  }
+
   vector<StatusCallback> cbs;
   {
     std::lock_guard<simple_spinlock> l(leader_master_lock_);
     cbs.swap(leader_master_callbacks_);
     leader_master_rpc_.reset();
-    if (connect_response.has_authn_token()) {
-      authn_token_ = connect_response.authn_token();
-    }
 
     if (status.ok()) {
       leader_master_hostport_ = HostPort(leader_addr);

@@ -4655,7 +4655,7 @@ TEST_F(ClientTest, TestConnectToClusterCompatibility) {
 // certificate authority and authentication token from the master.
 TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
   // Client is already connected when the test starts.
-  ASSERT_TRUE(client_->data_->authn_token_ != boost::none);
+  ASSERT_TRUE(client_->data_->messenger_->authn_token() != boost::none);
   ASSERT_EQ(1, client_->data_->messenger_->tls_context().trusted_cert_count_for_tests());
 }
 

@@ -25,6 +25,7 @@
 #include <sasl/sasl.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
@@ -39,6 +40,7 @@ class Slice;
 
 namespace security {
 class TlsContext;
+class TokenVerifier;
 }
 
 namespace rpc {
@@ -54,7 +56,8 @@ class ServerNegotiation {
   //
   // The provided TlsContext must outlive this negotiation instance.
   explicit ServerNegotiation(std::unique_ptr<Socket> socket,
-                             const security::TlsContext* tls_context);
+                             const security::TlsContext* tls_context,
+                             const security::TokenVerifier* token_verifier);
 
   // Enable PLAIN authentication.
   // Despite PLAIN authentication taking a username and password, we disregard
@@ -69,6 +72,13 @@ class ServerNegotiation {
   // Returns mechanism negotiated by this connection.
   // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;
+
+  // Returns the negotiated authentication type for the connection.
+  // Must be called after Negotiate().
+  AuthenticationType negotiated_authn() const {
+    DCHECK_NE(negotiated_authn_, AuthenticationType::INVALID);
+    return negotiated_authn_;
+  }
 
   // Returns true if TLS was negotiated.
   // Must be called after Negotiate().
@@ -146,17 +156,31 @@ class ServerNegotiation {
   // Initialize the SASL server negotiation instance.
   Status InitSaslServer() WARN_UNUSED_RESULT;
 
-  // Handle case when client sends NEGOTIATE request.
+  // Handle case when client sends NEGOTIATE request. Builds the set of
+  // client-supported RPC features, determines a mutually supported
+  // authentication type to use for the connection, and sends a NEGOTIATE
+  // response.
   Status HandleNegotiate(const NegotiatePB& request) WARN_UNUSED_RESULT;
-
-  // Send a NEGOTIATE response to the client with the list of available mechanisms.
-  Status SendNegotiate(const std::set<SaslMechanism::Type>& server_mechs) WARN_UNUSED_RESULT;
 
   // Handle a TLS_HANDSHAKE request message from the server.
   Status HandleTlsHandshake(const NegotiatePB& request) WARN_UNUSED_RESULT;
 
   // Send a TLS_HANDSHAKE response message to the server with the provided token.
   Status SendTlsHandshake(std::string tls_token) WARN_UNUSED_RESULT;
+
+  // Authenticate the client using SASL. Populates the 'authenticated_user_'
+  // field with the SASL principal.
+  // 'recv_buf' allows a receive buffer to be reused.
+  Status AuthenticateBySasl(faststring* recv_buf) WARN_UNUSED_RESULT;
+
+  // Authenticate the client using a token. Populates the
+  // 'authenticated_user_' field with the token's principal.
+  // 'recv_buf' allows a receive buffer to be reused.
+  Status AuthenticateByToken(faststring* recv_buf) WARN_UNUSED_RESULT;
+
+  // Authenticate the client using the client's TLS certificate. Populates the
+  // 'authenticated_user_' field with the certificate's subject.
+  Status AuthenticateByCertificate() WARN_UNUSED_RESULT;
 
   // Handle case when client sends SASL_INITIATE request.
   // Returns Status::OK if the SASL negotiation is complete, or
@@ -191,6 +215,9 @@ class ServerNegotiation {
   security::TlsHandshake tls_handshake_;
   bool tls_negotiated_;
 
+  // TSK state.
+  const security::TokenVerifier* token_verifier_;
+
   // The set of features supported by the client and server. Filled in during negotiation.
   std::set<RpcFeatureFlag> client_features_;
   std::set<RpcFeatureFlag> server_features_;
@@ -199,7 +226,11 @@ class ServerNegotiation {
   // negotiation.
   std::string authenticated_user_;
 
-  // The SASL mechanism. Filled in during negotiation.
+  // The authentication type. Filled in during negotiation.
+  AuthenticationType negotiated_authn_;
+
+  // The SASL mechanism. Filled in during negotiation if the negotiated
+  // authentication type is SASL.
   SaslMechanism::Type negotiated_mech_;
 
   // Negotiation timeout deadline.

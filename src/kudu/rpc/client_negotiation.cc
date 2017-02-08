@@ -104,11 +104,14 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 }
 
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
-                                     const security::TlsContext* tls_context)
+                                     const security::TlsContext* tls_context,
+                                     const boost::optional<security::SignedTokenPB>& authn_token)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
       tls_context_(tls_context),
       tls_negotiated_(false),
+      authn_token_(authn_token),
+      negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
@@ -169,15 +172,10 @@ Status ClientNegotiation::Negotiate() {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
 
-    if (negotiated_mech_ == SaslMechanism::GSSAPI ||
-        negotiated_mech_ == SaslMechanism::PLAIN) {
-      // When using GSSAPI, we don't verify the server's certificate. Instead,
-      // we rely on Kerberos authentication, and use channel binding to tie the
-      // SASL authentication to the TLS channel.
-      //
-      // When using 'PLAIN' authentication, this implies that strong authentication
-      // is not enabled. So, we are just using TLS for encryption and don't need to
-      // validate a cert.
+    if (negotiated_authn_ == AuthenticationType::SASL) {
+      // When using SASL authentication, verifying the server's certificate is
+      // not necessary. This allows the client to still use TLS encryption for
+      // connections to servers which only have a self-signed certificate.
       tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
     }
 
@@ -197,27 +195,18 @@ Status ClientNegotiation::Negotiate() {
     tls_negotiated_ = true;
   }
 
-  // Step 4: SASL negotiation.
-  RETURN_NOT_OK(InitSaslClient());
-  RETURN_NOT_OK(SendSaslInitiate());
-  for (bool cont = true; cont; ) {
-    NegotiatePB response;
-    RETURN_NOT_OK(RecvNegotiatePB(&response, &recv_buf));
-    Status s;
-    switch (response.step()) {
-      // SASL_CHALLENGE: Server sent us a follow-up to an SASL_INITIATE or SASL_RESPONSE request.
-      case NegotiatePB::SASL_CHALLENGE:
-        RETURN_NOT_OK(HandleSaslChallenge(response));
-        break;
-      // SASL_SUCCESS: Server has accepted our authentication request. Negotiation successful.
-      case NegotiatePB::SASL_SUCCESS:
-        RETURN_NOT_OK(HandleSaslSuccess(response));
-        cont = false;
-        break;
-      default:
-        return Status::NotAuthorized("expected SASL_CHALLENGE or SASL_SUCCESS step",
-                                     NegotiatePB::NegotiateStep_Name(response.step()));
-    }
+  // Step 4: Authentication
+  switch (negotiated_authn_) {
+    case AuthenticationType::SASL:
+      RETURN_NOT_OK(AuthenticateBySasl(&recv_buf));
+      break;
+    case AuthenticationType::TOKEN:
+      RETURN_NOT_OK(AuthenticateByToken(&recv_buf));
+      break;
+    case AuthenticationType::CERTIFICATE:
+      // The TLS handshake has already authenticated the server.
+      break;
+    case AuthenticationType::INVALID: LOG(FATAL) << "unreachable";
   }
 
   // Step 5: Send connection context.
@@ -310,6 +299,22 @@ Status ClientNegotiation::SendNegotiate() {
     msg.add_supported_features(feature);
   }
 
+  if (!helper_.EnabledMechs().empty()) {
+    msg.add_authn_types()->mutable_sasl();
+  }
+  if (tls_context_->has_signed_cert()) {
+    msg.add_authn_types()->mutable_certificate();
+  }
+  if (authn_token_ && tls_context_->has_trusted_cert()) {
+    // TODO(PKI): check that the authn token is not expired. Can this be done
+    // reliably on clients?
+    msg.add_authn_types()->mutable_token();
+  }
+
+  if (PREDICT_FALSE(msg.authn_types().empty())) {
+    return Status::NotAuthorized("client is not configured with an authentication type");
+  }
+
   RETURN_NOT_OK(SendNegotiatePB(msg));
   return Status::OK();
 }
@@ -330,6 +335,39 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
       server_features_.insert(feature_flag);
     }
   }
+
+  // Get the authentication type which the server would like to use.
+  DCHECK_LE(response.authn_types().size(), 1);
+  if (response.authn_types().empty()) {
+    // If the server doesn't send back an authentication type, default to SASL
+    // in order to maintain backwards compatibility.
+    negotiated_authn_ = AuthenticationType::SASL;
+  } else {
+    const auto& authn_type = response.authn_types(0);
+    switch (authn_type.type_case()) {
+      case AuthenticationTypePB::kSasl:
+        negotiated_authn_ = AuthenticationType::SASL;
+        break;
+      case AuthenticationTypePB::kToken:
+        if (!authn_token_) {
+          return Status::RuntimeError(
+              "server chose token authentication, but client has no token");
+        }
+        negotiated_authn_ = AuthenticationType::TOKEN;
+        return Status::OK();
+      case AuthenticationTypePB::kCertificate:
+        if (!tls_context_->has_signed_cert()) {
+          return Status::RuntimeError(
+              "server chose certificate authentication, but client has no certificate");
+        }
+        negotiated_authn_ = AuthenticationType::CERTIFICATE;
+        return Status::OK();
+      case AuthenticationTypePB::TYPE_NOT_SET:
+        return Status::RuntimeError("server chose an unknown authentication type");
+    }
+  }
+
+  DCHECK_EQ(negotiated_authn_, AuthenticationType::SASL);
 
   // Build a map of the SASL mechanisms offered by the server.
   const set<SaslMechanism::Type>& client_mechs = helper_.EnabledMechs();
@@ -428,6 +466,50 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
   return tls_handshake_.Finish(&socket_);
 }
 
+Status ClientNegotiation::AuthenticateBySasl(faststring* recv_buf) {
+  RETURN_NOT_OK(InitSaslClient());
+  RETURN_NOT_OK(SendSaslInitiate());
+  NegotiatePB response;
+  while (true) {
+    RETURN_NOT_OK(RecvNegotiatePB(&response, recv_buf));
+    Status s;
+    switch (response.step()) {
+      // SASL_CHALLENGE: Server sent us a follow-up to a SASL_INITIATE or SASL_RESPONSE request.
+      case NegotiatePB::SASL_CHALLENGE:
+        RETURN_NOT_OK(HandleSaslChallenge(response));
+        break;
+      // SASL_SUCCESS: Server has accepted our authentication request. Negotiation successful.
+      case NegotiatePB::SASL_SUCCESS:
+        return HandleSaslSuccess(response);
+      default:
+        return Status::NotAuthorized("expected SASL_CHALLENGE or SASL_SUCCESS step",
+                                     NegotiatePB::NegotiateStep_Name(response.step()));
+    }
+  }
+}
+
+Status ClientNegotiation::AuthenticateByToken(faststring* recv_buf) {
+  // Sanity check that TLS has been negotiated. Sending the token on an
+  // unencrypted channel is a big no-no.
+  CHECK(tls_negotiated_);
+
+  // Send the token to the server.
+  NegotiatePB pb;
+  pb.set_step(NegotiatePB::TOKEN_EXCHANGE);
+  pb.mutable_authn_token()->Swap(authn_token_.get_ptr());
+  RETURN_NOT_OK(SendNegotiatePB(pb));
+  pb.Clear();
+
+  // Check that the server responds with a non-error TOKEN_EXCHANGE message.
+  RETURN_NOT_OK(RecvNegotiatePB(&pb, recv_buf));
+  if (pb.step() != NegotiatePB::TOKEN_EXCHANGE) {
+    return Status::NotAuthorized("expected TOKEN_EXCHANGE step",
+                                 NegotiatePB::NegotiateStep_Name(pb.step()));
+  }
+
+  return Status::OK();
+}
+
 Status ClientNegotiation::SendSaslInitiate() {
   TRACE("Initiating SASL $0 handshake", negotiated_mech_);
 
@@ -512,7 +594,9 @@ Status ClientNegotiation::HandleSaslChallenge(const NegotiatePB& response) {
 Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
   TRACE("Received SASL_SUCCESS response from server");
 
-  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::Type::GSSAPI) {
+  if (tls_negotiated_ &&
+      negotiated_authn_ == AuthenticationType::SASL &&
+      negotiated_mech_ == SaslMechanism::GSSAPI) {
     // Check the channel bindings provided by the server against the expected
     // channel bindings.
     security::Cert cert;

@@ -82,28 +82,25 @@ Status TokenVerifier::ImportPublicKeys(const vector<TokenSigningPublicKeyPB>& pu
 }
 
 // Verify the signature on the given token.
-VerificationResult TokenVerifier::VerifyTokenSignature(
-    const SignedTokenPB& signed_token) const {
+VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& signed_token,
+                                                       TokenPB* token) const {
   if (!signed_token.has_signature() ||
       !signed_token.has_signing_key_seq_num() ||
       !signed_token.has_token_data()) {
     return VerificationResult::INVALID_TOKEN;
   }
 
-  // TODO(perf): should we return the deserialized TokenPB here
-  // since callers are probably going to need it, anyway?
-  TokenPB token;
-  if (!token.ParseFromString(signed_token.token_data()) ||
-      !token.has_expire_unix_epoch_seconds()) {
+  if (!token->ParseFromString(signed_token.token_data()) ||
+      !token->has_expire_unix_epoch_seconds()) {
     return VerificationResult::INVALID_TOKEN;
   }
 
   int64_t now = WallTime_Now();
-  if (token.expire_unix_epoch_seconds() < now) {
+  if (token->expire_unix_epoch_seconds() < now) {
     return VerificationResult::EXPIRED_TOKEN;
   }
 
-  for (auto flag : token.incompatible_features()) {
+  for (auto flag : token->incompatible_features()) {
     if (!TokenPB::Feature_IsValid(flag)) {
       return VerificationResult::INCOMPATIBLE_FEATURE;
     }

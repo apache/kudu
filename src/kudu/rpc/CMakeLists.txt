@@ -23,7 +23,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES rpc_header.proto)
 ADD_EXPORTABLE_LIBRARY(rpc_header_proto
   SRCS ${RPC_HEADER_PROTO_SRCS}
-  DEPS protobuf pb_util_proto
+  DEPS protobuf pb_util_proto token_proto
   NONLINK_DEPS ${RPC_HEADER_PROTO_TGTS})
 
 PROTOBUF_GENERATE_CPP(

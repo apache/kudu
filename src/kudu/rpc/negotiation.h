@@ -17,6 +17,8 @@
 #ifndef KUDU_RPC_NEGOTIATION_H
 #define KUDU_RPC_NEGOTIATION_H
 
+#include <ostream>
+
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 
@@ -25,6 +27,14 @@ namespace kudu {
 namespace rpc {
 
 class Connection;
+
+enum class AuthenticationType {
+  INVALID,
+  SASL,
+  TOKEN,
+  CERTIFICATE,
+};
+std::ostream& operator<<(std::ostream& o, AuthenticationType authentication_type);
 
 class Negotiation {
  public:

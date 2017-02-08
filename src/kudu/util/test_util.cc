@@ -72,8 +72,8 @@ KuduTest::KuduTest()
     // Disable log redaction.
     {"log_redact_user_data", "false"},
     // Reduce default RSA key length for faster tests.
-    {"server_rsa_key_length_bits", "512"},
-    {"master_ca_rsa_key_length_bits", "512"}
+    {"server_rsa_key_length_bits", "1024"},
+    {"master_ca_rsa_key_length_bits", "1024"}
   };
   for (const auto& e : flags_for_tests) {
     // We don't check for errors here, because we have some default flags that

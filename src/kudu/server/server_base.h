@@ -49,6 +49,7 @@ class ServiceIf;
 
 namespace security {
 class TlsContext;
+class TokenVerifier;
 } // namespace security
 
 namespace server {
@@ -76,8 +77,11 @@ class ServerBase {
 
   FsManager* fs_manager() { return fs_manager_.get(); }
 
-  const security::TlsContext& tls_context() { return messenger_->tls_context(); }
+  const security::TlsContext& tls_context() const { return messenger_->tls_context(); }
   security::TlsContext* mutable_tls_context() { return messenger_->mutable_tls_context(); }
+
+  const security::TokenVerifier& token_verifier() const { return messenger_->token_verifier(); }
+  security::TokenVerifier* mutable_token_verifier() { return messenger_->mutable_token_verifier(); }
 
   // Return the instance identifier of this server.
   // This may not be called until after the server is Started.

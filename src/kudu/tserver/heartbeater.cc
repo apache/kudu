@@ -32,6 +32,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
@@ -372,6 +373,10 @@ Status Heartbeater::Thread::DoHeartbeat() {
   // TODO(PKI): send the version number of the latest CA cert which we know about.
   // The response should include new CA certs.
 
+  // Send the most recently known TSK sequence number so that the master can
+  // send us knew ones if they exist.
+  req.set_latest_tsk_seq_num(server_->token_verifier().GetMaxKnownKeySequenceNumber());
+
   if (send_full_tablet_report_) {
     LOG(INFO) << Substitute(
         "Master $0 was elected leader, sending a full tablet report...",
@@ -435,6 +440,15 @@ Status Heartbeater::Thread::DoHeartbeat() {
     RETURN_NOT_OK_PREPEND(
         server_->mutable_tls_context()->AdoptSignedCert(cert),
         "failed to adopt master-signed X509 cert");
+  }
+
+  // Import TSKs.
+  if (!last_hb_response_.tsks().empty()) {
+    vector<security::TokenSigningPublicKeyPB> tsks(last_hb_response_.tsks().begin(),
+                                                   last_hb_response_.tsks().end());
+    RETURN_NOT_OK_PREPEND(
+        server_->mutable_token_verifier()->ImportPublicKeys(tsks),
+        "failed to import token signing public keys from master heartbeat");
   }
 
   MarkTabletReportAcknowledged(req.tablet_report());

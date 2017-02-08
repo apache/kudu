@@ -40,42 +40,28 @@ namespace security {
 
 using ca::CertSigner;
 
-enum class CertType {
-  NONE,
-  SELF_SIGNED,
-  SIGNED,
-};
-
 struct Case {
-  CertType client_cert;
+  PkiConfig client_pki;
   TlsVerificationMode client_verification;
-  CertType server_cert;
+  PkiConfig server_pki;
   TlsVerificationMode server_verification;
   Status expected_status;
 };
 
 // Beautifies CLI test output.
 std::ostream& operator<<(std::ostream& o, Case c) {
-
-  auto cert_type_name = [] (const CertType& cert_type) {
-    switch (cert_type) {
-      case CertType::NONE: return "NONE";
-      case CertType::SELF_SIGNED: return "SELF_SIGNED";
-      case CertType::SIGNED: return "SIGNED";
-    }
-  };
-
   auto verification_mode_name = [] (const TlsVerificationMode& verification_mode) {
     switch (verification_mode) {
       case TlsVerificationMode::VERIFY_NONE: return "NONE";
       case TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST: return "REMOTE_CERT_AND_HOST";
     }
+    return "unreachable";
   };
 
-  o << "{client-cert: " << cert_type_name(c.client_cert) << ", "
+  o << "{client-pki: " << c.client_pki << ", "
     << "client-verification: " << verification_mode_name(c.client_verification) << ", "
-    << "server-cert: " << cert_type_name(c.client_cert) << ", "
-    << "server-verification: " << verification_mode_name(c.client_verification) << ", "
+    << "server-pki: " << c.server_pki << ", "
+    << "server-verification: " << verification_mode_name(c.server_verification) << ", "
     << "expected-status: " << c.expected_status.ToString() << "}";
 
   return o;
@@ -86,11 +72,6 @@ class TestTlsHandshake : public KuduTest,
  public:
   void SetUp() override {
     KuduTest::SetUp();
-
-    // Tune down the RSA key length in order to speed up tests. We would tune it
-    // smaller, but at 512 bits OpenSSL returns a "digest too big for rsa key"
-    // error during negotiation.
-    FLAGS_server_rsa_key_length_bits = 1024;
 
     ASSERT_OK(client_tls_.Init());
     ASSERT_OK(server_tls_.Init());
@@ -144,38 +125,14 @@ class TestTlsHandshake : public KuduTest,
   string key_path_;
 };
 
-namespace {
-Status InitTlsContextCert(const PrivateKey& ca_key,
-                          const Cert& ca_cert,
-                          TlsContext* tls_context,
-                          CertType cert_type) {
-  RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
-  switch (cert_type) {
-    case CertType::SIGNED: {
-      Cert cert;
-      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
-      RETURN_NOT_OK(CertSigner(&ca_cert, &ca_key).Sign(*tls_context->GetCsrIfNecessary(), &cert));
-      RETURN_NOT_OK(tls_context->AdoptSignedCert(cert));
-      break;
-    }
-    case CertType::SELF_SIGNED:
-      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
-      break;
-    case CertType::NONE:
-      break;
-  }
-  return Status::OK();
-}
-} // anonymous namespace
-
 TEST_F(TestTlsHandshake, TestHandshakeSequence) {
   PrivateKey ca_key;
   Cert ca_cert;
   ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
   // Both client and server have certs and CA.
-  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &client_tls_, CertType::SIGNED));
-  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &server_tls_, CertType::SIGNED));
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &client_tls_));
+  ASSERT_OK(ConfigureTlsContext(PkiConfig::SIGNED, ca_cert, ca_key, &server_tls_));
 
   TlsHandshake server;
   TlsHandshake client;
@@ -278,8 +235,8 @@ TEST_P(TestTlsHandshake, TestHandshake) {
   Cert ca_cert;
   ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
-  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &client_tls_, test_case.client_cert));
-  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &server_tls_, test_case.server_cert));
+  ASSERT_OK(ConfigureTlsContext(test_case.client_pki, ca_cert, ca_key, &client_tls_));
+  ASSERT_OK(ConfigureTlsContext(test_case.server_pki, ca_cert, ca_key, &server_tls_));
 
   Status s = RunHandshake(test_case.client_verification, test_case.server_verification);
 
@@ -295,56 +252,85 @@ INSTANTIATE_TEST_CASE_P(CertCombinations,
         // has a self-signed cert, since we don't expect those to occur in
         // practice.
 
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::OK() },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::RuntimeError("client error:.*certificate verify failed") },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                Status::RuntimeError("server error:.*peer did not return a certificate") },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                Status::RuntimeError("client error:.*certificate verify failed") },
 
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::OK() },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
-               Status::OK() },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               Status::RuntimeError("server error:.*peer did not return a certificate") },
-        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               Status::RuntimeError("server error:.*peer did not return a certificate") },
-
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
-               Status::OK() },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::RuntimeError("client error:.*certificate verify failed") },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               Status::OK() },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+        Case { PkiConfig::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                Status::RuntimeError("client error:.*certificate verify failed") },
 
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::OK() },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::OK() },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
                Status::OK() },
-        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+        Case { PkiConfig::TRUSTED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               // OpenSSL 1.0.0 returns "no certificate returned" for this case,
+               // which appears to be a bug.
+               Status::RuntimeError("server error:.*(certificate verify failed|"
+                                                    "no certificate returned)") },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::OK() },
+        Case { PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               PkiConfig::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                Status::OK() }
 ));
 

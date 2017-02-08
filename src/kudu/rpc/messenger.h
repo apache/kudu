@@ -31,6 +31,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -44,6 +45,7 @@ class ThreadPool;
 
 namespace security {
 class TlsContext;
+class TokenVerifier;
 }
 
 namespace rpc {
@@ -195,6 +197,18 @@ class Messenger {
   const security::TlsContext& tls_context() const { return *tls_context_; }
   security::TlsContext* mutable_tls_context() { return tls_context_.get(); }
 
+  const security::TokenVerifier& token_verifier() const { return *token_verifier_; }
+  security::TokenVerifier* mutable_token_verifier() { return token_verifier_.get(); }
+
+  boost::optional<security::SignedTokenPB> authn_token() const {
+    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    return authn_token_;
+  }
+  void set_authn_token(const security::SignedTokenPB& token) {
+    std::lock_guard<simple_spinlock> l(authn_token_lock_);
+    authn_token_ = token;
+  }
+
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
@@ -249,6 +263,13 @@ class Messenger {
   gscoped_ptr<ThreadPool> negotiation_pool_;
 
   std::unique_ptr<security::TlsContext> tls_context_;
+
+  // A TokenVerifier, which can verify client provided authentication tokens.
+  std::unique_ptr<security::TokenVerifier> token_verifier_;
+
+  // An optional token, which can be used to authenticate to a server.
+  mutable simple_spinlock authn_token_lock_;
+  boost::optional<security::SignedTokenPB> authn_token_;
 
   std::unique_ptr<RpczStore> rpcz_store_;
 

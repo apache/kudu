@@ -98,7 +98,7 @@ class TokenSigner {
   ~TokenSigner();
 
   // Sign the given token using the current TSK.
-  Status SignToken(SignedTokenPB* token) const;
+  Status SignToken(SignedTokenPB* token) const WARN_UNUSED_RESULT;
 
   // Returns the set of valid public keys with sequence numbers greater
   // than 'after_sequence_number'.
@@ -108,7 +108,7 @@ class TokenSigner {
   // Rotate to a new token-signing key.
   //
   // See class documentation for more information.
-  Status RotateSigningKey();
+  Status RotateSigningKey() WARN_UNUSED_RESULT;
 
  private:
   // Protects following fields.

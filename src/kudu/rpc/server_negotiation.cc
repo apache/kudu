@@ -39,6 +39,8 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/security/tls_socket.h"
+#include "kudu/security/token_verifier.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -71,11 +73,14 @@ static int ServerNegotiationPlainAuthCb(sasl_conn_t* conn,
 }
 
 ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
-                                     const security::TlsContext* tls_context)
+                                     const security::TlsContext* tls_context,
+                                     const security::TokenVerifier* token_verifier)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
       tls_context_(tls_context),
       tls_negotiated_(false),
+      token_verifier_(token_verifier),
+      negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
@@ -113,11 +118,12 @@ void ServerNegotiation::set_deadline(const MonoTime& deadline) {
 Status ServerNegotiation::Negotiate() {
   TRACE("Beginning negotiation");
 
-  // Wait until starting negotiation to check that the socket and tls_context
-  // are not null, since the socket and tls_context need not be set for
+  // Wait until starting negotiation to check that the socket, tls_context, and
+  // token_verifier are not null, since they do not need to be set for
   // PreflightCheckGSSAPI.
   DCHECK(socket_);
   DCHECK(tls_context_);
+  DCHECK(token_verifier_);
 
   // Ensure we can use blocking calls on the socket during negotiation.
   RETURN_NOT_OK(EnsureBlockingMode(socket_.get()));
@@ -139,10 +145,11 @@ Status ServerNegotiation::Negotiate() {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::SERVER,
                                                   &tls_handshake_));
 
-    // The server does not verify the client's certificate.
-    // TODO(PKI): Add client-certificate authn support, which will verify the
-    // client cert.
-    tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+    if (negotiated_authn_ != AuthenticationType::CERTIFICATE) {
+      // The server does not need to verify the client's certificate unless it's
+      // being used for authentication.
+      tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
+    }
 
     while (true) {
       NegotiatePB request;
@@ -154,25 +161,19 @@ Status ServerNegotiation::Negotiate() {
     tls_negotiated_ = true;
   }
 
-  // Step 4: SASL negotiation.
-  RETURN_NOT_OK(InitSaslServer());
-  {
-    NegotiatePB request;
-    RETURN_NOT_OK(RecvNegotiatePB(&request, &recv_buf));
-    Status s = HandleSaslInitiate(request);
-
-    while (s.IsIncomplete()) {
-      RETURN_NOT_OK(RecvNegotiatePB(&request, &recv_buf));
-      s = HandleSaslResponse(request);
-    }
-    RETURN_NOT_OK(s);
+  // Step 4: Authentication
+  switch (negotiated_authn_) {
+    case AuthenticationType::SASL:
+      RETURN_NOT_OK(AuthenticateBySasl(&recv_buf));
+      break;
+    case AuthenticationType::TOKEN:
+      RETURN_NOT_OK(AuthenticateByToken(&recv_buf));
+      break;
+    case AuthenticationType::CERTIFICATE:
+      RETURN_NOT_OK(AuthenticateByCertificate());
+      break;
+    case AuthenticationType::INVALID: LOG(FATAL) << "unreachable";
   }
-  const char* username = nullptr;
-  int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
-                        reinterpret_cast<const void**>(&username));
-  // We expect that SASL_USERNAME will always get set.
-  CHECK(rc == SASL_OK && username != nullptr) << "No username on authenticated connection";
-  authenticated_user_ = username;
 
   // Step 5: Receive connection context.
   RETURN_NOT_OK(RecvConnectionContext(&recv_buf));
@@ -193,7 +194,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI() {
   //
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
-  ServerNegotiation server(nullptr, nullptr);
+  ServerNegotiation server(nullptr, nullptr, nullptr);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -336,27 +337,67 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     }
   }
 
-  set<SaslMechanism::Type> server_mechs = helper_.EnabledMechs();
-  if (PREDICT_FALSE(server_mechs.empty())) {
-    // This will happen if no mechanisms are enabled before calling Init()
-    Status s = Status::NotAuthorized("SASL server mechanism list is empty!");
-    LOG(ERROR) << s.ToString();
-    TRACE("Sending FATAL_UNAUTHORIZED response to client");
-    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-    return s;
+  // Find the set of mutually supported authentication types.
+  set<AuthenticationType> authn_types;
+  if (request.authn_types().empty()) {
+    // If the client doesn't send any support authentication types, we assume
+    // support for SASL. This preserves backwards compatibility with clients who
+    // don't support security features.
+    authn_types.insert(AuthenticationType::SASL);
+  } else {
+    for (const auto& type : request.authn_types()) {
+      switch (type.type_case()) {
+        case AuthenticationTypePB::kSasl:
+          authn_types.insert(AuthenticationType::SASL);
+          break;
+        case AuthenticationTypePB::kToken:
+          authn_types.insert(AuthenticationType::TOKEN);
+          break;
+        case AuthenticationTypePB::kCertificate:
+          authn_types.insert(AuthenticationType::CERTIFICATE);
+          break;
+        case AuthenticationTypePB::TYPE_NOT_SET: {
+          Sockaddr addr;
+          RETURN_NOT_OK(socket_->GetPeerAddress(&addr));
+          KLOG_EVERY_N_SECS(WARNING, 60)
+              << "client supports unknown authentication type, consider updating server, address: "
+              << addr.ToString();
+          break;
+        }
+      }
+    }
+
+    if (authn_types.empty()) {
+      Status s = Status::NotSupported("no mutually supported authentication types");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+      return s;
+    }
   }
 
-  RETURN_NOT_OK(SendNegotiate(server_mechs));
-  return Status::OK();
-}
+  if (ContainsKey(authn_types, AuthenticationType::CERTIFICATE) &&
+      tls_context_->has_signed_cert()) {
+    // If the client supports it and we are locally configured with TLS and have
+    // a CA-signed cert, choose cert authn.
+    // TODO(PKI): consider adding the fingerprint of the CA cert which signed
+    // the client's cert to the authentication message.
+    negotiated_authn_ = AuthenticationType::CERTIFICATE;
+  } else if (ContainsKey(authn_types, AuthenticationType::TOKEN) &&
+             token_verifier_->GetMaxKnownKeySequenceNumber() >= 0 &&
+             tls_context_->has_signed_cert()) {
+    // If the client supports it, we have a TSK to verify the client's token,
+    // and we have a signed-cert so the client can verify us, choose token authn.
+    // TODO(PKI): consider adding the TSK sequence number to the authentication
+    // message.
+    negotiated_authn_ = AuthenticationType::TOKEN;
+  } else {
+    // Otherwise we always can fallback to SASL.
+    DCHECK(ContainsKey(authn_types, AuthenticationType::SASL));
+    negotiated_authn_ = AuthenticationType::SASL;
+  }
 
-Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_mechs) {
+  // Fill in the NEGOTIATE step response for the client.
   NegotiatePB response;
   response.set_step(NegotiatePB::NEGOTIATE);
-
-  for (auto mechanism : server_mechs) {
-    response.add_sasl_mechanisms()->set_mechanism(SaslMechanism::name_of(mechanism));
-  }
 
   // Tell the client which features we support.
   server_features_ = kSupportedServerRpcFeatureFlags;
@@ -373,8 +414,34 @@ Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_m
     response.add_supported_features(feature);
   }
 
-  RETURN_NOT_OK(SendNegotiatePB(response));
-  return Status::OK();
+  switch (negotiated_authn_) {
+    case AuthenticationType::CERTIFICATE:
+      response.add_authn_types()->mutable_certificate();
+      break;
+    case AuthenticationType::TOKEN:
+      response.add_authn_types()->mutable_token();
+      break;
+    case AuthenticationType::SASL: {
+      response.add_authn_types()->mutable_sasl();
+      const set<SaslMechanism::Type>& server_mechs = helper_.EnabledMechs();
+      if (PREDICT_FALSE(server_mechs.empty())) {
+        // This will happen if no mechanisms are enabled before calling Init()
+        Status s = Status::NotAuthorized("SASL server mechanism list is empty!");
+        LOG(ERROR) << s.ToString();
+        TRACE("Sending FATAL_UNAUTHORIZED response to client");
+        RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+        return s;
+      }
+
+      for (auto mechanism : server_mechs) {
+        response.add_sasl_mechanisms()->set_mechanism(SaslMechanism::name_of(mechanism));
+      }
+      break;
+    }
+    case AuthenticationType::INVALID: LOG(FATAL) << "unreachable";
+  }
+
+  return SendNegotiatePB(response);
 }
 
 Status ServerNegotiation::HandleTlsHandshake(const NegotiatePB& request) {
@@ -423,6 +490,94 @@ Status ServerNegotiation::SendTlsHandshake(string tls_token) {
   msg.set_step(NegotiatePB::TLS_HANDSHAKE);
   msg.mutable_tls_handshake()->swap(tls_token);
   return SendNegotiatePB(msg);
+}
+
+Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
+  RETURN_NOT_OK(InitSaslServer());
+
+  NegotiatePB request;
+  RETURN_NOT_OK(RecvNegotiatePB(&request, recv_buf));
+  Status s = HandleSaslInitiate(request);
+
+  while (s.IsIncomplete()) {
+    RETURN_NOT_OK(RecvNegotiatePB(&request, recv_buf));
+    s = HandleSaslResponse(request);
+  }
+  RETURN_NOT_OK(s);
+
+  const char* username = nullptr;
+  int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
+                        reinterpret_cast<const void**>(&username));
+  // We expect that SASL_USERNAME will always get set.
+  CHECK(rc == SASL_OK && username != nullptr) << "No username on authenticated connection";
+  authenticated_user_ = username;
+
+  return Status::OK();
+}
+
+Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
+  // Sanity check that TLS has been negotiated. Receiving the token on an
+  // unencrypted channel is a big no-no.
+  CHECK(tls_negotiated_);
+
+  // Receive the token from the client.
+  NegotiatePB pb;
+  RETURN_NOT_OK(RecvNegotiatePB(&pb, recv_buf));
+
+  if (pb.step() != NegotiatePB::TOKEN_EXCHANGE) {
+    Status s =  Status::NotAuthorized("expected TOKEN_EXCHANGE step",
+                                      NegotiatePB::NegotiateStep_Name(pb.step()));
+  }
+  if (!pb.has_authn_token()) {
+    Status s = Status::NotAuthorized("TOKEN_EXCHANGE message must include an authentication token");
+  }
+
+  // TODO(PKI): propagate the specific token verification failure back to the client,
+  // so it knows how to intelligently retry.
+  security::TokenPB token;
+  switch (token_verifier_->VerifyTokenSignature(pb.authn_token(), &token)) {
+    case security::VerificationResult::VALID: break;
+    case security::VerificationResult::INVALID_TOKEN:
+      return Status::NotAuthorized("invalid authentication token");
+    case security::VerificationResult::INVALID_SIGNATURE:
+      return Status::NotAuthorized("invalid authentication token signature");
+    case security::VerificationResult::EXPIRED_TOKEN:
+      return Status::NotAuthorized("authentication token expired");
+    case security::VerificationResult::EXPIRED_SIGNING_KEY:
+      return Status::NotAuthorized("authentication token signing key expired");
+    case security::VerificationResult::UNKNOWN_SIGNING_KEY:
+      return Status::NotAuthorized("authentication token signed with unknown key");
+    case security::VerificationResult::INCOMPATIBLE_FEATURE:
+      return Status::NotAuthorized("authentication token uses incompatible feature");
+  }
+
+  if (!token.has_authn()) {
+    return Status::NotAuthorized("non-authentication token presented for authentication");
+  }
+  if (!token.authn().has_username()) {
+    // This is a runtime error because there should be no way a client could
+    // get a signed authn token without a subject.
+    return Status::RuntimeError("authentication token has no username");
+  }
+  authenticated_user_ = token.authn().username();
+
+  // Respond with success message.
+  pb.Clear();
+  pb.set_step(NegotiatePB::TOKEN_EXCHANGE);
+  return SendNegotiatePB(pb);
+}
+
+Status ServerNegotiation::AuthenticateByCertificate() {
+  // Sanity check that TLS has been negotiated. Cert-based authentication is
+  // only possible with TLS.
+  CHECK(tls_negotiated_);
+
+  // Grab the subject from the client's cert.
+  security::Cert cert;
+  RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
+  authenticated_user_ = cert.SubjectName();
+
+  return Status::OK();
 }
 
 Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {

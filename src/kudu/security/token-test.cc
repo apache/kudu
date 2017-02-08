@@ -131,13 +131,14 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
   ASSERT_OK(signer.RotateSigningKey());
 
   // Make and sign a token.
-  SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
-  ASSERT_OK(signer.SignToken(&token));
+  SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+  ASSERT_OK(signer.SignToken(&signed_token));
 
   // Try to verify it.
   TokenVerifier verifier;
   ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(0)));
-  ASSERT_EQ(VerificationResult::VALID, verifier.VerifyTokenSignature(token));
+  TokenPB token;
+  ASSERT_EQ(VerificationResult::VALID, verifier.VerifyTokenSignature(signed_token, &token));
 }
 
 // Test all of the possible cases covered by token verification.
@@ -151,32 +152,40 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
 
   // Make and sign a token, but corrupt the data in it.
   {
-    SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
-    ASSERT_OK(signer.SignToken(&token));
-    token.set_token_data("xyz");
-    ASSERT_EQ(VerificationResult::INVALID_TOKEN, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+    ASSERT_OK(signer.SignToken(&signed_token));
+    signed_token.set_token_data("xyz");
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::INVALID_TOKEN,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 
   // Make and sign a token, but corrupt the signature.
   {
-    SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
-    ASSERT_OK(signer.SignToken(&token));
-    token.set_signature("xyz");
-    ASSERT_EQ(VerificationResult::INVALID_SIGNATURE, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+    ASSERT_OK(signer.SignToken(&signed_token));
+    signed_token.set_signature("xyz");
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::INVALID_SIGNATURE,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 
   // Make and sign a token, but set it to be already expired.
   {
-    SignedTokenPB token = MakeUnsignedToken(WallTime_Now() - 10);
-    ASSERT_OK(signer.SignToken(&token));
-    ASSERT_EQ(VerificationResult::EXPIRED_TOKEN, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() - 10);
+    ASSERT_OK(signer.SignToken(&signed_token));
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::EXPIRED_TOKEN,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 
   // Make and sign a token which uses an incompatible feature flag.
   {
-    SignedTokenPB token = MakeIncompatibleToken();
-    ASSERT_OK(signer.SignToken(&token));
-    ASSERT_EQ(VerificationResult::INCOMPATIBLE_FEATURE, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeIncompatibleToken();
+    ASSERT_OK(signer.SignToken(&signed_token));
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::INCOMPATIBLE_FEATURE,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 
   // Rotate to a new key, but don't inform the verifier of it yet. When we
@@ -184,9 +193,11 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   ASSERT_OK(signer.RotateSigningKey());
   ASSERT_OK(signer.RotateSigningKey());
   {
-    SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
-    ASSERT_OK(signer.SignToken(&token));
-    ASSERT_EQ(VerificationResult::UNKNOWN_SIGNING_KEY, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+    ASSERT_OK(signer.SignToken(&signed_token));
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::UNKNOWN_SIGNING_KEY,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 
   // Rotate to a signing key which is already expired, and inform the verifier
@@ -198,9 +209,11 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   ASSERT_OK(verifier.ImportPublicKeys(signer.GetTokenSigningPublicKeys(
       verifier.GetMaxKnownKeySequenceNumber())));
   {
-    SignedTokenPB token = MakeUnsignedToken(WallTime_Now() + 600);
-    ASSERT_OK(signer.SignToken(&token));
-    ASSERT_EQ(VerificationResult::EXPIRED_SIGNING_KEY, verifier.VerifyTokenSignature(token));
+    SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+    ASSERT_OK(signer.SignToken(&signed_token));
+    TokenPB token;
+    ASSERT_EQ(VerificationResult::EXPIRED_SIGNING_KEY,
+              verifier.VerifyTokenSignature(signed_token, &token));
   }
 }
 

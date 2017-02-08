@@ -44,6 +44,7 @@
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
@@ -292,6 +293,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
   : name_(bld.name_),
     closing_(false),
     tls_context_(new security::TlsContext()),
+    token_verifier_(new security::TokenVerifier()),
     rpcz_store_(new RpczStore()),
     metric_entity_(bld.metric_entity_),
     retain_self_(this) {

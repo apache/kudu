@@ -141,6 +141,8 @@ Status TlsHandshake::Verify(const Socket& socket) const {
     return Status::OK();
   }
 
+  // TODO(PKI): KUDU-1886: Do hostname verification.
+  /*
   TRACE("Verifying peer cert");
 
   // Get the peer's hostname
@@ -167,6 +169,7 @@ Status TlsHandshake::Verify(const Socket& socket) const {
     return Status::RuntimeError("TLS certificate hostname verification error", GetOpenSSLErrors());
   }
   DCHECK_EQ(match, 1);
+  */
   return Status::OK();
 }
 

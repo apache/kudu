@@ -22,6 +22,7 @@ package kudu.rpc;
 option java_package = "org.apache.kudu.rpc";
 
 import "google/protobuf/descriptor.proto";
+import "kudu/security/token.proto";
 import "kudu/util/pb_util.proto";
 
 // The Kudu RPC protocol is similar to the RPC protocol of Hadoop and HBase.
@@ -85,6 +86,32 @@ enum RpcFeatureFlag {
   TLS_AUTHENTICATION_ONLY = 3;
 };
 
+// An authentication type. This is modeled as a oneof in case any of these
+// authentication types, or any authentication types in the future, need to add
+// extra type-specific parameters during negotiation.
+message AuthenticationTypePB {
+  message Sasl {};
+  message Token {};
+  message Certificate {};
+
+  oneof type {
+    // The server and client mutually authenticate via SASL.
+    Sasl sasl = 1;
+
+    // The server authenticates the client via a signed token, and the client
+    // authenticates the server by verifying its certificate has been signed by
+    // a trusted CA.
+    //
+    // Token authentication requires the connection to be TLS encrypted.
+    Token token = 2;
+
+    // The server and client mutually authenticate by certificate.
+    //
+    // Certificate authentication requires the connection to be TLS encrypted.
+    Certificate certificate = 3;
+  }
+}
+
 // Message type passed back & forth for the SASL negotiation.
 message NegotiatePB {
   enum NegotiateStep {
@@ -95,6 +122,7 @@ message NegotiatePB {
     SASL_CHALLENGE = 3;
     SASL_RESPONSE  = 4;
     TLS_HANDSHAKE  = 5;
+    TOKEN_EXCHANGE = 6;
   }
 
   message SaslMechanism {
@@ -137,6 +165,13 @@ message NegotiatePB {
   // During the NEGOTIATE step, contains the supported SASL mechanisms.
   // During the SASL_INITIATE step, contains the single chosen SASL mechanism.
   repeated SaslMechanism sasl_mechanisms = 4;
+
+  // During the client to server NEGOTIATE step, contains the supported authentication types.
+  // During the server to client NEGOTIATE step, contains the chosen authentication type.
+  repeated AuthenticationTypePB authn_types = 7;
+
+  // During the TOKEN_EXCHANGE step, contains the client's signed authentication token.
+  optional security.SignedTokenPB authn_token = 8;
 }
 
 message RemoteMethodPB {

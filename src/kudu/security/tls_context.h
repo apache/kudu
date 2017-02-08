@@ -79,10 +79,17 @@ class TlsContext {
   }
 
   // Returns true if this TlsContext has been configured with a CA-signed TLS
-  // cert and key for use with TLS-encrypted connections.
+  // cert and key for use with TLS-encrypted connections. If this method returns
+  // true, then 'has_trusted_cert' will also return true.
   bool has_signed_cert() const {
     MutexLock lock(lock_);
     return has_cert_ && !csr_;
+  }
+
+  // Returns true if this TlsContext has at least one certificate in its trust store.
+  bool has_trusted_cert() const {
+    MutexLock lock(lock_);
+    return trusted_cert_count_ > 0;
   }
 
   // Adds 'cert' as a trusted root CA certificate.

@@ -25,9 +25,10 @@
 namespace kudu {
 namespace security {
 
+class SignedTokenPB;
+class TokenPB;
 class TokenSigningPublicKey;
 class TokenSigningPublicKeyPB;
-class SignedTokenPB;
 enum class VerificationResult;
 
 // Class responsible for verifying tokens provided to a server.
@@ -64,8 +65,10 @@ class TokenVerifier {
   Status ImportPublicKeys(const std::vector<TokenSigningPublicKeyPB>& public_keys)
     WARN_UNUSED_RESULT;
 
-  // Verify the signature on the given token.
-  VerificationResult VerifyTokenSignature(const SignedTokenPB& signed_token) const;
+  // Verify the signature on the given signed token, and deserialize the
+  // contents into 'token'.
+  VerificationResult VerifyTokenSignature(const SignedTokenPB& signed_token,
+                                          TokenPB* token) const;
 
   // TODO(PKI): should expire out old key versions at some point. eg only
   // keep old key versions until their expiration is an hour or two in the past?

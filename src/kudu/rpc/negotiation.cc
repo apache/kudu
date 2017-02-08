@@ -67,6 +67,16 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
+std::ostream& operator<<(std::ostream& o, AuthenticationType authentication_type) {
+  switch (authentication_type) {
+    case AuthenticationType::INVALID: o << "INVALID"; break;
+    case AuthenticationType::SASL: o << "SASL"; break;
+    case AuthenticationType::TOKEN: o << "TOKEN"; break;
+    case AuthenticationType::CERTIFICATE: o << "CERTIFICATE"; break;
+  }
+  return o;
+}
+
 // Wait for the client connection to be established and become ready for writing.
 static Status WaitForClientConnect(Socket* socket, const MonoTime& deadline) {
   TRACE("Waiting for socket to connect");
@@ -137,8 +147,10 @@ static Status DisableSocketTimeouts(Socket* socket) {
 
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
-  const auto* tls_context = &conn->reactor_thread()->reactor()->messenger()->tls_context();
-  ClientNegotiation client_negotiation(conn->release_socket(), tls_context);
+  const auto* messenger = conn->reactor_thread()->reactor()->messenger();
+  ClientNegotiation client_negotiation(conn->release_socket(),
+                                       &messenger->tls_context(),
+                                       messenger->authn_token());
 
   // Note that the fqdn is an IP address here: we've already lost whatever DNS
   // name the client was attempting to use. Unless krb5 is configured with 'rdns
@@ -186,8 +198,10 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   }
 
   // Create a new ServerNegotiation to handle the synchronous negotiation.
-  const auto* tls_context = &conn->reactor_thread()->reactor()->messenger()->tls_context();
-  ServerNegotiation server_negotiation(conn->release_socket(), tls_context);
+  const auto* messenger = conn->reactor_thread()->reactor()->messenger();
+  ServerNegotiation server_negotiation(conn->release_socket(),
+                                       &messenger->tls_context(),
+                                       &messenger->token_verifier());
 
   if (FLAGS_server_require_kerberos) {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());

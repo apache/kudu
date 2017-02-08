@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <ostream>
 #include <string>
 
 #include "kudu/util/env.h"
@@ -27,6 +28,8 @@ namespace security {
 
 class Cert;
 class PrivateKey;
+class PublicKey;
+class TlsContext;
 
 // TODO(todd): consolidate these certs with those in
 // security/test/test_certs.h once we support configuring a password
@@ -100,6 +103,26 @@ dc+JVPKL8Fe4a8fmsI6ndcZQ9qpOdZM5WOD0ldKRc+SsrYKkTmOOJQ==
 }
 
 Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert);
+
+// Describes the options for configuring a TlsContext.
+enum class PkiConfig {
+  // The TLS context has no TLS cert and no trusted certs.
+  NONE,
+  // The TLS context has a self-signed TLS cert and no trusted certs.
+  SELF_SIGNED,
+  // The TLS context has no TLS cert and a trusted cert.
+  TRUSTED,
+  // The TLS context has a signed TLS cert and trusts the corresonding signing cert.
+  SIGNED,
+};
+
+// PkiConfig pretty-printer.
+std::ostream& operator<<(std::ostream& o, PkiConfig c);
+
+Status ConfigureTlsContext(PkiConfig config,
+                           const Cert& ca_cert,
+                           const PrivateKey& ca_key,
+                           TlsContext* tls_context);
 
 } // namespace security
 } // namespace kudu

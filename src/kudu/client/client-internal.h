@@ -233,10 +233,6 @@ class KuduClient::Data {
   scoped_refptr<internal::ConnectToClusterRpc> leader_master_rpc_;
   std::vector<StatusCallback> leader_master_callbacks_;
 
-  // The latest authentication token that this client should use to talk
-  // to the cluster.
-  boost::optional<security::SignedTokenPB> authn_token_;
-
   // Protects 'leader_master_rpc_', 'leader_master_hostport_',
   // and master_proxy_
   //
