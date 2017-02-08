@@ -161,8 +161,6 @@ src/kudu/util/slice.h
 src/kudu/util/status-test.cc
 src/kudu/util/status.cc
 src/kudu/util/status.h
-src/kudu/util/sync_point.cc
-src/kudu/util/sync_point.h
 src/kudu/util/x509_check_host.cc
 src/kudu/util/x509_check_host.h
 src/kudu/util/debug/trace_event.h

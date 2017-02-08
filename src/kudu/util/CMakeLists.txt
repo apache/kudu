@@ -181,7 +181,6 @@ set(UTIL_SRCS
   string_case.cc
   striped64.cc
   subprocess.cc
-  sync_point.cc
   test_graph.cc
   test_util_prod.cc
   thread.cc
@@ -372,7 +371,6 @@ ADD_KUDU_TEST(status-test)
 ADD_KUDU_TEST(string_case-test)
 ADD_KUDU_TEST(striped64-test)
 ADD_KUDU_TEST(subprocess-test)
-ADD_KUDU_TEST(sync_point-test)
 ADD_KUDU_TEST(thread-test)
 ADD_KUDU_TEST(threadpool-test)
 ADD_KUDU_TEST(throttler-test)
