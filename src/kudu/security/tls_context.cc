@@ -118,8 +118,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
   ERR_clear_error();
 
   // Verify that the cert and key match.
-  OPENSSL_RET_NOT_OK(X509_check_private_key(cert.GetRawData(), key.GetRawData()),
-                     "cert and private key do not match");
+  RETURN_NOT_OK(cert.CheckKeyMatch(key));
 
   // Verify that the appropriate CA certs have been loaded into the context
   // before we adopt a cert. Otherwise, client connections without the CA cert

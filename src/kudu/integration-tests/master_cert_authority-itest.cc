@@ -216,7 +216,7 @@ TEST_F(MasterCertAuthorityTest, CertAuthorityOnLeaderRoleSwitch) {
 }
 
 // Test that every master accepts heartbeats, but only the leader master
-// responds with with signed certificate if a heartbeat contains the CSR field.
+// responds with signed certificate if a heartbeat contains the CSR field.
 TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   shared_ptr<rpc::Messenger> messenger;
   rpc::MessengerBuilder bld("Client");

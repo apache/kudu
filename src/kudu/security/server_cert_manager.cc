@@ -92,7 +92,9 @@ Status ServerCertManager::AdoptSignedCert(const string& cert_der) {
   unique_ptr<Cert> new_cert(new Cert());
   RETURN_NOT_OK_PREPEND(new_cert->FromString(cert_der, DataFormat::DER),
                         "could not parse DER data");
-
+  RETURN_NOT_OK_PREPEND(new_cert->CheckKeyMatch(*key_),
+                        "signed certificate does not match the private key "
+                        "of the original CSR");
   LOG(INFO) << "Adopting new signed X509 certificate";
   signed_cert_ = std::move(new_cert);
   // No longer need to get a signed cert, so we can forget our CSR.

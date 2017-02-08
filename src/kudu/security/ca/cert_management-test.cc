@@ -48,6 +48,9 @@ class CertManagementTest : public KuduTest {
     ASSERT_OK(ca_public_key_.FromString(kCaPublicKey, DataFormat::PEM));
     ASSERT_OK(ca_exp_cert_.FromString(kCaExpiredCert, DataFormat::PEM));
     ASSERT_OK(ca_exp_private_key_.FromString(kCaExpiredPrivateKey, DataFormat::PEM));
+    // Sanity checks.
+    ASSERT_OK(ca_cert_.CheckKeyMatch(ca_private_key_));
+    ASSERT_OK(ca_exp_cert_.CheckKeyMatch(ca_exp_private_key_));
   }
 
  protected:
@@ -233,7 +236,7 @@ TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
 
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsRuntimeError()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "CA certificate and private key do not match");
+    ASSERT_STR_CONTAINS(err_msg, "certificate does not match private key");
   }
   {
     Cert cert;
@@ -241,7 +244,7 @@ TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
         .Sign(csr, &cert);
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsRuntimeError()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "CA certificate and private key do not match");
+    ASSERT_STR_CONTAINS(err_msg, "certificate does not match private key");
   }
 }
 
@@ -256,6 +259,7 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
   // Signer works fine even with expired CA certificate.
   Cert cert;
   ASSERT_OK(CertSigner(&ca_exp_cert_, &ca_exp_private_key_).Sign(req, &cert));
+  ASSERT_OK(cert.CheckKeyMatch(key));
 }
 
 // Generate X509 CSR and issues corresponding certificate.
@@ -266,6 +270,7 @@ TEST_F(CertManagementTest, SignCert) {
   const auto& csr = PrepareTestCSR(gen_config, &key);
   Cert cert;
   ASSERT_OK(CertSigner(&ca_cert_, &ca_private_key_).Sign(csr, &cert));
+  ASSERT_OK(cert.CheckKeyMatch(key));
 
   EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
             cert.IssuerName());
@@ -281,6 +286,7 @@ TEST_F(CertManagementTest, SignCaCert) {
   const auto& csr = PrepareTestCSR<CaCertRequestGenerator>(gen_config, &key);
   Cert cert;
   ASSERT_OK(CertSigner(&ca_cert_, &ca_private_key_).Sign(csr, &cert));
+  ASSERT_OK(cert.CheckKeyMatch(key));
 }
 
 // Test the creation and use of a CA which uses a self-signed CA cert
@@ -300,6 +306,7 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
   // Sign it using the self-signed CA.
   Cert ts_cert;
   ASSERT_OK(CertSigner(&ca_cert, &ca_key).Sign(ts_csr, &ts_cert));
+  ASSERT_OK(ts_cert.CheckKeyMatch(ts_key));
 }
 
 // Check the transformation chains for X509 CSRs:

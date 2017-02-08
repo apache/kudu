@@ -700,6 +700,8 @@ Status CatalogManager::CheckInitCertAuthority() {
         info.private_key(), DataFormat::DER));
     RETURN_NOT_OK(ca_cert->FromString(
         info.certificate(), DataFormat::DER));
+    // Extra sanity check.
+    RETURN_NOT_OK(ca_cert->CheckKeyMatch(*ca_private_key));
   } else {
     // Generate new private key and corresponding CA certificate.
     RETURN_NOT_OK(ca->Generate(ca_private_key.get(), ca_cert.get()));

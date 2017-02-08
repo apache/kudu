@@ -42,6 +42,9 @@ class CertTest : public KuduTest {
     ASSERT_OK(ca_exp_cert_.FromString(kCaExpiredCert, DataFormat::PEM));
     ASSERT_OK(ca_exp_private_key_.FromString(kCaExpiredPrivateKey,
                                              DataFormat::PEM));
+    // Sanity checks.
+    ASSERT_OK(ca_cert_.CheckKeyMatch(ca_private_key_));
+    ASSERT_OK(ca_exp_cert_.CheckKeyMatch(ca_exp_private_key_));
   }
 
  protected:

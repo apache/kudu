@@ -292,9 +292,9 @@ CertSigner::CertSigner(const Cert* ca_cert,
     : ca_cert_(ca_cert),
       ca_private_key_(ca_private_key) {
   // Private key is required.
-  CHECK(ca_private_key && ca_private_key->GetRawData());
+  CHECK(ca_private_key_ && ca_private_key_->GetRawData());
   // The cert is optional, but if we have it, it should be initialized.
-  CHECK(!ca_cert || ca_cert->GetRawData());
+  CHECK(!ca_cert_ || ca_cert_->GetRawData());
 }
 
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
@@ -306,9 +306,7 @@ Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
   // error since we're always using internally-generated CA certs, but
   // this isn't a hot path so we'll keep the extra safety.
   if (ca_cert_) {
-    OPENSSL_RET_NOT_OK(
-        X509_check_private_key(ca_cert_->GetRawData(), ca_private_key_->GetRawData()),
-        "CA certificate and private key do not match");
+    RETURN_NOT_OK(ca_cert_->CheckKeyMatch(*ca_private_key_));
   }
   auto x509 = ssl_make_unique(X509_new());
   RETURN_NOT_OK(FillCertTemplateFromRequest(req.GetRawData(), x509.get()));
