@@ -17,6 +17,7 @@
 
 #include <utility>
 
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
@@ -55,6 +56,27 @@ class CertTest : public KuduTest {
   Cert ca_exp_cert_;
   PrivateKey ca_exp_private_key_;
 };
+
+// Check input/output of the X509 certificates in PEM format.
+TEST_F(CertTest, CertInputOutputPEM) {
+  const Cert& cert = ca_cert_;
+  string cert_str;
+  cert.ToString(&cert_str, DataFormat::PEM);
+  RemoveExtraWhitespace(&cert_str);
+
+  string ca_input_cert(kCaCert);
+  RemoveExtraWhitespace(&ca_input_cert);
+  EXPECT_EQ(ca_input_cert, cert_str);
+}
+
+// Check that Cert behaves in a predictable way if given invalid PEM data.
+TEST_F(CertTest, CertInvalidInput) {
+  // Providing files which guaranteed to exists, but do not contain valid data.
+  // This is to make sure the init handles that situation correctly and
+  // does not choke on the wrong input data.
+  Cert c;
+  ASSERT_FALSE(c.FromFile("/bin/sh", DataFormat::PEM).ok());
+}
 
 // Check X509 certificate/private key matching: match cases.
 TEST_F(CertTest, CertMatchesRsaPrivateKey) {

@@ -21,7 +21,6 @@
 #include <utility>
 #include <vector>
 
-#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/cert.h"
@@ -95,67 +94,6 @@ class CertManagementTest : public KuduTest {
   Cert ca_exp_cert_;
   PrivateKey ca_exp_private_key_;
 };
-
-// Check input/output of RSA private keys in PEM format.
-TEST_F(CertManagementTest, RsaPrivateKeyInputOutputPEM) {
-  const auto& key = ca_private_key_;
-  string key_str;
-  key.ToString(&key_str, DataFormat::PEM);
-  RemoveExtraWhitespace(&key_str);
-
-  string ca_input_key(kCaPrivateKey);
-  RemoveExtraWhitespace(&ca_input_key);
-  EXPECT_EQ(ca_input_key, key_str);
-}
-
-// Check input/output of RSA public keys in PEM format.
-TEST_F(CertManagementTest, RsaPublicKeyInputOutputPEM) {
-  const auto& key = ca_public_key_;
-  string str_key;
-  key.ToString(&str_key, DataFormat::PEM);
-  RemoveExtraWhitespace(&str_key);
-
-  string ref_str_key(kCaPublicKey);
-  RemoveExtraWhitespace(&ref_str_key);
-  EXPECT_EQ(ref_str_key, str_key);
-}
-
-// Check extraction of the public part out from RSA private keys par.
-TEST_F(CertManagementTest, RsaExtractPublicPartFromPrivateKey) {
-  // Load the reference RSA private key.
-  const PrivateKey& private_key = ca_private_key_;
-
-  PublicKey public_key;
-  ASSERT_OK(private_key.GetPublicKey(&public_key));
-  string str_public_key;
-  public_key.ToString(&str_public_key, DataFormat::PEM);
-  RemoveExtraWhitespace(&str_public_key);
-
-  string ref_str_public_key(kCaPublicKey);
-  RemoveExtraWhitespace(&ref_str_public_key);
-  EXPECT_EQ(ref_str_public_key, str_public_key);
-}
-
-// Check input/output of the X509 certificates in PEM format.
-TEST_F(CertManagementTest, CertInputOutputPEM) {
-  const Cert& cert = ca_cert_;
-  string cert_str;
-  cert.ToString(&cert_str, DataFormat::PEM);
-  RemoveExtraWhitespace(&cert_str);
-
-  string ca_input_cert(kCaCert);
-  RemoveExtraWhitespace(&ca_input_cert);
-  EXPECT_EQ(ca_input_cert, cert_str);
-}
-
-// Check that Cert behaves in a predictable way if given invalid PEM data.
-TEST_F(CertManagementTest, CertInvalidInput) {
-  // Providing files which guaranteed to exists, but do not contain valid data.
-  // This is to make sure the init handles that situation correctly and
-  // does not choke on the wrong input data.
-  Cert c;
-  ASSERT_FALSE(c.FromFile("/bin/sh", DataFormat::PEM).ok());
-}
 
 // Check for basic SAN-related constraints while initializing
 // CertRequestGenerator objects.
