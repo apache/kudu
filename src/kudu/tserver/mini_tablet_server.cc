@@ -19,38 +19,21 @@
 
 #include <utility>
 
-#include <glog/logging.h>
-
-#include "kudu/common/schema.h"
-#include "kudu/consensus/consensus.h"
-#include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/log.h"
-#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/rpc_server.h"
-#include "kudu/server/webserver.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 using std::pair;
 
-using kudu::consensus::Consensus;
-using kudu::consensus::ConsensusOptions;
-using kudu::consensus::OpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::RaftConfigPB;
-using kudu::log::Log;
-using kudu::log::LogOptions;
 using strings::Substitute;
 
+DECLARE_bool(enable_minidumps);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
 
 namespace kudu {
@@ -60,6 +43,8 @@ MiniTabletServer::MiniTabletServer(const string& fs_root,
                                    uint16_t rpc_port)
   : started_(false) {
 
+  // Disable minidump handler (we allow only one per process).
+  FLAGS_enable_minidumps = false;
   // Start RPC server on loopback.
   FLAGS_rpc_server_allow_ephemeral_ports = true;
   opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);

@@ -349,6 +349,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Causes a CHECK failure if the process is not running.
   pid_t pid() const;
 
+  // Return the pointer to the undelying Subprocess if it is set.
+  // Otherwise, returns nullptr.
+  Subprocess* process() const;
+
   // Set the path of the executable to run as a daemon.
   // Overrides the exe path specified in the constructor.
   // The daemon must be shut down before calling this method.

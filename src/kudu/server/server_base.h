@@ -34,6 +34,7 @@ class FsManager;
 class MemTracker;
 class MetricEntity;
 class MetricRegistry;
+class MinidumpExceptionHandler;
 class NodeInstancePB;
 class RpcServer;
 class ScopedGLogMetrics;
@@ -97,7 +98,7 @@ class ServerBase {
 
  protected:
   ServerBase(std::string name, const ServerBaseOptions& options,
-             const std::string& metrics_namespace);
+             const std::string& metric_namespace);
   virtual ~ServerBase();
 
   Status Init();
@@ -107,6 +108,7 @@ class ServerBase {
 
   const std::string name_;
 
+  std::unique_ptr<MinidumpExceptionHandler> minidump_handler_;
   std::shared_ptr<MemTracker> mem_tracker_;
   gscoped_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
@@ -135,13 +137,14 @@ class ServerBase {
   void MetricsLoggingThread();
   std::string FooterHtml() const;
 
-  Status StartExcessGlogDeleterThread();
-  void ExcessGlogDeleterThread();
+  // Start thread to remove excess glog and minidump files.
+  Status StartExcessLogFileDeleterThread();
+  void ExcessLogFileDeleterThread();
 
   ServerBaseOptions options_;
 
   scoped_refptr<Thread> metrics_logging_thread_;
-  scoped_refptr<Thread> excess_glog_deleter_thread_;
+  scoped_refptr<Thread> excess_log_deleter_thread_;
   CountDownLatch stop_background_threads_latch_;
 
   gscoped_ptr<ScopedGLogMetrics> glog_metrics_;

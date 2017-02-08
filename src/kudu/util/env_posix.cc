@@ -1243,7 +1243,7 @@ class PosixEnv : public Env {
     ThreadRestrictions::AssertIOAllowed();
     unique_ptr<char[], FreeDeleter> r(realpath(path.c_str(), nullptr));
     if (!r) {
-      return IOError(path, errno);
+      return IOError(Substitute("Unable to canonicalize $0", path), errno);
     }
     *result = string(r.get());
     return Status::OK();

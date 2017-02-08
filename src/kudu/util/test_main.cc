@@ -24,6 +24,7 @@
 
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/minidump.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
@@ -65,6 +66,11 @@ static void StartStressThreads() {
 
 int main(int argc, char **argv) {
   google::InstallFailureSignalHandler();
+
+  // We don't use InitGoogleLoggingSafe() because gtest initializes glog, so we
+  // need to block SIGUSR1 explicitly in order to test minidump generation.
+  CHECK_OK(kudu::BlockSigUSR1());
+
   // InitGoogleTest() must precede ParseCommandLineFlags(), as the former
   // removes gtest-related flags from argv that would trip up the latter.
   ::testing::InitGoogleTest(&argc, argv);

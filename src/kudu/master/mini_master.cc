@@ -32,6 +32,7 @@
 
 using strings::Substitute;
 
+DECLARE_bool(enable_minidumps);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
 
 namespace kudu {
@@ -41,7 +42,10 @@ MiniMaster::MiniMaster(Env* env, string fs_root, uint16_t rpc_port)
     : running_(false),
       env_(env),
       fs_root_(std::move(fs_root)),
-      rpc_port_(rpc_port) {}
+      rpc_port_(rpc_port) {
+  // Disable minidump handler (we allow only one per process).
+  FLAGS_enable_minidumps = false;
+}
 
 MiniMaster::~MiniMaster() {
   CHECK(!running_);

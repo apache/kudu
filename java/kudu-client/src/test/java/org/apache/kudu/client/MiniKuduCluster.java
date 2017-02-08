@@ -159,12 +159,17 @@ public class MiniKuduCluster implements AutoCloseable {
     for (int i = 0; i < numTservers; i++) {
       int rpcPort = ports.get(i * 2);
       tserverPorts.add(rpcPort);
-      String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
+      String tsBaseDirPath = baseDirPath + "/ts-" + i + "-" + now;
+      new File(tsBaseDirPath).mkdir();
+      String logDirPath = tsBaseDirPath + "/logs";
+      new File(logDirPath).mkdir();
+      String dataDirPath = tsBaseDirPath + "/data";
       String flagsPath = TestUtils.getFlagsPath();
 
       List<String> commandLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-tserver"),
           "--flagfile=" + flagsPath,
+          "--log_dir=" + logDirPath,
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
           "--flush_threshold_mb=1",
@@ -189,7 +194,7 @@ public class MiniKuduCluster implements AutoCloseable {
         // We made a temporary copy of the flags; delete them later.
         pathsToDelete.add(flagsPath);
       }
-      pathsToDelete.add(dataDirPath);
+      pathsToDelete.add(tsBaseDirPath);
     }
   }
 
@@ -226,7 +231,11 @@ public class MiniKuduCluster implements AutoCloseable {
     long now = System.currentTimeMillis();
     for (int i = 0; i < numMasters; i++) {
       int port = masterRpcPorts.get(i);
-      String dataDirPath = baseDirPath + "/master-" + i + "-" + now;
+      String masterBaseDirPath = baseDirPath + "/master-" + i + "-" + now;
+      new File(masterBaseDirPath).mkdir();
+      String logDirPath = masterBaseDirPath + "/logs";
+      new File(logDirPath).mkdir();
+      String dataDirPath = masterBaseDirPath + "/data";
       String flagsPath = TestUtils.getFlagsPath();
       // The web port must be reserved in the call to findFreePorts above and specified
       // to avoid the scenario where:
@@ -238,6 +247,7 @@ public class MiniKuduCluster implements AutoCloseable {
       List<String> commandLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-master"),
           "--flagfile=" + flagsPath,
+          "--log_dir=" + logDirPath,
           "--fs_wal_dir=" + dataDirPath,
           "--fs_data_dirs=" + dataDirPath,
           "--webserver_interface=" + bindHost,
@@ -265,7 +275,7 @@ public class MiniKuduCluster implements AutoCloseable {
         // We made a temporary copy of the flags; delete them later.
         pathsToDelete.add(flagsPath);
       }
-      pathsToDelete.add(dataDirPath);
+      pathsToDelete.add(masterBaseDirPath);
     }
     return lastFreePort + 1;
   }

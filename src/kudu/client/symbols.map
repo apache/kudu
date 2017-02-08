@@ -23,12 +23,23 @@
     # devtoolset
     __cxa_throw_bad_array*;
 
+    # breakpad
+    ConvertUTF*;
+    isLegalUTF8Sequence;
+    my_*;
+
     extern "C++" {
       # glog, gflags, and protobuf
       *google::*;
       fL*::FLAGS_*;
       gflags_mutex_namespace::*;
       glog_internal_namespace_::*;
+
+      # breakpad
+      google_breakpad::*;
+      logger::write*;
+      CreateGUID*;
+      GUIDToString*;
 
       # crcutil
       crcutil::*;

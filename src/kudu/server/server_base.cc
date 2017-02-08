@@ -52,6 +52,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/minidump.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -100,6 +101,7 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
 ServerBase::ServerBase(string name, const ServerBaseOptions& options,
                        const string& metric_namespace)
     : name_(std::move(name)),
+      minidump_handler_(new MinidumpExceptionHandler()),
       mem_tracker_(CreateMemTrackerForServer()),
       metric_registry_(new MetricRegistry()),
       metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(),
@@ -207,7 +209,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 
   result_tracker_->StartGCThread();
-  RETURN_NOT_OK(StartExcessGlogDeleterThread());
+  RETURN_NOT_OK(StartExcessLogFileDeleterThread());
 
   return Status::OK();
 }
@@ -319,23 +321,27 @@ void ServerBase::MetricsLoggingThread() {
   WARN_NOT_OK(log.Close(), "Unable to close metric log");
 }
 
-Status ServerBase::StartExcessGlogDeleterThread() {
-  if (FLAGS_logtostderr) {
-    return Status::OK();
-  }
+Status ServerBase::StartExcessLogFileDeleterThread() {
   // Try synchronously deleting excess log files once at startup to make sure it
   // works, then start a background thread to continue deleting them in the
-  // future.
-  RETURN_NOT_OK_PREPEND(DeleteExcessLogFiles(options_.env), "Unable to delete excess log files");
-  return Thread::Create("server", "excess-glog-deleter", &ServerBase::ExcessGlogDeleterThread,
-                        this, &excess_glog_deleter_thread_);
+  // future. Same with minidumps.
+  if (!FLAGS_logtostderr) {
+    RETURN_NOT_OK_PREPEND(DeleteExcessLogFiles(options_.env),
+                          "Unable to delete excess log files");
+  }
+  RETURN_NOT_OK_PREPEND(minidump_handler_->DeleteExcessMinidumpFiles(options_.env),
+                        "Unable to delete excess minidump files");
+  return Thread::Create("server", "excess-log-deleter", &ServerBase::ExcessLogFileDeleterThread,
+                        this, &excess_log_deleter_thread_);
 }
 
-void ServerBase::ExcessGlogDeleterThread() {
-  // How often to attempt to clean up excess glog files.
+void ServerBase::ExcessLogFileDeleterThread() {
+  // How often to attempt to clean up excess glog and minidump files.
   const MonoDelta kWait = MonoDelta::FromSeconds(60);
   while (!stop_background_threads_latch_.WaitUntil(MonoTime::Now() + kWait)) {
     WARN_NOT_OK(DeleteExcessLogFiles(options_.env), "Unable to delete excess log files");
+    WARN_NOT_OK(minidump_handler_->DeleteExcessMinidumpFiles(options_.env),
+                "Unable to delete excess minidump files");
   }
 }
 
@@ -373,8 +379,8 @@ void ServerBase::Shutdown() {
   if (metrics_logging_thread_) {
     metrics_logging_thread_->Join();
   }
-  if (excess_glog_deleter_thread_) {
-    excess_glog_deleter_thread_->Join();
+  if (excess_log_deleter_thread_) {
+    excess_log_deleter_thread_->Join();
   }
   web_server_->Stop();
   rpc_server_->Shutdown();

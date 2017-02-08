@@ -98,11 +98,11 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 
   // Test that we can change the signal and that the stack traces still work,
   // on the new signal.
-  ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR1));
-  ASSERT_OK(SetStackTraceSignal(SIGUSR1));
+  ASSERT_FALSE(IsSignalHandlerRegistered(SIGHUP));
+  ASSERT_OK(SetStackTraceSignal(SIGHUP));
 
   // Should now be registered.
-  ASSERT_TRUE(IsSignalHandlerRegistered(SIGUSR1));
+  ASSERT_TRUE(IsSignalHandlerRegistered(SIGHUP));
 
   // SIGUSR2 should be relinquished.
   ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR2));
@@ -113,17 +113,17 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   // Switch back to SIGUSR2 and ensure it changes back.
   ASSERT_OK(SetStackTraceSignal(SIGUSR2));
   ASSERT_TRUE(IsSignalHandlerRegistered(SIGUSR2));
-  ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR1));
+  ASSERT_FALSE(IsSignalHandlerRegistered(SIGHUP));
 
   // Stack traces should work using the new handler.
   ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
 
-  // Register our own signal handler on SIGUSR1, and ensure that
+  // Register our own signal handler on SIGHUP, and ensure that
   // we get a bad Status if we try to use it.
-  signal(SIGUSR1, &fake_signal_handler);
-  ASSERT_STR_CONTAINS(SetStackTraceSignal(SIGUSR1).ToString(),
+  signal(SIGHUP, &fake_signal_handler);
+  ASSERT_STR_CONTAINS(SetStackTraceSignal(SIGHUP).ToString(),
                       "unable to install signal handler");
-  signal(SIGUSR1, SIG_IGN);
+  signal(SIGHUP, SIG_DFL);
 
   // Stack traces should be disabled
   ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "unable to take thread stack");

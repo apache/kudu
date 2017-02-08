@@ -85,6 +85,10 @@ ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(webserver-stress-itest)
 ADD_KUDU_TEST(write_throttling-itest)
 
+if (NOT APPLE)
+  ADD_KUDU_TEST(minidump_generation-itest)
+endif()
+
 # Tests that should not be run automatically by ctest.
 ADD_KUDU_TEST_NO_CTEST(version_migration-test)
 

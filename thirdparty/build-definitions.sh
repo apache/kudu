@@ -567,6 +567,32 @@ build_crcutil() {
   popd
 }
 
+build_breakpad() {
+  BREAKPAD_BDIR=$TP_BUILD_DIR/$BREAKPAD_NAME$MODE_SUFFIX
+  mkdir -p $BREAKPAD_BDIR
+  pushd $BREAKPAD_BDIR
+
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    $BREAKPAD_SOURCE/configure --prefix=$PREFIX
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+
+  # Here we run a script to munge breakpad #include statements in-place. Sadly,
+  # breakpad does not prefix its header file paths. Until we can solve that
+  # issue upstream we use this "hack" to add breakpad/ as a prefix for all the
+  # breakpad-related includes in the breakpad header files ourselves. See also
+  # https://bugs.chromium.org/p/google-breakpad/issues/detail?id=721
+  local BREAKPAD_INCLUDE_DIR=$PREFIX/include/breakpad
+  pushd "$BREAKPAD_INCLUDE_DIR"
+  find . -type f | xargs grep -l "#include" | \
+    xargs perl -p -i -e '@pre = qw(client common google_breakpad processor third_party); for $p (@pre) { s{#include "$p/}{#include "breakpad/$p/}; }'
+  popd
+
+  popd
+}
+
 build_cpplint() {
   # Copy cpplint tool into bin directory
   cp $GSG_SOURCE/cpplint/cpplint.py $PREFIX/bin/cpplint.py

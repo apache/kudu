@@ -156,6 +156,7 @@ set(UTIL_SRCS
   memory/overwrite.cc
   mem_tracker.cc
   metrics.cc
+  minidump.cc
   monotime.cc
   mutex.cc
   net/dns_resolver.cc
@@ -223,6 +224,7 @@ set(UTIL_LIBS
 if(NOT APPLE)
   set(UTIL_LIBS
     ${UTIL_LIBS}
+    breakpad_client
     dl
     rt
     vmem)
@@ -379,6 +381,7 @@ ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(user-test)
 
 if (NOT APPLE)
+  ADD_KUDU_TEST(minidump-test)
   ADD_KUDU_TEST(pstack_watcher-test)
 endif()
 

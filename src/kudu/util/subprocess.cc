@@ -72,23 +72,40 @@ static const char* kProcSelfFd =
 #if defined(__linux__)
 #define READDIR readdir64
 #define DIRENT dirent64
+typedef sighandler_t SignalHandlerCallback;
 #else
 #define READDIR readdir
 #define DIRENT dirent
+typedef sig_t SignalHandlerCallback;
 #endif
 
-void DisableSigPipe() {
+// Convenience wrapper for sigaction().
+void SetSignalHandler(int signal, SignalHandlerCallback handler) {
   struct sigaction act;
-
-  act.sa_handler = SIG_IGN;
+  act.sa_handler = handler;
   sigemptyset(&act.sa_mask);
   act.sa_flags = 0;
-  PCHECK(sigaction(SIGPIPE, &act, nullptr) == 0);
+  PCHECK(sigaction(signal, &act, nullptr) == 0);
 }
 
-void EnsureSigPipeDisabled() {
+void IgnoreSigPipe() {
+  SetSignalHandler(SIGPIPE, SIG_IGN);
+}
+
+void ResetSigPipeHandlerToDefault() {
+  SetSignalHandler(SIGPIPE, SIG_DFL);
+}
+
+void EnsureSigPipeIgnored() {
   static GoogleOnceType once = GOOGLE_ONCE_INIT;
-  GoogleOnceInit(&once, &DisableSigPipe);
+  GoogleOnceInit(&once, &IgnoreSigPipe);
+}
+
+// We unblock all signal masks since they are inherited.
+void ResetAllSignalMasksToUnblocked() {
+  sigset_t signals;
+  PCHECK(sigfillset(&signals) == 0);
+  PCHECK(sigprocmask(SIG_UNBLOCK, &signals, nullptr) == 0);
 }
 
 // Since opendir() calls malloc(), this must be called before fork().
@@ -322,7 +339,7 @@ Status Subprocess::Start() {
   if (argv_.empty()) {
     return Status::InvalidArgument("argv must have at least one elem");
   }
-  EnsureSigPipeDisabled();
+  EnsureSigPipeIgnored();
 
   vector<char*> argv_ptrs;
   for (const string& arg : argv_) {
@@ -375,35 +392,47 @@ Status Subprocess::Start() {
     if (fd_state_[STDIN_FILENO] == PIPED) {
       PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
     }
+
     // stdout
     switch (fd_state_[STDOUT_FILENO]) {
-    case PIPED: {
-      PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
-      break;
+      case PIPED: {
+        PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
+        break;
+      }
+      case DISABLED: {
+        RedirectToDevNull(STDOUT_FILENO);
+        break;
+      }
+      default:
+        break;
     }
-    case DISABLED: {
-      RedirectToDevNull(STDOUT_FILENO);
-      break;
-    }
-    default: break;
-    }
+
     // stderr
     switch (fd_state_[STDERR_FILENO]) {
-    case PIPED: {
-      PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
-      break;
+      case PIPED: {
+        PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
+        break;
+      }
+      case DISABLED: {
+        RedirectToDevNull(STDERR_FILENO);
+        break;
+      }
+      default:
+        break;
     }
-    case DISABLED: {
-      RedirectToDevNull(STDERR_FILENO);
-      break;
-    }
-    default: break;
-    }
+
     // Close the read side of the sync pipe;
     // the write side should be closed upon execvp().
     PCHECK(close(sync_pipe[0]) == 0);
 
     CloseNonStandardFDs(fd_dir);
+
+    // Ensure we are not ignoring or blocking signals in the child process.
+    ResetAllSignalMasksToUnblocked();
+    // Reset SIGPIPE to its default disposition because we previously set it to
+    // SIG_IGN via EnsureSigPipeIgnored(). At the time of writing, we don't
+    // explicitly ignore any other signals in Kudu.
+    ResetSigPipeHandlerToDefault();
 
     // Set the environment for the subprocess. This is more portable than
     // using execvpe(), which doesn't exist on OS X. We rely on the 'p'

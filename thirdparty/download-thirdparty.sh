@@ -298,5 +298,9 @@ if needs_openssl_workaround && [ ! -d "$OPENSSL_WORKAROUND_DIR" ] ; then
   $TP_DIR/install-openssl-el6-workaround.sh
 fi
 
+if [ ! -d "$BREAKPAD_SOURCE" ]; then
+  fetch_and_expand breakpad-${BREAKPAD_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

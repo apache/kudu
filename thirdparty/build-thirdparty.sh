@@ -91,6 +91,7 @@ else
       "trace-viewer") F_TRACE_VIEWER=1 ;;
       "nvml")         F_NVML=1 ;;
       "boost")        F_BOOST=1 ;;
+      "breakpad")     F_BREAKPAD=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -289,6 +290,10 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BOOST" ]; then
   build_boost normal
 fi
 
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BREAKPAD" ]; then
+  build_breakpad
+fi
+
 restore_env
 
 # If we're on MacOs best to exit here, otherwise single dependency builds will try to
@@ -450,6 +455,10 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
   build_boost tsan
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_BREAKPAD" ]; then
+  build_breakpad
 fi
 
 restore_env

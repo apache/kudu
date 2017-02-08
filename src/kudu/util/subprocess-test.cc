@@ -207,7 +207,7 @@ TEST_F(SubprocessTest, TestGetExitStatusSignaled) {
     SIGABRT,
     SIGKILL,
     SIGTERM,
-    SIGUSR1,
+    SIGUSR2,
   };
   for (auto signum : kSignals) {
     Subprocess p("/bin/cat", { "cat" });

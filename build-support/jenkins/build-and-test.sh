@@ -495,10 +495,9 @@ fi
 if [ $EXIT_STATUS == 0 ]; then
   TEST_TMPDIR_CONTENTS=$(ls $TEST_TMPDIR)
   if [ -n "$TEST_TMPDIR_CONTENTS" ]; then
-    echo "All tests passed, yet some left behind their test output:"
-    for SUBDIR in $TEST_TMPDIR_CONTENTS; do
-      echo $SUBDIR
-    done
+    echo "All tests passed, yet some left behind their test output."
+    echo "TEST_TMPDIR: $TEST_TMPDIR"
+    find $TEST_TMPDIR -ls
     EXIT_STATUS=1
   fi
 fi

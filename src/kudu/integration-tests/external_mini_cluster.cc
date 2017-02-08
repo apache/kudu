@@ -630,6 +630,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // strong encryption in tests.
   argv.push_back("--server_rsa_key_length_bits=512");
 
+  // Disable minidumps by default since many tests purposely inject faults.
+  argv.push_back("--enable_minidumps=false");
+
   // Disable log redaction.
   argv.push_back("--log_redact_user_data=false");
 
@@ -798,6 +801,10 @@ Status ExternalDaemon::WaitForCrash(const MonoDelta& timeout,
 
 pid_t ExternalDaemon::pid() const {
   return process_->pid();
+}
+
+Subprocess* ExternalDaemon::process() const {
+  return process_.get();
 }
 
 void ExternalDaemon::Shutdown() {

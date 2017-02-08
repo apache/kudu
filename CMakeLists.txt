@@ -919,6 +919,15 @@ ADD_THIRDPARTY_LIB(crcutil
   STATIC_LIB "${CRCUTIL_STATIC_LIB}"
   SHARED_LIB "${CRCUTIL_SHARED_LIB}")
 
+## breakpad
+if (NOT APPLE)
+  find_package(BreakpadClient REQUIRED)
+  include_directories(SYSTEM ${BREAKPAD_CLIENT_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(breakpad_client
+    STATIC_LIB "${BREAKPAD_CLIENT_STATIC_LIB}"
+    SHARED_LIB "${BREAKPAD_CLIENT_SHARED_LIB}")
+endif()
+
 ## llvm
 # Note that llvm has a unique cmake setup. See kudu/codegen/CMakeLists.txt
 # for details.

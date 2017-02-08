@@ -105,21 +105,23 @@ export TMPDIR=${TMPDIR:-/tmp}
 export TEST_TMPDIR=${TEST_TMPDIR:-$TMPDIR/kudutest-$UID}
 mkdir -p $TEST_TMPDIR
 BASE_DIR=$(mktemp -d $TEST_TMPDIR/client_samples-test.XXXXXXXX)
+mkdir -p "$BASE_DIR/master/logs"
 $OUTPUT_DIR/kudu-master \
   --unlock_experimental_flags \
   --default_num_replicas=1 \
-  --log_dir=$BASE_DIR \
-  --fs_wal_dir=$BASE_DIR/master \
-  --fs_data_dirs=$BASE_DIR/master \
+  --log_dir=$BASE_DIR/master/logs \
+  --fs_wal_dir=$BASE_DIR/master/wals \
+  --fs_data_dirs=$BASE_DIR/master/data \
   --webserver_interface=localhost \
   --webserver_port=0 \
   --rpc_bind_addresses=$LOCALHOST_IP &
 MASTER_PID=$!
+mkdir -p "$BASE_DIR/ts/logs"
 $OUTPUT_DIR/kudu-tserver \
   --unlock_experimental_flags \
-  --log_dir=$BASE_DIR \
-  --fs_wal_dir=$BASE_DIR/ts \
-  --fs_data_dirs=$BASE_DIR/ts \
+  --log_dir=$BASE_DIR/ts/logs \
+  --fs_wal_dir=$BASE_DIR/ts/wals \
+  --fs_data_dirs=$BASE_DIR/ts/data \
   --rpc_bind_addresses=$LOCALHOST_IP \
   --local_ip_for_outbound_sockets=$LOCALHOST_IP \
   --webserver_interface=localhost \

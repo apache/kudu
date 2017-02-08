@@ -43,6 +43,7 @@ REQUIRED_TOOLS = [
   "git",
   "make",
   "patch",
+  "perl",
   "pkg-config",
   "rsync",
   "unzip",
