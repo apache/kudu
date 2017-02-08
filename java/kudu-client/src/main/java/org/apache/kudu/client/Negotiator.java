@@ -62,8 +62,13 @@ import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 
+/**
+ * Netty Pipeline handler which runs connection negotiation with
+ * the server. When negotiation is complete, this removes itself
+ * from the pipeline and fires a Negotiator.Result upstream.
+ */
 @InterfaceAudience.Private
-public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
+public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
@@ -90,7 +95,7 @@ public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
   private final Subject subject;
   private final String remoteHostname;
 
-  public SecureRpcHelper(Subject subject, String remoteHostname) {
+  public Negotiator(Subject subject, String remoteHostname) {
     this.subject = subject;
     this.remoteHostname = remoteHostname;
   }
@@ -243,7 +248,7 @@ public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
     chan.getPipeline().remove(this);
 
     Channels.write(chan, makeConnectionContext());
-    Channels.fireMessageReceived(chan, new NegotiationResult(serverFeatures));
+    Channels.fireMessageReceived(chan, new Result(serverFeatures));
   }
 
   private ChannelBuffer makeConnectionContext() {
@@ -251,8 +256,8 @@ public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
 
     // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
     RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
-    userBuilder.setEffectiveUser(SecureRpcHelper.USER_AND_PASSWORD);
-    userBuilder.setRealUser(SecureRpcHelper.USER_AND_PASSWORD);
+    userBuilder.setEffectiveUser(Negotiator.USER_AND_PASSWORD);
+    userBuilder.setRealUser(Negotiator.USER_AND_PASSWORD);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
     RpcHeader.ConnectionContextPB pb = builder.build();
     RpcHeader.RequestHeader header =
@@ -293,10 +298,10 @@ public class SecureRpcHelper extends SimpleChannelUpstreamHandler {
    * The results of a successful negotiation. This is sent to upstream handlers in the
    * Netty pipeline after negotiation completes.
    */
-  static class NegotiationResult {
+  static class Result {
     final Set<RpcFeatureFlag> serverFeatures;
 
-    public NegotiationResult(Set<RpcFeatureFlag> serverFeatures) {
+    public Result(Set<RpcFeatureFlag> serverFeatures) {
       this.serverFeatures = serverFeatures;
     }
   }

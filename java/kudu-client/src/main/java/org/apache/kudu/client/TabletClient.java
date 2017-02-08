@@ -56,7 +56,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.client.SecureRpcHelper.NegotiationResult;
+import org.apache.kudu.client.Negotiator.Result;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.tserver.Tserver;
@@ -143,7 +143,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   // differently by also clearing the caches.
   private volatile boolean gotUncaughtException = false;
 
-  private NegotiationResult negotiationResult;
+  private Result negotiationResult;
 
   public TabletClient(AsyncKuduClient client, ServerInfo serverInfo) {
     this.kuduClient = client;
@@ -378,8 +378,8 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   @SuppressWarnings("unchecked")
   public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
     Object m = evt.getMessage();
-    if (m instanceof SecureRpcHelper.NegotiationResult) {
-      this.negotiationResult = (NegotiationResult) m;
+    if (m instanceof Negotiator.Result) {
+      this.negotiationResult = (Result) m;
       this.chan = ctx.getChannel();
       sendQueuedRpcs();
       return;
@@ -603,7 +603,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     final Channel chan = e.getChannel();
     Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
 
-    SecureRpcHelper secureRpcHelper = new SecureRpcHelper(getSubject(), serverInfo.getHostname());
+    Negotiator secureRpcHelper = new Negotiator(getSubject(), serverInfo.getHostname());
     ctx.getPipeline().addBefore(ctx.getName(), "negotiation", secureRpcHelper);
     secureRpcHelper.sendHello(chan);
   }
