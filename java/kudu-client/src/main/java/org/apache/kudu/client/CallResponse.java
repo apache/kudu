@@ -53,7 +53,7 @@ final class CallResponse {
    * @throws IndexOutOfBoundsException if any length prefix inside the
    * response points outside the bounds of the buffer.
    */
-  private CallResponse(final ChannelBuffer buf) {
+  CallResponse(final ChannelBuffer buf) {
     this.buf = buf;
 
     this.totalResponseSize = buf.readableBytes();

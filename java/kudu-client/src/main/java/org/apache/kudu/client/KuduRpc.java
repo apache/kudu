@@ -378,6 +378,8 @@ public abstract class KuduRpc<R> {
     }
   }
 
+  // TODO(todd): make this private and have all RPCs send RpcOutboundMessage
+  // instances instead of ChannelBuffers
   static ChannelBuffer toChannelBuffer(Message header, Message pb) {
     int totalSize = IPCUtil.getTotalSizeWhenWrittenDelimited(header, pb);
     byte[] buf = new byte[totalSize + 4];

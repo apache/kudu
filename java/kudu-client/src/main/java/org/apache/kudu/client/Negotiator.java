@@ -49,7 +49,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 
-import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
@@ -86,8 +85,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private boolean finished;
   private SaslClient saslClient;
-  public static final int CONNECTION_CTX_CALL_ID = -3;
-  private static final int SASL_CALL_ID = -33;
+  static final int CONNECTION_CTX_CALL_ID = -3;
+  static final int SASL_CALL_ID = -33;
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
@@ -121,9 +120,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     RpcHeader.RequestHeader.Builder builder = RpcHeader.RequestHeader.newBuilder();
     builder.setCallId(SASL_CALL_ID);
     RpcHeader.RequestHeader header = builder.build();
-
-    ChannelBuffer buffer = KuduRpc.toChannelBuffer(header, msg);
-    Channels.write(channel, buffer);
+    Channels.write(channel, new RpcOutboundMessage(header, msg));
   }
 
   @Override
@@ -251,7 +248,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     Channels.fireMessageReceived(chan, new Result(serverFeatures));
   }
 
-  private ChannelBuffer makeConnectionContext() {
+  private RpcOutboundMessage makeConnectionContext() {
     RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
 
     // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
@@ -262,7 +259,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     RpcHeader.ConnectionContextPB pb = builder.build();
     RpcHeader.RequestHeader header =
         RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID).build();
-    return KuduRpc.toChannelBuffer(header, pb);
+    return new RpcOutboundMessage(header, pb);
   }
 
   private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
