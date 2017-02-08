@@ -51,7 +51,10 @@ class ServerNegotiation {
   // provided socket. After completing the negotiation process by setting the
   // desired options and calling Negotiate((), the socket can be retrieved with
   // release_socket().
-  explicit ServerNegotiation(std::unique_ptr<Socket> socket);
+  //
+  // The provided TlsContext must outlive this negotiation instance.
+  explicit ServerNegotiation(std::unique_ptr<Socket> socket,
+                             const security::TlsContext* tls_context);
 
   // Enable PLAIN authentication.
   // Despite PLAIN authentication taking a username and password, we disregard
@@ -95,10 +98,6 @@ class ServerNegotiation {
   // Specify the fully-qualified domain name of the remote server.
   // Must be called before Negotiate(). Required for some mechanisms.
   void set_server_fqdn(const std::string& domain_name);
-
-  // Allow TLS to be used on the connection. 'tls_context' must outlive this
-  // ServerNegotiation.
-  void EnableTls(const security::TlsContext* tls_context);
 
   // Set deadline for connection negotiation.
   void set_deadline(const MonoTime& deadline);

@@ -67,10 +67,11 @@ static int ServerNegotiationPlainAuthCb(sasl_conn_t* conn,
   return server_negotiation->PlainAuthCb(conn, user, pass, passlen, propctx);
 }
 
-ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket)
+ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
+                                     const security::TlsContext* tls_context)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
-      tls_context_(nullptr),
+      tls_context_(tls_context),
       tls_negotiated_(false),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
@@ -110,16 +111,18 @@ void ServerNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
 
-void ServerNegotiation::EnableTls(const security::TlsContext* tls_context) {
-  tls_context_ = DCHECK_NOTNULL(tls_context);
-}
-
 void ServerNegotiation::set_deadline(const MonoTime& deadline) {
   deadline_ = deadline;
 }
 
 Status ServerNegotiation::Negotiate() {
   TRACE("Beginning negotiation");
+
+  // Wait until starting negotiation to check that the socket and tls_context
+  // are not null, since the socket and tls_context need not be set for
+  // PreflightCheckGSSAPI.
+  DCHECK(socket_);
+  DCHECK(tls_context_);
 
   // Ensure we can use blocking calls on the socket during negotiation.
   RETURN_NOT_OK(EnsureBlockingMode(socket_.get()));
@@ -137,7 +140,7 @@ Status ServerNegotiation::Negotiate() {
 
   // Step 3: if both ends support TLS, do a TLS handshake.
   // TODO(dan): allow the server to require TLS.
-  if (tls_context_ && ContainsKey(client_features_, TLS)) {
+  if (tls_context_->has_cert() && ContainsKey(client_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::SERVER,
                                                   &tls_handshake_));
 
@@ -195,7 +198,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI() {
   //
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
-  ServerNegotiation server(nullptr);
+  ServerNegotiation server(nullptr, nullptr);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -364,8 +367,7 @@ Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_m
   for (RpcFeatureFlag feature : kSupportedServerRpcFeatureFlags) {
     response.add_supported_features(feature);
   }
-
-  if (tls_context_) {
+  if (tls_context_->has_cert()) {
     response.add_supported_features(TLS);
   }
 

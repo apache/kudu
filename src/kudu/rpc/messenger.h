@@ -198,8 +198,6 @@ class Messenger {
     return name_;
   }
 
-  bool server_tls_enabled() const { return server_tls_enabled_; }
-
   bool closing() const {
     shared_lock<rw_spinlock> l(lock_.get_lock());
     return closing_;
@@ -229,8 +227,6 @@ class Messenger {
   mutable percpu_rwlock lock_;
 
   bool closing_;
-
-  bool server_tls_enabled_;
 
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these

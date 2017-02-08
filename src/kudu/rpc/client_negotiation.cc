@@ -100,10 +100,11 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
   }
 }
 
-ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket)
+ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
+                                     const security::TlsContext* tls_context)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
-      tls_context_(nullptr),
+      tls_context_(tls_context),
       tls_negotiated_(false),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {
@@ -114,6 +115,8 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket)
   callbacks_.push_back(SaslBuildCallback(SASL_CB_PASS,
       reinterpret_cast<int (*)()>(&ClientNegotiationSecretCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
+  DCHECK(socket_);
+  DCHECK(tls_context_);
 }
 
 Status ClientNegotiation::EnablePlain(const string& user, const string& pass) {
@@ -143,10 +146,6 @@ void ClientNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
 
-void ClientNegotiation::EnableTls(const security::TlsContext* tls_context) {
-  tls_context_ = DCHECK_NOTNULL(tls_context);
-}
-
 void ClientNegotiation::set_deadline(const MonoTime& deadline) {
   deadline_ = deadline;
 }
@@ -170,8 +169,8 @@ Status ClientNegotiation::Negotiate() {
   }
 
   // Step 3: if both ends support TLS, do a TLS handshake.
-  // TODO(dan): allow the client to require TLS.
-  if (tls_context_ && ContainsKey(server_features_, TLS)) {
+  // TODO(PKI): allow the client to require TLS.
+  if (ContainsKey(server_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
 
@@ -179,7 +178,6 @@ Status ClientNegotiation::Negotiate() {
       // When using GSSAPI, we don't verify the server's certificate. Instead,
       // we rely on Kerberos authentication, and use channel binding to tie the
       // SASL authentication to the TLS channel.
-      // TODO(PKI): implement channel binding when TLS and GSSAPI are used.
       tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
     }
 
@@ -351,7 +349,7 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
                                    "but client does not have Kerberos enabled");
     }
     if (!ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
-               ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
+        ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
       return Status::NotAuthorized("client requires authentication, "
                                    "but server does not have Kerberos enabled");
     }
@@ -367,6 +365,7 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
     return Status::NotAuthorized(msg);
   }
 
+  // TODO(PKI): allow the client to require authentication.
   if (ContainsKey(common_mechs, SaslMechanism::GSSAPI)) {
     negotiated_mech_ = SaslMechanism::GSSAPI;
   } else {
@@ -505,7 +504,7 @@ Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
 
     string expected_channel_bindings;
     RETURN_NOT_OK_PREPEND(cert.GetServerEndPointChannelBindings(&expected_channel_bindings),
-                          "failed to generate expected channel bindings");
+                          "failed to generate channel bindings");
 
     if (!response.has_channel_bindings()) {
       return Status::NotAuthorized("no channel bindings provided by server");

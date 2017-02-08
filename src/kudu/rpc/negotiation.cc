@@ -129,7 +129,8 @@ static Status DisableSocketTimeouts(Socket* socket) {
 
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
-  ClientNegotiation client_negotiation(conn->release_socket());
+  const auto* tls_context = &conn->reactor_thread()->reactor()->messenger()->tls_context();
+  ClientNegotiation client_negotiation(conn->release_socket(), tls_context);
 
   // Note that the fqdn is an IP address here: we've already lost whatever DNS
   // name the client was attempting to use. Unless krb5 is configured with 'rdns
@@ -154,7 +155,6 @@ static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
   }
 
   RETURN_NOT_OK(client_negotiation.EnablePlain(conn->user_credentials().real_user(), ""));
-  client_negotiation.EnableTls(&conn->reactor_thread()->reactor()->messenger()->tls_context());
   client_negotiation.set_deadline(deadline);
 
   RETURN_NOT_OK(WaitForClientConnect(client_negotiation.socket(), deadline));
@@ -178,14 +178,13 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   }
 
   // Create a new ServerNegotiation to handle the synchronous negotiation.
-  ServerNegotiation server_negotiation(conn->release_socket());
+  const auto* tls_context = &conn->reactor_thread()->reactor()->messenger()->tls_context();
+  ServerNegotiation server_negotiation(conn->release_socket(), tls_context);
+
   if (FLAGS_server_require_kerberos) {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());
   } else {
     RETURN_NOT_OK(server_negotiation.EnablePlain());
-  }
-  if (conn->reactor_thread()->reactor()->messenger()->server_tls_enabled()) {
-    server_negotiation.EnableTls(&conn->reactor_thread()->reactor()->messenger()->tls_context());
   }
   server_negotiation.set_deadline(deadline);
 

@@ -111,7 +111,9 @@ static void RunNegotiationTest(const SocketCallable& server_runner,
 ////////////////////////////////////////////////////////////////////////////////
 
 static void RunPlainNegotiationServer(unique_ptr<Socket> socket) {
-  ServerNegotiation server_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ServerNegotiation server_negotiation(std::move(socket), &tls_context);
   CHECK_OK(server_negotiation.EnablePlain());
   CHECK_OK(server_negotiation.Negotiate());
   CHECK(ContainsKey(server_negotiation.client_features(), APPLICATION_FEATURE_FLAGS));
@@ -119,7 +121,9 @@ static void RunPlainNegotiationServer(unique_ptr<Socket> socket) {
 }
 
 static void RunPlainNegotiationClient(unique_ptr<Socket> socket) {
-  ClientNegotiation client_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ClientNegotiation client_negotiation(std::move(socket), &tls_context);
   CHECK_OK(client_negotiation.EnablePlain("my-username", "ignored password"));
   CHECK_OK(client_negotiation.Negotiate());
   CHECK(ContainsKey(client_negotiation.server_features(), APPLICATION_FEATURE_FLAGS));
@@ -140,7 +144,9 @@ using CheckerFunction = std::function<void(const Status&, T&)>;
 // 'post_check' after negotiation to verify the result.
 static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
                                        const CheckerFunction<ServerNegotiation>& post_check) {
-  ServerNegotiation server_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ServerNegotiation server_negotiation(std::move(socket), &tls_context);
   server_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(server_negotiation.EnableGSSAPI());
   post_check(server_negotiation.Negotiate(), server_negotiation);
@@ -150,7 +156,9 @@ static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
 // 'post_check' after negotiation to verify the result.
 static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
                                        const CheckerFunction<ClientNegotiation>& post_check) {
-  ClientNegotiation client_negotiation(std::move(conn));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ClientNegotiation client_negotiation(std::move(conn), &tls_context);
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
   post_check(client_negotiation.Negotiate(), client_negotiation);
@@ -183,7 +191,9 @@ TEST_F(TestNegotiation, TestRestrictiveServer_NonRestrictiveClient) {
                   CHECK_EQ("testuser", server.authenticated_user());
                 }),
       [](unique_ptr<Socket> socket) {
-        ClientNegotiation client_negotiation(std::move(socket));
+        security::TlsContext tls_context;
+        CHECK_OK(tls_context.Init());
+        ClientNegotiation client_negotiation(std::move(socket), &tls_context);
         client_negotiation.set_server_fqdn("127.0.0.1");
         // The client enables both PLAIN and GSSAPI.
         CHECK_OK(client_negotiation.EnablePlain("foo", "bar"));
@@ -216,7 +226,9 @@ TEST_F(TestNegotiation, TestNoMatchingMechanisms) {
                   ASSERT_STR_CONTAINS(s.ToString(), "got EOF from remote");
                 }),
       [](unique_ptr<Socket> socket) {
-        ClientNegotiation client_negotiation(std::move(socket));
+        security::TlsContext tls_context;
+        CHECK_OK(tls_context.Init());
+        ClientNegotiation client_negotiation(std::move(socket), &tls_context);
         client_negotiation.set_server_fqdn("127.0.0.1");
         // The client enables both PLAIN and GSSAPI.
         CHECK_OK(client_negotiation.EnablePlain("foo", "bar"));
@@ -387,7 +399,9 @@ TEST_F(TestNegotiation, TestPreflight) {
 ////////////////////////////////////////////////////////////////////////////////
 
 static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
-  ServerNegotiation server_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ServerNegotiation server_negotiation(std::move(socket), &tls_context);
   CHECK_OK(server_negotiation.EnablePlain());
   Status s = server_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
@@ -395,7 +409,9 @@ static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
 }
 
 static void RunTimeoutNegotiationClient(unique_ptr<Socket> sock) {
-  ClientNegotiation client_negotiation(std::move(sock));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ClientNegotiation client_negotiation(std::move(sock), &tls_context);
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   client_negotiation.set_deadline(deadline);
@@ -412,7 +428,9 @@ TEST_F(TestNegotiation, TestClientTimeout) {
 ////////////////////////////////////////////////////////////////////////////////
 
 static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
-  ServerNegotiation server_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ServerNegotiation server_negotiation(std::move(socket), &tls_context);
   CHECK_OK(server_negotiation.EnablePlain());
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   server_negotiation.set_deadline(deadline);
@@ -422,7 +440,9 @@ static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
 }
 
 static void RunTimeoutExpectingClient(unique_ptr<Socket> socket) {
-  ClientNegotiation client_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  CHECK_OK(tls_context.Init());
+  ClientNegotiation client_negotiation(std::move(socket), &tls_context);
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   Status s = client_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "
@@ -542,19 +562,17 @@ TEST_F(TestDisableInit, TestMultipleSaslInit_NoMutexImpl) {
 
 // Server which has TLS and SASL GSSAPI enabled.
 static void RunTlsGssapiNegotiationServer(unique_ptr<Socket> socket) {
-  ServerNegotiation server_negotiation(std::move(socket));
+  security::TlsContext tls_context;
+  ASSERT_OK(tls_context.Init());
 
   // TODO(PKI): switch this to use an in-memory cert and key.
   std::string server_cert_path = JoinPathSegments(GetTestDataDirectory(), "server-cert.pem");
   std::string private_key_path = JoinPathSegments(GetTestDataDirectory(), "server-key.pem");
   ASSERT_OK(security::CreateSSLServerCert(server_cert_path));
   ASSERT_OK(security::CreateSSLPrivateKey(private_key_path));
-
-  security::TlsContext tls_context;
-  ASSERT_OK(tls_context.Init());
   ASSERT_OK(tls_context.LoadCertificateAndKey(server_cert_path, private_key_path));
-  server_negotiation.EnableTls(&tls_context);
 
+  ServerNegotiation server_negotiation(std::move(socket), &tls_context);
   server_negotiation.set_server_fqdn("127.0.0.1");
   ASSERT_OK(server_negotiation.EnableGSSAPI());
 
@@ -569,12 +587,10 @@ static void RunTlsGssapiNegotiationServer(unique_ptr<Socket> socket) {
 }
 
 static void RunTlsGssapiNegotiationClient(unique_ptr<Socket> socket) {
-  ClientNegotiation client_negotiation(std::move(socket));
-
   security::TlsContext tls_context;
   ASSERT_OK(tls_context.Init());
-  client_negotiation.EnableTls(&tls_context);
 
+  ClientNegotiation client_negotiation(std::move(socket), &tls_context);
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
   CHECK_OK(client_negotiation.Negotiate());

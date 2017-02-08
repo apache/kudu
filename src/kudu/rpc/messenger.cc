@@ -270,6 +270,7 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 Messenger::Messenger(const MessengerBuilder &bld)
   : name_(bld.name_),
     closing_(false),
+    tls_context_(new security::TlsContext()),
     rpcz_store_(new RpczStore()),
     metric_entity_(bld.metric_entity_),
     retain_self_(this) {
@@ -298,17 +299,14 @@ Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {
 
 Status Messenger::Init() {
   Status status;
-  server_tls_enabled_ = !FLAGS_rpc_ssl_server_certificate.empty()
-                     || !FLAGS_rpc_ssl_private_key.empty()
-                     || !FLAGS_rpc_ssl_certificate_authority.empty();
 
-  // Enable TLS unconditionally for client connections.
-  tls_context_.reset(new security::TlsContext());
   RETURN_NOT_OK(tls_context_->Init());
-  if (server_tls_enabled_) {
+  if (!FLAGS_rpc_ssl_server_certificate.empty() ||
+      !FLAGS_rpc_ssl_private_key.empty() ||
+      !FLAGS_rpc_ssl_certificate_authority.empty()) {
+    RETURN_NOT_OK(tls_context_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
     RETURN_NOT_OK(tls_context_->LoadCertificateAndKey(FLAGS_rpc_ssl_server_certificate,
                                                       FLAGS_rpc_ssl_private_key));
-    RETURN_NOT_OK(tls_context_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
   }
   for (Reactor* r : reactors_) {
     RETURN_NOT_OK(r->Init());
