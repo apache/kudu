@@ -27,6 +27,8 @@ class Status;
 
 namespace security {
 
+class PrivateKey;
+
 // Convert an X509_NAME object to a human-readable string.
 std::string X509NameToString(X509_NAME* name);
 
@@ -38,6 +40,10 @@ class Cert : public RawDataWrapper<X509> {
 
   std::string SubjectName() const;
   std::string IssuerName() const;
+
+  // Check whether the specified private key matches the certificate.
+  // Return Status::OK() if key match the certificate.
+  Status CheckKeyMatch(const PrivateKey& key) const;
 
   // Returns the 'tls-server-end-point' channel bindings for the certificate as
   // specified in RFC 5929.

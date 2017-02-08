@@ -108,6 +108,7 @@ if (NOT NO_TESTS)
     ${KUDU_MIN_TEST_LIBS})
 
   ADD_KUDU_TEST(ca/cert_management-test)
+  ADD_KUDU_TEST(cert-test)
   ADD_KUDU_TEST(crypto-test)
   ADD_KUDU_TEST(test/mini_kdc-test)
   ADD_KUDU_TEST(tls_handshake-test)

@@ -23,6 +23,7 @@
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
+#include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/openssl_util_bio.h"
 #include "kudu/util/status.h"
@@ -60,6 +61,12 @@ string Cert::SubjectName() const {
 
 string Cert::IssuerName() const {
   return X509NameToString(X509_get_issuer_name(data_.get()));
+}
+
+Status Cert::CheckKeyMatch(const PrivateKey& key) const {
+  OPENSSL_RET_NOT_OK(X509_check_private_key(data_.get(), key.GetRawData()),
+                     "certificate does not match private key");
+  return Status::OK();
 }
 
 Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
