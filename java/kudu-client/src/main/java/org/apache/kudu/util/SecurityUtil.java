@@ -19,9 +19,16 @@ package org.apache.kudu.util;
 
 import java.security.AccessControlContext;
 import java.security.AccessController;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import javax.security.auth.Subject;
 import javax.security.auth.kerberos.KerberosPrincipal;
 import javax.security.auth.login.AppConfigurationEntry;
@@ -30,6 +37,8 @@ import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Throwables;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,4 +109,41 @@ public abstract class SecurityUtil {
     }
   }
 
+  /**
+   * TrustManager implementation which will trust any certificate.
+   * TODO(PKI): this needs to change so that it can be configured with
+   * the cluster's CA cert.
+   */
+  static class TrustAnyCert implements X509TrustManager {
+    @Override
+    public void checkClientTrusted(X509Certificate[] arg0, String arg1)
+        throws CertificateException {
+    }
+
+    @Override
+    public void checkServerTrusted(X509Certificate[] arg0, String arg1)
+        throws CertificateException {
+    }
+
+    @Override
+    public X509Certificate[] getAcceptedIssuers() {
+      return null;
+    }
+  }
+
+  /**
+   * Create an SSL engine configured to trust any certificate.
+   * @return
+   * @throws SSLException
+   */
+  public static SSLEngine createSslEngine() throws SSLException {
+    try {
+      SSLContext ctx = SSLContext.getInstance("TLS");
+      ctx.init(null, new TrustManager[] { new TrustAnyCert() }, null);
+      return ctx.createSSLEngine();
+    } catch (Exception e) {
+      Throwables.propagateIfInstanceOf(e, SSLException.class);
+      throw Throwables.propagate(e);
+    }
+  }
 }

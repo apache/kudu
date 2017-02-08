@@ -19,22 +19,33 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.*;
 
+import java.nio.ByteBuffer;
 import java.security.AccessControlContext;
 import java.security.AccessController;
+import java.util.List;
 
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLEngineResult;
+import javax.net.ssl.SSLEngineResult.HandshakeStatus;
+import javax.net.ssl.SSLException;
 import javax.security.auth.Subject;
 
 import org.apache.kudu.client.Negotiator.Result;
 import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
+import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
+import org.apache.kudu.util.SecurityUtil;
 import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
+import org.jboss.netty.handler.ssl.SslHandler;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.common.collect.Lists;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 
 public class TestNegotiator {
@@ -66,7 +77,7 @@ public class TestNegotiator {
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
     NegotiatePB body = (NegotiatePB) msg.getBody();
     assertEquals(Negotiator.SASL_CALL_ID, msg.getHeader().getCallId());
-    assertEquals(NegotiateStep.NEGOTIATE, ((NegotiatePB)msg.getBody()).getStep());
+    assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
 
     // Respond with NEGOTIATE.
     embedder.offer(fakeResponse(
@@ -104,4 +115,104 @@ public class TestNegotiator {
     assertNotNull(result);
   }
 
+  private static void runTasks(SSLEngineResult result,
+      SSLEngine engine) {
+    if (result.getHandshakeStatus() != HandshakeStatus.NEED_TASK) {
+      return;
+    }
+    Runnable task;
+    while ((task = engine.getDelegatedTask()) != null) {
+      task.run();
+    }
+  }
+
+  private static CallResponse runServerStep(SSLEngine engine,
+      ByteString clientTlsMessage) throws SSLException {
+    Negotiator.LOG.info("Handling TLS message from client: {}", clientTlsMessage.toByteArray());
+    ByteBuffer dst = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
+    ByteBuffer src = clientTlsMessage.asReadOnlyByteBuffer();
+    do {
+      SSLEngineResult result = engine.unwrap(src, dst);
+      runTasks(result, engine);
+    } while (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP);
+
+    if (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
+      // The server has more to send.
+      // Produce the ServerHello and send it back to the client.
+      List<ByteString> bufs = Lists.newArrayList();
+      while (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
+        dst.clear();
+        runTasks(engine.wrap(ByteBuffer.allocate(0), dst), engine);
+        dst.flip();
+        bufs.add(ByteString.copyFrom(dst));
+      }
+      return fakeResponse(
+          ResponseHeader.newBuilder().setCallId(-33).build(),
+          NegotiatePB.newBuilder()
+            .setTlsHandshake(ByteString.copyFrom(bufs))
+            .setStep(NegotiateStep.TLS_HANDSHAKE)
+            .build());
+    } else if (engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
+      // Handshake complete.
+      return null;
+    } else {
+      throw new AssertionError("unexpected state: " + engine.getHandshakeStatus());
+    }
+  }
+
+  @Test
+  public void testTlsNegotiation() throws Exception {
+    SSLEngine serverEngine = SecurityUtil.createSslEngine();
+    serverEngine.setUseClientMode(false);
+    // Enable only an anonymous cipher suite, so we don't need to deal with
+    // setting up certs in this test, for now.
+    serverEngine.setEnabledCipherSuites(new String[]{
+        "TLS_DH_anon_WITH_AES_128_CBC_SHA"
+    });
+
+    negotiator.sendHello(embedder.getPipeline().getChannel());
+
+    // Expect client->server: NEGOTIATE, TLS included.
+    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    NegotiatePB body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
+    assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
+
+    // Fake a server response with TLS enabled.
+    embedder.offer(fakeResponse(
+        ResponseHeader.newBuilder().setCallId(-33).build(),
+        NegotiatePB.newBuilder()
+          .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
+          .addSupportedFeatures(RpcFeatureFlag.TLS)
+          .setStep(NegotiateStep.NEGOTIATE)
+          .build()));
+
+    // Expect client->server: TLS_HANDSHAKE.
+    msg = (RpcOutboundMessage) embedder.poll();
+    body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.TLS_HANDSHAKE, body.getStep());
+
+    // Consume the ClientHello in our fake server, which should generate ServerHello.
+    embedder.offer(runServerStep(serverEngine, body.getTlsHandshake()));
+
+    // Expect client to generate ClientKeyExchange, ChangeCipherSpec, Finished.
+    msg = (RpcOutboundMessage) embedder.poll();
+    body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.TLS_HANDSHAKE, body.getStep());
+
+    // Server consumes the above. Should send the TLS "Finished" message.
+    embedder.offer(runServerStep(serverEngine, body.getTlsHandshake()));
+
+    // The pipeline should now have an SSL handler as the first handler.
+    assertTrue(embedder.getPipeline().getFirst() instanceof SslHandler);
+
+    // The Negotiator should have sent the SASL_INITIATE at this point.
+    // NOTE: in a non-mock environment, this message would now be encrypted
+    // by the newly-added TLS handler. But, with the DecoderEmbedder that we're
+    // using, we don't actually end up processing outbound events. Upgrading
+    // to Netty 4 and using EmbeddedChannel instead would make this more realistic.
+    msg = (RpcOutboundMessage) embedder.poll();
+    body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
+  }
 }

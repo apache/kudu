@@ -27,9 +27,12 @@
 package org.apache.kudu.client;
 
 import java.security.PrivilegedExceptionAction;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.net.ssl.SSLEngine;
+import javax.net.ssl.SSLException;
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -45,21 +48,32 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.ObjectArrays;
 import com.google.common.collect.Sets;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
+import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
+import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
+import org.jboss.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
+import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
+import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.util.SecurityUtil;
 
 /**
  * Netty Pipeline handler which runs connection negotiation with
@@ -69,10 +83,13 @@ import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 @InterfaceAudience.Private
 public class Negotiator extends SimpleChannelUpstreamHandler {
 
-  private static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
+  static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
-  private static final Map<String, String> SASL_PROPS = ImmutableMap.of();
   private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
+  private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
+      ImmutableSet.of(
+          RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS,
+          RpcHeader.RpcFeatureFlag.TLS);
 
   /**
    * List of SASL mechanisms supported by the client, in descending priority order.
@@ -83,16 +100,45 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   static final String USER_AND_PASSWORD = "java_client";
 
-  private boolean finished;
-  private SaslClient saslClient;
   static final int CONNECTION_CTX_CALL_ID = -3;
   static final int SASL_CALL_ID = -33;
-  private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
-      ImmutableSet.of(RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS);
+
+  private static enum State {
+    INITIAL,
+    AWAIT_NEGOTIATE,
+    AWAIT_TLS_HANDSHAKE,
+    AWAIT_SASL,
+    FINISHED
+  }
+
+  /** Subject to authenticate as, when using Kerberos/GSSAPI */
+  private final Subject subject;
+  /** The remote hostname we're connecting to, used by TLS and GSSAPI */
+  private final String remoteHostname;
+
+  private State state = State.INITIAL;
+  private SaslClient saslClient;
+
+  /** The negotiated mechanism, set after NEGOTIATE stage. */
+  private String chosenMech;
+
+  /** The features supported by the server, set after NEGOTIATE stage. */
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
 
-  private final Subject subject;
-  private final String remoteHostname;
+  /**
+   * The negotiation protocol relies on tunneling the TLS handshake through
+   * protobufs. The embedder holds a Netty SslHandler which can perform the
+   * handshake. Once the handshake is complete, we will stop using the embedder
+   * and add the handler directly to the real ChannelPipeline.
+   * Only non-null once TLS is initiated.
+   */
+  private DecoderEmbedder<ChannelBuffer> sslEmbedder;
+
+  /**
+   * Future indicating whether the embedded handshake has completed.
+   * Only non-null once TLS is initiated.
+   */
+  private ChannelFuture sslHandshakeFuture;
 
   public Negotiator(Subject subject, String remoteHostname) {
     this.subject = subject;
@@ -112,6 +158,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
 
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
+    state = State.AWAIT_NEGOTIATE;
     sendSaslMessage(channel, builder.build());
   }
 
@@ -134,14 +181,32 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     handleResponse(ctx.getChannel(), (CallResponse)m);
   }
 
-  private void handleResponse(Channel chan, CallResponse callResponse) throws SaslException {
+  private void handleResponse(Channel chan, CallResponse callResponse)
+      throws SaslException, SSLException {
     // TODO(todd): this needs to handle error responses, not just success responses.
-    Preconditions.checkState(!finished, "received a response after negotiation was complete");
     RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
-    switch (response.getStep()) {
-      case NEGOTIATE:
+
+    // TODO: check that the message type matches the expected one in all
+    // of the below implementations.
+    switch (state) {
+      case AWAIT_NEGOTIATE:
         handleNegotiateResponse(chan, response);
         break;
+      case AWAIT_SASL:
+        handleSaslMessage(chan, response);
+        break;
+      case AWAIT_TLS_HANDSHAKE:
+        handleTlsMessage(chan, response);
+        break;
+      default:
+        throw new IllegalStateException("received a message in unexpected state: " +
+            state.toString());
+    }
+  }
+
+  private void handleSaslMessage(Channel chan, NegotiatePB response)
+      throws SaslException {
+    switch (response.getStep()) {
       case SASL_CHALLENGE:
         handleChallengeResponse(chan, response);
         break;
@@ -149,7 +214,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         handleSuccessResponse(chan);
         break;
       default:
-        LOG.error(String.format("Wrong negotiation step: %s", response.getStep()));
+        throw new IllegalStateException("Wrong negotiation step: " +
+            response.getStep());
     }
   }
 
@@ -167,7 +233,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
-      SaslException {
+      SaslException, SSLException {
     // Store the supported features advertised by the server.
     ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
     for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
@@ -176,6 +242,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       }
     }
     serverFeatures = features.build();
+
+    boolean willUseTls = serverFeatures.contains(RpcFeatureFlag.TLS);
 
     // Gather the set of server-supported mechanisms.
     Set<String> serverMechs = Sets.newHashSet();
@@ -187,24 +255,27 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // the server also supports them. If so, try to initialize saslClient.
     // If we find a common mechanism that also can be successfully initialized,
     // choose that mech.
-    byte[] initialResponse = null;
-    String chosenMech = null;
     Map<String, String> errorsByMech = Maps.newHashMap();
     for (String clientMech : PRIORITIZED_MECHS) {
       if (!serverMechs.contains(clientMech)) {
         errorsByMech.put(clientMech, "not advertised by server");
         continue;
       }
+      Map<String, String> props = Maps.newHashMap();
+      // If we are using GSSAPI with TLS, enable integrity protection, which we use
+      // to securely transmit the channel bindings. Channel bindings aren't
+      // yet implemented, but if we don't advertise 'auth-int', then the server
+      // won't talk to us.
+      if ("GSSAPI".equals(clientMech) && willUseTls) {
+        props.put(Sasl.QOP, "auth-int");
+      }
       try {
         saslClient = Sasl.createSaslClient(new String[]{ clientMech },
                                            null,
                                            "kudu",
                                            remoteHostname,
-                                           SASL_PROPS,
+                                           props,
                                            SASL_CALLBACK);
-        if (saslClient.hasInitialResponse()) {
-          initialResponse = evaluateChallenge(new byte[0]);
-        }
         chosenMech = clientMech;
         break;
       } catch (SaslException e) {
@@ -219,12 +290,110 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
                               "]");
     }
 
+    // If we negotiated TLS, then we want to start the TLS handshake.
+    if (willUseTls) {
+      startTlsHandshake(chan);
+    } else {
+      sendSaslInitiate(chan);
+    }
+  }
+
+  /**
+   * Send the initial TLS "ClientHello" message.
+   */
+  private void startTlsHandshake(Channel chan) throws SSLException {
+    SSLEngine engine = SecurityUtil.createSslEngine();
+    // TODO(todd): remove usage of this anonymous cipher suite.
+    // It's replaced in the next patch in this patch series by
+    // a self-signed cert used for tests.
+    engine.setEnabledCipherSuites(ObjectArrays.concat(
+        engine.getEnabledCipherSuites(),
+        "TLS_DH_anon_WITH_AES_128_CBC_SHA"));
+    engine.setUseClientMode(true);
+    SslHandler handler = new SslHandler(engine);
+    handler.setEnableRenegotiation(false);
+    sslEmbedder = new DecoderEmbedder<>(handler);
+    sslHandshakeFuture = handler.handshake();
+    state = State.AWAIT_TLS_HANDSHAKE;
+    boolean sent = sendPendingOutboundTls(chan);
+    assert sent;
+  }
+
+  /**
+   * Handle an inbound message during the TLS handshake. If this message
+   * causes the handshake to complete, triggers the beginning of SASL initiation.
+   */
+  private void handleTlsMessage(Channel chan, NegotiatePB response)
+      throws SaslException {
+    Preconditions.checkState(response.getStep() == NegotiateStep.TLS_HANDSHAKE);
+    Preconditions.checkArgument(!response.getTlsHandshake().isEmpty(),
+        "empty TLS message from server");
+
+    // Pass the TLS message into our embedded SslHandler.
+    sslEmbedder.offer(ChannelBuffers.copiedBuffer(
+        response.getTlsHandshake().asReadOnlyByteBuffer()));
+    if (sendPendingOutboundTls(chan)) {
+      // Data was sent -- we must continue the handshake process.
+      return;
+    }
+    // The handshake completed.
+    // Insert the SSL handler into the pipeline so that all following traffic
+    // gets encrypted, and then move on to the SASL portion of negotiation.
+    //
+    // NOTE: this takes effect immediately (i.e. the following SASL initiation
+    // sequence is encrypted).
+    chan.getPipeline().addFirst("tls", sslEmbedder.getPipeline().getFirst());
+    sendSaslInitiate(chan);
+  }
+
+  /**
+   * If the embedded SslHandler has data to send outbound, gather
+   * it all, send it tunneled in a NegotiatePB message, and return true.
+   *
+   * Otherwise, indicates that the handshake is complete by returning false.
+   */
+  private boolean sendPendingOutboundTls(Channel chan) {
+    // The SslHandler can generate multiple TLS messages in response
+    // (e.g. ClientKeyExchange, ChangeCipherSpec, ClientFinished).
+    // We poll the handler until it stops giving us buffers.
+    List<ByteString> bufs = Lists.newArrayList();
+    while (sslEmbedder.peek() != null) {
+      bufs.add(ByteString.copyFrom(sslEmbedder.poll().toByteBuffer()));
+    }
+    ByteString data = ByteString.copyFrom(bufs);
+    if (sslHandshakeFuture.isDone()) {
+      // TODO(danburkert): is this a correct assumption? would the
+      // client ever be "done" but also produce handshake data?
+      // if it did, would we want to encrypt the SSL message or no?
+      assert data.size() == 0;
+      return false;
+    } else {
+      assert data.size() > 0;
+      sendTunneledTls(chan, data);
+      return true;
+    }
+  }
+
+  /**
+   * Send a buffer of data for the TLS handshake, encapsulated in the
+   * appropriate TLS_HANDSHAKE negotiation message.
+   */
+  private void sendTunneledTls(Channel chan, ByteString buf) {
+    sendSaslMessage(chan, NegotiatePB.newBuilder()
+        .setStep(NegotiateStep.TLS_HANDSHAKE)
+        .setTlsHandshake(buf)
+        .build());
+  }
+
+  private void sendSaslInitiate(Channel chan) throws SaslException {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
-    if (initialResponse != null) {
+    if (saslClient.hasInitialResponse()) {
+      byte[] initialResponse = evaluateChallenge(new byte[0]);
       builder.setToken(ZeroCopyLiteralByteString.wrap(initialResponse));
     }
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
     builder.addSaslMechanismsBuilder().setMechanism(chosenMech);
+    state = State.AWAIT_SASL;
     sendSaslMessage(chan, builder.build());
   }
 
@@ -241,7 +410,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void handleSuccessResponse(Channel chan) {
-    finished = true;
+    state = State.FINISHED;
     chan.getPipeline().remove(this);
 
     Channels.write(chan, makeConnectionContext());
