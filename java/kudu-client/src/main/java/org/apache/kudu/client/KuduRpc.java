@@ -67,6 +67,10 @@ import org.apache.kudu.util.Slice;
 @InterfaceAudience.Private
 public abstract class KuduRpc<R> {
 
+  /**
+   * This along with {@link Status#MAX_MESSAGE_LENGTH} dictates how big all the messages
+   * in a trace can be.
+   */
   @VisibleForTesting
   public static final int MAX_TRACES_SIZE = 100;
 

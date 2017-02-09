@@ -22,6 +22,8 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import java.util.Arrays;
+
 public class TestStatus {
 
   @Test
@@ -52,5 +54,34 @@ public class TestStatus {
     assertTrue(s.isNotFound());
     assertEquals(2, s.getPosixCode());
     assertEquals("Not found: File not found (error 2)", s.toString());
+  }
+
+  @Test
+  public void testMessageTooLong() {
+
+    // Test string that will not get abbreviated.
+    char[] chars = new char[Status.MAX_MESSAGE_LENGTH];
+    Arrays.fill(chars, 'a');
+    Status s = Status.Corruption(new String(chars));
+    assertEquals(Status.MAX_MESSAGE_LENGTH, s.getMessage().length());
+    assertEquals(s.getMessage().substring(Status.MAX_MESSAGE_LENGTH -
+        Status.ABBREVIATION_CHARS_LENGTH), "aaa");
+
+
+    // Test string just over the limit that will get abbreviated.
+    chars = new char[Status.MAX_MESSAGE_LENGTH + 1];
+    Arrays.fill(chars, 'a');
+    s = Status.Corruption(new String(chars));
+    assertEquals(Status.MAX_MESSAGE_LENGTH, s.getMessage().length());
+    assertEquals(s.getMessage().substring(Status.MAX_MESSAGE_LENGTH -
+        Status.ABBREVIATION_CHARS_LENGTH), Status.ABBREVIATION_CHARS);
+
+    // Test string that's way too big that will get abbreviated.
+    chars = new char[Status.MAX_MESSAGE_LENGTH * 2];
+    Arrays.fill(chars, 'a');
+    s = Status.Corruption(new String(chars));
+    assertEquals(Status.MAX_MESSAGE_LENGTH, s.getMessage().length());
+    assertEquals(s.getMessage().substring(Status.MAX_MESSAGE_LENGTH -
+        Status.ABBREVIATION_CHARS_LENGTH), Status.ABBREVIATION_CHARS);
   }
 }

@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -31,22 +32,35 @@ import org.apache.kudu.tserver.Tserver;
 @InterfaceStability.Evolving
 public class Status {
 
+  // Limit the message size we get from the servers as it can be quite large.
+  @VisibleForTesting
+  static final int MAX_MESSAGE_LENGTH = 256;
+  @VisibleForTesting
+  static final String ABBREVIATION_CHARS = "...";
+  @VisibleForTesting
+  static final int ABBREVIATION_CHARS_LENGTH = ABBREVIATION_CHARS.length();
+
   // Keep a single OK status object else we'll end up instantiating tons of them.
   private static final Status STATIC_OK = new Status(WireProtocol.AppStatusPB.ErrorCode.OK);
 
-  private final WireProtocol.AppStatusPB appStatusPB;
-
-  private Status(WireProtocol.AppStatusPB appStatusPB) {
-    this.appStatusPB = appStatusPB;
-  }
+  private final WireProtocol.AppStatusPB.ErrorCode code;
+  private final String message;
+  private final int posixCode;
 
   private Status(WireProtocol.AppStatusPB.ErrorCode code, String msg, int posixCode) {
-    this.appStatusPB =
-        WireProtocol.AppStatusPB.newBuilder()
-            .setCode(code)
-            .setMessage(msg)
-            .setPosixCode(posixCode)
-            .build();
+    this.code = code;
+    this.posixCode = posixCode;
+
+    if (msg.length() > MAX_MESSAGE_LENGTH) {
+      // Truncate the message and indicate that it was abbreviated.
+      this.message =  msg.substring(0, MAX_MESSAGE_LENGTH - ABBREVIATION_CHARS_LENGTH)
+          + ABBREVIATION_CHARS;
+    } else
+      this.message = msg;
+  }
+
+  private Status(WireProtocol.AppStatusPB appStatusPB) {
+    this(appStatusPB.getCode(), appStatusPB.getMessage(), appStatusPB.getPosixCode());
   }
 
   private Status(WireProtocol.AppStatusPB.ErrorCode code, String msg) {
@@ -226,79 +240,79 @@ public class Status {
   // Boolean status checks.
 
   public boolean ok() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.OK;
+    return code == WireProtocol.AppStatusPB.ErrorCode.OK;
   }
 
   public boolean isCorruption() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.CORRUPTION;
+    return code == WireProtocol.AppStatusPB.ErrorCode.CORRUPTION;
   }
 
   public boolean isNotFound() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_FOUND;
+    return code == WireProtocol.AppStatusPB.ErrorCode.NOT_FOUND;
   }
 
   public boolean isNotSupported() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_SUPPORTED;
+    return code == WireProtocol.AppStatusPB.ErrorCode.NOT_SUPPORTED;
   }
 
   public boolean isInvalidArgument() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.INVALID_ARGUMENT;
+    return code == WireProtocol.AppStatusPB.ErrorCode.INVALID_ARGUMENT;
   }
 
   public boolean isIOError() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.IO_ERROR;
+    return code == WireProtocol.AppStatusPB.ErrorCode.IO_ERROR;
   }
 
   public boolean isAlreadyPresent() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT;
+    return code == WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT;
   }
 
   public boolean isRuntimeError() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.RUNTIME_ERROR;
+    return code == WireProtocol.AppStatusPB.ErrorCode.RUNTIME_ERROR;
   }
 
   public boolean isNetworkError() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NETWORK_ERROR;
+    return code == WireProtocol.AppStatusPB.ErrorCode.NETWORK_ERROR;
   }
 
   public boolean isIllegalState() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE;
+    return code == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE;
   }
 
   public boolean isNotAuthorized() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.NOT_AUTHORIZED;
+    return code == WireProtocol.AppStatusPB.ErrorCode.NOT_AUTHORIZED;
   }
 
   public boolean isAborted() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.ABORTED;
+    return code == WireProtocol.AppStatusPB.ErrorCode.ABORTED;
   }
 
   public boolean isRemoteError() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.REMOTE_ERROR;
+    return code == WireProtocol.AppStatusPB.ErrorCode.REMOTE_ERROR;
   }
 
   public boolean isServiceUnavailable() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE;
+    return code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE;
   }
 
   public boolean isTimedOut() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.TIMED_OUT;
+    return code == WireProtocol.AppStatusPB.ErrorCode.TIMED_OUT;
   }
 
   public boolean isUninitialized() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.UNINITIALIZED;
+    return code == WireProtocol.AppStatusPB.ErrorCode.UNINITIALIZED;
   }
 
   public boolean isConfigurationError() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.CONFIGURATION_ERROR;
+    return code == WireProtocol.AppStatusPB.ErrorCode.CONFIGURATION_ERROR;
   }
 
   public boolean isIncomplete() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.INCOMPLETE;
+    return code == WireProtocol.AppStatusPB.ErrorCode.INCOMPLETE;
   }
 
   public boolean isEndOfFile() {
-    return appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE;
+    return code == WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE;
   }
 
   /**
@@ -306,7 +320,7 @@ public class Status {
    * See also status.cc in the C++ codebase.
    */
   private String getCodeAsString() {
-    switch (appStatusPB.getCode().getNumber()) {
+    switch (code.getNumber()) {
       case WireProtocol.AppStatusPB.ErrorCode.OK_VALUE:
         return "OK";
       case WireProtocol.AppStatusPB.ErrorCode.NOT_FOUND_VALUE:
@@ -346,7 +360,7 @@ public class Status {
       case WireProtocol.AppStatusPB.ErrorCode.END_OF_FILE_VALUE:
         return "End of file";
       default:
-        return "Unknown error (" + appStatusPB.getCode().getNumber() + ")";
+        return "Unknown error (" + code.getNumber() + ")";
     }
   }
 
@@ -355,7 +369,7 @@ public class Status {
    * @return {@code -1} if no posix code is set. Otherwise, returns the posix code.
    */
   public int getPosixCode() {
-    return appStatusPB.getPosixCode();
+    return posixCode;
   }
 
   /**
@@ -363,7 +377,7 @@ public class Status {
    * Intended for internal use only.
    */
   String getCodeName() {
-    return appStatusPB.getCode().name();
+    return code.name();
   }
 
   /**
@@ -371,7 +385,7 @@ public class Status {
    * Intended for internal use only.
    */
   String getMessage() {
-    return appStatusPB.getMessage();
+    return message;
   }
 
   /**
@@ -380,12 +394,12 @@ public class Status {
   @Override
   public String toString() {
     String str = getCodeAsString();
-    if (appStatusPB.getCode() == WireProtocol.AppStatusPB.ErrorCode.OK) {
+    if (code == WireProtocol.AppStatusPB.ErrorCode.OK) {
       return str;
     }
-    str = String.format("%s: %s", str, appStatusPB.getMessage());
-    if (appStatusPB.getPosixCode() != -1) {
-      str = String.format("%s (error %d)", str, appStatusPB.getPosixCode());
+    str = String.format("%s: %s", str, message);
+    if (posixCode != -1) {
+      str = String.format("%s (error %d)", str, posixCode);
     }
     return str;
   }
