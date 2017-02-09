@@ -24,6 +24,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/util/errno.h"
 
 namespace kudu {
 namespace security {
@@ -58,7 +59,8 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
       *nwritten = 0;
       return Status::OK();
     }
-    return Status::NetworkError("TlsSocket::Write", GetSSLErrorDescription(error_code));
+    return Status::NetworkError("failed to write to TLS socket",
+                                GetSSLErrorDescription(error_code));
   }
   *nwritten = bytes_written;
   return Status::OK();
@@ -84,12 +86,16 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritt
 }
 
 Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
+  const char* kErrString = "failed to read from TLS socket";
+
   CHECK(ssl_);
   ERR_clear_error();
+  errno = 0;
   int32_t bytes_read = SSL_read(ssl_.get(), buf, amt);
+  int save_errno = errno;
   if (bytes_read <= 0) {
     if (bytes_read == 0 && SSL_get_shutdown(ssl_.get()) == SSL_RECEIVED_SHUTDOWN) {
-      return Status::NetworkError("TlsSocket::Recv", "received remote shutdown", ESHUTDOWN);
+      return Status::NetworkError(kErrString, ErrnoToString(ESHUTDOWN), ESHUTDOWN);
     }
     auto error_code = SSL_get_error(ssl_.get(), bytes_read);
     if (error_code == SSL_ERROR_WANT_READ) {
@@ -97,7 +103,24 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
       *nread = 0;
       return Status::OK();
     }
-    return Status::NetworkError("TlsSocket::Recv", GetSSLErrorDescription(error_code));
+    if (error_code == SSL_ERROR_SYSCALL && ERR_peek_error() == 0) {
+      // From the OpenSSL docs:
+      //   Some I/O error occurred.  The OpenSSL error queue may contain more
+      //   information on the error.  If the error queue is empty (i.e.
+      //   ERR_get_error() returns 0), ret can be used to find out more about
+      //   the error: If ret == 0, an EOF was observed that violates the pro-
+      //   tocol.  If ret == -1, the underlying BIO reported an I/O error (for
+      //   socket I/O on Unix systems, consult errno for details).
+      if (bytes_read == 0) {
+        // "EOF was observed that violates the protocol" (eg the other end disconnected)
+        return Status::NetworkError(kErrString, ErrnoToString(ECONNRESET), ECONNRESET);
+      }
+      if (bytes_read == -1 && save_errno != 0) {
+        return Status::NetworkError(kErrString, ErrnoToString(save_errno), save_errno);
+      }
+      return Status::NetworkError(kErrString, "unknown ERROR_SYSCALL");
+    }
+    return Status::NetworkError(kErrString, GetSSLErrorDescription(error_code));
   }
   *nread = bytes_read;
   return Status::OK();
