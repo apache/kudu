@@ -32,7 +32,6 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/init.h"
-#include "kudu/security/server_cert_manager.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
@@ -188,18 +187,15 @@ Status ServerBase::Init() {
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
 
-  // Initialize the cert manager.
-  // TODO(PKI): make built-in PKI enabled/disabled based on a flag.
-  cert_manager_.reset(new security::ServerCertManager(fs_manager_->uuid()));
-  RETURN_NOT_OK(cert_manager_->Init());
-
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
 
-  builder.set_num_reactors(FLAGS_num_reactor_threads);
-  builder.set_min_negotiation_threads(FLAGS_min_negotiation_threads);
-  builder.set_max_negotiation_threads(FLAGS_max_negotiation_threads);
-  builder.set_metric_entity(metric_entity());
+  builder.set_num_reactors(FLAGS_num_reactor_threads)
+         .set_min_negotiation_threads(FLAGS_min_negotiation_threads)
+         .set_max_negotiation_threads(FLAGS_max_negotiation_threads)
+         .set_metric_entity(metric_entity())
+         // TODO(PKI): make built-in PKI enabled/disabled based on a flag.
+         .enable_inbound_tls(fs_manager_->uuid());
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));

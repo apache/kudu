@@ -20,8 +20,12 @@
 #include <functional>
 #include <string>
 
+#include <boost/optional.hpp>
+
+#include "kudu/security/cert.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -30,9 +34,33 @@ namespace security {
 class Cert;
 class PrivateKey;
 
-// TlsContext wraps data required by the OpenSSL library for creating TLS
-// protected channels. A single TlsContext instance should be used per server or
-// client instance.
+// TlsContext wraps data required by the OpenSSL library for creating and
+// accepting TLS protected channels. A single TlsContext instance should be used
+// per server or client instance.
+//
+// Internally, a 'TlsContext' manages a single keypair which it uses for
+// terminating TLS connections. It also manages a collection of trusted root CA
+// certificates (a trust store), as well as a signed certificate for the
+// keypair.
+//
+// When used on a server, the TlsContext can generate a keypair and a
+// self-signed certificate, and provide a CSR for transititioning to a CA-signed
+// certificate. This allows Kudu servers to start with a self-signed
+// certificate, and later adopt a CA-signed certificate as it becomes available.
+// See GenerateSelfSignedCertAndKey(), GetCsrIfNecessary(), and
+// AdoptSignedCert() for details on how to generate the keypair and self-signed
+// cert, access the CSR, and transtition to a CA-signed cert, repectively.
+//
+// When used in a client or a server, the TlsContext can immediately adopt a
+// private key and CA-signed cert using UseCertificateAndKey(). A TlsContext
+// only manages a single keypair, so if UseCertificateAndKey() is called,
+// GenerateSelfSignedCertAndKey() must not be called, and vice versa.
+//
+// TlsContext may be used with or without a keypair and cert to initiate TLS
+// connections, when mutual TLS authentication is not needed (for example, for
+// token or Kerberos authenticated connections).
+//
+// This class is thread-safe after initialization.
 class TlsContext {
 
  public:
@@ -43,26 +71,60 @@ class TlsContext {
 
   Status Init();
 
-  // Return true if this TlsContext has been configured with a cert and key to
-  // accept TLS connections.
-  bool has_cert() const { return has_cert_.Load(); }
+  // Returns true if this TlsContext has been configured with a cert and key for
+  // use with TLS-encrypted connections.
+  bool has_cert() const {
+    MutexLock lock(lock_);
+    return has_cert_;
+  }
 
-  // Use 'cert' and 'key' as the cert/key for this server/client.
-  //
-  // If the cert is not self-signed, checks that the CA that issued
-  // the signature on 'cert' is already trusted by this context
-  // (e.g. by AddTrustedCertificate).
-  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key);
+  // Returns true if this TlsContext has been configured with a CA-signed TLS
+  // cert and key for use with TLS-encrypted connections.
+  bool has_signed_cert() const {
+    MutexLock lock(lock_);
+    return has_cert_ && !csr_;
+  }
 
-  // Add 'cert' as a trusted certificate for this server/client.
+  // Adds 'cert' as a trusted root CA certificate.
   //
-  // This determines whether other peers are trusted. It also must
-  // be called for any CA certificates that are part of the certificate
-  // chain for the cert passed in 'UseCertificate' above.
+  // This determines whether other peers are trusted. It also must be called for
+  // any CA certificates that are part of the certificate chain for the cert
+  // passed in to 'UseCertificateAndKey()' or 'AdoptSignedCert()'.
   //
   // Returns AlreadyPresent if the cert is already marked as trusted. Other
   // OpenSSL errors will be RuntimeError.
   Status AddTrustedCertificate(const Cert& cert);
+
+  // Uses 'cert' and 'key' as the cert and key for use with TLS connections.
+  //
+  // Checks that the CA that issued the signature on 'cert' is already trusted
+  // by this context (e.g. by AddTrustedCertificate()).
+  Status UseCertificateAndKey(const Cert& cert, const PrivateKey& key);
+
+  // Generates a self-signed cert and key for use with TLS connections.
+  //
+  // This method should only be used on the server. Once this method is called,
+  // 'GetCsrIfNecessary' can be used to retrieve a CSR for generating a
+  // CA-signed cert for the generated private key, and 'AdoptSignedCert' can be
+  // used to transition to using the CA-signed cert with subsequent TLS
+  // connections.
+  Status GenerateSelfSignedCertAndKey(const std::string& server_uuid);
+
+  // Returns a new certificate signing request (CSR) in DER format, if this
+  // context's cert is self-signed. If the cert is already signed, returns
+  // boost::none.
+  boost::optional<CertSignRequest> GetCsrIfNecessary() const;
+
+  // Adopts the provided CA-signed certificate for this TLS context.
+  //
+  // The certificate must correspond to a CSR previously returned by
+  // 'GetCsrIfNecessary()'.
+  //
+  // Checks that the CA that issued the signature on 'cert' is already trusted
+  // by this context (e.g. by AddTrustedCertificate()).
+  //
+  // This has no effect if the instance already has a CA-signed cert.
+  Status AdoptSignedCert(const Cert& cert);
 
   // Convenience functions for loading cert/CA/key from file paths.
   // -------------------------------------------------------------
@@ -80,18 +142,23 @@ class TlsContext {
   // Return the number of certs that have been marked as trusted.
   // Used by tests.
   int trusted_cert_count_for_tests() const {
-    return trusted_cert_count_.Load();
+    MutexLock lock(lock_);
+    return trusted_cert_count_;
   }
 
  private:
+
   Status VerifyCertChain(const Cert& cert);
-
-  AtomicBool has_cert_;
-
-  AtomicInt<int32> trusted_cert_count_;
 
   // Owned SSL context.
   c_unique_ptr<SSL_CTX> ctx_;
+
+  // Protexts trusted_cert_count_, has_cert_ and csr_, as well as ctx_ when it
+  // needs to be updated transactionally with has_cert_ and csr_.
+  mutable Mutex lock_;
+  int32_t trusted_cert_count_;
+  bool has_cert_;
+  boost::optional<CertSignRequest> csr_;
 };
 
 } // namespace security

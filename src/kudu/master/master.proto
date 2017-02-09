@@ -296,6 +296,17 @@ message TSHeartbeatResponsePB {
   // If the heartbeat request had a CSR, then the successfully
   // signed certificate will be returned in DER format.
   optional bytes signed_cert_der = 7;
+
+  // Any CA certs used by the cluster, currently only included when
+  // 'signed_cert_der' is also sent (however the tablet server will always check
+  // for all heartbeat responses). Currently the master only uses one cert, but
+  // we may support rolling this cert in the future, so tablet servers should
+  // add all returned certs to their trusted CA list.
+  //
+  // NOTE: this is not necessarily a "certificate chain" but rather a set of
+  // independent certs to be trusted. They may or may not have any signing
+  // relationship between them.
+  repeated bytes ca_cert_der = 8;
 }
 
 //////////////////////////////

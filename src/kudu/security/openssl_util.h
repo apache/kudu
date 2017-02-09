@@ -100,6 +100,9 @@ template<> struct SslTypeTraits<X509_REQ> {
   static constexpr auto write_pem = &PEM_write_bio_X509_REQ;
   static constexpr auto write_der = &i2d_X509_REQ_bio;
 };
+template<> struct SslTypeTraits<EVP_PKEY> {
+  static constexpr auto free = &EVP_PKEY_free;
+};
 
 template<typename SSL_TYPE, typename Traits = SslTypeTraits<SSL_TYPE>>
 c_unique_ptr<SSL_TYPE> ssl_make_unique(SSL_TYPE* d) {

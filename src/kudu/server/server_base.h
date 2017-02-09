@@ -23,6 +23,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/status.h"
@@ -43,12 +44,11 @@ class Thread;
 class Webserver;
 
 namespace rpc {
-class Messenger;
 class ServiceIf;
 } // namespace rpc
 
 namespace security {
-class ServerCertManager;
+class TlsContext;
 } // namespace security
 
 namespace server {
@@ -76,7 +76,8 @@ class ServerBase {
 
   FsManager* fs_manager() { return fs_manager_.get(); }
 
-  security::ServerCertManager* cert_manager() { return cert_manager_.get(); }
+  const security::TlsContext& tls_context() { return messenger_->tls_context(); }
+  security::TlsContext* mutable_tls_context() { return messenger_->mutable_tls_context(); }
 
   // Return the instance identifier of this server.
   // This may not be called until after the server is Started.
@@ -115,10 +116,6 @@ class ServerBase {
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;
-
-  // Manager for the SSL certificate associated with this server, if built-in
-  // PKI is enabled.
-  std::unique_ptr<security::ServerCertManager> cert_manager_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;

@@ -135,6 +135,13 @@ void Cert::AdoptAndAddRefRawData(X509* data) {
   AdoptRawData(data);
 }
 
+Status Cert::GetPublicKey(PublicKey* key) const {
+  EVP_PKEY* raw_key = X509_get_pubkey(data_.get());
+  OPENSSL_RET_IF_NULL(raw_key, "unable to get certificate public key");
+  key->AdoptRawData(raw_key);
+  return Status::OK();
+}
+
 Status CertSignRequest::FromString(const std::string& data, DataFormat format) {
   return ::kudu::security::FromString(data, format, &data_);
 }
@@ -145,6 +152,22 @@ Status CertSignRequest::ToString(std::string* data, DataFormat format) const {
 
 Status CertSignRequest::FromFile(const std::string& fpath, DataFormat format) {
   return ::kudu::security::FromFile(fpath, format, &data_);
+}
+
+CertSignRequest CertSignRequest::Clone() const {
+  CHECK_GT(CRYPTO_add(&data_->references, 1, CRYPTO_LOCK_X509_REQ), 1)
+    << "X509_REQ use-after-free detected";
+
+  CertSignRequest clone;
+  clone.AdoptRawData(GetRawData());
+  return clone;
+}
+
+Status CertSignRequest::GetPublicKey(PublicKey* key) const {
+  EVP_PKEY* raw_key = X509_REQ_get_pubkey(data_.get());
+  OPENSSL_RET_IF_NULL(raw_key, "unable to get CSR public key");
+  key->AdoptRawData(raw_key);
+  return Status::OK();
 }
 
 } // namespace security

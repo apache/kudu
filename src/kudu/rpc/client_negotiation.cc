@@ -169,10 +169,15 @@ Status ClientNegotiation::Negotiate() {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
 
-    if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+    if (negotiated_mech_ == SaslMechanism::GSSAPI ||
+        negotiated_mech_ == SaslMechanism::PLAIN) {
       // When using GSSAPI, we don't verify the server's certificate. Instead,
       // we rely on Kerberos authentication, and use channel binding to tie the
       // SASL authentication to the TLS channel.
+      //
+      // When using 'PLAIN' authentication, this implies that strong authentication
+      // is not enabled. So, we are just using TLS for encryption and don't need to
+      // validate a cert.
       tls_handshake_.set_verification_mode(security::TlsVerificationMode::VERIFY_NONE);
     }
 

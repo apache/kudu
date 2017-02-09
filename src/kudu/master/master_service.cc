@@ -161,6 +161,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     }
     LOG(INFO) << "Signed X509 certificate for tserver " << rpc->requestor_string();
     resp->mutable_signed_cert_der()->swap(cert);
+    resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
   }
 
   // TODO(aserbin): 7. Send any active CA certs which the TS doesn't have.

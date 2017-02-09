@@ -30,7 +30,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
-#include "kudu/security/server_cert_manager.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/curl_util.h"
@@ -204,7 +204,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
 TEST_F(RegistrationTest, TestTSGetsSignedX509Certificate) {
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   AssertEventually([&](){
-      ASSERT_TRUE(ts->server()->cert_manager()->has_signed_cert());
+      ASSERT_TRUE(ts->server()->tls_context().has_signed_cert());
     }, MonoDelta::FromSeconds(10));
 }
 

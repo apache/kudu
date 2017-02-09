@@ -49,6 +49,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -129,19 +130,39 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
   return *this;
 }
 
+MessengerBuilder& MessengerBuilder::enable_inbound_tls(std::string server_uuid) {
+  enable_inbound_tls_server_uuid_ = server_uuid;
+  return *this;
+}
+
 Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   RETURN_NOT_OK(SaslInit()); // Initialize SASL library before we start making requests
+
   Messenger* new_msgr(new Messenger(*this));
-  Status build_status = new_msgr->Init();
-  if (!build_status.ok()) {
-    // 'new_msgr' will be freed when 'retain_self_' is reset, so no need to explicitly free it.
-    new_msgr->AllExternalReferencesDropped();
-    return build_status;
+
+  auto cleanup = MakeScopedCleanup([&] () {
+      new_msgr->AllExternalReferencesDropped();
+  });
+
+  RETURN_NOT_OK(new_msgr->Init());
+  if (enable_inbound_tls_server_uuid_) {
+    auto* tls_context = new_msgr->mutable_tls_context();
+    if (!FLAGS_rpc_ssl_server_certificate.empty() ||
+        !FLAGS_rpc_ssl_private_key.empty() ||
+        !FLAGS_rpc_ssl_certificate_authority.empty()) {
+      // TODO(PKI): should we try and enforce that the server UUID and/or
+      // hostname is in the subject or alt names of the cert?
+      RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
+      RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_ssl_server_certificate,
+                                                       FLAGS_rpc_ssl_private_key));
+    } else {
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey(*enable_inbound_tls_server_uuid_));
+    }
   }
 
   // See docs on Messenger::retain_self_ for info about this odd hack.
-  *msgr = shared_ptr<Messenger>(
-    new_msgr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
+  cleanup.cancel();
+  *msgr = shared_ptr<Messenger>(new_msgr, std::mem_fun(&Messenger::AllExternalReferencesDropped));
   return Status::OK();
 }
 
@@ -298,16 +319,7 @@ Reactor* Messenger::RemoteToReactor(const Sockaddr &remote) {
 }
 
 Status Messenger::Init() {
-  Status status;
-
   RETURN_NOT_OK(tls_context_->Init());
-  if (!FLAGS_rpc_ssl_server_certificate.empty() ||
-      !FLAGS_rpc_ssl_private_key.empty() ||
-      !FLAGS_rpc_ssl_certificate_authority.empty()) {
-    RETURN_NOT_OK(tls_context_->LoadCertificateAuthority(FLAGS_rpc_ssl_certificate_authority));
-    RETURN_NOT_OK(tls_context_->LoadCertificateAndKey(FLAGS_rpc_ssl_server_certificate,
-                                                      FLAGS_rpc_ssl_private_key));
-  }
   for (Reactor* r : reactors_) {
     RETURN_NOT_OK(r->Init());
   }

@@ -55,6 +55,9 @@ class PublicKey : public RawDataWrapper<EVP_PKEY> {
   Status VerifySignature(DigestType digest,
                          const std::string& data,
                          const std::string& signature) const;
+
+  // Sets 'equals' to true if the other public key equals this.
+  Status Equals(const PublicKey& other, bool* equals) const;
 };
 
 // A class with generic private key interface, but actually it represents

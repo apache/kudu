@@ -18,28 +18,79 @@
 #include "kudu/security/tls_handshake.h"
 
 #include <functional>
+#include <iostream>
 #include <string>
 
+#include <boost/optional.hpp>
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/security/ca/cert_management.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
 
+DECLARE_int32(server_rsa_key_length_bits);
+
 namespace kudu {
 namespace security {
 
-class TestTlsHandshake : public KuduTest {
+using ca::CertSigner;
+
+enum class CertType {
+  NONE,
+  SELF_SIGNED,
+  SIGNED,
+};
+
+struct Case {
+  CertType client_cert;
+  TlsVerificationMode client_verification;
+  CertType server_cert;
+  TlsVerificationMode server_verification;
+  Status expected_status;
+};
+
+// Beautifies CLI test output.
+std::ostream& operator<<(std::ostream& o, Case c) {
+
+  auto cert_type_name = [] (const CertType& cert_type) {
+    switch (cert_type) {
+      case CertType::NONE: return "NONE";
+      case CertType::SELF_SIGNED: return "SELF_SIGNED";
+      case CertType::SIGNED: return "SIGNED";
+    }
+  };
+
+  auto verification_mode_name = [] (const TlsVerificationMode& verification_mode) {
+    switch (verification_mode) {
+      case TlsVerificationMode::VERIFY_NONE: return "NONE";
+      case TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST: return "REMOTE_CERT_AND_HOST";
+    }
+  };
+
+  o << "{client-cert: " << cert_type_name(c.client_cert) << ", "
+    << "client-verification: " << verification_mode_name(c.client_verification) << ", "
+    << "server-cert: " << cert_type_name(c.client_cert) << ", "
+    << "server-verification: " << verification_mode_name(c.client_verification) << ", "
+    << "expected-status: " << c.expected_status.ToString() << "}";
+
+  return o;
+}
+
+class TestTlsHandshake : public KuduTest,
+                         public ::testing::WithParamInterface<Case> {
  public:
   void SetUp() override {
     KuduTest::SetUp();
 
-    key_path_ = GetTestPath("key.pem");
-    cert_path_ = GetTestPath("cert.pem");
-    ASSERT_OK(CreateSSLServerCert(cert_path_));
-    ASSERT_OK(CreateSSLPrivateKey(key_path_));
+    // Tune down the RSA key length in order to speed up tests. We would tune it
+    // smaller, but at 512 bits OpenSSL returns a "digest too big for rsa key"
+    // error during negotiation.
+    FLAGS_server_rsa_key_length_bits = 1024;
 
     ASSERT_OK(client_tls_.Init());
     ASSERT_OK(server_tls_.Init());
@@ -93,12 +144,38 @@ class TestTlsHandshake : public KuduTest {
   string key_path_;
 };
 
-TEST_F(TestTlsHandshake, TestSuccessfulHandshake) {
+namespace {
+Status InitTlsContextCert(const PrivateKey& ca_key,
+                          const Cert& ca_cert,
+                          TlsContext* tls_context,
+                          CertType cert_type) {
+  RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
+  switch (cert_type) {
+    case CertType::SIGNED: {
+      Cert cert;
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      RETURN_NOT_OK(CertSigner(&ca_cert, &ca_key).Sign(*tls_context->GetCsrIfNecessary(), &cert));
+      RETURN_NOT_OK(tls_context->AdoptSignedCert(cert));
+      break;
+    }
+    case CertType::SELF_SIGNED:
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      break;
+    case CertType::NONE:
+      break;
+  }
+  return Status::OK();
+}
+} // anonymous namespace
+
+TEST_F(TestTlsHandshake, TestHandshakeSequence) {
+  PrivateKey ca_key;
+  Cert ca_cert;
+  ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
+
   // Both client and server have certs and CA.
-  ASSERT_OK(client_tls_.LoadCertificateAuthority(cert_path_));
-  ASSERT_OK(client_tls_.LoadCertificateAndKey(cert_path_, key_path_));
-  ASSERT_OK(server_tls_.LoadCertificateAuthority(cert_path_));
-  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
+  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &client_tls_, CertType::SIGNED));
+  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &server_tls_, CertType::SIGNED));
 
   TlsHandshake server;
   TlsHandshake client;
@@ -129,59 +206,147 @@ TEST_F(TestTlsHandshake, TestSuccessfulHandshake) {
   ASSERT_EQ(buf2.size(), 0);
 }
 
-// Client has no cert.
-// Server has self-signed cert.
-TEST_F(TestTlsHandshake, Test_ClientNone_ServerSelfSigned) {
-  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
+// Tests that the TlsContext can transition from self signed cert to signed
+// cert, and that it rejects invalid certs along the way. We are testing this
+// here instead of in a dedicated TlsContext test because it requires completing
+// handshakes to fully validate.
+TEST_F(TestTlsHandshake, TestTlsContextCertTransition) {
+  ASSERT_FALSE(server_tls_.has_cert());
+  ASSERT_FALSE(server_tls_.has_signed_cert());
+  ASSERT_EQ(boost::none, server_tls_.GetCsrIfNecessary());
 
-  // If the client wants to verify the server, it should fail because
-  // the server cert is self-signed.
-  Status s = RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-                          TlsVerificationMode::VERIFY_NONE);
-  ASSERT_STR_MATCHES(s.ToString(), "client error:.*certificate verify failed");
+  ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey("test-uuid"));
+  ASSERT_TRUE(server_tls_.has_cert());
+  ASSERT_FALSE(server_tls_.has_signed_cert());
+  ASSERT_NE(boost::none, server_tls_.GetCsrIfNecessary());
+  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE));
+  ASSERT_STR_MATCHES(RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+                                  TlsVerificationMode::VERIFY_NONE).ToString(),
+                     "client error:.*certificate verify failed");
 
-  // If the client doesn't care, it should succeed against the self-signed
-  // server.
-  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE,
-                         TlsVerificationMode::VERIFY_NONE));
+  PrivateKey ca_key;
+  Cert ca_cert;
+  ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
-  // If the client loads the cert as trusted, then it should succeed
-  // with verification enabled.
-  ASSERT_OK(client_tls_.LoadCertificateAuthority(cert_path_));
+  Cert cert;
+  ASSERT_OK(CertSigner(&ca_cert, &ca_key).Sign(*server_tls_.GetCsrIfNecessary(), &cert));
+
+  // Try to adopt the cert without first trusting the CA.
+  ASSERT_STR_MATCHES(server_tls_.AdoptSignedCert(cert).ToString(),
+                     "could not verify certificate chain");
+
+  // Check that we can still do (unverified) handshakes.
+  ASSERT_TRUE(server_tls_.has_cert());
+  ASSERT_FALSE(server_tls_.has_signed_cert());
+  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE));
+
+  // Trust the root cert.
+  ASSERT_OK(server_tls_.AddTrustedCertificate(ca_cert));
+
+  // Generate a bogus cert and attempt to adopt it.
+  Cert bogus_cert;
+  {
+    TlsContext bogus_tls;
+    ASSERT_OK(bogus_tls.Init());
+    ASSERT_OK(bogus_tls.GenerateSelfSignedCertAndKey("test-uuid"));
+    ASSERT_OK(CertSigner(&ca_cert, &ca_key).Sign(*bogus_tls.GetCsrIfNecessary(), &bogus_cert));
+  }
+  ASSERT_STR_MATCHES(server_tls_.AdoptSignedCert(bogus_cert).ToString(),
+                     "certificate public key does not match the CSR public key");
+
+  // Check that we can still do (unverified) handshakes.
+  ASSERT_TRUE(server_tls_.has_cert());
+  ASSERT_FALSE(server_tls_.has_signed_cert());
+  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE));
+
+  // Adopt the legitimate signed cert.
+  ASSERT_OK(server_tls_.AdoptSignedCert(cert));
+
+  // Check that we can do verified handshakes.
+  ASSERT_TRUE(server_tls_.has_cert());
+  ASSERT_TRUE(server_tls_.has_signed_cert());
+  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE));
+  ASSERT_OK(client_tls_.AddTrustedCertificate(ca_cert));
   ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
                          TlsVerificationMode::VERIFY_NONE));
-
-  // If the server requires authentication of the client, the handshake should fail.
-  s = RunHandshake(TlsVerificationMode::VERIFY_NONE,
-                   TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST);
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_MATCHES(s.ToString(), "server error:.*peer did not return a certificate");
 }
 
-// TODO(PKI): this test has both the client and server using the same cert,
-// which isn't very realistic. We should have this generate self-signed certs
-// on the fly.
-TEST_F(TestTlsHandshake, Test_ClientSelfSigned_ServerSelfSigned) {
-  ASSERT_OK(client_tls_.LoadCertificateAndKey(cert_path_, key_path_));
-  ASSERT_OK(client_tls_.LoadCertificateAuthority(cert_path_));
-  ASSERT_OK(server_tls_.LoadCertificateAndKey(cert_path_, key_path_));
-  ASSERT_OK(server_tls_.LoadCertificateAuthority(cert_path_));
+TEST_P(TestTlsHandshake, TestHandshake) {
+  Case test_case = GetParam();
 
-  // This scenario should succeed in all cases.
-  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-                         TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST));
+  PrivateKey ca_key;
+  Cert ca_cert;
+  ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
-  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
-                         TlsVerificationMode::VERIFY_NONE));
+  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &client_tls_, test_case.client_cert));
+  ASSERT_OK(InitTlsContextCert(ca_key, ca_cert, &server_tls_, test_case.server_cert));
 
-  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE,
-                         TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST));
+  Status s = RunHandshake(test_case.client_verification, test_case.server_verification);
 
-  ASSERT_OK(RunHandshake(TlsVerificationMode::VERIFY_NONE,
-                         TlsVerificationMode::VERIFY_NONE));
+  EXPECT_EQ(test_case.expected_status.CodeAsString(), s.CodeAsString());
+  ASSERT_STR_MATCHES(s.ToString(), test_case.expected_status.message().ToString());
 }
 
-// TODO(PKI): add test coverage for mismatched common-name in the cert.
+INSTANTIATE_TEST_CASE_P(CertCombinations,
+                        TestTlsHandshake,
+                        ::testing::Values(
+
+        // We don't test any cases where the server has no cert or the client
+        // has a self-signed cert, since we don't expect those to occur in
+        // practice.
+
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_NONE,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+        Case { CertType::NONE, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("server error:.*peer did not return a certificate") },
+
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::OK() },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SELF_SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::RuntimeError("client error:.*certificate verify failed") },
+
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               Status::OK() },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_NONE,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::OK() },
+        Case { CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               CertType::SIGNED, TlsVerificationMode::VERIFY_REMOTE_CERT_AND_HOST,
+               Status::OK() }
+));
 
 } // namespace security
 } // namespace kudu

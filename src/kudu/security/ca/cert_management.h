@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/locks.h"
@@ -78,7 +79,7 @@ class CertRequestGeneratorBase {
  protected:
   // Push the specified extension into the stack provided.
   static Status PushExtension(stack_st_X509_EXTENSION* st, int32_t nid,
-                              const char* value);
+                              StringPiece value);
   // Set the certificate-specific extensions into the specified request.
   virtual Status SetExtensions(X509_REQ* req) const = 0;
 
@@ -103,13 +104,19 @@ class CertRequestGenerator : public CertRequestGeneratorBase {
   Status Init() override;
   bool Initialized() const override;
 
+  CertRequestGenerator& enable_self_signing() {
+    CHECK(!is_initialized_);
+    for_self_signing_ = true;
+    return *this;
+  }
+
  protected:
   Status SetExtensions(X509_REQ* req) const override;
 
  private:
-  stack_st_X509_EXTENSION* extensions_;
-  mutable simple_spinlock lock_;
-  bool is_initialized_; // protected by lock_
+  stack_st_X509_EXTENSION* extensions_ = nullptr;
+  bool is_initialized_ = false;
+  bool for_self_signing_ = false;
 };
 
 // An utility class that facilitates issuing of root CA self-signed certificate
@@ -147,6 +154,12 @@ class CertSigner {
   static Status SelfSignCA(const PrivateKey& key,
                            CaCertRequestGenerator::Config config,
                            Cert* cert);
+
+  // Generate a self-signed certificate using the given key and CSR
+  // configuration.
+  static Status SelfSignCert(const PrivateKey& key,
+                             CertRequestGenerator::Config config,
+                             Cert* cert);
 
   // Create a CertSigner.
   //

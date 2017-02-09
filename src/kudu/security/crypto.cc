@@ -63,9 +63,6 @@ int DerWritePublicKey(BIO* bio, EVP_PKEY* key) {
 template<> struct SslTypeTraits<BIGNUM> {
   static constexpr auto free = &BN_free;
 };
-template<> struct SslTypeTraits<EVP_PKEY> {
-  static constexpr auto free = &EVP_PKEY_free;
-};
 struct RsaPrivateKeyTraits : public SslTypeTraits<EVP_PKEY> {
   static constexpr auto read_pem = &PEM_read_bio_PrivateKey;
   static constexpr auto read_der = &d2i_PrivateKey_bio;
@@ -149,6 +146,23 @@ Status PublicKey::VerifySignature(DigestType digest,
   }
 
   return Status::OK();
+}
+
+Status PublicKey::Equals(const PublicKey& other, bool* equals) const {
+  int cmp = EVP_PKEY_cmp(data_.get(), other.data_.get());
+  switch (cmp) {
+    case -2:
+      return Status::NotSupported("failed to compare public keys");
+    case -1: // Key types are different; treat this as not equal
+    case 0:  // Keys are not equal
+      *equals = false;
+      return Status::OK();
+    case 1:
+      *equals = true;
+      return Status::OK();
+    default:
+      return Status::RuntimeError("unexpected public key comparison result", std::to_string(cmp));
+  }
 }
 
 Status PrivateKey::FromString(const std::string& data, DataFormat format) {

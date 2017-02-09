@@ -30,7 +30,8 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
-#include "kudu/security/server_cert_manager.h"
+#include "kudu/security/cert.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
@@ -360,9 +361,10 @@ Status Heartbeater::Thread::DoHeartbeat() {
 
   // Check with the TS cert manager if it has a cert that needs signing.
   // if so, send the CSR in the heartbeat for the master to sign.
-  boost::optional<string> csr = server_->cert_manager()->GetCSRIfNecessary();
+  boost::optional<security::CertSignRequest> csr =
+    server_->mutable_tls_context()->GetCsrIfNecessary();
   if (csr != boost::none) {
-    req.mutable_csr_der()->swap(*csr);
+    RETURN_NOT_OK(csr->ToString(req.mutable_csr_der(), security::DataFormat::DER));
     VLOG(1) << "Sending a CSR to the master in the next heartbeat";
   }
 
@@ -413,11 +415,25 @@ Status Heartbeater::Thread::DoHeartbeat() {
 
   last_hb_response_.Swap(&resp);
 
+  for (const auto& ca_cert_der : last_hb_response_.ca_cert_der()) {
+    security::Cert ca_cert;
+    RETURN_NOT_OK_PREPEND(
+        ca_cert.FromString(ca_cert_der, security::DataFormat::DER),
+        "failed to parse CA certificate from master");
+    RETURN_NOT_OK_PREPEND(
+        server_->mutable_tls_context()->AddTrustedCertificate(ca_cert),
+        "failed to adopt master-signed X509 cert");
+  }
+
   // If we have a new signed certificate from the master, adopt it.
   if (last_hb_response_.has_signed_cert_der()) {
+    security::Cert cert;
     RETURN_NOT_OK_PREPEND(
-        server_->cert_manager()->AdoptSignedCert(last_hb_response_.signed_cert_der()),
-        "could not adopt master-signed X509 cert");
+        cert.FromString(last_hb_response_.signed_cert_der(), security::DataFormat::DER),
+        "failed to parse signed certificate from master");
+    RETURN_NOT_OK_PREPEND(
+        server_->mutable_tls_context()->AdoptSignedCert(cert),
+        "failed to adopt master-signed X509 cert");
   }
 
   MarkTabletReportAcknowledged(req.tablet_report());

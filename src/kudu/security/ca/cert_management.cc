@@ -56,9 +56,6 @@ template<> struct SslTypeTraits<ASN1_INTEGER> {
 template<> struct SslTypeTraits<BIGNUM> {
   static constexpr auto free = &BN_free;
 };
-template<> struct SslTypeTraits<EVP_PKEY> {
-  static constexpr auto free = &EVP_PKEY_free;
-};
 
 namespace ca {
 
@@ -111,9 +108,9 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
 }
 
 Status CertRequestGeneratorBase::PushExtension(stack_st_X509_EXTENSION* st,
-                                               int32_t nid, const char* value) {
+                                               int32_t nid, StringPiece value) {
   auto ex = ssl_make_unique(
-      X509V3_EXT_conf_nid(nullptr, nullptr, nid, const_cast<char*>(value)));
+      X509V3_EXT_conf_nid(nullptr, nullptr, nid, const_cast<char*>(value.data())));
   if (!ex) {
     return Status::RuntimeError("error configuring extension");
   }
@@ -123,15 +120,12 @@ Status CertRequestGeneratorBase::PushExtension(stack_st_X509_EXTENSION* st,
 }
 
 CertRequestGenerator::CertRequestGenerator(Config config)
-    : CertRequestGeneratorBase(config),
-      extensions_(nullptr),
-      is_initialized_(false) {
+    : CertRequestGeneratorBase(config) {
 }
 
 Status CertRequestGenerator::Init() {
   InitializeOpenSSL();
 
-  lock_guard<simple_spinlock> guard(lock_);
   CHECK(!is_initialized_);
   if (config_.uuid.empty()) {
     return Status::InvalidArgument("missing end-entity UUID/name");
@@ -151,14 +145,21 @@ Status CertRequestGenerator::Init() {
 
   // The generated certificates are for using as TLS certificates for
   // both client and server.
-  RETURN_NOT_OK(PushExtension(extensions_, NID_key_usage,
-                              "critical,digitalSignature,keyEncipherment"));
+  string usage = "critical,digitalSignature,keyEncipherment";
+  if (for_self_signing_) {
+    // If we are generating a CSR for self-signing, then we need to
+    // add this keyUsage attribute. See https://s.apache.org/BFHk
+    usage += ",keyCertSign";
+  }
+
+  RETURN_NOT_OK(PushExtension(extensions_, NID_key_usage, usage));
   // The generated certificates should be good for authentication
   // of a server to a client and vice versa: the intended users of the
   // certificates are tablet servers which are going to talk to master
   // and other tablet servers via TLS channels.
   RETURN_NOT_OK(PushExtension(extensions_, NID_ext_key_usage,
                               "critical,serverAuth,clientAuth"));
+
   // The generated certificates are not intended to be used as CA certificates
   // (i.e. they cannot be used to sign/issue certificates).
   RETURN_NOT_OK(PushExtension(extensions_, NID_basic_constraints,
@@ -206,7 +207,6 @@ Status CertRequestGenerator::Init() {
 }
 
 bool CertRequestGenerator::Initialized() const {
-  lock_guard<simple_spinlock> guard(lock_);
   return is_initialized_;
 }
 
@@ -286,6 +286,24 @@ Status CertSigner::SelfSignCA(const PrivateKey& key,
   RETURN_NOT_OK(CertSigner(nullptr, &key).Sign(ca_csr, cert));
   return Status::OK();
 }
+
+Status CertSigner::SelfSignCert(const PrivateKey& key,
+                                CertRequestGenerator::Config config,
+                                Cert* cert) {
+  // Generate a CSR.
+  CertSignRequest csr;
+  {
+    CertRequestGenerator gen(std::move(config));
+    gen.enable_self_signing();
+    RETURN_NOT_OK(gen.Init());
+    RETURN_NOT_OK(gen.GenerateRequest(key, &csr));
+  }
+
+  // Self-sign the CSR with the key.
+  RETURN_NOT_OK(CertSigner(nullptr, &key).Sign(csr, cert));
+  return Status::OK();
+}
+
 
 CertSigner::CertSigner(const Cert* ca_cert,
                        const PrivateKey* ca_private_key)

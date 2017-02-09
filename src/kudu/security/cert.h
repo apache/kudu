@@ -28,6 +28,7 @@ class Status;
 namespace security {
 
 class PrivateKey;
+class PublicKey;
 
 // Convert an X509_NAME object to a human-readable string.
 std::string X509NameToString(X509_NAME* name);
@@ -51,6 +52,9 @@ class Cert : public RawDataWrapper<X509> {
 
   // Adopts the provided X509 certificate, and increments the reference count.
   void AdoptAndAddRefRawData(X509* data);
+
+  // Returns the certificate's public key.
+  Status GetPublicKey(PublicKey* key) const;
 };
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {
@@ -58,6 +62,12 @@ class CertSignRequest : public RawDataWrapper<X509_REQ> {
   Status FromString(const std::string& data, DataFormat format);
   Status ToString(std::string* data, DataFormat format) const;
   Status FromFile(const std::string& fpath, DataFormat format);
+
+  // Returns a shallow clone of the CSR (only a reference count is incremented).
+  CertSignRequest Clone() const;
+
+  // Returns the CSR's public key.
+  Status GetPublicKey(PublicKey* key) const;
 };
 
 } // namespace security
