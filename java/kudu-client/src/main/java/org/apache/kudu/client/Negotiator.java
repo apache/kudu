@@ -27,12 +27,14 @@
 package org.apache.kudu.client;
 
 import java.security.PrivilegedExceptionAction;
+import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -46,11 +48,9 @@ import javax.security.sasl.SaslException;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.ObjectArrays;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
@@ -140,6 +140,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    */
   private ChannelFuture sslHandshakeFuture;
 
+  private Certificate peerCert;
+
   public Negotiator(Subject subject, String remoteHostname) {
     this.subject = subject;
     this.remoteHostname = remoteHostname;
@@ -211,7 +213,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         handleChallengeResponse(chan, response);
         break;
       case SASL_SUCCESS:
-        handleSuccessResponse(chan);
+        handleSuccessResponse(chan, response);
         break;
       default:
         throw new IllegalStateException("Wrong negotiation step: " +
@@ -263,9 +265,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       }
       Map<String, String> props = Maps.newHashMap();
       // If we are using GSSAPI with TLS, enable integrity protection, which we use
-      // to securely transmit the channel bindings. Channel bindings aren't
-      // yet implemented, but if we don't advertise 'auth-int', then the server
-      // won't talk to us.
+      // to securely transmit the channel bindings.
       if ("GSSAPI".equals(clientMech) && willUseTls) {
         props.put(Sasl.QOP, "auth-int");
       }
@@ -303,12 +303,6 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    */
   private void startTlsHandshake(Channel chan) throws SSLException {
     SSLEngine engine = SecurityUtil.createSslEngine();
-    // TODO(todd): remove usage of this anonymous cipher suite.
-    // It's replaced in the next patch in this patch series by
-    // a self-signed cert used for tests.
-    engine.setEnabledCipherSuites(ObjectArrays.concat(
-        engine.getEnabledCipherSuites(),
-        "TLS_DH_anon_WITH_AES_128_CBC_SHA"));
     engine.setUseClientMode(true);
     SslHandler handler = new SslHandler(engine);
     handler.setEnableRenegotiation(false);
@@ -342,7 +336,17 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     //
     // NOTE: this takes effect immediately (i.e. the following SASL initiation
     // sequence is encrypted).
-    chan.getPipeline().addFirst("tls", sslEmbedder.getPipeline().getFirst());
+    SslHandler handler = (SslHandler)sslEmbedder.getPipeline().getFirst();
+    try {
+      Certificate[] certs = handler.getEngine().getSession().getPeerCertificates();
+      if (certs.length == 0) {
+        throw new SSLPeerUnverifiedException("no peer cert found");
+      }
+    } catch (SSLPeerUnverifiedException e) {
+      throw Throwables.propagate(e);
+    }
+
+    chan.getPipeline().addFirst("tls", handler);
     sendSaslInitiate(chan);
   }
 
@@ -362,6 +366,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
     ByteString data = ByteString.copyFrom(bufs);
     if (sslHandshakeFuture.isDone()) {
+      // TODO(todd): should check sslHandshakeFuture.isSuccess()
       // TODO(danburkert): is this a correct assumption? would the
       // client ever be "done" but also produce handshake data?
       // if it did, would we want to encrypt the SSL message or no?
@@ -409,7 +414,38 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleSuccessResponse(Channel chan) {
+  /**
+   * Verify the channel bindings included in 'response'. This is used only
+   * for GSSAPI-authenticated connections over TLS.
+   * @throws RuntimeException on failure to verify
+   */
+  private void verifyChannelBindings(NegotiatePB response) {
+    try {
+      byte[] expected = SecurityUtil.getEndpointChannelBindings(peerCert);
+      if (!response.hasChannelBindings()) {
+        throw new RuntimeException("no channel bindings provided by remote peer");
+      }
+      byte[] provided = response.getChannelBindings().toByteArray();
+      // NOTE: the C SASL library's implementation of sasl_encode() actually
+      // includes a length prefix. Java's equivalents do not. So, we have to
+      // chop off the length prefix here before unwrapping.
+      if (provided.length < 4) {
+        throw new RuntimeException("invalid too-short channel bindings");
+      }
+      byte[] unwrapped = saslClient.unwrap(provided, 4, provided.length - 4);
+      if (!Bytes.equals(expected, unwrapped)) {
+        throw new RuntimeException("invalid channel bindings provided by remote peer");
+      }
+    } catch (SaslException se) {
+      throw Throwables.propagate(se);
+    }
+  }
+
+  private void handleSuccessResponse(Channel chan, NegotiatePB response) {
+    if (peerCert != null && "GSSAPI".equals(chosenMech)) {
+      verifyChannelBindings(response);
+    }
+
     state = State.FINISHED;
     chan.getPipeline().remove(this);
 

@@ -22,8 +22,12 @@ import static org.junit.Assert.*;
 import java.nio.ByteBuffer;
 import java.security.AccessControlContext;
 import java.security.AccessController;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
 import java.util.List;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
@@ -34,9 +38,9 @@ import org.apache.kudu.client.Negotiator.Result;
 import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.util.SecurityUtil;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
-import org.apache.kudu.util.SecurityUtil;
 import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
@@ -44,6 +48,7 @@ import org.jboss.netty.handler.ssl.SslHandler;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -51,6 +56,8 @@ import com.google.protobuf.Message;
 public class TestNegotiator {
   private Negotiator negotiator;
   private DecoderEmbedder<Object> embedder;
+
+  private static final char[] password = "password".toCharArray();
 
   @Before
   public void setup() {
@@ -64,6 +71,33 @@ public class TestNegotiator {
     ChannelBuffer buf = KuduRpc.toChannelBuffer(header, body);
     buf = buf.slice(4, buf.readableBytes() - 4);
     return new CallResponse(buf);
+  }
+
+  KeyStore loadTestKeystore() throws Exception {
+    KeyStore ks = KeyStore.getInstance("JKS");
+    ks.load(TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks"),
+        password);
+    return ks;
+  }
+
+  SSLEngine createServerEngine() {
+    try {
+      KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+      kmf.init(loadTestKeystore(), password);
+      SSLContext ctx = SSLContext.getInstance("TLS");
+      ctx.init(kmf.getKeyManagers(), null, null);
+      return ctx.createSSLEngine();
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
+  }
+
+  @Test
+  public void testChannelBinding() throws Exception {
+    KeyStore ks = loadTestKeystore();
+    Certificate cert = ks.getCertificate("1");
+    byte[] bindings = SecurityUtil.getEndpointChannelBindings(cert);
+    assertEquals(32, bindings.length);
   }
 
   /**
@@ -162,14 +196,8 @@ public class TestNegotiator {
 
   @Test
   public void testTlsNegotiation() throws Exception {
-    SSLEngine serverEngine = SecurityUtil.createSslEngine();
+    SSLEngine serverEngine = createServerEngine();
     serverEngine.setUseClientMode(false);
-    // Enable only an anonymous cipher suite, so we don't need to deal with
-    // setting up certs in this test, for now.
-    serverEngine.setEnabledCipherSuites(new String[]{
-        "TLS_DH_anon_WITH_AES_128_CBC_SHA"
-    });
-
     negotiator.sendHello(embedder.getPipeline().getChannel());
 
     // Expect client->server: NEGOTIATE, TLS included.
