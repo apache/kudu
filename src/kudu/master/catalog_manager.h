@@ -50,7 +50,7 @@ class ThreadPool;
 
 // Working around FRIEND_TEST() ugliness.
 namespace client {
-class ServiceUnavailableRetryClientTest_DISABLED_CreateTable_Test;
+class ServiceUnavailableRetryClientTest_CreateTable_Test;
 } // namespace client
 
 class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
@@ -525,7 +525,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   FRIEND_TEST(kudu::CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata);
 
   // This test exclusively acquires the leader_lock_ directly.
-  FRIEND_TEST(kudu::client::ServiceUnavailableRetryClientTest, DISABLED_CreateTable);
+  FRIEND_TEST(kudu::client::ServiceUnavailableRetryClientTest, CreateTable);
 
   friend class TableLoader;
   friend class TabletLoader;

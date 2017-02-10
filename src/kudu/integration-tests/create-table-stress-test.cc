@@ -330,12 +330,14 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
 
   thread reload_metadata_thread([&]() {
     while (!stop.Load()) {
-      CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->VisitTablesAndTablets());
+      CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->
+          VisitTablesAndTablets());
 
       // Give table creation a chance to run.
-      SleepFor(MonoDelta::FromMilliseconds(1));
+      SleepFor(MonoDelta::FromMilliseconds(1 + rand() % 10));
     }
   });
+
   for (int num_tables_created = 0; num_tables_created < 20;) {
     string table_name = Substitute("test-$0", num_tables_created);
     LOG(INFO) << "Creating table " << table_name;
@@ -346,14 +348,22 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
                   .num_replicas(3)
                   .wait(false)
                   .Create();
-    if (s.IsServiceUnavailable()) {
-      // The master was busy reloading its metadata. Try again.
+    if (s.IsTimedOut()) {
+      // The master was busy reloading its metadata, replying with
+      // ServiceUnavailable on CreateTable() requests. The client transparently
+      // retried (randomized exponential back-off) until the timeout elapsed.
       //
-      // This is a purely synthetic case. In real life, it only manifests at
-      // startup (single master) or during leader failover (multiple masters).
-      // In the latter case, the client will transparently retry to another
-      // master. That won't happen here as we've only got one master, so we
-      // must handle retrying ourselves.
+      // It's hard to find some universal constant for timeout which would work
+      // in any testing environment instead of simply retrying here. That's
+      // because the client uses exponential-with-random back-off strategy
+      // while the metadata is being reloaded very often. So, from one side
+      // we want to have more or less random interaction between the metadata
+      // reloading and the simultaneous table creations, but from the other side
+      // it's hard do deduce the universal timeout constant and we prefer to
+      // not introduce test flakiness.
+      //
+      // TODO(aserbin): update the test keeping its racy essence but making it
+      //                cleaner regarding this timeout&retry workaround.
       continue;
     }
     ASSERT_OK(s);

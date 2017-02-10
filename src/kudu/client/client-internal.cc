@@ -189,17 +189,34 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       }
     }
 
+    // A network error is a special case for retries: in most cases a network
+    // error means there is some misconfiguration, a typo in the command line,
+    // or the whole Kudu cluster is offline. It's better to report on such
+    // errors right away to allow faster troubleshooting.
     if (s.IsNetworkError()) {
       KLOG_EVERY_N_SECS(WARNING, 1)
           << "Unable to send the request (" << SecureShortDebugString(req)
-          << ") to leader Master (" << leader_master_hostport().ToString() << "): "
-          << s.ToString();
+          << ") to leader Master (" << leader_master_hostport().ToString()
+          << "): " << s.ToString();
       if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
         WARN_NOT_OK(ConnectToCluster(client, deadline),
                     "Unable to determine the new leader Master");
         continue;
       }
+    }
+
+    if (s.IsServiceUnavailable()) {
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << "Unable to send the request (" << SecureShortDebugString(req)
+          << ") to leader Master (" << leader_master_hostport().ToString()
+          << "): " << s.ToString();
+      if (client->IsMultiMaster()) {
+        LOG(INFO) << "Determining the new leader Master and retrying...";
+        WARN_NOT_OK(ConnectToCluster(client, deadline),
+                    "Unable to determine the new leader Master");
+      }
+      continue;
     }
 
     if (s.IsTimedOut()) {
@@ -228,8 +245,10 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           KLOG_EVERY_N_SECS(INFO, 1) << "Determining the new leader Master and retrying...";
           WARN_NOT_OK(ConnectToCluster(client, deadline),
                       "Unable to determine the new leader Master");
-          continue;
         }
+        continue;
+      } else {
+        return StatusFromPB(resp->error().status());
       }
     }
     return s;
@@ -385,14 +404,9 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
-  Status s = SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
-      deadline, client, req, &resp, "CreateTable", &MasterServiceProxy::CreateTable,
-      features);
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  return Status::OK();
+  return SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
+      deadline, client, req, &resp, "CreateTable",
+      &MasterServiceProxy::CreateTable, features);
 }
 
 Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
@@ -403,9 +417,10 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
   IsCreateTableDoneResponsePB resp;
   req.mutable_table()->set_table_name(table_name);
 
-  // TODO: Add client rpc timeout and use 'default_admin_operation_timeout_' as
-  // the default timeout for all admin operations.
-  Status s =
+  // TODO(aserbin): Add client rpc timeout and use
+  // 'default_admin_operation_timeout_' as the default timeout for all
+  // admin operations.
+  RETURN_NOT_OK((
       SyncLeaderMasterRpc<IsCreateTableDoneRequestPB, IsCreateTableDoneResponsePB>(
           deadline,
           client,
@@ -413,15 +428,7 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
           &resp,
           "IsCreateTableDone",
           &MasterServiceProxy::IsCreateTableDone,
-          {});
-  // RETURN_NOT_OK macro can't take templated function call as param,
-  // and SyncLeaderMasterRpc must be explicitly instantiated, else the
-  // compiler complains.
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
+          {})));
   *create_in_progress = !resp.done();
   return Status::OK();
 }
@@ -443,14 +450,9 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
   DeleteTableResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
-  Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
+  return SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
       deadline, client, req, &resp,
       "DeleteTable", &MasterServiceProxy::DeleteTable, {});
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  return Status::OK();
 }
 
 Status KuduClient::Data::AlterTable(KuduClient* client,
@@ -462,20 +464,14 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
     required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
   }
   AlterTableResponsePB resp;
-  Status s =
-      SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
-          deadline,
-          client,
-          req,
-          &resp,
-          "AlterTable",
-          &MasterServiceProxy::AlterTable,
-          std::move(required_feature_flags));
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  return Status::OK();
+  return SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
+      deadline,
+      client,
+      req,
+      &resp,
+      "AlterTable",
+      &MasterServiceProxy::AlterTable,
+      std::move(required_feature_flags));
 }
 
 Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
@@ -486,7 +482,7 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
   IsAlterTableDoneResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
-  Status s =
+  RETURN_NOT_OK((
       SyncLeaderMasterRpc<IsAlterTableDoneRequestPB, IsAlterTableDoneResponsePB>(
           deadline,
           client,
@@ -494,12 +490,7 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
           &resp,
           "IsAlterTableDone",
           &MasterServiceProxy::IsAlterTableDone,
-          {});
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
+          {})));
   *alter_in_progress = !resp.done();
   return Status::OK();
 }
@@ -569,14 +560,10 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   GetTableSchemaResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
-  Status s = SyncLeaderMasterRpc<GetTableSchemaRequestPB, GetTableSchemaResponsePB>(
-      deadline, client, req, &resp,
-      "GetTableSchema", &MasterServiceProxy::GetTableSchema, {});
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-
+  RETURN_NOT_OK((
+      SyncLeaderMasterRpc<GetTableSchemaRequestPB, GetTableSchemaResponsePB>(
+          deadline, client, req, &resp,
+          "GetTableSchema", &MasterServiceProxy::GetTableSchema, {})));
   // Parse the server schema out of the response.
   unique_ptr<Schema> new_schema(new Schema());
   RETURN_NOT_OK(SchemaFromPB(resp.schema(), new_schema.get()));
@@ -584,9 +571,8 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   // Parse the server partition schema out of the response.
   PartitionSchema new_partition_schema;
   RETURN_NOT_OK(PartitionSchema::FromPB(resp.partition_schema(),
-                                        *new_schema.get(),
+                                        *new_schema,
                                         &new_partition_schema));
-
   if (schema) {
     delete schema->schema_;
     schema->schema_ = new_schema.release();

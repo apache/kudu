@@ -4672,7 +4672,7 @@ class ServiceUnavailableRetryClientTest :
 
 // Test the client retries on ServiceUnavailable errors. This scenario uses
 // 'CreateTable' RPC to verify the retry behavior.
-TEST_P(ServiceUnavailableRetryClientTest, DISABLED_CreateTable) {
+TEST_P(ServiceUnavailableRetryClientTest, CreateTable) {
   // This scenario is designed to run on a single-master cluster.
   ASSERT_EQ(1, cluster_->num_masters());
 
