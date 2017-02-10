@@ -87,17 +87,17 @@ be specified on a per-column basis.
 === Column Encoding
 
 Each column in a Kudu table can be created with an encoding, based on the type
-of the column. Columns use plain encoding by default.
+of the column.
 
 .Encoding Types
 [options="header"]
 |===
-| Column Type             | Encoding
-| int8, int16, int32      | plain, bitshuffle, run length
-| int64, unixtime_micros  | plain, bitshuffle
-| float, double           | plain, bitshuffle
-| bool                    | plain, run length
-| string, binary          | plain, prefix, dictionary
+| Column Type             | Encoding                       | Default
+| int8, int16, int32      | plain, bitshuffle, run length  | bitshuffle
+| int64, unixtime_micros  | plain, bitshuffle, run length  | bitshuffle
+| float, double           | plain, bitshuffle              | bitshuffle
+| bool                    | plain, run length              | run length
+| string, binary          | plain, prefix, dictionary      | dictionary
 |===
 
 [[plain]]
