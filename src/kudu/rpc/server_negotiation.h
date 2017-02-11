@@ -87,14 +87,6 @@ class ServerNegotiation {
   // Must be called after a successful Negotiate().
   const std::string& authenticated_user() const;
 
-  // Specify IP:port of local side of connection.
-  // Must be called before Negotiate(). Required for some mechanisms.
-  void set_local_addr(const Sockaddr& addr);
-
-  // Specify IP:port of remote side of connection.
-  // Must be called before Negotiate(). Required for some mechanisms.
-  void set_remote_addr(const Sockaddr& addr);
-
   // Specify the fully-qualified domain name of the remote server.
   // Must be called before Negotiate(). Required for some mechanisms.
   void set_server_fqdn(const std::string& domain_name);

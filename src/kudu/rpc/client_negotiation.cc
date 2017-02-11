@@ -134,14 +134,6 @@ SaslMechanism::Type ClientNegotiation::negotiated_mechanism() const {
   return negotiated_mech_;
 }
 
-void ClientNegotiation::set_local_addr(const Sockaddr& addr) {
-  helper_.set_local_addr(addr);
-}
-
-void ClientNegotiation::set_remote_addr(const Sockaddr& addr) {
-  helper_.set_remote_addr(addr);
-}
-
 void ClientNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
@@ -284,8 +276,8 @@ Status ClientNegotiation::InitSaslClient() {
       return sasl_client_new(
           kSaslProtoName,               // Registered name of the service using SASL. Required.
           helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
-          helper_.local_addr_string(),  // Local and remote IP address strings. (NULL disables
-          helper_.remote_addr_string(), //   mechanisms which require this info.)
+          nullptr,                      // Local and remote IP address strings. (we don't use
+          nullptr,                      // any mechanisms which require this info.)
           &callbacks_[0],               // Connection-specific callbacks.
           secflags,                     // Security flags.
           &sasl_conn);

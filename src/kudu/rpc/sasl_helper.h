@@ -47,14 +47,6 @@ class SaslHelper {
   explicit SaslHelper(PeerType peer_type);
   ~SaslHelper() = default;
 
-  // Specify IP:port of local side of connection.
-  void set_local_addr(const Sockaddr& addr);
-  const char* local_addr_string() const;
-
-  // Specify IP:port of remote side of connection.
-  void set_remote_addr(const Sockaddr& addr);
-  const char* remote_addr_string() const;
-
   // Specify the fully-qualified domain name of the remote server.
   void set_server_fqdn(const std::string& domain_name);
   const char* server_fqdn() const;
@@ -96,8 +88,6 @@ class SaslHelper {
   // The returned pointer is valid only until the next call to EnabledMechsString().
   const char* EnabledMechsString() const;
 
-  std::string local_addr_;
-  std::string remote_addr_;
   std::string server_fqdn_;
 
   // Authentication types and data.

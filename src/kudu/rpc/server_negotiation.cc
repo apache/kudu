@@ -99,14 +99,6 @@ const string& ServerNegotiation::authenticated_user() const {
   return authenticated_user_;
 }
 
-void ServerNegotiation::set_local_addr(const Sockaddr& addr) {
-  helper_.set_local_addr(addr);
-}
-
-void ServerNegotiation::set_remote_addr(const Sockaddr& addr) {
-  helper_.set_remote_addr(addr);
-}
-
 void ServerNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
@@ -310,10 +302,10 @@ Status ServerNegotiation::InitSaslServer() {
           helper_.server_fqdn(),
           // Permits multiple user realms on server. NULL == use default.
           nullptr,
-          // Local and remote IP address strings. (NULL disables
-          // mechanisms which require this info.)
-          helper_.local_addr_string(),
-          helper_.remote_addr_string(),
+          // Local and remote IP address strings. We don't use any mechanisms
+          // which need these.
+          nullptr,
+          nullptr,
           // Connection-specific callbacks.
           &callbacks_[0],
           // Security flags.

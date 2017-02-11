@@ -48,20 +48,6 @@ SaslHelper::SaslHelper(PeerType peer_type)
   tag_ = (peer_type_ == SERVER) ? "Server" : "Client";
 }
 
-void SaslHelper::set_local_addr(const Sockaddr& addr) {
-  local_addr_ = SaslIpPortString(addr);
-}
-const char* SaslHelper::local_addr_string() const {
-  return local_addr_.empty() ? nullptr : local_addr_.c_str();
-}
-
-void SaslHelper::set_remote_addr(const Sockaddr& addr) {
-  remote_addr_ = SaslIpPortString(addr);
-}
-const char* SaslHelper::remote_addr_string() const {
-  return remote_addr_.empty() ? nullptr : remote_addr_.c_str();
-}
-
 void SaslHelper::set_server_fqdn(const string& domain_name) {
   server_fqdn_ = domain_name;
 }
