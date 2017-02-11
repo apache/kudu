@@ -77,10 +77,6 @@ branch with the same name and the previously-noted SHA1.
   mvn versions:set -DnewVersion=0.X.0-SNAPSHOT
 ----
 
-. Check to make sure the version number in `java/kudu-csd/pom.xml` under
-  "com.cloudera.csd" matches. It’s listed in two places and some versions of
-  maven apparently do not update both.
-
 . If the python API has changed since the previous release, bump the Python version
   in `python/setup.py` in master. (the Python API uses separate versioning).
 

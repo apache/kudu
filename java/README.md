@@ -136,19 +136,3 @@ likely a bug in maven-protoc-plugin.
 
 There's a simple workaround: delete the errant folder within
 Eclipse and refresh the kudu-client project.
-
-
-Building the Kudu Custom Service Descriptor (CSD)
-------------------------------------------------------------
-
-By default, the Kudu CSD will not be built with the client
-and isn't needed by any API.
-
-It requires access to the Kudu binaries which have to be built
-prior to building this module.
-
-Here's how to build the kudu-csd module:
-
-$ mvn package -DskipTests -PbuildCSD
-
-This will both build the Kudu CSD and validate it for correctness.

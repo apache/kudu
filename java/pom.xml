@@ -297,16 +297,6 @@
  </repositories>
 
   <profiles>
-    <!-- Build the CSD.
-
-         Disabled by default; add -PbuildCSD to the maven command line. -->
-    <profile>
-      <id>buildCSD</id>
-      <modules>
-        <module>kudu-csd</module>
-      </modules>
-    </profile>
-
     <!-- Build the jepsen test for Kudu.
 
          Disabled by default since Java 8 and maven >= 3.3.6 is required to

@@ -353,7 +353,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
   pushd $SOURCE_ROOT/java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
-  if ! mvn $MVN_FLAGS -PbuildCSD \
+  if ! mvn $MVN_FLAGS \
       -Dsurefire.rerunFailingTestsCount=3 \
       -Dfailsafe.rerunFailingTestsCount=3 \
       clean verify ; then
