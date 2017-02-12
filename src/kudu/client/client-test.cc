@@ -4659,5 +4659,83 @@ TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
   ASSERT_EQ(1, client_->data_->messenger_->tls_context().trusted_cert_count_for_tests());
 }
 
+struct ServiceUnavailableRetryParams {
+  MonoDelta usurper_sleep;
+  MonoDelta client_timeout;
+  std::function<bool(const Status&)> status_check;
+};
+
+class ServiceUnavailableRetryClientTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<ServiceUnavailableRetryParams> {
+};
+
+// Test the client retries on ServiceUnavailable errors. This scenario uses
+// 'CreateTable' RPC to verify the retry behavior.
+TEST_P(ServiceUnavailableRetryClientTest, DISABLED_CreateTable) {
+  // This scenario is designed to run on a single-master cluster.
+  ASSERT_EQ(1, cluster_->num_masters());
+
+  const ServiceUnavailableRetryParams& param(GetParam());
+
+  CountDownLatch start_synchronizer(1);
+  // Usurp catalog manager's leader lock for some time to block
+  // the catalog manager from performing its duties when becoming a leader.
+  // Keeping the catalog manager off its duties results in ServiceUnavailable
+  // error response for 'CreateTable' RPC.
+  thread usurper([&]() {
+      std::lock_guard<RWMutex> leader_lock_guard(
+            cluster_->mini_master()->master()->catalog_manager()->leader_lock_);
+      start_synchronizer.CountDown();
+      SleepFor(param.usurper_sleep);
+    });
+
+  // Wait for the lock to be acquired by the usurper thread to make sure
+  // the following CreateTable call will get ServiceUnavailable response
+  // while the lock is held.
+  start_synchronizer.Wait();
+
+  // Start issuing 'CreateTable' RPC when the catalog manager is still
+  // unavailable to serve the incoming requests.
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  const Status s = table_creator->table_name("service-unavailable-retry")
+      .schema(&schema_)
+      .num_replicas(1)
+      .set_range_partition_columns({ "key" })
+      .timeout(param.client_timeout)
+      .Create();
+  EXPECT_TRUE(param.status_check(s)) << s.ToString();
+
+  // Wait for the usurper thread to release the lock, otherwise there
+  // would be a problem with destroying a locked mutex upon catalog manager
+  // shutdown.
+  usurper.join();
+}
+
+static const ServiceUnavailableRetryParams service_unavailable_retry_cases[] = {
+  // Under the hood, there should be multiple retries. However, they should
+  // fail as timed out because the catalog manager responds with
+  // ServiceUnavailable error to all calls: the leader lock is still held
+  // by the usurping thread.
+  {
+    MonoDelta::FromSeconds(2),        // usurper_sleep
+    MonoDelta::FromMilliseconds(500), // client_timeout
+    &Status::IsTimedOut,              // status_check
+  },
+
+  // After some time the usurper thread should release the lock and the catalog
+  // manager should succeed. I.e., the client should succeed if retrying the
+  // request for long enough time.
+  {
+    MonoDelta::FromSeconds(1),        // usurper_sleep
+    MonoDelta::FromSeconds(10),       // client_timeout
+    &Status::ok,                      // status_check
+  },
+};
+
+INSTANTIATE_TEST_CASE_P(
+    , ServiceUnavailableRetryClientTest,
+    ::testing::ValuesIn(service_unavailable_retry_cases));
+
 } // namespace client
 } // namespace kudu
