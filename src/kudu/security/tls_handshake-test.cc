@@ -33,7 +33,7 @@
 
 using std::string;
 
-DECLARE_int32(server_rsa_key_length_bits);
+DECLARE_int32(ipki_server_key_size);
 
 namespace kudu {
 namespace security {

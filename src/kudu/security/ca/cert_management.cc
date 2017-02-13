@@ -273,6 +273,7 @@ Status CaCertRequestGenerator::SetExtensions(X509_REQ* req) const {
 
 Status CertSigner::SelfSignCA(const PrivateKey& key,
                               CaCertRequestGenerator::Config config,
+                              int64_t cert_expiration_seconds,
                               Cert* cert) {
   // Generate a CSR for the CA.
   CertSignRequest ca_csr;
@@ -283,7 +284,10 @@ Status CertSigner::SelfSignCA(const PrivateKey& key,
   }
 
   // Self-sign the CA's CSR.
-  RETURN_NOT_OK(CertSigner(nullptr, &key).Sign(ca_csr, cert));
+  RETURN_NOT_OK(CertSigner(nullptr, &key)
+                .set_expiration_interval(
+                    MonoDelta::FromSeconds(cert_expiration_seconds))
+                .Sign(ca_csr, cert));
   return Status::OK();
 }
 

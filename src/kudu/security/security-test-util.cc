@@ -31,12 +31,16 @@ using ca::CaCertRequestGenerator;
 using ca::CertSigner;
 
 Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
+  static const int64_t kRootCaCertExpirationSeconds = 24 * 60 * 60;
   // Create a key for the self-signed CA.
   RETURN_NOT_OK(GeneratePrivateKey(512, ca_key));
 
   CaCertRequestGenerator::Config config;
   config.uuid = "test-ca-uuid";
-  RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key, config, ca_cert));
+  RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key,
+                                       config,
+                                       kRootCaCertExpirationSeconds,
+                                       ca_cert));
   return Status::OK();
 }
 

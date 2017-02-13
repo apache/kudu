@@ -153,6 +153,7 @@ class CertSigner {
   // and CSR configuration.
   static Status SelfSignCA(const PrivateKey& key,
                            CaCertRequestGenerator::Config config,
+                           int64_t cert_expiration_seconds,
                            Cert* cert);
 
   // Generate a self-signed certificate using the given key and CSR

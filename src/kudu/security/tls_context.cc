@@ -37,10 +37,10 @@
 using strings::Substitute;
 using std::string;
 
-DEFINE_int32(server_rsa_key_length_bits, 2048,
-             "The number of bits to use for the server's private RSA key. This is used "
-             "for TLS connections to and from clients and other servers.");
-TAG_FLAG(server_rsa_key_length_bits, experimental);
+DEFINE_int32(ipki_server_key_size, 2048,
+             "the number of bits for server cert's private key. The server cert "
+             "is used for TLS connections to and from clients and other servers.");
+TAG_FLAG(ipki_server_key_size, experimental);
 
 namespace kudu {
 namespace security {
@@ -166,7 +166,7 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
 Status TlsContext::GenerateSelfSignedCertAndKey(const std::string& server_uuid) {
   // Step 1: generate the private key to be self signed.
   PrivateKey key;
-  RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_server_rsa_key_length_bits,
+  RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_ipki_server_key_size,
                                            &key),
                                            "failed to generate private key");
 

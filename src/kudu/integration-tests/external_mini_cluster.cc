@@ -628,7 +628,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // than generating the default 2048-bit key, and we don't care about
   // strong encryption in tests. Setting it lower (e.g. 512 bits) results
   // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122.
-  argv.push_back("--server_rsa_key_length_bits=1024");
+  argv.push_back("--ipki_server_key_size=1024");
 
   // Disable minidumps by default since many tests purposely inject faults.
   argv.push_back("--enable_minidumps=false");
@@ -1012,7 +1012,7 @@ Status ExternalMaster::Start() {
   vector<string> flags;
 
   // Generate smaller RSA keys. See note above for server_rsa_key_length_bits.
-  flags.push_back("--master_ca_rsa_key_length_bits=1024");
+  flags.push_back("--ipki_ca_key_size=1024");
 
   flags.push_back("--fs_wal_dir=" + data_dir_);
   flags.push_back("--fs_data_dirs=" + data_dir_);

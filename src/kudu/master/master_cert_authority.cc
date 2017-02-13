@@ -39,10 +39,21 @@ using kudu::security::PrivateKey;
 using kudu::security::ca::CaCertRequestGenerator;
 using kudu::security::ca::CertSigner;
 
-DEFINE_int32(master_ca_rsa_key_length_bits, 2048,
-             "The number of bits to use for the master's self-signed "
-             "certificate authority private key.");
-TAG_FLAG(master_ca_rsa_key_length_bits, experimental);
+DEFINE_int32(ipki_ca_key_size, 2048,
+             "the number of bits for self-signed root CA cert used by Kudu IPKI "
+             "(Internal Private Key Infrastructure, a.k.a. Internal Kudu CA)");
+TAG_FLAG(ipki_ca_key_size, experimental);
+
+DEFINE_int64(ipki_ca_cert_expiration_seconds, 10 * 365 * 24 * 60 * 60,
+             "validity interval for self-signed root CA certifcate "
+             "issued by Kudu IPKI "
+             "(Internal Private Key Infrastructure, a.k.a. Internal Kudu CA)");
+TAG_FLAG(ipki_ca_cert_expiration_seconds, experimental);
+
+DEFINE_int64(ipki_server_cert_expiration_seconds, 10 * 365 * 24 * 60 * 60,
+             "validity interval for server certificates issued by Kudu IPKI "
+             "(Internal Private Key Infrastructure, a.k.a. Internal Kudu CA)");
+TAG_FLAG(ipki_server_cert_expiration_seconds, experimental);
 
 namespace kudu {
 namespace master {
@@ -53,15 +64,15 @@ CaCertRequestGenerator::Config PrepareCaConfig(const string& server_uuid) {
   // TODO(aserbin): do we actually have to set all these fields given we
   // aren't using a web browser to connect?
   return {
-    "US",                     // country
-    "CA",                     // state
-    "San Francisco",          // locality
-    "ASF",                    // org
-    "The Kudu Project",       // unit
-    server_uuid,              // uuid
-    "Self-signed master CA",  // comment
-    {},                       // hostnames
-    {},                       // ips
+    "US",               // country
+    "CA",               // state
+    "San Francisco",    // locality
+    "ASF",              // org
+    "The Kudu Project", // unit
+    server_uuid,        // uuid
+    "Kudu IPKI self-signed root CA certificate",// comment
+    {},                 // hostnames
+    {},                 // ips
   };
 }
 
@@ -80,8 +91,11 @@ Status MasterCertAuthority::Generate(security::PrivateKey* key,
   CHECK(key);
   CHECK(cert);
   // Create a key and cert for the self-signed CA.
-  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_master_ca_rsa_key_length_bits, key));
-  return CertSigner::SelfSignCA(*key, PrepareCaConfig(server_uuid_), cert);
+  RETURN_NOT_OK(GeneratePrivateKey(FLAGS_ipki_ca_key_size, key));
+  return CertSigner::SelfSignCA(*key,
+                                PrepareCaConfig(server_uuid_),
+                                FLAGS_ipki_ca_cert_expiration_seconds,
+                                cert);
 }
 
 Status MasterCertAuthority::Init(unique_ptr<PrivateKey> key,
@@ -110,9 +124,10 @@ Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_de
   CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(csr.FromString(csr_der, security::DataFormat::DER),
                         "could not parse CSR");
-  // TODO(PKI): need to set expiration interval on the signed CA cert!
   Cert cert;
   RETURN_NOT_OK_PREPEND(CertSigner(ca_cert_.get(), ca_private_key_.get())
+                        .set_expiration_interval(MonoDelta::FromSeconds(
+                            FLAGS_ipki_server_cert_expiration_seconds))
                         .Sign(csr, &cert),
                         "failed to sign cert");
 
