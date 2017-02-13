@@ -663,18 +663,10 @@ build_boost() {
   BOOST_CXXFLAGS="$EXTRA_CXXFLAGS -fPIC -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG"
   BOOST_LDFLAGS="$EXTRA_LDFLAGS"
 
-
   case $BUILD_TYPE in
     "normal")
-      # Default: use the default toolset.
       ;;
     "tsan")
-      # We're using a custom clang, so we specify its path in the jamfile.
-      echo "using clang : : $CXX ;" > $USER_JAMFILE
-      echo "User jamfile location: $USER_JAMFILE"
-      echo "User jamfile contents:"
-      cat $USER_JAMFILE
-      TOOLSET="toolset=clang"
       BOOST_LDFLAGS="-stdlib=libc++ $BOOST_LDFLAGS"
       ;;
     *)
@@ -682,6 +674,21 @@ build_boost() {
       exit 1
       ;;
   esac
+
+  # If CC and CXX are set, set the compiler in user-config.jam.
+  if [ -n "$CC" -a -n "$CXX" ]; then
+    # Determine the name of the compiler referenced in $CC. This assumes the compiler
+    # prints its name as the first word of the first line, which appears to work for gcc
+    # and clang, even when they're called through ccache.
+    local COMPILER=$($CC --version | awk 'NR==1 {print $1;}')
+
+    TOOLSET="toolset=${COMPILER}"
+    echo "Using $TOOLSET"
+    echo "using ${COMPILER} : : $CXX ;" > $USER_JAMFILE
+    echo "User jamfile location: $USER_JAMFILE"
+    echo "User jamfile contents:"
+    cat $USER_JAMFILE
+  fi
 
   # Build the date_time boost lib.
   ./bootstrap.sh --prefix=$PREFIX threading=multi --with-libraries=date_time
