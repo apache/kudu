@@ -28,6 +28,9 @@ const char* const kSaslProtoName = "kudu";
 
 // The server supports the TLS flag if there is a TLS certificate available.
 // The flag is added during negotiation if this is the case.
+//
+// NOTE: the TLS_AUTHENTICATION_ONLY flag is dynamically added on both sides
+// based on the remote peer's address.
 set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
 set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS, TLS };
 

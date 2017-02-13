@@ -74,6 +74,15 @@ enum RpcFeatureFlag {
   // this flag, the connection will automatically be wrapped in a TLS protected
   // channel following a TLS handshake.
   TLS = 2;
+
+  // If both sides advertise TLS_AUTHENTICATION_ONLY, this means that they
+  // agree that, after handshaking TLS, they will *not* wrap the connection
+  // in a TLS-protected channel. Instead, they will use TLS only for its
+  // handshake-based authentication.
+  //
+  // This is currently used for loopback connections only, so that compute
+  // frameworks which schedule for locality don't pay encryption overhead.
+  TLS_AUTHENTICATION_ONLY = 3;
 };
 
 // Message type passed back & forth for the SASL negotiation.

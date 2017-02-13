@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <sasl/sasl.h>
 
@@ -57,6 +58,8 @@ using std::string;
 using std::unique_ptr;
 
 using strings::Substitute;
+
+DECLARE_bool(rpc_encrypt_loopback_connections);
 
 namespace kudu {
 namespace rpc {
@@ -291,7 +294,14 @@ Status ClientNegotiation::SendNegotiate() {
   msg.set_step(NegotiatePB::NEGOTIATE);
 
   // Advertise our supported features.
-  for (RpcFeatureFlag feature : kSupportedClientRpcFeatureFlags) {
+  client_features_ = kSupportedClientRpcFeatureFlags;
+  // If the remote peer is local, then we allow using TLS for authentication
+  // without encryption or integrity.
+  if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
+    client_features_.insert(TLS_AUTHENTICATION_ONLY);
+  }
+
+  for (RpcFeatureFlag feature : client_features_) {
     msg.add_supported_features(feature);
   }
 
@@ -400,6 +410,11 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
 
   // TLS handshake is finished.
   DCHECK(token.empty());
+
+  if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
+      ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
+    return tls_handshake_.FinishNoWrap(*socket_);
+  }
   return tls_handshake_.Finish(&socket_);
 }
 
@@ -490,9 +505,8 @@ Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
   if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::Type::GSSAPI) {
     // Check the channel bindings provided by the server against the expected
     // channel bindings.
-    security::TlsSocket* tls_socket = down_cast<security::TlsSocket*>(socket_.get());
     security::Cert cert;
-    RETURN_NOT_OK(tls_socket->GetRemoteCert(&cert));
+    RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
 
     string expected_channel_bindings;
     RETURN_NOT_OK_PREPEND(cert.GetServerEndPointChannelBindings(&expected_channel_bindings),

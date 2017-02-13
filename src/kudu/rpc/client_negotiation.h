@@ -68,8 +68,14 @@ class ClientNegotiation {
   Status EnableGSSAPI();
 
   // Returns mechanism negotiated by this connection.
-  // Must be called before Negotiate().
+  // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;
+
+  // Returns true if TLS was negotiated.
+  // Must be called after Negotiate().
+  bool tls_negotiated() const {
+    return tls_negotiated_;
+  }
 
   // Returns the set of RPC system features supported by the remote server.
   // Must be called before Negotiate().
@@ -188,6 +194,11 @@ class ClientNegotiation {
   std::string plain_auth_user_;
   std::string plain_pass_;
   gscoped_ptr<sasl_secret_t, FreeDeleter> psecret_;
+
+  // The set of features advertised by the client. Filled in when we send
+  // the first message. This is not necessarily constant since some features
+  // may be dynamically enabled.
+  std::set<RpcFeatureFlag> client_features_;
 
   // The set of features supported by the server. Filled in during negotiation.
   std::set<RpcFeatureFlag> server_features_;

@@ -70,6 +70,12 @@ class ServerNegotiation {
   // Must be called after Negotiate().
   SaslMechanism::Type negotiated_mechanism() const;
 
+  // Returns true if TLS was negotiated.
+  // Must be called after Negotiate().
+  bool tls_negotiated() const {
+    return tls_negotiated_;
+  }
+
   // Returns the set of RPC system features supported by the remote client.
   // Must be called after Negotiate().
   std::set<RpcFeatureFlag> client_features() const {
@@ -185,8 +191,9 @@ class ServerNegotiation {
   security::TlsHandshake tls_handshake_;
   bool tls_negotiated_;
 
-  // The set of features supported by the client. Filled in during negotiation.
+  // The set of features supported by the client and server. Filled in during negotiation.
   std::set<RpcFeatureFlag> client_features_;
+  std::set<RpcFeatureFlag> server_features_;
 
   // The successfully-authenticated user, if applicable. Filled in during
   // negotiation.

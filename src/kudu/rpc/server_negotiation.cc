@@ -23,6 +23,7 @@
 #include <set>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
 #include <sasl/sasl.h>
@@ -46,6 +47,8 @@
 using std::set;
 using std::string;
 using std::unique_ptr;
+
+DECLARE_bool(rpc_encrypt_loopback_connections);
 
 namespace kudu {
 namespace rpc {
@@ -356,11 +359,18 @@ Status ServerNegotiation::SendNegotiate(const set<SaslMechanism::Type>& server_m
   }
 
   // Tell the client which features we support.
-  for (RpcFeatureFlag feature : kSupportedServerRpcFeatureFlags) {
-    response.add_supported_features(feature);
-  }
+  server_features_ = kSupportedServerRpcFeatureFlags;
   if (tls_context_->has_cert()) {
-    response.add_supported_features(TLS);
+    server_features_.insert(TLS);
+    // If the remote peer is local, then we allow using TLS for authentication
+    // without encryption or integrity.
+    if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
+      server_features_.insert(TLS_AUTHENTICATION_ONLY);
+    }
+  }
+
+  for (RpcFeatureFlag feature : server_features_) {
+    response.add_supported_features(feature);
   }
 
   RETURN_NOT_OK(SendNegotiatePB(response));
@@ -396,6 +406,10 @@ Status ServerNegotiation::HandleTlsHandshake(const NegotiatePB& request) {
   RETURN_NOT_OK(s);
 
   // TLS handshake is finished.
+  if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
+      ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
+    return tls_handshake_.FinishNoWrap(*socket_);
+  }
   return tls_handshake_.Finish(&socket_);
 }
 
@@ -537,9 +551,8 @@ Status ServerNegotiation::SendSaslSuccess() {
 
   if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::Type::GSSAPI) {
     // Send the channel bindings to the client.
-    security::TlsSocket* tls_socket = down_cast<security::TlsSocket*>(socket_.get());
     security::Cert cert;
-    RETURN_NOT_OK(tls_socket->GetLocalCert(&cert));
+    RETURN_NOT_OK(tls_handshake_.GetLocalCert(&cert));
 
     string plaintext_channel_bindings;
     RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));

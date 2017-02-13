@@ -37,6 +37,7 @@
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/tls_socket.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -60,6 +61,7 @@ using std::unique_ptr;
 DEFINE_bool(is_test_child, false,
             "Used by tests which require clean processes. "
             "See TestDisableInit.");
+DECLARE_bool(rpc_encrypt_loopback_connections);
 
 namespace kudu {
 namespace rpc {
@@ -583,7 +585,9 @@ static void RunTlsGssapiNegotiationServer(unique_ptr<Socket> socket) {
   ASSERT_EQ(SaslMechanism::GSSAPI, server_negotiation.negotiated_mechanism());
   ASSERT_EQ("testuser", server_negotiation.authenticated_user());
 
-  // TODO(PKI): assert that TLS is actually negotiated.
+  CHECK(server_negotiation.tls_negotiated());
+  bool is_tls_socket = dynamic_cast<security::TlsSocket*>(server_negotiation.socket());
+  CHECK_EQ(is_tls_socket, FLAGS_rpc_encrypt_loopback_connections);
 }
 
 static void RunTlsGssapiNegotiationClient(unique_ptr<Socket> socket) {
@@ -597,7 +601,9 @@ static void RunTlsGssapiNegotiationClient(unique_ptr<Socket> socket) {
   CHECK(ContainsKey(client_negotiation.server_features(), APPLICATION_FEATURE_FLAGS));
   CHECK(ContainsKey(client_negotiation.server_features(), TLS));
 
-  // TODO(PKI): assert that TLS is actually negotiated.
+  CHECK(client_negotiation.tls_negotiated());
+  bool is_tls_socket = dynamic_cast<security::TlsSocket*>(client_negotiation.socket());
+  CHECK_EQ(is_tls_socket, FLAGS_rpc_encrypt_loopback_connections);
 }
 
 // Test TLS and GSSAPI (kerberos) SASL negotiation.
@@ -616,7 +622,12 @@ TEST_F(TestNegotiation, TestTlsWithGssapiNegotiation) {
   ASSERT_OK(kdc.SetKrb5Environment());
 
   // Authentication should succeed on both sides.
-  RunNegotiationTest(RunTlsGssapiNegotiationServer, RunTlsGssapiNegotiationClient);
+  // We run with both flag values for the loopback TLS encryption flag.
+  for (bool encrypt_loopback : { false, true }) {
+    SCOPED_TRACE(encrypt_loopback);
+    FLAGS_rpc_encrypt_loopback_connections = encrypt_loopback;
+    RunNegotiationTest(RunTlsGssapiNegotiationServer, RunTlsGssapiNegotiationClient);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

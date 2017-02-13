@@ -99,6 +99,12 @@ class Socket {
   // Call getpeername to get the address of the connected peer.
   Status GetPeerAddress(Sockaddr *cur_addr) const;
 
+  // Return true if this socket is determined to be a loopback connection
+  // (i.e. the local and remote peer share an IP address).
+  //
+  // If any error occurs while determining this, returns false.
+  bool IsLoopbackConnection() const;
+
   // Call bind() to bind the socket to a given address.
   // If bind() fails and indicates that the requested port is already in use,
   // generates an informative log message by calling 'lsof' if available.

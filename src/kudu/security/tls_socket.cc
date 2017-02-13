@@ -37,30 +37,6 @@ TlsSocket::~TlsSocket() {
   ignore_result(Close());
 }
 
-Status TlsSocket::GetLocalCert(Cert* cert) const {
-  X509* raw_cert = SSL_get_certificate(ssl_.get());
-
-  // This can happen if the cert has not been set (e.g. this is a client->server
-  // socket with no cert), or a non-PKI cipher is being used.
-  OPENSSL_RET_IF_NULL(raw_cert, "TLS socket has no local certificate");
-
-  // For whatever reason, SSL_get_certificate (unlike SSL_get_peer_certificate)
-  // does not increment the X509's reference count.
-  cert->AdoptAndAddRefRawData(raw_cert);
-  return Status::OK();
-}
-
-Status TlsSocket::GetRemoteCert(Cert* cert) const {
-  X509* raw_cert = SSL_get_peer_certificate(ssl_.get());
-
-  // This can happen if the cert has not been set (e.g. this is a server->client
-  // socket with no verification), or a non-PKI cipher is being used.
-  OPENSSL_RET_IF_NULL(raw_cert, "TLS socket has no remote certificate");
-
-  cert->AdoptRawData(raw_cert);
-  return Status::OK();
-}
-
 Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   CHECK(ssl_);
 

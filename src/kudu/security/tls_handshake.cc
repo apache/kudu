@@ -25,6 +25,7 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include "kudu/security/cert.h"
 #include "kudu/security/tls_socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -130,7 +131,7 @@ Status TlsHandshake::Verify(const Socket& socket) const {
   }
 
   // Get the peer certificate.
-  c_unique_ptr<X509> cert = ssl_make_unique(SSL_get_peer_certificate(ssl_.get()));
+  X509* cert = remote_cert_.GetRawData();
   if (!cert) {
     if (SSL_get_verify_mode(ssl_.get()) & SSL_VERIFY_FAIL_IF_NO_PEER_CERT) {
       return Status::NotAuthorized("Handshake failed: unable to retreive peer certificate");
@@ -154,7 +155,7 @@ Status TlsHandshake::Verify(const Socket& socket) const {
 
   // Check if the hostname matches with either the Common Name or any of the Subject Alternative
   // Names of the certificate.
-  int match = X509_check_host(cert.get(),
+  int match = X509_check_host(cert,
                               peer_hostname.c_str(),
                               peer_hostname.length(),
                               0,
@@ -169,7 +170,23 @@ Status TlsHandshake::Verify(const Socket& socket) const {
   return Status::OK();
 }
 
+Status TlsHandshake::GetCerts() {
+  X509* cert = SSL_get_certificate(ssl_.get());
+  if (cert) {
+    // For whatever reason, SSL_get_certificate (unlike SSL_get_peer_certificate)
+    // does not increment the X509's reference count.
+    local_cert_.AdoptAndAddRefRawData(cert);
+  }
+
+  cert = SSL_get_peer_certificate(ssl_.get());
+  if (cert) {
+    remote_cert_.AdoptRawData(cert);
+  }
+  return Status::OK();
+}
+
 Status TlsHandshake::Finish(unique_ptr<Socket>* socket) {
+  RETURN_NOT_OK(GetCerts());
   RETURN_NOT_OK(Verify(**socket));
 
   int fd = (*socket)->Release();
@@ -184,6 +201,27 @@ Status TlsHandshake::Finish(unique_ptr<Socket>* socket) {
   // Transfer the SSL instance to the socket.
   socket->reset(new TlsSocket(fd, std::move(ssl_)));
 
+  return Status::OK();
+}
+
+Status TlsHandshake::FinishNoWrap(const Socket& socket) {
+  RETURN_NOT_OK(GetCerts());
+  return Verify(socket);
+}
+
+Status TlsHandshake::GetLocalCert(Cert* cert) const {
+  if (!local_cert_.GetRawData()) {
+    return Status::RuntimeError("no local certificate");
+  }
+  cert->AdoptAndAddRefRawData(local_cert_.GetRawData());
+  return Status::OK();
+}
+
+Status TlsHandshake::GetRemoteCert(Cert* cert) const {
+  if (!remote_cert_.GetRawData()) {
+    return Status::RuntimeError("no remote certificate");
+  }
+  cert->AdoptAndAddRefRawData(remote_cert_.GetRawData());
   return Status::OK();
 }
 

@@ -158,6 +158,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
+    // TODO(todd): if we are on a loopback connection, advertise and support
+    // TLS_AUTHENTICATION_ONLY.
 
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
     state = State.AWAIT_NEGOTIATE;

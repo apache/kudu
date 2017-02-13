@@ -296,6 +296,17 @@ Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
   return Status::OK();
 }
 
+bool Socket::IsLoopbackConnection() const {
+  Sockaddr local, remote;
+  if (!GetSocketAddress(&local).ok()) return false;
+  if (!GetSocketAddress(&remote).ok()) return false;
+
+  // Compare without comparing ports.
+  local.set_port(0);
+  remote.set_port(0);
+  return local == remote;
+}
+
 Status Socket::Bind(const Sockaddr& bind_addr) {
   struct sockaddr_in addr = bind_addr.addr();
 

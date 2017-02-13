@@ -54,6 +54,14 @@ TAG_FLAG(rpc_negotiation_inject_delay_ms, unsafe);
 
 DECLARE_bool(server_require_kerberos);
 
+DEFINE_bool(rpc_encrypt_loopback_connections, false,
+            "Whether to encrypt data transfer on RPC connections that stay within "
+            "a single host. Encryption here is likely to offer no additional "
+            "security benefit since only a local 'root' user could intercept the "
+            "traffic, and wire encryption does not suitably protect against such "
+            "an attacker.");
+TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
+
 using strings::Substitute;
 
 namespace kudu {

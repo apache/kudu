@@ -443,8 +443,28 @@ Client                                                                    Server
 ```
 
 The client and server repeat `TLS_HANDSHAKE` round-trips until the TLS handshake
-is complete, at which point both ends wrap their respective TCP socket in the
-new TLS channel. All subsequent messages will be encrypted.
+is complete. After the handshake is complete, in the absence of the
+`TLS_AUTHENTICATION_ONLY` feature described belowq, the client and server
+wrap the socket connection such that all further traffic is encrypted via TLS.
+
+##### `TLS_AUTHENTICATION_ONLY`
+
+In many cases, RPC connections are made between a client and server running
+on the same machine. For example, the schedulers in Spark, MapReduce,
+or Impala will typically schedule tasks such that most data is scanned by
+a process running on the same machine as the Kudu replica. In this case,
+the overhead of TLS is significant, and TLS affords no additional security
+(only a local root attacker could intercept the traffic, and such an
+attacker could just as easily dump the process memory or read data from disk).
+
+To avoid TLS overhead in such situations, while keeping the authentication
+properties of TLS, KRPC supports the `TLS_AUTHENTICATION_ONLY` feature flag.
+In the case that a client or server detects that the remote peer is on the
+same socket address as the local peer, it will advertise this flag. If both
+client and server advertise the flag, then after completing the TLS handshake,
+the peers will _not_ wrap the socket with TLS. All other behavior remains
+the same, including channel binding as described below.
+
 
 #### Step 3: SASL Negotiation
 
