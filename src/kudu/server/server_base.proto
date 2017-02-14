@@ -20,6 +20,7 @@ option java_package = "org.apache.kudu.server";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
+import "kudu/rpc/rpc_header.proto";
 import "kudu/util/version_info.proto";
 
 // The status information dumped by a server after it starts.
@@ -33,14 +34,13 @@ message ServerStatusPB {
   repeated HostPortPB bound_rpc_addresses = 2;
   repeated HostPortPB bound_http_addresses = 3;
   optional VersionInfoPB version_info = 4;
+  // NOTE: this PB may be fetched by any authenticated user, not just superusers.
+  // So, do not expose anything here which may be sensitive!
 }
 
 // Attempt to set a command line flag.
 // Note that many command line flags do not take effect if changed
 // at runtime.
-//
-// TODO: We plan to add tags indicating which flags can be modified at
-// runtime. For now, this is an advanced option.
 message SetFlagRequestPB {
   required string flag = 1;
   required string value = 2;
@@ -123,6 +123,8 @@ message SetServerWallClockForTestsResponsePB {
 }
 
 service GenericService {
+  option (kudu.rpc.default_authz_method) = "AuthorizeSuperUser";
+
   rpc SetFlag(SetFlagRequestPB)
     returns (SetFlagResponsePB);
 
@@ -132,12 +134,15 @@ service GenericService {
   rpc CheckLeaks(CheckLeaksRequestPB)
     returns (CheckLeaksResponsePB);
 
-  rpc ServerClock(ServerClockRequestPB)
-    returns (ServerClockResponsePB);
+  rpc ServerClock(ServerClockRequestPB) returns (ServerClockResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
+  // TODO(dralves): seems unused. can we remove this?
   rpc SetServerWallClockForTests(SetServerWallClockForTestsRequestPB)
     returns (SetServerWallClockForTestsResponsePB);
 
-  rpc GetStatus(GetStatusRequestPB)
-    returns (GetStatusResponsePB);
+  rpc GetStatus(GetStatusRequestPB) returns (GetStatusResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 }

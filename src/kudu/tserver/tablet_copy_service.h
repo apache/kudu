@@ -33,6 +33,10 @@
 namespace kudu {
 class FsManager;
 
+namespace server {
+class ServerBase;
+} // namespace server
+
 namespace log {
 class ReadableLogSegment;
 } // namespace log
@@ -44,10 +48,12 @@ class TabletPeerLookupIf;
 
 class TabletCopyServiceImpl : public TabletCopyServiceIf {
  public:
-  TabletCopyServiceImpl(FsManager* fs_manager,
-                             TabletPeerLookupIf* tablet_peer_lookup,
-                             const scoped_refptr<MetricEntity>& metric_entity,
-                             const scoped_refptr<rpc::ResultTracker>& result_tracker);
+  TabletCopyServiceImpl(server::ServerBase* server,
+                        TabletPeerLookupIf* tablet_peer_lookup);
+
+  bool AuthorizeServiceUser(const google::protobuf::Message* req,
+                            google::protobuf::Message* resp,
+                            rpc::RpcContext* rpc) override;
 
   virtual void BeginTabletCopySession(const BeginTabletCopySessionRequestPB* req,
                                            BeginTabletCopySessionResponsePB* resp,
@@ -99,6 +105,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
                             const string& message,
                             const Status& s);
 
+  server::ServerBase* server_;
   FsManager* fs_manager_;
   TabletPeerLookupIf* tablet_peer_lookup_;
 

@@ -21,16 +21,21 @@
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/remote_user.h"
+#include "kudu/rpc/rpc_context.h"
+#include "kudu/security/kerberos_util.h"
 #include "kudu/security/init.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
@@ -59,6 +64,7 @@
 #include "kudu/util/rolling_log.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/user.h"
 #include "kudu/util/version_info.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start.");
@@ -69,6 +75,23 @@ TAG_FLAG(min_negotiation_threads, advanced);
 
 DEFINE_int32(max_negotiation_threads, 50, "Maximum number of connection negotiation threads.");
 TAG_FLAG(max_negotiation_threads, advanced);
+
+DEFINE_string(superuser_acl, "",
+              "The list of usernames to allow as super users, comma-separated. "
+              "A '*' entry indicates that all authenticated users are allowed. "
+              "If this is left unset or blank, the default behavior is that the "
+              "identity of the daemon itself determines the superuser. If the "
+              "daemon is logged in from a Keytab, then the local username from "
+              "the Kerberos principal is used; otherwise, the local Unix "
+              "username is used.");
+TAG_FLAG(superuser_acl, stable);
+TAG_FLAG(superuser_acl, sensitive);
+
+DEFINE_string(user_acl, "*",
+              "The list of usernames who may access the cluster, comma-separated. "
+              "A '*' entry indicates that all authenticated users are allowed.");
+TAG_FLAG(user_acl, stable);
+TAG_FLAG(user_acl, sensitive);
 
 DECLARE_bool(use_hybrid_clock);
 
@@ -187,6 +210,8 @@ Status ServerBase::Init() {
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
 
+  RETURN_NOT_OK(InitAcls());
+
   // Create the Messenger.
   rpc::MessengerBuilder builder(name_);
 
@@ -206,6 +231,41 @@ Status ServerBase::Init() {
 
   result_tracker_->StartGCThread();
   RETURN_NOT_OK(StartExcessLogFileDeleterThread());
+
+  return Status::OK();
+}
+
+Status ServerBase::InitAcls() {
+
+  string service_user;
+  boost::optional<string> keytab_user = security::GetLoggedInUsernameFromKeytab();
+  if (keytab_user) {
+    // If we're logged in from a keytab, then everyone should be, and we expect them
+    // to use the same mapped username.
+    service_user = *keytab_user;
+  } else {
+    // If we aren't logged in from a keytab, then just assume that the services
+    // will be running as the same Unix user as we are.
+    RETURN_NOT_OK_PREPEND(GetLoggedInUser(&service_user),
+                          "could not deterine local username");
+  }
+
+  // If the user has specified a superuser acl, use that. Otherwise, assume
+  // that the same user running the service acts as superuser.
+  if (!FLAGS_superuser_acl.empty()) {
+    RETURN_NOT_OK_PREPEND(superuser_acl_.ParseFlag(FLAGS_superuser_acl),
+                          "could not parse --superuser_acl flag");
+  } else {
+    superuser_acl_.Reset({ service_user });
+  }
+
+  RETURN_NOT_OK_PREPEND(user_acl_.ParseFlag(FLAGS_user_acl),
+                        "could not parse --user_acl flag");
+
+  // For the "service" ACL, we currently don't allow it to be user-configured,
+  // but instead assume that all of the services will be running the same
+  // way.
+  service_acl_.Reset({ service_user });
 
   return Status::OK();
 }
@@ -239,6 +299,34 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
   }
 
   VersionInfo::GetVersionInfoPB(status->mutable_version_info());
+}
+
+void ServerBase::LogUnauthorizedAccess(rpc::RpcContext* rpc) const {
+  LOG(WARNING) << "Unauthorized access attempt to method "
+               << rpc->service_name() << "." << rpc->method_name()
+               << " from " << rpc->requestor_string();
+}
+
+bool ServerBase::Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) {
+  if ((allowed_roles & SUPER_USER) &&
+      superuser_acl_.UserAllowed(rpc->remote_user().username())) {
+    return true;
+  }
+
+  if ((allowed_roles & USER) &&
+      user_acl_.UserAllowed(rpc->remote_user().username())) {
+    return true;
+  }
+
+  if ((allowed_roles & SERVICE_USER) &&
+      service_acl_.UserAllowed(rpc->remote_user().username())) {
+    return true;
+  }
+
+  LogUnauthorizedAccess(rpc);
+  rpc->RespondFailure(Status::NotAuthorized("unauthorized access to method",
+                                            rpc->method_name()));
+  return false;
 }
 
 Status ServerBase::DumpServerInfo(const string& path,

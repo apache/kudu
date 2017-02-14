@@ -18,6 +18,7 @@
 #include "kudu/master/master_service.h"
 
 #include <gflags/gflags.h>
+#include <google/protobuf/message.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -50,14 +51,16 @@ TAG_FLAG(master_support_connect_to_master_rpc, unsafe);
 TAG_FLAG(master_support_connect_to_master_rpc, hidden);
 
 using kudu::security::SignedTokenPB;
+using google::protobuf::Message;
+using std::string;
+using std::vector;
+using std::shared_ptr;
 
 namespace kudu {
 namespace master {
 
-using consensus::RaftPeerPB;
-using std::string;
-using std::vector;
-using std::shared_ptr;
+using server::ServerBase;
+using security::SignedTokenPB;
 using strings::Substitute;
 
 namespace {
@@ -80,8 +83,30 @@ MasterServiceImpl::MasterServiceImpl(Master* server)
     server_(server) {
 }
 
-void MasterServiceImpl::Ping(const PingRequestPB* req,
-                             PingResponsePB* resp,
+bool MasterServiceImpl::AuthorizeClient(const Message* /*req*/,
+                                        Message* /*resp*/,
+                                        rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER);
+}
+
+bool MasterServiceImpl::AuthorizeService(const Message* /*req*/,
+                                         Message* /*resp*/,
+                                         rpc::RpcContext* context) {
+  // We don't allow superusers to pretend to be tablet servers -- there are no
+  // operator tools that do anything like this and since we sign requests for
+  // tablet servers, we should be extra tight here.
+  return server_->Authorize(context, ServerBase::SERVICE_USER);
+}
+
+bool MasterServiceImpl::AuthorizeClientOrService(const Message* /*req*/,
+                                                 Message* /*resp*/,
+                                                 rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER |
+                            ServerBase::SERVICE_USER);
+}
+
+void MasterServiceImpl::Ping(const PingRequestPB* /*req*/,
+                             PingResponsePB* /*resp*/,
                              rpc::RpcContext* rpc) {
   rpc->RespondSuccess();
 }

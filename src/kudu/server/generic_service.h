@@ -30,6 +30,14 @@ class GenericServiceImpl : public GenericServiceIf {
   explicit GenericServiceImpl(ServerBase* server);
   virtual ~GenericServiceImpl();
 
+  bool AuthorizeSuperUser(const google::protobuf::Message* req,
+                          google::protobuf::Message* resp,
+                          rpc::RpcContext* rpc) override;
+
+  bool AuthorizeClient(const google::protobuf::Message* req,
+                       google::protobuf::Message* resp,
+                       rpc::RpcContext* rpc) override;
+
   virtual void SetFlag(const SetFlagRequestPB* req,
                        SetFlagResponsePB* resp,
                        rpc::RpcContext* rpc) OVERRIDE;

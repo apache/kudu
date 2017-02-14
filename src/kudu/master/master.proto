@@ -21,6 +21,7 @@ option java_package = "org.apache.kudu.master";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/rpc/rpc_header.proto";
 import "kudu/security/token.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/util/pb_util.proto";
@@ -674,35 +675,67 @@ enum MasterFeatures {
 }
 
 service MasterService {
+  // Set the default authz method to something invalid, so that if
+  // we forget to set the option on a new RPC call, we'll get a build
+  // failure.
+  option (kudu.rpc.default_authz_method) = "MUST_SET_AUTHZ_PER_RPC";
+
   // TS->Master RPCs
   // ------------------------------------------------------------
-  rpc TSHeartbeat(TSHeartbeatRequestPB) returns (TSHeartbeatResponsePB);
+  rpc TSHeartbeat(TSHeartbeatRequestPB) returns (TSHeartbeatResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeService";
+  }
 
   // Client->Master RPCs
   // ------------------------------------------------------------
 
   // Used only by Kudu 1.3 and later.
-  rpc ConnectToMaster(ConnectToMasterRequestPB) returns (ConnectToMasterResponsePB);
+  rpc ConnectToMaster(ConnectToMasterRequestPB) returns (ConnectToMasterResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
-  rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB);
+  rpc GetTabletLocations(GetTabletLocationsRequestPB) returns (GetTabletLocationsResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
-  rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB);
-  rpc IsCreateTableDone(IsCreateTableDoneRequestPB) returns (IsCreateTableDoneResponsePB);
+  rpc CreateTable(CreateTableRequestPB) returns (CreateTableResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc IsCreateTableDone(IsCreateTableDoneRequestPB) returns (IsCreateTableDoneResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
-  rpc DeleteTable(DeleteTableRequestPB) returns (DeleteTableResponsePB);
+  rpc AlterTable(AlterTableRequestPB) returns (AlterTableResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc IsAlterTableDone(IsAlterTableDoneRequestPB) returns (IsAlterTableDoneResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
-  rpc AlterTable(AlterTableRequestPB) returns (AlterTableResponsePB);
-  rpc IsAlterTableDone(IsAlterTableDoneRequestPB) returns (IsAlterTableDoneResponsePB);
-
-  rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB);
-  rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB);
-  rpc GetTableSchema(GetTableSchemaRequestPB) returns (GetTableSchemaResponsePB);
+  rpc ListTables(ListTablesRequestPB) returns (ListTablesResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc GetTableLocations(GetTableLocationsRequestPB) returns (GetTableLocationsResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc GetTableSchema(GetTableSchemaRequestPB) returns (GetTableSchemaResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
   // Administrative/monitoring RPCs
   // ------------------------------------------------------------
-  rpc ListTabletServers(ListTabletServersRequestPB) returns (ListTabletServersResponsePB);
-  rpc ListMasters(ListMastersRequestPB) returns (ListMastersResponsePB);
-  rpc Ping(PingRequestPB) returns (PingResponsePB);
+  rpc ListTabletServers(ListTabletServersRequestPB) returns (ListTabletServersResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc ListMasters(ListMastersRequestPB) returns (ListMastersResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc Ping(PingRequestPB) returns (PingResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrService";
+  }
 
   // Master->Master RPCs
   // ------------------------------------------------------------
@@ -710,5 +743,7 @@ service MasterService {
   // NOTE: this RPC is also used by Kudu client <= 1.2 when first connecting to the
   // cluster.
   rpc GetMasterRegistration(GetMasterRegistrationRequestPB) returns
-    (GetMasterRegistrationResponsePB);
+      (GetMasterRegistrationResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrService";
+  }
 }

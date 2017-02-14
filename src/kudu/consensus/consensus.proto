@@ -484,6 +484,8 @@ message StartTabletCopyResponsePB {
 
 // A Raft implementation.
 service ConsensusService {
+  option (kudu.rpc.default_authz_method) = "AuthorizeServiceUser";
+
   // Analogous to AppendEntries in Raft, but only used for followers.
   rpc UpdateConsensus(ConsensusRequestPB) returns (ConsensusResponsePB);
 

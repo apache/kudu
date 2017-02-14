@@ -23,6 +23,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.h"
@@ -46,6 +47,19 @@ GenericServiceImpl::GenericServiceImpl(ServerBase* server)
 
 GenericServiceImpl::~GenericServiceImpl() {
 }
+
+bool GenericServiceImpl::AuthorizeSuperUser(const google::protobuf::Message* /*req*/,
+                                            google::protobuf::Message* /*resp*/,
+                                            rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER);
+}
+
+bool GenericServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*/,
+                                         google::protobuf::Message* /*resp*/,
+                                         rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER);
+}
+
 
 void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
                                  SetFlagResponsePB* resp,

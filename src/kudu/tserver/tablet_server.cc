@@ -111,11 +111,9 @@ Status TabletServer::Start() {
 
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_entity(),
-                                                                    result_tracker(),
-                                                                    tablet_manager_.get()));
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(this, tablet_manager_.get()));
   gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
-      fs_manager_.get(), tablet_manager_.get(), metric_entity(), result_tracker()));
+      this, tablet_manager_.get()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(ts_service)));
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(admin_service)));

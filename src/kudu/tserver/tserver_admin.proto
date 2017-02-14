@@ -20,6 +20,7 @@ option java_package = "org.apache.kudu.tserver";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/tserver/tserver.proto";
 
@@ -123,6 +124,8 @@ enum TSTabletManagerStatePB {
 }
 
 service TabletServerAdminService {
+  option (kudu.rpc.default_authz_method) = "AuthorizeServiceUser";
+
   // Create a new, empty tablet with the specified parameters. Only used for
   // brand-new tablets, not for "moves".
   rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);

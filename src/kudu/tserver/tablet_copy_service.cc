@@ -28,6 +28,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/server/server_base.h"
 #include "kudu/tserver/tablet_copy_source_session.h"
 #include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -61,25 +62,33 @@ DEFINE_double(fault_crash_on_handle_tc_fetch_data, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_on_handle_tc_fetch_data, unsafe);
 
+using strings::Substitute;
+
 namespace kudu {
-namespace tserver {
 
 using crc::Crc32c;
-using strings::Substitute;
+using server::ServerBase;
 using tablet::TabletPeer;
 
+namespace tserver {
+
 TabletCopyServiceImpl::TabletCopyServiceImpl(
-    FsManager* fs_manager,
-    TabletPeerLookupIf* tablet_peer_lookup,
-    const scoped_refptr<MetricEntity>& metric_entity,
-    const scoped_refptr<rpc::ResultTracker>& result_tracker)
-    : TabletCopyServiceIf(metric_entity, result_tracker),
-      fs_manager_(CHECK_NOTNULL(fs_manager)),
+    ServerBase* server,
+    TabletPeerLookupIf* tablet_peer_lookup)
+    : TabletCopyServiceIf(server->metric_entity(), server->result_tracker()),
+      server_(server),
+      fs_manager_(CHECK_NOTNULL(server->fs_manager())),
       tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
       shutdown_latch_(1) {
   CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
                           &TabletCopyServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
+}
+
+bool TabletCopyServiceImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
+                                                 google::protobuf::Message* /*resp*/,
+                                                 rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void TabletCopyServiceImpl::BeginTabletCopySession(

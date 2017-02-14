@@ -32,6 +32,10 @@ class Schema;
 class Status;
 class Timestamp;
 
+namespace server {
+class ServerBase;
+} // namespace server
+
 namespace tablet {
 class Tablet;
 class TabletPeer;
@@ -47,6 +51,14 @@ class TabletServer;
 class TabletServiceImpl : public TabletServerServiceIf {
  public:
   explicit TabletServiceImpl(TabletServer* server);
+
+  bool AuthorizeClient(const google::protobuf::Message* req,
+                       google::protobuf::Message* resp,
+                       rpc::RpcContext* rpc) override;
+
+  bool AuthorizeClientOrServiceUser(const google::protobuf::Message* req,
+                                    google::protobuf::Message* resp,
+                                    rpc::RpcContext* rpc) override;
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
@@ -103,6 +115,11 @@ class TabletServiceImpl : public TabletServerServiceIf {
 class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
  public:
   explicit TabletServiceAdminImpl(TabletServer* server);
+
+  bool AuthorizeServiceUser(const google::protobuf::Message* req,
+                            google::protobuf::Message* resp,
+                            rpc::RpcContext* rpc) override;
+
   virtual void CreateTablet(const CreateTabletRequestPB* req,
                             CreateTabletResponsePB* resp,
                             rpc::RpcContext* context) OVERRIDE;
@@ -121,11 +138,14 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
 
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
  public:
-  ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
-                       const scoped_refptr<rpc::ResultTracker>& result_tracker,
-                       TabletPeerLookupIf* tablet_manager_);
+  ConsensusServiceImpl(server::ServerBase* server,
+                       TabletPeerLookupIf* tablet_manager);
 
   virtual ~ConsensusServiceImpl();
+
+  bool AuthorizeServiceUser(const google::protobuf::Message* req,
+                            google::protobuf::Message* resp,
+                            rpc::RpcContext* rpc) override;
 
   virtual void UpdateConsensus(const consensus::ConsensusRequestPB *req,
                                consensus::ConsensusResponsePB *resp,
@@ -164,6 +184,7 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                     rpc::RpcContext* context) OVERRIDE;
 
  private:
+  server::ServerBase* server_;
   TabletPeerLookupIf* tablet_manager_;
 };
 

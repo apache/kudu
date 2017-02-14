@@ -158,6 +158,14 @@ std::string RpcContext::requestor_string() const {
     call_->remote_address().ToString();
 }
 
+std::string RpcContext::method_name() const {
+  return call_->remote_method().method_name();
+}
+
+std::string RpcContext::service_name() const {
+  return call_->remote_method().service_name();
+}
+
 MonoTime RpcContext::GetClientDeadline() const {
   return call_->GetClientDeadline();
 }

@@ -117,9 +117,8 @@ using kudu::consensus::StartTabletCopyRequestPB;
 using kudu::consensus::StartTabletCopyResponsePB;
 using kudu::consensus::VoteRequestPB;
 using kudu::consensus::VoteResponsePB;
-using kudu::rpc::ResultTracker;
 using kudu::rpc::RpcContext;
-using kudu::server::HybridClock;
+using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaTransactionState;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
@@ -513,8 +512,22 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
     server_(server) {
 }
 
-void TabletServiceImpl::Ping(const PingRequestPB* req,
-                             PingResponsePB* resp,
+bool TabletServiceImpl::AuthorizeClientOrServiceUser(const google::protobuf::Message* /*req*/,
+                                                 google::protobuf::Message* /*resp*/,
+                                                 rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER |
+                            ServerBase::SERVICE_USER);
+}
+
+bool TabletServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*/,
+                                        google::protobuf::Message* /*resp*/,
+                                        rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER);
+}
+
+
+void TabletServiceImpl::Ping(const PingRequestPB* /*req*/,
+                             PingResponsePB* /*resp*/,
                              rpc::RpcContext* context) {
   context->RespondSuccess();
 }
@@ -522,6 +535,12 @@ void TabletServiceImpl::Ping(const PingRequestPB* req,
 TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
   : TabletServerAdminServiceIf(server->metric_entity(), server->result_tracker()),
     server_(server) {
+}
+
+bool TabletServiceAdminImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
+                                                  google::protobuf::Message* /*resp*/,
+                                                  rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
@@ -782,17 +801,22 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
   }
-  return;
 }
 
-ConsensusServiceImpl::ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
-                                           const scoped_refptr<ResultTracker>& result_tracker,
+ConsensusServiceImpl::ConsensusServiceImpl(ServerBase* server,
                                            TabletPeerLookupIf* tablet_manager)
-  : ConsensusServiceIf(metric_entity, result_tracker),
-    tablet_manager_(tablet_manager) {
+    : ConsensusServiceIf(server->metric_entity(), server->result_tracker()),
+      server_(server),
+      tablet_manager_(tablet_manager) {
 }
 
 ConsensusServiceImpl::~ConsensusServiceImpl() {
+}
+
+bool ConsensusServiceImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
+                                                google::protobuf::Message* /*resp*/,
+                                                rpc::RpcContext* rpc) {
+  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,

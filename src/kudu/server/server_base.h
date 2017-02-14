@@ -25,6 +25,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/service_if.h"
+#include "kudu/security/simple_acl.h"
 #include "kudu/server/server_base_options.h"
 #include "kudu/util/status.h"
 
@@ -44,7 +45,7 @@ class Thread;
 class Webserver;
 
 namespace rpc {
-class ServiceIf;
+class RpcContext;
 } // namespace rpc
 
 namespace security {
@@ -101,6 +102,18 @@ class ServerBase {
   // Return a PB describing the status of the server (version info, bound ports, etc)
   void GetStatusPB(ServerStatusPB* status) const;
 
+  enum {
+    SUPER_USER = 1,
+    USER = 1 << 1,
+    SERVICE_USER = 1 << 2
+  };
+
+  // Authorize an RPC. 'allowed_roles' is a bitset of which roles from the above
+  // enum should be allowed to make hthe RPC.
+  //
+  // If authorization fails, return false and respond to the RPC.
+  bool Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles);
+
  protected:
   ServerBase(std::string name, const ServerBaseOptions& options,
              const std::string& metric_namespace);
@@ -110,6 +123,8 @@ class ServerBase {
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
   Status Start();
   void Shutdown();
+
+  void LogUnauthorizedAccess(rpc::RpcContext* rpc) const;
 
   const std::string name_;
 
@@ -130,7 +145,16 @@ class ServerBase {
   // The instance identifier of this server.
   gscoped_ptr<NodeInstancePB> instance_pb_;
 
+  // The ACL of users who are allowed to act as superusers.
+  security::SimpleAcl superuser_acl_;
+
+  // The ACL of users who are allowed to access the cluster.
+  security::SimpleAcl user_acl_;
+
+  // The ACL of users who may act as part of the Kudu service.
+  security::SimpleAcl service_acl_;
  private:
+  Status InitAcls();
   void GenerateInstanceID();
   Status DumpServerInfo(const std::string& path,
                         const std::string& format) const;

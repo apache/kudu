@@ -183,6 +183,7 @@ public class MiniKuduCluster implements AutoCloseable {
         commandLine.add("--keytab_file=" + keytab);
         commandLine.add("--principal=kudu/" + bindHost);
         commandLine.add("--rpc_authentication=required");
+        commandLine.add("--superuser_acl=testuser");
       }
 
       commandLine.addAll(extraTserverFlags);
@@ -264,6 +265,7 @@ public class MiniKuduCluster implements AutoCloseable {
         commandLine.add("--keytab_file=" + keytab);
         commandLine.add("--principal=kudu/" + bindHost);
         commandLine.add("--rpc_authentication=required");
+        commandLine.add("--superuser_acl=testuser");
       }
 
       commandLine.addAll(extraMasterFlags);

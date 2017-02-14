@@ -107,6 +107,7 @@ class KinitContext {
   int32_t GetBackedOffRenewInterval(int32_t time_remaining, uint32_t num_retries);
 
   const string& principal_str() const { return principal_str_; }
+  const string& username_str() const { return username_str_; }
 
  private:
   krb5_principal principal_;
@@ -114,8 +115,8 @@ class KinitContext {
   krb5_ccache ccache_;
   krb5_get_init_creds_opt* opts_;
 
-  // The stringified principal that we are logged in as.
-  string principal_str_;
+  // The stringified principal and username that we are logged in as.
+  string principal_str_, username_str_;
 
   // This is the time that the current TGT in use expires.
   int32_t ticket_end_timestamp_;
@@ -343,8 +344,11 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
   // configuration if not originally specified.
   RETURN_NOT_OK_PREPEND(Krb5UnparseName(principal_, &principal_str_),
                         "could not stringify the logged-in principal");
+  RETURN_NOT_OK_PREPEND(MapPrincipalToLocalName(principal_str_, &username_str_),
+                        "could not map own logged-in principal to a short username");
 
-  LOG(INFO) << "Logged in from keytab as " << principal_str_;
+  LOG(INFO) << "Logged in from keytab as " << principal_str_
+            << " (short username " << username_str_ << ")";
 
   return Status::OK();
 }
@@ -416,6 +420,11 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
 boost::optional<string> GetLoggedInPrincipalFromKeytab() {
   if (!g_kinit_ctx) return boost::none;
   return g_kinit_ctx->principal_str();
+}
+
+boost::optional<string> GetLoggedInUsernameFromKeytab() {
+  if (!g_kinit_ctx) return boost::none;
+  return g_kinit_ctx->username_str();
 }
 
 Status InitKerberosForServer() {

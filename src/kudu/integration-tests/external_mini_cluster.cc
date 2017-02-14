@@ -148,10 +148,15 @@ Status ExternalMiniCluster::Start() {
   if (opts_.enable_kerberos) {
     kdc_.reset(new MiniKdc(opts_.mini_kdc_options));
     RETURN_NOT_OK(kdc_->Start());
-    RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("testuser"),
-                          "could not create client principal");
-    RETURN_NOT_OK_PREPEND(kdc_->Kinit("testuser"),
-                          "could not kinit as client");
+    RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("test-admin"),
+                          "could not create admin principal");
+    RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("test-user"),
+                          "could not create user principal");
+    RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("joe-interloper"),
+                          "could not create unauthorized principal");
+
+    RETURN_NOT_OK_PREPEND(kdc_->Kinit("test-admin"),
+                          "could not kinit as admin");
     RETURN_NOT_OK_PREPEND(kdc_->SetKrb5Environment(),
                           "could not set krb5 client env");
   }
@@ -607,6 +612,8 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   extra_flags_.push_back(Substitute("--keytab_file=$0", ktpath));
   extra_flags_.push_back(Substitute("--principal=$0", spn));
   extra_flags_.push_back("--rpc_authentication=required");
+  extra_flags_.push_back("--superuser_acl=test-admin");
+  extra_flags_.push_back("--user_acl=test-user");
   return Status::OK();
 }
 

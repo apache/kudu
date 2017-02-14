@@ -36,6 +36,20 @@ class MasterServiceImpl : public MasterServiceIf {
  public:
   explicit MasterServiceImpl(Master* server);
 
+  // Authorize an RPC call which must be from a client.
+  bool AuthorizeClient(const google::protobuf::Message* req,
+                       google::protobuf::Message* resp,
+                       rpc::RpcContext *context) override;
+
+  // Authorize an RPC call which must be from within the Kudu service.
+  bool AuthorizeService(const google::protobuf::Message* req,
+                        google::protobuf::Message* resp,
+                        rpc::RpcContext *context) override;
+
+  bool AuthorizeClientOrService(const google::protobuf::Message* req,
+                                google::protobuf::Message* resp,
+                                rpc::RpcContext *context) override;
+
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
                     rpc::RpcContext* rpc) OVERRIDE;

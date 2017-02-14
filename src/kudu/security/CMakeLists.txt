@@ -58,9 +58,11 @@ set(SECURITY_SRCS
   ca/cert_management.cc
   cert.cc
   crypto.cc
+  kerberos_util.cc
   init.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
+  simple_acl.cc
   tls_context.cc
   tls_handshake.cc
   tls_socket.cc

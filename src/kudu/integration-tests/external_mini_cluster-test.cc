@@ -62,7 +62,7 @@ void SmokeTestKerberizedCluster(const ExternalMiniClusterOptions& opts) {
   SleepFor(MonoDelta::FromSeconds(10));
 
   // Re-kinit for the client, since the client's ticket would have expired as well.
-  ASSERT_OK(cluster.kdc()->Kinit("testuser"));
+  ASSERT_OK(cluster.kdc()->Kinit("test-admin"));
 
   // Restart the master, and make sure the tserver is still able to reconnect and
   // authenticate.

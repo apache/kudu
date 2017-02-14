@@ -22,21 +22,35 @@ import "kudu/rpc/rpc_header.proto";
 import "kudu/tserver/tserver.proto";
 
 service TabletServerService {
+  // Set the default authz method to something invalid, so that if
+  // we forget to set the option on a new RPC call, we'll get a build
+  // failure.
+  option (kudu.rpc.default_authz_method) = "MUST_SET_AUTHZ_PER_RPC";
 
-  rpc Ping(PingRequestPB) returns (PingResponsePB);
+  rpc Ping(PingRequestPB) returns (PingResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
+  }
   rpc Write(WriteRequestPB) returns (WriteResponsePB)  {
     option (kudu.rpc.track_rpc_result) = true;
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
-  rpc Scan(ScanRequestPB) returns (ScanResponsePB);
-  rpc ScannerKeepAlive(ScannerKeepAliveRequestPB) returns (ScannerKeepAliveResponsePB);
-  rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB);
+  rpc Scan(ScanRequestPB) returns (ScanResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc ScannerKeepAlive(ScannerKeepAliveRequestPB) returns (ScannerKeepAliveResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
+  rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
   // Run full-scan data checksum on a tablet to verify data integrity.
   //
   // TODO: Consider refactoring this as a scan that runs a checksum aggregation
   // function.
-  rpc Checksum(ChecksumRequestPB)
-      returns (ChecksumResponsePB);
+  rpc Checksum(ChecksumRequestPB) returns (ChecksumResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 }
 
 message ChecksumRequestPB {

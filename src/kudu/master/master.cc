@@ -141,9 +141,9 @@ Status Master::StartAsync() {
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
   gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(
-      metric_entity(), result_tracker(), catalog_manager_.get()));
+      this, catalog_manager_.get()));
   gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
-      fs_manager_.get(), catalog_manager_.get(), metric_entity(), result_tracker()));
+      this, catalog_manager_.get()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(impl)));
   RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));

@@ -42,6 +42,9 @@ RWMutex* KerberosReinitLock();
 // If the server has not logged in from a keytab, returns boost::none.
 boost::optional<std::string> GetLoggedInPrincipalFromKeytab();
 
+// Same, but returns the mapped short username.
+boost::optional<std::string> GetLoggedInUsernameFromKeytab();
+
 // Canonicalize the given principal name by adding '@DEFAULT_REALM' in the case that
 // the principal has no realm.
 //

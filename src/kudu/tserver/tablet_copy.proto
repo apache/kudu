@@ -27,6 +27,8 @@ import "kudu/util/pb_util.proto";
 
 // RaftConfig tablet copy RPC calls.
 service TabletCopyService {
+  option (kudu.rpc.default_authz_method) = "AuthorizeServiceUser";
+
   // Establish a tablet copy session.
   rpc BeginTabletCopySession(BeginTabletCopySessionRequestPB)
       returns (BeginTabletCopySessionResponsePB);
