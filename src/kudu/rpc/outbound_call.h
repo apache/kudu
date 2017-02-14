@@ -30,6 +30,7 @@
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -52,36 +53,6 @@ class InboundTransfer;
 class RpcCallInProgressPB;
 class RpcController;
 
-// Client-side user credentials, such as a user's username & password.
-// In the future, we will add Kerberos credentials.
-//
-// TODO(mpercy): this is actually used server side too -- should
-// we instead introduce a RemoteUser class or something?
-// TODO(todd): this should move into a standalone header.
-class UserCredentials {
- public:
-   UserCredentials();
-
-  // Real user.
-  bool has_real_user() const;
-  void set_real_user(const std::string& real_user);
-  const std::string& real_user() const { return real_user_; }
-
-  // Copy state from another object to this one.
-  void CopyFrom(const UserCredentials& other);
-
-  // Returns a string representation of the object, not including the password field.
-  std::string ToString() const;
-
-  std::size_t HashCode() const;
-  bool Equals(const UserCredentials& other) const;
-
- private:
-  // Remember to update HashCode() and Equals() when new fields are added.
-  std::string real_user_;
-
-  DISALLOW_COPY_AND_ASSIGN(UserCredentials);
-};
 
 // Used to key on Connection information.
 // For use as a key in an unordered STL collection, use ConnectionIdHash and ConnectionIdEqual.

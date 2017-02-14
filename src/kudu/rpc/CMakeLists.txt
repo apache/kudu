@@ -66,6 +66,7 @@ set(KRPC_SRCS
     service_if.cc
     service_pool.cc
     service_queue.cc
+    user_credentials.cc
     transfer.cc
 )
 

@@ -354,41 +354,6 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
 }
 
 ///
-/// UserCredentials
-///
-
-UserCredentials::UserCredentials() {}
-
-bool UserCredentials::has_real_user() const {
-  return !real_user_.empty();
-}
-
-void UserCredentials::set_real_user(const string& real_user) {
-  real_user_ = real_user;
-}
-
-void UserCredentials::CopyFrom(const UserCredentials& other) {
-  real_user_ = other.real_user_;
-}
-
-string UserCredentials::ToString() const {
-  // Does not print the password.
-  return StringPrintf("{real_user=%s}", real_user_.c_str());
-}
-
-size_t UserCredentials::HashCode() const {
-  size_t seed = 0;
-  if (has_real_user()) {
-    boost::hash_combine(seed, real_user());
-  }
-  return seed;
-}
-
-bool UserCredentials::Equals(const UserCredentials& other) const {
-  return real_user() == other.real_user();
-}
-
-///
 /// ConnectionId
 ///
 

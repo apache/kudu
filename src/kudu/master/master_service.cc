@@ -30,7 +30,7 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/rpc/outbound_call.h" // for UserCredentials
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
