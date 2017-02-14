@@ -165,7 +165,7 @@ Status Master::InitCatalogManager() {
   return Status::OK();
 }
 
-Status Master::WaitForCatalogManagerInit() {
+Status Master::WaitForCatalogManagerInit() const {
   CHECK_EQ(state_, kRunning);
 
   return init_status_.Get();

@@ -52,15 +52,15 @@ class MiniMaster {
 
   Status StartDistributedMaster(const std::vector<uint16_t>& peer_ports);
 
-  Status WaitForCatalogManagerInit();
-
-  void Shutdown();
-
-  bool is_running() const { return running_; }
-
   // Restart the master on the same ports as it was previously bound.
   // Requires that the master is currently started.
   Status Restart();
+
+  void Shutdown();
+
+  Status WaitForCatalogManagerInit() const;
+
+  bool is_running() const { return running_; }
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
@@ -74,13 +74,13 @@ class MiniMaster {
   std::string bound_rpc_addr_str() const;
 
  private:
-  Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                       const std::vector<uint16_t>& peer_ports);
-
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
 
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port,
                       MasterOptions* options);
+
+  Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
+                                       const std::vector<uint16_t>& peer_ports);
 
   bool running_;
 

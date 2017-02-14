@@ -58,10 +58,16 @@ Status MiniMaster::Start() {
   return master_->WaitForCatalogManagerInit();
 }
 
-
 Status MiniMaster::StartDistributedMaster(const vector<uint16_t>& peer_ports) {
   CHECK(!running_);
   return StartDistributedMasterOnPorts(rpc_port_, 0, peer_ports);
+}
+
+Status MiniMaster::Restart() {
+  CHECK(!running_);
+  RETURN_NOT_OK(StartOnPorts(bound_rpc_.port(), bound_http_.port()));
+  CHECK(running_);
+  return WaitForCatalogManagerInit();
 }
 
 void MiniMaster::Shutdown() {
@@ -72,6 +78,29 @@ void MiniMaster::Shutdown() {
   }
   running_ = false;
   master_.reset();
+}
+
+Status MiniMaster::WaitForCatalogManagerInit() const {
+  return master_->WaitForCatalogManagerInit();
+}
+
+const Sockaddr MiniMaster::bound_rpc_addr() const {
+  CHECK(running_);
+  return master_->first_rpc_address();
+}
+
+const Sockaddr MiniMaster::bound_http_addr() const {
+  CHECK(running_);
+  return master_->first_http_address();
+}
+
+std::string MiniMaster::permanent_uuid() const {
+  CHECK(master_);
+  return DCHECK_NOTNULL(master_->fs_manager())->uuid();
+}
+
+std::string MiniMaster::bound_rpc_addr_str() const {
+  return bound_rpc_addr().ToString();
 }
 
 Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
@@ -114,36 +143,6 @@ Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web
   opts.master_addresses = peer_addresses;
 
   return StartOnPorts(rpc_port, web_port, &opts);
-}
-
-Status MiniMaster::Restart() {
-  CHECK(!running_);
-  RETURN_NOT_OK(StartOnPorts(bound_rpc_.port(), bound_http_.port()));
-  CHECK(running_);
-  return WaitForCatalogManagerInit();
-}
-
-Status MiniMaster::WaitForCatalogManagerInit() {
-  return master_->WaitForCatalogManagerInit();
-}
-
-const Sockaddr MiniMaster::bound_rpc_addr() const {
-  CHECK(running_);
-  return master_->first_rpc_address();
-}
-
-const Sockaddr MiniMaster::bound_http_addr() const {
-  CHECK(running_);
-  return master_->first_http_address();
-}
-
-std::string MiniMaster::permanent_uuid() const {
-  CHECK(master_);
-  return DCHECK_NOTNULL(master_->fs_manager())->uuid();
-}
-
-std::string MiniMaster::bound_rpc_addr_str() const {
-  return bound_rpc_addr().ToString();
 }
 
 } // namespace master

@@ -64,7 +64,7 @@ class Master : public server::ServerBase {
   Status Start();
 
   Status StartAsync();
-  Status WaitForCatalogManagerInit();
+  Status WaitForCatalogManagerInit() const;
 
   // Wait until this Master's catalog manager instance is the leader and is ready.
   // This method is intended for use by unit tests.
