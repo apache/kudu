@@ -539,7 +539,9 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
     jw.String("http_addrs");
     jw.StartArray();
     for (const HostPortPB& host_port : reg.http_addresses()) {
-      jw.String(Substitute("http://$0:$1", host_port.host(), host_port.port()));
+      jw.String(Substitute("$0://$1:$2",
+                           reg.https_enabled() ? "https" : "http",
+                           host_port.host(), host_port.port()));
     }
     jw.EndArray();
 
@@ -586,7 +588,8 @@ string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
   desc.GetRegistration(&reg);
 
   if (reg.http_addresses().size() > 0) {
-    return Substitute("<a href=\"http://$0:$1/tablet?id=$2\">$3:$4</a>",
+    return Substitute("<a href=\"$0://$1:$2/tablet?id=$3\">$4:$5</a>",
+                      reg.https_enabled() ? "https" : "http",
                       reg.http_addresses(0).host(),
                       reg.http_addresses(0).port(),
                       EscapeForHtmlToString(tablet_id),
@@ -602,7 +605,8 @@ string MasterPathHandlers::RegistrationToHtml(
     const std::string& link_text) const {
   string link_html = EscapeForHtmlToString(link_text);
   if (reg.http_addresses().size() > 0) {
-    link_html = Substitute("<a href=\"http://$0:$1/\">$2</a>",
+    link_html = Substitute("<a href=\"$0://$1:$2/\">$3</a>",
+                           reg.https_enabled() ? "https" : "http",
                            reg.http_addresses(0).host(),
                            reg.http_addresses(0).port(), link_html);
   }

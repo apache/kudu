@@ -86,6 +86,11 @@ message ServerRegistrationPB {
   repeated HostPortPB rpc_addresses = 1;
   repeated HostPortPB http_addresses = 2;
   optional string software_version = 3;
+
+  // True if HTTPS has been enabled for the web interface.
+  // In this case, https:// URLs should be generated for the above
+  // 'http_addresses' field.
+  optional bool https_enabled = 4;
 }
 
 message ServerEntryPB {

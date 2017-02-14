@@ -24,12 +24,14 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -46,6 +48,7 @@ namespace kudu {
 
 using std::vector;
 using std::shared_ptr;
+using std::string;
 using master::MiniMaster;
 using master::TSDescriptor;
 using master::TabletLocationsPB;
@@ -73,21 +76,25 @@ class RegistrationTest : public KuduTest {
     cluster_->Shutdown();
   }
 
-  void CheckTabletServersPage() {
+  void CheckTabletServersPage(string* contents = nullptr) {
     EasyCurl c;
     faststring buf;
     string addr = cluster_->mini_master()->bound_http_addr().ToString();
     ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/tablet-servers", addr),
                                 &buf));
+    string buf_str = buf.ToString();
 
     // Should include the TS UUID
     string expected_uuid =
       cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid();
-    ASSERT_STR_CONTAINS(buf.ToString(), expected_uuid);
+    ASSERT_STR_CONTAINS(buf_str, expected_uuid);
 
     // Should check that the TS software version is included on the page.
     // tserver version should be the same as returned by GetShortVersionString()
-    ASSERT_STR_CONTAINS(buf.ToString(), VersionInfo::GetShortVersionString());
+    ASSERT_STR_CONTAINS(buf_str, VersionInfo::GetShortVersionString());
+    if (contents != nullptr) {
+      *contents = std::move(buf_str);
+    }
   }
 
 
@@ -206,6 +213,35 @@ TEST_F(RegistrationTest, TestTSGetsSignedX509Certificate) {
   AssertEventually([&](){
       ASSERT_TRUE(ts->server()->tls_context().has_signed_cert());
     }, MonoDelta::FromSeconds(10));
+}
+
+// Test that, if the tserver has HTTPS enabled, the master links to it
+// via https:// URLs and not http://.
+TEST_F(RegistrationTest, TestExposeHttpsURLs) {
+  MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+  string password;
+  WebserverOptions* opts = &ts->options()->webserver_opts;
+  ASSERT_OK(security::CreateTestSSLCerts(GetTestDataDirectory(),
+                                         &opts->certificate_file,
+                                         &opts->private_key_file,
+                                         &password));
+  opts->private_key_password_cmd = strings::Substitute("echo $0", password);
+  ts->Shutdown();
+  ASSERT_OK(ts->Start());
+
+  // The URL displayed on the page uses a hostname. Rather than
+  // dealing with figuring out what the hostname should be, just
+  // use a more permissive regex which doesn't check the host.
+  string expected_url_regex = strings::Substitute(
+      "https://[a-zA-Z0-9.-]+:$0/", opts->port);
+
+  // Need "eventually" here because the tserver may take a few seconds
+  // to re-register while starting up.
+  AssertEventually([&](){
+      string contents;
+      NO_FATALS(CheckTabletServersPage(&contents));
+      ASSERT_STR_MATCHES(contents, expected_url_regex);
+    });
 }
 
 } // namespace kudu

@@ -311,6 +311,7 @@ Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
                         "Failed to add HTTP addresses to registration");
   reg->set_software_version(VersionInfo::GetShortVersionString());
 
+  reg->set_https_enabled(server_->web_server()->IsSecure());
   return Status::OK();
 }
 
