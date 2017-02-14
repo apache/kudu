@@ -39,6 +39,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/logging.h"
@@ -239,7 +240,7 @@ static Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
     default:
       return Status::NotSupported(Substitute("Unknown create mode $0", mode));
   }
-  const int f = open(filename.c_str(), flags, 0644);
+  const int f = open(filename.c_str(), flags, 0666);
   if (f < 0) {
     return IOError(filename, errno);
   }
@@ -880,7 +881,7 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::CreateDir", "path", name);
     ThreadRestrictions::AssertIOAllowed();
     Status result;
-    if (mkdir(name.c_str(), 0755) != 0) {
+    if (mkdir(name.c_str(), 0777) != 0) {
       result = IOError(name, errno);
     }
     return result;
@@ -1046,7 +1047,7 @@ class PosixEnv : public Env {
     ThreadRestrictions::AssertIOAllowed();
     *lock = nullptr;
     Status result;
-    int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
+    int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0666);
     if (fd < 0) {
       result = IOError(fname, errno);
     } else if (LockOrUnlock(fd, true) == -1) {
@@ -1342,6 +1343,28 @@ class PosixEnv : public Env {
     return string(u.release);
   }
 
+  Status EnsureFileModeAdheresToUmask(const string& path) override {
+    struct stat s;
+    if (stat(path.c_str(), &s) != 0) {
+      return IOError("stat", errno);
+    }
+    CHECK_NE(g_parsed_umask, -1);
+    if (s.st_mode & g_parsed_umask) {
+      uint32_t old_perms = s.st_mode & ACCESSPERMS;
+      uint32_t new_perms = old_perms & ~g_parsed_umask;
+      LOG(WARNING) << "Path " << path << " has permissions "
+                   << StringPrintf("%03o", old_perms)
+                   << " which are less restrictive than current umask value "
+                   << StringPrintf("%03o", g_parsed_umask)
+                   << ": resetting permissions to "
+                   << StringPrintf("%03o", new_perms);
+      if (chmod(path.c_str(), new_perms) != 0) {
+        return IOError("chmod", errno);
+      }
+    }
+    return Status::OK();
+  }
+
  private:
   // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {
@@ -1358,6 +1381,13 @@ class PosixEnv : public Env {
     if (created_fd < 0) {
       return IOError(Substitute("Call to mkstemp() failed on name template $0", name_template),
                      errno);
+    }
+    // mkstemp defaults to making files with permissions 0600. But, if the
+    // user configured a more permissive umask, then we ensure that the
+    // resulting file gets the desired (wider) permissions.
+    uint32_t new_perms = 0666 & ~g_parsed_umask;
+    if (new_perms != 0600) {
+      CHECK_ERR(fchmod(created_fd, new_perms));
     }
     *fd = created_fd;
     *created_filename = fname.get();

@@ -15,19 +15,23 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <memory>
+#include <unordered_set>
 
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <unistd.h>
-#include <unordered_set>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/test_macros.h"
@@ -39,6 +43,8 @@ using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+
+DECLARE_string(umask);
 
 namespace kudu {
 
@@ -278,6 +284,47 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   n_tmp_files = 0;
   ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
   ASSERT_EQ(0, n_tmp_files);
+}
+
+namespace {
+
+string FilePermsAsString(const string& path) {
+  struct stat s;
+  CHECK_ERR(stat(path.c_str(), &s));
+  return StringPrintf("%03o", s.st_mode & ACCESSPERMS);
+}
+
+} // anonymous namespace
+
+TEST_F(FsManagerTestBase, TestUmask) {
+  // With the default umask, we should create files with permissions 600
+  // and directories with permissions 700.
+  ASSERT_EQ(077, g_parsed_umask) << "unexpected default value";
+  string root = GetTestPath("fs_root");
+  EXPECT_EQ("700", FilePermsAsString(root));
+  EXPECT_EQ("700", FilePermsAsString(fs_manager()->GetConsensusMetadataDir()));
+  EXPECT_EQ("600", FilePermsAsString(fs_manager()->GetInstanceMetadataPath(root)));
+
+  // With umask 007, we should create files with permissions 660
+  // and directories with 770.
+  FLAGS_umask = "007";
+  HandleCommonFlags();
+  ASSERT_EQ(007, g_parsed_umask);
+  root = GetTestPath("new_root");
+  ReinitFsManager({ root }, { root });
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  EXPECT_EQ("770", FilePermsAsString(root));
+  EXPECT_EQ("770", FilePermsAsString(fs_manager()->GetConsensusMetadataDir()));
+  EXPECT_EQ("660", FilePermsAsString(fs_manager()->GetInstanceMetadataPath(root)));
+
+  // If we change the umask back to being restrictive and re-open the filesystem,
+  // the permissions on the root dir should be fixed accordingly.
+  FLAGS_umask = "077";
+  HandleCommonFlags();
+  ASSERT_EQ(077, g_parsed_umask);
+  ReinitFsManager({ root }, { root });
+  ASSERT_OK(fs_manager()->Open());
+  EXPECT_EQ("700", FilePermsAsString(root));
 }
 
 } // namespace kudu

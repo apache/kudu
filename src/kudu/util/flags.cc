@@ -23,6 +23,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <gflags/gflags.h>
 #include <gperftools/heap-profiler.h>
 
@@ -64,6 +67,31 @@ TAG_FLAG(heap_profile_path, advanced);
 DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
 TAG_FLAG(disable_core_dumps, advanced);
 TAG_FLAG(disable_core_dumps, evolving);
+
+DEFINE_string(umask, "077",
+              "The umask that will be used when creating files and directories. "
+              "Permissions of top-level data directories will also be modified at "
+              "start-up to conform to the given umask. Changing this value may "
+              "enable unauthorized local users to read or modify data stored by Kudu.");
+TAG_FLAG(umask, advanced);
+
+static bool ValidateUmask(const char* /*flagname*/, const string& value) {
+  uint32_t parsed;
+  if (!safe_strtou32_base(value.c_str(), &parsed, 8)) {
+    LOG(ERROR) << "Invalid umask: must be an octal string";
+    return false;
+  }
+
+  // Verify that the umask doesn't restrict the permissions of the owner.
+  // If it did, we'd end up creating files that we can't read.
+  if ((parsed & 0700) != 0) {
+    LOG(ERROR) << "Invalid umask value: must not restrict owner permissions";
+    return false;
+  }
+  return true;
+}
+static bool dummy = google::RegisterFlagValidator(&FLAGS_umask, &ValidateUmask);
+
 
 DEFINE_bool(unlock_experimental_flags, false,
             "Unlock flags marked as 'experimental'. These flags are not guaranteed to "
@@ -228,6 +256,10 @@ DECLARE_bool(version);
 TAG_FLAG(version, stable);
 
 namespace kudu {
+
+// After flags have been parsed, the umask value is filled in here.
+uint32_t g_parsed_umask = -1;
+
 namespace {
 
 void AppendXMLTag(const char* tag, const string& txt, string* r) {
@@ -320,6 +352,17 @@ void CheckFlagsAllowed() {
   }
 }
 
+void SetUmask() {
+  // We already validated with a nice error message using the ValidateUmask
+  // FlagValidator above.
+  CHECK(safe_strtou32_base(FLAGS_umask.c_str(), &g_parsed_umask, 8));
+  uint32_t old_mask = umask(g_parsed_umask);
+  if (old_mask != g_parsed_umask) {
+    VLOG(2) << "Changed umask from " << StringPrintf("%03o", old_mask) << " to "
+            << StringPrintf("%03o", g_parsed_umask);
+  }
+}
+
 } // anonymous namespace
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
@@ -349,6 +392,8 @@ void HandleCommonFlags() {
   if (FLAGS_disable_core_dumps) {
     DisableCoreDumps();
   }
+
+  SetUmask();
 
 #ifdef TCMALLOC_ENABLED
   if (FLAGS_enable_process_lifetime_heap_profiling) {

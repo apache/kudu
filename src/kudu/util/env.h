@@ -312,6 +312,15 @@ class Env {
   // Gets the kernel release string for this machine.
   virtual std::string GetKernelRelease() = 0;
 
+  // Ensure that the file with the given path has permissions which adhere
+  // to the current configured umask (from flags.h). If the permissions are
+  // wider than the current umask, then a warning is logged and the permissions
+  // are fixed.
+  //
+  // Returns a bad Status if the file does not exist or the permissions cannot
+  // be changed.
+  virtual Status EnsureFileModeAdheresToUmask(const std::string& path) = 0;
+
   // Special string injected into file-growing operations' random failures
   // (if enabled).
   //

@@ -242,6 +242,10 @@ class FsManager {
   // Logs warnings in case of errors.
   void CleanTmpFiles();
 
+  // Checks that the permissions of the root data directories conform to the
+  // configured umask, and tightens them as necessary if they do not.
+  void CheckAndFixPermissions();
+
   static const char *kDataDirName;
   static const char *kTabletMetadataDirName;
   static const char *kWalDirName;

@@ -33,6 +33,7 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -42,6 +43,8 @@
 #include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/errno.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
@@ -74,7 +77,8 @@ DEFINE_string(fs_data_dirs, "",
               "block directory.");
 TAG_FLAG(fs_data_dirs, stable);
 
-using google::protobuf::Message;
+DECLARE_string(umask);
+
 using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
@@ -230,9 +234,10 @@ void FsManager::InitBlockManager() {
 Status FsManager::Open() {
   RETURN_NOT_OK(Init());
 
-  // Remove leftover tmp files
+  // Remove leftover tmp files and fix permissions.
   if (!read_only_) {
     CleanTmpFiles();
+    CheckAndFixPermissions();
   }
 
   for (const string& root : canonicalized_all_fs_roots_) {
@@ -510,6 +515,14 @@ void FsManager::CleanTmpFiles() {
     } else {
       LOG(WARNING) << "Unable to read directory: " << s.ToString();
     }
+  }
+}
+
+void FsManager::CheckAndFixPermissions() {
+  for (const string& root : canonicalized_all_fs_roots_) {
+    WARN_NOT_OK(env_->EnsureFileModeAdheresToUmask(root),
+                Substitute("could not check and fix permissions for path: $0",
+                           root));
   }
 }
 
