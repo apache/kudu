@@ -244,6 +244,16 @@ cdef class Client:
             KuduClientBuilder builder
             TimeDelta timeout
 
+        # Python programs will often have already imported _ssl, which
+        # has the side effect of initializing OpenSSL. So, we detect
+        # whether _ssl is present, and if we can import it, we disable
+        # Kudu's initialization to avoid a conflict.
+        try:
+          import _ssl
+          DisableOpenSSLInitialization()
+        except:
+          pass
+
         if isinstance(addr_or_addrs, six.string_types):
             addr_or_addrs = [addr_or_addrs]
         elif not isinstance(addr_or_addrs, list):

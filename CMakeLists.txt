@@ -844,8 +844,8 @@ ADD_THIRDPARTY_LIB(squeasel
 ##
 ## Version 1.0.0 or higher is required because we are using the following
 ## features introduced started OpenSSL 1.0.0:
-##   * CRYPTO_THREADID and associated functions
 ##   * The new breed of functions to work with the X509_EXTENSION stack
+##   * automatic usage of &errno as a safe per-thread identifier
 ##
 ## If having multiple OpenSSL libraries installed on the system,
 ## use the OPENSSL_ROOT_DIR cmake flag to specify where to look for the proper

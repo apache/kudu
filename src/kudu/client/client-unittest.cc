@@ -156,6 +156,13 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_BadColumnName) {
             b.Build(&s).ToString());
 }
 
+TEST(ClientUnitTest, TestDisableSslFailsIfNotInitialized) {
+  // If we try to disable SSL initialization without setting up SSL properly,
+  // it should return an error.
+  Status s = DisableOpenSSLInitialization();
+  ASSERT_STR_MATCHES(s.ToString(), "Locking callback not initialized");
+}
+
 namespace {
 Status TestFunc(const MonoTime& deadline, bool* retry, int* counter) {
   (*counter)++;

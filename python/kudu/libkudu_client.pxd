@@ -469,6 +469,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         PartitionType_Exclusive " kudu::client::KuduTableCreator::EXCLUSIVE_BOUND"
         PartitionType_Inclusive " kudu::client::KuduTableCreator::INCLUSIVE_BOUND"
 
+    Status DisableOpenSSLInitialization()
+
     cdef cppclass KuduClient:
 
         Status DeleteTable(const string& table_name)

@@ -60,6 +60,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/sasl_common.h"
+#include "kudu/security/openssl_util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -183,6 +184,10 @@ Status SetInternalSignalNumber(int signum) {
 
 Status DisableSaslInitialization() {
   return kudu::rpc::DisableSaslInitialization();
+}
+
+Status DisableOpenSSLInitialization() {
+  return kudu::security::DisableOpenSSLInitialization();
 }
 
 string GetShortVersionString() {

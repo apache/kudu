@@ -50,9 +50,6 @@ using ca::CertRequestGenerator;
 template<> struct SslTypeTraits<SSL> {
   static constexpr auto free = &SSL_free;
 };
-template<> struct SslTypeTraits<SSL_CTX> {
-  static constexpr auto free = &SSL_CTX_free;
-};
 template<> struct SslTypeTraits<X509_STORE_CTX> {
   static constexpr auto free = &X509_STORE_CTX_free;
 };

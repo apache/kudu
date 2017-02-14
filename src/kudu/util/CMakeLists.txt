@@ -266,10 +266,8 @@ ADD_EXPORTABLE_LIBRARY(kudu_util_compression
 
 if(NOT NO_TESTS)
   add_library(kudu_test_util
-    test_util.cc
-    curl_util.cc)
+    test_util.cc)
   target_link_libraries(kudu_test_util
-    ${CURL_LIBRARIES}
     gflags
     glog
     gmock
@@ -279,6 +277,17 @@ if(NOT NO_TESTS)
     target_link_libraries(kudu_test_util
       vmem)
   endif()
+
+#######################################
+# kudu_curl_util
+#######################################
+  add_library(kudu_curl_util
+    curl_util.cc)
+  target_link_libraries(kudu_curl_util
+    security
+    ${CURL_LIBRARIES}
+    glog
+    gutil)
 
 #######################################
 # kudu_test_main

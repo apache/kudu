@@ -162,6 +162,7 @@ target_link_libraries(tserver_test_util
 #########################################
 
 set(KUDU_TEST_LINK_LIBS
+  kudu_curl_util
   tserver
   tserver_test_util
   ${KUDU_MIN_TEST_LIBS})

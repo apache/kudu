@@ -141,6 +141,31 @@ Status KUDU_EXPORT SetInternalSignalNumber(int signum);
 /// implementation if they are choosing to handle SASL initialization manually.
 Status KUDU_EXPORT DisableSaslInitialization();
 
+
+/// Disable initialization of the OpenSSL library. Clients should call this
+/// method and manually initialize OpenSSL before using the Kudu client if
+/// they are also using OpenSSL for any other purpose. If this method is not
+/// called, Kudu will attempt to initialize OpenSSL, which may trigger a crash
+/// if concurrent with another thread's initialization attempt.
+///
+/// If this function is called, it must be called prior to the first construction
+/// of a KuduClient object.
+///
+/// @note If OpenSSL initialization is disabled, Kudu depends on the embedding
+/// application to take care of initialization. When this function is called,
+/// Kudu will attempt to verify that the appropriate initialization steps have
+/// been taken, and return a bad Status if they have not. Applications may
+/// use the following code to initialize OpenSSL:
+///
+/// @code
+///   SSL_load_error_strings();
+///   SSL_library_init();
+///   OpenSSL_add_all_algorithms();
+///   RAND_poll(); // or an equivalent RAND setup.
+///   CRYPTO_set_locking_callback(MyAppLockingCallback);
+/// @endcode
+Status KUDU_EXPORT DisableOpenSSLInitialization();
+
 /// @return Short version info, i.e. a single-line version string
 ///   identifying the Kudu client.
 std::string KUDU_EXPORT GetShortVersionString();

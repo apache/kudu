@@ -17,10 +17,12 @@
 
 #include "kudu/util/curl_util.h"
 
-#include "kudu/gutil/strings/substitute.h"
 
 #include <curl/curl.h>
 #include <glog/logging.h>
+
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/security/openssl_util.h"
 
 namespace kudu {
 
@@ -45,6 +47,10 @@ size_t WriteCallback(void* buffer, size_t size, size_t nmemb, void* user_ptr) {
 } // anonymous namespace
 
 EasyCurl::EasyCurl() {
+  // Use our own SSL initialization, and disable curl's.
+  // Both of these calls are idempotent.
+  security::InitializeOpenSSL();
+  CHECK_EQ(0, curl_global_init(CURL_GLOBAL_DEFAULT & ~CURL_GLOBAL_SSL));
   curl_ = curl_easy_init();
   CHECK(curl_) << "Could not init curl";
 }

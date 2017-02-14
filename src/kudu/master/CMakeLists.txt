@@ -63,7 +63,13 @@ target_link_libraries(master
   tserver_service_proto)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS master master_proto kudu_client ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS
+  ${KUDU_MIN_TEST_LIBS}
+  kudu_client
+  kudu_curl_util
+  master
+  master_proto)
+
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")

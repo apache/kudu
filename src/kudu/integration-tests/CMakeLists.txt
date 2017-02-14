@@ -39,6 +39,7 @@ target_link_libraries(integration-tests
   ksck
   kudu_client
   kudu_client_test_util
+  kudu_curl_util
   kudu_fs
   kudu_test_util
   security-test)
