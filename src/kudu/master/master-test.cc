@@ -16,6 +16,7 @@
 // under the License.
 
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include <algorithm>
 #include <memory>
@@ -36,9 +37,11 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/version_info.h"
 
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
@@ -149,6 +152,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ServerRegistrationPB fake_reg;
   MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
   MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
+  fake_reg.set_software_version(VersionInfo::GetShortVersionString());
 
   {
     TSHeartbeatRequestPB req;
@@ -278,6 +282,28 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_EQ(1, resp.servers_size());
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
     ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
+  }
+
+  // Ensure that /dump-entities endpoint also shows the faked server.
+  {
+    EasyCurl c;
+    faststring buf;
+    string addr = mini_master_->bound_http_addr().ToString();
+    ASSERT_OK(c.FetchURL(Substitute("http://$0/dump-entities", addr), &buf))
+    rapidjson::Document doc;
+    doc.Parse<0>(buf.ToString().c_str());
+    const rapidjson::Value& tablet_servers = doc["tablet_servers"];
+    ASSERT_EQ(tablet_servers.Size(), 1);
+    const rapidjson::Value& tablet_server = tablet_servers[rapidjson::SizeType(0)];
+    ASSERT_STREQ("localhost:1000",
+        tablet_server["rpc_addrs"][rapidjson::SizeType(0)].GetString());
+    ASSERT_STREQ("http://localhost:2000",
+        tablet_server["http_addrs"][rapidjson::SizeType(0)].GetString());
+    ASSERT_STREQ("my-ts-uuid", tablet_server["uuid"].GetString());
+    ASSERT_TRUE(tablet_server["millis_since_heartbeat"].GetInt64() >= 0);
+    ASSERT_EQ(true, tablet_server["live"].GetBool());
+    ASSERT_STREQ(VersionInfo::GetShortVersionString().c_str(),
+        tablet_server["version"].GetString());
   }
 
   // Ensure that trying to re-register with a different version is OK.

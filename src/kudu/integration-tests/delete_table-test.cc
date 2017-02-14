@@ -23,6 +23,7 @@
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/shared_ptr.h"
@@ -283,7 +284,10 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/dump-entities",
                                   cluster_->master()->bound_http_hostport().ToString()),
                        &entities_buf));
-  ASSERT_EQ("{\"tables\":[],\"tablets\":[]}", entities_buf.ToString());
+  rapidjson::Document doc;
+  doc.Parse<0>(entities_buf.ToString().c_str());
+  ASSERT_EQ(0, doc["tables"].Size());
+  ASSERT_EQ(0, doc["tablets"].Size());
 }
 
 // Test that a DeleteTablet RPC is rejected without a matching destination UUID.

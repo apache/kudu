@@ -516,6 +516,46 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
   }
   jw.EndArray();
 
+  jw.String("tablet_servers");
+  jw.StartArray();
+  vector<std::shared_ptr<TSDescriptor> > descs;
+  master_->ts_manager()->GetAllDescriptors(&descs);
+  for (const std::shared_ptr<TSDescriptor>& desc : descs) {
+    jw.StartObject();
+
+    jw.String("uuid");
+    jw.String(desc->permanent_uuid());
+
+    ServerRegistrationPB reg;
+    desc->GetRegistration(&reg);
+
+    jw.String("rpc_addrs");
+    jw.StartArray();
+    for (const HostPortPB& host_port : reg.rpc_addresses()) {
+      jw.String(Substitute("$0:$1", host_port.host(), host_port.port()));
+    }
+    jw.EndArray();
+
+    jw.String("http_addrs");
+    jw.StartArray();
+    for (const HostPortPB& host_port : reg.http_addresses()) {
+      jw.String(Substitute("http://$0:$1", host_port.host(), host_port.port()));
+    }
+    jw.EndArray();
+
+    jw.String("live");
+    jw.Bool(!desc->PresumedDead());
+
+    jw.String("millis_since_heartbeat");
+    jw.Int64(desc->TimeSinceHeartbeat().ToMilliseconds());
+
+    jw.String("version");
+    jw.String(reg.software_version());
+
+    jw.EndObject();
+  }
+  jw.EndArray();
+
   jw.EndObject();
 }
 
