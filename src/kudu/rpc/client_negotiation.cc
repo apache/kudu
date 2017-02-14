@@ -418,6 +418,7 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
 
   if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
       ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
+    TRACE("Negotiated auth-only TLS");
     return tls_handshake_.FinishNoWrap(*socket_);
   }
   return tls_handshake_.Finish(&socket_);

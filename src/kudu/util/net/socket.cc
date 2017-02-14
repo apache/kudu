@@ -299,7 +299,7 @@ Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
 bool Socket::IsLoopbackConnection() const {
   Sockaddr local, remote;
   if (!GetSocketAddress(&local).ok()) return false;
-  if (!GetSocketAddress(&remote).ok()) return false;
+  if (!GetPeerAddress(&remote).ok()) return false;
 
   // Compare without comparing ports.
   local.set_port(0);
