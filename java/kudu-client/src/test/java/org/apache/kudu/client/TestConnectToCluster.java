@@ -27,12 +27,10 @@ import java.util.List;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
 import org.junit.Test;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
 
 public class TestConnectToCluster {
 
@@ -161,9 +159,7 @@ public class TestConnectToCluster {
     // Here we basically do what AsyncKuduClient would do, add all the callbacks and then we also
     // add the responses. We then check for the right response.
 
-    Deferred<Master.GetTableLocationsResponsePB> d = new Deferred<>();
-
-    ConnectToCluster grrm = new ConnectToCluster(MASTERS, d);
+    ConnectToCluster grrm = new ConnectToCluster(MASTERS);
 
     Callback<Void, ConnectToClusterResponse> cb0 = grrm.callbackForNode(MASTERS.get(0));
     Callback<Void, ConnectToClusterResponse> cb1 = grrm.callbackForNode(MASTERS.get(1));
@@ -178,7 +174,7 @@ public class TestConnectToCluster {
     callTheRightCallback(cb2, eb2, response2);
 
     try {
-      d.join(); // Don't care about the response.
+      grrm.getDeferred().join(); // Don't care about the response.
       if ((expectedResponse instanceof Exception)) {
         fail("Should not work " + expectedResponse.getClass());
       } else {

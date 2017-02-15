@@ -34,8 +34,8 @@ import org.apache.kudu.util.Pair;
 public class ConnectToMasterRequest extends KuduRpc<ConnectToClusterResponse> {
   private static final String GET_MASTER_REGISTRATION = "GetMasterRegistration";
 
-  public ConnectToMasterRequest(KuduTable masterTable) {
-    super(masterTable);
+  public ConnectToMasterRequest() {
+    super(null); // no KuduTable
   }
 
   @Override

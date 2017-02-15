@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
@@ -37,6 +38,7 @@ import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.util.NetUtil;
 
 /**
@@ -71,11 +73,71 @@ final class ConnectToCluster {
    * @param responseD Deferred object that will hold the GetTableLocationsResponsePB object for
    *                  the master table.
    */
-  public ConnectToCluster(List<HostAndPort> masterAddrs,
-                          Deferred<Master.GetTableLocationsResponsePB> responseD) {
+  ConnectToCluster(List<HostAndPort> masterAddrs) {
     this.masterAddrs = masterAddrs;
-    this.responseD = responseD;
+    this.responseD = new Deferred<>();
     this.numMasters = masterAddrs.size();
+  }
+
+  public Deferred<GetTableLocationsResponsePB> getDeferred() {
+    return responseD;
+  }
+
+  private static Deferred<ConnectToClusterResponse> getMasterRegistration(
+      TabletClient masterClient, KuduRpc<?> parentRpc,
+      long defaultTimeoutMs) {
+    // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
+    // basically reuse in some way the master permits.
+    // TODO: is null below for table object ok?
+    ConnectToMasterRequest rpc = new ConnectToMasterRequest();
+    if (parentRpc != null) {
+      rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
+      rpc.setParentRpc(parentRpc);
+    } else {
+      rpc.setTimeoutMillis(defaultTimeoutMs);
+    }
+    Deferred<ConnectToClusterResponse> d = rpc.getDeferred();
+    rpc.attempt++;
+    masterClient.sendRpc(rpc);
+    return d;
+  }
+
+  /**
+   * Retrieve the master registration (see {@link ConnectToClusterResponse}
+   * from the leader master.
+   *
+   * @param masterAddresses the addresses of masters to fetch from
+   * @param parentRpc RPC that prompted a master lookup, can be null
+   * @param connCache the client's connection cache, used for creating connections
+   *                  to masters
+   * @param defaultTimeoutMs timeout to use for RPCs if the parentRpc has no timeout
+   * @return a Deferred object for the master replica's current registration
+   */
+  public static Deferred<GetTableLocationsResponsePB> run(
+      List<HostAndPort> masterAddresses,
+      KuduRpc<?> parentRpc,
+      ConnectionCache connCache,
+      long defaultTimeoutMs) {
+    ConnectToCluster connector = new ConnectToCluster(masterAddresses);
+
+    // Try to connect to each master. The ConnectToCluster instance
+    // waits until it gets a good response before firing the returned
+    // deferred.
+    for (HostAndPort hostAndPort : masterAddresses) {
+      Deferred<ConnectToClusterResponse> d;
+      TabletClient client = connCache.newMasterClient(hostAndPort);
+      if (client == null) {
+        String message = "Couldn't resolve this master's address " + hostAndPort.toString();
+        LOG.warn(message);
+        Status statusIOE = Status.IOError(message);
+        d = Deferred.fromError(new NonRecoverableException(statusIOE));
+      } else {
+        d = getMasterRegistration(client, parentRpc, defaultTimeoutMs);
+      }
+      d.addCallbacks(connector.callbackForNode(hostAndPort),
+          connector.errbackForNode(hostAndPort));
+    }
+    return connector.responseD;
   }
 
   /**
@@ -85,7 +147,8 @@ final class ConnectToCluster {
    *                    be valid.
    * @return The callback object that can be added to the RPC request.
    */
-  public Callback<Void, ConnectToClusterResponse> callbackForNode(HostAndPort hostAndPort) {
+  @VisibleForTesting
+  Callback<Void, ConnectToClusterResponse> callbackForNode(HostAndPort hostAndPort) {
     return new GetMasterRegistrationCB(hostAndPort);
   }
 
@@ -96,7 +159,8 @@ final class ConnectToCluster {
    *                    purposes.
    * @return The errback object that can be added to the RPC request.
    */
-  public Callback<Void, Exception> errbackForNode(HostAndPort hostAndPort) {
+  @VisibleForTesting
+  Callback<Void, Exception> errbackForNode(HostAndPort hostAndPort) {
     return new GetMasterRegistrationErrCB(hostAndPort);
   }
 

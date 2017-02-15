@@ -1067,29 +1067,9 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return An initialized Deferred object to hold the response.
    */
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
-    final Deferred<Master.GetTableLocationsResponsePB> responseD = new Deferred<>();
-    final ConnectToCluster connector =
-        new ConnectToCluster(masterAddresses, responseD);
-    for (HostAndPort hostAndPort : masterAddresses) {
-      Deferred<ConnectToClusterResponse> d;
-      // Note: we need to create a client for that host first, as there's a
-      // chicken and egg problem: since there is no source of truth beyond
-      // the master, the only way to get information about a master host is
-      // by making an RPC to that host.
-      TabletClient clientForHostAndPort = newMasterClient(hostAndPort);
-      if (clientForHostAndPort == null) {
-        String message = "Couldn't resolve this master's address " + hostAndPort.toString();
-        LOG.warn(message);
-        Status statusIOE = Status.IOError(message);
-        d = Deferred.fromError(new NonRecoverableException(statusIOE));
-      } else {
-        d = getMasterRegistration(clientForHostAndPort, parentRpc);
-      }
-      d.addCallbacks(connector.callbackForNode(hostAndPort), connector.errbackForNode(hostAndPort));
-    }
-    return responseD;
+    return ConnectToCluster.run(masterAddresses, parentRpc,
+        connectionCache, defaultAdminOperationTimeoutMs);
   }
-
 
   /**
    * Get all or some tablets for a given table. This may query the master multiple times if there
@@ -1483,46 +1463,6 @@ public class AsyncKuduClient implements AutoCloseable {
             return Deferred.fromResult(tablets.get(0));
           }
         });
-  }
-
-  /**
-   * Retrieve the master registration (see {@link ConnectToClusterResponse}
-   * for a replica.
-   * @param masterClient an initialized client for the master replica
-   * @param parentRpc RPC that prompted a master lookup, can be null
-   * @return a Deferred object for the master replica's current registration
-   */
-  Deferred<ConnectToClusterResponse> getMasterRegistration(
-      TabletClient masterClient, KuduRpc<?> parentRpc) {
-    // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
-    // basically reuse in some way the master permits.
-    ConnectToMasterRequest rpc = new ConnectToMasterRequest(masterTable);
-    if (parentRpc != null) {
-      rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
-      rpc.setParentRpc(parentRpc);
-    } else {
-      rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    }
-    Deferred<ConnectToClusterResponse> d = rpc.getDeferred();
-    rpc.attempt++;
-    masterClient.sendRpc(rpc);
-    return d;
-  }
-
-  /**
-   * If a live client already exists for the specified master server, returns that client;
-   * otherwise, creates a new client for the specified master server.
-   * @param masterHostPort The RPC host and port for the master server.
-   * @return A live and initialized client for the specified master server.
-   */
-  TabletClient newMasterClient(HostAndPort masterHostPort) {
-    // We should pass a UUID here but we have a chicken and egg problem, we first need to
-    // communicate with the masters to find out about them, and that's what we're trying to do.
-    // The UUID is used for logging, so instead we're passing the "master table name" followed by
-    // host and port which is enough to identify the node we're connecting to.
-    return connectionCache.newClient(
-        MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
-        masterHostPort);
   }
 
   /**

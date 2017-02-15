@@ -121,6 +121,14 @@ class ConnectionCache {
     return newClient(new ServerInfo(uuid, hostPort, inetAddress)).getServerInfo();
   }
 
+  TabletClient newMasterClient(HostAndPort hostPort) {
+    // We should pass a UUID here but we have a chicken and egg problem, we first need to
+    // communicate with the masters to find out about them, and that's what we're trying to do.
+    // The UUID is just used for logging and cache key, so instead we just use a constructed
+    // string with the master host and port as.
+    return newClient("master-" + hostPort.toString(), hostPort);
+  }
+
   TabletClient newClient(String uuid, HostAndPort hostPort) {
     InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHostText());
     if (inetAddress == null) {
