@@ -82,7 +82,10 @@ class MinidumpExceptionHandler {
   // at a time, as a sanity check.
   static std::atomic<int> current_num_instances_;
 
-  std::atomic<bool> user_signal_handler_thread_running_ ATTRIBUTE_UNUSED; // Unused in macOS build.
+  #ifndef __APPLE__
+  std::atomic<bool> user_signal_handler_thread_running_;// Unused in macOS build.
+  #endif
+
   scoped_refptr<Thread> user_signal_handler_thread_;
 
   // Breakpad ExceptionHandler. It registers its own signal handlers to write
