@@ -42,7 +42,6 @@ import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -734,7 +733,8 @@ public final class AsyncKuduScanner {
     }
 
     /** Serializes this request.  */
-    ChannelBuffer serialize(Message header) {
+    @Override
+    Message createRequestPB() {
       final ScanRequestPB.Builder builder = ScanRequestPB.newBuilder();
       switch (state) {
         case OPENING:
@@ -789,9 +789,7 @@ public final class AsyncKuduScanner {
           throw new RuntimeException("unreachable!");
       }
 
-      ScanRequestPB request = builder.build();
-
-      return toChannelBuffer(header, request);
+      return builder.build();
     }
 
     @Override

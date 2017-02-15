@@ -39,6 +39,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
+import com.google.protobuf.Message.Builder;
 import com.stumbleupon.async.Deferred;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -149,7 +150,7 @@ public abstract class KuduRpc<R> {
    * Notice that this method is package-private, so only classes within this
    * package can use this as a base class.
    */
-  abstract ChannelBuffer serialize(Message header);
+  abstract Message createRequestPB();
 
   /**
    * Package private way of getting the name of the RPC service.
@@ -367,7 +368,7 @@ public abstract class KuduRpc<R> {
   }
 
   static void readProtobuf(final Slice slice,
-      final com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+      final Builder builder) {
     final int length = slice.length();
     final byte[] payload = slice.getRawArray();
     final int offset = slice.getRawOffset();

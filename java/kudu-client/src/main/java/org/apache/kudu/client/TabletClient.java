@@ -163,7 +163,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     if (!rpc.deadlineTracker.hasDeadline()) {
       LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
     }
-    Pair<ChannelBuffer, Integer> encodedRpcAndId = null;
+    RpcOutboundMessage outbound = null;
     if (chan != null) {
       if (!rpc.getRequiredFeatures().isEmpty() &&
           !negotiationResult.serverFeatures.contains(
@@ -174,14 +174,14 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         // TODO(todd): this should return here. We seem to lack test coverage!
       }
 
-      encodedRpcAndId = encode(rpc);
-      if (encodedRpcAndId == null) {  // Error during encoding.
+      outbound = encode(rpc);
+      if (outbound == null) {  // Error during encoding.
         return;  // Stop here.  RPC has been failed already.
       }
 
       final Channel chan = this.chan;  // Volatile read.
       if (chan != null) {  // Double check if we disconnected during encode().
-        Channels.write(chan, encodedRpcAndId.getFirst());
+        Channels.write(chan, outbound);
         return;
       }
     }
@@ -196,8 +196,9 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         // cleanup() already took care of calling failOrRetryRpc() for us. If it did, the entry we
         // added in rpcsInflight will be missing. If not, we have to call failOrRetryRpc()
         // ourselves after this synchronized block.
-        // `encodedRpcAndId` is null iff `chan` is null.
-        if (encodedRpcAndId == null || rpcsInflight.containsKey(encodedRpcAndId.getSecond())) {
+        // `outbound` is null iff `chan` is null.
+        if (outbound == null ||
+            rpcsInflight.containsKey(outbound.getHeader().getCallId())) {
           failRpc = true;
         }
       } else {
@@ -222,9 +223,9 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private <R> Pair<ChannelBuffer, Integer> encode(final KuduRpc<R> rpc) {
+  private <R> RpcOutboundMessage encode(final KuduRpc<R> rpc) {
     final int rpcid = this.rpcid.incrementAndGet();
-    ChannelBuffer payload;
+    RpcOutboundMessage outbound;
     final String service = rpc.serviceName();
     final String method = rpc.method();
     try {
@@ -262,9 +263,9 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         headerBuilder.setRequestId(requestIdBuilder);
       }
 
-      payload = rpc.serialize(headerBuilder.build());
+      outbound = new RpcOutboundMessage(headerBuilder.build(), rpc.createRequestPB());
     } catch (Exception e) {
-      LOG.error("Uncaught exception while serializing RPC: " + rpc, e);
+      LOG.error("Uncaught exception while constructing RPC request: " + rpc, e);
       rpc.errback(e);  // Make the RPC fail with the exception.
       return null;
     }
@@ -280,12 +281,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       oldrpc.errback(new NonRecoverableException(statusIllegalState));
     }
 
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(getPeerUuidLoggingString() + chan + " Sending RPC #" + rpcid +
-          ", payload=" + payload);
-    }
-
-    return new Pair<>(payload, rpcid);
+    return outbound;
   }
 
   /**

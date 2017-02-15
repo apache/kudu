@@ -26,7 +26,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -128,7 +127,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
+  Message createRequestPB() {
     final Tserver.WriteRequestPB.Builder builder =
         createAndFillWriteRequestPB(ImmutableList.of(this));
     this.rowOperationSizeBytes = builder.getRowOperations().getRows().size() +
@@ -138,7 +137,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
       builder.setPropagatedTimestamp(this.propagatedTimestamp);
     }
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 
   @Override

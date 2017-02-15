@@ -55,7 +55,6 @@ import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
-import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioWorkerPool;
@@ -429,7 +428,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // timeouts and use its Deferred.
     final KuduRpc<KuduTable> fakeRpc = new KuduRpc<KuduTable>(null) {
       @Override
-      ChannelBuffer serialize(Message header) {
+      Message createRequestPB() {
         return null;
       }
 

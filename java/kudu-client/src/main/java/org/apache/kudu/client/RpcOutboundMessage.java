@@ -18,9 +18,13 @@
 package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
+import com.google.protobuf.TextFormat;
+
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.rpc.RpcHeader.RequestHeader;
 
@@ -30,6 +34,8 @@ import org.apache.kudu.rpc.RpcHeader.RequestHeader;
  * for serializing these instances into wire-format-compatible buffers.
  */
 class RpcOutboundMessage {
+  private static final Logger LOG = LoggerFactory.getLogger(RpcOutboundMessage.class);
+
   private final RequestHeader header;
   private final Message body;
 
@@ -46,6 +52,13 @@ class RpcOutboundMessage {
     return body;
   }
 
+  @Override
+  public String toString() {
+    // TODO(todd): should this redact? it's only used at TRACE level, so hopefully OK.
+    return "RpcOutboundMessage[header={" + TextFormat.shortDebugString(header) +
+        "}, body={" + TextFormat.shortDebugString(body) + "}]";
+  }
+
   /**
    * Netty encoder implementation to serialize outbound messages.
    */
@@ -57,6 +70,9 @@ class RpcOutboundMessage {
         return obj;
       }
       RpcOutboundMessage msg = (RpcOutboundMessage)obj;
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("{}: sending RPC {}", chan, msg);
+      }
       // TODO(todd): move this impl into this class and remove external
       // callers.
       return KuduRpc.toChannelBuffer(msg.getHeader(), msg.getBody());

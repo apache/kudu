@@ -25,7 +25,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -87,14 +86,14 @@ class Batch extends KuduRpc<BatchResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
+  Message createRequestPB() {
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(operations);
     rowOperationsSizeBytes = builder.getRowOperations().getRows().size() +
                              builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 
   @Override

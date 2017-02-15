@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.tserver.Tserver;
@@ -35,11 +34,8 @@ class ListTabletsRequest extends KuduRpc<ListTabletsResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
-    final Tserver.ListTabletsRequestPB.Builder builder =
-        Tserver.ListTabletsRequestPB.newBuilder();
-    return toChannelBuffer(header, builder.build());
+  Message createRequestPB() {
+    return Tserver.ListTabletsRequestPB.getDefaultInstance();
   }
 
   @Override

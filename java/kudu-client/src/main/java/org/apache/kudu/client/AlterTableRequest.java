@@ -27,7 +27,6 @@ import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
@@ -54,11 +53,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
+  Message createRequestPB() {
     TableIdentifierPB tableID = TableIdentifierPB.newBuilder().setTableName(name).build();
     this.builder.setTable(tableID);
-    return toChannelBuffer(header, this.builder.build());
+    return this.builder.build();
   }
 
   @Override

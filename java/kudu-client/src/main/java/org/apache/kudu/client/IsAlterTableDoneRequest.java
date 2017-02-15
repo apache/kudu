@@ -22,7 +22,6 @@ import static org.apache.kudu.master.Master.IsAlterTableDoneResponsePB;
 import static org.apache.kudu.master.Master.TableIdentifierPB;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
@@ -43,13 +42,12 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
+  Message createRequestPB() {
     final IsAlterTableDoneRequestPB.Builder builder = IsAlterTableDoneRequestPB.newBuilder();
     TableIdentifierPB tableID =
         TableIdentifierPB.newBuilder().setTableName(name).build();
     builder.setTable(tableID);
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 
   @Override

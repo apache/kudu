@@ -21,7 +21,6 @@ import java.util.Collection;
 import java.util.List;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -51,11 +50,10 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
+  Message createRequestPB() {
     this.builder.setName(this.name);
     this.builder.setSchema(ProtobufHelper.schemaToPb(this.schema));
-    return toChannelBuffer(header, this.builder.build());
+    return this.builder.build();
   }
 
   @Override

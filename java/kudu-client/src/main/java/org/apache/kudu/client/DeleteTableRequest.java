@@ -18,7 +18,6 @@
 package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
@@ -40,13 +39,12 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
+  Message createRequestPB() {
     final Master.DeleteTableRequestPB.Builder builder = Master.DeleteTableRequestPB.newBuilder();
     Master.TableIdentifierPB tableID =
         Master.TableIdentifierPB.newBuilder().setTableName(name).build();
     builder.setTable(tableID);
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 
   @Override

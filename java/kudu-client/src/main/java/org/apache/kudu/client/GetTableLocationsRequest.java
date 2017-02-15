@@ -20,7 +20,6 @@ package org.apache.kudu.client;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
@@ -75,7 +74,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
+  Message createRequestPB() {
     final Master.GetTableLocationsRequestPB.Builder builder = Master
         .GetTableLocationsRequestPB.newBuilder();
     builder.setTable(Master.TableIdentifierPB.newBuilder()
@@ -87,6 +86,6 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
       builder.setPartitionKeyEnd(ZeroCopyLiteralByteString.wrap(endKey));
     }
     builder.setMaxReturnedLocations(maxReturnedLocations);
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 }

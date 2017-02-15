@@ -19,8 +19,6 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
-import com.google.protobuf.Message;
-
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
@@ -77,12 +75,6 @@ final class CallResponse {
    */
   public int getTotalResponseSize() {
     return this.totalResponseSize;
-  }
-
-  public <T extends Message> T parseResponse(T prototypeInstance) {
-    prototypeInstance.newBuilderForType();
-    return prototypeInstance;
-
   }
 
   /**

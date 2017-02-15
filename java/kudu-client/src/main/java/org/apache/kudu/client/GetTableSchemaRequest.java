@@ -22,7 +22,6 @@ import static org.apache.kudu.master.Master.GetTableSchemaResponsePB;
 import static org.apache.kudu.master.Master.TableIdentifierPB;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -43,13 +42,12 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
+  Message createRequestPB() {
     final GetTableSchemaRequestPB.Builder builder = GetTableSchemaRequestPB.newBuilder();
     TableIdentifierPB tableID =
         TableIdentifierPB.newBuilder().setTableName(name).build();
     builder.setTable(tableID);
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 
   @Override

@@ -23,7 +23,6 @@ import static org.apache.kudu.master.Master.GetMasterRegistrationResponsePB;
 import static org.apache.kudu.master.Master.MasterErrorPB;
 
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
@@ -40,11 +39,8 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
-    assert header.isInitialized();
-    final GetMasterRegistrationRequestPB.Builder builder =
-        GetMasterRegistrationRequestPB.newBuilder();
-    return toChannelBuffer(header, builder.build());
+  Message createRequestPB() {
+    return GetMasterRegistrationRequestPB.getDefaultInstance();
   }
 
   @Override

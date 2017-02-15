@@ -19,7 +19,6 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
-import org.jboss.netty.buffer.ChannelBuffer;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
@@ -60,11 +59,11 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
   }
 
   @Override
-  ChannelBuffer serialize(Message header) {
+  Message createRequestPB() {
     final Master.IsCreateTableDoneRequestPB.Builder builder = Master
         .IsCreateTableDoneRequestPB.newBuilder();
     builder.setTable(Master.TableIdentifierPB.newBuilder().setTableId(
         ByteString.copyFromUtf8(tableId)));
-    return toChannelBuffer(header, builder.build());
+    return builder.build();
   }
 }
