@@ -89,6 +89,9 @@ message RaftConfigPB {
   // Obsolete. This parameter has been retired.
   optional bool OBSOLETE_local = 2;
 
+  // Flag to allow unsafe config change operations.
+  optional bool unsafe_config_change = 4 [ default = false ];
+
   // The set of peers in the configuration.
   repeated RaftPeerPB peers = 3;
 }

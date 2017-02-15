@@ -31,6 +31,7 @@
 #include "kudu/client/scanner-internal.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
@@ -61,6 +62,8 @@ using client::KuduRowResult;
 using client::KuduScanBatch;
 using client::KuduSchema;
 using consensus::ConsensusServiceProxy;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using consensus::StartTabletCopyRequestPB;
 using consensus::StartTabletCopyResponsePB;
 using rpc::RpcController;
@@ -155,6 +158,8 @@ const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
     "to the default port.";
 const char* const kSrcAddressArg = "src_address";
 const char* const kDstAddressArg = "dst_address";
+const char* const kPeerUUIDsArg = "peer uuids";
+const char* const kPeerUUIDsArgDesc = "List of peer uuids to be part of new config";
 
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
@@ -338,6 +343,43 @@ Status CopyReplica(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status UnsafeChangeConfig(const RunnerContext& context) {
+  // Parse and validate arguments.
+  const string& dst_address = FindOrDie(context.required_args, kTServerAddressArg);
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  ServerStatusPB dst_status;
+  RETURN_NOT_OK(GetServerStatus(dst_address, TabletServer::kDefaultPort,
+                                &dst_status));
+
+  if (context.variadic_args.empty()) {
+    return Status::InvalidArgument("No peer UUIDs specified for the new config");
+  }
+
+  RaftConfigPB new_config;
+  for (const auto& arg : context.variadic_args) {
+    RaftPeerPB new_peer;
+    new_peer.set_permanent_uuid(arg);
+    new_config.add_peers()->CopyFrom(new_peer);
+  }
+
+  // Send a request to replace the config to node dst_address.
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(dst_address, TabletServer::kDefaultPort, &proxy));
+  consensus::UnsafeChangeConfigRequestPB req;
+  consensus::UnsafeChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+  req.set_dest_uuid(dst_status.node_instance().permanent_uuid());
+  req.set_tablet_id(tablet_id);
+  req.set_caller_id("kudu-tools");
+  *req.mutable_new_config() = new_config;
+  RETURN_NOT_OK(proxy->UnsafeChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildRemoteReplicaMode() {
@@ -377,6 +419,17 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 
+  unique_ptr<Action> unsafe_change_config =
+      ActionBuilder("unsafe_change_config", &UnsafeChangeConfig)
+      .Description("Force the specified replica to adopt a new Raft config")
+      .ExtraDescription("The members of the new Raft config must be a subset "
+                        "of (or the same as) the members of the existing "
+                        "committed Raft config on that replica.")
+      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredVariadicParameter({ kPeerUUIDsArg, kPeerUUIDsArgDesc })
+      .Build();
+
   return ModeBuilder("remote_replica")
       .Description("Operate on remote tablet replicas on a Kudu Tablet Server")
       .AddAction(std::move(check_replicas))
@@ -384,6 +437,7 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
       .AddAction(std::move(delete_replica))
       .AddAction(std::move(dump_replica))
       .AddAction(std::move(list))
+      .AddAction(std::move(unsafe_change_config))
       .Build();
 }
 

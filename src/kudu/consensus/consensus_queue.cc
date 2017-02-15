@@ -556,6 +556,8 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
 
   // If we haven't enough peers to calculate the watermark return.
   if (watermarks.size() < num_peers_required) {
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermarks size: " << watermarks.size() << ", "
+                                 << "Num peers required: " << num_peers_required;
     return;
   }
 
@@ -779,7 +781,12 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       } else {
         VLOG_WITH_PREFIX_UNLOCKED(2) << "Cannot advance commit index, waiting for > "
                                      << "first index in current leader term: "
-                                     << queue_state_.first_index_in_current_term;
+                                     << queue_state_.first_index_in_current_term << ". "
+                                     << "current majority_replicated_index: "
+                                     << queue_state_.majority_replicated_index << ", "
+                                     << "current committed_index: "
+                                     << queue_state_.committed_index;
+
       }
 
       // Only notify observers if the commit index actually changed.

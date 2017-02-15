@@ -111,6 +111,8 @@ using kudu::consensus::GetNodeInstanceRequestPB;
 using kudu::consensus::GetNodeInstanceResponsePB;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
+using kudu::consensus::UnsafeChangeConfigRequestPB;
+using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::StartTabletCopyRequestPB;
@@ -880,7 +882,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
 void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                         ChangeConfigResponsePB* resp,
                                         RpcContext* context) {
-  DVLOG(3) << "Received ChangeConfig RPC: " << SecureDebugString(*req);
+  VLOG(2) << "Received ChangeConfig RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "ChangeConfig", req, resp, context)) {
     return;
   }
@@ -899,6 +901,30 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
   // The success case is handled when the callback fires.
+}
+
+void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB* req,
+                                              UnsafeChangeConfigResponsePB* resp,
+                                              RpcContext* context) {
+  VLOG(2) << "Received UnsafeChangeConfig RPC: " << SecureDebugString(*req);
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "UnsafeChangeConfig", req, resp, context)) {
+    return;
+  }
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                 &tablet_peer)) {
+    return;
+  }
+
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  TabletServerErrorPB::Code error_code;
+  Status s = consensus->UnsafeChangeConfig(*req, &error_code);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+    return;
+  }
+  context->RespondSuccess();
 }
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,

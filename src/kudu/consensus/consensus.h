@@ -251,6 +251,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
     return Status::NotSupported("Not implemented.");
   }
 
+  virtual Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
+                                    tserver::TabletServerErrorPB::Code* error) = 0;
+
   // Returns the current Raft role of this instance.
   virtual RaftPeerPB::Role role() const = 0;
 

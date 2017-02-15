@@ -79,8 +79,6 @@ using itest::RemoveServer;
 using itest::StartElection;
 using itest::WaitUntilLeader;
 using itest::WriteSimpleTestRow;
-using master::GetTabletLocationsRequestPB;
-using master::GetTabletLocationsResponsePB;
 using master::TabletLocationsPB;
 using rpc::RpcController;
 using server::SetFlagRequestPB;
@@ -339,23 +337,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Note: This test assumes all tablet servers listed in tablet_servers are voters.
   void AssertMajorityRequiredForElectionsAndWrites(const TabletServerMap& tablet_servers,
                                                    const string& leader_uuid);
-
-  // Return the replicas of the specified 'tablet_id', as seen by the Master.
-  Status GetTabletLocations(const string& tablet_id, const MonoDelta& timeout,
-                            master::TabletLocationsPB* tablet_locations);
-
-  enum WaitForLeader {
-    NO_WAIT_FOR_LEADER = 0,
-    WAIT_FOR_LEADER = 1
-  };
-
-  // Wait for the specified number of replicas to be reported by the master for
-  // the given tablet. Fails with an assertion if the timeout expires.
-  void WaitForReplicasReportedToMaster(int num_replicas, const string& tablet_id,
-                                       const MonoDelta& timeout,
-                                       WaitForLeader wait_for_leader,
-                                       bool* has_leader,
-                                       master::TabletLocationsPB* tablet_locations);
 
   void CreateClusterForChurnyElectionsTests(const vector<string>& extra_ts_flags);
   void DoTestChurnyElections(TestWorkload* workload, int max_rows_to_insert);
@@ -1743,60 +1724,6 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
                                MonoDelta::FromSeconds(10)));
 }
 
-// Return the replicas of the specified 'tablet_id', as seen by the Master.
-Status RaftConsensusITest::GetTabletLocations(const string& tablet_id, const MonoDelta& timeout,
-                                              master::TabletLocationsPB* tablet_locations) {
-  RpcController rpc;
-  rpc.set_timeout(timeout);
-  GetTabletLocationsRequestPB req;
-  *req.add_tablet_ids() = tablet_id;
-  GetTabletLocationsResponsePB resp;
-  RETURN_NOT_OK(cluster_->master_proxy()->GetTabletLocations(req, &resp, &rpc));
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  if (resp.errors_size() > 0) {
-    CHECK_EQ(1, resp.errors_size()) << SecureShortDebugString(resp);
-    CHECK_EQ(tablet_id, resp.errors(0).tablet_id()) << SecureShortDebugString(resp);
-    return StatusFromPB(resp.errors(0).status());
-  }
-  CHECK_EQ(1, resp.tablet_locations_size()) << SecureShortDebugString(resp);
-  *tablet_locations = resp.tablet_locations(0);
-  return Status::OK();
-}
-
-void RaftConsensusITest::WaitForReplicasReportedToMaster(
-    int num_replicas, const string& tablet_id,
-    const MonoDelta& timeout,
-    WaitForLeader wait_for_leader,
-    bool* has_leader,
-    master::TabletLocationsPB* tablet_locations) {
-  MonoTime deadline(MonoTime::Now() + timeout);
-  while (true) {
-    ASSERT_OK(GetTabletLocations(tablet_id, timeout, tablet_locations));
-    *has_leader = false;
-    if (tablet_locations->replicas_size() == num_replicas) {
-      for (const master::TabletLocationsPB_ReplicaPB& replica :
-                    tablet_locations->replicas()) {
-        if (replica.role() == RaftPeerPB::LEADER) {
-          *has_leader = true;
-        }
-      }
-      if (wait_for_leader == NO_WAIT_FOR_LEADER ||
-          (wait_for_leader == WAIT_FOR_LEADER && *has_leader)) {
-        break;
-      }
-    }
-    if (deadline < MonoTime::Now()) break;
-    SleepFor(MonoDelta::FromMilliseconds(20));
-  }
-  ASSERT_EQ(num_replicas, tablet_locations->replicas_size())
-      << SecureDebugString(*tablet_locations);
-  if (wait_for_leader == WAIT_FOR_LEADER) {
-    ASSERT_TRUE(*has_leader) << SecureDebugString(*tablet_locations);
-  }
-}
-
 // Basic test of adding and removing servers from a configuration.
 TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   MonoDelta kTimeout = MonoDelta::FromSeconds(10);
@@ -2264,8 +2191,9 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, WAIT_FOR_LEADER,
-                                            &has_leader, &tablet_locations));
+  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                                   2, tablet_id, timeout, itest::WAIT_FOR_LEADER,
+                                                   &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
@@ -2283,8 +2211,10 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Wait for the master to be notified of the config change.
   // It should continue to have the same leader, even without waiting.
   LOG(INFO) << "Waiting for Master to see config change...";
-  NO_FATALS(WaitForReplicasReportedToMaster(3, tablet_id, timeout, NO_WAIT_FOR_LEADER,
-                                            &has_leader, &tablet_locations));
+  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                                   3, tablet_id, timeout,
+                                                   itest::DONT_WAIT_FOR_LEADER,
+                                                   &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
@@ -2297,8 +2227,10 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   // Wait for the master to be notified of the removal.
   LOG(INFO) << "Waiting for Master to see config change...";
-  NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, NO_WAIT_FOR_LEADER,
-                                            &has_leader, &tablet_locations));
+  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                                   2, tablet_id, timeout,
+                                                   itest::DONT_WAIT_FOR_LEADER,
+                                                   &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 }

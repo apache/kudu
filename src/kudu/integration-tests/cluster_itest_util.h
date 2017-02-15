@@ -156,6 +156,22 @@ Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
 
+enum WaitForLeader {
+  DONT_WAIT_FOR_LEADER = 0,
+  WAIT_FOR_LEADER = 1
+};
+
+// Wait for the specified number of replicas to be reported by the master for
+// the given tablet. Fails when leader is not found or number of replicas
+// did not match up, or timeout waiting for leader.
+Status WaitForReplicasReportedToMaster(
+    const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+    int num_replicas, const std::string& tablet_id,
+    const MonoDelta& timeout,
+    WaitForLeader wait_for_leader,
+    bool* has_leader,
+    master::TabletLocationsPB* tablet_locations);
+
 // Wait until the last commited OpId has index exactly 'opid_index'.
 Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
                                      TServerDetails* replica,
@@ -181,6 +197,12 @@ Status FindTabletLeader(const TabletServerMap& tablet_servers,
                         const std::string& tablet_id,
                         const MonoDelta& timeout,
                         TServerDetails** leader);
+
+// Grabs list of followers using FindTabletLeader() above.
+Status FindTabletFollowers(const TabletServerMap& tablet_servers,
+                           const string& tablet_id,
+                           const MonoDelta& timeout,
+                           vector<TServerDetails*>* followers);
 
 // Start an election on the specified tserver.
 // 'timeout' only refers to the RPC asking the peer to start an election. The

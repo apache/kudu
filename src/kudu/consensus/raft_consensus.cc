@@ -613,11 +613,13 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
 
     const RaftConfigPB& new_config = change_record->new_config();
 
-    Status s = state_->CheckNoConfigChangePendingUnlocked();
-    if (PREDICT_FALSE(!s.ok())) {
-      s = s.CloneAndAppend(Substitute("\n  New config: $0", SecureShortDebugString(new_config)));
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
-      return s;
+    if (!new_config.unsafe_config_change()) {
+      Status s = state_->CheckNoConfigChangePendingUnlocked();
+      if (PREDICT_FALSE(!s.ok())) {
+        s = s.CloneAndAppend(Substitute("\n  New config: $0", SecureShortDebugString(new_config)));
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
+        return s;
+      }
     }
     // Check if the pending Raft config has an OpId less than the committed
     // config. If so, this is a replay at startup in which the COMMIT
@@ -1161,7 +1163,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         deduped_req.preceding_opid->index(),
         request->committed_index()});
 
-    VLOG_WITH_PREFIX_UNLOCKED(1) << "Early marking committed up to " << early_apply_up_to;
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Early marking committed up to " << early_apply_up_to
+                                 << ", Last pending opid index: "
+                                 << pending_.GetLastPendingTransactionOpId().index()
+                                 << ", preceding opid index: "
+                                 << deduped_req.preceding_opid->index()
+                                 << ", requested index: " << request->committed_index();
     TRACE("Early marking committed up to index $0", early_apply_up_to);
     CHECK_OK(pending_.AdvanceCommittedIndex(early_apply_up_to));
 
@@ -1319,10 +1326,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     TRACE("finished");
   }
 
-  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG_WITH_PREFIX(2) << "Replica updated."
-        << state_->ToString() << " Request: " << SecureShortDebugString(*request);
-  }
+  VLOG_WITH_PREFIX(2) << "Replica updated. " << state_->ToString()
+                      << ". Request: " << SecureShortDebugString(*request);
 
   TRACE("UpdateReplicas() finished");
   return Status::OK();
@@ -1553,6 +1558,150 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
   }
   peer_manager_->SignalRequest();
   return Status::OK();
+}
+
+Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
+                                         TabletServerErrorPB::Code* error_code) {
+  if (PREDICT_FALSE(!req.has_new_config())) {
+    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    return Status::InvalidArgument("Request must contain 'new_config' argument "
+                                   "to UnsafeChangeConfig()", SecureShortDebugString(req));
+  }
+  if (PREDICT_FALSE(!req.has_caller_id())) {
+    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    return Status::InvalidArgument("Must specify 'caller_id' argument to UnsafeChangeConfig()",
+                                   SecureShortDebugString(req));
+  }
+
+  // Grab the committed config and current term on this node.
+  int64_t current_term;
+  RaftConfigPB committed_config;
+  int64_t all_replicated_index;
+  int64 last_committed_index;
+  OpId preceding_opid;
+  uint64 msg_timestamp;
+  string local_peer_uuid;
+  {
+    // Take the snapshot of the replica state and queue state so that
+    // we can stick them in the consensus update request later.
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForRead(&lock));
+    local_peer_uuid = state_->GetPeerUuid();
+    current_term = state_->GetCurrentTermUnlocked();
+    committed_config = state_->GetCommittedConfigUnlocked();
+    if (state_->IsConfigChangePendingUnlocked()) {
+      LOG_WITH_PREFIX_UNLOCKED(WARNING)
+            << "Replica has a pending config, but the new config "
+            << "will be unsafely changed anyway. "
+            << "Currently pending config on the node: "
+            << SecureShortDebugString(state_->GetPendingConfigUnlocked());
+    }
+    all_replicated_index = queue_->GetAllReplicatedIndex();
+    last_committed_index = queue_->GetCommittedIndex();
+    preceding_opid = queue_->GetLastOpIdInLog();
+    msg_timestamp = time_manager_->GetSerialTimestamp().value();
+  }
+
+  // Validate that passed replica uuids are part of the committed config
+  // on this node.  This allows a manual recovery tool to only have to specify
+  // the uuid of each replica in the new config without having to know the
+  // addresses of each server (since we can get the address information from
+  // the committed config). Additionally, only a subset of the committed config
+  // is required for typical cluster repair scenarios.
+  unordered_set<string> retained_peer_uuids;
+  const RaftConfigPB& config = req.new_config();
+  for (const RaftPeerPB& new_peer : config.peers()) {
+    const string& peer_uuid = new_peer.permanent_uuid();
+    retained_peer_uuids.insert(peer_uuid);
+    if (!IsRaftConfigMember(peer_uuid, committed_config)) {
+      *error_code = TabletServerErrorPB::INVALID_CONFIG;
+      return Status::InvalidArgument(Substitute("Peer with uuid $0 is not in the committed  "
+                                                "config on this replica, rejecting the  "
+                                                "unsafe config change request for tablet $1. "
+                                                "Committed config: $2",
+                                                peer_uuid, req.tablet_id(),
+                                                SecureShortDebugString(committed_config)));
+    }
+  }
+
+  RaftConfigPB new_config = committed_config;
+  for (const auto& peer : committed_config.peers()) {
+    const string& peer_uuid = peer.permanent_uuid();
+    if (!ContainsKey(retained_peer_uuids, peer_uuid)) {
+      CHECK(RemoveFromRaftConfig(&new_config, peer_uuid));
+    }
+  }
+  // Check that local peer is part of the new config and is a VOTER.
+  // Although it is valid for a local replica to not have itself
+  // in the committed config, it is rare and a replica without itself
+  // in the latest config is definitely not caught up with the latest leader's log.
+  if (!IsRaftConfigVoter(local_peer_uuid, new_config)) {
+    return Status::InvalidArgument(Substitute("Local replica uuid $0 is not "
+                                              "a VOTER in the new config, "
+                                              "rejecting the unsafe config "
+                                              "change request for tablet $1. "
+                                              "Rejected config: $2" ,
+                                              local_peer_uuid, req.tablet_id(),
+                                              SecureShortDebugString(new_config)));
+  }
+  new_config.set_unsafe_config_change(true);
+  int64 replicate_opid_index = preceding_opid.index() + 1;
+  new_config.set_opid_index(replicate_opid_index);
+
+  // Sanity check the new config. 'type' is irrelevant here.
+  Status s = VerifyRaftConfig(new_config, UNCOMMITTED_QUORUM);
+  if (!s.ok()) {
+    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    return Status::InvalidArgument(Substitute("The resulting new config for tablet $0  "
+                                              "from passed parameters has failed raft "
+                                              "config sanity check: $1",
+                                              req.tablet_id(), s.ToString()));
+  }
+
+  // Prepare the consensus request as if the request is being generated
+  // from a different leader.
+  ConsensusRequestPB consensus_req;
+  ConsensusResponsePB consensus_resp;
+  consensus_req.set_caller_uuid(req.caller_id());
+  // Bumping up the term for the consensus request being generated.
+  // This makes this request appear to come from a new leader that
+  // the local replica doesn't know about yet. If the local replica
+  // happens to be the leader, this will cause it to step down.
+  int64 new_term = current_term + 1;
+  consensus_req.set_caller_term(new_term);
+  consensus_req.mutable_preceding_id()->CopyFrom(preceding_opid);
+  consensus_req.set_committed_index(last_committed_index);
+  consensus_req.set_all_replicated_index(all_replicated_index);
+
+  // Prepare the replicate msg to be replicated.
+  ReplicateMsg* replicate = consensus_req.add_ops();
+  ChangeConfigRecordPB* cc_req = replicate->mutable_change_config_record();
+  cc_req->set_tablet_id(req.tablet_id());
+  *cc_req->mutable_old_config() = committed_config;
+  *cc_req->mutable_new_config() = new_config;
+  OpId* id = replicate->mutable_id();
+  // Bumping up both the term and the opid_index from what's found in the log.
+  id->set_term(new_term);
+  id->set_index(replicate_opid_index);
+  replicate->set_op_type(CHANGE_CONFIG_OP);
+  replicate->set_timestamp(msg_timestamp);
+
+  VLOG_WITH_PREFIX(3) << "UnsafeChangeConfig: Generated consensus request: "
+                      << SecureShortDebugString(consensus_req);
+
+  LOG_WITH_PREFIX(WARNING)
+        << "PROCEEDING WITH UNSAFE CONFIG CHANGE ON THIS SERVER, "
+        << "COMMITTED CONFIG: " << SecureShortDebugString(committed_config)
+        << "NEW CONFIG: " << SecureShortDebugString(new_config);
+
+  s = Update(&consensus_req, &consensus_resp);
+  if (!s.ok() || consensus_resp.has_error()) {
+    *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
+  }
+  if (s.ok() && consensus_resp.has_error()) {
+    s = StatusFromPB(consensus_resp.error().status());
+  }
+  return s;
 }
 
 void RaftConsensus::Shutdown() {

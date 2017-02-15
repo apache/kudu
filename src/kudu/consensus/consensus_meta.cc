@@ -24,9 +24,16 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
+
+DEFINE_double(fault_crash_before_cmeta_flush, 0.0,
+              "Fraction of the time when the server will crash just before flushing "
+              "consensus metadata. (For testing only!)");
+TAG_FLAG(fault_crash_before_cmeta_flush, unsafe);
 
 namespace kudu {
 namespace consensus {
@@ -186,6 +193,7 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
 }
 
 Status ConsensusMetadata::Flush() {
+  MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
 
   flush_count_for_tests_++;

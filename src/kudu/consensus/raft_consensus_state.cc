@@ -198,10 +198,17 @@ Status ReplicaState::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   DCHECK(update_lock_.is_locked());
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config, UNCOMMITTED_QUORUM),
                         "Invalid config to set as pending");
-  CHECK(!cmeta_->has_pending_config())
-      << "Attempt to set pending config while another is already pending! "
-      << "Existing pending config: " << SecureShortDebugString(cmeta_->pending_config()) << "; "
-      << "Attempted new pending config: " << SecureShortDebugString(new_config);
+  if (!new_config.unsafe_config_change()) {
+    CHECK(!cmeta_->has_pending_config())
+        << "Attempt to set pending config while another is already pending! "
+        << "Existing pending config: " << SecureShortDebugString(cmeta_->pending_config()) << "; "
+        << "Attempted new pending config: " << SecureShortDebugString(new_config);
+  } else if (cmeta_->has_pending_config()) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Allowing unsafe config change even though there is a pending config! "
+        << "Existing pending config: " << SecureShortDebugString(cmeta_->pending_config()) << "; "
+        << "New pending config: " << SecureShortDebugString(new_config);
+  }
   cmeta_->set_pending_config(new_config);
   return Status::OK();
 }
@@ -216,24 +223,32 @@ const RaftConfigPB& ReplicaState::GetPendingConfigUnlocked() const {
   return cmeta_->pending_config();
 }
 
-Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& committed_config) {
+Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit) {
   TRACE_EVENT0("consensus", "ReplicaState::SetCommittedConfigUnlocked");
   DCHECK(update_lock_.is_locked());
-  DCHECK(committed_config.IsInitialized());
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(committed_config, COMMITTED_QUORUM),
+  DCHECK(config_to_commit.IsInitialized());
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config_to_commit, COMMITTED_QUORUM),
                         "Invalid config to set as committed");
 
-  // Compare committed with pending configuration, ensure they are the same.
-  DCHECK(cmeta_->has_pending_config());
-  const RaftConfigPB& pending_config = GetPendingConfigUnlocked();
-  // Quorums must be exactly equal, even w.r.t. peer ordering.
-  CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(), committed_config.SerializeAsString())
-      << Substitute("New committed config must equal pending config, but does not. "
-                    "Pending config: $0, committed config: $1",
-                    SecureShortDebugString(pending_config),
-                    SecureShortDebugString(committed_config));
-
-  cmeta_->set_committed_config(committed_config);
+  // Compare committed with pending configuration, ensure that they are the same.
+  // In the event of an unsafe config change triggered by an administrator,
+  // it is possible that the config being committed may not match the pending config
+  // because unsafe config change allows multiple pending configs to exist.
+  // Therefore we only need to validate that 'config_to_commit' matches the pending config
+  // if the pending config does not have its 'unsafe_config_change' flag set.
+  if (IsConfigChangePendingUnlocked()) {
+    const RaftConfigPB& pending_config = GetPendingConfigUnlocked();
+    if (!pending_config.unsafe_config_change()) {
+      // Quorums must be exactly equal, even w.r.t. peer ordering.
+      CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(),
+               config_to_commit.SerializeAsString())
+          << Substitute("New committed config must equal pending config, but does not. "
+                        "Pending config: $0, committed config: $1",
+                        SecureShortDebugString(pending_config),
+                        SecureShortDebugString(config_to_commit));
+    }
+  }
+  cmeta_->set_committed_config(config_to_commit);
   cmeta_->clear_pending_config();
   CHECK_OK(cmeta_->Flush());
   return Status::OK();

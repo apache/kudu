@@ -347,6 +347,51 @@ Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                      SecureShortDebugString(cstate), s.ToString()));
 }
 
+Status WaitForReplicasReportedToMaster(
+    const shared_ptr<master::MasterServiceProxy>& master_proxy,
+    int num_replicas, const string& tablet_id,
+    const MonoDelta& timeout,
+    WaitForLeader wait_for_leader,
+    bool* has_leader,
+    master::TabletLocationsPB* tablet_locations) {
+  MonoTime deadline(MonoTime::Now() + timeout);
+  while (true) {
+    RETURN_NOT_OK(GetTabletLocations(master_proxy, tablet_id, timeout, tablet_locations));
+    *has_leader = false;
+    if (tablet_locations->replicas_size() == num_replicas) {
+      for (const master::TabletLocationsPB_ReplicaPB& replica :
+                    tablet_locations->replicas()) {
+        if (replica.role() == RaftPeerPB::LEADER) {
+          *has_leader = true;
+        }
+      }
+      if (wait_for_leader == DONT_WAIT_FOR_LEADER ||
+          (wait_for_leader == WAIT_FOR_LEADER && *has_leader)) {
+        break;
+      }
+    }
+    if (deadline < MonoTime::Now()) {
+      return Status::TimedOut(Substitute("Timed out after waiting "
+          "for tablet $1 expected to report master with $2 replicas, has_leader: $3",
+          tablet_id, num_replicas, *has_leader));
+    }
+    SleepFor(MonoDelta::FromMilliseconds(20));
+  }
+  if (num_replicas != tablet_locations->replicas_size()) {
+      return Status::NotFound(Substitute("Number of replicas for tablet $0 "
+          "reported to master $1:$2",
+          tablet_id, tablet_locations->replicas_size(),
+          SecureDebugString(*tablet_locations)));
+  }
+  if (wait_for_leader == WAIT_FOR_LEADER && !(*has_leader)) {
+    return Status::NotFound(Substitute("Leader for tablet $0 not found on master, "
+                                       "number of replicas $1:$2",
+                                       tablet_id, tablet_locations->replicas_size(),
+                                       SecureDebugString(*tablet_locations)));
+  }
+  return Status::OK();
+}
+
 Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
                                      TServerDetails* replica,
                                      const string& tablet_id,
@@ -448,6 +493,22 @@ Status FindTabletLeader(const TabletServerMap& tablet_servers,
                                      "Status message: $2", tablet_id,
                                      (MonoTime::Now() - start).ToString(),
                                      s.ToString()));
+}
+
+Status FindTabletFollowers(const TabletServerMap& tablet_servers,
+                           const string& tablet_id,
+                           const MonoDelta& timeout,
+                           vector<TServerDetails*>* followers) {
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers, &tservers);
+  TServerDetails* leader;
+  RETURN_NOT_OK(FindTabletLeader(tablet_servers, tablet_id, timeout, &leader));
+  for (TServerDetails* ts : tservers) {
+    if (ts->uuid() != leader->uuid()) {
+      followers->push_back(ts);
+    }
+  }
+  return Status::OK();
 }
 
 Status StartElection(const TServerDetails* replica,

@@ -378,10 +378,11 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kRemoteReplicaModeRegexes = {
         "check.*Check if all tablet replicas",
-        "copy.*Copy a tablet replica from one Kudu Tablet Server to another",
+        "copy.*Copy a tablet replica from one Kudu Tablet Server",
         "delete.*Delete a tablet replica",
         "dump.*Dump the data of a tablet replica",
-        "list.*List all tablet replicas"
+        "list.*List all tablet replicas",
+        "unsafe_change_config.*Force the specified replica to adopt"
     };
     NO_FATALS(RunTestHelp("remote_replica", kRemoteReplicaModeRegexes));
   }

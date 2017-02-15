@@ -129,6 +129,7 @@ class TimeManager : public RefCountedThreadSafe<TimeManager> {
  private:
   FRIEND_TEST(TimeManagerTest, TestTimeManagerNonLeaderMode);
   FRIEND_TEST(TimeManagerTest, TestTimeManagerLeaderMode);
+  friend class RaftConsensus;
 
   // Returns whether we've advanced safe time recently.
   // If this returns false we might be partitioned or there might be election churn.
