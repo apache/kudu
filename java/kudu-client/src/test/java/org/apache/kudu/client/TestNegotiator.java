@@ -110,7 +110,7 @@ public class TestNegotiator {
     // Expect client->server: NEGOTIATE.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
     NegotiatePB body = (NegotiatePB) msg.getBody();
-    assertEquals(Negotiator.SASL_CALL_ID, msg.getHeader().getCallId());
+    assertEquals(Negotiator.SASL_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
 
     // Respond with NEGOTIATE.
@@ -125,7 +125,7 @@ public class TestNegotiator {
     msg = (RpcOutboundMessage)embedder.poll();
     body = (NegotiatePB) msg.getBody();
 
-    assertEquals(Negotiator.SASL_CALL_ID, msg.getHeader().getCallId());
+    assertEquals(Negotiator.SASL_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
     assertEquals(1, body.getSaslMechanismsCount());
     assertEquals("PLAIN", body.getSaslMechanisms(0).getMechanism());
@@ -141,7 +141,7 @@ public class TestNegotiator {
     // Expect client->server: ConnectionContext
     msg = (RpcOutboundMessage)embedder.poll();
     ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
-    assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeader().getCallId());
+    assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals("java_client", connCtx.getDEPRECATEDUserInfo().getRealUser());
 
     // Expect the client to also emit a negotiation Result.

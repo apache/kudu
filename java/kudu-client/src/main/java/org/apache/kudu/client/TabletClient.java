@@ -28,17 +28,20 @@ package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
+import javax.annotation.concurrent.GuardedBy;
 import javax.security.auth.Subject;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
 
-import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelEvent;
@@ -86,8 +89,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
 
   public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
 
-  private ArrayList<KuduRpc<?>> pendingRpcs;
-
   public static final byte RPC_CURRENT_VERSION = 9;
   /** Initial header sent by the client upon connection establishment */
   private static final byte[] CONNECTION_HEADER = new byte[] { 'h', 'r', 'p', 'c',
@@ -97,39 +98,44 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   };
 
   /**
+   * The channel we're connected to. This is set very soon after construction
+   * before any other events can arrive.
+   */
+  private Channel chan;
+
+  /** Lock for several of the below fields. */
+  private final ReentrantLock lock = new ReentrantLock();
+
+  /**
+   * RPCs which are waiting to be sent once a connection has been
+   * established.
+   *
+   * This is non-null until the connection is connected, at which point
+   * any pending RPCs will be sent, and the variable set to null.
+   */
+  @GuardedBy("lock")
+  ArrayList<KuduRpc<?>> pendingRpcs = Lists.newArrayList();
+
+  /**
    * A monotonically increasing counter for RPC IDs.
-   * RPCs can be sent out from any thread, so we need an atomic integer.
-   * RPC IDs can be arbitrary.  So it's fine if this integer wraps around and
-   * becomes negative.  They don't even have to start at 0, but we do it for
-   * simplicity and ease of debugging.
    */
-  private final AtomicInteger rpcid = new AtomicInteger(-1);
+  @GuardedBy("lock")
+  private int nextCallId = 0;
 
-  /**
-   * The channel we're connected to.
-   * This will be {@code null} while we're not connected to the TabletServer.
-   * This attribute is volatile because {@link #shutdown} may access it from a
-   * different thread, and because while we connect various user threads will
-   * test whether it's {@code null}.  Once we're connected and we know what
-   * protocol version the server speaks, we'll set this reference.
-   */
-  private volatile Channel chan;
+  private static enum State {
+    NEGOTIATING,
+    ALIVE,
+    DISCONNECTED
+  }
 
-  /**
-   * Set to {@code true} once we've disconnected from the server.
-   * This way, if any thread is still trying to use this client after it's
-   * been removed from the caches in the {@link AsyncKuduClient}, we will
-   * immediately fail / reschedule its requests.
-   * <p>
-   * Manipulating this value requires synchronizing on `this'.
-   */
-  private boolean dead = false;
+  @GuardedBy("lock")
+  private State state = State.NEGOTIATING;
 
-  /**
-   * Maps an RPC ID to the in-flight RPC that was given this ID.
-   * RPCs can be sent out from any thread, so we need a concurrent map.
-   */
-  private final ConcurrentHashMap<Integer, KuduRpc<?>> rpcsInflight = new ConcurrentHashMap<>();
+  @GuardedBy("lock")
+  private HashMap<Integer, KuduRpc<?>> rpcsInflight = new HashMap<>();
+
+  @GuardedBy("lock")
+  private Result negotiationResult;
 
   private final AsyncKuduClient kuduClient;
 
@@ -138,12 +144,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   private final RequestTracker requestTracker;
 
   private final ServerInfo serverInfo;
-
-  // If an uncaught exception forced us to shutdown this TabletClient, we'll handle the retry
-  // differently by also clearing the caches.
-  private volatile boolean gotUncaughtException = false;
-
-  private Result negotiationResult;
 
   public TabletClient(AsyncKuduClient client, ServerInfo serverInfo) {
     this.kuduClient = client;
@@ -163,136 +163,137 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     if (!rpc.deadlineTracker.hasDeadline()) {
       LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
     }
-    RpcOutboundMessage outbound = null;
-    if (chan != null) {
-      if (!rpc.getRequiredFeatures().isEmpty() &&
-          !negotiationResult.serverFeatures.contains(
-              RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS)) {
-        Status statusNotSupported = Status.NotSupported("the server does not support the" +
-            "APPLICATION_FEATURE_FLAGS RPC feature");
-        rpc.errback(new NonRecoverableException(statusNotSupported));
-        // TODO(todd): this should return here. We seem to lack test coverage!
-      }
 
-      outbound = encode(rpc);
-      if (outbound == null) {  // Error during encoding.
-        return;  // Stop here.  RPC has been failed already.
-      }
-
-      final Channel chan = this.chan;  // Volatile read.
-      if (chan != null) {  // Double check if we disconnected during encode().
-        Channels.write(chan, outbound);
-        return;
-      }
-    }
-    boolean tryAgain = false; // True when we notice we are about to get connected to the TS.
-    boolean failRpc = false; // True when the connection was closed while encoding.
-    synchronized (this) {
-      // Check if we got connected while entering this synchronized block.
-      if (chan != null) {
-        tryAgain = true;
-      } else if (dead) {
-        // We got disconnected during the process of encoding this rpc, but we need to check if
-        // cleanup() already took care of calling failOrRetryRpc() for us. If it did, the entry we
-        // added in rpcsInflight will be missing. If not, we have to call failOrRetryRpc()
-        // ourselves after this synchronized block.
-        // `outbound` is null iff `chan` is null.
-        if (outbound == null ||
-            rpcsInflight.containsKey(outbound.getHeader().getCallId())) {
-          failRpc = true;
-        }
-      } else {
-        if (pendingRpcs == null) {
-          pendingRpcs = new ArrayList<>();
-        }
-        pendingRpcs.add(rpc);
-      }
-    }
-
-    if (failRpc) {
-      Status statusNetworkError =
-          Status.NetworkError(getPeerUuidLoggingString() + "Connection reset");
-      failOrRetryRpc(rpc, new RecoverableException(statusNetworkError));
-    } else if (tryAgain) {
-      // This recursion will not lead to a loop because we only get here if we
-      // connected while entering the synchronized block above. So when trying
-      // a second time,  we will either succeed to send the RPC if we're still
-      // connected, or fail through to the code below if we got disconnected
-      // in the mean time.
-      sendRpc(rpc);
-    }
-  }
-
-  private <R> RpcOutboundMessage encode(final KuduRpc<R> rpc) {
-    final int rpcid = this.rpcid.incrementAndGet();
-    RpcOutboundMessage outbound;
-    final String service = rpc.serviceName();
-    final String method = rpc.method();
+    // Serialize the request outside the lock.
+    Message req;
     try {
-      final RpcHeader.RequestHeader.Builder headerBuilder = RpcHeader.RequestHeader.newBuilder()
-          .setCallId(rpcid)
-          .addAllRequiredFeatureFlags(rpc.getRequiredFeatures())
-          .setRemoteMethod(
-              RpcHeader.RemoteMethodPB.newBuilder().setServiceName(service).setMethodName(method));
-
-      // If any timeout is set, find the lowest non-zero one, since this will be the deadline that
-      // the server must respect.
-      if (rpc.deadlineTracker.hasDeadline() || socketReadTimeoutMs > 0) {
-        long millisBeforeDeadline = Long.MAX_VALUE;
-        if (rpc.deadlineTracker.hasDeadline()) {
-          millisBeforeDeadline = rpc.deadlineTracker.getMillisBeforeDeadline();
-        }
-
-        long localRpcTimeoutMs = Long.MAX_VALUE;
-        if (socketReadTimeoutMs > 0) {
-          localRpcTimeoutMs = socketReadTimeoutMs;
-        }
-
-        headerBuilder.setTimeoutMillis((int) Math.min(millisBeforeDeadline, localRpcTimeoutMs));
-      }
-
-      if (rpc.isRequestTracked()) {
-        RpcHeader.RequestIdPB.Builder requestIdBuilder = RpcHeader.RequestIdPB.newBuilder();
-        if (rpc.getSequenceId() == RequestTracker.NO_SEQ_NO) {
-          rpc.setSequenceId(requestTracker.newSeqNo());
-        }
-        requestIdBuilder.setClientId(requestTracker.getClientId());
-        requestIdBuilder.setSeqNo(rpc.getSequenceId());
-        requestIdBuilder.setAttemptNo(rpc.attempt);
-        requestIdBuilder.setFirstIncompleteSeqNo(requestTracker.firstIncomplete());
-        headerBuilder.setRequestId(requestIdBuilder);
-      }
-
-      outbound = new RpcOutboundMessage(headerBuilder.build(), rpc.createRequestPB());
+      req = rpc.createRequestPB();
     } catch (Exception e) {
       LOG.error("Uncaught exception while constructing RPC request: " + rpc, e);
       rpc.errback(e);  // Make the RPC fail with the exception.
-      return null;
+      return;
     }
-    final KuduRpc<?> oldrpc = rpcsInflight.put(rpcid, rpc);
+
+    lock.lock();
+    boolean needsUnlock = true;
+    try {
+      // If we are disconnected, immediately fail the RPC
+      if (state == State.DISCONNECTED) {
+        lock.unlock();
+        needsUnlock = false;
+        Status statusNetworkError =
+            Status.NetworkError(getPeerUuidLoggingString() + "Connection reset");
+        failOrRetryRpc(rpc, new RecoverableException(statusNetworkError));
+        return;
+      }
+
+      // We're still negotiating -- just add it to the pending list
+      // which will be sent when the negotiation either completes or
+      // fails.
+      if (state == State.NEGOTIATING) {
+        pendingRpcs.add(rpc);
+        return;
+      }
+
+      // We are alive, in which case we must have a channel.
+      assert state == State.ALIVE;
+      assert chan != null;
+
+      // Check that the server supports feature flags, if our RPC uses them.
+      if (!rpc.getRequiredFeatures().isEmpty() &&
+          !negotiationResult.serverFeatures.contains(
+              RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS)) {
+        // We don't want to call out of this class while holding the lock.
+        lock.unlock();
+        needsUnlock = false;
+
+        Status statusNotSupported = Status.NotSupported("the server does not support the" +
+            "APPLICATION_FEATURE_FLAGS RPC feature");
+        rpc.errback(new NonRecoverableException(statusNotSupported));
+        return;
+      }
+
+      // Assign the call ID and write it to the wire.
+      sendCallToWire(rpc, req);
+    } finally {
+      if (needsUnlock) {
+        lock.unlock();
+      }
+    }
+  }
+
+  @GuardedBy("lock")
+  private <R> void sendCallToWire(final KuduRpc<R> rpc, Message reqPB) {
+    assert lock.isHeldByCurrentThread();
+    assert state == State.ALIVE;
+    assert chan != null;
+
+    int callId = nextCallId++;
+
+    final RpcHeader.RequestHeader.Builder headerBuilder = RpcHeader.RequestHeader.newBuilder()
+        .addAllRequiredFeatureFlags(rpc.getRequiredFeatures())
+        .setCallId(callId)
+        .setRemoteMethod(
+            RpcHeader.RemoteMethodPB.newBuilder()
+            .setServiceName(rpc.serviceName())
+            .setMethodName(rpc.method()));
+
+    // If any timeout is set, find the lowest non-zero one, since this will be the deadline that
+    // the server must respect.
+    if (rpc.deadlineTracker.hasDeadline() || socketReadTimeoutMs > 0) {
+      long millisBeforeDeadline = Long.MAX_VALUE;
+      if (rpc.deadlineTracker.hasDeadline()) {
+        millisBeforeDeadline = rpc.deadlineTracker.getMillisBeforeDeadline();
+      }
+
+      long localRpcTimeoutMs = Long.MAX_VALUE;
+      if (socketReadTimeoutMs > 0) {
+        localRpcTimeoutMs = socketReadTimeoutMs;
+      }
+
+      headerBuilder.setTimeoutMillis((int) Math.min(millisBeforeDeadline, localRpcTimeoutMs));
+    }
+
+    if (rpc.isRequestTracked()) {
+      RpcHeader.RequestIdPB.Builder requestIdBuilder = RpcHeader.RequestIdPB.newBuilder();
+      if (rpc.getSequenceId() == RequestTracker.NO_SEQ_NO) {
+        rpc.setSequenceId(requestTracker.newSeqNo());
+      }
+      requestIdBuilder.setClientId(requestTracker.getClientId());
+      requestIdBuilder.setSeqNo(rpc.getSequenceId());
+      requestIdBuilder.setAttemptNo(rpc.attempt);
+      requestIdBuilder.setFirstIncompleteSeqNo(requestTracker.firstIncomplete());
+      headerBuilder.setRequestId(requestIdBuilder);
+    }
+
+    final KuduRpc<?> oldrpc = rpcsInflight.put(callId, rpc);
     if (oldrpc != null) {
       final String wtf = getPeerUuidLoggingString() +
-          "WTF?  There was already an RPC in flight with" +
-          " rpcid=" + rpcid + ": " + oldrpc +
+          "Unexpected state: there was already an RPC in flight with" +
+          " callId=" + callId + ": " + oldrpc +
           ".  This happened when sending out: " + rpc;
       LOG.error(wtf);
       Status statusIllegalState = Status.IllegalState(wtf);
       // Make it fail. This isn't an expected failure mode.
       oldrpc.errback(new NonRecoverableException(statusIllegalState));
+      return;
     }
 
-    return outbound;
+    RpcOutboundMessage outbound = new RpcOutboundMessage(headerBuilder, reqPB);
+    Channels.write(chan, outbound);
   }
 
   /**
-   * Quick and dirty way to close a connection to a tablet server, if it wasn't already closed.
+   * Triggers the channel to be disconnected, which will asynchronously cause all
+   * pending and in-flight RPCs to be failed. This method is idempotent.
    */
   @VisibleForTesting
-  void disconnect() {
-    Channel chancopy = chan;
-    if (chancopy != null && chancopy.isConnected()) {
-      Channels.disconnect(chancopy);
-    }
+  ChannelFuture disconnect() {
+    // 'chan' should never be null, because as soon as this object is created, it's
+    // added to a ChannelPipeline, which synchronously fires the channelOpen()
+    // event.
+    Preconditions.checkNotNull(chan);
+    return Channels.disconnect(chan);
   }
 
   /**
@@ -301,66 +302,26 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * @return deferred object to use to track the shutting down of this connection
    */
   public Deferred<Void> shutdown() {
-    Status statusNetworkError =
-        Status.NetworkError(getPeerUuidLoggingString() + "Client is shutting down");
-    NonRecoverableException exception = new NonRecoverableException(statusNetworkError);
-    // First, check whether we have RPCs in flight and cancel them.
-    for (Iterator<KuduRpc<?>> ite = rpcsInflight.values().iterator(); ite
-        .hasNext();) {
-      ite.next().errback(exception);
-      ite.remove();
-    }
-
-    // Same for the pending RPCs.
-    synchronized (this) {
-      if (pendingRpcs != null) {
-        for (Iterator<KuduRpc<?>> ite = pendingRpcs.iterator(); ite.hasNext();) {
-          ite.next().errback(exception);
-          ite.remove();
+    ChannelFuture disconnectFuture = disconnect();
+    final Deferred<Void> d = new Deferred<Void>();
+    disconnectFuture.addListener(new ChannelFutureListener() {
+      public void operationComplete(final ChannelFuture future) {
+        if (future.isSuccess()) {
+          d.callback(null);
+          return;
+        }
+        final Throwable t = future.getCause();
+        if (t instanceof Exception) {
+          d.callback(t);
+        } else {
+          // Wrap the Throwable because Deferred doesn't handle Throwables,
+          // it only uses Exception.
+          Status statusIllegalState = Status.IllegalState("Failed to shutdown: " +
+              TabletClient.this);
+          d.callback(new NonRecoverableException(statusIllegalState, t));
         }
       }
-    }
-
-    final Channel chancopy = chan;
-    if (chancopy == null) {
-      return Deferred.fromResult(null);
-    }
-    if (chancopy.isConnected()) {
-      Channels.disconnect(chancopy);   // ... this is going to set it to null.
-      // At this point, all in-flight RPCs are going to be failed.
-    }
-    if (chancopy.isBound()) {
-      Channels.unbind(chancopy);
-    }
-    // It's OK to call close() on a Channel if it's already closed.
-    final ChannelFuture future = Channels.close(chancopy);
-    // Now wrap the ChannelFuture in a Deferred.
-    final Deferred<Void> d = new Deferred<Void>();
-    // Opportunistically check if it's already completed successfully.
-    if (future.isSuccess()) {
-      d.callback(null);
-    } else {
-      // If we get here, either the future failed (yeah, that sounds weird)
-      // or the future hasn't completed yet (heh).
-      future.addListener(new ChannelFutureListener() {
-        public void operationComplete(final ChannelFuture future) {
-          if (future.isSuccess()) {
-            d.callback(null);
-            return;
-          }
-          final Throwable t = future.getCause();
-          if (t instanceof Exception) {
-            d.callback(t);
-          } else {
-            // Wrap the Throwable because Deferred doesn't handle Throwables,
-            // it only uses Exception.
-            Status statusIllegalState = Status.IllegalState("Failed to shutdown: " +
-                TabletClient.this);
-            d.callback(new NonRecoverableException(statusIllegalState, t));
-          }
-        }
-      });
-    }
+    });
     return d;
   }
 
@@ -375,9 +336,20 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
     Object m = evt.getMessage();
     if (m instanceof Negotiator.Result) {
-      this.negotiationResult = (Result) m;
-      this.chan = ctx.getChannel();
-      sendQueuedRpcs();
+      ArrayList<KuduRpc<?>> queuedRpcs;
+      lock.lock();
+      try {
+        assert chan != null;
+        this.negotiationResult = (Result) m;
+        state = State.ALIVE;
+        queuedRpcs = pendingRpcs;
+        pendingRpcs = null;
+      } finally {
+        lock.unlock();
+      }
+      // Send the queued RPCs after dropping the lock, so we don't end up calling
+      // their callbacks/errbacks with the lock held.
+      sendQueuedRpcs(queuedRpcs);
       return;
     }
     if (!(m instanceof CallResponse)) {
@@ -447,8 +419,9 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         exception = ex;
       }
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(getPeerUuidLoggingString() + "rpcid=" + rpcid +
+    if (LOG.isTraceEnabled()) {
+      LOG.trace(getPeerUuidLoggingString() + " received RPC response: " +
+          "rpcId=" + rpcid +
           ", response size=" + response.getTotalResponseSize() +
           ", rpc=" + rpc);
     }
@@ -515,8 +488,8 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       LOG.debug(getPeerUuidLoggingString() + "Unexpected exception while handling RPC #" + rpcid +
           ", rpc=" + rpc, e);
     }
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("------------------<< LEAVING  DECODE <<------------------" +
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("------------------<< LEAVING  DECODE <<------------------" +
           " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
     }
   }
@@ -529,7 +502,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * @return an exception if we couldn't dispatch the error, or null
    */
   private KuduException dispatchTSErrorOrReturnException(
-      KuduRpc rpc, Tserver.TabletServerErrorPB error,
+      KuduRpc<?> rpc, Tserver.TabletServerErrorPB error,
       RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromTabletServerErrorPB(error);
@@ -557,7 +530,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * @return an exception if we couldn't dispatch the error, or null
    */
   private KuduException dispatchMasterErrorOrReturnException(
-      KuduRpc rpc, Master.MasterErrorPB error, RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
+      KuduRpc<?> rpc, Master.MasterErrorPB error, RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
     Status status = Status.fromMasterErrorPB(error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
@@ -588,17 +561,26 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * retried in the client right away
    */
   public boolean isAlive() {
-    synchronized (this) {
-      return !dead;
+    lock.lock();
+    try {
+      return state == State.ALIVE || state == State.NEGOTIATING;
+    } finally {
+      lock.unlock();
     }
+  }
+
+  @Override
+  public void channelOpen(ChannelHandlerContext ctx, ChannelStateEvent e)
+      throws Exception {
+    this.chan = e.getChannel();
+    super.channelOpen(ctx, e);
   }
 
   @Override
   public void channelConnected(final ChannelHandlerContext ctx,
                                final ChannelStateEvent e) {
-    final Channel chan = e.getChannel();
+    assert chan != null;
     Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
-
     Negotiator secureRpcHelper = new Negotiator(getSubject(), serverInfo.getHostname());
     ctx.getPipeline().addBefore(ctx.getName(), "negotiation", secureRpcHelper);
     secureRpcHelper.sendHello(chan);
@@ -607,8 +589,8 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   @Override
   public void handleUpstream(final ChannelHandlerContext ctx,
                              final ChannelEvent e) throws Exception {
-    if (LOG.isDebugEnabled()) {
-      LOG.debug(getPeerUuidLoggingString() + e.toString());
+    if (LOG.isTraceEnabled()) {
+      LOG.trace(e.toString());
     }
     super.handleUpstream(ctx, e);
   }
@@ -616,19 +598,14 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   @Override
   public void channelDisconnected(final ChannelHandlerContext ctx,
                                   final ChannelStateEvent e) throws Exception {
-    chan = null;
     super.channelDisconnected(ctx, e);  // Let the ReplayingDecoder cleanup.
     cleanup("Connection disconnected");
   }
 
   @Override
   public void channelClosed(final ChannelHandlerContext ctx,
-                            final ChannelStateEvent e) {
-    chan = null;
-    // No need to call super.channelClosed() because we already called
-    // super.channelDisconnected().  If we get here without getting a
-    // DISCONNECTED event, then we were never connected in the first place so
-    // the ReplayingDecoder has nothing to cleanup.
+                            final ChannelStateEvent e) throws Exception {
+    super.channelClosed(ctx, e);
     cleanup("Connection closed");
   }
 
@@ -641,35 +618,35 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * @param errorMessage string to describe the cause of cleanup
    */
   private void cleanup(final String errorMessage) {
-    final ArrayList<KuduRpc<?>> rpcs;
+    final ArrayList<KuduRpc<?>> rpcsToFail = Lists.newArrayList();
 
-    // The timing of this block is critical. If this TabletClient is 'dead' then it means that
-    // rpcsInflight was emptied and that anything added to it after won't be handled and needs
-    // to be sent to failOrRetryRpc.
-    synchronized (this) {
-      // Cleanup can be called multiple times, but we only want to run it once so that we don't
-      // clear up rpcsInflight multiple times.
-      if (dead) {
+    lock.lock();
+    try {
+      // Cleanup can be called multiple times, but we only want to run it once.
+      if (state == State.DISCONNECTED) {
+        assert pendingRpcs == null;
         return;
       }
-      dead = true;
-      rpcs = pendingRpcs == null ? new ArrayList<KuduRpc<?>>(rpcsInflight.size()) : pendingRpcs;
+      state = State.DISCONNECTED;
 
-      for (Iterator<KuduRpc<?>> iterator = rpcsInflight.values().iterator(); iterator.hasNext();) {
-        KuduRpc<?> rpc = iterator.next();
-        rpcs.add(rpc);
-        iterator.remove();
+      // In case we were negotiating, we need to fail any that were waiting
+      // for negotiation to complete.
+      if (pendingRpcs != null) {
+        rpcsToFail.addAll(pendingRpcs);
       }
-      // After this, rpcsInflight might still have entries since they could have been added
-      // concurrently, and those RPCs will be handled by their caller in sendRpc.
-
       pendingRpcs = null;
+
+      // Similarly, we need to fail any that were already sent and in-flight.
+      rpcsToFail.addAll(rpcsInflight.values());
+      rpcsInflight = null;
+    } finally {
+      lock.unlock();
     }
     Status statusNetworkError = Status.NetworkError(getPeerUuidLoggingString() +
         (errorMessage == null ? "Connection reset" : errorMessage));
     RecoverableException exception = new RecoverableException(statusNetworkError);
 
-    failOrRetryRpcs(rpcs, exception);
+    failOrRetryRpcs(rpcsToFail, exception);
   }
 
   /**
@@ -705,13 +682,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     if (tablet == null) {  // Can't retry, dunno where this RPC should go.
       rpc.errback(exception);
     } else {
-      if (gotUncaughtException) {
-        // This will remove this TabletClient from this RPC's cache since there's something wrong
-        // about it.
-        kuduClient.handleTabletNotFound(rpc, exception, this);
-      } else {
-        kuduClient.handleRetryableError(rpc, exception);
-      }
+      kuduClient.handleTabletNotFound(rpc, exception, this);
     }
   }
 
@@ -729,9 +700,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       LOG.debug(getPeerUuidLoggingString() + "Encountered a read timeout, will close the channel");
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
-      // For any other exception, likely a connection error, we'll clear the tablet caches for the
-      // RPCs we're going to retry.
-      gotUncaughtException = true;
     }
     if (c.isOpen()) {
       Channels.close(c);        // Will trigger channelClosed(), which will cleanup()
@@ -745,18 +713,14 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
    * Sends the queued RPCs to the server, once we're connected to it.
    * This gets called after {@link #channelConnected}, once we were able to
    * handshake with the server
+   *
+   * Must *not* be called with 'lock' held.
    */
-  private void sendQueuedRpcs() {
-    ArrayList<KuduRpc<?>> rpcs;
-    synchronized (this) {
-      rpcs = pendingRpcs;
-      pendingRpcs = null;
-    }
-    if (rpcs != null) {
-      for (final KuduRpc<?> rpc : rpcs) {
-        LOG.debug(getPeerUuidLoggingString() + "Executing RPC queued: " + rpc);
-        sendRpc(rpc);
-      }
+  private void sendQueuedRpcs(List<KuduRpc<?>> rpcs) {
+    assert !lock.isHeldByCurrentThread();
+    for (final KuduRpc<?> rpc : rpcs) {
+      LOG.debug(getPeerUuidLoggingString() + "Executing RPC queued: " + rpc);
+      sendRpc(rpc);
     }
   }
 
@@ -776,22 +740,27 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   }
 
   public String toString() {
-    final StringBuilder buf = new StringBuilder(13 + 10 + 6 + 64 + 7 + 32 + 16 + 1 + 17 + 2 + 1);
-    buf.append("TabletClient@")           // =13
-        .append(hashCode())                 // ~10
-        .append("(chan=")                   // = 6
-        .append(chan)                       // ~64 (up to 66 when using IPv4)
-        .append(", uuid=")                  // = 7
-        .append(serverInfo.getUuid())       // = 32
-        .append(", #pending_rpcs=");        // =16
+    final StringBuilder buf = new StringBuilder();
+    buf.append("TabletClient@")
+        .append(hashCode())
+        .append("(chan=")
+        .append(chan)
+        .append(", uuid=")
+        .append(serverInfo.getUuid())
+        .append(", #pending_rpcs=");
     int npendingRpcs;
-    synchronized (this) {
+    int nInFlight;
+    lock.lock();
+    try {
       npendingRpcs = pendingRpcs == null ? 0 : pendingRpcs.size();
+      nInFlight = rpcsInflight == null ? 0 : rpcsInflight.size();
+    } finally {
+      lock.unlock();
     }
-    buf.append(npendingRpcs);             // = 1
-    buf.append(", #rpcs_inflight=")       // =17
-        .append(rpcsInflight.size())       // ~ 2
-        .append(')');                       // = 1
+    buf.append(npendingRpcs);
+    buf.append(", #rpcs_inflight=")
+        .append(nInFlight)
+        .append(')');
     return buf.toString();
   }
 

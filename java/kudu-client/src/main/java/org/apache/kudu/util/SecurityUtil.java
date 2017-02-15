@@ -128,7 +128,8 @@ public abstract class SecurityUtil {
       LOG.debug("Logged in as subject: {}", Joiner.on(",").join(subject.getPrincipals()));
       return subject;
     } catch (LoginException e) {
-      LOG.debug("Could not login via JAAS. Using no credentials", e);
+      LOG.debug("Could not login via JAAS. Using no credentials: " + e.getMessage(),
+          LOG.isTraceEnabled() ? e : null);
       return null;
     }
   }

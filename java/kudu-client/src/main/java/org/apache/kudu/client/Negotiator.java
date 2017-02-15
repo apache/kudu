@@ -170,8 +170,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     Preconditions.checkNotNull(channel);
     RpcHeader.RequestHeader.Builder builder = RpcHeader.RequestHeader.newBuilder();
     builder.setCallId(SASL_CALL_ID);
-    RpcHeader.RequestHeader header = builder.build();
-    Channels.write(channel, new RpcOutboundMessage(header, msg));
+    Channels.write(channel, new RpcOutboundMessage(builder, msg));
   }
 
   @Override
@@ -464,8 +463,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     userBuilder.setRealUser(Negotiator.USER_AND_PASSWORD);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
     RpcHeader.ConnectionContextPB pb = builder.build();
-    RpcHeader.RequestHeader header =
-        RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID).build();
+    RpcHeader.RequestHeader.Builder header =
+        RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID);
     return new RpcOutboundMessage(header, pb);
   }
 

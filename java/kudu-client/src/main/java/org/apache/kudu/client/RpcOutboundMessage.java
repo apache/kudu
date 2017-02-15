@@ -36,16 +36,16 @@ import org.apache.kudu.rpc.RpcHeader.RequestHeader;
 class RpcOutboundMessage {
   private static final Logger LOG = LoggerFactory.getLogger(RpcOutboundMessage.class);
 
-  private final RequestHeader header;
+  private final RequestHeader.Builder headerBuilder;
   private final Message body;
 
-  RpcOutboundMessage(RequestHeader header, Message body) {
-    this.header = header;
+  RpcOutboundMessage(RequestHeader.Builder header, Message body) {
+    this.headerBuilder = header;
     this.body = body;
   }
 
-  public RequestHeader getHeader() {
-    return header;
+  public RequestHeader.Builder getHeaderBuilder() {
+    return headerBuilder;
   }
 
   public Message getBody() {
@@ -55,7 +55,7 @@ class RpcOutboundMessage {
   @Override
   public String toString() {
     // TODO(todd): should this redact? it's only used at TRACE level, so hopefully OK.
-    return "RpcOutboundMessage[header={" + TextFormat.shortDebugString(header) +
+    return "RpcOutboundMessage[header={" + TextFormat.shortDebugString(headerBuilder) +
         "}, body={" + TextFormat.shortDebugString(body) + "}]";
   }
 
@@ -75,7 +75,8 @@ class RpcOutboundMessage {
       }
       // TODO(todd): move this impl into this class and remove external
       // callers.
-      return KuduRpc.toChannelBuffer(msg.getHeader(), msg.getBody());
+      return KuduRpc.toChannelBuffer(msg.getHeaderBuilder().build(),
+          msg.getBody());
     }
   }
 }

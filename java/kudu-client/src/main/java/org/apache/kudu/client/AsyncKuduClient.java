@@ -930,8 +930,8 @@ public class AsyncKuduClient implements AutoCloseable {
     // Randomized exponential backoff, truncated at 4096ms.
     long sleepTime = (long)(Math.pow(2.0, Math.min(attemptCount, 12)) *
         sleepRandomizer.nextDouble());
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
+    if (LOG.isTraceEnabled()) {
+      LOG.trace("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
     }
     return sleepTime;
   }
