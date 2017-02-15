@@ -45,71 +45,80 @@ import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.Upsert;
 
 /**
- * A regular expression serializer that generates one {@link Insert} or
- * {@link Upsert} per {@link Event} by parsing the payload into values using a
- * regular expression. Values are coerced to the proper column types.
+ * A regular expression operations producer that generates one or more Kudu
+ * {@link Insert} or {@link Upsert} operations per Flume {@link Event} by
+ * parsing the event {@code body} using a regular expression. Values are
+ * coerced to the types of the named columns in the Kudu table.
  *
- * Example: if the Kudu table has the schema
+ * <p>Example: If the Kudu table has the schema:
  *
+ * <pre>
  * key INT32
- * name STRING
+ * name STRING</pre>
  *
- * and producer.pattern is '(?&lt;key&gt;\\d+),(?&lt;name&gt;\w+)', then the
- * RegexpKuduOperationsProducer will parse the string
+ * <p>and {@code producer.pattern = (?<key>\\d+),(?<name>\\w+)} then
+ * {@code RegexpKuduOperationsProducer} will parse the string:
  *
- * |12345,Mike||54321,Todd|
+ * <pre>|12345,Mike||54321,Todd|</pre>
  *
- * into the rows (key=12345, name=Mike) and (key=54321, name=Todd).
+ * into the rows: {@code (key=12345, name=Mike)} and {@code (key=54321, name=Todd)}.
  *
- * Note: this class relies on JDK7 named capturing groups, which are documented
- * in {@link Pattern}.
+ * <p>Note: This class relies on JDK7 named capturing groups, which are
+ * documented in {@link Pattern}. The name of each capturing group must
+ * correspond to a column name in the destination Kudu table.
  *
- * <p><strong>Regular Expression Kudu Operations Producer configuration parameters</strong></p>
+ * <p><strong><code>RegexpKuduOperationsProducer</code> Flume Configuration Parameters</strong></p>
  *
- * <table cellpadding=3 cellspacing=0 border=1>
+ * <table cellpadding=3 cellspacing=0 border=1 summary="Flume Configuration Parameters">
  * <tr>
  *   <th>Property Name</th>
  *   <th>Default</th>
  *   <th>Required?</th>
  *   <th>Description</th>
  * </tr>
- * <tr></tr><td>producer.pattern</td><td></td><td>Yes</td>
- * <td>The regular expression used to parse the event body.</td>
+ * <tr>
+ *   <td>producer.pattern</td>
+ *   <td></td>
+ *   <td>Yes</td>
+ *   <td>The regular expression used to parse the event body.</td>
  * </tr>
  * <tr>
  *   <td>producer.charset</td>
  *   <td>utf-8</td>
  *   <td>No</td>
- *   <td>The charset of the event body.</td>
+ *   <td>The character set of the event body.</td>
  * </tr>
  * <tr>
  *   <td>producer.operation</td>
  *   <td>upsert</td>
  *   <td>No</td>
- *   <td>Operation type used to write the event to Kudu. Must be 'insert' or
- *   'upsert'.</td>
+ *   <td>Operation type used to write the event to Kudu. Must be either
+ *   {@code insert} or {@code upsert}.</td>
  * </tr>
  * <tr>
  *   <td>producer.skipMissingColumn</td>
  *   <td>false</td>
  *   <td>No</td>
- *   <td>Whether to ignore a column if it has no corresponding capture group, or
- *   instead completely abandon the attempt to parse and insert/upsert the row.
+ *   <td>What to do if a column in the Kudu table has no corresponding capture group.
+ *   If set to {@code true}, a warning message is logged and the operation is still attempted.
+ *   If set to {@code false}, an exception is thrown and the sink will not process the
+ *   {@code Event}, causing a Flume {@code Channel} rollback.
  * </tr>
  * <tr>
  *   <td>producer.skipBadColumnValue</td>
  *   <td>false</td>
  *   <td>No</td>
- *   <td>Whether to omit a column value from the row if its raw value cannot be
- *   coerced to the right type, or instead complete abandon the attempt to parse
- *   and insert/operation the row.</td>
+ *   <td>What to do if a value in the pattern match cannot be coerced to the required type.
+ *   If set to {@code true}, a warning message is logged and the operation is still attempted.
+ *   If set to {@code false}, an exception is thrown and the sink will not process the
+ *   {@code Event}, causing a Flume {@code Channel} rollback.
  * </tr>
  * <tr>
  *   <td>producer.warnUnmatchedRows</td>
  *   <td>true</td>
  *   <td>No</td>
- *   <td>Whether to warn about payloads that do not match the pattern. If this
- *   option is not set, event bodies with no matches will be silently dropped.</td>
+ *   <td>Whether to log a warning about payloads that do not match the pattern. If set to
+ *   {@code false}, event bodies with no matches will be silently dropped.</td>
  * </tr>
  * </table>
  *
@@ -119,21 +128,21 @@ import org.apache.kudu.client.Upsert;
 @InterfaceStability.Evolving
 public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
   private static final Logger logger = LoggerFactory.getLogger(RegexpKuduOperationsProducer.class);
+  private static final String INSERT = "insert";
+  private static final String UPSERT = "upsert";
+  private static final List<String> validOperations = Lists.newArrayList(UPSERT, INSERT);
 
   public static final String PATTERN_PROP = "pattern";
   public static final String ENCODING_PROP = "encoding";
   public static final String DEFAULT_ENCODING = "utf-8";
   public static final String OPERATION_PROP = "operation";
-  public static final String DEFAULT_OPERATION = "upsert";
+  public static final String DEFAULT_OPERATION = UPSERT;
   public static final String SKIP_MISSING_COLUMN_PROP = "skipMissingColumn";
   public static final boolean DEFAULT_SKIP_MISSING_COLUMN = false;
   public static final String SKIP_BAD_COLUMN_VALUE_PROP = "skipBadColumnValue";
   public static final boolean DEFAULT_SKIP_BAD_COLUMN_VALUE = false;
   public static final String WARN_UNMATCHED_ROWS_PROP = "skipUnmatchedRows";
   public static final boolean DEFAULT_WARN_UNMATCHED_ROWS = true;
-
-  private static final List<String> validOperations =
-      Lists.newArrayList("upsert", "insert");
 
   private KuduTable table;
   private Pattern pattern;
@@ -165,10 +174,9 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
       throw new FlumeException(
           String.format("Invalid or unsupported charset %s", charsetName), e);
     }
-    operation = context.getString(OPERATION_PROP,
-        DEFAULT_OPERATION);
+    operation = context.getString(OPERATION_PROP, DEFAULT_OPERATION).toLowerCase();
     Preconditions.checkArgument(
-        validOperations.contains(operation.toLowerCase()),
+        validOperations.contains(operation),
         "Unrecognized operation '%s'",
         operation);
     skipMissingColumn = context.getBoolean(SKIP_MISSING_COLUMN_PROP,
@@ -194,16 +202,16 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
     while (m.find()) {
       match = true;
       Operation op;
-      switch (operation.toLowerCase()) {
-        case "upsert":
+      switch (operation) {
+        case UPSERT:
           op = table.newUpsert();
           break;
-        case "insert":
+        case INSERT:
           op = table.newInsert();
           break;
         default:
           throw new FlumeException(
-              String.format("Unrecognized operation type '%s' in getOperations: " +
+              String.format("Unrecognized operation type '%s' in getOperations(): " +
                   "this should never happen!", operation));
       }
       PartialRow row = op.getRow();

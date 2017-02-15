@@ -45,8 +45,8 @@ public interface KuduOperationsProducer extends Configurable, AutoCloseable {
 
   /**
    * Returns the operations that should be written to Kudu as a result of this event.
-   * @return List of {@link org.apache.kudu.client.Operation} that
-   * should be written to Kudu
+   * @param event Event to convert to one or more Operations
+   * @return List of Operations that should be written to Kudu
    */
   List<Operation> getOperations(Event event);
 
