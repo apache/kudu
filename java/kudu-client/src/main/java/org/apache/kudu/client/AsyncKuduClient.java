@@ -1066,10 +1066,10 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
     final Deferred<Master.GetTableLocationsResponsePB> responseD = new Deferred<>();
-    final GetMasterRegistrationReceived received =
-        new GetMasterRegistrationReceived(masterAddresses, responseD);
+    final ConnectToCluster connector =
+        new ConnectToCluster(masterAddresses, responseD);
     for (HostAndPort hostAndPort : masterAddresses) {
-      Deferred<GetMasterRegistrationResponse> d;
+      Deferred<ConnectToClusterResponse> d;
       // Note: we need to create a client for that host first, as there's a
       // chicken and egg problem: since there is no source of truth beyond
       // the master, the only way to get information about a master host is
@@ -1083,7 +1083,7 @@ public class AsyncKuduClient implements AutoCloseable {
       } else {
         d = getMasterRegistration(clientForHostAndPort, parentRpc);
       }
-      d.addCallbacks(received.callbackForNode(hostAndPort), received.errbackForNode(hostAndPort));
+      d.addCallbacks(connector.callbackForNode(hostAndPort), connector.errbackForNode(hostAndPort));
     }
     return responseD;
   }
@@ -1484,24 +1484,24 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Retrieve the master registration (see {@link GetMasterRegistrationResponse}
+   * Retrieve the master registration (see {@link ConnectToClusterResponse}
    * for a replica.
    * @param masterClient an initialized client for the master replica
    * @param parentRpc RPC that prompted a master lookup, can be null
    * @return a Deferred object for the master replica's current registration
    */
-  Deferred<GetMasterRegistrationResponse> getMasterRegistration(
+  Deferred<ConnectToClusterResponse> getMasterRegistration(
       TabletClient masterClient, KuduRpc<?> parentRpc) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
-    GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTable);
+    ConnectToMasterRequest rpc = new ConnectToMasterRequest(masterTable);
     if (parentRpc != null) {
       rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
       rpc.setParentRpc(parentRpc);
     } else {
       rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     }
-    Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
+    Deferred<ConnectToClusterResponse> d = rpc.getDeferred();
     rpc.attempt++;
     masterClient.sendRpc(rpc);
     return d;

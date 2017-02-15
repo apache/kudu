@@ -40,13 +40,13 @@ import org.apache.kudu.master.Master;
 import org.apache.kudu.util.NetUtil;
 
 /**
- * Class grouping the callback and the errback for GetMasterRegistration calls
- * made in getMasterTableLocationsPB.
+ * Class responsible for fanning out RPCs to all of the configured masters,
+ * finding a leader, and responding when the leader has been located.
  */
 @InterfaceAudience.Private
-final class GetMasterRegistrationReceived {
+final class ConnectToCluster {
 
-  private static final Logger LOG = LoggerFactory.getLogger(GetMasterRegistrationReceived.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ConnectToCluster.class);
 
   private final List<HostAndPort> masterAddrs;
   private final Deferred<Master.GetTableLocationsResponsePB> responseD;
@@ -71,8 +71,8 @@ final class GetMasterRegistrationReceived {
    * @param responseD Deferred object that will hold the GetTableLocationsResponsePB object for
    *                  the master table.
    */
-  public GetMasterRegistrationReceived(List<HostAndPort> masterAddrs,
-                                       Deferred<Master.GetTableLocationsResponsePB> responseD) {
+  public ConnectToCluster(List<HostAndPort> masterAddrs,
+                          Deferred<Master.GetTableLocationsResponsePB> responseD) {
     this.masterAddrs = masterAddrs;
     this.responseD = responseD;
     this.numMasters = masterAddrs.size();
@@ -85,7 +85,7 @@ final class GetMasterRegistrationReceived {
    *                    be valid.
    * @return The callback object that can be added to the RPC request.
    */
-  public Callback<Void, GetMasterRegistrationResponse> callbackForNode(HostAndPort hostAndPort) {
+  public Callback<Void, ConnectToClusterResponse> callbackForNode(HostAndPort hostAndPort) {
     return new GetMasterRegistrationCB(hostAndPort);
   }
 
@@ -170,7 +170,7 @@ final class GetMasterRegistrationReceived {
    * the number of masters, pass {@link NoLeaderFoundException} into
    * 'responseD' if no one else had called 'responseD' before; otherwise, do nothing.
    */
-  final class GetMasterRegistrationCB implements Callback<Void, GetMasterRegistrationResponse> {
+  final class GetMasterRegistrationCB implements Callback<Void, ConnectToClusterResponse> {
     private final HostAndPort hostAndPort;
 
     public GetMasterRegistrationCB(HostAndPort hostAndPort) {
@@ -178,7 +178,7 @@ final class GetMasterRegistrationReceived {
     }
 
     @Override
-    public Void call(GetMasterRegistrationResponse r) throws Exception {
+    public Void call(ConnectToClusterResponse r) throws Exception {
       Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
           Master.TabletLocationsPB.ReplicaPB.newBuilder();
 

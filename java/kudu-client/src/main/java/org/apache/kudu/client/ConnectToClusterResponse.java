@@ -23,24 +23,24 @@ import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
 /**
- * Response for {@link GetMasterRegistrationRequest}.
+ * Response for {@link ConnectToMasterRequest}.
  */
 @InterfaceAudience.Private
-public class GetMasterRegistrationResponse extends KuduRpcResponse {
+public class ConnectToClusterResponse extends KuduRpcResponse {
 
   private final Metadata.RaftPeerPB.Role role;
   private final WireProtocol.ServerRegistrationPB serverRegistration;
   private final WireProtocol.NodeInstancePB instanceId;
 
   /**
-   * Describes a response to a {@link GetMasterRegistrationRequest}, built from
+   * Describes a response to a {@link ConnectToMasterRequest}, built from
    * {@link Master.GetMasterRegistrationResponsePB}.
    *
    * @param role Master's role in the config.
    * @param serverRegistration server registration (RPC and HTTP addresses) for this master.
    * @param instanceId Node instance (permanent uuid and
    */
-  public GetMasterRegistrationResponse(long elapsedMillis, String tsUUID,
+  public ConnectToClusterResponse(long elapsedMillis, String tsUUID,
                                        Metadata.RaftPeerPB.Role role,
                                        WireProtocol.ServerRegistrationPB serverRegistration,
                                        WireProtocol.NodeInstancePB instanceId) {

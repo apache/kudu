@@ -31,10 +31,10 @@ import org.apache.kudu.util.Pair;
  * Package-private RPC that can only go to master.
  */
 @InterfaceAudience.Private
-public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationResponse> {
+public class ConnectToMasterRequest extends KuduRpc<ConnectToClusterResponse> {
   private static final String GET_MASTER_REGISTRATION = "GetMasterRegistration";
 
-  public GetMasterRegistrationRequest(KuduTable masterTable) {
+  public ConnectToMasterRequest(KuduTable masterTable) {
     super(masterTable);
   }
 
@@ -54,8 +54,8 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
   }
 
   @Override
-  Pair<GetMasterRegistrationResponse, Object> deserialize(CallResponse callResponse,
-                                                          String tsUUID) throws KuduException {
+  Pair<ConnectToClusterResponse, Object> deserialize(CallResponse callResponse,
+                                                     String tsUUID) throws KuduException {
     final GetMasterRegistrationResponsePB.Builder respBuilder =
         GetMasterRegistrationResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
@@ -64,13 +64,13 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
         MasterErrorPB.Code.CATALOG_MANAGER_NOT_INITIALIZED) {
       role = respBuilder.getRole();
     }
-    GetMasterRegistrationResponse response = new GetMasterRegistrationResponse(
+    ConnectToClusterResponse response = new ConnectToClusterResponse(
         deadlineTracker.getElapsedMillis(),
         tsUUID,
         role,
         respBuilder.getRegistration(),
         respBuilder.getInstanceId());
-    return new Pair<GetMasterRegistrationResponse, Object>(
+    return new Pair<ConnectToClusterResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }
 }

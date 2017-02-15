@@ -34,7 +34,7 @@ import org.apache.kudu.WireProtocol;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
-public class TestGetMasterRegistrationReceived {
+public class TestConnectToCluster {
 
   private static final List<HostAndPort> MASTERS = ImmutableList.of(
       HostAndPort.fromParts("0", 9000),
@@ -163,11 +163,11 @@ public class TestGetMasterRegistrationReceived {
 
     Deferred<Master.GetTableLocationsResponsePB> d = new Deferred<>();
 
-    GetMasterRegistrationReceived grrm = new GetMasterRegistrationReceived(MASTERS, d);
+    ConnectToCluster grrm = new ConnectToCluster(MASTERS, d);
 
-    Callback<Void, GetMasterRegistrationResponse> cb0 = grrm.callbackForNode(MASTERS.get(0));
-    Callback<Void, GetMasterRegistrationResponse> cb1 = grrm.callbackForNode(MASTERS.get(1));
-    Callback<Void, GetMasterRegistrationResponse> cb2 = grrm.callbackForNode(MASTERS.get(2));
+    Callback<Void, ConnectToClusterResponse> cb0 = grrm.callbackForNode(MASTERS.get(0));
+    Callback<Void, ConnectToClusterResponse> cb1 = grrm.callbackForNode(MASTERS.get(1));
+    Callback<Void, ConnectToClusterResponse> cb2 = grrm.callbackForNode(MASTERS.get(2));
 
     Callback<Void, Exception> eb0 = grrm.errbackForNode(MASTERS.get(0));
     Callback<Void, Exception> eb1 = grrm.errbackForNode(MASTERS.get(1));
@@ -191,18 +191,18 @@ public class TestGetMasterRegistrationReceived {
 
   // Helper method that determines if the callback or errback should be called.
   private static void callTheRightCallback(
-      Callback<Void, GetMasterRegistrationResponse> cb,
+      Callback<Void, ConnectToClusterResponse> cb,
       Callback<Void, Exception> eb,
       Object response) throws Exception {
     if (response instanceof Exception) {
       eb.call((Exception) response);
     } else {
-      cb.call((GetMasterRegistrationResponse) response);
+      cb.call((ConnectToClusterResponse) response);
     }
   }
 
-  private static GetMasterRegistrationResponse makeGMRR(Metadata.RaftPeerPB.Role role) {
-    return new GetMasterRegistrationResponse(0, "", role, null,
+  private static ConnectToClusterResponse makeGMRR(Metadata.RaftPeerPB.Role role) {
+    return new ConnectToClusterResponse(0, "", role, null,
         WireProtocol.NodeInstancePB.getDefaultInstance());
   }
 }

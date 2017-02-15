@@ -536,7 +536,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
       kuduClient.handleNotLeader(rpc, new RecoverableException(status), this);
     } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
-      if (rpc instanceof GetMasterRegistrationRequest) {
+      if (rpc instanceof ConnectToMasterRequest) {
         // Special case:
         // We never want to retry this RPC, we only use it to poke masters to learn where the leader
         // is. If the error is truly non recoverable, it'll be handled later.
