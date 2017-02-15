@@ -259,7 +259,7 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
 // KuduSchemaBuilder
 ////////////////////////////////////////////////////////////
 
-class KUDU_NO_EXPORT KuduSchemaBuilder::Data {
+class KuduSchemaBuilder::Data {
  public:
   Data() : has_key_col_names(false) {
   }
