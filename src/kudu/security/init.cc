@@ -37,10 +37,11 @@ DEFINE_string(kerberos_principal, "kudu/_HOST",
               "Kerberos principal that this daemon will log in as. The special token "
               "_HOST will be replaced with the FQDN of the local host.");
 TAG_FLAG(kerberos_principal, experimental);
-
-// TODO(todd): this currently only affects the keytab login which is used
-// for client credentials, but doesn't affect the SASL server code path.
-// We probably need to plumb the same configuration into the RPC code.
+// This is currently tagged as unsafe because there is no way for users to configure
+// clients to expect a non-default principal. As such, configuring a server to login
+// as a different one would end up with a cluster that can't be connected to.
+// See KUDU-1884.
+TAG_FLAG(kerberos_principal, unsafe);
 
 using std::mt19937;
 using std::random_device;
