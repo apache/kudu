@@ -280,9 +280,6 @@ void GetFullLogFilename(google::LogSeverity severity, std::string* filename);
 // flushed.
 void ShutdownLoggingSafe();
 
-// Writes all command-line flags to the log at level INFO.
-void LogCommandLineFlags();
-
 // Deletes excess rotated log files.
 //
 // Keeps at most 'FLAG_max_log_files' of the most recent log files at every

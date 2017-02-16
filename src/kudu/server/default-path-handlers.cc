@@ -36,6 +36,7 @@
 #include "kudu/server/pprof-path-handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/histogram.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
@@ -43,7 +44,6 @@
 #include "kudu/util/jsonwriter.h"
 
 using boost::replace_all;
-using google::CommandlineFlagsIntoString;
 using std::ifstream;
 using std::string;
 using std::endl;
@@ -112,6 +112,8 @@ static void LogsHandler(const Webserver::WebRequest& req, std::ostringstream* ou
 }
 
 // Registered to handle "/flags", and prints out all command-line flags and their values
+// If --redact_sensitive_flags is true, the values of flags tagged as sensitive will
+// be redacted.
 static void FlagsHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);

@@ -27,12 +27,17 @@
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
 
 DECLARE_int32(webserver_max_post_length_bytes);
+
+DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
+TAG_FLAG(test_sensitive_flag, sensitive);
 
 namespace kudu {
 
@@ -123,6 +128,14 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/varz?raw=1", addr_.ToString()),
                            &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), "--v=");
+}
+
+TEST_F(WebserverTest, TestRedactFlagsDump) {
+  // Test varz -- check for the sensitive flag is redacted.
+  ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/varz?raw=1", addr_.ToString()),
+                           &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), strings::Substitute("--test_sensitive_flag=$0",
+                                                           kRedactionMessage));
 }
 
 // Used in symbolization test below.

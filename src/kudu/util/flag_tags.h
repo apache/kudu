@@ -80,6 +80,10 @@
 //         have any effect, you must be sure to use the FLAGS_foo_bar variable directly
 //         rather than initializing some instance variable during program startup.
 //
+// - "sensitive":
+//         The values of these flags are considered sensitive and will be redacted
+//         if --redact_sensitive_flags is true.
+//
 // A given flag may have zero or more tags associated with it. The system does
 // not make any attempt to check integrity of the tags - for example, it allows
 // you to mark a flag as both stable and unstable, even though this makes no
@@ -120,7 +124,8 @@ struct FlagTags {
     hidden,
     advanced,
     unsafe,
-    runtime
+    runtime,
+    sensitive
   };
 };
 

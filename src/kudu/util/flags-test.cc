@@ -22,6 +22,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/test_util.h"
 
 // Test gflags
@@ -33,6 +35,9 @@ DEFINE_string(test_default_ff, "default",
              "Check if we track defaults from flagfile");
 DEFINE_string(test_default_explicit, "default",
              "Check if we track explicitly set defaults");
+DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
+TAG_FLAG(test_sensitive_flag, sensitive);
+
 DECLARE_bool(never_fsync);
 DECLARE_bool(log_redact_user_data);
 
@@ -76,6 +81,9 @@ TEST_F(FlagsTest, TestNonDefaultFlags) {
     "--test_default_ff"
   };
 
+  // Setting a sensitive flag with non-default value should return
+  // a redacted value.
+  FLAGS_test_sensitive_flag = true;
   std::string result = GetNonDefaultFlags(default_flags);
 
   for (const auto& expected : expected_flags) {
@@ -85,6 +93,9 @@ TEST_F(FlagsTest, TestNonDefaultFlags) {
   for (const auto& unexpected : unexpected_flags) {
     ASSERT_STR_NOT_CONTAINS(result, unexpected)
   }
+
+  ASSERT_STR_CONTAINS(result, strings::Substitute("--test_sensitive_flag=$0",
+                                                  kRedactionMessage));
 }
 
 } // namespace kudu

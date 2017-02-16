@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
@@ -106,6 +107,12 @@ DEFINE_bool(unlock_unsafe_flags, false,
             "known to be unsafe. Use at your own risk.");
 TAG_FLAG(unlock_unsafe_flags, advanced);
 TAG_FLAG(unlock_unsafe_flags, stable);
+
+DEFINE_bool(redact_sensitive_flags, true,
+            "Sensitive flags marked as 'sensitive'. The value of these flags will "
+            "be redacted when logging the configuration at daemon startup.");
+TAG_FLAG(redact_sensitive_flags, advanced);
+TAG_FLAG(redact_sensitive_flags, evolving);
 
 // Tag a bunch of the flags that we inherit from glog/gflags.
 
@@ -352,6 +359,21 @@ void CheckFlagsAllowed() {
   }
 }
 
+// Redact the flag tagged as 'sensitive', if --redact_sensitive_flags
+// is true. Otherwise, return its value as-is.
+string CheckFlagAndRedact(const CommandLineFlagInfo& flag) {
+  string retval;
+  unordered_set<string> tags;
+  GetFlagTags(flag.name, &tags);
+
+  if (ContainsKey(tags, "sensitive") && FLAGS_redact_sensitive_flags) {
+    retval += kRedactionMessage;
+  } else {
+    retval += flag.current_value;
+  }
+  return retval;
+}
+
 void SetUmask() {
   // We already validated with a nice error message using the ValidateUmask
   // FlagValidator above.
@@ -402,6 +424,21 @@ void HandleCommonFlags() {
 #endif
 }
 
+string CommandlineFlagsIntoString() {
+  string retval;
+  vector<CommandLineFlagInfo> flags;
+  GetAllFlags(&flags);
+
+  for (const auto& f : flags) {
+    retval += "--";
+    retval += f.name;
+    retval += "=";
+    retval += CheckFlagAndRedact(f);
+    retval += "\n";
+  }
+  return retval;
+}
+
 string GetNonDefaultFlags(const GFlagsMap& default_flags) {
   stringstream args;
   vector<CommandLineFlagInfo> flags;
@@ -419,7 +456,11 @@ string GetNonDefaultFlags(const GFlagsMap& default_flags) {
         if (!args.str().empty()) {
           args << '\n';
         }
-        args << "--" << flag.name << '=' << flag.current_value;
+
+        // Redact the flags tagged as sensitive, if --redact_sensitive_flags
+        // is true.
+        string flagValue = CheckFlagAndRedact(flag);
+        args << "--" << flag.name << '=' << flagValue;
       }
     }
   }

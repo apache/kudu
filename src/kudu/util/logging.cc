@@ -353,11 +353,6 @@ void ShutdownLoggingSafe() {
   logging_initialized = false;
 }
 
-void LogCommandLineFlags() {
-  LOG(INFO) << "Flags (see also /varz are on debug webserver):" << endl
-            << google::CommandlineFlagsIntoString();
-}
-
 Status DeleteExcessLogFiles(Env* env) {
   int32_t max_log_files = FLAGS_max_log_files;
   // Ignore bad input or disable log rotation.
