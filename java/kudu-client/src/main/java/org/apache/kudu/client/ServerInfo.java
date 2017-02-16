@@ -38,9 +38,8 @@ public class ServerInfo {
    * Constructor for all the fields. The intent is that there should only be one ServerInfo
    * instance per UUID the client is connected to.
    * @param uuid server's UUID
-   * @param hostname server's hostname, only one of them
-   * @param port server's port
-   * @param local if the server is hosted on the same machine where this client is running
+   * @param hostPort server's hostname and port
+   * @param resolvedAddr resolved address used to check if the server is local
    */
   public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr) {
     this.uuid = uuid;
