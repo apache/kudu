@@ -408,7 +408,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
         String message = getPeerUuidLoggingString() +
             "Tablet server sent error " + error.getMessage();
         Status status = Status.RemoteError(message);
-        exception = new NonRecoverableException(status);
+        exception = new RpcRemoteException(status, error);
         LOG.error(message); // can be useful
       }
     } else {

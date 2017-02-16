@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
@@ -29,25 +28,17 @@ import org.apache.kudu.master.Master;
 public class ConnectToClusterResponse extends KuduRpcResponse {
 
   private final Metadata.RaftPeerPB.Role role;
-  private final WireProtocol.ServerRegistrationPB serverRegistration;
-  private final WireProtocol.NodeInstancePB instanceId;
 
   /**
    * Describes a response to a {@link ConnectToMasterRequest}, built from
    * {@link Master.GetMasterRegistrationResponsePB}.
    *
    * @param role Master's role in the config.
-   * @param serverRegistration server registration (RPC and HTTP addresses) for this master.
-   * @param instanceId Node instance (permanent uuid and
    */
   public ConnectToClusterResponse(long elapsedMillis, String tsUUID,
-                                       Metadata.RaftPeerPB.Role role,
-                                       WireProtocol.ServerRegistrationPB serverRegistration,
-                                       WireProtocol.NodeInstancePB instanceId) {
+                                  Metadata.RaftPeerPB.Role role) {
     super(elapsedMillis, tsUUID);
     this.role = role;
-    this.serverRegistration = serverRegistration;
-    this.instanceId = instanceId;
   }
 
   /**
@@ -60,30 +51,10 @@ public class ConnectToClusterResponse extends KuduRpcResponse {
     return role;
   }
 
-  /**
-   * Returns the server registration (list of RPC and HTTP ports) for this master.
-   *
-   * @return The {@link WireProtocol.ServerRegistrationPB} object for this master.
-   */
-  public WireProtocol.ServerRegistrationPB getServerRegistration() {
-    return serverRegistration;
-  }
-
-  /**
-   * The node instance (initial sequence number and permanent uuid) for this master.
-   *
-   * @return The {@link WireProtocol.NodeInstancePB} object for this master.
-   */
-  public WireProtocol.NodeInstancePB getInstanceId() {
-    return instanceId;
-  }
-
   @Override
   public String toString() {
     return "GetMasterRegistrationResponse{" +
         "role=" + role +
-        ", serverRegistration=" + serverRegistration +
-        ", instanceId=" + instanceId +
         '}';
   }
 }

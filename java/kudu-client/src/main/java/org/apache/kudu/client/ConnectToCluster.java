@@ -39,6 +39,7 @@ import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
+import org.apache.kudu.rpc.RpcHeader.ErrorStatusPB.RpcErrorCodePB;
 import org.apache.kudu.util.NetUtil;
 
 /**
@@ -84,12 +85,11 @@ final class ConnectToCluster {
   }
 
   private static Deferred<ConnectToClusterResponse> getMasterRegistration(
-      TabletClient masterClient, KuduRpc<?> parentRpc,
+      final TabletClient masterClient, KuduRpc<?> parentRpc,
       long defaultTimeoutMs) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
-    // TODO: is null below for table object ok?
-    ConnectToMasterRequest rpc = new ConnectToMasterRequest();
+    final ConnectToMasterRequest rpc = new ConnectToMasterRequest();
     if (parentRpc != null) {
       rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
       rpc.setParentRpc(parentRpc);
@@ -99,6 +99,30 @@ final class ConnectToCluster {
     Deferred<ConnectToClusterResponse> d = rpc.getDeferred();
     rpc.attempt++;
     masterClient.sendRpc(rpc);
+
+    // If we are connecting to an older version of Kudu, we'll get a NO_SUCH_METHOD
+    // error. In that case, we resend using the older version of the RPC.
+    d.addErrback(new Callback<Deferred<ConnectToClusterResponse>, Exception>() {
+      @Override
+      public Deferred<ConnectToClusterResponse> call(Exception result)
+          throws Exception {
+        if (result instanceof RpcRemoteException) {
+          RpcRemoteException rre = (RpcRemoteException)result;
+          if (rre.getErrPB().getCode() == RpcErrorCodePB.ERROR_INVALID_REQUEST &&
+              rre.getErrPB().getUnsupportedFeatureFlagsCount() > 0) {
+            AsyncKuduClient.LOG.debug("Falling back to GetMasterRegistration() RPC to connect " +
+                "to server running Kudu < 1.3.");
+            Deferred<ConnectToClusterResponse> newAttempt = rpc.getDeferred();
+            assert newAttempt != null;
+            rpc.setUseOldMethod();
+            masterClient.sendRpc(rpc);
+            return newAttempt;
+          }
+        }
+        return Deferred.fromError(result);
+      }
+    });
+
     return d;
   }
 
@@ -246,9 +270,10 @@ final class ConnectToCluster {
       Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
           Master.TabletLocationsPB.ReplicaPB.newBuilder();
 
-      Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
-      tsInfoBuilder.addRpcAddresses(ProtobufHelper.hostAndPortToPB(hostAndPort));
-      tsInfoBuilder.setPermanentUuid(r.getInstanceId().getPermanentUuid());
+      Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder()
+          .addRpcAddresses(ProtobufHelper.hostAndPortToPB(hostAndPort))
+          .setPermanentUuid(ByteString.EMPTY); // required field, but unused for master
+
       replicaBuilder.setTsInfo(tsInfoBuilder);
       if (r.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
         replicaBuilder.setRole(r.getRole());

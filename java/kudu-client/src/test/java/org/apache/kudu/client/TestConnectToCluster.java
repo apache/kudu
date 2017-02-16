@@ -29,7 +29,6 @@ import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import org.junit.Test;
 
-import org.apache.kudu.WireProtocol;
 import org.apache.kudu.consensus.Metadata;
 
 public class TestConnectToCluster {
@@ -39,8 +38,40 @@ public class TestConnectToCluster {
       HostAndPort.fromParts("1", 9000),
       HostAndPort.fromParts("2", 9000));
 
+  /**
+   * Test that the client properly falls back to the old GetMasterRegistration
+   * RPC when connecting to a master which does not support the new
+   * ConnectToMaster RPC.
+   */
+  @Test(timeout=60000)
+  public void testFallbackConnectRpc() throws Exception {
+    MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+        .addMasterFlag("--master_support_connect_to_master_rpc=0")
+        .numMasters(1)
+        .numTservers(0)
+        .build();
+    KuduClient c = null;
+    try {
+      c = new KuduClient.KuduClientBuilder(cluster.getMasterAddresses())
+          .build();
+      // Call some method which uses the master. This forces us to connect
+      // and verifies that the fallback works.
+      c.listTabletServers();
+    } finally {
+      if (c != null) {
+        c.close();
+      }
+      cluster.shutdown();
+    }
+  }
+
+  /**
+   * Unit test which checks that the ConnectToCluster aggregates the
+   * responses from the different masters properly and returns the
+   * response from the located leader.
+   */
   @Test(timeout = 10000)
-  public void test() throws Exception {
+  public void testAggregateResponses() throws Exception {
     NonRecoverableException reusableNRE = new NonRecoverableException(
         Status.RuntimeError(""));
     RecoverableException reusableRE = new RecoverableException(
@@ -198,7 +229,6 @@ public class TestConnectToCluster {
   }
 
   private static ConnectToClusterResponse makeGMRR(Metadata.RaftPeerPB.Role role) {
-    return new ConnectToClusterResponse(0, "", role, null,
-        WireProtocol.NodeInstancePB.getDefaultInstance());
+    return new ConnectToClusterResponse(0, "", role);
   }
 }
