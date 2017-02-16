@@ -971,7 +971,7 @@ Status CFileIterator::Scan(ColumnMaterializationContext* ctx) {
                                      remaining_dst.stride() * nblock,
                                      "NULLNULLNULLNULLNULL");
 #endif
-          if (ctx->DecoderEvalNotDisabled()) {
+          if (ctx->DecoderEvalNotDisabled() && !ctx->EvaluatingIsNull()) {
             remaining_sel.ClearBits(this_batch);
           }
         }

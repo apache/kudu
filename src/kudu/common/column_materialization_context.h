@@ -73,6 +73,12 @@ class ColumnMaterializationContext {
     return decoder_eval_status_ != kDecoderEvalNotSupported;
   }
 
+  // Checked during materialization to determine whether null values should be
+  // cleared in the results vector.
+  bool EvaluatingIsNull() const {
+    return pred_ && pred_->predicate_type() == PredicateType::IsNull;
+  }
+
   // A context should not switch from supporting decoder-level eval to not
   // supporting it, or vice versa.
   //
