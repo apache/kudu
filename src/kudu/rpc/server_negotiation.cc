@@ -408,9 +408,13 @@ Status ServerNegotiation::HandleTlsHandshake(const NegotiatePB& request) {
   // TLS handshake is finished.
   if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
       ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
-    TRACE("Negotiated auth-only TLS");
+    TRACE("Negotiated auth-only $0 with cipher suite $1",
+          tls_handshake_.GetProtocol(), tls_handshake_.GetCipherSuite());
     return tls_handshake_.FinishNoWrap(*socket_);
   }
+
+  TRACE("Negotiated $0 with cipher suite $1",
+        tls_handshake_.GetProtocol(), tls_handshake_.GetCipherSuite());
   return tls_handshake_.Finish(&socket_);
 }
 

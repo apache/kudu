@@ -121,6 +121,14 @@ class TlsHandshake {
   // May only be called after 'Finish' or 'FinishNoWrap'.
   Status GetRemoteCert(Cert* cert) const WARN_UNUSED_RESULT;
 
+  // Retrieve the negotiated cipher suite. Only valid to call after the
+  // handshake is complete and before 'Finish()'.
+  std::string GetCipherSuite() const;
+
+  // Retrieve the negotiated TLS protocol version. Only valid to call after the
+  // handshake is complete and before 'Finish()'.
+  std::string GetProtocol() const;
+
  private:
   friend class TlsContext;
 

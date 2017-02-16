@@ -225,5 +225,15 @@ Status TlsHandshake::GetRemoteCert(Cert* cert) const {
   return Status::OK();
 }
 
+string TlsHandshake::GetCipherSuite() const {
+  CHECK(has_started_);
+  return SSL_get_cipher_name(ssl_.get());
+}
+
+string TlsHandshake::GetProtocol() const {
+  CHECK(has_started_);
+  return SSL_get_version(ssl_.get());
+}
+
 } // namespace security
 } // namespace kudu
