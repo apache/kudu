@@ -37,12 +37,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 
@@ -629,6 +631,78 @@ public class TestKuduClient extends BaseKuduTest {
       // Sanity check to make sure the debug printing does not throw.
       LOG.debug(KuduScanToken.stringifySerializedToken(token.serialize(), syncClient));
     }
+  }
+
+  /**
+   * Tests the results of creating scan tokens, altering the columns being
+   * scanned, and then executing the scan tokens.
+   */
+  @Test
+  public void testScanTokensConcurrentAlterTable() throws Exception {
+    Schema schema = new Schema(ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT64).nullable(false).key(true).build(),
+        new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64).nullable(false).key(false).build()
+    ));
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.<String>of());
+    createOptions.setNumReplicas(1);
+    syncClient.createTable(tableName, schema, createOptions);
+
+    KuduTable table = syncClient.openTable(tableName);
+
+    KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
+    List<KuduScanToken> tokens = tokenBuilder.build();
+    assertEquals(1, tokens.size());
+    KuduScanToken token = tokens.get(0);
+
+    // Drop a column
+    syncClient.alterTable(tableName, new AlterTableOptions().dropColumn("a"));
+    assertTrue(syncClient.isAlterTableDone(tableName));
+    try {
+      token.intoScanner(syncClient);
+      fail();
+    } catch (IllegalArgumentException e) {
+      assertTrue(e.getMessage().contains("Unknown column"));
+    }
+
+    // Add back the column with the wrong type.
+    syncClient.alterTable(
+        tableName,
+        new AlterTableOptions().addColumn(
+            new ColumnSchema.ColumnSchemaBuilder("a", Type.STRING).nullable(true).build()));
+    assertTrue(syncClient.isAlterTableDone(tableName));
+    try {
+      token.intoScanner(syncClient);
+      fail();
+    } catch (IllegalStateException e) {
+      assertTrue(e.getMessage().contains(
+          "invalid type INT64 for column 'a' in scan token, expected: STRING"));
+    }
+
+    // Add the column with the wrong nullability.
+    syncClient.alterTable(
+        tableName,
+        new AlterTableOptions().dropColumn("a")
+                               .addColumn(new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64)
+                                                          .nullable(true).build()));
+    assertTrue(syncClient.isAlterTableDone(tableName));
+    try {
+      token.intoScanner(syncClient);
+      fail();
+    } catch (IllegalStateException e) {
+      assertTrue(e.getMessage().contains(
+          "invalid nullability for column 'a' in scan token, expected: NOT NULL"));
+    }
+
+    // Add the column with the correct type and nullability.
+    syncClient.alterTable(
+        tableName,
+        new AlterTableOptions().dropColumn("a")
+                               .addColumn(new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64)
+                                                          .nullable(false)
+                                                          .defaultValue(0L).build()));
+    assertTrue(syncClient.isAlterTableDone(tableName));
+    token.intoScanner(syncClient);
   }
 
   /**

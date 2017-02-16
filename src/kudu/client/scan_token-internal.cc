@@ -90,17 +90,23 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
 
   vector<int> column_indexes;
   for (const ColumnSchemaPB& column : message.projected_columns()) {
-    int columnIdx = schema->find_column(column.name());
-    if (columnIdx == Schema::kColumnNotFound) {
-      return Status::InvalidArgument("unknown column in scan token", column.name());
+    int column_idx = schema->find_column(column.name());
+    if (column_idx == Schema::kColumnNotFound) {
+      return Status::IllegalState("unknown column in scan token", column.name());
     }
-    DataType expectedType = schema->column(columnIdx).type_info()->type();
-    if (column.type() != expectedType) {
-      return Status::InvalidArgument(Substitute(
+    DataType expected_type = schema->column(column_idx).type_info()->type();
+    if (column.type() != expected_type) {
+      return Status::IllegalState(Substitute(
             "invalid type $0 for column '$1' in scan token, expected: $2",
-            column.type(), column.name(), expectedType));
+            DataType_Name(column.type()), column.name(), DataType_Name(expected_type)));
     }
-    column_indexes.push_back(columnIdx);
+    bool expected_is_nullable = schema->column(column_idx).is_nullable();
+    if (column.is_nullable() != expected_is_nullable) {
+      return Status::IllegalState(Substitute(
+            "invalid nullability for column '$0' in scan token, expected: $1",
+            column.name(), expected_is_nullable ? "NULLABLE" : "NOT NULL"));
+    }
+    column_indexes.push_back(column_idx);
   }
   RETURN_NOT_OK(scan_builder->SetProjectedColumnIndexes(column_indexes));
 

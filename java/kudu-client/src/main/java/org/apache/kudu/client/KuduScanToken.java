@@ -157,9 +157,18 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     for (Common.ColumnSchemaPB column : message.getProjectedColumnsList()) {
       int columnIdx = table.getSchema().getColumnIndex(column.getName());
       ColumnSchema schema = table.getSchema().getColumnByIndex(columnIdx);
-      Preconditions.checkArgument(column.getType() == schema.getType().getDataType(),
-                                  String.format("Column types do not match for column %s",
-                                                column.getName()));
+      if (column.getType() != schema.getType().getDataType()) {
+        throw new IllegalStateException(String.format(
+            "invalid type %s for column '%s' in scan token, expected: %s",
+            column.getType().name(), column.getName(), schema.getType().name()));
+      }
+      if (column.getIsNullable() != schema.isNullable()) {
+        throw new IllegalStateException(String.format(
+            "invalid nullability for column '%s' in scan token, expected: %s",
+            column.getName(), column.getIsNullable() ? "NULLABLE" : "NOT NULL"));
+
+      }
+
       columns.add(columnIdx);
     }
     builder.setProjectedColumnIndexes(columns);
@@ -276,7 +285,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       if (projectedColumnNames != null) {
         for (String columnName : projectedColumnNames) {
           ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
-          Preconditions.checkArgument(columnSchema != null, "unknown column %s", columnName);
+          Preconditions.checkArgument(columnSchema != null, "unknown column i%s", columnName);
           ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(), columnSchema);
         }
       } else if (projectedColumnIndexes != null) {

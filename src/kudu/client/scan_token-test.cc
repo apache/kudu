@@ -454,5 +454,84 @@ TEST_F(ScanTokenTest, TestTimestampPropagation) {
   }
 }
 
+// Tests the results of creating scan tokens, altering the columns being
+// scanned, and then executing the scan tokens.
+TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
+  const char* kTableName = "scan-token-alter";
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("a")->NotNull()->Type(KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                            .schema(&schema)
+                            .set_range_partition_columns({})
+                            .num_replicas(1)
+                            .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+  }
+
+  vector<KuduScanToken*> tokens;
+  ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+  ASSERT_EQ(1, tokens.size());
+  unique_ptr<KuduScanToken> token(tokens[0]);
+
+  // Drop a column.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->DropColumn("a");
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  KuduScanner* scanner_ptr;
+  Status s = token->IntoKuduScanner(&scanner_ptr);
+  ASSERT_EQ("Illegal state: unknown column in scan token: a", s.ToString());
+
+  // Add back the column with the wrong type.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AddColumn("a")->Type(KuduColumnSchema::STRING);
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  s = token->IntoKuduScanner(&scanner_ptr);
+  ASSERT_EQ("Illegal state: invalid type INT64 for column 'a' in scan token, expected: STRING",
+            s.ToString());
+
+  // Add back the column with the wrong nullability.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->DropColumn("a");
+    table_alterer->AddColumn("a")->Type(KuduColumnSchema::INT64)->Nullable();
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  s = token->IntoKuduScanner(&scanner_ptr);
+  ASSERT_EQ("Illegal state: invalid nullability for column 'a' in scan token, expected: NULLABLE",
+            s.ToString());
+
+  // Add the column with the correct type and nullability.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->DropColumn("a");
+    table_alterer->AddColumn("a")
+                 ->Type(KuduColumnSchema::INT64)
+                 ->NotNull()
+                 ->Default(KuduValue::FromInt(0));
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
+  delete scanner_ptr;
+}
+
 } // namespace client
 } // namespace kudu
