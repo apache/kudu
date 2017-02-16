@@ -273,8 +273,9 @@ $ sudo yum install -y devtoolset-3-toolchain
 . Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
-$ sudo yum install gem ruby-devel zlib-devel
+$ sudo yum install doxygen gem graphviz ruby-devel zlib-devel
 ----
+NOTE: If building on RHEL or CentOS older than 7.0, the gem package may need to be replaced with rubygems
 
 . Clone the Git repository and change to the new `kudu` directory.
 +
@@ -367,10 +368,10 @@ $ sudo apt-get install autoconf automake curl g++ gcc gdb git \
   patch pkg-config python rsync unzip vim-common
 ----
 
-. Optional: Install additional packages to build the documentation
+. Optional: Install some additional packages, including ruby, if you plan to build documentation.
 +
 ----
-$ sudo apt-get install xsltproc zlib1g-dev gem ruby-dev
+$ sudo apt-get install doxygen gem graphviz ruby-dev xsltproc zlib1g-dev
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -534,7 +535,14 @@ for more information.
 +
 ----
 $ brew tap homebrew/dupes
-$ brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
+$ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
+----
+
+. Optional: Install some additional packages, including ruby, if you plan to build documentation.
++
+----
+$ brew install doxygen graphviz ruby
+$ brew install gnu-sed --with-default-names #The macOS default sed handles the -i parameter differently
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -594,7 +602,7 @@ are installed.
 #!/bin/bash
 
 brew tap homebrew/dupes
-brew install autoconf automake cmake krb5 libtool openssl pkg-config pstree
+brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
