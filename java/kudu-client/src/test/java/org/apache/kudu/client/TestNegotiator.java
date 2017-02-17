@@ -50,6 +50,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -354,7 +355,7 @@ public class TestNegotiator {
    */
   @Test
   public void testTokenAuthWithTrustedCerts() throws Exception {
-    secContext.trustCertificate(ByteString.copyFromUtf8(CA_CERT_DER));
+    secContext.trustCertificates(ImmutableList.of(ByteString.copyFromUtf8(CA_CERT_DER)));
     secContext.setAuthenticationToken(SignedTokenPB.getDefaultInstance());
     startNegotiation(false);
 

@@ -21,12 +21,7 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.client.RowResult.timestampToString;
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 import static org.junit.matchers.JUnitMatchers.containsString;
 
 import java.util.ArrayList;
@@ -37,14 +32,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
-import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 
@@ -520,6 +513,12 @@ public class TestKuduClient extends BaseKuduTest {
       thread.join();
     }
     return count.get();
+  }
+
+  @Test
+  public void testGetAuthnToken() throws Exception {
+    byte[] token = client.exportAuthenticationCredentials().join();
+    assertNotNull(token);
   }
 
   /**

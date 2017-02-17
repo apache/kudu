@@ -40,12 +40,19 @@ class ConnectToClusterResponse {
   /** The response from that master */
   private final ConnectToMasterResponsePB connectResponse;
 
-
   public ConnectToClusterResponse(HostAndPort hostAndPort,
       ConnectToMasterResponsePB connectResponse) {
     super();
     this.leaderHostAndPort = hostAndPort;
     this.connectResponse = connectResponse;
+  }
+
+  public ConnectToMasterResponsePB getConnectResponse() {
+    return connectResponse;
+  }
+
+  public HostAndPort getLeaderHostAndPort() {
+    return leaderHostAndPort;
   }
 
   /**

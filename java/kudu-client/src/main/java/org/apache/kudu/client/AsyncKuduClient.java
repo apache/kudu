@@ -30,6 +30,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 import java.net.UnknownHostException;
+import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -51,6 +52,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -507,6 +509,48 @@ public class AsyncKuduClient implements AutoCloseable {
         return d;
       }
     };
+  }
+
+  /**
+   * Export serialized authentication data that may be passed to a different
+   * client instance and imported to provide that client the ability to connect
+   * to the cluster.
+   */
+  @InterfaceStability.Unstable
+  public Deferred<byte[]> exportAuthenticationCredentials() {
+    byte[] authnData = securityContext.exportAuthenticationCredentials();
+    if (authnData != null) {
+      return Deferred.fromResult(authnData);
+    }
+    // We have no authn data -- connect to the master, which will fetch
+    // new info.
+    return getMasterTableLocationsPB(null)
+        .addCallback(new MasterLookupCB(masterTable, null, 1))
+        .addCallback(new Callback<byte[], Object>() {
+          @Override
+          public byte[] call(Object ignored) {
+            // Connecting to the cluster should have also fetched the
+            // authn data.
+            return securityContext.exportAuthenticationCredentials();
+          }
+        });
+  }
+
+  /**
+   * Import data allowing this client to authenticate to the cluster.
+   * This will typically be used before making any connections to servers
+   * in the cluster.
+   *
+   * Note that, if this client has already been used by one user, this
+   * method cannot be used to switch authenticated users. Attempts to
+   * do so have undefined results, and may throw an exception.
+   *
+   * @param authnData then authentication data provided by a prior call to
+   * {@link #exportAuthenticationCredentials()}
+   */
+  @InterfaceStability.Unstable
+  public void importAuthenticationCredentials(byte[] authnData) {
+    securityContext.importAuthenticationCredentials(authnData);
   }
 
   /**
@@ -1066,7 +1110,23 @@ public class AsyncKuduClient implements AutoCloseable {
             new Callback<Master.GetTableLocationsResponsePB, ConnectToClusterResponse>() {
               @Override
               public Master.GetTableLocationsResponsePB call(ConnectToClusterResponse resp) {
-                // Once we've connected, we translate the located master into a TableLocations
+                // If the response has security info, adopt it.
+                if (resp.getConnectResponse().hasAuthnToken()) {
+                  securityContext.setAuthenticationToken(
+                      resp.getConnectResponse().getAuthnToken());
+                }
+                List<ByteString> caCerts = resp.getConnectResponse().getCaCertDerList();
+                if (!caCerts.isEmpty()) {
+                  try {
+                    securityContext.trustCertificates(caCerts);
+                  } catch (CertificateException e) {
+                    LOG.warn("Ignoring invalid CA cert from leader {}: {}",
+                        resp.getLeaderHostAndPort(),
+                        e.getMessage());
+                  }
+                }
+
+                // Translate the located master into a TableLocations
                 // since the rest of our locations caching code expects this type.
                 return resp.getAsTableLocations();
               }

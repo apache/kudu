@@ -21,7 +21,8 @@ PROTOBUF_GENERATE_CPP(
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES client.proto)
 set(CLIENT_PROTO_LIBS
-  kudu_common_proto)
+  kudu_common_proto
+  token_proto)
 ADD_EXPORTABLE_LIBRARY(client_proto
   SRCS ${CLIENT_PROTO_SRCS}
   DEPS ${CLIENT_PROTO_LIBS}

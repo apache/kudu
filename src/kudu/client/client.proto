@@ -22,6 +22,7 @@ package kudu.client;
 option java_package = "org.apache.kudu.client";
 
 import "kudu/common/common.proto";
+import "kudu/security/token.proto";
 import "kudu/util/pb_util.proto";
 
 // Serialization format for client scan tokens. Scan tokens are serializable
@@ -91,4 +92,13 @@ message ScanTokenPB {
 
   // Whether the scan should be fault tolerant.
   optional bool fault_tolerant = 14 [default = false];
+}
+
+
+// All of the data necessary to authenticate to a cluster from a client with
+// no Kerberos credentials.
+message AuthenticationCredentialsPB {
+  optional security.SignedTokenPB authn_token = 1;
+
+  repeated bytes ca_cert_ders = 2;
 }
