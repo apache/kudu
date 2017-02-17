@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
@@ -62,6 +63,12 @@ DEFINE_string(rpc_tls_ciphers,
               "for more information.");
 TAG_FLAG(rpc_tls_ciphers, advanced);
 
+DEFINE_string(rpc_tls_min_protocol, "TLSv1",
+              "The minimum protocol version to allow when for securing RPC "
+              "connections with TLS. May be one of 'TLSv1', 'TLSv1.1', or "
+              "'TLSv1.2'.");
+TAG_FLAG(rpc_tls_min_protocol, advanced);
+
 namespace kudu {
 namespace security {
 
@@ -101,9 +108,30 @@ Status TlsContext::Init() {
   // Disable SSL/TLS compression to free up CPU resources and be less prone
   // to attacks exploiting the compression feature:
   //   https://tools.ietf.org/html/rfc7525#section-3.3
-  SSL_CTX_set_options(ctx_.get(),
-                      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
-                      SSL_OP_NO_COMPRESSION);
+  auto options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
+
+  if (boost::iequals(FLAGS_rpc_tls_min_protocol, "TLSv1.2")) {
+#if OPENSSL_VERSION_NUMBER < 0x10001000L
+    return Status::InvalidArgument(
+        "--rpc_tls_min_protocol=TLSv1.2 is not be supported on this platform. "
+        "TLSv1 is the latest supported TLS protocol.");
+#else
+    options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
+#endif
+  } else if (boost::iequals(FLAGS_rpc_tls_min_protocol, "TLSv1.1")) {
+#if OPENSSL_VERSION_NUMBER < 0x10001000L
+    return Status::InvalidArgument(
+        "--rpc_tls_min_protocol=TLSv1.1 is not be supported on this platform. "
+        "TLSv1 is the latest supported TLS protocol.");
+#else
+    options |= SSL_OP_NO_TLSv1;
+#endif
+  } else if (!boost::iequals(FLAGS_rpc_tls_min_protocol, "TLSv1")) {
+    return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
+                                   FLAGS_rpc_tls_min_protocol);
+  }
+
+  SSL_CTX_set_options(ctx_.get(), options);
 
   OPENSSL_RET_NOT_OK(
       SSL_CTX_set_cipher_list(ctx_.get(), FLAGS_rpc_tls_ciphers.c_str()),
