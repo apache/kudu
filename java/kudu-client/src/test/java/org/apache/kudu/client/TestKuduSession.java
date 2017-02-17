@@ -18,6 +18,7 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -120,6 +121,20 @@ public class TestKuduSession extends BaseKuduTest {
       }
     }
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
+  }
+
+  /**
+   * Regression test for KUDU-1402. Calls to session.flush() should return an empty list
+   * instead of null.
+   * @throws Exception
+   */
+  @Test(timeout = 100000)
+  public void testEmptyFlush() throws Exception {
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    List<OperationResponse> result = session.flush();
+    assertNotNull(result);
+    assertTrue(result.isEmpty());
   }
 
   /**
