@@ -74,6 +74,20 @@ struct AcceptorPoolInfo {
   Sockaddr bind_address_;
 };
 
+// Authentication configuration for RPC connections.
+enum class RpcAuthentication {
+  DISABLED,
+  OPTIONAL,
+  REQUIRED,
+};
+
+// Encryption configuration for RPC connections.
+enum class RpcEncryption {
+  DISABLED,
+  OPTIONAL,
+  REQUIRED,
+};
+
 // Used to construct a Messenger.
 class MessengerBuilder {
  public:
@@ -251,6 +265,13 @@ class Messenger {
   mutable percpu_rwlock lock_;
 
   bool closing_;
+
+  // Whether to require authentication and encryption on the connections managed
+  // by this messenger.
+  // TODO(PKI): scope these to individual proxies, so that messengers can be
+  // reused by different clients.
+  RpcAuthentication authentication_;
+  RpcEncryption encryption_;
 
   // Pools which are listening on behalf of this messenger.
   // Note that the user may have called Shutdown() on one of these

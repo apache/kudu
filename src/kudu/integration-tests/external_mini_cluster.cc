@@ -606,7 +606,7 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   extra_env_ = kdc->GetEnvVars();
   extra_flags_.push_back(Substitute("--keytab=$0", ktpath));
   extra_flags_.push_back(Substitute("--kerberos_principal=$0", spn));
-  extra_flags_.push_back("--server_require_kerberos");
+  extra_flags_.push_back("--rpc_authentication=required");
   return Status::OK();
 }
 

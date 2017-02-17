@@ -182,7 +182,7 @@ public class MiniKuduCluster implements AutoCloseable {
       if (miniKdc != null) {
         commandLine.add("--keytab=" + keytab);
         commandLine.add("--kerberos_principal=kudu/" + bindHost);
-        commandLine.add("--server_require_kerberos");
+        commandLine.add("--rpc_authentication=required");
       }
 
       commandLine.addAll(extraTserverFlags);
@@ -263,7 +263,7 @@ public class MiniKuduCluster implements AutoCloseable {
       if (miniKdc != null) {
         commandLine.add("--keytab=" + keytab);
         commandLine.add("--kerberos_principal=kudu/" + bindHost);
-        commandLine.add("--server_require_kerberos");
+        commandLine.add("--rpc_authentication=required");
       }
 
       commandLine.addAll(extraMasterFlags);

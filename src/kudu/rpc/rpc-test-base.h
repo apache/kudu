@@ -50,10 +50,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 
-DECLARE_string(rpc_ssl_server_certificate);
-DECLARE_string(rpc_ssl_private_key);
-DECLARE_string(rpc_ssl_certificate_authority);
-
 namespace kudu { namespace rpc {
 
 using kudu::rpc_test::AddRequestPB;
@@ -367,16 +363,12 @@ class RpcTestBase : public KuduTest {
   std::shared_ptr<Messenger> CreateMessenger(const string &name,
                                              int n_reactors = 1,
                                              bool enable_ssl = false) {
-    if (enable_ssl) {
-      std::string server_cert_path = GetTestPath("server-cert.pem");
-      std::string private_key_path = GetTestPath("server-key.pem");
-      CHECK_OK(security::CreateSSLServerCert(server_cert_path));
-      CHECK_OK(security::CreateSSLPrivateKey(private_key_path));
-      FLAGS_rpc_ssl_server_certificate = server_cert_path;
-      FLAGS_rpc_ssl_private_key = private_key_path;
-      FLAGS_rpc_ssl_certificate_authority = server_cert_path;
-    }
     MessengerBuilder bld(name);
+
+    if (enable_ssl) {
+      bld.enable_inbound_tls(name);
+    }
+
     bld.set_num_reactors(n_reactors);
     bld.set_connection_keepalive_time(
       MonoDelta::FromMilliseconds(keepalive_time_ms_));
