@@ -30,6 +30,7 @@ import com.stumbleupon.async.Callback;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 
 public class TestConnectToCluster {
 
@@ -86,45 +87,45 @@ public class TestConnectToCluster {
 
     // Normal case.
     runTest(
-        makeGMRR(LEADER),
-        makeGMRR(FOLLOWER),
-        makeGMRR(FOLLOWER),
+        makeCTMR(LEADER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER),
         successResponse);
 
     // Permutation works too.
     runTest(
-        makeGMRR(FOLLOWER),
-        makeGMRR(LEADER),
-        makeGMRR(FOLLOWER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(LEADER),
+        makeCTMR(FOLLOWER),
         successResponse);
 
     // Multiple leaders, that's fine since it might be a TOCTOU situation, or one master
     // is confused. Raft handles this if the client then tries to do something that requires a
     // replication on the master-side.
     runTest(
-        makeGMRR(LEADER),
-        makeGMRR(LEADER),
-        makeGMRR(FOLLOWER),
+        makeCTMR(LEADER),
+        makeCTMR(LEADER),
+        makeCTMR(FOLLOWER),
         successResponse);
 
     // Mixed bag, still works because there's a leader.
     runTest(
         reusableNRE,
-        makeGMRR(FOLLOWER),
-        makeGMRR(LEADER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(LEADER),
         successResponse);
 
     // All unreachable except one leader, still good.
     runTest(
         reusableNRE,
         reusableNRE,
-        makeGMRR(LEADER),
+        makeCTMR(LEADER),
         successResponse);
 
     // Permutation of the previous.
     runTest(
         reusableNRE,
-        makeGMRR(LEADER),
+        makeCTMR(LEADER),
         reusableNRE,
         successResponse);
 
@@ -132,22 +133,22 @@ public class TestConnectToCluster {
 
     // Just followers means we retry.
     runTest(
-        makeGMRR(FOLLOWER),
-        makeGMRR(FOLLOWER),
-        makeGMRR(FOLLOWER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER),
         retryResponse);
 
     // One NRE but we have responsive masters, retry.
     runTest(
-        makeGMRR(FOLLOWER),
-        makeGMRR(FOLLOWER),
+        makeCTMR(FOLLOWER),
+        makeCTMR(FOLLOWER),
         reusableNRE,
         retryResponse);
 
     // One good master but no leader, retry.
     runTest(
         reusableNRE,
-        makeGMRR(FOLLOWER),
+        makeCTMR(FOLLOWER),
         reusableNRE,
         retryResponse);
 
@@ -155,7 +156,7 @@ public class TestConnectToCluster {
     runTest(
         reusableRE,
         reusableNRE,
-        makeGMRR(FOLLOWER),
+        makeCTMR(FOLLOWER),
         retryResponse);
 
     // All recoverable means retry.
@@ -192,9 +193,9 @@ public class TestConnectToCluster {
 
     ConnectToCluster grrm = new ConnectToCluster(MASTERS);
 
-    Callback<Void, ConnectToClusterResponse> cb0 = grrm.callbackForNode(MASTERS.get(0));
-    Callback<Void, ConnectToClusterResponse> cb1 = grrm.callbackForNode(MASTERS.get(1));
-    Callback<Void, ConnectToClusterResponse> cb2 = grrm.callbackForNode(MASTERS.get(2));
+    Callback<Void, ConnectToMasterResponsePB> cb0 = grrm.callbackForNode(MASTERS.get(0));
+    Callback<Void, ConnectToMasterResponsePB> cb1 = grrm.callbackForNode(MASTERS.get(1));
+    Callback<Void, ConnectToMasterResponsePB> cb2 = grrm.callbackForNode(MASTERS.get(2));
 
     Callback<Void, Exception> eb0 = grrm.errbackForNode(MASTERS.get(0));
     Callback<Void, Exception> eb1 = grrm.errbackForNode(MASTERS.get(1));
@@ -218,17 +219,19 @@ public class TestConnectToCluster {
 
   // Helper method that determines if the callback or errback should be called.
   private static void callTheRightCallback(
-      Callback<Void, ConnectToClusterResponse> cb,
+      Callback<Void, ConnectToMasterResponsePB> cb,
       Callback<Void, Exception> eb,
       Object response) throws Exception {
     if (response instanceof Exception) {
       eb.call((Exception) response);
     } else {
-      cb.call((ConnectToClusterResponse) response);
+      cb.call((ConnectToMasterResponsePB) response);
     }
   }
 
-  private static ConnectToClusterResponse makeGMRR(Metadata.RaftPeerPB.Role role) {
-    return new ConnectToClusterResponse(0, "", role);
+  private static ConnectToMasterResponsePB makeCTMR(Metadata.RaftPeerPB.Role role) {
+    return ConnectToMasterResponsePB.newBuilder()
+        .setRole(role)
+        .build();
   }
 }

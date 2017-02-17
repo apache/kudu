@@ -1060,8 +1060,17 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return An initialized Deferred object to hold the response.
    */
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
-    return ConnectToCluster.run(masterAddresses, parentRpc,
-        connectionCache, defaultAdminOperationTimeoutMs);
+    return ConnectToCluster.run(masterAddresses, parentRpc, connectionCache,
+        defaultAdminOperationTimeoutMs)
+        .addCallback(
+            new Callback<Master.GetTableLocationsResponsePB, ConnectToClusterResponse>() {
+              @Override
+              public Master.GetTableLocationsResponsePB call(ConnectToClusterResponse resp) {
+                // Once we've connected, we translate the located master into a TableLocations
+                // since the rest of our locations caching code expects this type.
+                return resp.getAsTableLocations();
+              }
+            });
   }
 
   /**

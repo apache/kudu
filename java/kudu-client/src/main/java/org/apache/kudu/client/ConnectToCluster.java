@@ -28,17 +28,14 @@ import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
-import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.Common;
 import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
-import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
+import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;
+import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.rpc.RpcHeader.ErrorStatusPB.RpcErrorCodePB;
 import org.apache.kudu.util.NetUtil;
 
@@ -52,15 +49,13 @@ final class ConnectToCluster {
   private static final Logger LOG = LoggerFactory.getLogger(ConnectToCluster.class);
 
   private final List<HostAndPort> masterAddrs;
-  private final Deferred<Master.GetTableLocationsResponsePB> responseD;
+  private final Deferred<ConnectToClusterResponse> responseD;
   private final int numMasters;
 
   // Used to avoid calling 'responseD' twice.
   private final AtomicBoolean responseDCalled = new AtomicBoolean(false);
 
-  // Number of responses we've receives: used to tell whether or not we've received
-  // errors/replies from all of the masters, or if there are any
-  // GetMasterRegistrationRequests still pending.
+  /** Number of responses we've received so far */
   private final AtomicInteger countResponsesReceived = new AtomicInteger(0);
 
   // Exceptions received so far: kept for debugging purposes.
@@ -71,8 +66,6 @@ final class ConnectToCluster {
    * Creates an object that holds the state needed to retrieve master table's location.
    * @param masterAddrs Addresses of all master replicas that we want to retrieve the
    *                    registration from.
-   * @param responseD Deferred object that will hold the GetTableLocationsResponsePB object for
-   *                  the master table.
    */
   ConnectToCluster(List<HostAndPort> masterAddrs) {
     this.masterAddrs = masterAddrs;
@@ -80,11 +73,12 @@ final class ConnectToCluster {
     this.numMasters = masterAddrs.size();
   }
 
-  public Deferred<GetTableLocationsResponsePB> getDeferred() {
+  @VisibleForTesting
+  public Deferred<ConnectToClusterResponse> getDeferred() {
     return responseD;
   }
 
-  private static Deferred<ConnectToClusterResponse> getMasterRegistration(
+  private static Deferred<ConnectToMasterResponsePB> connectToMaster(
       final TabletClient masterClient, KuduRpc<?> parentRpc,
       long defaultTimeoutMs) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
@@ -96,15 +90,15 @@ final class ConnectToCluster {
     } else {
       rpc.setTimeoutMillis(defaultTimeoutMs);
     }
-    Deferred<ConnectToClusterResponse> d = rpc.getDeferred();
+    Deferred<ConnectToMasterResponsePB> d = rpc.getDeferred();
     rpc.attempt++;
     masterClient.sendRpc(rpc);
 
-    // If we are connecting to an older version of Kudu, we'll get a NO_SUCH_METHOD
+    // If we are connecting to an older version of Kudu, we'll get an invalid request
     // error. In that case, we resend using the older version of the RPC.
-    d.addErrback(new Callback<Deferred<ConnectToClusterResponse>, Exception>() {
+    d.addErrback(new Callback<Deferred<ConnectToMasterResponsePB>, Exception>() {
       @Override
-      public Deferred<ConnectToClusterResponse> call(Exception result)
+      public Deferred<ConnectToMasterResponsePB> call(Exception result)
           throws Exception {
         if (result instanceof RpcRemoteException) {
           RpcRemoteException rre = (RpcRemoteException)result;
@@ -112,7 +106,7 @@ final class ConnectToCluster {
               rre.getErrPB().getUnsupportedFeatureFlagsCount() > 0) {
             AsyncKuduClient.LOG.debug("Falling back to GetMasterRegistration() RPC to connect " +
                 "to server running Kudu < 1.3.");
-            Deferred<ConnectToClusterResponse> newAttempt = rpc.getDeferred();
+            Deferred<ConnectToMasterResponsePB> newAttempt = rpc.getDeferred();
             assert newAttempt != null;
             rpc.setUseOldMethod();
             masterClient.sendRpc(rpc);
@@ -127,17 +121,17 @@ final class ConnectToCluster {
   }
 
   /**
-   * Retrieve the master registration (see {@link ConnectToClusterResponse}
-   * from the leader master.
+   * Locate the leader master and retrieve the cluster information
+   * (see {@link ConnectToClusterResponse}.
    *
    * @param masterAddresses the addresses of masters to fetch from
    * @param parentRpc RPC that prompted a master lookup, can be null
    * @param connCache the client's connection cache, used for creating connections
    *                  to masters
    * @param defaultTimeoutMs timeout to use for RPCs if the parentRpc has no timeout
-   * @return a Deferred object for the master replica's current registration
+   * @return a Deferred object for the cluster connection status
    */
-  public static Deferred<GetTableLocationsResponsePB> run(
+  public static Deferred<ConnectToClusterResponse> run(
       List<HostAndPort> masterAddresses,
       KuduRpc<?> parentRpc,
       ConnectionCache connCache,
@@ -148,7 +142,7 @@ final class ConnectToCluster {
     // waits until it gets a good response before firing the returned
     // deferred.
     for (HostAndPort hostAndPort : masterAddresses) {
-      Deferred<ConnectToClusterResponse> d;
+      Deferred<ConnectToMasterResponsePB> d;
       TabletClient client = connCache.newMasterClient(hostAndPort);
       if (client == null) {
         String message = "Couldn't resolve this master's address " + hostAndPort.toString();
@@ -156,7 +150,7 @@ final class ConnectToCluster {
         Status statusIOE = Status.IOError(message);
         d = Deferred.fromError(new NonRecoverableException(statusIOE));
       } else {
-        d = getMasterRegistration(client, parentRpc, defaultTimeoutMs);
+        d = connectToMaster(client, parentRpc, defaultTimeoutMs);
       }
       d.addCallbacks(connector.callbackForNode(hostAndPort),
           connector.errbackForNode(hostAndPort));
@@ -165,32 +159,32 @@ final class ConnectToCluster {
   }
 
   /**
-   * Creates a callback for a GetMasterRegistrationRequest that was sent to 'hostAndPort'.
-   * @see GetMasterRegistrationCB
+   * Creates a callback for a ConnectToMaster RPC that was sent to 'hostAndPort'.
+   * @see ConnectToMasterCB
    * @param hostAndPort Host and part for the RPC we're attaching this to. Host and port must
    *                    be valid.
    * @return The callback object that can be added to the RPC request.
    */
   @VisibleForTesting
-  Callback<Void, ConnectToClusterResponse> callbackForNode(HostAndPort hostAndPort) {
-    return new GetMasterRegistrationCB(hostAndPort);
+  Callback<Void, ConnectToMasterResponsePB> callbackForNode(HostAndPort hostAndPort) {
+    return new ConnectToMasterCB(hostAndPort);
   }
 
   /**
-   * Creates an errback for a GetMasterRegistrationRequest that was sent to 'hostAndPort'.
-   * @see GetMasterRegistrationErrCB
+   * Creates an errback for a ConnectToMaster that was sent to 'hostAndPort'.
+   * @see ConnectToMasterErrCB
    * @param hostAndPort Host and port for the RPC we're attaching this to. Used for debugging
    *                    purposes.
    * @return The errback object that can be added to the RPC request.
    */
   @VisibleForTesting
   Callback<Void, Exception> errbackForNode(HostAndPort hostAndPort) {
-    return new GetMasterRegistrationErrCB(hostAndPort);
+    return new ConnectToMasterErrCB(hostAndPort);
   }
 
   /**
    * Checks if we've already received a response or an exception from every master that
-   * we've sent a GetMasterRegistrationRequest to. If so -- and no leader has been found
+   * we've sent a ConnectToMaster to. If so -- and no leader has been found
    * (that is, 'responseD' was never called) -- pass a {@link NoLeaderFoundException}
    * to responseD.
    */
@@ -250,7 +244,7 @@ final class ConnectToCluster {
   }
 
   /**
-   * Callback for each GetMasterRegistrationRequest sent in getMasterTableLocations() above.
+   * Callback for each ConnectToCluster RPC sent in connectToMaster() above.
    * If a request (paired to a specific master) returns a reply that indicates it's a leader,
    * the callback in 'responseD' is invoked with an initialized GetTableLocationResponsePB
    * object containing the leader's RPC address.
@@ -258,65 +252,50 @@ final class ConnectToCluster {
    * the number of masters, pass {@link NoLeaderFoundException} into
    * 'responseD' if no one else had called 'responseD' before; otherwise, do nothing.
    */
-  final class GetMasterRegistrationCB implements Callback<Void, ConnectToClusterResponse> {
+  final class ConnectToMasterCB implements Callback<Void, ConnectToMasterResponsePB> {
     private final HostAndPort hostAndPort;
 
-    public GetMasterRegistrationCB(HostAndPort hostAndPort) {
+    public ConnectToMasterCB(HostAndPort hostAndPort) {
       this.hostAndPort = hostAndPort;
     }
 
     @Override
-    public Void call(ConnectToClusterResponse r) throws Exception {
-      Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
-          Master.TabletLocationsPB.ReplicaPB.newBuilder();
-
-      Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder()
-          .addRpcAddresses(ProtobufHelper.hostAndPortToPB(hostAndPort))
-          .setPermanentUuid(ByteString.EMPTY); // required field, but unused for master
-
-      replicaBuilder.setTsInfo(tsInfoBuilder);
-      if (r.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
-        replicaBuilder.setRole(r.getRole());
-        Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
-        locationBuilder.setPartition(
-            Common.PartitionPB.newBuilder().setPartitionKeyStart(ByteString.EMPTY)
-                                           .setPartitionKeyEnd(ByteString.EMPTY));
-        locationBuilder.setTabletId(
-            ByteString.copyFromUtf8(AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER));
-        locationBuilder.addReplicas(replicaBuilder);
-        // No one else has called this before us.
-        if (responseDCalled.compareAndSet(false, true)) {
-          responseD.callback(
-              Master.GetTableLocationsResponsePB.newBuilder().addTabletLocations(
-                  locationBuilder.build()).build()
-          );
-        } else {
-          LOG.debug("Callback already invoked, discarding response(" + r.toString() + ") from " +
-              hostAndPort.toString());
-        }
-      } else {
+    public Void call(ConnectToMasterResponsePB r) throws Exception {
+      if (!r.getRole().equals(Role.LEADER)) {
         incrementCountAndCheckExhausted();
+        return null;
       }
+      // We found a leader!
+      if (!responseDCalled.compareAndSet(false,  true)) {
+        // Someone else already found a leader. This is somewhat unexpected
+        // because this means two nodes think they're the leader, but it's
+        // not impossible. We'll just ignore it.
+        LOG.debug("Callback already invoked, discarding response(" + r.toString() + ") from " +
+            hostAndPort.toString());
+        return null;
+      }
+
+      responseD.callback(new ConnectToClusterResponse(hostAndPort, r));
       return null;
     }
 
     @Override
     public String toString() {
-      return "get master registration for " + hostAndPort.toString();
+      return "ConnectToMasterCB for " + hostAndPort.toString();
     }
   }
 
   /**
-   * Errback for each GetMasterRegistrationRequest sent in getMasterTableLocations() above.
+   * Errback for each ConnectToMaster RPC sent in connectToMaster() above.
    * Stores each exception in 'exceptionsReceived'. Increments 'countResponseReceived': if
    * the count is equal to the number of masters and no one else had called 'responseD' before,
    * pass a {@link NoLeaderFoundException} into 'responseD'; otherwise, do
    * nothing.
    */
-  final class GetMasterRegistrationErrCB implements Callback<Void, Exception> {
+  final class ConnectToMasterErrCB implements Callback<Void, Exception> {
     private final HostAndPort hostAndPort;
 
-    public GetMasterRegistrationErrCB(HostAndPort hostAndPort) {
+    public ConnectToMasterErrCB(HostAndPort hostAndPort) {
       this.hostAndPort = hostAndPort;
     }
 
@@ -330,7 +309,7 @@ final class ConnectToCluster {
 
     @Override
     public String toString() {
-      return "get master registration errback for " + hostAndPort.toString();
+      return "ConnectToMasterErrCB for " + hostAndPort.toString();
     }
   }
 }

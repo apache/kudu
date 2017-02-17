@@ -17,10 +17,8 @@
 
 package org.apache.kudu.client;
 
-import static org.apache.kudu.consensus.Metadata.RaftPeerPB;
 import static org.apache.kudu.master.Master.GetMasterRegistrationRequestPB;
 import static org.apache.kudu.master.Master.GetMasterRegistrationResponsePB;
-import static org.apache.kudu.master.Master.MasterErrorPB;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -36,7 +34,7 @@ import org.apache.kudu.util.Pair;
  * Package-private RPC that can only go to master.
  */
 @InterfaceAudience.Private
-public class ConnectToMasterRequest extends KuduRpc<ConnectToClusterResponse> {
+public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
   /**
    * Kudu 1.2 and earlier use GetMasterRegistration to connect to the master.
    */
@@ -81,49 +79,42 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToClusterResponse> {
   }
 
   @Override
-  Pair<ConnectToClusterResponse, Object> deserialize(CallResponse callResponse,
-                                                     String tsUUID) throws KuduException {
+  Pair<ConnectToMasterResponsePB, Object> deserialize(CallResponse callResponse,
+                                                       String tsUUID) throws KuduException {
     if (method == CONNECT_TO_MASTER) {
       return deserializeNewRpc(callResponse, tsUUID);
     }
     return deserializeOldRpc(callResponse, tsUUID);
   }
 
-  private Pair<ConnectToClusterResponse, Object> deserializeNewRpc(
+  private Pair<ConnectToMasterResponsePB, Object> deserializeNewRpc(
       CallResponse callResponse, String tsUUID) {
 
     final ConnectToMasterResponsePB.Builder respBuilder =
         ConnectToMasterResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    RaftPeerPB.Role role = RaftPeerPB.Role.FOLLOWER;
-    if (!respBuilder.hasError() || respBuilder.getError().getCode() !=
-        MasterErrorPB.Code.CATALOG_MANAGER_NOT_INITIALIZED) {
-      role = respBuilder.getRole();
-    }
-    ConnectToClusterResponse response = new ConnectToClusterResponse(
-        deadlineTracker.getElapsedMillis(),
-        tsUUID,
-        role);
-    return new Pair<ConnectToClusterResponse, Object>(
-        response, respBuilder.hasError() ? respBuilder.getError() : null);
+    return new Pair<ConnectToMasterResponsePB, Object>(
+        respBuilder.build(),
+        respBuilder.hasError() ? respBuilder.getError() : null);
   }
 
-  private Pair<ConnectToClusterResponse, Object> deserializeOldRpc(CallResponse callResponse,
+  private Pair<ConnectToMasterResponsePB, Object> deserializeOldRpc(CallResponse callResponse,
       String tsUUID) throws KuduException {
-    final GetMasterRegistrationResponsePB.Builder respBuilder =
+    final GetMasterRegistrationResponsePB.Builder resp =
         GetMasterRegistrationResponsePB.newBuilder();
-    readProtobuf(callResponse.getPBMessage(), respBuilder);
-    RaftPeerPB.Role role = RaftPeerPB.Role.FOLLOWER;
-    if (!respBuilder.hasError() || respBuilder.getError().getCode() !=
-        MasterErrorPB.Code.CATALOG_MANAGER_NOT_INITIALIZED) {
-      role = respBuilder.getRole();
+    readProtobuf(callResponse.getPBMessage(), resp);
+
+    // Translate to the new RPC result type.
+    ConnectToMasterResponsePB.Builder b = ConnectToMasterResponsePB.newBuilder();
+    if (resp.hasRole()) {
+      b.setRole(resp.getRole());
     }
-    ConnectToClusterResponse response = new ConnectToClusterResponse(
-        deadlineTracker.getElapsedMillis(),
-        tsUUID,
-        role);
-    return new Pair<ConnectToClusterResponse, Object>(
-        response, respBuilder.hasError() ? respBuilder.getError() : null);
+    if (resp.hasError()) {
+      b.setError(resp.getError());
+    }
+    return new Pair<ConnectToMasterResponsePB, Object>(
+        b.build(),
+        b.hasError() ? b.getError() : null);
   }
 
   public void setUseOldMethod() {

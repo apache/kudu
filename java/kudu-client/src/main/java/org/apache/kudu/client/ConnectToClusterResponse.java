@@ -17,44 +17,53 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
+import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
+
+import org.apache.kudu.Common.PartitionPB;
+import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
+import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
+import org.apache.kudu.master.Master.TSInfoPB;
+import org.apache.kudu.master.Master.TabletLocationsPB;
+import org.apache.kudu.master.Master.TabletLocationsPB.ReplicaPB;
 
 /**
- * Response for {@link ConnectToMasterRequest}.
+ * The aggregated response after connecting to a cluster. This stores the
+ * identity of the leader master as well as the response from that master.
  */
-@InterfaceAudience.Private
-public class ConnectToClusterResponse extends KuduRpcResponse {
+class ConnectToClusterResponse {
+  private static final ByteString FAKE_TABLET_ID = ByteString.copyFromUtf8(
+      AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER);
 
-  private final Metadata.RaftPeerPB.Role role;
+  /** The host and port of the master that is currently leader */
+  private final HostAndPort leaderHostAndPort;
+  /** The response from that master */
+  private final ConnectToMasterResponsePB connectResponse;
 
-  /**
-   * Describes a response to a {@link ConnectToMasterRequest}, built from
-   * {@link Master.GetMasterRegistrationResponsePB}.
-   *
-   * @param role Master's role in the config.
-   */
-  public ConnectToClusterResponse(long elapsedMillis, String tsUUID,
-                                  Metadata.RaftPeerPB.Role role) {
-    super(elapsedMillis, tsUUID);
-    this.role = role;
+
+  public ConnectToClusterResponse(HostAndPort hostAndPort,
+      ConnectToMasterResponsePB connectResponse) {
+    super();
+    this.leaderHostAndPort = hostAndPort;
+    this.connectResponse = connectResponse;
   }
 
   /**
-   * Returns this master's role in the config.
-   *
-   * @see Metadata.RaftPeerPB.Role
-   * @return Node's role in the cluster, or FOLLOWER if the node is not initialized.
+   * Return the location of the located leader master as if this had been a normal
+   * tablet lookup. This is necessary so that we can cache the master location as
+   * if it were a tablet.
    */
-  public Metadata.RaftPeerPB.Role getRole() {
-    return role;
-  }
-
-  @Override
-  public String toString() {
-    return "GetMasterRegistrationResponse{" +
-        "role=" + role +
-        '}';
+  public GetTableLocationsResponsePB getAsTableLocations() {
+    return GetTableLocationsResponsePB.newBuilder()
+        .addTabletLocations(TabletLocationsPB.newBuilder()
+            .setPartition(PartitionPB.newBuilder()
+                .setPartitionKeyStart(ByteString.EMPTY)
+                .setPartitionKeyEnd(ByteString.EMPTY))
+            .setTabletId(FAKE_TABLET_ID)
+            .addReplicas(ReplicaPB.newBuilder()
+                .setTsInfo(TSInfoPB.newBuilder()
+                    .addRpcAddresses(ProtobufHelper.hostAndPortToPB(leaderHostAndPort))
+                    .setPermanentUuid(ByteString.EMPTY)) // required field, but unused for master
+                .setRole(connectResponse.getRole()))).build();
   }
 }
