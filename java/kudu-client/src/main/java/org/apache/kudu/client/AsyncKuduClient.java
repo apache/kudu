@@ -685,8 +685,9 @@ public class AsyncKuduClient implements AutoCloseable {
                                                  entry.getUpperBoundPartitionKey());
       // Sending both as an errback and returning fromError because sendRpcToTablet might be
       // called via a callback that won't care about the returned Deferred.
+      Deferred<R> d = request.getDeferred();
       request.errback(e);
-      return Deferred.fromError(e);
+      return d;
     }
 
     // Set the propagated timestamp so that the next time we send a message to
@@ -1005,8 +1006,9 @@ public class AsyncKuduClient implements AutoCloseable {
     Status statusTimedOut = Status.TimedOut(message + request);
     final Exception e = new NonRecoverableException(statusTimedOut, cause);
     LOG.debug("Cannot continue with this RPC: {} because of: {}", request, message, e);
+    Deferred<R> d = request.getDeferred();
     request.errback(e);
-    return Deferred.fromError(e);
+    return d;
   }
 
   /**
