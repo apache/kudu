@@ -370,21 +370,20 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     }
     final int rpcid = header.getCallId();
 
-    @SuppressWarnings("rawtypes")
-    final KuduRpc rpc = rpcsInflight.get(rpcid);
+    KuduRpc<Object> rpc;
+    lock.lock();
+    try {
+      rpc = (KuduRpc<Object>) rpcsInflight.remove(rpcid);
+    } finally {
+      lock.unlock();
+    }
 
     if (rpc == null) {
       final String msg = getPeerUuidLoggingString() + "Invalid rpcid: " + rpcid;
       LOG.error(msg);
-      Status statusIllegalState = Status.IllegalState(msg);
-      // The problem here is that we don't know which Deferred corresponds to
-      // this RPC, since we don't have a valid ID.  So we're hopeless, we'll
-      // never be able to recover because responses are not framed, we don't
-      // know where the next response will start...  We have to give up here
-      // and throw this outside of our Netty handler, so Netty will call our
-      // exception handler where we'll close this channel, which will cause
-      // all RPCs in flight to be failed.
-      throw new NonRecoverableException(statusIllegalState);
+      // If we get a bad RPC ID back, we are probably somehow misaligned from
+      // the server. So, we disconnect the connection.
+      throw new NonRecoverableException(Status.IllegalState(msg));
     }
 
     // Start building the trace, we'll finish it as we parse the response.
@@ -424,15 +423,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
           "rpcId=" + rpcid +
           ", response size=" + response.getTotalResponseSize() +
           ", rpc=" + rpc);
-    }
-
-    {
-      final KuduRpc<?> removed = rpcsInflight.remove(rpcid);
-      if (removed == null) {
-        // The RPC we were decoding was cleaned up already, give up.
-        Status statusIllegalState = Status.IllegalState("RPC not found");
-        throw new NonRecoverableException(statusIllegalState);
-      }
     }
 
     // This check is specifically for the ERROR_SERVER_TOO_BUSY case above.
