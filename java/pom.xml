@@ -256,7 +256,8 @@
                         <phase>validate</phase>
                         <configuration>
                             <configLocation>kudu_style.xml</configLocation>
-                            <propertyExpansion>samedir=.</propertyExpansion>
+                            <suppressionsLocation>checkstyle_suppressions.xml</suppressionsLocation>
+                            <suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
                             <encoding>UTF-8</encoding>
                             <consoleOutput>true</consoleOutput>
                             <failsOnError>false</failsOnError>

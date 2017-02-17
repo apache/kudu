@@ -51,7 +51,7 @@
     <module name="SuppressionCommentFilter"/>
     <!-- Suppress generated sources -->
     <module name="SuppressionFilter">
-        <property name="file" value="${samedir}/checkstyle_suppressions.xml"/>
+        <property name="file" value="${checkstyle.suppressions.file}"/>
         <property name="optional" value="false"/>
     </module>
     <module name="TreeWalker">
