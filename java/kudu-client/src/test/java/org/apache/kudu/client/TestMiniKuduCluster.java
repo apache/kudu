@@ -24,6 +24,7 @@ public class TestMiniKuduCluster {
 
   private static final int NUM_TABLET_SERVERS = 3;
   private static final int DEFAULT_NUM_MASTERS = 1;
+  private static final long SLEEP_TIME_MS = 10000;
 
   @Test(timeout = 50000)
   public void test() throws Exception {
@@ -38,30 +39,30 @@ public class TestMiniKuduCluster {
       {
         // Kill the master.
         int masterPort = cluster.getMasterProcesses().keySet().iterator().next();
-        testPort(masterPort, true, 1000);
+        testPort(masterPort, true);
         cluster.killMasterOnPort(masterPort);
 
-        testPort(masterPort, false, 2000);
+        testPort(masterPort, false);
 
         // Restart the master.
         cluster.restartDeadMasterOnPort(masterPort);
 
         // Test we can reach it.
-        testPort(masterPort, true, 3000);
+        testPort(masterPort, true);
       }
 
       {
         // Kill the first TS.
         int tsPort = cluster.getTabletServerProcesses().keySet().iterator().next();
-        testPort(tsPort, true, 1000);
+        testPort(tsPort, true);
         cluster.killTabletServerOnPort(tsPort);
 
-        testPort(tsPort, false, 2000);
+        testPort(tsPort, false);
 
         // Restart it.
         cluster.restartDeadTabletServerOnPort(tsPort);
 
-        testPort(tsPort, true, 3000);
+        testPort(tsPort, true);
       }
 
       assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
@@ -81,17 +82,14 @@ public class TestMiniKuduCluster {
   }
 
   /**
-   * Test without the specified is open or closed, waiting up to a certain time.
-   * The longer you expect it might for the socket to become open or closed.
+   * Test whether the specified port is open or closed, waiting up to a certain time.
    * @param port the port to test
    * @param testIsOpen true if we should want it to be open, false if we want it closed
-   * @param timeout how long we're willing to wait before it happens
    */
   private static void testPort(int port,
-                               boolean testIsOpen,
-                               long timeout) throws InterruptedException {
+                               boolean testIsOpen) throws InterruptedException {
     DeadlineTracker tracker = new DeadlineTracker();
-    while (tracker.getElapsedMillis() < timeout) {
+    while (tracker.getElapsedMillis() < SLEEP_TIME_MS) {
       try {
         Socket socket = new Socket(TestUtils.getUniqueLocalhost(), port);
         socket.close();
