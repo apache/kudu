@@ -349,6 +349,9 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
         negotiated_authn_ = AuthenticationType::SASL;
         break;
       case AuthenticationTypePB::kToken:
+        // TODO(todd): we should also be checking tls_context_->has_trusted_cert()
+        // here to match the original logic we used to advertise TOKEN support,
+        // or perhaps just check explicitly whether we advertised TOKEN.
         if (!authn_token_) {
           return Status::RuntimeError(
               "server chose token authentication, but client has no token");

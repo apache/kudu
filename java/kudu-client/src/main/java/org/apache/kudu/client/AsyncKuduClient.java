@@ -193,12 +193,13 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final RequestTracker requestTracker;
 
-  private final Subject subject;
+  private final SecurityContext securityContext;
 
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
     this.channelFactory = b.createChannelFactory();
+    this.securityContext = new SecurityContext(b.subject);
     this.masterAddresses = b.masterAddresses;
     this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
         MASTER_TABLE_NAME_PLACEHOLDER, null, null);
@@ -210,7 +211,6 @@ public class AsyncKuduClient implements AutoCloseable {
     this.timer = b.timer;
     String clientId = UUID.randomUUID().toString().replace("-", "");
     this.requestTracker = new RequestTracker(clientId);
-    this.subject = b.subject;
     this.connectionCache = new ConnectionCache(this);
   }
 
@@ -565,6 +565,10 @@ public class AsyncKuduClient implements AutoCloseable {
 
   ClientSocketChannelFactory getChannelFactory() {
     return channelFactory;
+  }
+
+  SecurityContext getSecurityContext() {
+    return securityContext;
   }
 
   /**
@@ -952,17 +956,6 @@ public class AsyncKuduClient implements AutoCloseable {
   @VisibleForTesting
   TabletClient getTabletClient(String uuid) {
     return connectionCache.getClient(uuid);
-  }
-
-  /**
-   * Gets the subject who created the Kudu client.
-   *
-   * The subject contains credentials necessary to authenticate to Kerberized Kudu clusters.
-   *
-   * @return the subject who created the Kudu client, or null if no login context was active.
-   */
-  Subject getSubject() {
-    return subject;
   }
 
   /**

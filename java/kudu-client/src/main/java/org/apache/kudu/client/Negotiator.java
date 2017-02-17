@@ -70,9 +70,11 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
+import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.util.SecurityUtil;
 
 /**
@@ -107,20 +109,30 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     INITIAL,
     AWAIT_NEGOTIATE,
     AWAIT_TLS_HANDSHAKE,
+    AWAIT_TOKEN_EXCHANGE,
     AWAIT_SASL,
     FINISHED
   }
 
-  /** Subject to authenticate as, when using Kerberos/GSSAPI */
-  private final Subject subject;
   /** The remote hostname we're connecting to, used by TLS and GSSAPI */
   private final String remoteHostname;
+  /** The security context holding the client credentials */
+  private final SecurityContext securityContext;
+  /**
+   * The authentication token we'll try to connect with, maybe null.
+   * This is fetched from {@link #securityContext} in the constructor to
+   * ensure that it doesn't change over the course of a negotiation attempt.
+   */
+  private final SignedTokenPB authnToken;
 
   private State state = State.INITIAL;
   private SaslClient saslClient;
 
   /** The negotiated mechanism, set after NEGOTIATE stage. */
   private String chosenMech;
+
+  /** The negotiated authentication type, set after NEGOTIATE state. */
+  private AuthenticationTypePB.TypeCase chosenAuthnType;
 
   /** The features supported by the server, set after NEGOTIATE stage. */
   private Set<RpcHeader.RpcFeatureFlag> serverFeatures;
@@ -134,6 +146,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    */
   private DecoderEmbedder<ChannelBuffer> sslEmbedder;
 
+  /** True if we have negotiated TLS with the server */
+  private boolean negotiatedTls;
+
   /**
    * Future indicating whether the embedded handshake has completed.
    * Only non-null once TLS is initiated.
@@ -142,9 +157,10 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private Certificate peerCert;
 
-  public Negotiator(Subject subject, String remoteHostname) {
-    this.subject = subject;
+  public Negotiator(String remoteHostname, SecurityContext securityContext) {
     this.remoteHostname = remoteHostname;
+    this.securityContext = securityContext;
+    this.authnToken = securityContext.getAuthenticationToken();
   }
 
   public void sendHello(Channel channel) {
@@ -152,16 +168,33 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void sendNegotiateMessage(Channel channel) {
-    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
+        .setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
 
     // Advertise our supported features
+    // ----------------------------------
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
     // TODO(todd): if we are on a loopback connection, advertise and support
     // TLS_AUTHENTICATION_ONLY.
 
-    builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.NEGOTIATE);
+    // Advertise our authentication types.
+    // ----------------------------------
+    // We always advertise SASL.
+    builder.addAuthnTypesBuilder().setSasl(
+        AuthenticationTypePB.Sasl.getDefaultInstance());
+
+    // We may also have a token. But, we can only use the token
+    // if we are able to use authenticated TLS to authenticate the server.
+    if (authnToken != null && securityContext.hasTrustedCerts()) {
+      builder.addAuthnTypesBuilder().setToken(
+          AuthenticationTypePB.Token.getDefaultInstance());
+    }
+
+    // We currently don't support client-certificate authentication from the
+    // Java client.
+
     state = State.AWAIT_NEGOTIATE;
     sendSaslMessage(channel, builder.build());
   }
@@ -197,6 +230,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         break;
       case AWAIT_SASL:
         handleSaslMessage(chan, response);
+        break;
+      case AWAIT_TOKEN_EXCHANGE:
+        handleTokenExchangeResponse(chan, response);
         break;
       case AWAIT_TLS_HANDSHAKE:
         handleTlsMessage(chan, response);
@@ -237,17 +273,31 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
       SaslException, SSLException {
+    Preconditions.checkState(response.getStep() == NegotiateStep.NEGOTIATE,
+        "Expected NEGOTIATE message, got {}", response.getStep());
+
     // Store the supported features advertised by the server.
-    ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
-    for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
-      if (SUPPORTED_RPC_FEATURES.contains(feature)) {
-        features.add(feature);
-      }
+    serverFeatures = getFeatureFlags(response);
+    // If the server supports TLS, we will always speak TLS to it.
+    negotiatedTls = serverFeatures.contains(RpcFeatureFlag.TLS);
+
+    // Check the negotiated authentication type sent by the server.
+    chosenAuthnType = chooseAuthenticationType(response);
+
+    if (chosenAuthnType == AuthenticationTypePB.TypeCase.SASL) {
+      chooseAndInitializeSaslMech(response);
     }
-    serverFeatures = features.build();
 
-    boolean willUseTls = serverFeatures.contains(RpcFeatureFlag.TLS);
+    // If we negotiated TLS, then we want to start the TLS handshake; otherwise,
+    // we can move directly to the authentication phase.
+    if (negotiatedTls) {
+      startTlsHandshake(chan);
+    } else {
+      startAuthentication(chan);
+    }
+  }
 
+  private void chooseAndInitializeSaslMech(NegotiatePB response) throws SaslException {
     // Gather the set of server-supported mechanisms.
     Set<String> serverMechs = Sets.newHashSet();
     for (RpcHeader.NegotiatePB.SaslMechanism mech : response.getSaslMechanismsList()) {
@@ -267,7 +317,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       Map<String, String> props = Maps.newHashMap();
       // If we are using GSSAPI with TLS, enable integrity protection, which we use
       // to securely transmit the channel bindings.
-      if ("GSSAPI".equals(clientMech) && willUseTls) {
+      if ("GSSAPI".equals(clientMech) && negotiatedTls) {
         props.put(Sasl.QOP, "auth-int");
       }
       try {
@@ -284,26 +334,65 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         saslClient = null;
       }
     }
-
     if (chosenMech == null) {
       throw new SaslException("unable to negotiate a matching mechanism. Errors: [" +
                               Joiner.on(",").withKeyValueSeparator(": ").join(errorsByMech) +
                               "]");
     }
+  }
 
-    // If we negotiated TLS, then we want to start the TLS handshake.
-    if (willUseTls) {
-      startTlsHandshake(chan);
-    } else {
-      sendSaslInitiate(chan);
+  private AuthenticationTypePB.TypeCase chooseAuthenticationType(NegotiatePB response) {
+    Preconditions.checkArgument(response.getAuthnTypesCount() <= 1,
+        "Expected server to reply with at most one authn type");
+
+    if (response.getAuthnTypesCount() == 0) {
+      // Default to SASL for compatibility with old servers.
+      return AuthenticationTypePB.TypeCase.SASL;
     }
+
+    AuthenticationTypePB.TypeCase type = response.getAuthnTypes(0).getTypeCase();
+    switch (type) {
+      case SASL:
+        break;
+      case TOKEN:
+        if (authnToken == null) {
+          // TODO(todd): should we also check whether we have a CA cert?
+          // it seems like this should have the same logic as whether we advertised it
+          throw new IllegalArgumentException("server chose token authentication " +
+              "but client had no valid token");
+        }
+        break;
+      default:
+        throw new IllegalArgumentException("server chose bad authn type " + chosenAuthnType);
+    }
+    return type;
+  }
+
+  private Set<RpcFeatureFlag> getFeatureFlags(NegotiatePB response) {
+    ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
+    for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
+      if (SUPPORTED_RPC_FEATURES.contains(feature)) {
+        features.add(feature);
+      }
+    }
+    return features.build();
   }
 
   /**
    * Send the initial TLS "ClientHello" message.
    */
   private void startTlsHandshake(Channel chan) throws SSLException {
-    SSLEngine engine = SecurityUtil.createSslEngine();
+    SSLEngine engine;
+    switch (chosenAuthnType) {
+      case SASL:
+        engine = securityContext.createSSLEngineTrustAll();
+        break;
+      case TOKEN:
+        engine = securityContext.createSSLEngine();
+        break;
+      default:
+        throw new AssertionError("unreachable");
+    }
     engine.setUseClientMode(true);
     SslHandler handler = new SslHandler(engine);
     handler.setEnableRenegotiation(false);
@@ -348,7 +437,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
 
     chan.getPipeline().addFirst("tls", handler);
-    sendSaslInitiate(chan);
+    startAuthentication(chan);
   }
 
   /**
@@ -389,6 +478,41 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         .setStep(NegotiateStep.TLS_HANDSHAKE)
         .setTlsHandshake(buf)
         .build());
+  }
+
+  private void startAuthentication(Channel chan) throws SaslException {
+    switch (chosenAuthnType) {
+      case SASL:
+        sendSaslInitiate(chan);
+        break;
+      case TOKEN:
+        sendTokenExchange(chan);
+        break;
+      default:
+        throw new AssertionError("unreachable");
+    }
+  }
+
+  private void sendTokenExchange(Channel chan) {
+    // We must not send a token unless we have successfully finished
+    // authenticating via TLS.
+    Preconditions.checkNotNull(authnToken);
+    Preconditions.checkNotNull(sslHandshakeFuture);
+    Preconditions.checkState(sslHandshakeFuture.isSuccess());
+
+    RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder()
+        .setStep(NegotiateStep.TOKEN_EXCHANGE)
+        .setAuthnToken(authnToken);
+    state = State.AWAIT_TOKEN_EXCHANGE;
+    sendSaslMessage(chan, builder.build());
+  }
+
+  private void handleTokenExchangeResponse(Channel chan, NegotiatePB response) {
+    Preconditions.checkArgument(response.getStep() == NegotiateStep.TOKEN_EXCHANGE,
+        "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
+
+    // The token response doesn't have any actual data in it, so we can just move on.
+    handleSuccessResponse(chan, response);
   }
 
   private void sendSaslInitiate(Channel chan) throws SaslException {
@@ -470,7 +594,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
     try {
-      return Subject.doAs(subject, new PrivilegedExceptionAction<byte[]>() {
+      return Subject.doAs(securityContext.getSubject(),
+          new PrivilegedExceptionAction<byte[]>() {
           @Override
           public byte[] run() throws Exception {
             return saslClient.evaluateChallenge(challenge);

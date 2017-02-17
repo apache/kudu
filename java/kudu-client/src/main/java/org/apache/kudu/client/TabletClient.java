@@ -34,7 +34,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantLock;
 
 import javax.annotation.concurrent.GuardedBy;
-import javax.security.auth.Subject;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -571,9 +570,10 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
                                final ChannelStateEvent e) {
     assert chan != null;
     Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
-    Negotiator secureRpcHelper = new Negotiator(getSubject(), serverInfo.getHostname());
-    ctx.getPipeline().addBefore(ctx.getName(), "negotiation", secureRpcHelper);
-    secureRpcHelper.sendHello(chan);
+    Negotiator negotiator = new Negotiator(serverInfo.getHostname(),
+        kuduClient.getSecurityContext());
+    ctx.getPipeline().addBefore(ctx.getName(), "negotiation", negotiator);
+    negotiator.sendHello(chan);
   }
 
   @Override
@@ -720,13 +720,6 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
 
   ServerInfo getServerInfo() {
     return serverInfo;
-  }
-
-  /**
-   * @return the subject containing security credentials, or null if no subject is available.
-   */
-  Subject getSubject() {
-    return kuduClient.getSubject();
   }
 
   public String toString() {

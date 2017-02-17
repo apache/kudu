@@ -20,7 +20,6 @@ package org.apache.kudu.client;
 import static org.junit.Assert.*;
 
 import java.nio.ByteBuffer;
-import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
@@ -35,12 +34,14 @@ import javax.net.ssl.SSLException;
 import javax.security.auth.Subject;
 
 import org.apache.kudu.client.Negotiator.Result;
+import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
 import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 import org.apache.kudu.util.SecurityUtil;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
+import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
@@ -52,19 +53,53 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
+import com.google.protobuf.TextFormat;
 
 public class TestNegotiator {
-  private Negotiator negotiator;
   private DecoderEmbedder<Object> embedder;
+  private SecurityContext secContext;
+  private SSLEngine serverEngine;
 
-  private static final char[] password = "password".toCharArray();
+  private static final char[] KEYSTORE_PASSWORD = "password".toCharArray();
+
+  /**
+   * The cert stored in the keystore, in base64ed DER format.
+   * The real certs we'll get from the server will not be in Base64,
+   * but the CertificateFactory also supports binary DER.
+   */
+  private static final String CA_CERT_DER =
+      "-----BEGIN CERTIFICATE-----\n" +
+      "MIIDXTCCAkWgAwIBAgIJAOOmFHYkBz4rMA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNVBAYTAkFVMRMw" +
+      "EQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwHhcN" +
+      "MTYxMTAyMjI0OTQ5WhcNMTcwMjEwMjI0OTQ5WjBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t" +
+      "ZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0B" +
+      "AQEFAAOCAQ8AMIIBCgKCAQEAppo9GwiDisQVYAF9NXl8ykqo0MIi5rfNwiE9kUWbZ2ejzxs+1Cf7" +
+      "WCn4mzbkJx5ZscRjhnNb6dJxtZJeid/qgiNVBcNzh35H8J+ao0tEbHjCs7rKOX0etsFUp4GQwYkd" +
+      "fpvVBsU8ciXvkxhvt1XjSU3/YJJRAvCyGVxUQlKiVKGCD4OnFNBwMdNw7qI8ryiRv++7I9udfSuM" +
+      "713yMeBtkkV7hWUfxrTgQOLsV/CS+TsSoOJ7JJqHozeZ+VYom85UqSfpIFJVzM6S7BTb6SX/vwYI" +
+      "oS70gubT3HbHgDRcMvpCye1npHL9fL7B87XZn7wnnUem0eeCqWyUjJ82Uj9mQQIDAQABo1AwTjAd" +
+      "BgNVHQ4EFgQUOY7rpWGoZMrmyRZ9RohPWVwyPBowHwYDVR0jBBgwFoAUOY7rpWGoZMrmyRZ9RohP" +
+      "WVwyPBowDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEATKh3io8ruqbhmopY3xQWA2pE" +
+      "hs4ZSu3H+AfULMruVsXKEZjWp27nTsFaxLZYUlzeZr0EcWwZ79qkcA8Dyj+mVHhrCAPpcjsDACh1" +
+      "ZdUQAgASkVS4VQvkukct3DFa3y0lz5VwQIxjoQR5y6dCvxxXT9NpRo/Z7pd4MRhEbz3NT6PScQ9f" +
+      "2MTrR0NOikLdB98JlpKQbEKxzbMhWDw4J3mrmK6zdemjdCcRDsBVPswKnyAjkibXaZkpNRzjvDNA" +
+      "gO88MKlArCYoyRZqIfkcSXAwwTdGQ+5GQLsY9zS49Rrhk9R7eOmDhaHybdRBDqW1JiCSmzURZAxl" +
+      "nrjox4GmC3JJaA==\n" +
+      "-----END CERTIFICATE-----";
 
   @Before
   public void setup() {
-    AccessControlContext context = AccessController.getContext();
-    Subject subject = Subject.getSubject(context);
-    negotiator = new Negotiator(subject, "127.0.0.1");
+    serverEngine = createServerEngine();
+    serverEngine.setUseClientMode(false);
+    secContext = new SecurityContext(Subject.getSubject(
+        AccessController.getContext()));
+  }
+
+  private Negotiator startNegotiation() {
+    Negotiator negotiator = new Negotiator("127.0.0.1", secContext);
     embedder = new DecoderEmbedder<Object>(negotiator);
+    negotiator.sendHello(embedder.getPipeline().getChannel());
+    return negotiator;
   }
 
   static CallResponse fakeResponse(ResponseHeader header, Message body) {
@@ -76,20 +111,37 @@ public class TestNegotiator {
   KeyStore loadTestKeystore() throws Exception {
     KeyStore ks = KeyStore.getInstance("JKS");
     ks.load(TestNegotiator.class.getResourceAsStream("/test-key-and-cert.jks"),
-        password);
+        KEYSTORE_PASSWORD);
     return ks;
   }
 
   SSLEngine createServerEngine() {
     try {
       KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-      kmf.init(loadTestKeystore(), password);
+      kmf.init(loadTestKeystore(), KEYSTORE_PASSWORD);
       SSLContext ctx = SSLContext.getInstance("TLS");
       ctx.init(kmf.getKeyManagers(), null, null);
       return ctx.createSSLEngine();
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
+  }
+
+  /**
+   * Checks that the client sends a connection context and then yields
+   * a Negotiation.Result to the pipeline.
+   * @return the result
+   */
+  private Result assertComplete() {
+    RpcOutboundMessage msg = (RpcOutboundMessage)embedder.poll();
+    ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
+    assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
+    assertEquals("java_client", connCtx.getDEPRECATEDUserInfo().getRealUser());
+
+    // Expect the client to also emit a negotiation Result.
+    Result result = (Result)embedder.poll();
+    assertNotNull(result);
+    return result;
   }
 
   @Test
@@ -105,7 +157,7 @@ public class TestNegotiator {
    */
   @Test
   public void testNegotiation() {
-    negotiator.sendHello(embedder.getPipeline().getChannel());
+    startNegotiation();
 
     // Expect client->server: NEGOTIATE.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
@@ -139,14 +191,7 @@ public class TestNegotiator {
           .build()));
 
     // Expect client->server: ConnectionContext
-    msg = (RpcOutboundMessage)embedder.poll();
-    ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
-    assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
-    assertEquals("java_client", connCtx.getDEPRECATEDUserInfo().getRealUser());
-
-    // Expect the client to also emit a negotiation Result.
-    Result result = (Result)embedder.poll();
-    assertNotNull(result);
+    assertComplete();
   }
 
   private static void runTasks(SSLEngineResult result,
@@ -181,7 +226,7 @@ public class TestNegotiator {
         bufs.add(ByteString.copyFrom(dst));
       }
       return fakeResponse(
-          ResponseHeader.newBuilder().setCallId(-33).build(),
+          ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
           NegotiatePB.newBuilder()
             .setTlsHandshake(ByteString.copyFrom(bufs))
             .setStep(NegotiateStep.TLS_HANDSHAKE)
@@ -194,30 +239,13 @@ public class TestNegotiator {
     }
   }
 
-  @Test
-  public void testTlsNegotiation() throws Exception {
-    SSLEngine serverEngine = createServerEngine();
-    serverEngine.setUseClientMode(false);
-    negotiator.sendHello(embedder.getPipeline().getChannel());
-
-    // Expect client->server: NEGOTIATE, TLS included.
+  /**
+   * Completes the 3-step TLS handshake, assuming that the client is
+   * about to generate the first of the messages.
+   */
+  private void runTlsHandshake() throws SSLException {
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
     NegotiatePB body = (NegotiatePB) msg.getBody();
-    assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
-    assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
-
-    // Fake a server response with TLS enabled.
-    embedder.offer(fakeResponse(
-        ResponseHeader.newBuilder().setCallId(-33).build(),
-        NegotiatePB.newBuilder()
-          .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
-          .addSupportedFeatures(RpcFeatureFlag.TLS)
-          .setStep(NegotiateStep.NEGOTIATE)
-          .build()));
-
-    // Expect client->server: TLS_HANDSHAKE.
-    msg = (RpcOutboundMessage) embedder.poll();
-    body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.TLS_HANDSHAKE, body.getStep());
 
     // Consume the ClientHello in our fake server, which should generate ServerHello.
@@ -230,6 +258,29 @@ public class TestNegotiator {
 
     // Server consumes the above. Should send the TLS "Finished" message.
     embedder.offer(runServerStep(serverEngine, body.getTlsHandshake()));
+  }
+
+  @Test
+  public void testTlsNegotiation() throws Exception {
+    startNegotiation();
+
+    // Expect client->server: NEGOTIATE, TLS included.
+    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    NegotiatePB body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
+    assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
+
+    // Fake a server response with TLS enabled.
+    embedder.offer(fakeResponse(
+        ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
+        NegotiatePB.newBuilder()
+          .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
+          .addSupportedFeatures(RpcFeatureFlag.TLS)
+          .setStep(NegotiateStep.NEGOTIATE)
+          .build()));
+
+    // Expect client->server: TLS_HANDSHAKE.
+    runTlsHandshake();
 
     // The pipeline should now have an SSL handler as the first handler.
     assertTrue(embedder.getPipeline().getFirst() instanceof SslHandler);
@@ -242,5 +293,72 @@ public class TestNegotiator {
     msg = (RpcOutboundMessage) embedder.poll();
     body = (NegotiatePB) msg.getBody();
     assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
+  }
+
+  /**
+   * Test that, if we don't have any trusted certs, we don't expose
+   * token authentication as an option.
+   */
+  @Test
+  public void testNoTokenAuthWhenNoTrustedCerts() throws Exception {
+    secContext.setAuthenticationToken(SignedTokenPB.getDefaultInstance());
+    startNegotiation();
+
+    // Expect client->server: NEGOTIATE, TLS included, Token not included.
+    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    NegotiatePB body = (NegotiatePB) msg.getBody();
+    assertEquals("supported_features: APPLICATION_FEATURE_FLAGS " +
+        "supported_features: TLS " +
+        "step: NEGOTIATE " +
+        "authn_types { sasl { } }", TextFormat.shortDebugString(body));
+  }
+
+  /**
+   * Test that, if we have a trusted CA cert, we expose token authentication
+   * as an option during negotiation, and run it to completion.
+   */
+  @Test
+  public void testTokenAuthWithTrustedCerts() throws Exception {
+    secContext.trustCertificate(ByteString.copyFromUtf8(CA_CERT_DER));
+    secContext.setAuthenticationToken(SignedTokenPB.getDefaultInstance());
+    startNegotiation();
+
+    // Expect client->server: NEGOTIATE, TLS included, Token included.
+    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    NegotiatePB body = (NegotiatePB) msg.getBody();
+    assertEquals("supported_features: APPLICATION_FEATURE_FLAGS " +
+        "supported_features: TLS " +
+        "step: NEGOTIATE " +
+        "authn_types { sasl { } } " +
+        "authn_types { token { } }", TextFormat.shortDebugString(body));
+
+    // Fake a server response with TLS enabled and TOKEN chosen.
+    embedder.offer(fakeResponse(
+        ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
+        NegotiatePB.newBuilder()
+          .addSupportedFeatures(RpcFeatureFlag.TLS)
+          .addAuthnTypes(AuthenticationTypePB.newBuilder().setToken(
+              AuthenticationTypePB.Token.getDefaultInstance()))
+          .setStep(NegotiateStep.NEGOTIATE)
+          .build()));
+
+    // Expect to now run the TLS handshake
+    runTlsHandshake();
+
+    // Expect the client to send the token.
+    msg = (RpcOutboundMessage) embedder.poll();
+    body = (NegotiatePB) msg.getBody();
+    assertEquals("step: TOKEN_EXCHANGE authn_token { }",
+        TextFormat.shortDebugString(body));
+
+    // Fake a response indicating success.
+    embedder.offer(fakeResponse(
+        ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
+        NegotiatePB.newBuilder()
+        .setStep(NegotiateStep.TOKEN_EXCHANGE)
+          .build()));
+
+    // Should be complete now.
+    assertComplete();
   }
 }
