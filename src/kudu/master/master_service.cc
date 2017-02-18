@@ -32,6 +32,7 @@
 #include "kudu/rpc/user_credentials.h"
 #include "kudu/server/webserver.h"
 #include "kudu/security/token_signer.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 
@@ -164,7 +165,15 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
   }
 
-  // TODO(aserbin): 7. Send any active CA certs which the TS doesn't have.
+  // 7. Only leaders send public parts of non-expired TSK
+  // which the TS doesn't have.
+  if (is_leader_master && req->has_latest_tsk_seq_num()) {
+    auto tsk_public_keys = server_->token_signer()->verifier().ExportKeys(
+        req->latest_tsk_seq_num());
+    for (auto& key : tsk_public_keys) {
+      resp->add_tsks()->Swap(&key);
+    }
+  }
 
   rpc->RespondSuccess();
 }

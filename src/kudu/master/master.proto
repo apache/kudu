@@ -608,7 +608,6 @@ message ConnectToMasterResponsePB {
 
   // If the client requested an authentication token, and security is
   // enabled on the cluster, the master returns a signed authn token.
-  // TODO(PKI): implement me!
   optional security.SignedTokenPB authn_token = 4;
 }
 

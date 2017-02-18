@@ -33,6 +33,7 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/curl_util.h"
@@ -219,6 +220,15 @@ TEST_F(RegistrationTest, TestTSGetsSignedX509Certificate) {
   AssertEventually([&](){
       ASSERT_TRUE(ts->server()->tls_context().has_signed_cert());
     }, MonoDelta::FromSeconds(10));
+}
+
+// Check that after the tablet server registers, it gets the list of valid
+// public token signing keys.
+TEST_F(RegistrationTest, TestTSGetsTskList) {
+  MiniTabletServer* ts = cluster_->mini_tablet_server(0);
+  AssertEventually([&](){
+      ASSERT_FALSE(ts->server()->token_verifier().ExportKeys().empty());
+    });
 }
 
 // Test that, if the tserver has HTTPS enabled, the master links to it
