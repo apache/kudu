@@ -87,13 +87,13 @@ class TokenTest : public KuduTest {
  public:
   void SetUp() override {
     KuduTest::SetUp();
-    // Set the keylength smaller to make tests run faster.
+    // Set the key length smaller to make tests run faster.
     FLAGS_tsk_num_rsa_bits = 512;
   }
 };
 
 TEST_F(TokenTest, TestInit) {
-  TokenSigner signer(60, 20, make_shared<TokenVerifier>());
+  TokenSigner signer(10, 10);
   const TokenVerifier& verifier(signer.verifier());
 
   SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
@@ -122,7 +122,7 @@ TEST_F(TokenTest, TestInit) {
 
 TEST_F(TokenTest, TestTokenSignerAddKeys) {
   {
-    TokenSigner signer(60, 20, make_shared<TokenVerifier>());
+    TokenSigner signer(10, 10);
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
@@ -137,7 +137,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
   {
     // Special configuration for TokenSigner: rotation interval is zero,
     // so should be able to add two keys right away.
-    TokenSigner signer(60, 0, make_shared<TokenVerifier>());
+    TokenSigner signer(10, 0);
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
@@ -156,9 +156,9 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
 
   {
     // Special configuration for TokenSigner: key rotation interval
-    // just one second shorter than the validity interval. It should not
-    // need next key right away, but should need next key after 1 second.
-    TokenSigner signer(60, 1, make_shared<TokenVerifier>());
+    // just one second. It should not need next key right away, but should need
+    // next key after 1 second.
+    TokenSigner signer(10, 1);
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
@@ -185,7 +185,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
 // Test how test rotation works.
 TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
   // Key rotation interval 0 allows adding 2 keys in a row with no delay.
-  TokenSigner signer(60, 0, make_shared<TokenVerifier>());
+  TokenSigner signer(10, 0);
   const TokenVerifier& verifier(signer.verifier());
 
   // Should start off with no signing keys.
@@ -248,8 +248,10 @@ TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
 TEST_F(TokenTest, TestExportKeys) {
   // Test that the exported public keys don't contain private key material,
   // and have an appropriate expiration.
-  const int64_t key_exp_seconds = 60;
-  TokenSigner signer(key_exp_seconds, 30, make_shared<TokenVerifier>());
+  const int64_t key_exp_seconds = 20;
+  const int64_t key_rotation_seconds = 10;
+  TokenSigner signer(key_exp_seconds - key_rotation_seconds,
+                     key_rotation_seconds);
   int64_t key_seq_num;
   {
     std::unique_ptr<TokenSigningPrivateKey> key;
@@ -273,7 +275,7 @@ TEST_F(TokenTest, TestExportKeys) {
 // Test that the TokenVerifier can import keys exported by the TokenSigner
 // and then verify tokens signed by it.
 TEST_F(TokenTest, TestEndToEnd_Valid) {
-  TokenSigner signer(60, 20, make_shared<TokenVerifier>());
+  TokenSigner signer(10, 10);
   {
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
@@ -296,7 +298,7 @@ TEST_F(TokenTest, TestEndToEnd_Valid) {
 // See VerificationResult.
 TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   // Key rotation interval 0 allows adding 2 keys in a row with no delay.
-  TokenSigner signer(60, 0, make_shared<TokenVerifier>());
+  TokenSigner signer(10, 0);
   {
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));

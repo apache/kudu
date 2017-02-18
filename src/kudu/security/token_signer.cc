@@ -36,14 +36,6 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
-DEFINE_int64(authn_token_validity_seconds, 120,
-             "Period of time for which an issued authentication token is valid.");
-// TODO(PKI): docs for what actual effect this has, given we don't support
-// token renewal.
-// TODO(PKI): this is set extremely low, so that we don't forget to come back to
-// this and add rolling and refetching code.
-TAG_FLAG(authn_token_validity_seconds, experimental);
-
 DEFINE_int32(tsk_num_rsa_bits, 2048,
              "Number of bits used for token signing keys");
 // TODO(PKI) is 1024 enough for TSKs since they rotate frequently?
@@ -60,13 +52,17 @@ using std::vector;
 namespace kudu {
 namespace security {
 
-TokenSigner::TokenSigner(int64_t key_validity_seconds,
+TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
                          int64_t key_rotation_seconds,
                          shared_ptr<TokenVerifier> verifier)
-    : verifier_(std::move(verifier)),
-      key_validity_seconds_(key_validity_seconds),
+    : verifier_(verifier ? std::move(verifier)
+                         : std::make_shared<TokenVerifier>()),
+      authn_token_validity_seconds_(authn_token_validity_seconds),
       key_rotation_seconds_(key_rotation_seconds),
+      key_validity_seconds_(key_rotation_seconds_ + authn_token_validity_seconds_),
       next_key_seq_num_(0) {
+  CHECK_GE(key_rotation_seconds_, 0);
+  CHECK_GE(authn_token_validity_seconds_, 0);
   CHECK(verifier_);
 }
 
@@ -133,7 +129,7 @@ Status TokenSigner::GenerateAuthnToken(string username,
                                        SignedTokenPB* signed_token) const {
   TokenPB token;
   token.set_expire_unix_epoch_seconds(
-      WallTime_Now() + FLAGS_authn_token_validity_seconds);
+      WallTime_Now() + authn_token_validity_seconds_);
   AuthnTokenPB* authn = token.mutable_authn();
   authn->mutable_username()->assign(std::move(username));
 
@@ -177,7 +173,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
     // It does not make much sense to keep more than two keys in the queue.
     // It's enough to have just one active key and next key ready to be
     // activated when it's time to do so.  However, it does not mean the
-    // process of key refreshement is about to stop once there are two keys
+    // process of key refreshment is about to stop once there are two keys
     // in the queue: the TryRotate() method (which should be called periodically
     // along with CheckNeedKey()/AddKey() pair) will eventually pop the
     // current key out of the keys queue once the key enters its inactive phase.

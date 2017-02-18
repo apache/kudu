@@ -135,7 +135,7 @@ class TokenVerifier;
 //
 // Typical usage pattern:
 //
-//    TokenSigner ts;
+//    TokenSigner ts(...);
 //    // Load existing TSKs from the system table.
 //    ...
 //    RETURN_NOT_OK(ts.ImportKeys(...));
@@ -163,14 +163,25 @@ class TokenVerifier;
 //
 class TokenSigner {
  public:
-  // Parameters of the TokenSigner constructor define the TSK rotation schedule.
-  // See the class's comment just above for details.
+  // The 'key_validity_seconds' and 'key_rotation_seconds' parameters define
+  // the schedule of TSK rotation. See the class comment above for details.
   //
   // Any newly imported or generated keys are automatically imported into the
-  // passed 'verifier'.
-  TokenSigner(int64_t key_validity_seconds,
+  // passed 'verifier'. If no verifier passed as a parameter, TokenSigner
+  // creates one on its own. In either case, it's possible to access
+  // the embedded TokenVerifier instance using the verifier() accessor.
+  //
+  // The 'authn_token_validity_seconds' parameter is used to specify validity
+  // interval for the generated authn tokens and with 'key_rotation_seconds'
+  // it defines validity interval of the newly generated TSK:
+  //   key_validity = key_rotation + authn_token_validity.
+  //
+  // That corresponds to the maximum possible token lifetime for the effective
+  // TSK validity and rotation intervals: see the class comment above for
+  // details.
+  TokenSigner(int64_t authn_token_validity_seconds,
               int64_t key_rotation_seconds,
-              std::shared_ptr<TokenVerifier> verifier);
+              std::shared_ptr<TokenVerifier> verifier = nullptr);
   ~TokenSigner();
 
   // Import token signing keys in PB format, notifying TokenVerifier
@@ -236,13 +247,16 @@ class TokenSigner {
 
   std::shared_ptr<TokenVerifier> verifier_;
 
-  // Period of validity for newly created token signing keys. In other words,
-  // the expiration time for a new key is set to (now + key_validity_seconds_).
-  const int64_t key_validity_seconds_;
+  // Validity interval for the generated authn tokens.
+  const int64_t authn_token_validity_seconds_;
 
   // TSK rotation interval: number of seconds between consecutive activations
   // of new token signing keys.
   const int64_t key_rotation_seconds_;
+
+  // Period of validity for newly created token signing keys. In other words,
+  // the expiration time for a new key is set to (now + key_validity_seconds_).
+  const int64_t key_validity_seconds_;
 
   // Protects next_seq_num_ and tsk_deque_ members.
   mutable RWMutex lock_;

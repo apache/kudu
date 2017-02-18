@@ -38,7 +38,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int64(tsk_validity_seconds);
+DECLARE_int64(authn_token_validity_seconds);
 DECLARE_int64(tsk_rotation_seconds);
 
 using std::string;
@@ -54,7 +54,7 @@ namespace master {
 class TokenSignerITest : public KuduTest {
  public:
   TokenSignerITest() {
-    FLAGS_tsk_validity_seconds = 60;
+    FLAGS_authn_token_validity_seconds = 60;
     FLAGS_tsk_rotation_seconds = 20;
 
     // Hard-coded ports for the masters. This is safe, as this unit test

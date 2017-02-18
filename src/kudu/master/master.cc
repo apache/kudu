@@ -53,20 +53,20 @@ DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
 TAG_FLAG(master_registration_rpc_timeout_ms, experimental);
 
-DEFINE_int64(tsk_validity_seconds, 60 * 60 * 24 * 7,
-             "Number of seconds that a TSK (Token Signing Key) is valid for.");
-TAG_FLAG(tsk_validity_seconds, advanced);
-TAG_FLAG(tsk_validity_seconds, experimental);
-
 DEFINE_int64(tsk_rotation_seconds, 60 * 60 * 24 * 1,
              "Number of seconds between consecutive activations of newly "
              "generated TSKs (Token Signing Keys).");
 TAG_FLAG(tsk_rotation_seconds, advanced);
 TAG_FLAG(tsk_rotation_seconds, experimental);
 
+DEFINE_int64(authn_token_validity_seconds, 60 * 60 * 24 * 7,
+             "Period of time for which an issued authentication token is valid.");
+// TODO(PKI): docs for what actual effect this has, given we don't support
+// token renewal.
+TAG_FLAG(authn_token_validity_seconds, experimental);
+
 using std::min;
 using std::shared_ptr;
-using std::unique_ptr;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;
@@ -119,9 +119,10 @@ Status Master::Init() {
   cert_authority_.reset(new MasterCertAuthority(fs_manager_->uuid()));
 
   // The TokenSigner loads its keys during catalog manager initialization.
-  token_signer_.reset(new TokenSigner(FLAGS_tsk_validity_seconds,
-                                      FLAGS_tsk_rotation_seconds,
-                                      messenger_->shared_token_verifier()));
+  token_signer_.reset(new TokenSigner(
+      FLAGS_authn_token_validity_seconds,
+      FLAGS_tsk_rotation_seconds,
+      messenger_->shared_token_verifier()));
   state_ = kInitialized;
   return Status::OK();
 }
