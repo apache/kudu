@@ -79,6 +79,8 @@ public class BaseKuduTest {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
+    FakeDNS.getInstance().install();
+
     LOG.info("Setting up before class...");
 
     miniCluster = miniClusterBuilder
