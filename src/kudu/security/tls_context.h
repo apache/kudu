@@ -98,8 +98,7 @@ class TlsContext {
   // any CA certificates that are part of the certificate chain for the cert
   // passed in to 'UseCertificateAndKey()' or 'AdoptSignedCert()'.
   //
-  // Returns AlreadyPresent if the cert is already marked as trusted. Other
-  // OpenSSL errors will be RuntimeError.
+  // If this cert has already been marked as trusted, this has no effect.
   Status AddTrustedCertificate(const Cert& cert);
 
   // Uses 'cert' and 'key' as the cert and key for use with TLS connections.

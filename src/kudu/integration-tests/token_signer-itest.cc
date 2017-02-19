@@ -111,7 +111,7 @@ class TokenSignerITest : public KuduTest {
     CHECK_LT(idx, num_masters_);
     MiniMaster* mm = cluster_->mini_master(idx);
     vector<TokenSigningPublicKeyPB> keys =
-        mm->master()->token_signer()->verifier().ExportKeys();
+        mm->master()->token_verifier().ExportKeys();
     public_keys->swap(keys);
     return Status::OK();
   }

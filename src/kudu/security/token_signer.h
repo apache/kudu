@@ -165,8 +165,12 @@ class TokenSigner {
  public:
   // Parameters of the TokenSigner constructor define the TSK rotation schedule.
   // See the class's comment just above for details.
+  //
+  // Any newly imported or generated keys are automatically imported into the
+  // passed 'verifier'.
   TokenSigner(int64_t key_validity_seconds,
-              int64_t key_rotation_seconds);
+              int64_t key_rotation_seconds,
+              std::shared_ptr<TokenVerifier> verifier);
   ~TokenSigner();
 
   // Import token signing keys in PB format, notifying TokenVerifier
@@ -230,7 +234,7 @@ class TokenSigner {
                                    std::unique_ptr<TokenSigningPrivateKey>* tsk)
       WARN_UNUSED_RESULT;
 
-  std::unique_ptr<TokenVerifier> verifier_;
+  std::shared_ptr<TokenVerifier> verifier_;
 
   // Period of validity for newly created token signing keys. In other words,
   // the expiration time for a new key is set to (now + key_validity_seconds_).

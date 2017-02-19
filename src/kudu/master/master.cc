@@ -120,7 +120,8 @@ Status Master::Init() {
 
   // The TokenSigner loads its keys during catalog manager initialization.
   token_signer_.reset(new TokenSigner(FLAGS_tsk_validity_seconds,
-                                      FLAGS_tsk_rotation_seconds));
+                                      FLAGS_tsk_rotation_seconds,
+                                      messenger_->shared_token_verifier()));
   state_ = kInitialized;
   return Status::OK();
 }

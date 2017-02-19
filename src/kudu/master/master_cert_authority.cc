@@ -113,6 +113,17 @@ Status MasterCertAuthority::Init(unique_ptr<PrivateKey> key,
   return Status::OK();
 }
 
+Status MasterCertAuthority::SignServerCSR(const CertSignRequest& csr,
+                                          Cert* cert) {
+  CHECK(ca_cert_ && ca_private_key_) << "not initialized";
+  RETURN_NOT_OK_PREPEND(CertSigner(ca_cert_.get(), ca_private_key_.get())
+                        .set_expiration_interval(MonoDelta::FromSeconds(
+                            FLAGS_ipki_server_cert_expiration_seconds))
+                        .Sign(csr, cert),
+                        "failed to sign cert");
+  return Status::OK();
+}
+
 Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_der) {
   CHECK(ca_cert_ && ca_private_key_) << "not initialized";
 
@@ -125,11 +136,7 @@ Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_de
   RETURN_NOT_OK_PREPEND(csr.FromString(csr_der, security::DataFormat::DER),
                         "could not parse CSR");
   Cert cert;
-  RETURN_NOT_OK_PREPEND(CertSigner(ca_cert_.get(), ca_private_key_.get())
-                        .set_expiration_interval(MonoDelta::FromSeconds(
-                            FLAGS_ipki_server_cert_expiration_seconds))
-                        .Sign(csr, &cert),
-                        "failed to sign cert");
+  RETURN_NOT_OK(SignServerCSR(csr, &cert));
 
   RETURN_NOT_OK_PREPEND(cert.ToString(cert_der, security::DataFormat::DER),
                         "failed to signed cert as DER format");

@@ -607,9 +607,7 @@ void KuduClient::Data::ConnectedToClusterCb(
         continue;
       }
       s = messenger_->mutable_tls_context()->AddTrustedCertificate(cert);
-      // In the case that we are just re-connecting, then the attempt to trust the cert
-      // will return AlreadyPresent, since we already have the cert trusted.
-      if (!s.ok() && !s.IsAlreadyPresent()) {
+      if (!s.ok()) {
         KLOG_EVERY_N_SECS(WARNING, 5) << "Master " << leader_addr.ToString()
                                      << " provided a cert that could not be trusted: "
                                      << s.ToString();

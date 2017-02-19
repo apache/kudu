@@ -1080,10 +1080,17 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
 
   // Now restart the master with orphan deletion enabled. The tablet should get
   // deleted.
-  cluster_->master()->Shutdown();
+  // We also need to restart the tablet server, or else the old tablet server
+  // won't be able to authenticate to the new master, due to it having a new
+  // CA certificate which the old tserver doesn't trust.
+  //
+  // TODO(PKI): perhaps this is actually a feature? should we have tablet servers
+  // remember the CA cert persistently so that it's impossible to connect an
+  // old tserver to a new cluster?
+  cluster_->Shutdown();
   cluster_->master()->mutable_flags()->push_back(
       "--catalog_manager_delete_orphaned_tablets");
-  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->Restart());
   AssertEventually([&]() {
     ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
         &METRIC_ENTITY_server, "kudu.tabletserver",

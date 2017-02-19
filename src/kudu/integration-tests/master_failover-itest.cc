@@ -457,7 +457,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
         // See TestCreateTableSync to understand why we must check for
         // IsAlreadyPresent as well.
         Status s = CreateTable(table_name, kWaitForCreate);
-        ASSERT_TRUE(s.ok() || s.IsAlreadyPresent());
+        ASSERT_TRUE(s.ok() || s.IsAlreadyPresent()) << s.ToString();
 
         ASSERT_OK(client_->OpenTable(table_name, &table));
         ASSERT_EQ(0, CountTableRows(table.get()));

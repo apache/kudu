@@ -51,6 +51,7 @@ DEFINE_int32(tsk_num_rsa_bits, 2048,
 
 using std::lock_guard;
 using std::map;
+using std::shared_ptr;
 using std::string;
 using std::unique_lock;
 using std::unique_ptr;
@@ -60,11 +61,13 @@ namespace kudu {
 namespace security {
 
 TokenSigner::TokenSigner(int64_t key_validity_seconds,
-                         int64_t key_rotation_seconds)
-    : verifier_(new TokenVerifier),
+                         int64_t key_rotation_seconds,
+                         shared_ptr<TokenVerifier> verifier)
+    : verifier_(std::move(verifier)),
       key_validity_seconds_(key_validity_seconds),
       key_rotation_seconds_(key_rotation_seconds),
       next_key_seq_num_(0) {
+  CHECK(verifier_);
 }
 
 TokenSigner::~TokenSigner() {

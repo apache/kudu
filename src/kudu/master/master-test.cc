@@ -36,6 +36,8 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/security/tls_context.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/pb_util.h"
@@ -1331,6 +1333,15 @@ TEST_F(MasterTest, TestConnectToMaster) {
   security::TokenPB token;
   ASSERT_TRUE(token.ParseFromString(resp.authn_token().token_data()));
   ASSERT_TRUE(token.authn().has_username());
+}
+
+// Test that the master signs its on server certificate when it becomes the leader,
+// and also that it loads TSKs into the messenger's verifier.
+TEST_F(MasterTest, TestSignOwnCertAndLoadTSKs) {
+  AssertEventually([&]() {
+      ASSERT_TRUE(master_->tls_context().has_signed_cert());
+      ASSERT_GT(master_->messenger()->token_verifier().GetMaxKnownKeySequenceNumber(), -1);
+    });
 }
 
 } // namespace master

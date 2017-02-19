@@ -218,13 +218,13 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
   int rc = X509_STORE_add_cert(cert_store, cert.GetRawData());
   if (rc <= 0) {
-    // Translate the common case of re-adding a cert that is already in the
-    // trust store into an AlreadyPresent status.
+    // Ignore the common case of re-adding a cert that is already in the
+    // trust store.
     auto err = ERR_peek_error();
     if (ERR_GET_LIB(err) == ERR_LIB_X509 &&
         ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
       ERR_clear_error();
-      return Status::AlreadyPresent("certificate already trusted");
+      return Status::OK();
     }
     OPENSSL_RET_NOT_OK(rc, "failed to add trusted certificate");
   }

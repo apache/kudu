@@ -31,6 +31,7 @@ class Status;
 namespace security {
 
 class Cert;
+class CertSignRequest;
 class PrivateKey;
 
 namespace ca {
@@ -80,6 +81,9 @@ class MasterCertAuthority {
   //        to keep the internal state consistent.
   Status SignServerCSR(const std::string& csr_der, std::string* cert_der);
 
+  // Same as above, but with objects instead of the DER format CSR/cert.
+  Status SignServerCSR(const security::CertSignRequest& csr, security::Cert* cert);
+
   // Export the current CA certificate in DER format.
   //
   // This can be sent to participants in the cluster so they can add it to
@@ -88,6 +92,12 @@ class MasterCertAuthority {
     CHECK(ca_cert_) << "must Init()";
     return ca_cert_der_;
   }
+
+  const security::Cert& ca_cert() const {
+    CHECK(ca_cert_) << "must Init()";
+    return *ca_cert_;
+  }
+
  private:
   friend class ::kudu::master::MasterCertAuthorityTest;
   // The UUID of the master. This is used as a field in the certificate.

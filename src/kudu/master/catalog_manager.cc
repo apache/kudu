@@ -83,6 +83,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_signing_key.h"
@@ -759,7 +760,24 @@ Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
 Status CatalogManager::InitCertAuthority(unique_ptr<PrivateKey> key,
                                          unique_ptr<Cert> cert) {
   leader_lock_.AssertAcquiredForWriting();
-  return master_->cert_authority()->Init(std::move(key), std::move(cert));
+  auto* ca = master_->cert_authority();
+  RETURN_NOT_OK_PREPEND(ca->Init(std::move(key), std::move(cert)),
+                        "could not init master CA");
+
+  auto* tls = master_->mutable_tls_context();
+  RETURN_NOT_OK_PREPEND(tls->AddTrustedCertificate(ca->ca_cert()),
+                        "could not trust master CA cert");
+  // If we haven't signed our own server cert yet, do so.
+  boost::optional<security::CertSignRequest> csr =
+      tls->GetCsrIfNecessary();
+  if (csr) {
+    Cert cert;
+    RETURN_NOT_OK_PREPEND(ca->SignServerCSR(*csr, &cert),
+                          "couldn't sign master cert with CA cert");
+    RETURN_NOT_OK_PREPEND(tls->AdoptSignedCert(cert),
+                          "couldn't adopt signed master cert");
+  }
+  return Status::OK();
 }
 
 // Store internal Kudu CA cert authority information into the system table.
