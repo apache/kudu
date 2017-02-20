@@ -155,6 +155,10 @@ const RemoteUser& RpcContext::remote_user() const {
   return call_->remote_user();
 }
 
+void RpcContext::DiscardTransfer() {
+  call_->DiscardTransfer();
+}
+
 const Sockaddr& RpcContext::remote_address() const {
   return call_->remote_address();
 }

@@ -162,6 +162,14 @@ class RpcContext {
   // Return the identity of remote user who made this call.
   const RemoteUser& remote_user() const;
 
+  // Discards the memory associated with the inbound call's payload. All previously
+  // obtained sidecar slices will be invalidated by this call. It is an error to call
+  // GetInboundSidecar() after this method. request_pb() remains valid.
+  // This is useful in the case where the server wishes to delay responding to an RPC
+  // (perhaps to control the rate of RPC requests), but knows that the RPC payload itself
+  // won't be processed any further.
+  void DiscardTransfer();
+
   // Return the remote IP address and port which sent the current RPC call.
   const Sockaddr& remote_address() const;
 

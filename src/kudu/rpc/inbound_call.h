@@ -78,7 +78,8 @@ class InboundCall {
   Status ParseFrom(gscoped_ptr<InboundTransfer> transfer);
 
   // Return the serialized request parameter protobuf.
-  const Slice &serialized_request() const {
+  const Slice& serialized_request() const {
+    DCHECK(transfer_) << "Transfer discarded before parameter parsing";
     return serialized_request_;
   }
 
@@ -189,6 +190,10 @@ class InboundCall {
   // Get a sidecar sent as part of the request. If idx < 0 || idx > num sidecars - 1,
   // returns an error.
   Status GetInboundSidecar(int idx, Slice* sidecar) const;
+
+  // Releases the buffer that contains the request + sidecar data. It is an error to
+  // access sidecars or serialized_request() after this method is called.
+  void DiscardTransfer();
 
  private:
   friend class RpczStore;

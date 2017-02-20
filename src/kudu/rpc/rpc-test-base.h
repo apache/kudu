@@ -184,6 +184,8 @@ class GenericCalculatorService : public ServiceIf {
     resp.set_size2(sidecar2.size());
     resp.set_data2(reinterpret_cast<const char*>(sidecar2.data()), sidecar2.size());
 
+    // Drop the sidecars etc, just to confirm that it's safe to do so.
+    incoming->DiscardTransfer();
     incoming->RespondSuccess(resp);
   }
 
