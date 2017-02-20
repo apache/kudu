@@ -137,6 +137,7 @@ Status ServerNegotiation::Negotiate() {
     NegotiatePB request;
     RETURN_NOT_OK(RecvNegotiatePB(&request, &recv_buf));
     RETURN_NOT_OK(HandleNegotiate(request));
+    TRACE("Negotiated authn=$0", AuthenticationTypeToString(negotiated_authn_));
   }
 
   // Step 3: if both ends support TLS, do a TLS handshake.

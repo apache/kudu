@@ -20,6 +20,7 @@
 #include <sys/time.h>
 #include <poll.h>
 
+#include <ostream>
 #include <string>
 
 #include <gflags/gflags.h>
@@ -67,14 +68,18 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
-std::ostream& operator<<(std::ostream& o, AuthenticationType authentication_type) {
-  switch (authentication_type) {
-    case AuthenticationType::INVALID: o << "INVALID"; break;
-    case AuthenticationType::SASL: o << "SASL"; break;
-    case AuthenticationType::TOKEN: o << "TOKEN"; break;
-    case AuthenticationType::CERTIFICATE: o << "CERTIFICATE"; break;
+const char* AuthenticationTypeToString(AuthenticationType t) {
+  switch (t) {
+    case AuthenticationType::INVALID: return "INVALID"; break;
+    case AuthenticationType::SASL: return "SASL"; break;
+    case AuthenticationType::TOKEN: return "TOKEN"; break;
+    case AuthenticationType::CERTIFICATE: return "CERTIFICATE"; break;
   }
-  return o;
+  return "<cannot reach here>";
+}
+
+std::ostream& operator<<(std::ostream& o, AuthenticationType authentication_type) {
+  return o << AuthenticationTypeToString(authentication_type);
 }
 
 // Wait for the client connection to be established and become ready for writing.

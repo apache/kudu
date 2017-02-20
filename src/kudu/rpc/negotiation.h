@@ -17,7 +17,7 @@
 #ifndef KUDU_RPC_NEGOTIATION_H
 #define KUDU_RPC_NEGOTIATION_H
 
-#include <ostream>
+#include <iosfwd>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
@@ -34,6 +34,8 @@ enum class AuthenticationType {
   TOKEN,
   CERTIFICATE,
 };
+const char* AuthenticationTypeToString(AuthenticationType t);
+
 std::ostream& operator<<(std::ostream& o, AuthenticationType authentication_type);
 
 class Negotiation {
