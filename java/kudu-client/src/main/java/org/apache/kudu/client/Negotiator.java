@@ -26,6 +26,8 @@
 
 package org.apache.kudu.client;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
 import java.util.List;
@@ -45,6 +47,7 @@ import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
@@ -157,6 +160,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private Certificate peerCert;
 
+  @VisibleForTesting
+  boolean overrideLoopbackForTests;
+
   public Negotiator(String remoteHostname, SecurityContext securityContext) {
     this.remoteHostname = remoteHostname;
     this.securityContext = securityContext;
@@ -176,8 +182,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     for (RpcHeader.RpcFeatureFlag flag : SUPPORTED_RPC_FEATURES) {
       builder.addSupportedFeatures(flag);
     }
-    // TODO(todd): if we are on a loopback connection, advertise and support
-    // TLS_AUTHENTICATION_ONLY.
+    if (isLoopbackConnection(channel)) {
+      builder.addSupportedFeatures(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY);
+    }
 
     // Advertise our authentication types.
     // ----------------------------------
@@ -297,6 +304,25 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
+  /**
+   * Determine whether the given channel is a loopback connection (i.e. the server
+   * and client are on the same host).
+   */
+  private boolean isLoopbackConnection(Channel channel) {
+    if (overrideLoopbackForTests) {
+      return true;
+    }
+    try {
+      InetAddress local = ((InetSocketAddress)channel.getLocalAddress()).getAddress();
+      InetAddress remote = ((InetSocketAddress)channel.getRemoteAddress()).getAddress();
+      return local.equals(remote);
+    } catch (ClassCastException cce) {
+      // In the off chance that we have some other type of local/remote address,
+      // we'll just assume it's not loopback.
+      return false;
+    }
+  }
+
   private void chooseAndInitializeSaslMech(NegotiatePB response) throws SaslException {
     // Gather the set of server-supported mechanisms.
     Set<String> serverMechs = Sets.newHashSet();
@@ -371,7 +397,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   private Set<RpcFeatureFlag> getFeatureFlags(NegotiatePB response) {
     ImmutableSet.Builder<RpcHeader.RpcFeatureFlag> features = ImmutableSet.builder();
     for (RpcHeader.RpcFeatureFlag feature : response.getSupportedFeaturesList()) {
-      if (SUPPORTED_RPC_FEATURES.contains(feature)) {
+      if (feature != RpcFeatureFlag.UNKNOWN) {
         features.add(feature);
       }
     }
@@ -420,6 +446,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       // Data was sent -- we must continue the handshake process.
       return;
     }
+
     // The handshake completed.
     // Insert the SSL handler into the pipeline so that all following traffic
     // gets encrypted, and then move on to the SASL portion of negotiation.
@@ -436,7 +463,12 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       throw Throwables.propagate(e);
     }
 
-    chan.getPipeline().addFirst("tls", handler);
+    // Don't wrap the TLS socket if we are using TLS for authentication only.
+    boolean isAuthOnly = serverFeatures.contains(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY) &&
+        isLoopbackConnection(chan);
+    if (!isAuthOnly) {
+      chan.getPipeline().addFirst("tls", handler);
+    }
     startAuthentication(chan);
   }
 

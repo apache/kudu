@@ -95,11 +95,11 @@ public class TestNegotiator {
         AccessController.getContext()));
   }
 
-  private Negotiator startNegotiation() {
+  private void startNegotiation(boolean fakeLoopback) {
     Negotiator negotiator = new Negotiator("127.0.0.1", secContext);
+    negotiator.overrideLoopbackForTests = fakeLoopback;
     embedder = new DecoderEmbedder<Object>(negotiator);
     negotiator.sendHello(embedder.getPipeline().getChannel());
-    return negotiator;
   }
 
   static CallResponse fakeResponse(ResponseHeader header, Message body) {
@@ -157,7 +157,7 @@ public class TestNegotiator {
    */
   @Test
   public void testNegotiation() {
-    startNegotiation();
+    startNegotiation(false);
 
     // Expect client->server: NEGOTIATE.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
@@ -262,7 +262,7 @@ public class TestNegotiator {
 
   @Test
   public void testTlsNegotiation() throws Exception {
-    startNegotiation();
+    startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
@@ -295,6 +295,41 @@ public class TestNegotiator {
     assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
   }
 
+  @Test
+  public void testTlsNegotiationAuthOnly() throws Exception {
+    startNegotiation(true);
+
+    // Expect client->server: NEGOTIATE, TLS and TLS_AUTHENTICATION_ONLY included.
+    RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
+    NegotiatePB body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.NEGOTIATE, body.getStep());
+    assertTrue(body.getSupportedFeaturesList().contains(RpcFeatureFlag.TLS));
+    assertTrue(body.getSupportedFeaturesList().contains(
+        RpcFeatureFlag.TLS_AUTHENTICATION_ONLY));
+
+    // Fake a server response with TLS and TLS_AUTHENTICATION_ONLY enabled.
+    embedder.offer(fakeResponse(
+        ResponseHeader.newBuilder().setCallId(Negotiator.SASL_CALL_ID).build(),
+        NegotiatePB.newBuilder()
+          .addSaslMechanisms(NegotiatePB.SaslMechanism.newBuilder().setMechanism("PLAIN"))
+          .addSupportedFeatures(RpcFeatureFlag.TLS)
+          .addSupportedFeatures(RpcFeatureFlag.TLS_AUTHENTICATION_ONLY)
+          .setStep(NegotiateStep.NEGOTIATE)
+          .build()));
+
+    // Expect client->server: TLS_HANDSHAKE.
+    runTlsHandshake();
+
+    // The pipeline should *not* have an SSL handler as the first handler,
+    // since we used TLS for authentication only.
+    assertFalse(embedder.getPipeline().getFirst() instanceof SslHandler);
+
+    // The Negotiator should have sent the SASL_INITIATE at this point.
+    msg = (RpcOutboundMessage) embedder.poll();
+    body = (NegotiatePB) msg.getBody();
+    assertEquals(NegotiateStep.SASL_INITIATE, body.getStep());
+  }
+
   /**
    * Test that, if we don't have any trusted certs, we don't expose
    * token authentication as an option.
@@ -302,7 +337,7 @@ public class TestNegotiator {
   @Test
   public void testNoTokenAuthWhenNoTrustedCerts() throws Exception {
     secContext.setAuthenticationToken(SignedTokenPB.getDefaultInstance());
-    startNegotiation();
+    startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included, Token not included.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
@@ -321,7 +356,7 @@ public class TestNegotiator {
   public void testTokenAuthWithTrustedCerts() throws Exception {
     secContext.trustCertificate(ByteString.copyFromUtf8(CA_CERT_DER));
     secContext.setAuthenticationToken(SignedTokenPB.getDefaultInstance());
-    startNegotiation();
+    startNegotiation(false);
 
     // Expect client->server: NEGOTIATE, TLS included, Token included.
     RpcOutboundMessage msg = (RpcOutboundMessage) embedder.poll();
