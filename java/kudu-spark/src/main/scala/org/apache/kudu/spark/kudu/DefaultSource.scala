@@ -168,8 +168,8 @@ class KuduRelation(private val tableName: String,
     */
   override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val predicates = filters.flatMap(filterToPredicate)
-    new KuduRDD(masterAddrs, 1024 * 1024 * 20, requiredColumns, predicates,
-                table, context, sqlContext.sparkContext)
+    new KuduRDD(context, 1024 * 1024 * 20, requiredColumns, predicates,
+                table, sqlContext.sparkContext)
   }
 
   /**

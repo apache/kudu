@@ -17,6 +17,8 @@
 package org.apache.kudu.spark.kudu
 
 import java.sql.Timestamp
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream,
+                ObjectInputStream, ObjectOutputStream}
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.decode
@@ -27,6 +29,36 @@ import org.scalatest.{FunSuite, Matchers}
 @RunWith(classOf[JUnitRunner])
 class KuduContextTest extends FunSuite with TestContext with Matchers {
   val rowCount = 10
+
+  private def serialize(value: Any): Array[Byte] = {
+    val stream: ByteArrayOutputStream = new ByteArrayOutputStream()
+    val oos = new ObjectOutputStream(stream)
+    try {
+      oos.writeObject(value)
+      stream.toByteArray
+    } finally {
+      oos.close
+    }
+  }
+
+  private def deserialize(bytes: Array[Byte]): Any = {
+    val ois = new ObjectInputStream(new ByteArrayInputStream(bytes))
+    try {
+      ois.readObject
+    } finally {
+      ois.close
+    }
+  }
+
+  test("Test KuduContext serialization") {
+    val serialized = serialize(kuduContext)
+    KuduConnection.syncCache.clear()
+    KuduConnection.asyncCache.clear()
+    val deserialized = deserialize(serialized).asInstanceOf[KuduContext]
+    assert(deserialized.authnCredentials != null)
+    // Make a nonsense call just to make sure the re-hydrated client works.
+    deserialized.tableExists("foo")
+  }
 
   test("Test basic kuduRDD") {
     val rows = insertRows(rowCount)

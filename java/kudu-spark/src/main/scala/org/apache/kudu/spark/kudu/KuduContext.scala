@@ -43,12 +43,24 @@ import org.apache.kudu.{ColumnSchema, Schema, Type}
 class KuduContext(kuduMaster: String) extends Serializable {
 
   @transient lazy val syncClient = {
-    KuduConnection.getSyncClient(kuduMaster)
+    val c = KuduConnection.getSyncClient(kuduMaster)
+    if (authnCredentials != null) {
+      c.importAuthenticationCredentials(authnCredentials)
+    }
+    c
   }
 
   @transient lazy val asyncClient = {
-    KuduConnection.getAsyncClient(kuduMaster)
+    val c = KuduConnection.getAsyncClient(kuduMaster)
+    if (authnCredentials != null) {
+      c.importAuthenticationCredentials(authnCredentials)
+    }
+    c
   }
+
+  // Visible for testing.
+  private[kudu] val authnCredentials : Array[Byte] =
+    syncClient.exportAuthenticationCredentials()
 
   /**
     * Create an RDD from a Kudu table.
@@ -62,8 +74,8 @@ class KuduContext(kuduMaster: String) extends Serializable {
   def kuduRDD(sc: SparkContext,
               tableName: String,
               columnProjection: Seq[String] = Nil): RDD[Row] = {
-    new KuduRDD(kuduMaster, 1024*1024*20, columnProjection.toArray, Array(),
-                syncClient.openTable(tableName), this, sc)
+    new KuduRDD(this, 1024*1024*20, columnProjection.toArray, Array(),
+                syncClient.openTable(tableName), sc)
   }
 
   /**
@@ -229,8 +241,8 @@ class KuduContext(kuduMaster: String) extends Serializable {
 }
 
 private object KuduConnection {
-  private val syncCache = new mutable.HashMap[String, KuduClient]()
-  private val asyncCache = new mutable.HashMap[String, AsyncKuduClient]()
+  private[kudu] val syncCache = new mutable.HashMap[String, KuduClient]()
+  private[kudu] val asyncCache = new mutable.HashMap[String, AsyncKuduClient]()
 
   /**
     * Set to

@@ -27,27 +27,15 @@ import org.apache.kudu.{Type, client}
 
 /**
   * A Resilient Distributed Dataset backed by a Kudu table.
+  *
+  * To construct a KuduRDD, use {@link KuduContext#kuduRdd} or a Kudu DataSource.
   */
-class KuduRDD(val kuduMaster: String,
-              @transient val batchSize: Integer,
-              @transient val projectedCols: Array[String],
-              @transient val predicates: Array[client.KuduPredicate],
-              @transient val table: KuduTable,
-              @transient val kc: KuduContext,
-              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
-
-  /**
-    * The [[KuduContext]] for this `KuduRDD`.
-    *
-    * The `KuduContext` manages the Kudu client instances for the `KuduRDD`.
-    * When the `KuduRDD` is first constructed it uses the context passed in as
-    * `kc`. After deserialization, a new `KuduContext` is created as necessary.
-    * The `kc` field should not be used, since it will not be rehydrated after
-    * serialization.
-    */
-  @transient private lazy val kuduContext: KuduContext = {
-    if (kc != null) kc else new KuduContext(kuduMaster)
-  }
+class KuduRDD private[kudu] (val kuduContext: KuduContext,
+                             @transient val batchSize: Integer,
+                             @transient val projectedCols: Array[String],
+                             @transient val predicates: Array[client.KuduPredicate],
+                             @transient val table: KuduTable,
+                             @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
     val builder = kuduContext.syncClient
