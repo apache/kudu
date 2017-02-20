@@ -428,7 +428,7 @@ Status Heartbeater::Thread::DoHeartbeat() {
         "failed to parse CA certificate from master");
     RETURN_NOT_OK_PREPEND(
         server_->mutable_tls_context()->AddTrustedCertificate(ca_cert),
-        "failed to adopt master-signed X509 cert");
+        "failed to trust master CA cert");
   }
 
   // If we have a new signed certificate from the master, adopt it.
