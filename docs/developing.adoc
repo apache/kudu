@@ -108,6 +108,8 @@ then import kudu-spark and create a dataframe:
 [source,scala]
 ----
 import org.apache.kudu.spark.kudu._
+import org.apache.kudu.client._
+import collection.JavaConverters._
 
 // Read a table from Kudu
 val df = sqlContext.read.options(Map("kudu.master" -> "kudu.master:7051","kudu.table" -> "kudu_table")).kudu
@@ -124,7 +126,11 @@ val kuduContext = new KuduContext("kudu.master:7051")
 
 // Create a new Kudu table from a dataframe schema
 // NB: No rows from the dataframe are inserted into the table
-kuduContext.createTable("test_table", df.schema, Seq("key"), new CreateTableOptions().setNumReplicas(1))
+kuduContext.createTable(
+    "test_table", df.schema, Seq("key"),
+    new CreateTableOptions()
+        .setNumReplicas(1)
+        .addHashPartitions(List("key").asJava, 3))
 
 // Insert data
 kuduContext.insertRows(df, "test_table")
