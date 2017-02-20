@@ -95,14 +95,13 @@ void DoInitializeOpenSSL() {
   // log a warning.
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (ctx) {
-    LOG(DFATAL) << "It appears that OpenSSL has been previously initialized by "
-                << "code outside of Kudu. Please use kudu::client::DisableOpenSSLInitialization() "
-                << "to avoid potential crashes due to conflicting initialization.";
-    // Continue anyway rather than crashing the process in release builds.
-    // All of the below is idempotent, except for the locking callback, which we
-    // check before overriding. They aren't thread-safe, however -- that's why
-    // we try to get embedding applications to do the right thing here rather
-    // than risk a potential initialization race.
+    LOG(WARNING) << "It appears that OpenSSL has been previously initialized by "
+                 << "code outside of Kudu. Please use kudu::client::DisableOpenSSLInitialization() "
+                 << "to avoid potential crashes due to conflicting initialization.";
+    // Continue anyway; all of the below is idempotent, except for the locking callback,
+    // which we check before overriding. They aren't thread-safe, however -- that's why
+    // we try to get embedding applications to do the right thing here rather than risk a
+    // potential initialization race.
   }
 
   SSL_load_error_strings();
