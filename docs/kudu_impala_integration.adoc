@@ -731,8 +731,8 @@ The examples above have only explored a fraction of what you can do with Impala 
 - Kudu tables with a name containing upper case or non-ascii characters must be
   assigned an alternate name when used as an external table in Impala.
 - Kudu tables with a column name containing upper case or non-ascii characters
-  may not be used as an external table in Impala. Non-primary key columns may be
-  renamed in Kudu to work around this issue.
+  may not be used as an external table in Impala. Columns may be renamed in Kudu 
+  to work around this issue.
 - When creating a Kudu table, the `CREATE TABLE` statement must include the
   primary key columns before other columns, in primary key order.
 - Kudu tables containing `UNIXTIME_MICROS`-typed columns may not be used as an

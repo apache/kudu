@@ -101,6 +101,52 @@ TEST_F(TestSchema, TestSwap) {
   ASSERT_EQ(2, schema2.num_key_columns());
 }
 
+TEST_F(TestSchema, TestColumnSchemaEquals) {
+  Slice default_str("read-write default");
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("key1", STRING);
+  ColumnSchema col3("key", STRING, true);
+  ColumnSchema col4("key", STRING, true, &default_str, &default_str);
+
+  ASSERT_TRUE(col1.Equals(col1));
+  ASSERT_FALSE(col1.Equals(col2, ColumnSchema::COMPARE_NAME));
+  ASSERT_TRUE(col1.Equals(col2, ColumnSchema::COMPARE_TYPE));
+  ASSERT_TRUE(col1.Equals(col3, ColumnSchema::COMPARE_NAME));
+  ASSERT_FALSE(col1.Equals(col3, ColumnSchema::COMPARE_TYPE));
+  ASSERT_TRUE(col1.Equals(col3, ColumnSchema::COMPARE_DEFAULTS));
+  ASSERT_FALSE(col3.Equals(col4, ColumnSchema::COMPARE_DEFAULTS));
+  ASSERT_TRUE(col4.Equals(col4, ColumnSchema::COMPARE_DEFAULTS));
+}
+
+TEST_F(TestSchema, TestSchemaEquals) {
+  Schema schema1({ ColumnSchema("col1", STRING),
+                   ColumnSchema("col2", STRING),
+                   ColumnSchema("col3", UINT32) },
+                 2);
+  Schema schema2({ ColumnSchema("newCol1", STRING),
+                   ColumnSchema("newCol2", STRING),
+                   ColumnSchema("newCol3", UINT32) },
+                 2);
+  Schema schema3({ ColumnSchema("col1", STRING),
+                   ColumnSchema("col2", UINT32),
+                   ColumnSchema("col3", UINT32, true) },
+                 2);
+  Schema schema4({ ColumnSchema("col1", STRING),
+                   ColumnSchema("col2", UINT32),
+                   ColumnSchema("col3", UINT32, false) },
+                 2);
+  ASSERT_FALSE(schema1.Equals(schema2));
+  ASSERT_TRUE(schema1.KeyEquals(schema1));
+  ASSERT_TRUE(schema1.KeyEquals(schema2, ColumnSchema::COMPARE_TYPE));
+  ASSERT_FALSE(schema1.KeyEquals(schema2, ColumnSchema::COMPARE_NAME));
+  ASSERT_TRUE(schema1.KeyTypeEquals(schema2));
+  ASSERT_FALSE(schema2.KeyTypeEquals(schema3));
+  ASSERT_FALSE(schema3.Equals(schema4));
+  ASSERT_TRUE(schema4.Equals(schema4));
+  ASSERT_TRUE(schema3.KeyEquals(schema4,
+              ColumnSchema::COMPARE_NAME | ColumnSchema::COMPARE_TYPE));
+}
+
 TEST_F(TestSchema, TestReset) {
   Schema schema;
   ASSERT_FALSE(schema.initialized());

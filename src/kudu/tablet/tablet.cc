@@ -917,10 +917,6 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
 
 Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
                                          const Schema* schema) {
-  if (!key_schema_.KeyEquals(*schema)) {
-    return Status::InvalidArgument("Schema keys cannot be altered",
-                                   schema->CreateKeyProjection().ToString());
-  }
 
   if (!schema->has_column_ids()) {
     // this probably means that the request is not from the Master
@@ -937,8 +933,8 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
 }
 
 Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
-  DCHECK(key_schema_.KeyEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
-    "Schema keys cannot be altered";
+  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
+    "Schema keys cannot be altered(except name)";
 
   // Prevent any concurrent flushes. Otherwise, we run into issues where
   // we have an MRS in the rowset tree, and we can't alter its schema

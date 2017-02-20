@@ -186,7 +186,7 @@ struct TableState {
     }
 
     row->clear();
-    row->push_back(make_pair("key", key));
+    row->push_back(make_pair(col_names_[0], key));
     for (int i = 1; i < col_names_.size(); i++) {
       int32_t val;
       if (col_nullable_[i] && seed % 2 == 1) {
@@ -199,7 +199,7 @@ struct TableState {
   }
 
   bool Insert(const vector<pair<string, int32_t>>& data) {
-    DCHECK_EQ("key", data[0].first);
+    DCHECK_EQ(col_names_[0], data[0].first);
     int32_t key = data[0].second;
     if (ContainsKey(rows_, key)) return false;
 
@@ -210,7 +210,7 @@ struct TableState {
   }
 
   bool Update(const vector<pair<string, int32_t>>& data) {
-    DCHECK_EQ("key", data[0].first);
+    DCHECK_EQ(col_names_[0], data[0].first);
     int32_t key = data[0].second;
     if (!ContainsKey(rows_, key)) return false;
 
@@ -244,6 +244,10 @@ struct TableState {
   void RenameColumn(const string& existing_name, string new_name) {
     auto iter = std::find(col_names_.begin(), col_names_.end(), existing_name);
     CHECK(iter != col_names_.end());
+    int index = iter - col_names_.begin();
+    for (auto& e : rows_) {
+      e.second->cols[index].first = new_name;
+    }
     *iter = std::move(new_name);
   }
 
@@ -340,7 +344,7 @@ struct MirrorTable {
     if (ts_.rows_.empty()) return;
     int32_t row_key = ts_.GetRandomExistingRowKey();
     vector<pair<string, int32_t>> del;
-    del.push_back(make_pair("key", row_key));
+    del.push_back(make_pair(ts_.col_names_[0], row_key));
     CHECK_OK(DoRealOp(del, DELETE));
 
     ts_.Delete(row_key);
@@ -351,7 +355,7 @@ struct MirrorTable {
     int32_t row_key = ts_.GetRandomExistingRowKey();
 
     vector<pair<string, int32_t>> update;
-    update.push_back(make_pair("key", row_key));
+    update.push_back(make_pair(ts_.col_names_[0], row_key));
     for (int i = 1; i < num_columns(); i++) {
       int32_t val = rand * i;
       if (val == RowState::kNullValue) val++;
@@ -387,7 +391,7 @@ struct MirrorTable {
 
     int step_count = 1 + ts_.rand_.Uniform(10);
     for (int step = 0; step < step_count; step++) {
-      int r = ts_.rand_.Uniform(4);
+      int r = ts_.rand_.Uniform(6);
       if (r < 1 && num_columns() < kMaxColumns) {
         AddAColumn(table_alterer.get());
       } else if (r < 2 && num_columns() > 1) {
@@ -395,6 +399,10 @@ struct MirrorTable {
       } else if (num_range_partitions() == 0 ||
                  (r < 3 && num_range_partitions() < kMaxRangePartitions)) {
         AddARangePartition(schema, table_alterer.get());
+      } else if (r < 4 && num_columns() > 1) {
+        RenameAColumn(table_alterer.get());
+      } else if (r < 5 && num_columns() > 1) {
+        RenamePrimaryKeyColumn(table_alterer.get());
       } else {
         DropARangePartition(schema, table_alterer.get());
       }
@@ -440,7 +448,14 @@ struct MirrorTable {
     ts_.RenameColumn(original_name, std::move(new_name));
   }
 
-  void AddARangePartition(KuduSchema& schema, KuduTableAlterer* table_alterer) {
+  void RenamePrimaryKeyColumn(KuduTableAlterer* table_alterer) {
+    string new_name = ts_.GetRandomNewColumnName();
+    LOG(INFO) << "Renaming PrimaryKey column " << ts_.col_names_[0] << " to " << new_name;
+    table_alterer->AlterColumn(ts_.col_names_[0])->RenameTo(new_name);
+    ts_.RenameColumn(ts_.col_names_[0], std::move(new_name));
+  }
+
+  void AddARangePartition(const KuduSchema& schema, KuduTableAlterer* table_alterer) {
     auto bounds = ts_.AddRangePartition();
     LOG(INFO) << "Adding range partition: [" << bounds.first << ", " << bounds.second << ")"
               << " resulting partitions: ("
@@ -464,9 +479,9 @@ struct MirrorTable {
     }
 
     unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
-    CHECK_OK(lower_bound->SetInt32("key", lower_bound_value));
+    CHECK_OK(lower_bound->SetInt32(schema.Column(0).name(), lower_bound_value));
     unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
-    CHECK_OK(upper_bound->SetInt32("key", upper_bound_value));
+    CHECK_OK(upper_bound->SetInt32(schema.Column(0).name(), upper_bound_value));
 
     table_alterer->AddRangePartition(lower_bound.release(), upper_bound.release(),
                                      lower_bound_type, upper_bound_type);
@@ -481,9 +496,9 @@ struct MirrorTable {
                                            ", ", "], (") << ")";
 
     unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
-    CHECK_OK(lower_bound->SetInt32("key", bounds.first));
+    CHECK_OK(lower_bound->SetInt32(schema.Column(0).name(), bounds.first));
     unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
-    CHECK_OK(upper_bound->SetInt32("key", bounds.second));
+    CHECK_OK(upper_bound->SetInt32(schema.Column(0).name(), bounds.second));
 
     table_alterer->DropRangePartition(lower_bound.release(), upper_bound.release());
   }

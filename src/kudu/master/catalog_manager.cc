@@ -1592,11 +1592,6 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
           return Status::InvalidArgument("RENAME_COLUMN missing column info");
         }
 
-        // TODO: In theory we can rename a key
-        if (cur_schema.is_key_column(step.rename_column().old_name())) {
-          return Status::InvalidArgument("cannot rename a key column");
-        }
-
         RETURN_NOT_OK(builder.RenameColumn(
                         step.rename_column().old_name(),
                         step.rename_column().new_name()));

@@ -97,7 +97,7 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             s.spec->data_->has_default ||
             s.spec->data_->default_val ||
             s.spec->data_->remove_default) {
-          return Status::NotSupported("cannot support AlterColumn of this type",
+          return Status::NotSupported("cannot alter attributes for column",
                                       s.spec->data_->name);
         }
         // We only support rename column

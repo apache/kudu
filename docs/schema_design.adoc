@@ -429,6 +429,7 @@ partitioning, which logically adds another dimension of partitioning.
 You can alter a table's schema in the following ways:
 
 - Rename the table
+- Rename primary key columns
 - Rename, add, or drop non-primary key columns
 - Add and drop range partitions
 

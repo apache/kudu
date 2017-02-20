@@ -348,6 +348,43 @@ TEST_F(AlterTableTest, TestAddNullableColumnWithoutDefault) {
   EXPECT_EQ("(int32 c0=16777216, int32 c1=1, int32 new=NULL)", rows[1]);
 }
 
+// Rename a primary key column
+TEST_F(AlterTableTest, TestRenamePrimaryKeyColumn) {
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("c0")->RenameTo("primaryKeyRenamed");
+    table_alterer->AlterColumn("c1")->RenameTo("secondColumn");
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  InsertRows(1, 1);
+
+  vector<string> rows;
+  ScanToStrings(&rows);
+  ASSERT_EQ(2, rows.size());
+  EXPECT_EQ("(int32 primaryKeyRenamed=0, int32 secondColumn=0)", rows[0]);
+  EXPECT_EQ("(int32 primaryKeyRenamed=16777216, int32 secondColumn=1)", rows[1]);
+
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("primaryKeyRenamed")->RenameTo("pk");
+    table_alterer->AlterColumn("secondColumn")->RenameTo("sc");
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  InsertRows(2, 1);
+
+  rows.clear();
+  ScanToStrings(&rows);
+  ASSERT_EQ(3, rows.size());
+  EXPECT_EQ("(int32 pk=0, int32 sc=0)", rows[0]);
+  EXPECT_EQ("(int32 pk=16777216, int32 sc=1)", rows[1]);
+  EXPECT_EQ("(int32 pk=33554432, int32 sc=2)", rows[2]);
+}
+
 // Verify that, if a tablet server is down when an alter command is issued,
 // it will eventually receive the command when it restarts.
 TEST_F(AlterTableTest, TestAlterOnTSRestart) {

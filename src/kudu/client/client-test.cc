@@ -3167,15 +3167,6 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_STR_CONTAINS(s.ToString(), "cannot remove a key column");
   }
 
-  // test that renaming a key should throws an error
-  {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    table_alterer->AlterColumn("key")->RenameTo("key2");
-    Status s = table_alterer->Alter();
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "cannot rename a key column");
-  }
-
   // test that renaming to an already-existing name throws an error
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
@@ -3243,6 +3234,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
 
+  // test that adds a new column of type string
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->AddColumn("new_string_val")->Type(KuduColumnSchema::STRING)
@@ -3251,13 +3243,33 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
   }
 
+  // test renaming primary key column
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("key")->RenameTo("key2");
+    Status s = table_alterer->Alter();
+    ASSERT_FALSE(s.IsInvalidArgument());
+    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+  }
+
+  // test that changing the data type of a primary key column throws an error
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("key2")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    Status s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsNotSupported()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Not implemented: cannot alter attributes for column: key2");
+  }
+
+  // test that changes table name
   {
     const char *kRenamedTableName = "RenamedTable";
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     ASSERT_OK(table_alterer
               ->RenameTo(kRenamedTableName)
               ->Alter());
-    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(4, tablet_peer->tablet()->metadata()->schema_version());
     ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();

@@ -162,8 +162,8 @@ kuduContext.deleteTable("unwanted_table")
 - Kudu tables with a name containing upper case or non-ascii characters must be
   assigned an alternate name when registered as a temporary table.
 - Kudu tables with a column name containing upper case or non-ascii characters
-  may not be used with SparkSQL. Non-primary key columns may be renamed in Kudu
-  to work around this issue.
+  may not be used with SparkSQL. Columns may be renamed in Kudu to work around 
+  this issue.
 - `NULL`, `NOT NULL`, `<>`, `OR`, `LIKE`, and `IN` predicates are not pushed to
   Kudu, and instead will be evaluated by the Spark task.
 - Kudu does not support all types supported by Spark SQL, such as `Date`,
