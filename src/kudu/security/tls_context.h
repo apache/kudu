@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <boost/optional.hpp>
 
@@ -100,6 +101,10 @@ class TlsContext {
   //
   // If this cert has already been marked as trusted, this has no effect.
   Status AddTrustedCertificate(const Cert& cert);
+
+  // Dump all of the certs that are currently trusted by this context, in DER
+  // form, into 'cert_ders'.
+  Status DumpTrustedCerts(std::vector<std::string>* cert_ders) const;
 
   // Uses 'cert' and 'key' as the cert and key for use with TLS connections.
   //

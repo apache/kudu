@@ -224,6 +224,14 @@ class KUDU_EXPORT KuduClientBuilder {
   /// @return Reference to the updated object.
   KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
+  /// Import serialized authentication credentials from another client.
+  ///
+  /// @param [in] authn_creds
+  ///   The serialized authentication credentials, provided by a call to
+  ///   @c KuduClient.ExportAuthenticationCredentials in the C++ client or
+  ///   @c KuduClient#exportAuthenticationCredentials in the Java client.
+  KuduClientBuilder& import_authentication_credentials(std::string authn_creds);
+
   /// Create a client object.
   ///
   /// @note KuduClients objects are shared amongst multiple threads and,
@@ -476,6 +484,18 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @param [in] ht_timestamp
   ///   Timestamp encoded in HybridTime format.
   void SetLatestObservedTimestamp(uint64_t ht_timestamp);
+
+  /// Export the current authentication credentials from this client. This includes
+  /// the necessary credentials to authenticate to the cluster, as well as to
+  /// authenticate the cluster to the client.
+  ///
+  /// The resulting binary string may be passed into a new C++ client via the
+  /// @c KuduClientBuilder::import_authentication_credentials method, or into a new
+  /// Java client via @c KuduClient#importAuthenticationCredentials.
+  ///
+  /// @param [out] authn_creds
+  ///   The resulting binary authentication credsentials.
+  Status ExportAuthenticationCredentials(std::string* authn_creds) const;
 
  private:
   class KUDU_NO_EXPORT Data;

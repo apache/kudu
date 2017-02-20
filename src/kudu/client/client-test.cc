@@ -4652,11 +4652,30 @@ TEST_F(ClientTest, TestConnectToClusterCompatibility) {
 }
 
 // Test that, when the client connects to a cluster, that it gets the relevant
-// certificate authority and authentication token from the master.
+// certificate authority and authentication token from the master. Also checks that
+// the data can be exported and re-imported into a new client.
 TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
   // Client is already connected when the test starts.
   ASSERT_TRUE(client_->data_->messenger_->authn_token() != boost::none);
   ASSERT_EQ(1, client_->data_->messenger_->tls_context().trusted_cert_count_for_tests());
+
+  string authn_creds;
+  ASSERT_OK(client_->ExportAuthenticationCredentials(&authn_creds));
+
+  // Creating a new client by importing the authentication data should result in the
+  // having the same token.
+  shared_ptr<KuduClient> new_client;
+  ASSERT_OK(KuduClientBuilder()
+            .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+            .import_authentication_credentials(authn_creds)
+            .Build(&new_client));
+  ASSERT_EQ(client_->data_->messenger_->authn_token()->ShortDebugString(),
+            new_client->data_->messenger_->authn_token()->ShortDebugString());
+
+  // The new client should yield the same authentication data as the original.
+  string new_authn_creds;
+  ASSERT_OK(new_client->ExportAuthenticationCredentials(&new_authn_creds));
+  ASSERT_EQ(authn_creds, new_authn_creds);
 }
 
 struct ServiceUnavailableRetryParams {

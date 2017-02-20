@@ -60,7 +60,9 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/sasl_common.h"
+#include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/security/tls_context.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -233,15 +235,53 @@ KuduClientBuilder& KuduClientBuilder::default_rpc_timeout(const MonoDelta& timeo
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string authn_creds) {
+  data_->authn_creds_ = std::move(authn_creds);
+  return *this;
+}
+
+namespace {
+Status ImportAuthnCredsToMessenger(const string& authn_creds,
+                                   Messenger* messenger) {
+  AuthenticationCredentialsPB pb;
+  if (!pb.ParseFromString(authn_creds)) {
+    return Status::InvalidArgument("invalid authentication data");
+  }
+  if (pb.has_authn_token()) {
+    const auto& tok = pb.authn_token();
+    if (!tok.has_token_data() ||
+        !tok.has_signature() ||
+        !tok.has_signing_key_seq_num()) {
+      return Status::InvalidArgument("invalid authentication token");
+    }
+    messenger->set_authn_token(tok);
+  }
+  for (const string& cert_der : pb.ca_cert_ders()) {
+    security::Cert cert;
+    RETURN_NOT_OK_PREPEND(cert.FromString(cert_der, security::DataFormat::DER),
+                          "could not import CA cert");
+    RETURN_NOT_OK_PREPEND(messenger->mutable_tls_context()->AddTrustedCertificate(cert),
+                          "could not trust CA cert");
+  }
+  return Status::OK();
+}
+} // anonymous namespace
+
 Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK(CheckCPUFlags());
 
-  shared_ptr<KuduClient> c(new KuduClient());
-
   // Init messenger.
   MessengerBuilder builder("client");
-  RETURN_NOT_OK(builder.Build(&c->data_->messenger_));
+  std::shared_ptr<Messenger> messenger;
+  RETURN_NOT_OK(builder.Build(&messenger));
 
+  // Parse and import the provided authn data, if any.
+  if (!data_->authn_creds_.empty()) {
+    RETURN_NOT_OK(ImportAuthnCredsToMessenger(data_->authn_creds_, messenger.get()));
+  }
+
+  shared_ptr<KuduClient> c(new KuduClient());
+  c->data_->messenger_ = std::move(messenger);
   c->data_->master_server_addrs_ = data_->master_server_addrs_;
   c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
   c->data_->default_rpc_timeout_ = data_->default_rpc_timeout_;
@@ -486,6 +526,28 @@ uint64_t KuduClient::GetLatestObservedTimestamp() const {
 
 void KuduClient::SetLatestObservedTimestamp(uint64_t ht_timestamp) {
   data_->UpdateLatestObservedTimestamp(ht_timestamp);
+}
+
+Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
+  AuthenticationCredentialsPB pb;
+
+  boost::optional<security::SignedTokenPB> tok = data_->messenger_->authn_token();
+  if (tok) {
+    pb.mutable_authn_token()->CopyFrom(*tok);
+  }
+
+  vector<string> cert_ders;
+  RETURN_NOT_OK_PREPEND(data_->messenger_->tls_context().DumpTrustedCerts(&cert_ders),
+                        "could not export trusted certs");
+  for (auto& der : cert_ders) {
+    pb.add_ca_cert_ders()->assign(std::move(der));
+  }
+
+  if (!pb.SerializeToString(authn_creds)) {
+    return Status::RuntimeError("could not serialize authentication data");
+  }
+
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////

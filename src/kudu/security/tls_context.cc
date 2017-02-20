@@ -18,6 +18,7 @@
 #include "kudu/security/tls_context.h"
 
 #include <string>
+#include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
@@ -35,6 +36,7 @@
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/user.h"
 
@@ -236,6 +238,28 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   return Status::OK();
 }
 
+Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
+  vector<string> ret;
+  auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
+
+  CRYPTO_w_lock(CRYPTO_LOCK_X509_STORE);
+  auto unlock = MakeScopedCleanup([&]() {
+      CRYPTO_w_unlock(CRYPTO_LOCK_X509_STORE);
+    });
+  for (int i = 0; i < sk_X509_OBJECT_num(cert_store->objs); i++) {
+    X509_OBJECT* obj = sk_X509_OBJECT_value(cert_store->objs, i);
+    if (obj->type != X509_LU_X509) continue;
+    Cert c;
+    c.AdoptAndAddRefRawData(obj->data.x509);
+    string der;
+    RETURN_NOT_OK(c.ToString(&der, DataFormat::DER));
+    ret.emplace_back(std::move(der));
+  }
+
+  cert_ders->swap(ret);
+  return Status::OK();
+}
+
 namespace {
 Status SetCertAttributes(CertRequestGenerator::Config* config) {
   RETURN_NOT_OK_PREPEND(GetFQDN(&config->cn), "could not determine FQDN for CSR");
@@ -263,7 +287,6 @@ Status SetCertAttributes(CertRequestGenerator::Config* config) {
 Status TlsContext::GenerateSelfSignedCertAndKey() {
   CertRequestGenerator::Config config;
   RETURN_NOT_OK(SetCertAttributes(&config));
-
   // Step 1: generate the private key to be self signed.
   PrivateKey key;
   RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_ipki_server_key_size,
