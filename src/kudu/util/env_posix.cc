@@ -57,7 +57,10 @@
 #include <sys/sysctl.h>
 #else
 #include <linux/falloc.h>
+#include <linux/fiemap.h>
+#include <linux/fs.h>
 #include <linux/magic.h>
+#include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #include <sys/vfs.h>
 #endif  // defined(__APPLE__)
@@ -719,6 +722,62 @@ class PosixRWFile : public RWFile {
       return IOError(filename_, errno);
     }
     *size = st.st_size;
+    return Status::OK();
+  }
+
+  virtual Status GetExtentMap(ExtentMap* out) const OVERRIDE {
+#ifdef __APPLE__
+    return Status::NotSupported("GetExtentMap not supported on this platform");
+#endif
+    TRACE_EVENT1("io", "PosixRWFile::GetExtentMap", "path", filename_);
+    ThreadRestrictions::AssertIOAllowed();
+
+    // This allocation size is arbitrary.
+    static const int kBufSize = 4096;
+    uint8_t buf[kBufSize] = { 0 };
+
+    struct fiemap* fm = reinterpret_cast<struct fiemap*>(buf);
+    struct fiemap_extent* fme = &fm->fm_extents[0];
+    int avail_extents_in_buffer = (kBufSize - sizeof(*fm)) / sizeof(*fme);
+    bool saw_last_extent = false;
+    ExtentMap extents;
+    do {
+      // Fetch another block of extents.
+      fm->fm_length = FIEMAP_MAX_OFFSET;
+      fm->fm_extent_count = avail_extents_in_buffer;
+      if (ioctl(fd_, FS_IOC_FIEMAP, fm) == -1) {
+        return IOError(filename_, errno);
+      }
+
+      // No extents returned, this file must have no extents.
+      if (fm->fm_mapped_extents == 0) {
+        break;
+      }
+
+      // Parse the extent block.
+      uint64_t last_extent_end_offset;
+      for (int i = 0; i < fm->fm_mapped_extents; i++) {
+        if (fme[i].fe_flags & FIEMAP_EXTENT_LAST) {
+          // This should really be the last extent.
+          CHECK_EQ(fm->fm_mapped_extents - 1, i);
+
+          saw_last_extent = true;
+        }
+        InsertOrDie(&extents, fme[i].fe_logical, fme[i].fe_length);
+        VLOG(3) << Substitute("File $0 extent $1: o $2, l $3 $4",
+                              filename_, i,
+                              fme[i].fe_logical, fme[i].fe_length,
+                              saw_last_extent ? "(final)" : "");
+        last_extent_end_offset = fme[i].fe_logical + fme[i].fe_length;
+        if (saw_last_extent) {
+          break;
+        }
+      }
+
+      fm->fm_start = last_extent_end_offset;
+    } while (!saw_last_extent);
+
+    out->swap(extents);
     return Status::OK();
   }
 

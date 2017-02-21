@@ -22,6 +22,7 @@
 #include <string>
 
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/bind.h"
@@ -48,12 +49,15 @@
 #define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
 #endif
 
+DECLARE_bool(never_fsync);
+
 namespace kudu {
 
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 static const uint64_t kOneMb = 1024 * 1024;
 static const uint64_t kTwoMb = 2 * kOneMb;
@@ -162,7 +166,7 @@ class TestEnv : public KuduTest {
 
     srand(123);
 
-    const string test_descr = strings::Substitute(
+    const string test_descr = Substitute(
         "appending a vector of slices(number of slices=$0,size of slice=$1 b) $2 times",
         num_slices, slice_size, iterations);
     LOG_TIMING(INFO, test_descr)  {
@@ -664,8 +668,8 @@ TEST_F(TestEnv, TestGlob) {
   }
 
   for (const auto& matcher : matchers) {
-    SCOPED_TRACE(strings::Substitute("pattern: $0, expected matches: $1",
-                                     matcher.first, matcher.second));
+    SCOPED_TRACE(Substitute("pattern: $0, expected matches: $1",
+                            matcher.first, matcher.second));
     vector<string> matches;
     ASSERT_OK(env_->Glob(JoinPathSegments(dir, matcher.first), &matches));
     ASSERT_EQ(matcher.second, matches.size());
@@ -855,6 +859,65 @@ TEST_F(TestEnv, TestChangeDir) {
   ASSERT_OK(env_->ChangeDir(orig_dir));
   ASSERT_OK(env_->GetCurrentWorkingDir(&cwd));
   ASSERT_EQ(orig_dir, cwd);
+}
+
+TEST_F(TestEnv, TestGetExtentMap) {
+  // In order to force filesystems that use delayed allocation to write out the
+  // extents, we must Sync() after the file is done growing, and that should
+  // trigger a real fsync() to the filesystem.
+  FLAGS_never_fsync = false;
+
+  const string kTestFilePath = GetTestPath("foo");
+  const int kFileSizeBytes = 1024*1024;
+
+  // Create a test file of a particular size.
+  unique_ptr<RWFile> f;
+  ASSERT_OK(env_->NewRWFile(kTestFilePath, &f));
+  ASSERT_OK(f->PreAllocate(0, kFileSizeBytes, RWFile::CHANGE_FILE_SIZE));
+  ASSERT_OK(f->Sync());
+
+  // The number and distribution of extents differs depending on the
+  // filesystem; this just provides coverage of the code path.
+  RWFile::ExtentMap extents;
+  Status s = f->GetExtentMap(&extents);
+  if (s.IsNotSupported()) {
+    LOG(INFO) << "GetExtentMap() not supported, skipping test";
+    return;
+  }
+  ASSERT_OK(s);
+  SCOPED_TRACE(extents);
+  int num_extents = extents.size();
+  ASSERT_GT(num_extents, 0) <<
+      "There should have been at least one extent in the file";
+
+  uint64_t fs_block_size;
+  ASSERT_OK(env_->GetBlockSize(kTestFilePath, &fs_block_size));
+
+  // Look for an extent to punch. We want an extent that's at least three times
+  // the block size so that we can punch out the "middle" fs block and thus
+  // split the extent in half.
+  uint64_t found_offset = 0;
+  for (const auto& e : extents) {
+    if (e.second >= (fs_block_size * 3)) {
+      found_offset = e.first + fs_block_size;
+      break;
+    }
+  }
+  ASSERT_GT(found_offset, 0) << "Couldn't find extent to split";
+
+  // Punch out a hole and split the extent.
+  s = f->PunchHole(found_offset, fs_block_size);
+  if (s.IsNotSupported()) {
+    LOG(INFO) << "PunchHole() not supported, skipping this part of the test";
+    return;
+  }
+  ASSERT_OK(s);
+  ASSERT_OK(f->Sync());
+
+  // Test the extent map; there should be one more extent.
+  ASSERT_OK(f->GetExtentMap(&extents));
+  ASSERT_EQ(num_extents + 1, extents.size()) <<
+      "Punching a hole should have increased the number of extents by one";
 }
 
 }  // namespace kudu

@@ -15,6 +15,7 @@
 
 #include <cstdarg>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -576,6 +577,19 @@ class RWFile {
 
   // Retrieves the file's size.
   virtual Status Size(uint64_t* size) const = 0;
+
+  // Retrieve a map of the file's live extents.
+  //
+  // Each map entry is an offset and size representing a section of live file
+  // data. Any byte offset not contained in a map entry implicitly belongs to a
+  // "hole" in the (sparse) file.
+  //
+  // If the underlying filesystem does not support extents, map entries
+  // represent runs of adjacent fixed-size filesystem blocks instead. If the
+  // platform doesn't support fetching extents at all, a NotSupported status
+  // will be returned.
+  typedef std::map<uint64_t, uint64_t> ExtentMap;
+  virtual Status GetExtentMap(ExtentMap* out) const = 0;
 
   // Returns the filename provided when the RWFile was constructed.
   virtual const std::string& filename() const = 0;

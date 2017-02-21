@@ -260,6 +260,12 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->Size(size);
   }
 
+  Status GetExtentMap(ExtentMap* out) const override {
+    ScopedOpenedDescriptor<RWFile> opened(&base_);
+    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    return opened.file()->GetExtentMap(out);
+  }
+
   const string& filename() const override {
     return base_.filename();
   }
