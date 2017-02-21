@@ -292,21 +292,21 @@ Status ExternalMiniClusterFsInspector::WaitForMinFilesInTabletWalDirOnTS(int ind
 }
 
 Status ExternalMiniClusterFsInspector::WaitForReplicaCount(int expected, const MonoDelta& timeout) {
-  Status s;
-  MonoTime deadline = MonoTime::Now() + timeout;
+  const MonoTime deadline = MonoTime::Now() + timeout;
   int found;
   while (true) {
     found = CountReplicasInMetadataDirs();
-    if (found == expected) return Status::OK();
-    if (CountReplicasInMetadataDirs() == expected) return Status::OK();
+    if (found == expected) {
+      return Status::OK();
+    }
     if (MonoTime::Now() > deadline) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::TimedOut(Substitute("Timed out waiting for a total replica count of $0. "
-                                     "Found $2 replicas",
-                                     expected, found));
+  return Status::TimedOut(
+      Substitute("Timed out waiting for a total replica count of $0. "
+                 "Found $1 replicas", expected, found));
 }
 
 Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(
