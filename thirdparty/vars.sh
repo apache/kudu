@@ -146,7 +146,7 @@ LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 
 # Python 2.7 is required to build LLVM 3.6+. It is only built and installed if
 # the system Python version is not 2.7.
-PYTHON_VERSION=2.7.10
+PYTHON_VERSION=2.7.13
 PYTHON_NAME=python-$PYTHON_VERSION
 PYTHON_SOURCE=$TP_SOURCE_DIR/$PYTHON_NAME
 
