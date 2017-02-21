@@ -38,7 +38,7 @@ TAG_FLAG(block_manager_lock_dirs, unsafe);
 
 DEFINE_int64(block_manager_max_open_files, -1,
              "Maximum number of open file descriptors to be used for data "
-             "blocks. If 0, there is no limit. If -1, Kudu will use half of "
+             "blocks. If 0, there is no limit. If -1, Kudu will use 40% of "
              "its resource limit as per getrlimit(). This is a soft limit.");
 TAG_FLAG(block_manager_max_open_files, advanced);
 TAG_FLAG(block_manager_max_open_files, evolving);
@@ -64,7 +64,7 @@ int64_t GetFileCacheCapacityForBlockManager(Env* env) {
 
   // See block_manager_max_open_files.
   if (FLAGS_block_manager_max_open_files == -1) {
-    return env->GetOpenFileLimit() / 2;
+    return (2 * env->GetOpenFileLimit()) / 5;
   }
   if (FLAGS_block_manager_max_open_files == 0) {
     return kint64max;
