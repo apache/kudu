@@ -106,7 +106,10 @@ const char* MetricUnit::Name(Type unit) {
       return "messages";
     case kContextSwitches:
       return "context switches";
+    case kDataDirectories:
+      return "data directories";
     default:
+      DCHECK(false) << "Unknown unit with type = " << unit;
       return "UNKNOWN UNIT";
   }
 }
