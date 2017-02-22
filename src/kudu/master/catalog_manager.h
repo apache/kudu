@@ -591,11 +591,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status StoreCertAuthorityInfo(const security::PrivateKey& key,
                                 const security::Cert& cert);
 
-  // Load existing root CA information from the system table, if present.
-  // If not, generate new ones, store them into the system table.
-  // After that, use the CA information to initialize the certificate authority.
-  Status CheckInitCertAuthority();
-
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
   // "dirty" state field.

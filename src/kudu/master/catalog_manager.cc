@@ -777,53 +777,6 @@ Status CatalogManager::StoreCertAuthorityInfo(const PrivateKey& key,
   return Status::OK();
 }
 
-// Check if CA private key and the certificate were loaded into the
-// memory. If not, generate new ones and store them into the system table
-// and then load into the memory.
-Status CatalogManager::CheckInitCertAuthority() {
-  using security::Cert;
-  using security::DataFormat;
-  using security::PrivateKey;
-
-  leader_lock_.AssertAcquiredForWriting();
-
-  MasterCertAuthority* ca = master_->cert_authority();
-  unique_ptr<PrivateKey> ca_private_key(new PrivateKey);
-  unique_ptr<Cert> ca_cert(new Cert);
-
-  SysCertAuthorityEntryPB info;
-  const Status s = sys_catalog_->GetCertAuthorityEntry(&info);
-  if (!(s.ok() || s.IsNotFound())) {
-    return s;
-  }
-  if (PREDICT_TRUE(s.ok())) {
-    // The loaded data is necessary to initialize master's cert authority.
-    RETURN_NOT_OK(ca_private_key->FromString(
-        info.private_key(), DataFormat::DER));
-    RETURN_NOT_OK(ca_cert->FromString(
-        info.certificate(), DataFormat::DER));
-    // Extra sanity check.
-    RETURN_NOT_OK(ca_cert->CheckKeyMatch(*ca_private_key));
-  } else {
-    // Generate new private key and corresponding CA certificate.
-    RETURN_NOT_OK(ca->Generate(ca_private_key.get(), ca_cert.get()));
-    RETURN_NOT_OK(ca_private_key->ToString(
-        info.mutable_private_key(), DataFormat::DER));
-    RETURN_NOT_OK(ca_cert->ToString(
-        info.mutable_certificate(), DataFormat::DER));
-    // Store the newly generated private key and certificate
-    // in the system table.
-    RETURN_NOT_OK(sys_catalog_->AddCertAuthorityEntry(info));
-    LOG(INFO) << "Wrote cert authority information into the system table.";
-  }
-
-  // Initialize/re-initialize the master's certificate authority component
-  // with the new private key and certificate.
-  RETURN_NOT_OK(ca->Init(std::move(ca_private_key), std::move(ca_cert)));
-
-  return Status::OK();
-}
-
 void CatalogManager::VisitTablesAndTabletsTask() {
   {
     // Hack to block this function until InitSysCatalogAsync() is finished.
