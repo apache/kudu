@@ -382,22 +382,21 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     // exactly as the leader is changing.
     resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
 
-    // Issue an authentication token for the caller.
-    // TODO(PKI): we should probably only issue a token if the client is
-    // authenticated by kerberos, and not by another token. Otherwise we're
-    // essentially allowing unlimited renewal, which is probably not what
-    // we want.
-    SignedTokenPB authn_token;
-    Status s = server_->token_signer()->GenerateAuthnToken(
-        rpc->remote_user().username(),
-        &authn_token);
-    if (!s.ok()) {
-      KLOG_EVERY_N_SECS(WARNING, 1)
-          << "Unable to generate signed token for " << rpc->requestor_string()
-          << ": " << s.ToString();
-    } else {
-      // TODO(todd): this might be a good spot for some auditing code?
-      resp->mutable_authn_token()->Swap(&authn_token);
+    // Issue an authentication token for the caller, unless they are
+    // already using a token to authenticate.
+    if (rpc->remote_user().authenticated_by() != rpc::RemoteUser::AUTHN_TOKEN) {
+      SignedTokenPB authn_token;
+      Status s = server_->token_signer()->GenerateAuthnToken(
+          rpc->remote_user().username(),
+          &authn_token);
+      if (!s.ok()) {
+        KLOG_EVERY_N_SECS(WARNING, 1)
+            << "Unable to generate signed token for " << rpc->requestor_string()
+            << ": " << s.ToString();
+      } else {
+        // TODO(todd): this might be a good spot for some auditing code?
+        resp->mutable_authn_token()->Swap(&authn_token);
+      }
     }
   }
   rpc->RespondSuccess();
