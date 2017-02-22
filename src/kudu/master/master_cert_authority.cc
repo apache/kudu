@@ -21,8 +21,10 @@
 #include <string>
 #include <utility>
 
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 
+#include "kudu/rpc/remote_user.h"
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -30,6 +32,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 
+using boost::optional;
 using std::string;
 using std::unique_ptr;
 
@@ -105,19 +108,33 @@ Status MasterCertAuthority::SignServerCSR(const CertSignRequest& csr,
   return Status::OK();
 }
 
-Status MasterCertAuthority::SignServerCSR(const string& csr_der, string* cert_der) {
+Status MasterCertAuthority::SignServerCSR(const string& csr_der, const rpc::RemoteUser& user,
+                                          string* cert_der) {
   CHECK(ca_cert_ && ca_private_key_) << "not initialized";
-
-  // TODO(PKI): before signing, should we somehow verify the CSR's
-  // hostname/server_uuid matches what we think is the hostname? can the signer
-  // modify the CSR to add fields, etc, indicating when/where it was signed?
-  // maybe useful for debugging.
 
   CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(csr.FromString(csr_der, security::DataFormat::DER),
                         "could not parse CSR");
   Cert cert;
   RETURN_NOT_OK(SignServerCSR(csr, &cert));
+
+  // Validate that the cert has an included user ID.
+  // It may seem funny to validate after signing, but we already have the functions
+  // to get the cert details out of a Cert object, and not out of a CSR object.
+  optional<string> cert_uid = cert.UserId();
+  if (cert_uid != user.username()) {
+    return Status::NotAuthorized(strings::Substitute(
+        "CSR did not contain expected username. (CSR: '$0' RPC: '$1')",
+        cert_uid.value_or(""),
+        user.username()));
+  }
+  optional<string> cert_principal = cert.KuduKerberosPrincipal();
+  if (cert_principal != user.principal()) {
+    return Status::NotAuthorized(strings::Substitute(
+        "CSR did not contain expected krb5 principal (CSR: '$0' RPC: '$1')",
+        cert_principal.value_or(""),
+        user.principal().value_or("")));
+  }
 
   RETURN_NOT_OK_PREPEND(cert.ToString(cert_der, security::DataFormat::DER),
                         "failed to signed cert as DER format");

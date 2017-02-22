@@ -30,7 +30,7 @@ namespace rpc {
 string RemoteUser::ToString() const {
   string ret;
   strings::SubstituteAndAppend(&ret, "{username='$0'", username_);
-  if (has_principal()) {
+  if (principal_) {
     strings::SubstituteAndAppend(&ret, ", principal='$0'", *principal_);
   }
   ret.append("}");

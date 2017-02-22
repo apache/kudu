@@ -155,7 +155,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   // 6. Only leaders sign CSR from tablet servers (if present).
   if (is_leader_master && req->has_csr_der()) {
     string cert;
-    Status s = server_->cert_authority()->SignServerCSR(req->csr_der(), &cert);
+    Status s = server_->cert_authority()->SignServerCSR(
+        req->csr_der(), rpc->remote_user(), &cert);
     if (!s.ok()) {
       rpc->RespondFailure(s.CloneAndPrepend("invalid CSR"));
       return;

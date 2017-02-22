@@ -19,7 +19,6 @@
 #include <string>
 
 #include <boost/optional.hpp>
-#include <glog/logging.h>
 
 namespace kudu {
 namespace rpc {
@@ -49,12 +48,8 @@ class RemoteUser {
 
   const std::string& username() const { return username_; }
 
-  bool has_principal() const {
-    return principal_ != boost::none;
-  }
-  const std::string& principal() const {
-    DCHECK(has_principal());
-    return *principal_;
+  boost::optional<std::string> principal() const {
+    return principal_;
   }
 
   void SetAuthenticatedByKerberos(std::string username,

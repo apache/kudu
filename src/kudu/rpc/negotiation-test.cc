@@ -301,7 +301,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
             break;
           case SaslMechanism::GSSAPI:
             EXPECT_EQ("client-gssapi", remote_user.username());
-            EXPECT_EQ("client-gssapi@KRBTEST.COM", remote_user.principal());
+            EXPECT_EQ("client-gssapi@KRBTEST.COM", remote_user.principal().value_or(""));
             break;
           case SaslMechanism::INVALID: LOG(FATAL) << "invalid mechanism negotiated";
         }
@@ -312,7 +312,7 @@ TEST_P(TestNegotiation, TestNegotiation) {
         string expected;
         CHECK_OK(GetLoggedInUser(&expected));
         EXPECT_EQ(expected, remote_user.username());
-        EXPECT_FALSE(remote_user.has_principal());
+        EXPECT_FALSE(remote_user.principal());
         break;
       }
       case AuthenticationType::TOKEN:

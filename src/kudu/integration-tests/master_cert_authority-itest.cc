@@ -34,6 +34,7 @@
 #include "kudu/security/crypto.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/user.h"
 
 using std::string;
 using std::shared_ptr;
@@ -63,6 +64,9 @@ class MasterCertAuthorityTest : public KuduTest {
     KuduTest::SetUp();
     cluster_.reset(new MiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
+
+    rpc::MessengerBuilder bld("Client");
+    ASSERT_OK(bld.Build(&messenger_));
   }
 
   Status RestartCluster() {
@@ -90,7 +94,7 @@ class MasterCertAuthorityTest : public KuduTest {
     ASSERT_OK(ca_cert->ToString(ca_cert_str, DataFormat::PEM));
   }
 
-  void SendRegistrationHBs(const shared_ptr<rpc::Messenger>& messenger) {
+  void SendRegistrationHBs() {
     TSToMasterCommonPB common;
     common.mutable_ts_instance()->set_permanent_uuid(kFakeTsUUID);
     common.mutable_ts_instance()->set_instance_seqno(1);
@@ -114,7 +118,7 @@ class MasterCertAuthorityTest : public KuduTest {
       if (!m->is_running()) {
         continue;
       }
-      MasterServiceProxy proxy(messenger, m->bound_rpc_addr());
+      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());
 
       // All masters (including followers) should accept the heartbeat.
       ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
@@ -123,10 +127,9 @@ class MasterCertAuthorityTest : public KuduTest {
     }
   }
 
-  void SendCertSignRequestHBs(const shared_ptr<rpc::Messenger>& messenger,
-                              const string& csr_str,
-                              bool* has_signed_certificate,
-                              string* signed_certificate) {
+  Status SendCertSignRequestHBs(const string& csr_str,
+                                bool* has_signed_certificate,
+                                string* signed_certificate) {
     TSToMasterCommonPB common;
     common.mutable_ts_instance()->set_permanent_uuid(kFakeTsUUID);
     common.mutable_ts_instance()->set_instance_seqno(1);
@@ -145,26 +148,30 @@ class MasterCertAuthorityTest : public KuduTest {
       if (!m->is_running()) {
         continue;
       }
-      MasterServiceProxy proxy(messenger, m->bound_rpc_addr());
+      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());
 
       // All masters (including followers) should accept the heartbeat.
-      ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
+      RETURN_NOT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
       SCOPED_TRACE(SecureDebugString(resp));
-      ASSERT_FALSE(resp.has_error());
+      if (resp.has_error()) {
+        return Status::RuntimeError("RPC error", resp.error().ShortDebugString());
+      }
 
       // Only the leader sends back the signed server certificate.
       if (resp.leader_master()) {
         has_leader_master_response = true;
-        ASSERT_TRUE(resp.has_signed_cert_der());
         ts_cert_str = resp.signed_cert_der();
       } else {
-        ASSERT_FALSE(resp.has_signed_cert_der());
+        if (resp.has_signed_cert_der()) {
+          return Status::RuntimeError("unexpected cert returned from non-leader");
+        }
       }
     }
     if (has_leader_master_response) {
-      *has_signed_certificate = true;
+      *has_signed_certificate = !ts_cert_str.empty();
       *signed_certificate = ts_cert_str;
     }
+    return Status::OK();
   }
 
  protected:
@@ -173,6 +180,8 @@ class MasterCertAuthorityTest : public KuduTest {
   int num_masters_;
   MiniClusterOptions opts_;
   gscoped_ptr<MiniCluster> cluster_;
+
+  shared_ptr<rpc::Messenger> messenger_;
 };
 const char MasterCertAuthorityTest::kFakeTsUUID[] = "fake-ts-uuid";
 
@@ -215,25 +224,52 @@ TEST_F(MasterCertAuthorityTest, CertAuthorityOnLeaderRoleSwitch) {
   EXPECT_EQ(ref_cert_str, new_leader_cert_str);
 }
 
+
+void GenerateCSR(const CertRequestGenerator::Config& gen_config,
+                 string* csr_str) {
+  PrivateKey key;
+  ASSERT_OK(security::GeneratePrivateKey(512, &key));
+  CertRequestGenerator gen(gen_config);
+  ASSERT_OK(gen.Init());
+  CertSignRequest csr;
+  ASSERT_OK(gen.GenerateRequest(key, &csr));
+  ASSERT_OK(csr.ToString(csr_str, DataFormat::DER));
+}
+
+TEST_F(MasterCertAuthorityTest, RefuseToSignInvalidCSR) {
+  NO_FATALS(SendRegistrationHBs());
+  string csr_str;
+  {
+    CertRequestGenerator::Config gen_config;
+    gen_config.cn = "ts.foo.com";
+    gen_config.user_id = "joe-impostor";
+    NO_FATALS(GenerateCSR(gen_config, &csr_str));
+  }
+  ASSERT_OK(WaitForLeader());
+  {
+    string ts_cert_str;
+    bool has_ts_cert = false;
+    Status s = SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str);
+    ASSERT_STR_MATCHES(s.ToString(),
+                       "Remote error: Not authorized: invalid CSR: CSR did not "
+                       "contain expected username. "
+                       "\\(CSR: 'joe-impostor' RPC: '.*'\\)");
+  }
+}
+
 // Test that every master accepts heartbeats, but only the leader master
 // responds with signed certificate if a heartbeat contains the CSR field.
 TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
-  shared_ptr<rpc::Messenger> messenger;
-  rpc::MessengerBuilder bld("Client");
-  ASSERT_OK(bld.Build(&messenger));
-  NO_FATALS(SendRegistrationHBs(messenger));
+  NO_FATALS(SendRegistrationHBs());
 
   string csr_str;
   {
     CertRequestGenerator::Config gen_config;
     gen_config.cn = "ts.foo.com";
-    PrivateKey key;
-    ASSERT_OK(security::GeneratePrivateKey(512, &key));
-    CertRequestGenerator gen(gen_config);
-    ASSERT_OK(gen.Init());
-    CertSignRequest csr;
-    ASSERT_OK(gen.GenerateRequest(key, &csr));
-    ASSERT_OK(csr.ToString(&csr_str, DataFormat::DER));
+    string test_user;
+    ASSERT_OK(GetLoggedInUser(&test_user));
+    gen_config.user_id = test_user;
+    NO_FATALS(GenerateCSR(gen_config, &csr_str));
   }
 
   // Make sure a tablet server receives signed certificate from
@@ -242,8 +278,7 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   {
     string ts_cert_str;
     bool has_ts_cert = false;
-    NO_FATALS(SendCertSignRequestHBs(messenger, csr_str,
-                                     &has_ts_cert, &ts_cert_str));
+    NO_FATALS(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
     ASSERT_TRUE(has_ts_cert);
 
     // Try to load the certificate to check that the data is not corrupted.
@@ -260,12 +295,11 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
 
   // Re-register with the new leader.
   ASSERT_OK(WaitForLeader());
-  NO_FATALS(SendRegistrationHBs(messenger));
+  NO_FATALS(SendRegistrationHBs());
   {
     string ts_cert_str;
     bool has_ts_cert = false;
-    NO_FATALS(SendCertSignRequestHBs(messenger, csr_str,
-                                     &has_ts_cert, &ts_cert_str));
+    NO_FATALS(SendCertSignRequestHBs(csr_str, &has_ts_cert, &ts_cert_str));
     ASSERT_TRUE(has_ts_cert);
     // Try to load the certificate to check that the data is not corrupted.
     Cert ts_cert;

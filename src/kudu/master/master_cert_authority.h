@@ -39,6 +39,10 @@ class CertSigner;
 } // namespace ca
 } // namespace security
 
+namespace rpc {
+class RemoteUser;
+} // namespace rpc
+
 namespace master {
 
 class MasterCertAuthorityTest;
@@ -70,6 +74,8 @@ class MasterCertAuthority {
               std::unique_ptr<security::Cert> cert);
 
   // Sign the given CSR 'csr_der' provided by a server in the cluster.
+  // The authenticated user should be passed in 'caller'. The cert contents
+  // are verified to match the authenticated user.
   //
   // The CSR should be provided in the DER format.
   // The resulting certificate, also in DER format, is returned in 'cert_der'.
@@ -79,7 +85,8 @@ class MasterCertAuthority {
   // NOTE:  This method is not going to be called in parallel with Init()
   //        due to the current design, so there is no internal synchronization
   //        to keep the internal state consistent.
-  Status SignServerCSR(const std::string& csr_der, std::string* cert_der);
+  Status SignServerCSR(const std::string& csr_der, const rpc::RemoteUser& caller,
+                       std::string* cert_der);
 
   // Same as above, but with objects instead of the DER format CSR/cert.
   Status SignServerCSR(const security::CertSignRequest& csr, security::Cert* cert);
