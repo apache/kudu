@@ -55,15 +55,7 @@ class CertRequestGeneratorBase {
   // Properties for the generated X509 CSR.  Using server UUID for the common
   // name field.
   struct Config {
-    std::string country;  // subject field: C
-    std::string state;    // subject field: ST
-    std::string locality; // subject field: L
-    std::string org;      // subject field: O
-    std::string unit;     // subject field: OU
-    std::string uuid;     // subject field: CN
-    std::string comment;  // custom extension: Netscape Comment
-    std::vector<std::string> hostnames; // subjectAltName extension (DNS:)
-    std::vector<std::string> ips;       // subjectAltName extension (IP:)
+    std::string cn;     // subject field: CN
   };
 
   explicit CertRequestGeneratorBase(Config config);
@@ -93,11 +85,8 @@ class CertRequestGeneratorBase {
 // (a.k.a. X509 CSRs).
 class CertRequestGenerator : public CertRequestGeneratorBase {
  public:
-  // The CertRequestGenerator object is bound to the server UUID, hostnames
-  // and IP addresses specified by the 'config' parameter. The hostnames and
-  // IP addresses are put into the X509v3 SAN extension (subject alternative
-  // name, a.k.a. subjectAltName). The SAN can be used while verifying the
-  // generated certificates during TLS handshake.
+  // 'config' contains the properties to fill into the X509 attributes of the
+  // CSR.
   explicit CertRequestGenerator(Config config);
   ~CertRequestGenerator();
 

@@ -226,8 +226,7 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   string csr_str;
   {
     CertRequestGenerator::Config gen_config;
-    gen_config.uuid = kFakeTsUUID;
-    gen_config.hostnames =  {"localhost"};
+    gen_config.cn = "ts.foo.com";
     PrivateKey key;
     ASSERT_OK(security::GeneratePrivateKey(512, &key));
     CertRequestGenerator gen(gen_config);

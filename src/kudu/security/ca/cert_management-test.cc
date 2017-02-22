@@ -54,24 +54,8 @@ class CertManagementTest : public KuduTest {
 
  protected:
   CertRequestGenerator::Config PrepareConfig(
-      const string& uuid,
-      const vector<string>& hostnames = {},
-      const vector<string>& ips = {}) const {
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
-    const string comment = string(test_info->test_case_name()) + "." +
-      test_info->name();
-    return {
-      "US",               // country
-      "CA",               // state
-      "San Francisco",    // locality
-      "ASF",              // org
-      "The Kudu Project", // unit
-      uuid,               // uuid
-      comment,            // comment
-      hostnames,          // hostnames
-      ips,                // ips
-    };
+      const string& common_name) {
+    return { common_name };
   }
 
   // Create a new private key in 'key' and return a CSR associated with that
@@ -95,52 +79,17 @@ class CertManagementTest : public KuduTest {
   PrivateKey ca_exp_private_key_;
 };
 
-// Check for basic SAN-related constraints while initializing
+// Check for basic constraints while initializing
 // CertRequestGenerator objects.
-TEST_F(CertManagementTest, RequestGeneratorSanConstraints) {
-  const string kEntityUUID = "D94FBF10-6F40-4F9F-BC82-F96A1C4F2CFB";
-
-  // No hostnames, nor IP addresses are given to populate X509v3 SAN extension.
+TEST_F(CertManagementTest, RequestGeneratorConstraints) {
+  // Missing CN
   {
-    const CertRequestGenerator::Config gen_config = PrepareConfig(kEntityUUID);
+    const CertRequestGenerator::Config gen_config = PrepareConfig("");
     CertRequestGenerator gen(gen_config);
     const Status s = gen.Init();
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "SAN: missing DNS names and IP addresses");
-  }
-
-  // An empty hostname
-  {
-    const CertRequestGenerator::Config gen_config =
-        PrepareConfig(kEntityUUID, {"localhost", ""});
-    CertRequestGenerator gen(gen_config);
-    const Status s = gen.Init();
-    const string err_msg = s.ToString();
-    ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "SAN: an empty hostname");
-  }
-
-  // An empty IP address
-  {
-    const CertRequestGenerator::Config gen_config =
-        PrepareConfig(kEntityUUID, {}, {"127.0.0.1", ""});
-    CertRequestGenerator gen(gen_config);
-    const Status s = gen.Init();
-    const string err_msg = s.ToString();
-    ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "SAN: an empty IP address");
-  }
-
-  // Missing UUID
-  {
-    const CertRequestGenerator::Config gen_config =
-        PrepareConfig("", {"localhost"});
-    CertRequestGenerator gen(gen_config);
-    const Status s = gen.Init();
-    const string err_msg = s.ToString();
-    ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "missing end-entity UUID/name");
+    ASSERT_STR_CONTAINS(err_msg, "missing end-entity CN");
   }
 }
 
@@ -148,8 +97,7 @@ TEST_F(CertManagementTest, RequestGeneratorSanConstraints) {
 // check it's able to generate keys of expected number of bits and that it
 // reports an error if trying to generate a key of unsupported number of bits.
 TEST_F(CertManagementTest, RequestGeneratorBasics) {
-  const CertRequestGenerator::Config gen_config =
-      PrepareConfig("702C1C5E-CF02-4EDC-8883-07ECDEC8CE97", {"localhost"});
+  const CertRequestGenerator::Config gen_config = PrepareConfig("my-cn");
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
@@ -166,7 +114,7 @@ TEST_F(CertManagementTest, RequestGeneratorBasics) {
 // CA private key and certificate.
 TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
   PrivateKey key;
-  const auto& csr = PrepareTestCSR(PrepareConfig("test-uuid", {"localhost"}), &key);
+  const auto& csr = PrepareTestCSR(PrepareConfig("test-cn"), &key);
   {
     Cert cert;
     Status s = CertSigner(&ca_cert_, &ca_exp_private_key_)
@@ -189,8 +137,7 @@ TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
 // Check how CertSigner behaves if given expired CA certificate
 // and corresponding private key.
 TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
-  const CertRequestGenerator::Config gen_config(
-      PrepareConfig("F4466090-BBF8-4042-B72F-BB257500C45A", {"localhost"}));
+  const CertRequestGenerator::Config gen_config = PrepareConfig("test-cn");
   PrivateKey key;
   CertSignRequest req = PrepareTestCSR(gen_config, &key);
 
@@ -202,8 +149,7 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
 
 // Generate X509 CSR and issues corresponding certificate.
 TEST_F(CertManagementTest, SignCert) {
-  const CertRequestGenerator::Config gen_config(
-      PrepareConfig("test-uuid", {"localhost"}, {"127.0.0.1", "127.0.10.20"}));
+  const CertRequestGenerator::Config gen_config = PrepareConfig("test-cn");
   PrivateKey key;
   const auto& csr = PrepareTestCSR(gen_config, &key);
   Cert cert;
@@ -212,8 +158,7 @@ TEST_F(CertManagementTest, SignCert) {
 
   EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
             cert.IssuerName());
-  EXPECT_EQ("C = US, ST = CA, L = San Francisco, O = ASF, OU = The Kudu Project, "
-            "CN = test-uuid", cert.SubjectName());
+  EXPECT_EQ("CN = test-cn", cert.SubjectName());
 }
 
 // Generate X509 CA CSR and sign the result certificate.
@@ -235,9 +180,7 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
   ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
   // Create a key and CSR for the tablet server.
-  const auto& config = PrepareConfig(
-      "some-tablet-server",
-      {"localhost"}, {"127.0.0.1", "127.0.10.20"});
+  const auto& config = PrepareConfig("some-tablet-server");
   PrivateKey ts_key;
   CertSignRequest ts_csr = PrepareTestCSR(config, &ts_key);
 
@@ -255,8 +198,7 @@ TEST_F(CertManagementTest, X509CsrFromAndToString) {
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
-  CertRequestGenerator gen(PrepareConfig(
-      "4C931ADC-3945-4E05-8DB2-447327BF8F62", {"localhost"}));
+  CertRequestGenerator gen(PrepareConfig("test-cn"));
   ASSERT_OK(gen.Init());
   CertSignRequest req_ref;
   ASSERT_OK(gen.GenerateRequest(key, &req_ref));
@@ -281,8 +223,7 @@ TEST_F(CertManagementTest, X509FromAndToString) {
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
-  CertRequestGenerator gen(PrepareConfig(
-      "86F676E9-4E77-4DDC-B15C-596E74B03D90", {"localhost"}));
+  CertRequestGenerator gen(PrepareConfig("test-cn"));
   ASSERT_OK(gen.Init());
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));

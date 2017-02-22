@@ -88,12 +88,7 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
     } \
   } while (false)
 
-  CERT_SET_SUBJ_FIELD(config_.country, "C", "country");
-  CERT_SET_SUBJ_FIELD(config_.state, "ST", "state");
-  CERT_SET_SUBJ_FIELD(config_.locality, "L", "locality/city");
-  CERT_SET_SUBJ_FIELD(config_.org, "O", "organization");
-  CERT_SET_SUBJ_FIELD(config_.unit, "OU", "organizational unit");
-  CERT_SET_SUBJ_FIELD(config_.uuid, "CN", "common name");
+  CERT_SET_SUBJ_FIELD(config_.cn, "CN", "common name");
 #undef CERT_SET_SUBJ_FIELD
 
   // Set necessary extensions into the request.
@@ -127,13 +122,8 @@ Status CertRequestGenerator::Init() {
   InitializeOpenSSL();
 
   CHECK(!is_initialized_);
-  if (config_.uuid.empty()) {
-    return Status::InvalidArgument("missing end-entity UUID/name");
-  }
-  // Check that the config contain at least one entity (DNS name/IP address)
-  // to bind the generated certificate.
-  if (config_.hostnames.empty() && config_.ips.empty()) {
-    return Status::InvalidArgument("SAN: missing DNS names and IP addresses");
+  if (config_.cn.empty()) {
+    return Status::InvalidArgument("missing end-entity CN");
   }
 
   extensions_ = sk_X509_EXTENSION_new_null();
@@ -164,43 +154,7 @@ Status CertRequestGenerator::Init() {
   // (i.e. they cannot be used to sign/issue certificates).
   RETURN_NOT_OK(PushExtension(extensions_, NID_basic_constraints,
                               "critical,CA:FALSE"));
-  ostringstream san_hosts;
-  for (size_t i = 0; i < config_.hostnames.size(); ++i) {
-    const string& hostname = config_.hostnames[i];
-    if (hostname.empty()) {
-      // Basic validation: check for emptyness. Probably, more advanced
-      // validation is needed here.
-      return Status::InvalidArgument("SAN: an empty hostname");
-    }
-    if (i != 0) {
-      san_hosts << ",";
-    }
-    san_hosts << "DNS." << i << ":" << hostname;
-  }
-  ostringstream san_ips;
-  for (size_t i = 0; i < config_.ips.size(); ++i) {
-    const string& ip = config_.ips[i];
-    if (ip.empty()) {
-      // Basic validation: check for emptyness. Probably, more advanced
-      // validation is needed here.
-      return Status::InvalidArgument("SAN: an empty IP address");
-    }
-    if (i != 0) {
-      san_ips << ",";
-    }
-    san_ips << "IP." << i << ":" << ip;
-  }
-  // Encode hostname and IP address into the subjectAlternativeName attribute.
-  const string alt_name = san_hosts.str() +
-      ((!san_hosts.str().empty() && !san_ips.str().empty()) ? "," : "") +
-      san_ips.str();
-  RETURN_NOT_OK(PushExtension(extensions_, NID_subject_alt_name,
-                              alt_name.c_str()));
-  if (!config_.comment.empty()) {
-    // Add the comment if it's not empty.
-    RETURN_NOT_OK(PushExtension(extensions_, NID_netscape_comment,
-                                config_.comment.c_str()));
-  }
+
   is_initialized_ = true;
 
   return Status::OK();
@@ -233,7 +187,7 @@ Status CaCertRequestGenerator::Init() {
   if (is_initialized_) {
     return Status::OK();
   }
-  if (config_.uuid.empty()) {
+  if (config_.cn.empty()) {
     return Status::InvalidArgument("missing CA service UUID/name");
   }
 
@@ -250,11 +204,6 @@ Status CaCertRequestGenerator::Init() {
   // The generated certificates are for the private CA service.
   RETURN_NOT_OK(PushExtension(extensions_, NID_basic_constraints,
                               "critical,CA:TRUE"));
-  if (!config_.comment.empty()) {
-    // Add the comment if it's not empty.
-    RETURN_NOT_OK(PushExtension(extensions_, NID_netscape_comment,
-                                config_.comment.c_str()));
-  }
   is_initialized_ = true;
 
   return Status::OK();

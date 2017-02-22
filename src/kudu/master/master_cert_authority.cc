@@ -58,26 +58,6 @@ TAG_FLAG(ipki_server_cert_expiration_seconds, experimental);
 namespace kudu {
 namespace master {
 
-namespace {
-
-CaCertRequestGenerator::Config PrepareCaConfig(const string& server_uuid) {
-  // TODO(aserbin): do we actually have to set all these fields given we
-  // aren't using a web browser to connect?
-  return {
-    "US",               // country
-    "CA",               // state
-    "San Francisco",    // locality
-    "ASF",              // org
-    "The Kudu Project", // unit
-    server_uuid,        // uuid
-    "Kudu IPKI self-signed root CA certificate",// comment
-    {},                 // hostnames
-    {},                 // ips
-  };
-}
-
-} // anonymous namespace
-
 MasterCertAuthority::MasterCertAuthority(string server_uuid)
     : server_uuid_(std::move(server_uuid)) {
 }
@@ -91,9 +71,10 @@ Status MasterCertAuthority::Generate(security::PrivateKey* key,
   CHECK(key);
   CHECK(cert);
   // Create a key and cert for the self-signed CA.
+  CaCertRequestGenerator::Config config = { "kudu-ipki-ca" };
   RETURN_NOT_OK(GeneratePrivateKey(FLAGS_ipki_ca_key_size, key));
   return CertSigner::SelfSignCA(*key,
-                                PrepareCaConfig(server_uuid_),
+                                config,
                                 FLAGS_ipki_ca_cert_expiration_seconds,
                                 cert);
 }

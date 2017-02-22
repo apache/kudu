@@ -35,8 +35,7 @@ Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
   // Create a key for the self-signed CA.
   RETURN_NOT_OK(GeneratePrivateKey(512, ca_key));
 
-  CaCertRequestGenerator::Config config;
-  config.uuid = "test-ca-uuid";
+  CaCertRequestGenerator::Config config = { "test-ca-cn" };
   RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key,
                                        config,
                                        kRootCaCertExpirationSeconds,

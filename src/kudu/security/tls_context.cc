@@ -242,18 +242,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey(const std::string& server_uuid) 
 
   // Step 2: generate a CSR so that the self-signed cert can eventually be
   // replaced with a CA-signed cert.
-  // TODO(aserbin): do these fields actually have to be set?
-  const CertRequestGenerator::Config config = {
-    "US",               // country
-    "CA",               // state
-    "San Francisco",    // locality
-    "ASF",              // org
-    "The Kudu Project", // unit
-    server_uuid,        // uuid
-    "",                 // comment
-    {"localhost"},      // hostnames TODO(PKI): use real hostnames
-    {"127.0.0.1"},      // ips
-  };
+  const CertRequestGenerator::Config config = { server_uuid };
 
   CertRequestGenerator gen(config);
   CertSignRequest csr;
