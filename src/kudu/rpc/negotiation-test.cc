@@ -51,6 +51,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/user.h"
 
 // HACK: MIT Kerberos doesn't have any way of determining its version number,
 // but the error messages in krb5-1.10 and earlier are broken due to
@@ -291,29 +292,34 @@ TEST_P(TestNegotiation, TestNegotiation) {
     EXPECT_EQ(desc.rpc_encrypt_loopback, server_tls_socket);
 
     // Check that the expected user subject is authenticated.
-    // TODO(PKI): reenable this once subjects are handled correctly among authn types.
-    /*
+    RemoteUser remote_user = server_negotiation.take_authenticated_user();
     switch (server_negotiation.negotiated_authn()) {
       case AuthenticationType::SASL:
         switch (server_negotiation.negotiated_mechanism()) {
           case SaslMechanism::PLAIN:
-            EXPECT_EQ("client-plain", server_negotiation.authenticated_user());
+            EXPECT_EQ("client-plain", remote_user.username());
             break;
           case SaslMechanism::GSSAPI:
-            EXPECT_EQ("client-gssapi", server_negotiation.authenticated_user());
+            EXPECT_EQ("client-gssapi", remote_user.username());
+            EXPECT_EQ("client-gssapi@KRBTEST.COM", remote_user.principal());
             break;
           case SaslMechanism::INVALID: LOG(FATAL) << "invalid mechanism negotiated";
         }
         break;
-      case AuthenticationType::CERTIFICATE:
-          EXPECT_EQ("client-certificate", server_negotiation.authenticated_user());
-          break;
+      case AuthenticationType::CERTIFICATE: {
+        // We expect the cert to be using the local username, because it hasn't
+        // logged in from any Keytab.
+        string expected;
+        CHECK_OK(GetLoggedInUser(&expected));
+        EXPECT_EQ(expected, remote_user.username());
+        EXPECT_FALSE(remote_user.has_principal());
+        break;
+      }
       case AuthenticationType::TOKEN:
-          EXPECT_EQ("client-token", server_negotiation.authenticated_user());
-          break;
+        EXPECT_EQ("client-token", remote_user.username());
+        break;
       case AuthenticationType::INVALID: LOG(FATAL) << "invalid authentication negotiated";
     }
-    */
   }
 }
 

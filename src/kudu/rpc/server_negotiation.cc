@@ -36,6 +36,7 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/init.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/security/tls_socket.h"
@@ -502,13 +503,30 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
   }
   RETURN_NOT_OK(s);
 
-  const char* username = nullptr;
+  const char* c_username = nullptr;
   int rc = sasl_getprop(sasl_conn_.get(), SASL_USERNAME,
-                        reinterpret_cast<const void**>(&username));
+                        reinterpret_cast<const void**>(&c_username));
   // We expect that SASL_USERNAME will always get set.
-  CHECK(rc == SASL_OK && username != nullptr) << "No username on authenticated connection";
-  authenticated_user_.set_username(username);
+  CHECK(rc == SASL_OK && c_username != nullptr) << "No username on authenticated connection";
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+    // The SASL library doesn't include the user's realm in the username if it's the
+    // same realm as the default realm of the server. So, we pass it back through the
+    // Kerberos library to add back the realm if necessary.
+    string principal = c_username;
+    RETURN_NOT_OK_PREPEND(security::CanonicalizeKrb5Principal(&principal),
+                          "could not canonicalize krb5 principal");
 
+    // Map the principal to the corresponding local username. For example, admins
+    // can set up mappings so that joe@REMOTEREALM becomes something like 'remote-joe'
+    // locally for the purposes of group mapping, ACLs, etc.
+    string local_name;
+    RETURN_NOT_OK_PREPEND(security::MapPrincipalToLocalName(principal, &local_name),
+                          strings::Substitute("could not map krb5 principal '$0' to username",
+                                              principal));
+    authenticated_user_.SetAuthenticatedByKerberos(std::move(local_name), std::move(principal));
+  } else {
+    authenticated_user_.SetUnauthenticated(c_username);
+  }
   return Status::OK();
 }
 
@@ -556,7 +574,7 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
     // get a signed authn token without a subject.
     return Status::RuntimeError("authentication token has no username");
   }
-  authenticated_user_.set_username(token.authn().username());
+  authenticated_user_.SetAuthenticatedByToken(token.authn().username());
 
   // Respond with success message.
   pb.Clear();
@@ -572,7 +590,15 @@ Status ServerNegotiation::AuthenticateByCertificate() {
   // Grab the subject from the client's cert.
   security::Cert cert;
   RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
-  authenticated_user_.set_username(cert.SubjectName());
+
+  boost::optional<string> user_id = cert.UserId();
+  boost::optional<string> principal = cert.KuduKerberosPrincipal();
+
+  if (!user_id) {
+    return Status::NotAuthorized("did not find expected X509 userId extension in cert");
+  }
+
+  authenticated_user_.SetAuthenticatedByClientCert(*user_id, std::move(principal));
 
   return Status::OK();
 }

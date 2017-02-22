@@ -18,6 +18,9 @@
 
 #include <string>
 
+#include <boost/optional.hpp>
+#include <glog/logging.h>
+
 namespace kudu {
 namespace rpc {
 
@@ -27,10 +30,57 @@ namespace rpc {
 // its initialization during RPC negotiation.
 class RemoteUser {
  public:
+  // The method by which the remote user authenticated.
+  enum Method {
+    // No authentication (authentication was not required by the server
+    // and the user provided a username but it was not validated in any way)
+    UNAUTHENTICATED,
+    // Kerberos-authenticated.
+    KERBEROS,
+    // Authenticated by a Kudu authentication token.
+    AUTHN_TOKEN,
+    // Authenticated by a client certificate.
+    CLIENT_CERT
+  };
+
+  Method authenticated_by() const {
+    return authenticated_by_;
+  }
+
   const std::string& username() const { return username_; }
 
-  void set_username(std::string username) {
+  bool has_principal() const {
+    return principal_ != boost::none;
+  }
+  const std::string& principal() const {
+    DCHECK(has_principal());
+    return *principal_;
+  }
+
+  void SetAuthenticatedByKerberos(std::string username,
+                                  std::string principal) {
+    authenticated_by_ = KERBEROS;
     username_ = std::move(username);
+    principal_ = std::move(principal);
+  }
+
+  void SetUnauthenticated(std::string username) {
+    authenticated_by_ = UNAUTHENTICATED;
+    username_ = std::move(username);
+    principal_ = boost::none;
+  }
+
+  void SetAuthenticatedByClientCert(std::string username,
+                                    boost::optional<std::string> principal) {
+    authenticated_by_ = CLIENT_CERT;
+    username_ = std::move(username);
+    principal_ = std::move(principal);
+  }
+
+  void SetAuthenticatedByToken(std::string username) {
+    authenticated_by_ = AUTHN_TOKEN;
+    username_ = std::move(username);
+    principal_ = boost::none;
   }
 
   // Returns a string representation of the object.
@@ -41,6 +91,12 @@ class RemoteUser {
   // principal, this has already been mapped to a local username.
   // TODO(todd): actually do the above mapping.
   std::string username_;
+
+  // The full principal of the remote user. This is only set in the
+  // case of a strong-authenticated user.
+  boost::optional<std::string> principal_;
+
+  Method authenticated_by_ = UNAUTHENTICATED;
 };
 
 } // namespace rpc

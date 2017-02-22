@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/remote_user.h"
 
+#include <boost/optional.hpp>
 #include <string>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -27,7 +28,13 @@ namespace kudu {
 namespace rpc {
 
 string RemoteUser::ToString() const {
-  return strings::Substitute("{username='$0'}", username_);
+  string ret;
+  strings::SubstituteAndAppend(&ret, "{username='$0'", username_);
+  if (has_principal()) {
+    strings::SubstituteAndAppend(&ret, ", principal='$0'", *principal_);
+  }
+  ret.append("}");
+  return ret;
 }
 
 } // namespace rpc
