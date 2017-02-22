@@ -104,9 +104,6 @@ Master or tablet server goes offline before a particular DeleteTablet operation
 successfully completes, the Master will send a new DeleteTablet request at the
 time that the next heartbeat is received from the tablet that is to be deleted.
 
-A "Cleaner" process will be reponsible for removing the data from deleted tables
-and tablets in the future, both on-disk and cached in memory (TODO).
-
 
 Table Assignment (Tablet Creation)
 ----------------------------------
@@ -237,3 +234,32 @@ tablet server to the master (tablet servers that have been heard from,
 heartbeats, tablet reports, etc...). The information is stored in a
 map, where the key is the permanent uuid of a tablet server and the
 value is (a pointer to) a TSDescriptor.
+
+IPKI: Internal Root Certificate Authority (CA) Information
+----------------------------------------------------------
+
+Besides tables' metadata, the system table contains the root CA certificate
+and corresponding private key when Kudu is configured to use its own IPKI
+(Internal Private Key Infrastructure). The root CA certificate and the private
+key are used to
+  1. Sign TLS certificates for Kudu server-side components like Master and
+     Tablet Servers.
+  2. Authenticate the server side of TLS connection: the initiator of a
+     TLS connection (the client side) uses Kudu CA certificate to make sure
+     the peer has valid TLS certificate signed by the Kudu internal CA.
+
+Upon start of a Kudu master server, it generates and stores the root CA
+certificate and corresponding private key when becoming leader if no such
+information is present in the system table. If the internal root CA information
+is already present in the system table, the leader master loads that
+information into memory and uses it appropriately.
+
+IPKI: TSK (Token Signing Keys)
+------------------------------
+
+The system table contains entries with TSKs used for authn/authz token signing.
+The leader master generates and stores those in the system table. Upon start-up
+or on the change of master leadership, a new leader master loads existing TSK
+entries from the system table and populates in-memory structures necessary
+for token signing. Expired keys are lazily purged from the system table
+by the leader master.
