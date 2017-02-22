@@ -65,14 +65,14 @@ class ConnectionId {
   ConnectionId(const ConnectionId& other);
 
   // Convenience constructor.
-  ConnectionId(const Sockaddr& remote, const UserCredentials& user_credentials);
+  ConnectionId(const Sockaddr& remote, UserCredentials user_credentials);
 
   // The remote address.
   void set_remote(const Sockaddr& remote);
   const Sockaddr& remote() const { return remote_; }
 
   // The credentials of the user associated with this connection, if any.
-  void set_user_credentials(const UserCredentials& user_credentials);
+  void set_user_credentials(UserCredentials user_credentials);
   const UserCredentials& user_credentials() const { return user_credentials_; }
   UserCredentials* mutable_user_credentials() { return &user_credentials_; }
 

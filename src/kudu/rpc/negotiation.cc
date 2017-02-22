@@ -179,7 +179,7 @@ static Status DoClientNegotiation(Connection* conn, MonoTime deadline) {
     }
   }
 
-  RETURN_NOT_OK(client_negotiation.EnablePlain(conn->user_credentials().real_user(), ""));
+  RETURN_NOT_OK(client_negotiation.EnablePlain(conn->local_user_credentials().real_user(), ""));
   client_negotiation.set_deadline(deadline);
 
   RETURN_NOT_OK(WaitForClientConnect(client_negotiation.socket(), deadline));
@@ -226,7 +226,7 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
   // Transfer the negotiated socket and state back to the connection.
   conn->adopt_socket(server_negotiation.release_socket());
   conn->set_remote_features(server_negotiation.take_client_features());
-  conn->mutable_user_credentials()->set_real_user(server_negotiation.authenticated_user());
+  conn->set_remote_user(server_negotiation.take_authenticated_user());
 
   return Status::OK();
 }

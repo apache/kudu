@@ -26,6 +26,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/rpc/negotiation.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
@@ -101,7 +102,11 @@ class ServerNegotiation {
 
   // Name of the user that was authenticated.
   // Must be called after a successful Negotiate().
-  const std::string& authenticated_user() const;
+  //
+  // Subsequent calls will return bogus data.
+  RemoteUser take_authenticated_user() {
+    return std::move(authenticated_user_);
+  }
 
   // Specify the fully-qualified domain name of the remote server.
   // Must be called before Negotiate(). Required for some mechanisms.
@@ -224,7 +229,7 @@ class ServerNegotiation {
 
   // The successfully-authenticated user, if applicable. Filled in during
   // negotiation.
-  std::string authenticated_user_;
+  RemoteUser authenticated_user_;
 
   // The authentication type. Filled in during negotiation.
   AuthenticationType negotiated_authn_;

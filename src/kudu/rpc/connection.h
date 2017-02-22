@@ -34,6 +34,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -121,14 +122,17 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // The address of the remote end of the connection.
   const Sockaddr &remote() const { return remote_; }
 
-  // Set the user credentials which should be used to log in.
-  void set_user_credentials(const UserCredentials &user_credentials);
-
-  // Modify the user credentials which will be used to log in.
-  UserCredentials* mutable_user_credentials() { return &user_credentials_; }
+  // Set the user credentials for an outbound connection.
+  void set_local_user_credentials(UserCredentials creds) {
+    DCHECK_EQ(direction_, CLIENT);
+    local_user_credentials_ = std::move(creds);
+  }
 
   // Get the user credentials which will be used to log in.
-  const UserCredentials &user_credentials() const { return user_credentials_; }
+  const UserCredentials& local_user_credentials() const {
+    DCHECK_EQ(direction_, CLIENT);
+    return local_user_credentials_;
+  }
 
   RpczStore* rpcz_store();
 
@@ -166,6 +170,16 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   void set_remote_features(std::set<RpcFeatureFlag> remote_features) {
     remote_features_ = std::move(remote_features);
+  }
+
+  void set_remote_user(RemoteUser user) {
+    DCHECK_EQ(direction_, SERVER);
+    remote_user_ = std::move(user);
+  }
+
+  const RemoteUser& remote_user() const {
+    DCHECK_EQ(direction_, SERVER);
+    return remote_user_;
   }
 
  private:
@@ -234,7 +248,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
   std::unique_ptr<Socket> socket_;
 
   // The credentials of the user operating on this connection (if a client user).
-  UserCredentials user_credentials_;
+  UserCredentials local_user_credentials_;
+
+  // The authenticated remote user (if this is an inbound connection on the server).
+  RemoteUser remote_user_;
 
   // whether we are client or server
   Direction direction_;

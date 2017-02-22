@@ -49,10 +49,10 @@ namespace rpc {
 
 class Connection;
 class DumpRunningRpcsRequestPB;
+class RemoteUser;
 class RpcCallInProgressPB;
 struct RpcMethodInfo;
 class RpcSidecar;
-class UserCredentials;
 
 struct InboundCallTiming {
   MonoTime time_received;   // Time the call was first accepted.
@@ -130,7 +130,7 @@ class InboundCall {
 
   void DumpPB(const DumpRunningRpcsRequestPB& req, RpcCallInProgressPB* resp);
 
-  const UserCredentials& user_credentials() const;
+  const RemoteUser& remote_user() const;
 
   const Sockaddr& remote_address() const;
 

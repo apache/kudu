@@ -22,6 +22,7 @@
 
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/inbound_call.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/service_if.h"
@@ -144,8 +145,8 @@ Status RpcContext::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
   return call_->AddRpcSidecar(std::move(car), idx);
 }
 
-const UserCredentials& RpcContext::user_credentials() const {
-  return call_->user_credentials();
+const RemoteUser& RpcContext::remote_user() const {
+  return call_->remote_user();
 }
 
 const Sockaddr& RpcContext::remote_address() const {
@@ -153,7 +154,7 @@ const Sockaddr& RpcContext::remote_address() const {
 }
 
 std::string RpcContext::requestor_string() const {
-  return call_->user_credentials().ToString() + " at " +
+  return call_->remote_user().ToString() + " at " +
     call_->remote_address().ToString();
 }
 

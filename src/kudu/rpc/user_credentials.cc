@@ -28,18 +28,12 @@ using std::string;
 namespace kudu {
 namespace rpc {
 
-UserCredentials::UserCredentials() {}
-
 bool UserCredentials::has_real_user() const {
   return !real_user_.empty();
 }
 
 void UserCredentials::set_real_user(const string& real_user) {
   real_user_ = real_user;
-}
-
-void UserCredentials::CopyFrom(const UserCredentials& other) {
-  real_user_ = other.real_user_;
 }
 
 string UserCredentials::ToString() const {

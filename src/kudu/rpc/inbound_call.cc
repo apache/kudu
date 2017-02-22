@@ -213,8 +213,8 @@ void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
                            .ToMicroseconds());
 }
 
-const UserCredentials& InboundCall::user_credentials() const {
-  return conn_->user_credentials();
+const RemoteUser& InboundCall::remote_user() const {
+  return conn_->remote_user();
 }
 
 const Sockaddr& InboundCall::remote_address() const {

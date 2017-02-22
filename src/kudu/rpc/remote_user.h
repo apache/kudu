@@ -21,26 +21,26 @@
 namespace kudu {
 namespace rpc {
 
-// Client-side user credentials. Currently this is more-or-less a simple wrapper
-// around a username string. However, we anticipate moving more credentials such as
-// tokens into a per-Proxy structure rather than Messenger-wide, and this will
-// be the place to store them.
-class UserCredentials {
+// Server-side view of the remote authenticated user.
+//
+// This class may be read by multiple threads concurrently after
+// its initialization during RPC negotiation.
+class RemoteUser {
  public:
-  // Real user.
-  bool has_real_user() const;
-  void set_real_user(const std::string& real_user);
-  const std::string& real_user() const { return real_user_; }
+  const std::string& username() const { return username_; }
+
+  void set_username(std::string username) {
+    username_ = std::move(username);
+  }
 
   // Returns a string representation of the object.
   std::string ToString() const;
 
-  std::size_t HashCode() const;
-  bool Equals(const UserCredentials& other) const;
-
  private:
-  // Remember to update HashCode() and Equals() when new fields are added.
-  std::string real_user_;
+  // The real username of the remote user. In the case of a Kerberos
+  // principal, this has already been mapped to a local username.
+  // TODO(todd): actually do the above mapping.
+  std::string username_;
 };
 
 } // namespace rpc

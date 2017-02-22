@@ -363,17 +363,17 @@ ConnectionId::ConnectionId(const ConnectionId& other) {
   DoCopyFrom(other);
 }
 
-ConnectionId::ConnectionId(const Sockaddr& remote, const UserCredentials& user_credentials) {
+ConnectionId::ConnectionId(const Sockaddr& remote, UserCredentials user_credentials) {
   remote_ = remote;
-  user_credentials_.CopyFrom(user_credentials);
+  user_credentials_ = std::move(user_credentials);
 }
 
 void ConnectionId::set_remote(const Sockaddr& remote) {
   remote_ = remote;
 }
 
-void ConnectionId::set_user_credentials(const UserCredentials& user_credentials) {
-  user_credentials_.CopyFrom(user_credentials);
+void ConnectionId::set_user_credentials(UserCredentials user_credentials) {
+  user_credentials_ = std::move(user_credentials);
 }
 
 void ConnectionId::CopyFrom(const ConnectionId& other) {
@@ -389,7 +389,7 @@ string ConnectionId::ToString() const {
 
 void ConnectionId::DoCopyFrom(const ConnectionId& other) {
   remote_ = other.remote_;
-  user_credentials_.CopyFrom(other.user_credentials_);
+  user_credentials_ = other.user_credentials_;
 }
 
 size_t ConnectionId::HashCode() const {

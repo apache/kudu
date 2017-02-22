@@ -14,34 +14,21 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#pragma once
+
+#include "kudu/rpc/remote_user.h"
 
 #include <string>
+
+#include "kudu/gutil/strings/substitute.h"
+
+using std::string;
 
 namespace kudu {
 namespace rpc {
 
-// Client-side user credentials. Currently this is more-or-less a simple wrapper
-// around a username string. However, we anticipate moving more credentials such as
-// tokens into a per-Proxy structure rather than Messenger-wide, and this will
-// be the place to store them.
-class UserCredentials {
- public:
-  // Real user.
-  bool has_real_user() const;
-  void set_real_user(const std::string& real_user);
-  const std::string& real_user() const { return real_user_; }
-
-  // Returns a string representation of the object.
-  std::string ToString() const;
-
-  std::size_t HashCode() const;
-  bool Equals(const UserCredentials& other) const;
-
- private:
-  // Remember to update HashCode() and Equals() when new fields are added.
-  std::string real_user_;
-};
+string RemoteUser::ToString() const {
+  return strings::Substitute("{username='$0'}", username_);
+}
 
 } // namespace rpc
 } // namespace kudu

@@ -53,6 +53,7 @@ set(KRPC_SRCS
     proxy.cc
     reactor.cc
     remote_method.cc
+    remote_user.cc
     request_tracker.cc
     result_tracker.cc
     rpc.cc

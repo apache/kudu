@@ -435,10 +435,6 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 
-void Connection::set_user_credentials(const UserCredentials &user_credentials) {
-  user_credentials_.CopyFrom(user_credentials);
-}
-
 RpczStore* Connection::rpcz_store() {
   return reactor_thread_->reactor()->messenger()->rpcz_store();
 }
@@ -670,10 +666,7 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
   resp->set_remote_ip(remote_.ToString());
   if (negotiation_complete_) {
     resp->set_state(RpcConnectionPB::OPEN);
-    resp->set_remote_user_credentials(user_credentials_.ToString());
   } else {
-    // It's racy to dump credentials while negotiating, since the Connection
-    // object is owned by the negotiation thread at that point.
     resp->set_state(RpcConnectionPB::NEGOTIATING);
   }
 
@@ -685,6 +678,11 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
       }
     }
   } else if (direction_ == SERVER) {
+    if (negotiation_complete_) {
+      // It's racy to dump credentials while negotiating, since the Connection
+      // object is owned by the negotiation thread at that point.
+      resp->set_remote_user_credentials(remote_user_.ToString());
+    }
     for (const inbound_call_map_t::value_type& entry : calls_being_handled_) {
       InboundCall* c = entry.second;
       c->DumpPB(req, resp->add_calls_in_flight());

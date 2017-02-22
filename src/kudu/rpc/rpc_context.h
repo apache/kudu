@@ -38,10 +38,9 @@ class Trace;
 namespace rpc {
 
 class InboundCall;
+class RemoteUser;
 class ResultTracker;
 class RpcSidecar;
-class UserCredentials;
-
 
 #define PANIC_RPC(rpc_context, message) \
   do { \
@@ -156,8 +155,8 @@ class RpcContext {
   // by the RPC response.
   Status AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx);
 
-  // Return the credentials of the remote user who made this call.
-  const UserCredentials& user_credentials() const;
+  // Return the identity of remote user who made this call.
+  const RemoteUser& remote_user() const;
 
   // Return the remote IP address and port which sent the current RPC call.
   const Sockaddr& remote_address() const;

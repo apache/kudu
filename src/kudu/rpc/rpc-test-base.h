@@ -227,8 +227,8 @@ class CalculatorService : public CalculatorServiceIf {
   void WhoAmI(const WhoAmIRequestPB* /*req*/,
               WhoAmIResponsePB* resp,
               RpcContext* context) override {
-    const UserCredentials& creds = context->user_credentials();
-    resp->mutable_credentials()->set_real_user(creds.real_user());
+    const RemoteUser& user = context->remote_user();
+    resp->mutable_credentials()->set_real_user(user.username());
     resp->set_address(context->remote_address().ToString());
     context->RespondSuccess();
   }
@@ -287,7 +287,7 @@ class CalculatorService : public CalculatorServiceIf {
   bool AuthorizeDisallowAlice(const google::protobuf::Message* /*req*/,
                               google::protobuf::Message* /*resp*/,
                               RpcContext* context) override {
-    if (context->user_credentials().real_user() == "alice") {
+    if (context->remote_user().username() == "alice") {
       context->RespondFailure(Status::NotAuthorized("alice is not allowed to call this method"));
       return false;
     }
@@ -297,7 +297,7 @@ class CalculatorService : public CalculatorServiceIf {
   bool AuthorizeDisallowBob(const google::protobuf::Message* /*req*/,
                             google::protobuf::Message* /*resp*/,
                             RpcContext* context) override {
-    if (context->user_credentials().real_user() == "bob") {
+    if (context->remote_user().username() == "bob") {
       context->RespondFailure(Status::NotAuthorized("bob is not allowed to call this method"));
       return false;
     }

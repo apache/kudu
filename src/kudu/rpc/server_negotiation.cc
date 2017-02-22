@@ -103,10 +103,6 @@ SaslMechanism::Type ServerNegotiation::negotiated_mechanism() const {
   return negotiated_mech_;
 }
 
-const string& ServerNegotiation::authenticated_user() const {
-  return authenticated_user_;
-}
-
 void ServerNegotiation::set_server_fqdn(const string& domain_name) {
   helper_.set_server_fqdn(domain_name);
 }
@@ -511,7 +507,7 @@ Status ServerNegotiation::AuthenticateBySasl(faststring* recv_buf) {
                         reinterpret_cast<const void**>(&username));
   // We expect that SASL_USERNAME will always get set.
   CHECK(rc == SASL_OK && username != nullptr) << "No username on authenticated connection";
-  authenticated_user_ = username;
+  authenticated_user_.set_username(username);
 
   return Status::OK();
 }
@@ -560,7 +556,7 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
     // get a signed authn token without a subject.
     return Status::RuntimeError("authentication token has no username");
   }
-  authenticated_user_ = token.authn().username();
+  authenticated_user_.set_username(token.authn().username());
 
   // Respond with success message.
   pb.Clear();
@@ -576,7 +572,7 @@ Status ServerNegotiation::AuthenticateByCertificate() {
   // Grab the subject from the client's cert.
   security::Cert cert;
   RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
-  authenticated_user_ = cert.SubjectName();
+  authenticated_user_.set_username(cert.SubjectName());
 
   return Status::OK();
 }

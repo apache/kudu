@@ -28,8 +28,8 @@
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/rpc/user_credentials.h"
 #include "kudu/server/webserver.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
@@ -388,7 +388,7 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     // we want.
     SignedTokenPB authn_token;
     Status s = server_->token_signer()->GenerateAuthnToken(
-        rpc->user_credentials().real_user(),
+        rpc->remote_user().username(),
         &authn_token);
     if (!s.ok()) {
       KLOG_EVERY_N_SECS(WARNING, 1)
