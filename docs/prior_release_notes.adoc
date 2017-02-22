@@ -63,10 +63,10 @@ for a list of known issues and limitations.
 
 * The Java client now features client-side request tracing in order to help troubleshoot timeouts.
   Error messages are now augmented with traces that show which servers were contacted before the
-  timeout occured instead of just the last error. The traces also contain RPCs that were
+  timeout occurred instead of just the last error. The traces also contain RPCs that were
   required to fulfill the client's request, such as contacting the master to discover a tablet's
   location. Note that the traces are not available for successful requests and are not
-  programatically queryable.
+  programmatically queryable.
 
 == Optimizations and improvements
 
@@ -817,7 +817,7 @@ real-world use.
 
 - The master now attempts to spread tablets more evenly across the cluster during
 table creation. This has no impact on existing tables, but will improve the speed
-at which under-replicated tabletsare re-replicated after a tablet server failure.
+at which under-replicated tablets are re-replicated after a tablet server failure.
 
 - All licensing documents have been modified to adhere to ASF guidelines.
 

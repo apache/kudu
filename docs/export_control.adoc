@@ -50,7 +50,7 @@ The following provides more details on the included cryptographic
 software:
 
 - This software uses OpenSSL to enable TLS-encrypted connections,
-  generate keys for assymetric cryptography, and generate and
+  generate keys for asymmetric cryptography, and generate and
   verify signatures using those keys.
 - This software uses Java SE Security libraries including the
   Java Secure Socket Extension (JSSE), Java Generic Security Service

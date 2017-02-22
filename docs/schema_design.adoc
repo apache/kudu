@@ -292,7 +292,7 @@ independently.
 [[partitioning-examples]]
 === Partitioning Examples
 
-To illustrate the factors and tradeoffs associated with designing a partitioning
+To illustrate the factors and trade-offs associated with designing a partitioning
 strategy for a table, we will walk through some different partitioning
 scenarios. Consider the following table schema for storing machine metrics data
 (using SQL syntax and date-formatted timestamps for clarity):
@@ -448,7 +448,7 @@ Number of Columns:: By default, Kudu will not permit the creation of tables with
 more than 300 columns. We recommend schema designs that use fewer columns for best
 performance.
 
-Size of Cells:: No individual cell may be larger than 64KB. The cells making up a
+Size of Cells:: No individual cell may be larger than 64KB. The cells making up
 a composite key are limited to a total of 16KB after the internal composite-key encoding
 done by Kudu. Inserting rows not conforming to these limitations will result in errors
 being returned to the client.

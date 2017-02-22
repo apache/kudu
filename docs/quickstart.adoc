@@ -55,7 +55,7 @@ $ curl -s https://raw.githubusercontent.com/cloudera/kudu-examples/master/demo-v
 This command downloads a shell script which clones the `kudu-examples` Git repository and
 then downloads a VM image of about 1.2GB size into the current working
 directory.footnote:[In addition, the script will create a host-only network between host
-and guest and setup an enty in the `/etc/hosts` file with the name `quickstart.cloudera`
+and guest and setup an entry in the `/etc/hosts` file with the name `quickstart.cloudera`
 and the guest's IP address.] You can examine the script after downloading it by removing
 the `| bash` component of the command above. Once the setup is complete, you can verify
 that everything works by connecting to the guest via SSH:
@@ -87,7 +87,7 @@ to consult the <<trouble, Troubleshooting>> section.
 To practice some typical operations with Kudu and Impala, we'll use the
 https://data.sfgov.org/Transportation/Raw-AVL-GPS-data/5fk7-ivit/data[San Francisco MTA
 GPS dataset]. This dataset contains raw location data transmitted periodically from
-sensors installed on the busses in the SF MTA's fleet.
+sensors installed on the buses in the SF MTA's fleet.
 
 1. Download the sample data and load it into HDFS
 +

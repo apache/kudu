@@ -48,7 +48,7 @@ three tablet servers is necessary.
 .Operating System Requirements
 Linux::
     - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (Trusty), Ubuntu 16.04 (Xenial), Debian 8 (Jessie), or SLES 12.
-    - A kernel and fileystem that support _hole punching_. Hole punching is the use of the
+    - A kernel and filesystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
       information.

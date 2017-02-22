@@ -223,7 +223,7 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
   will be unavailable.
 
 . Decide how many masters to use. The number of masters should be odd. Three or five node master
-  configurations are recommendeded; they can tolerate one or two failures respectively.
+  configurations are recommended; they can tolerate one or two failures respectively.
 
 . Perform the following preparatory steps for the existing master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
