@@ -58,7 +58,7 @@ void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
   // TODO(dralves) Change this to READ_AT_SNAPSHOT, fault tolerant scan and get rid
   // of the retry code below.
   ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-  ASSERT_OK(scanner.SetTimeoutMillis(5000));
+  ASSERT_OK(scanner.SetTimeoutMillis(15000));
   ScanToStrings(&scanner, row_strings);
 }
 
