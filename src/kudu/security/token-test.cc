@@ -162,11 +162,13 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
     ASSERT_EQ(nullptr, key.get());
   }
 
-  {
-    // Special configuration for TokenSigner: key rotation interval
-    // just one second. It should not need next key right away, but should need
-    // next key after 1 second.
-    TokenSigner signer(10, 1);
+  if (AllowSlowTests()) {
+    // Special configuration for TokenSigner: short interval for key rotation.
+    // It should not need next key right away, but should need next key after
+    // the rotation interval.
+    static const int64_t kKeyRotationIntervalSeconds = 8;
+    const MonoTime t0 = MonoTime::Now();
+    TokenSigner signer(10, kKeyRotationIntervalSeconds);
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
@@ -177,9 +179,9 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_EQ(nullptr, key.get());
 
-    SleepFor(MonoDelta::FromMilliseconds(1001));
+    SleepFor(MonoDelta::FromSeconds(kKeyRotationIntervalSeconds));
 
-    // Should need next key after 1 second.
+    // Should need next key after the rotation interval.
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_OK(signer.AddKey(std::move(key)));
