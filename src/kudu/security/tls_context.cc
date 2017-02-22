@@ -30,10 +30,13 @@
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/init.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/user.h"
 
 using strings::Substitute;
 using std::string;
@@ -233,7 +236,34 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   return Status::OK();
 }
 
-Status TlsContext::GenerateSelfSignedCertAndKey(const std::string& server_uuid) {
+namespace {
+Status SetCertAttributes(CertRequestGenerator::Config* config) {
+  RETURN_NOT_OK_PREPEND(GetFQDN(&config->cn), "could not determine FQDN for CSR");
+
+  // If the server has logged in from a keytab, then we have a 'real' identity,
+  // and our desired CN should match the local username mapped from the Kerberos
+  // principal name. Otherwise, we'll make up a common name based on the hostname.
+  boost::optional<string> principal = GetLoggedInPrincipalFromKeytab();
+  if (!principal) {
+    string uid;
+    RETURN_NOT_OK_PREPEND(GetLoggedInUser(&uid),
+                          "couldn't get local username");
+    config->user_id = uid;
+    return Status::OK();
+  }
+  string uid;
+  RETURN_NOT_OK_PREPEND(security::MapPrincipalToLocalName(*principal, &uid),
+                        "could not get local username for krb5 principal");
+  config->user_id = uid;
+  config->kerberos_principal = *principal;
+  return Status::OK();
+}
+} // anonymous namespace
+
+Status TlsContext::GenerateSelfSignedCertAndKey() {
+  CertRequestGenerator::Config config;
+  RETURN_NOT_OK(SetCertAttributes(&config));
+
   // Step 1: generate the private key to be self signed.
   PrivateKey key;
   RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_ipki_server_key_size,
@@ -242,8 +272,6 @@ Status TlsContext::GenerateSelfSignedCertAndKey(const std::string& server_uuid) 
 
   // Step 2: generate a CSR so that the self-signed cert can eventually be
   // replaced with a CA-signed cert.
-  const CertRequestGenerator::Config config = { server_uuid };
-
   CertRequestGenerator gen(config);
   CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(gen.Init(), "could not initialize CSR generator");

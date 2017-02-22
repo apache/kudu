@@ -17,6 +17,7 @@
 
 #include <string>
 
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
@@ -77,6 +78,25 @@ TEST_F(MiniKdcTest, TestBasicOperation) {
   FLAGS_keytab_file = kt_path;
   FLAGS_principal = kSPN;
   ASSERT_OK(security::InitKerberosForServer());
+  ASSERT_EQ("kudu/foo.example.com@KRBTEST.COM", *security::GetLoggedInPrincipalFromKeytab());
+
+  // Test principal canonicalization.
+  string princ = "foo";
+  ASSERT_OK(security::CanonicalizeKrb5Principal(&princ));
+  ASSERT_EQ("foo@KRBTEST.COM", princ);
+
+  // Test auth-to-local mapping for a user from the local realm as well as a remote realm.
+  {
+    string local_user;
+    ASSERT_OK(security::MapPrincipalToLocalName("foo@KRBTEST.COM", &local_user));
+    ASSERT_EQ("foo", local_user);
+
+    ASSERT_OK(security::MapPrincipalToLocalName("foo/host@KRBTEST.COM", &local_user));
+    ASSERT_EQ("foo", local_user);
+
+    ASSERT_OK(security::MapPrincipalToLocalName("foo@OTHERREALM.COM", &local_user));
+    ASSERT_EQ("other-foo", local_user);
+  }
 }
 
 // Regression test to ensure that dropping a stopped MiniKdc doesn't panic.

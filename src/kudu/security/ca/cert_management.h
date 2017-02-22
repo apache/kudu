@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional.hpp>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/security/crypto.h"
@@ -52,10 +54,14 @@ namespace ca {
 // Base utility class for issuing X509 CSRs.
 class CertRequestGeneratorBase {
  public:
-  // Properties for the generated X509 CSR.  Using server UUID for the common
-  // name field.
+  // Properties for the generated X509 CSR.
   struct Config {
-    std::string cn;     // subject field: CN
+    // Common Name (CN)
+    std::string cn;
+    // userId (UID)
+    boost::optional<std::string> user_id;
+    // Our custom extension which stores the full Kerberos principal for IPKI certs.
+    boost::optional<std::string> kerberos_principal;
   };
 
   explicit CertRequestGeneratorBase(Config config);

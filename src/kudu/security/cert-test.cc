@@ -17,6 +17,9 @@
 
 #include <utility>
 
+#include <boost/optional.hpp>
+#include <boost/optional/optional_io.hpp>
+
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -100,6 +103,11 @@ TEST_F(CertTest, CertMismatchesRsaPrivateKey) {
     EXPECT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "certificate does not match private key");
   }
+}
+
+TEST_F(CertTest, TestGetKuduSpecificFieldsWhenMissing) {
+  EXPECT_EQ(boost::none, ca_cert_.UserId());
+  EXPECT_EQ(boost::none, ca_cert_.KuduKerberosPrincipal());
 }
 
 } // namespace security

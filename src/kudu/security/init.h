@@ -16,11 +16,14 @@
 // under the License.
 #pragma once
 
-#include "kudu/util/status.h"
+#include <string>
+
+#include <boost/optional/optional_fwd.hpp>
 
 namespace kudu {
 
 class RWMutex;
+class Status;
 
 namespace security {
 
@@ -32,6 +35,29 @@ Status InitKerberosForServer();
 // This lock is acquired in write mode while the ticket is being renewed, and
 // acquired in read mode before using the SASL library which might require a ticket.
 RWMutex* KerberosReinitLock();
+
+// Return the full principal (user/host@REALM) that the server has used to
+// log in from the keytab.
+//
+// If the server has not logged in from a keytab, returns boost::none.
+boost::optional<std::string> GetLoggedInPrincipalFromKeytab();
+
+// Canonicalize the given principal name by adding '@DEFAULT_REALM' in the case that
+// the principal has no realm.
+//
+// TODO(todd): move to kerberos_util.h in the later patch in this series (the file doesn't
+// exist yet, and trying to avoid rebase pain).
+Status CanonicalizeKrb5Principal(std::string* principal);
+
+// Map the given Kerberos principal 'principal' to a short username (i.e. with no realm or
+// host component).
+//
+// This respects the "auth-to-local" mappings from the system krb5.conf. However, if no such
+// mapping can be found, we fall back to simply taking the first component of the principal.
+//
+// TODO(todd): move to kerberos_util.h in the later patch in this series (the file doesn't
+// exist yet, and trying to avoid rebase pain).
+Status MapPrincipalToLocalName(const std::string& principal, std::string* local_name);
 
 } // namespace security
 } // namespace kudu

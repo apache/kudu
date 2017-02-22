@@ -118,9 +118,7 @@ class MessengerBuilder {
   MessengerBuilder &set_metric_entity(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Configure the messenger to enable TLS encryption on inbound connections.
-  // The 'server_uuid' will be used as the subject name for the server's
-  // certificate.
-  MessengerBuilder& enable_inbound_tls(std::string server_uuid);
+  MessengerBuilder& enable_inbound_tls();
 
   Status Build(std::shared_ptr<Messenger> *msgr);
 
@@ -132,7 +130,7 @@ class MessengerBuilder {
   int max_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   scoped_refptr<MetricEntity> metric_entity_;
-  boost::optional<string> enable_inbound_tls_server_uuid_;
+  bool enable_inbound_tls_;
 };
 
 // A Messenger is a container for the reactor threads which run event loops

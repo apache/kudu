@@ -172,7 +172,7 @@ TEST_F(TestTlsHandshake, TestTlsContextCertTransition) {
   ASSERT_FALSE(server_tls_.has_signed_cert());
   ASSERT_EQ(boost::none, server_tls_.GetCsrIfNecessary());
 
-  ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey("test-uuid"));
+  ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey());
   ASSERT_TRUE(server_tls_.has_cert());
   ASSERT_FALSE(server_tls_.has_signed_cert());
   ASSERT_NE(boost::none, server_tls_.GetCsrIfNecessary());
@@ -205,7 +205,7 @@ TEST_F(TestTlsHandshake, TestTlsContextCertTransition) {
   {
     TlsContext bogus_tls;
     ASSERT_OK(bogus_tls.Init());
-    ASSERT_OK(bogus_tls.GenerateSelfSignedCertAndKey("test-uuid"));
+    ASSERT_OK(bogus_tls.GenerateSelfSignedCertAndKey());
     ASSERT_OK(CertSigner(&ca_cert, &ca_key).Sign(*bogus_tls.GetCsrIfNecessary(), &bogus_cert));
   }
   ASSERT_STR_MATCHES(server_tls_.AdoptSignedCert(bogus_cert).ToString(),

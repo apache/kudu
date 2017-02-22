@@ -37,6 +37,7 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/init.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -89,6 +90,9 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
   } while (false)
 
   CERT_SET_SUBJ_FIELD(config_.cn, "CN", "common name");
+  if (config_.user_id) {
+    CERT_SET_SUBJ_FIELD(*config_.user_id, "UID", "userId");
+  }
 #undef CERT_SET_SUBJ_FIELD
 
   // Set necessary extensions into the request.
@@ -154,6 +158,12 @@ Status CertRequestGenerator::Init() {
   // (i.e. they cannot be used to sign/issue certificates).
   RETURN_NOT_OK(PushExtension(extensions_, NID_basic_constraints,
                               "critical,CA:FALSE"));
+
+  if (config_.kerberos_principal) {
+    int nid = GetKuduKerberosPrincipalOidNid();
+    RETURN_NOT_OK(PushExtension(extensions_, nid,
+                                Substitute("ASN1:UTF8:$0", *config_.kerberos_principal)));
+  }
 
   is_initialized_ = true;
 

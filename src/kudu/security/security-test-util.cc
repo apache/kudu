@@ -60,14 +60,14 @@ Status ConfigureTlsContext(PkiConfig config,
   switch (config) {
     case PkiConfig::NONE: break;
     case PkiConfig::SELF_SIGNED:
-      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey());
       break;
     case PkiConfig::TRUSTED:
       RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
       break;
     case PkiConfig::SIGNED: {
       RETURN_NOT_OK(tls_context->AddTrustedCertificate(ca_cert));
-      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey("test-uuid"));
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey());
       Cert cert;
       RETURN_NOT_OK(CertSigner(&ca_cert, &ca_key).Sign(*tls_context->GetCsrIfNecessary(), &cert));
       RETURN_NOT_OK(tls_context->AdoptSignedCert(cert));

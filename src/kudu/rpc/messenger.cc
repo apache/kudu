@@ -118,7 +118,9 @@ MessengerBuilder::MessengerBuilder(std::string name)
       num_reactors_(4),
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
-      coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {}
+      coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
+      enable_inbound_tls_(false) {
+}
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
   connection_keepalive_time_ = keepalive;
@@ -151,8 +153,8 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
   return *this;
 }
 
-MessengerBuilder& MessengerBuilder::enable_inbound_tls(std::string server_uuid) {
-  enable_inbound_tls_server_uuid_ = server_uuid;
+MessengerBuilder& MessengerBuilder::enable_inbound_tls() {
+  enable_inbound_tls_ = true;
   return *this;
 }
 
@@ -194,7 +196,7 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   }
 
   RETURN_NOT_OK(new_msgr->Init());
-  if (new_msgr->encryption_ != RpcEncryption::DISABLED && enable_inbound_tls_server_uuid_) {
+  if (new_msgr->encryption_ != RpcEncryption::DISABLED && enable_inbound_tls_) {
     auto* tls_context = new_msgr->mutable_tls_context();
 
     if (!FLAGS_rpc_certificate_file.empty() &&
@@ -212,7 +214,7 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
       return Status::InvalidArgument("--rpc_certificate_file, --rpc_private_key_file, and "
                                      "--rpc_ca_certificate_file flags must be set as a group");
     } else {
-      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey(*enable_inbound_tls_server_uuid_));
+      RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey());
     }
   }
 

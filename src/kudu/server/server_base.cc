@@ -195,7 +195,7 @@ Status ServerBase::Init() {
          .set_max_negotiation_threads(FLAGS_max_negotiation_threads)
          .set_metric_entity(metric_entity())
          // TODO(PKI): make built-in PKI enabled/disabled based on a flag.
-         .enable_inbound_tls(fs_manager_->uuid());
+         .enable_inbound_tls();
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));

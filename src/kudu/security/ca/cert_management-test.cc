@@ -149,7 +149,10 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
 
 // Generate X509 CSR and issues corresponding certificate.
 TEST_F(CertManagementTest, SignCert) {
-  const CertRequestGenerator::Config gen_config = PrepareConfig("test-cn");
+  CertRequestGenerator::Config gen_config;
+  gen_config.cn = "test-cn";
+  gen_config.user_id = "test-uid";
+  gen_config.kerberos_principal = "kudu/foo.bar.com@bar.com";
   PrivateKey key;
   const auto& csr = PrepareTestCSR(gen_config, &key);
   Cert cert;
@@ -158,7 +161,9 @@ TEST_F(CertManagementTest, SignCert) {
 
   EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
             cert.IssuerName());
-  EXPECT_EQ("CN = test-cn", cert.SubjectName());
+  EXPECT_EQ("CN = test-cn, UID = test-uid", cert.SubjectName());
+  EXPECT_EQ(gen_config.user_id, *cert.UserId());
+  EXPECT_EQ(gen_config.kerberos_principal, *cert.KuduKerberosPrincipal());
 }
 
 // Generate X509 CA CSR and sign the result certificate.

@@ -19,6 +19,8 @@
 
 #include <string>
 
+#include <boost/optional/optional_fwd.hpp>
+
 #include "kudu/security/openssl_util.h"
 
 namespace kudu {
@@ -33,6 +35,10 @@ class PublicKey;
 // Convert an X509_NAME object to a human-readable string.
 std::string X509NameToString(X509_NAME* name);
 
+// Return the OpenSSL NID for the custom X509 extension where we store
+// our Kerberos principal in IPKI certs.
+int GetKuduKerberosPrincipalOidNid();
+
 class Cert : public RawDataWrapper<X509> {
  public:
   Status FromString(const std::string& data, DataFormat format);
@@ -41,6 +47,12 @@ class Cert : public RawDataWrapper<X509> {
 
   std::string SubjectName() const;
   std::string IssuerName() const;
+
+  // Return the 'userId' extension of this cert, if set.
+  boost::optional<std::string> UserId() const;
+
+  // Return the Kerberos principal encoded in this certificate, if set.
+  boost::optional<std::string> KuduKerberosPrincipal() const;
 
   // Check whether the specified private key matches the certificate.
   // Return Status::OK() if key match the certificate.

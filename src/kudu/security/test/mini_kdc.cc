@@ -240,6 +240,11 @@ Status MiniKdc::CreateKrb5Conf() const {
 [realms]
     $1 = {
         kdc = 127.0.0.1:$0
+        # This super-arcane syntax can be found documented in various Hadoop
+        # vendors' security guides and very briefly in the MIT krb5 docs.
+        # Basically, this one says to map anyone coming in as foo@OTHERREALM.COM
+        # and map them to a local user 'other-foo'
+        auth_to_local = RULE:[1:other-$$1@$$0](.*@OTHERREALM.COM$$)s/@.*//
     }
   )";
   string file_contents = strings::Substitute(kFileTemplate, options_.port, options_.realm,

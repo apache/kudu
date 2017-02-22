@@ -366,7 +366,7 @@ class RpcTestBase : public KuduTest {
     MessengerBuilder bld(name);
 
     if (enable_ssl) {
-      bld.enable_inbound_tls(name);
+      bld.enable_inbound_tls();
     }
 
     bld.set_num_reactors(n_reactors);

@@ -114,7 +114,7 @@ class TlsContext {
   // CA-signed cert for the generated private key, and 'AdoptSignedCert' can be
   // used to transition to using the CA-signed cert with subsequent TLS
   // connections.
-  Status GenerateSelfSignedCertAndKey(const std::string& server_uuid);
+  Status GenerateSelfSignedCertAndKey();
 
   // Returns a new certificate signing request (CSR) in DER format, if this
   // context's cert is self-signed. If the cert is already signed, returns
