@@ -25,7 +25,7 @@ class RWMutex;
 namespace security {
 
 // Initializes Kerberos for a server. In particular, this processes
-// the '--keytab' command line flag.
+// the '--keytab_file' command line flag.
 Status InitKerberosForServer();
 
 // Returns the process lock 'kerberos_reinit_lock'

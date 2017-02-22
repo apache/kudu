@@ -27,8 +27,8 @@
 
 using std::string;
 
-DECLARE_string(keytab);
-DECLARE_string(kerberos_principal);
+DECLARE_string(keytab_file);
+DECLARE_string(principal);
 
 namespace kudu {
 
@@ -74,8 +74,8 @@ TEST_F(MiniKdcTest, TestBasicOperation) {
 
   // Test programmatic keytab login.
   kdc.SetKrb5Environment();
-  FLAGS_keytab = kt_path;
-  FLAGS_kerberos_principal = kSPN;
+  FLAGS_keytab_file = kt_path;
+  FLAGS_principal = kSPN;
   ASSERT_OK(security::InitKerberosForServer());
 }
 

@@ -30,18 +30,21 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
 
-DEFINE_string(keytab, "", "Path to the Kerberos Keytab for this server");
-TAG_FLAG(keytab, experimental);
+DEFINE_string(keytab_file, "",
+              "Path to the Kerberos Keytab file for this server. Specifying a "
+              "keytab file will cause the server to kinit, and enable Kerberos "
+              "to be used to authenticate RPC connections.");
+TAG_FLAG(keytab_file, stable);
 
-DEFINE_string(kerberos_principal, "kudu/_HOST",
+DEFINE_string(principal, "kudu/_HOST",
               "Kerberos principal that this daemon will log in as. The special token "
               "_HOST will be replaced with the FQDN of the local host.");
-TAG_FLAG(kerberos_principal, experimental);
+TAG_FLAG(principal, experimental);
 // This is currently tagged as unsafe because there is no way for users to configure
 // clients to expect a non-default principal. As such, configuring a server to login
 // as a different one would end up with a cluster that can't be connected to.
 // See KUDU-1884.
-TAG_FLAG(kerberos_principal, unsafe);
+TAG_FLAG(principal, unsafe);
 
 using std::mt19937;
 using std::random_device;
@@ -307,7 +310,7 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
 }
 
 Status GetLoginPrincipal(string* principal) {
-  string p = FLAGS_kerberos_principal;
+  string p = FLAGS_principal;
   string hostname;
   // Try to fill in either the FQDN or hostname.
   if (!GetFQDN(&hostname).ok()) {
@@ -325,19 +328,19 @@ RWMutex* KerberosReinitLock() {
 }
 
 Status InitKerberosForServer() {
-  if (FLAGS_keytab.empty()) return Status::OK();
+  if (FLAGS_keytab_file.empty()) return Status::OK();
 
   // Have the daemons use an in-memory ticket cache, so they don't accidentally
   // pick up credentials from test cases or any other daemon.
   // TODO(todd): extract these krb5 env vars into some constants since they're
   // typo-prone.
   setenv("KRB5CCNAME", "MEMORY:kudu", 1);
-  setenv("KRB5_KTNAME", FLAGS_keytab.c_str(), 1);
+  setenv("KRB5_KTNAME", FLAGS_keytab_file.c_str(), 1);
 
   g_kinit_ctx = new KinitContext();
   string principal;
   RETURN_NOT_OK(GetLoginPrincipal(&principal));
-  RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(FLAGS_keytab, principal), "unable to kinit");
+  RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(FLAGS_keytab_file, principal), "unable to kinit");
 
   g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
   scoped_refptr<Thread> renew_thread;

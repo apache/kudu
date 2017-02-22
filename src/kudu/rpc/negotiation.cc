@@ -53,7 +53,7 @@ DEFINE_int32(rpc_negotiation_inject_delay_ms, 0,
              "the RPC negotiation process on the server side.");
 TAG_FLAG(rpc_negotiation_inject_delay_ms, unsafe);
 
-DECLARE_string(keytab);
+DECLARE_string(keytab_file);
 
 DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "Whether to encrypt data transfer on RPC connections that stay within "
@@ -210,7 +210,7 @@ static Status DoServerNegotiation(Connection* conn, const MonoTime& deadline) {
 
   // TODO(PKI): this should be enabling PLAIN if authn < required, and GSSAPI if
   // there is a keytab and authn > disabled. Same with client version.
-  if (FLAGS_keytab.empty()) {
+  if (FLAGS_keytab_file.empty()) {
     RETURN_NOT_OK(server_negotiation.EnablePlain());
   } else {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());

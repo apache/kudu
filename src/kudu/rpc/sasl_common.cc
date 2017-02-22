@@ -42,7 +42,7 @@
 
 using std::set;
 
-DECLARE_string(keytab);
+DECLARE_string(keytab_file);
 
 namespace kudu {
 namespace rpc {
@@ -318,7 +318,7 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
   g_auth_failure_capture = &err;
 
   // Take the 'kerberos_reinit_lock' here to avoid a possible race with ticket renewal.
-  bool kerberos_supported = !FLAGS_keytab.empty();
+  bool kerberos_supported = !FLAGS_keytab_file.empty();
   if (kerberos_supported) kudu::security::KerberosReinitLock()->ReadLock();
   int rc = call();
   if (kerberos_supported) kudu::security::KerberosReinitLock()->ReadUnlock();

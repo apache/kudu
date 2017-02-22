@@ -64,14 +64,15 @@ DEFINE_string(webserver_private_key_password_cmd, "", "A Unix command whose outp
     "password-protected, this command will not be invoked. The output of the command "
     "will be truncated to 1024 bytes, and then all trailing whitespace will be trimmed "
     "before it is used to decrypt the private key");
-
+TAG_FLAG(webserver_certificate_file, stable);
+TAG_FLAG(webserver_private_key_file, stable);
+TAG_FLAG(webserver_private_key_password_cmd, stable);
 
 DEFINE_string(webserver_authentication_domain, "",
     "Domain used for debug webserver authentication");
 DEFINE_string(webserver_password_file, "",
     "(Optional) Location of .htpasswd file containing user names and hashed passwords for"
     " debug webserver authentication");
-
 
 DEFINE_int32(webserver_num_worker_threads, 50,
              "Maximum number of threads to start for handling web server requests");

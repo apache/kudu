@@ -103,7 +103,7 @@ DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "will disconnect the client.");
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
-DECLARE_string(keytab);
+DECLARE_string(keytab_file);
 
 namespace kudu {
 namespace rpc {
@@ -268,7 +268,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   // Before listening, if we expect to require Kerberos, we want to verify
   // that everything is set up correctly. This way we'll generate errors on
   // startup rather than later on when we first receive a client connection.
-  if (!FLAGS_keytab.empty()) {
+  if (!FLAGS_keytab_file.empty()) {
     RETURN_NOT_OK_PREPEND(ServerNegotiation::PreflightCheckGSSAPI(),
                           "GSSAPI/Kerberos not properly configured");
   }

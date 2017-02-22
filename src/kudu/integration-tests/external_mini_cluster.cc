@@ -604,8 +604,8 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
   extra_env_ = kdc->GetEnvVars();
-  extra_flags_.push_back(Substitute("--keytab=$0", ktpath));
-  extra_flags_.push_back(Substitute("--kerberos_principal=$0", spn));
+  extra_flags_.push_back(Substitute("--keytab_file=$0", ktpath));
+  extra_flags_.push_back(Substitute("--principal=$0", spn));
   extra_flags_.push_back("--rpc_authentication=required");
   return Status::OK();
 }
