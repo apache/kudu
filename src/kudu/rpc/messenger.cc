@@ -111,6 +111,73 @@ namespace rpc {
 class Messenger;
 class ServerBuilder;
 
+template <typename T>
+static Status ParseTriState(const char* flag_name, const string& flag_value, T* tri_state) {
+  if (boost::iequals(flag_value, "required")) {
+    *tri_state = T::REQUIRED;
+  } else if (boost::iequals(flag_value, "optional")) {
+    *tri_state = T::OPTIONAL;
+  } else if (boost::iequals(flag_value, "disabled")) {
+    *tri_state = T::DISABLED;
+  } else {
+    return Status::InvalidArgument(Substitute(
+          "$0 flag must be one of 'required', 'optional', or 'disabled'",
+          flag_name));
+  }
+  return Status::OK();
+}
+
+static bool ValidateRpcAuthentication(const char* /*flag_name*/, const string& /*flag_value*/) {
+  RpcAuthentication authentication;
+  Status s = ParseTriState("--rpc_authentication", FLAGS_rpc_authentication, &authentication);
+  if (!s.ok()) {
+    LOG(ERROR) << s.message().ToString();
+    return false;
+  }
+
+  RpcEncryption encryption;
+  s = ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption);
+  if (!s.ok()) {
+    // This will be caught by the rpc_encryption validator.
+    return true;
+  }
+
+  if (encryption == RpcEncryption::DISABLED && authentication != RpcAuthentication::DISABLED) {
+    LOG(ERROR) << "RPC authentication (--rpc_authentication) must be disabled "
+                  "if RPC encryption (--rpc_encryption) is disabled";
+    return false;
+  }
+
+  return true;
+}
+DEFINE_validator(rpc_authentication, &ValidateRpcAuthentication);
+
+static bool ValidateRpcEncryption(const char* /*flag_name*/, const string& /*flag_value*/) {
+  RpcEncryption encryption;
+  Status s = ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption);
+  if (!s.ok()) {
+    LOG(ERROR) << s.message().ToString();
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rpc_encryption, &ValidateRpcEncryption);
+
+static bool ValidatePkiFlags(const char* /*flag_name*/, const string& /*flag_value*/) {
+  bool has_cert = !FLAGS_rpc_certificate_file.empty();
+  bool has_key = !FLAGS_rpc_private_key_file.empty();
+  bool has_ca = !FLAGS_rpc_ca_certificate_file.empty();
+
+  if (has_cert != has_key || has_cert != has_ca) {
+    LOG(ERROR) << "--rpc_certificate_file, --rpc_private_key_file, and "
+                  "--rpc_ca_certificate_file flags must be set as a group";
+    return false;
+  }
+
+  return true;
+}
+DEFINE_validator(rpc_certificate_file, &ValidatePkiFlags);
+
 MessengerBuilder::MessengerBuilder(std::string name)
     : name_(std::move(name)),
       connection_keepalive_time_(
@@ -167,52 +234,26 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
       new_msgr->AllExternalReferencesDropped();
   });
 
-  if (boost::iequals(FLAGS_rpc_authentication, "required")) {
-    new_msgr->authentication_ = RpcAuthentication::REQUIRED;
-  } else if (boost::iequals(FLAGS_rpc_authentication, "optional")) {
-    new_msgr->authentication_ = RpcAuthentication::OPTIONAL;
-  } else if (boost::iequals(FLAGS_rpc_authentication, "disabled")) {
-    new_msgr->authentication_ = RpcAuthentication::DISABLED;
-  } else {
-    return Status::InvalidArgument(
-        "--rpc_authentication flag must be one of 'required', 'optional', or 'disabled'");
-  }
+  RETURN_NOT_OK(ParseTriState("--rpc_authentication",
+                              FLAGS_rpc_authentication,
+                              &new_msgr->authentication_));
 
-  if (boost::iequals(FLAGS_rpc_encryption, "required")) {
-    new_msgr->encryption_ = RpcEncryption::REQUIRED;
-  } else if (boost::iequals(FLAGS_rpc_encryption, "optional")) {
-    new_msgr->encryption_ = RpcEncryption::OPTIONAL;
-  } else if (boost::iequals(FLAGS_rpc_encryption, "disabled")) {
-    new_msgr->encryption_ = RpcEncryption::DISABLED;
-  } else {
-    return Status::InvalidArgument(
-        "--rpc_encryption flag must be one of 'required', 'optional', or 'disabled'");
-  }
-
-  if (new_msgr->encryption_ == RpcEncryption::DISABLED &&
-      new_msgr->authentication_ != RpcAuthentication::DISABLED) {
-    return Status::InvalidArgument("RPC authentication (--rpc_authentication) must be disabled "
-                                   "if RPC encryption (--rpc_encryption) is disabled");
-  }
+  RETURN_NOT_OK(ParseTriState("--rpc_encryption",
+                              FLAGS_rpc_encryption,
+                              &new_msgr->encryption_));
 
   RETURN_NOT_OK(new_msgr->Init());
   if (new_msgr->encryption_ != RpcEncryption::DISABLED && enable_inbound_tls_) {
     auto* tls_context = new_msgr->mutable_tls_context();
 
-    if (!FLAGS_rpc_certificate_file.empty() &&
-        !FLAGS_rpc_private_key_file.empty() &&
-        !FLAGS_rpc_ca_certificate_file.empty()) {
-
+    if (!FLAGS_rpc_certificate_file.empty()) {
+      CHECK(!FLAGS_rpc_private_key_file.empty());
+      CHECK(!FLAGS_rpc_ca_certificate_file.empty());
       // TODO(PKI): should we try and enforce that the server UUID and/or
       // hostname is in the subject or alt names of the cert?
       RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ca_certificate_file));
       RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_certificate_file,
                                                        FLAGS_rpc_private_key_file));
-    } else if (!FLAGS_rpc_certificate_file.empty() ||
-               !FLAGS_rpc_private_key_file.empty() ||
-               !FLAGS_rpc_ca_certificate_file.empty()) {
-      return Status::InvalidArgument("--rpc_certificate_file, --rpc_private_key_file, and "
-                                     "--rpc_ca_certificate_file flags must be set as a group");
     } else {
       RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey());
     }

@@ -84,6 +84,26 @@ TAG_FLAG(webserver_port, stable);
 
 namespace kudu {
 
+static bool ValidateTlsFlags(const char* /*flag_name*/, const string& /*flag_value*/) {
+  bool has_cert = !FLAGS_webserver_certificate_file.empty();
+  bool has_key = !FLAGS_webserver_private_key_file.empty();
+  bool has_passwd = !FLAGS_webserver_private_key_password_cmd.empty();
+
+  if (has_key != has_cert) {
+    LOG(ERROR) << "--webserver_certificate_file and --webserver_private_key_file "
+                  "must be set as a group";
+    return false;
+  }
+  if (has_passwd && !has_key) {
+    LOG(ERROR) << "--webserver_private_key_password_cmd may not be set without "
+                  "--webserver_private_key_file";
+    return false;
+  }
+
+  return true;
+}
+DEFINE_validator(webserver_private_key_file, &ValidateTlsFlags);
+
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
 static string GetDefaultDocumentRoot() {
   char* kudu_home = getenv("KUDU_HOME");
