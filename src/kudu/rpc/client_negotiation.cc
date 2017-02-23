@@ -111,6 +111,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
       tls_context_(tls_context),
       tls_negotiated_(false),
       authn_token_(authn_token),
+      psecret_(nullptr, std::free),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
       deadline_(MonoTime::Max()) {

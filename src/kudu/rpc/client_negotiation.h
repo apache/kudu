@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <memory>
 #include <set>
 #include <string>
@@ -25,7 +26,6 @@
 #include <boost/optional.hpp>
 #include <sasl/sasl.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/rpc/negotiation.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
@@ -201,7 +201,7 @@ class ClientNegotiation {
 
   // SASL state.
   std::vector<sasl_callback_t> callbacks_;
-  gscoped_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
+  std::unique_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
 
   // TLS state.
@@ -215,7 +215,7 @@ class ClientNegotiation {
   // Authentication state.
   std::string plain_auth_user_;
   std::string plain_pass_;
-  gscoped_ptr<sasl_secret_t, FreeDeleter> psecret_;
+  std::unique_ptr<sasl_secret_t, decltype(std::free)*> psecret_;
 
   // The set of features advertised by the client. Filled in when we send
   // the first message. This is not necessarily constant since some features
