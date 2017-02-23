@@ -120,6 +120,14 @@ TEST_F(TokenTest, TestInit) {
   ASSERT_TRUE(token.has_signature());
 }
 
+TEST_F(TokenTest, TestGenerateAuthToken) {
+  TokenSigner signer(10, 10);
+  SignedTokenPB signed_token_pb;
+  const Status& s = signer.GenerateAuthnToken("", &signed_token_pb);
+  EXPECT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "no username provided for authn token");
+}
+
 TEST_F(TokenTest, TestTokenSignerAddKeys) {
   {
     TokenSigner signer(10, 10);

@@ -127,6 +127,9 @@ Status TokenSigner::ImportKeys(const vector<TokenSigningPrivateKeyPB>& keys) {
 
 Status TokenSigner::GenerateAuthnToken(string username,
                                        SignedTokenPB* signed_token) const {
+  if (username.empty()) {
+    return Status::InvalidArgument("no username provided for authn token");
+  }
   TokenPB token;
   token.set_expire_unix_epoch_seconds(
       WallTime_Now() + authn_token_validity_seconds_);
