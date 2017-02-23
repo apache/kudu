@@ -60,9 +60,10 @@ TAG_FLAG(tsk_rotation_seconds, advanced);
 TAG_FLAG(tsk_rotation_seconds, experimental);
 
 DEFINE_int64(authn_token_validity_seconds, 60 * 60 * 24 * 7,
-             "Period of time for which an issued authentication token is valid.");
-// TODO(PKI): docs for what actual effect this has, given we don't support
-// token renewal.
+             "Period of time for which an issued authentication token is valid. "
+             "It's not possible to renew a token, hence the token validity "
+             "interval defines the longest possible lifetime of an external "
+             "job which uses a token for authentication.");
 TAG_FLAG(authn_token_validity_seconds, experimental);
 
 using std::min;
