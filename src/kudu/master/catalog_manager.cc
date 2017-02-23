@@ -858,8 +858,8 @@ void CatalogManager::VisitTablesAndTabletsTask() {
         // the leader master should not be run without CA certificate.
         CHECK_OK(InitCertAuthority(std::move(key), std::move(cert)));
       } else if (s.IsNotFound()) {
-        LOG(WARNING) << "Did not find CA certificate and key for Kudu IPKI, "
-                        "will generate new ones";
+        LOG(INFO) << "Did not find CA certificate and key for Kudu IPKI, "
+                     "will generate new ones";
         // No CA information record has been found in the table -- generate
         // a new one. The subtlety here is that first it's necessary to store
         // the newly generated information into the system table and only after
