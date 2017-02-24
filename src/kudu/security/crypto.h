@@ -31,6 +31,8 @@ class Status;
 
 namespace security {
 
+extern const size_t kNonceSize;
+
 // Supported message digests for data signing and signature verification.
 enum class DigestType {
   SHA256,
@@ -84,6 +86,9 @@ class PrivateKey : public RawDataWrapper<EVP_PKEY> {
 
 // Utility method to generate private keys.
 Status GeneratePrivateKey(int num_bits, PrivateKey* ret) WARN_UNUSED_RESULT;
+
+// Generates a nonce of size kNonceSize, and writes it to the provided string.
+Status GenerateNonce(std::string* s) WARN_UNUSED_RESULT;
 
 } // namespace security
 } // namespace kudu

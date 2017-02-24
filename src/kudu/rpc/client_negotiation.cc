@@ -19,7 +19,6 @@
 
 #include <string.h>
 
-#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
@@ -558,10 +557,10 @@ Status ClientNegotiation::SendSaslInitiate() {
   // Check that the SASL library is using the mechanism that we picked.
   DCHECK_EQ(SaslMechanism::value_of(negotiated_mech), negotiated_mech_);
 
-  // If we are speaking TLS and the negotiated mechanism is GSSAPI (Kerberos),
-  // configure SASL to use integrity protection so that the channel bindings
-  // can be verified.
-  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::GSSAPI) {
+  // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
+  // integrity protection so that the channel bindings and nonce can be
+  // verified.
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
     RETURN_NOT_OK(EnableIntegrityProtection(sasl_conn_.get()));
   }
 
@@ -608,34 +607,41 @@ Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
   }
   TRACE("Received SASL_SUCCESS response from server");
 
-  if (tls_negotiated_ &&
-      negotiated_authn_ == AuthenticationType::SASL &&
-      negotiated_mech_ == SaslMechanism::GSSAPI) {
-    // Check the channel bindings provided by the server against the expected
-    // channel bindings.
-    security::Cert cert;
-    RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
-
-    string expected_channel_bindings;
-    RETURN_NOT_OK_PREPEND(cert.GetServerEndPointChannelBindings(&expected_channel_bindings),
-                          "failed to generate channel bindings");
-
-    if (!response.has_channel_bindings()) {
-      return Status::NotAuthorized("no channel bindings provided by server");
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+    if (response.has_nonce()) {
+      // Grab the nonce from the server, if it has sent one. We'll send it back
+      // later with SASL integrity protection as part of the connection context.
+      nonce_ = response.nonce();
     }
 
-    string recieved_channel_bindings;
-    RETURN_NOT_OK_PREPEND(SaslDecode(response.channel_bindings(), &recieved_channel_bindings),
-                          "failed to decode channel bindings");
+    if (tls_negotiated_) {
+      // Check the channel bindings provided by the server against the expected channel bindings.
+      if (!response.has_channel_bindings()) {
+        return Status::NotAuthorized("no channel bindings provided by server");
+      }
 
-    if (expected_channel_bindings != recieved_channel_bindings) {
-      Sockaddr addr;
-      ignore_result(socket_->GetPeerAddress(&addr));
+      security::Cert cert;
+      RETURN_NOT_OK(tls_handshake_.GetRemoteCert(&cert));
 
-      LOG(WARNING) << "Recieved unexpected channel bindings from server "
-                   << addr.ToString()
-                   << ", this could indicate an active network man-in-the-middle";
-      return Status::NotAuthorized("channel bindings do not match");
+      string expected_channel_bindings;
+      RETURN_NOT_OK_PREPEND(cert.GetServerEndPointChannelBindings(&expected_channel_bindings),
+                            "failed to generate channel bindings");
+
+      string received_channel_bindings;
+      RETURN_NOT_OK_PREPEND(SaslDecode(sasl_conn_.get(),
+                                       response.channel_bindings(),
+                                       &received_channel_bindings),
+                            "failed to decode channel bindings");
+
+      if (expected_channel_bindings != received_channel_bindings) {
+        Sockaddr addr;
+        ignore_result(socket_->GetPeerAddress(&addr));
+
+        LOG(WARNING) << "Received invalid channel bindings from server "
+                    << addr.ToString()
+                    << ", this could indicate an active network man-in-the-middle";
+        return Status::NotAuthorized("channel bindings do not match");
+      }
     }
   }
 
@@ -650,27 +656,6 @@ Status ClientNegotiation::DoSaslStep(const string& in, const char** out, unsigne
   });
 }
 
-Status ClientNegotiation::SaslDecode(const string& encoded, string* plaintext) {
-  size_t offset = 0;
-  const char* out;
-  unsigned out_len;
-
-  // The SASL library can only decode up to a maximum amount at a time, so we
-  // have to call decode multiple times if our input is larger than this max.
-  while (offset < encoded.size()) {
-    size_t len = std::min(kSaslMaxOutBufLen, encoded.size() - offset);
-
-    RETURN_NOT_OK(WrapSaslCall(sasl_conn_.get(), [&]() {
-        return sasl_decode(sasl_conn_.get(), encoded.data() + offset, len, &out, &out_len);
-    }));
-
-    plaintext->append(out, out_len);
-    offset += len;
-  }
-
-  return Status::OK();
-}
-
 Status ClientNegotiation::SendConnectionContext() {
   TRACE("Sending connection context");
   RequestHeader header;
@@ -681,6 +666,12 @@ Status ClientNegotiation::SendConnectionContext() {
   // this and use the SASL-provided username instead.
   conn_context.mutable_deprecated_user_info()->set_real_user(
       plain_auth_user_.empty() ? "cpp-client" : plain_auth_user_);
+
+  if (nonce_) {
+    // Reply with the SASL-protected nonce. We only set the nonce when using SASL GSSAPI.
+    RETURN_NOT_OK(SaslEncode(sasl_conn_.get(), *nonce_, conn_context.mutable_encoded_nonce()));
+  }
+
   return SendFramedMessageBlocking(socket(), header, conn_context, deadline_);
 }
 

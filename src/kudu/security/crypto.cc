@@ -25,6 +25,7 @@
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/rand.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
@@ -36,6 +37,8 @@ using strings::Substitute;
 
 namespace kudu {
 namespace security {
+
+const size_t kNonceSize = 16;
 
 namespace {
 
@@ -239,6 +242,14 @@ Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
   }
   ret->AdoptRawData(key.release());
 
+  return Status::OK();
+}
+
+Status GenerateNonce(string* s) {
+  CHECK_NOTNULL(s);
+  unsigned char buf[kNonceSize];
+  OPENSSL_RET_NOT_OK(RAND_bytes(buf, sizeof(buf)), "failed to generate nonce");
+  s->assign(reinterpret_cast<char*>(buf), kNonceSize);
   return Status::OK();
 }
 

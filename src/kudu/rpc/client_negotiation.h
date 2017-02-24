@@ -199,9 +199,6 @@ class ClientNegotiation {
   // otherwise returns an appropriate error status.
   Status DoSaslStep(const std::string& in, const char** out, unsigned* out_len) WARN_UNUSED_RESULT;
 
-  // Decode the provided SASL-encoded data and append it to 'plaintext'.
-  Status SaslDecode(const std::string& encoded, std::string* plaintext) WARN_UNUSED_RESULT;
-
   Status SendConnectionContext() WARN_UNUSED_RESULT;
 
   // The socket to the remote server.
@@ -211,6 +208,7 @@ class ClientNegotiation {
   std::vector<sasl_callback_t> callbacks_;
   std::unique_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
+  boost::optional<std::string> nonce_;
 
   // TLS state.
   const security::TlsContext* tls_context_;

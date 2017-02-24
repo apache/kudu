@@ -531,13 +531,18 @@ keytab. Kerberos authentication is handled through the SASL `GSSAPI` mechanism.
 When using Kerberos authentication TLS certificates are not verified.
 
 When the SASL `GSSAPI` negotiation is complete, the server returns a special
-channel binding token to the client as part of the `SASL_SUCCESS` message. The
-channel binding token contains a hash of the server's certificate, wrapped in a
-SASL integrity protected envelope. The client must check the channel binding
-token against the certificate presented by the server during the TLS handshake
-before continuing to use the connection. See RFC 5056 for more information on
-channel binding and why it is necessary, and RFC 5929 for a description of the
-specific 'tls-server-end-point' channel binding type used.
+channel binding token and a random nonce to the client as part of the
+`SASL_SUCCESS` message. The channel binding token contains a hash of the
+server's certificate, wrapped in a SASL integrity protected envelope. The client
+must check the channel binding token against the certificate presented by the
+server during the TLS handshake before continuing to use the connection. See RFC
+5056 for more information on channel binding and why it is necessary, and RFC
+5929 for a description of the specific 'tls-server-end-point' channel binding
+type used. The client must return the nonce, wrapped in a SASL integrity
+protected envelope, to the server as part of the connection context. The nonce
+protects the server against Kerberos replay attacks. Kerberos's built-in replay
+attack mitigation is extremely slow, so this allows much faster connection
+negotiation.
 
 #### Certificate Authentication
 

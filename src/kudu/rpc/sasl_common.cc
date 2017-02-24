@@ -19,6 +19,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <limits>
 #include <mutex>
 #include <string>
@@ -346,6 +347,48 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
     default:
       return Status::RuntimeError(SaslErrDesc(rc, conn));
   }
+}
+
+Status SaslEncode(sasl_conn_t* conn, const std::string& plaintext, std::string* encoded) {
+  size_t offset = 0;
+
+  // The SASL library can only encode up to a maximum amount at a time, so we
+  // have to call encode multiple times if our input is larger than this max.
+  while (offset < plaintext.size()) {
+    const char* out;
+    unsigned out_len;
+    size_t len = std::min(kSaslMaxOutBufLen, plaintext.size() - offset);
+
+    RETURN_NOT_OK(WrapSaslCall(conn, [&]() {
+        return sasl_encode(conn, plaintext.data() + offset, len, &out, &out_len);
+    }));
+
+    encoded->append(out, out_len);
+    offset += len;
+  }
+
+  return Status::OK();
+}
+
+Status SaslDecode(sasl_conn_t* conn, const string& encoded, string* plaintext) {
+  size_t offset = 0;
+
+  // The SASL library can only decode up to a maximum amount at a time, so we
+  // have to call decode multiple times if our input is larger than this max.
+  while (offset < encoded.size()) {
+    const char* out;
+    unsigned out_len;
+    size_t len = std::min(kSaslMaxOutBufLen, encoded.size() - offset);
+
+    RETURN_NOT_OK(WrapSaslCall(conn, [&]() {
+        return sasl_decode(conn, encoded.data() + offset, len, &out, &out_len);
+    }));
+
+    plaintext->append(out, out_len);
+    offset += len;
+  }
+
+  return Status::OK();
 }
 
 string SaslIpPortString(const Sockaddr& addr) {

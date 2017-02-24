@@ -52,6 +52,12 @@ message ConnectionContextPB {
   // Impersonation (effective user) was never supported, so we'll have
   // to add that back at some point later.
   optional UserInformationPB DEPRECATED_user_info = 2;
+
+  // If the server sends a nonce to the client during the SASL_SUCCESS
+  // negotiation step, the client is required to encode it with SASL integrity
+  // protection and return it in this field. The nonce protects the server
+  // against a Kerberos replay attack.
+  optional bytes encoded_nonce = 3 [(REDACT) = true];
 }
 
 // Features supported by the RPC system itself.
@@ -161,6 +167,12 @@ message NegotiatePB {
   // protected through SASL. The client is responsible for validating that the
   // value matches the expected value.
   optional bytes channel_bindings = 6 [(REDACT) = true];
+
+  // A random nonce sent from the server to the client during the SASL_SUCCESS
+  // step when the Kerberos (GSSAPI) SASL mechanism is used with TLS. The nonce
+  // must be sent back to the server, wrapped in SASL integrity protection, as
+  // part of the connection context.
+  optional bytes nonce = 9 [(REDACT) = true];
 
   // During the NEGOTIATE step, contains the supported SASL mechanisms.
   // During the SASL_INITIATE step, contains the single chosen SASL mechanism.

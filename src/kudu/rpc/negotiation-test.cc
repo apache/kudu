@@ -32,6 +32,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -51,6 +52,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/user.h"
 
 // HACK: MIT Kerberos doesn't have any way of determining its version number,
@@ -68,6 +70,7 @@ DEFINE_bool(is_test_child, false,
             "Used by tests which require clean processes. "
             "See TestDisableInit.");
 DECLARE_bool(rpc_encrypt_loopback_connections);
+DECLARE_bool(rpc_trace_negotiation);
 
 using std::string;
 using std::thread;
@@ -261,9 +264,20 @@ TEST_P(TestNegotiation, TestNegotiation) {
       client_negotiation.socket()->Close();
   });
   thread server_thread([&] () {
+      scoped_refptr<Trace> t(new Trace());
+      ADOPT_TRACE(t.get());
       server_status = server_negotiation.Negotiate();
       // Close the socket so that the client will not block forever on error.
       server_negotiation.socket()->Close();
+
+      if (FLAGS_rpc_trace_negotiation || !server_status.ok()) {
+        string msg = Trace::CurrentTrace()->DumpToString();
+        if (!server_status.ok()) {
+          LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;
+        } else {
+          LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
+        }
+      }
   });
   client_thread.join();
   server_thread.join();
