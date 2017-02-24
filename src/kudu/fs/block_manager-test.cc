@@ -1338,10 +1338,11 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
 
   // Kernels from el6.8 update stream before a fix was applied: buggy.
   ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.11.1.el6.x86_64"));
+  ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.14.1.el6.x86_64"));
+  ASSERT_TRUE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.14.2.el6.x86_64"));
 
   // Kernels from el6.8 update stream after a fix was applied: not buggy.
-  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.14.1.el6.x86_64"));
-  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.14.2.el6.x86_64"));
+  ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.15.1.el6.x86_64"));
   ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-642.18.1.el6.x86_64"));
 
   // Kernel from el6.9 development prior to fix: buggy.

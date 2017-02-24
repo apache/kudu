@@ -1786,9 +1786,11 @@ bool LogBlockManager::IsBuggyEl6Kernel(const string& kernel_release) {
   if (kernel_release.find("el6") == string::npos) return false;
 
   // Kernels in the 6.8 update stream (2.6.32-642.a.b) are fixed
-  // for a >= 14.
+  // for a >= 15.
+  //
+  // https://rhn.redhat.com/errata/RHSA-2017-0307.html
   if (MatchPattern(kernel_release, "2.6.32-642.*.el6.*") &&
-      lt("2.6.32-642.14.0", kernel_release)) {
+      lt("2.6.32-642.15.0", kernel_release)) {
     return false;
   }
 
