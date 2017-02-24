@@ -98,16 +98,16 @@ class TlsHandshake {
   // round of messages.
   //
   // Returns any other status code on error.
-  Status Continue(const std::string& recv, std::string* send);
+  Status Continue(const std::string& recv, std::string* send) WARN_UNUSED_RESULT;
 
   // Finishes the handshake, wrapping the provided socket in the negotiated TLS
   // channel. This 'TlsHandshake' instance should not be used again after
   // calling this.
-  Status Finish(std::unique_ptr<Socket>* socket);
+  Status Finish(std::unique_ptr<Socket>* socket) WARN_UNUSED_RESULT;
 
   // Finish the handshake, using the provided socket to verify the remote peer,
   // but without wrapping the socket.
-  Status FinishNoWrap(const Socket& socket);
+  Status FinishNoWrap(const Socket& socket) WARN_UNUSED_RESULT;
 
   // Retrieve the local certificate. This will return an error status if there
   // is no local certificate.
@@ -150,10 +150,10 @@ class TlsHandshake {
   }
 
   // Populates local_cert_ and remote_cert_.
-  Status GetCerts();
+  Status GetCerts() WARN_UNUSED_RESULT;
 
   // Verifies that the handshake is valid for the provided socket.
-  Status Verify(const Socket& socket) const;
+  Status Verify(const Socket& socket) const WARN_UNUSED_RESULT;
 
   // Owned SSL handle.
   c_unique_ptr<SSL> ssl_;

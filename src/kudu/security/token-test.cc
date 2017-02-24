@@ -167,7 +167,6 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
     // It should not need next key right away, but should need next key after
     // the rotation interval.
     static const int64_t kKeyRotationIntervalSeconds = 8;
-    const MonoTime t0 = MonoTime::Now();
     TokenSigner signer(10, kKeyRotationIntervalSeconds);
     std::unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));

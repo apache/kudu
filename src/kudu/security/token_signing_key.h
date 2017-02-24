@@ -69,7 +69,7 @@ class TokenSigningPrivateKey {
   ~TokenSigningPrivateKey();
 
   // Sign a token, and store the signature and signing key's sequence number.
-  Status Sign(SignedTokenPB* token) const;
+  Status Sign(SignedTokenPB* token) const WARN_UNUSED_RESULT;
 
   // Export data into corresponding PB structure.
   void ExportPB(TokenSigningPrivateKeyPB* pb) const;

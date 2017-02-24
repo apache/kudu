@@ -104,7 +104,7 @@ TEST_F(CertManagementTest, RequestGeneratorBasics) {
   CertRequestGenerator gen(gen_config);
   ASSERT_OK(gen.Init());
   string key_str;
-  key.ToString(&key_str, DataFormat::PEM);
+  ASSERT_OK(key.ToString(&key_str, DataFormat::PEM));
   // Check for non-supported number of bits for the key.
   Status s = GeneratePrivateKey(7, &key);
   ASSERT_TRUE(s.IsRuntimeError());

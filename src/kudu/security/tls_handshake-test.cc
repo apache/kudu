@@ -83,8 +83,8 @@ class TestTlsHandshake : public KuduTest,
   Status RunHandshake(TlsVerificationMode client_verify,
                       TlsVerificationMode server_verify) {
     TlsHandshake client, server;
-    client_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client);
-    server_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server);
+    RETURN_NOT_OK(client_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client));
+    RETURN_NOT_OK(server_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server));
 
     client.set_verification_mode(client_verify);
     server.set_verification_mode(server_verify);
@@ -136,8 +136,8 @@ TEST_F(TestTlsHandshake, TestHandshakeSequence) {
 
   TlsHandshake server;
   TlsHandshake client;
-  client_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server);
-  server_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client);
+  ASSERT_OK(client_tls_.InitiateHandshake(TlsHandshakeType::SERVER, &server));
+  ASSERT_OK(server_tls_.InitiateHandshake(TlsHandshakeType::CLIENT, &client));
 
   string buf1;
   string buf2;

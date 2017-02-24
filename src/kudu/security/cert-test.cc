@@ -64,7 +64,7 @@ class CertTest : public KuduTest {
 TEST_F(CertTest, CertInputOutputPEM) {
   const Cert& cert = ca_cert_;
   string cert_str;
-  cert.ToString(&cert_str, DataFormat::PEM);
+  ASSERT_OK(cert.ToString(&cert_str, DataFormat::PEM));
   RemoveExtraWhitespace(&cert_str);
 
   string ca_input_cert(kCaCert);

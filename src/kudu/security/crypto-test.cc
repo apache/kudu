@@ -94,7 +94,7 @@ TEST_F(CryptoTest, RsaPrivateKeyInputOutputPEM) {
   PrivateKey key;
   ASSERT_OK(key.FromFile(private_key_file_, DataFormat::PEM));
   string key_str;
-  key.ToString(&key_str, DataFormat::PEM);
+  ASSERT_OK(key.ToString(&key_str, DataFormat::PEM));
   RemoveExtraWhitespace(&key_str);
 
   string ref_key_str(kCaPrivateKey);
@@ -122,7 +122,7 @@ TEST_F(CryptoTest, RsaPublicKeyInputOutputPEM) {
   PublicKey key;
   ASSERT_OK(key.FromFile(public_key_file_, DataFormat::PEM));
   string key_str;
-  key.ToString(&key_str, DataFormat::PEM);
+  ASSERT_OK(key.ToString(&key_str, DataFormat::PEM));
   RemoveExtraWhitespace(&key_str);
 
   string ref_key_str(kCaPublicKey);
@@ -154,7 +154,7 @@ TEST_F(CryptoTest, RsaExtractPublicPartFromPrivateKey) {
   PublicKey public_key;
   ASSERT_OK(private_key.GetPublicKey(&public_key));
   string str_public_key;
-  public_key.ToString(&str_public_key, DataFormat::PEM);
+  ASSERT_OK(public_key.ToString(&str_public_key, DataFormat::PEM));
   RemoveExtraWhitespace(&str_public_key);
 
   string ref_str_public_key(kCaPublicKey);

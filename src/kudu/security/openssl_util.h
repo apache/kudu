@@ -54,7 +54,7 @@ namespace security {
 
 // Disable initialization of OpenSSL. Must be called before
 // any call to InitializeOpenSSL().
-Status DisableOpenSSLInitialization();
+Status DisableOpenSSLInitialization() WARN_UNUSED_RESULT;
 
 // Initializes static state required by the OpenSSL library.
 // This is a no-op if DisableOpenSSLInitialization() has been called.

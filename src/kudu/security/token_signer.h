@@ -230,8 +230,7 @@ class TokenSigner {
   Status TryRotateKey(bool* has_rotated = nullptr) WARN_UNUSED_RESULT;
 
   Status GenerateAuthnToken(std::string username,
-                            SignedTokenPB* signed_token) const
-      WARN_UNUSED_RESULT;
+                            SignedTokenPB* signed_token) const WARN_UNUSED_RESULT;
 
   Status SignToken(SignedTokenPB* token) const WARN_UNUSED_RESULT;
 
@@ -242,8 +241,7 @@ class TokenSigner {
 
   static Status GenerateSigningKey(int64_t key_seq_num,
                                    int64_t key_expiration,
-                                   std::unique_ptr<TokenSigningPrivateKey>* tsk)
-      WARN_UNUSED_RESULT;
+                                   std::unique_ptr<TokenSigningPrivateKey>* tsk) WARN_UNUSED_RESULT;
 
   std::shared_ptr<TokenVerifier> verifier_;
 
