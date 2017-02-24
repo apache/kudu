@@ -172,12 +172,20 @@ class ClientNegotiation {
   Status AuthenticateByToken(faststring* recv_buf) WARN_UNUSED_RESULT;
 
   // Send an SASL_INITIATE message to the server.
+  // Returns:
+  //  Status::OK if the SASL_SUCCESS message is expected next.
+  //  Status::Incomplete if the SASL_CHALLENGE message is expected next.
+  //  Any other status indicates an error.
   Status SendSaslInitiate() WARN_UNUSED_RESULT;
 
   // Send a SASL_RESPONSE message to the server.
   Status SendSaslResponse(const char* resp_msg, unsigned resp_msg_len) WARN_UNUSED_RESULT;
 
   // Handle case when server sends SASL_CHALLENGE response.
+  // Returns:
+  //  Status::OK if a SASL_SUCCESS message is expected next.
+  //  Status::Incomplete if another SASL_CHALLENGE message is expected.
+  //  Any other status indicates an error.
   Status HandleSaslChallenge(const NegotiatePB& response) WARN_UNUSED_RESULT;
 
   // Handle case when server sends SASL_SUCCESS response.

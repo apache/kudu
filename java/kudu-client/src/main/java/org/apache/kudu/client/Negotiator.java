@@ -544,7 +544,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
 
     // The token response doesn't have any actual data in it, so we can just move on.
-    handleSuccessResponse(chan, response);
+    finish(chan);
   }
 
   private void sendSaslInitiate(Channel chan) throws SaslException {
@@ -599,10 +599,20 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void handleSuccessResponse(Channel chan, NegotiatePB response) {
+    Preconditions.checkState(saslClient.isComplete(),
+                             "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
     if (peerCert != null && "GSSAPI".equals(chosenMech)) {
       verifyChannelBindings(response);
     }
 
+    finish(chan);
+  }
+
+  /**
+   * Marks the negotiation as finished, and sends the connection context to the server.
+   * @param chan the connection channel
+   */
+  private void finish(Channel chan) {
     state = State.FINISHED;
     chan.getPipeline().remove(this);
 
