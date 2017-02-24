@@ -98,6 +98,16 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context);
 // initiating the SASL negotiation.
 Status EnableIntegrityProtection(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
 
+// Encode the provided data and append it to 'encoded'.
+Status SaslEncode(sasl_conn_t* conn,
+                  const std::string& plaintext,
+                  std::string* encoded) WARN_UNUSED_RESULT;
+
+// Decode the provided SASL-encoded data and append it to 'plaintext'.
+Status SaslDecode(sasl_conn_t* conn,
+                  const std::string& encoded,
+                  std::string* plaintext) WARN_UNUSED_RESULT;
+
 // Deleter for sasl_conn_t instances, for use with gscoped_ptr after calling sasl_*_new()
 struct SaslDeleter {
   inline void operator()(sasl_conn_t* conn) {

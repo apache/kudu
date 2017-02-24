@@ -28,6 +28,8 @@ package org.apache.kudu.client;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
 import java.util.List;
@@ -148,6 +150,12 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   /** True if we have negotiated TLS with the server */
   private boolean negotiatedTls;
+
+  /**
+   * The nonce sent from the server to the client, or null if negotiation has
+   * not yet taken place, or the server does not send a nonce.
+   */
+  private byte[] nonce;
 
   /**
    * Future indicating whether the embedded handshake has completed.
@@ -338,9 +346,10 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         continue;
       }
       Map<String, String> props = Maps.newHashMap();
-      // If we are using GSSAPI with TLS, enable integrity protection, which we use
-      // to securely transmit the channel bindings.
-      if ("GSSAPI".equals(clientMech) && negotiatedTls) {
+      // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
+      // integrity protection so that the channel bindings and nonce can be
+      // verified.
+      if ("GSSAPI".equals(clientMech)) {
         props.put(Sasl.QOP, "auth-int");
       }
       try {
@@ -536,7 +545,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleTokenExchangeResponse(Channel chan, NegotiatePB response) {
+  private void handleTokenExchangeResponse(Channel chan,
+                                           NegotiatePB response) throws SaslException {
     Preconditions.checkArgument(response.getStep() == NegotiateStep.TOKEN_EXCHANGE,
         "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
 
@@ -595,11 +605,20 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void handleSuccessResponse(Channel chan, NegotiatePB response) {
+  private void handleSuccessResponse(Channel chan, NegotiatePB response) throws SaslException {
     Preconditions.checkState(saslClient.isComplete(),
                              "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
-    if (peerCert != null && "GSSAPI".equals(chosenMech)) {
-      verifyChannelBindings(response);
+    if (chosenMech.equals("GSSAPI")) {
+      if (response.hasNonce()) {
+        // Grab the nonce from the server, if it has sent one. We'll send it back
+        // later with SASL integrity protection as part of the connection context.
+        nonce = response.getNonce().toByteArray();
+      }
+
+      if (peerCert != null) {
+        // Check the channel bindings provided by the server against the expected channel bindings.
+        verifyChannelBindings(response);
+      }
     }
 
     finish(chan);
@@ -609,7 +628,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * Marks the negotiation as finished, and sends the connection context to the server.
    * @param chan the connection channel
    */
-  private void finish(Channel chan) {
+  private void finish(Channel chan) throws SaslException {
     state = State.FINISHED;
     chan.getPipeline().remove(this);
 
@@ -617,7 +636,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     Channels.fireMessageReceived(chan, new Result(serverFeatures));
   }
 
-  private RpcOutboundMessage makeConnectionContext() {
+  private RpcOutboundMessage makeConnectionContext() throws SaslException {
     RpcHeader.ConnectionContextPB.Builder builder = RpcHeader.ConnectionContextPB.newBuilder();
 
     // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
@@ -626,6 +645,19 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     userBuilder.setEffectiveUser(user);
     userBuilder.setRealUser(user);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
+
+    if (nonce != null) {
+      // Reply with the SASL-protected nonce. We only set the nonce when using SASL GSSAPI.
+      // The Java SASL client does not automatically add the length header,
+      // so we have to do it ourselves.
+      byte[] encodedNonce = saslClient.wrap(nonce, 0, nonce.length);
+      ByteBuffer buf = ByteBuffer.allocate(encodedNonce.length + 4);
+      buf.order(ByteOrder.BIG_ENDIAN);
+      buf.putInt(encodedNonce.length);
+      buf.put(encodedNonce);
+      builder.setEncodedNonce(ZeroCopyLiteralByteString.wrap(buf.array()));
+    }
+
     RpcHeader.ConnectionContextPB pb = builder.build();
     RpcHeader.RequestHeader.Builder header =
         RpcHeader.RequestHeader.newBuilder().setCallId(CONNECTION_CTX_CALL_ID);

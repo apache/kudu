@@ -238,6 +238,19 @@ TEST_F(CryptoTest, VerifySignatureWrongData) {
   }
 }
 
+TEST_F(CryptoTest, TestGenerateNonce) {
+  string nonce;
+  ASSERT_OK(GenerateNonce(&nonce));
+
+  // Do some basic validation on the returned nonce.
+  ASSERT_EQ(kNonceSize, nonce.size());
+  ASSERT_NE(string(kNonceSize, '\0'), nonce);
+
+  // Nonces should be unique, by definition.
+  string another_nonce;
+  ASSERT_OK(GenerateNonce(&another_nonce));
+  ASSERT_NE(nonce, another_nonce);
+}
 
 } // namespace security
 } // namespace kudu

@@ -200,9 +200,6 @@ class ServerNegotiation {
   // Send a SASL_SUCCESS response to the client.
   Status SendSaslSuccess() WARN_UNUSED_RESULT;
 
-  // Encode the provided data and append it to 'encoded'.
-  Status SaslEncode(const std::string& plaintext, std::string* encoded) WARN_UNUSED_RESULT;
-
   // Receive and validate the ConnectionContextPB.
   Status RecvConnectionContext(faststring* recv_buf) WARN_UNUSED_RESULT;
 
@@ -213,6 +210,7 @@ class ServerNegotiation {
   std::vector<sasl_callback_t> callbacks_;
   std::unique_ptr<sasl_conn_t, SaslDeleter> sasl_conn_;
   SaslHelper helper_;
+  boost::optional<std::string> nonce_;
 
   // TLS state.
   const security::TlsContext* tls_context_;

@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/server_negotiation.h"
 
-#include <algorithm>
 #include <limits>
 #include <memory>
 #include <set>
@@ -36,6 +35,7 @@
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/crypto.h"
 #include "kudu/security/init.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
@@ -646,10 +646,10 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
 
   negotiated_mech_ = SaslMechanism::value_of(mechanism);
 
-  // If we are speaking TLS and the negotiated mechanism is GSSAPI (Kerberos),
-  // configure SASL to use integrity protection so that the channel bindings
-  // can be verified.
-  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::GSSAPI) {
+  // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
+  // integrity protection so that the channel bindings and nonce can be
+  // verified.
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
     RETURN_NOT_OK(EnableIntegrityProtection(sasl_conn_.get()));
   }
 
@@ -680,27 +680,6 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
     RETURN_NOT_OK(SendSaslChallenge(server_out, server_out_len));
   }
   return s;
-}
-
-Status ServerNegotiation::SaslEncode(const std::string& plaintext, std::string* encoded) {
-  size_t offset = 0;
-  const char* out;
-  unsigned out_len;
-
-  // The SASL library can only encode up to a maximum amount at a time, so we
-  // have to call encode multiple times if our input is larger than this max.
-  while (offset < plaintext.size()) {
-    size_t len = std::min(kSaslMaxOutBufLen, plaintext.size() - offset);
-
-    RETURN_NOT_OK(WrapSaslCall(sasl_conn_.get(), [&]() {
-        return sasl_encode(sasl_conn_.get(), plaintext.data() + offset, len, &out, &out_len);
-    }));
-
-    encoded->append(out, out_len);
-    offset += len;
-  }
-
-  return Status::OK();
 }
 
 Status ServerNegotiation::HandleSaslResponse(const NegotiatePB& request) {
@@ -753,14 +732,23 @@ Status ServerNegotiation::SendSaslSuccess() {
   NegotiatePB response;
   response.set_step(NegotiatePB::SASL_SUCCESS);
 
-  if (tls_negotiated_ && negotiated_mech_ == SaslMechanism::Type::GSSAPI) {
-    // Send the channel bindings to the client.
-    security::Cert cert;
-    RETURN_NOT_OK(tls_handshake_.GetLocalCert(&cert));
+  if (negotiated_mech_ == SaslMechanism::GSSAPI) {
+    // Send a nonce to the client.
+    nonce_ = string();
+    RETURN_NOT_OK(security::GenerateNonce(nonce_.get_ptr()));
+    response.set_nonce(*nonce_);
 
-    string plaintext_channel_bindings;
-    RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));
-    RETURN_NOT_OK(SaslEncode(plaintext_channel_bindings, response.mutable_channel_bindings()));
+    if (tls_negotiated_) {
+      // Send the channel bindings to the client.
+      security::Cert cert;
+      RETURN_NOT_OK(tls_handshake_.GetLocalCert(&cert));
+
+      string plaintext_channel_bindings;
+      RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));
+      RETURN_NOT_OK(SaslEncode(sasl_conn_.get(),
+                               plaintext_channel_bindings,
+                               response.mutable_channel_bindings()));
+    }
   }
 
   RETURN_NOT_OK(SendNegotiatePB(response));
@@ -785,7 +773,35 @@ Status ServerNegotiation::RecvConnectionContext(faststring* recv_buf) {
                                  conn_context.InitializationErrorString());
   }
 
-  // Currently none of the fields of the connection context are used.
+  if (nonce_) {
+    Status s;
+    // Validate that the client returned the correct SASL protected nonce.
+    if (!conn_context.has_encoded_nonce()) {
+      s = Status::NotAuthorized("ConnectionContextPB wrapped nonce missing");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+      return s;
+    }
+
+    string decoded_nonce;
+    s = SaslDecode(sasl_conn_.get(), conn_context.encoded_nonce(), &decoded_nonce);
+    if (!s.ok()) {
+      s = Status::NotAuthorized("failed to decode nonce", s.message());
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+      return s;
+    }
+
+    if (*nonce_ != decoded_nonce) {
+      Sockaddr addr;
+      RETURN_NOT_OK(socket_->GetPeerAddress(&addr));
+      LOG(WARNING) << "Received an invalid connection nonce from client "
+                   << addr.ToString()
+                   << ", this could indicate a replay attack";
+      s = Status::NotAuthorized("nonce mismatch");
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+      return s;
+    }
+  }
+
   return Status::OK();
 }
 
