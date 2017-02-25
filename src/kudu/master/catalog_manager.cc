@@ -719,9 +719,9 @@ Status CatalogManager::ElectedAsLeaderCb() {
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
-  string uuid = master_->fs_manager()->uuid();
-  Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
-  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  ConsensusStatePB cstate = sys_catalog_->tablet_peer()->consensus()->
+      ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  const string& uuid = master_->fs_manager()->uuid();
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
         Substitute("Node $0 not leader. Consensus state: $1",
@@ -800,7 +800,7 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     // Hack to block this function until InitSysCatalogAsync() is finished.
     shared_lock<LockType> l(lock_);
   }
-  Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
+  const Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
   int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
@@ -973,8 +973,14 @@ bool CatalogManager::IsInitialized() const {
 }
 
 RaftPeerPB::Role CatalogManager::Role() const {
-  CHECK(IsInitialized());
-  return sys_catalog_->tablet_peer_->consensus()->role();
+  scoped_refptr<consensus::Consensus> consensus;
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    if (state_ == kRunning) {
+      consensus = sys_catalog_->tablet_peer()->shared_consensus();
+    }
+  }
+  return consensus ? consensus->role() : RaftPeerPB::UNKNOWN_ROLE;
 }
 
 void CatalogManager::Shutdown() {
@@ -1005,10 +1011,28 @@ void CatalogManager::Shutdown() {
   }
   AbortAndWaitForAllTasks(copy);
 
-  // Wait for any outstanding table visitors to finish.
+  // Shutdown the underlying consensus implementation. This aborts all pending
+  // operations on the system table. In case of a multi-master Kudu cluster,
+  // a deadlock might happen if the consensus implementation were active during
+  // further phases: shutting down the leader election pool and the system
+  // catalog.
+  //
+  // The mechanics behind the deadlock are as follows:
+  //   * The majority of the system table's peers goes down (e.g. all non-leader
+  //     masters shut down).
+  //   * The ElectedAsLeaderCb task issues an operation to the system
+  //     table (e.g. write newly generated TSK).
+  //   * The code below calls Shutdown() on the leader election pool. That
+  //     call does not return because the underlying Raft indefinitely
+  //     retries to get the response for the submitted operations.
+  if (sys_catalog_) {
+    sys_catalog_->tablet_peer()->consensus()->Shutdown();
+  }
+
+  // Wait for any outstanding ElectedAsLeaderCb tasks to finish.
   //
   // Must be done before shutting down the catalog, otherwise its tablet peer
-  // may be destroyed while still in use by a table visitor.
+  // may be destroyed while still in use by the ElectedAsLeaderCb task.
   leader_election_pool_->Shutdown();
 
   // Shut down the underlying storage for tables and tablets.
@@ -3943,8 +3967,8 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   }
 
   // Check if the catalog manager is the leader.
-  Consensus* consensus = catalog_->sys_catalog_->tablet_peer_->consensus();
-  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_peer()->consensus()->
+      ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   string uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     leader_status_ = Status::IllegalState(
