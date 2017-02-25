@@ -114,6 +114,7 @@ enum class VerificationResult {
   INCOMPATIBLE_FEATURE
 };
 
+const char* VerificationResultToString(VerificationResult r);
 
 } // namespace security
 } // namespace kudu

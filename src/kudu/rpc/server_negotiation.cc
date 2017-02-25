@@ -92,8 +92,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
 }
 
 Status ServerNegotiation::EnablePlain() {
-  RETURN_NOT_OK(helper_.EnablePlain());
-  return Status::OK();
+  return helper_.EnablePlain();
 }
 
 Status ServerNegotiation::EnableGSSAPI() {
@@ -320,8 +319,10 @@ Status ServerNegotiation::InitSaslServer() {
 
 Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
   if (request.step() != NegotiatePB::NEGOTIATE) {
-    return Status::NotAuthorized("expected NEGOTIATE step",
-                                 NegotiatePB::NegotiateStep_Name(request.step()));
+    Status s = Status::NotAuthorized("expected NEGOTIATE step",
+                                     NegotiatePB::NegotiateStep_Name(request.step()));
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
   }
   TRACE("Received NEGOTIATE request from client");
 
@@ -550,29 +551,47 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   // TODO(PKI): propagate the specific token verification failure back to the client,
   // so it knows how to intelligently retry.
   security::TokenPB token;
-  switch (token_verifier_->VerifyTokenSignature(pb.authn_token(), &token)) {
+  auto verification_result = token_verifier_->VerifyTokenSignature(pb.authn_token(), &token);
+  switch (verification_result) {
     case security::VerificationResult::VALID: break;
+
     case security::VerificationResult::INVALID_TOKEN:
-      return Status::NotAuthorized("invalid authentication token");
     case security::VerificationResult::INVALID_SIGNATURE:
-      return Status::NotAuthorized("invalid authentication token signature");
     case security::VerificationResult::EXPIRED_TOKEN:
-      return Status::NotAuthorized("authentication token expired");
-    case security::VerificationResult::EXPIRED_SIGNING_KEY:
-      return Status::NotAuthorized("authentication token signing key expired");
-    case security::VerificationResult::UNKNOWN_SIGNING_KEY:
-      return Status::NotAuthorized("authentication token signed with unknown key");
-    case security::VerificationResult::INCOMPATIBLE_FEATURE:
-      return Status::NotAuthorized("authentication token uses incompatible feature");
+    case security::VerificationResult::EXPIRED_SIGNING_KEY: {
+      // These errors indicate the client should get a new token and try again.
+      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+      return s;
+    }
+
+    case security::VerificationResult::UNKNOWN_SIGNING_KEY: {
+      // The server doesn't recognize the signing key. This indicates that the
+      // server has not been updated with the most recent TSKs, so tell the
+      // client to try again later.
+      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
+      RETURN_NOT_OK(SendError(ErrorStatusPB::ERROR_UNAVAILABLE, s));
+      return s;
+    }
+    case security::VerificationResult::INCOMPATIBLE_FEATURE: {
+      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
+      // These error types aren't recoverable by having the client get a new token.
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+      return s;
+    }
   }
 
   if (!token.has_authn()) {
-    return Status::NotAuthorized("non-authentication token presented for authentication");
+    Status s = Status::NotAuthorized("non-authentication token presented for authentication");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
   }
   if (!token.authn().has_username()) {
     // This is a runtime error because there should be no way a client could
     // get a signed authn token without a subject.
-    return Status::RuntimeError("authentication token has no username");
+    Status s = Status::RuntimeError("authentication token has no username");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+    return s;
   }
   authenticated_user_.SetAuthenticatedByToken(token.authn().username());
 
@@ -595,7 +614,9 @@ Status ServerNegotiation::AuthenticateByCertificate() {
   boost::optional<string> principal = cert.KuduKerberosPrincipal();
 
   if (!user_id) {
-    return Status::NotAuthorized("did not find expected X509 userId extension in cert");
+    Status s = Status::NotAuthorized("did not find expected X509 userId extension in cert");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+    return s;
   }
 
   authenticated_user_.SetAuthenticatedByClientCert(*user_id, std::move(principal));

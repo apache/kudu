@@ -744,7 +744,8 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
                 [](const Status& s, ClientNegotiation& client) {
                   CHECK(s.IsNotAuthorized());
 #ifndef KRB5_VERSION_LE_1_10
-                  CHECK_EQ(s.message().ToString(), "No Kerberos credentials available");
+                  ASSERT_STR_MATCHES(s.ToString(),
+                                     "Not authorized: No Kerberos credentials available.*");
 #endif
                 }));
 

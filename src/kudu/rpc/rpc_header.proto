@@ -291,6 +291,10 @@ message ErrorStatusPB {
     // longer cached. It's unknown whether the request was executed or not.
     ERROR_REQUEST_STALE = 6;
 
+    // The server is not able to complete the connection or request at this
+    // time. The client may try again later.
+    ERROR_UNAVAILABLE = 7;
+
     // FATAL_* errors indicate that the client should shut down the connection.
     //------------------------------------------------------------
     // The RPC server is already shutting down.
@@ -303,6 +307,10 @@ message ErrorStatusPB {
     FATAL_VERSION_MISMATCH = 14;
     // Auth failed.
     FATAL_UNAUTHORIZED = 15;
+
+    // The authentication token is invalid or expired;
+    // the client should obtain a new one.
+    FATAL_INVALID_AUTHENTICATION_TOKEN = 16;
   }
 
   required string message = 1;

@@ -27,6 +27,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signing_key.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 
 using std::lock_guard;
 using std::string;
@@ -116,6 +117,8 @@ VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& sign
 
   for (auto flag : token->incompatible_features()) {
     if (!TokenPB::Feature_IsValid(flag)) {
+      KLOG_EVERY_N_SECS(WARNING, 60) << "received authentication token with unknown feature; "
+                                        "server needs to be updated";
       return VerificationResult::INCOMPATIBLE_FEATURE;
     }
   }
@@ -124,6 +127,8 @@ VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& sign
     shared_lock<RWMutex> l(lock_);
     auto* tsk = FindPointeeOrNull(keys_by_seq_, signed_token.signing_key_seq_num());
     if (!tsk) {
+      // TODO(pki): should this notify the heartbeater to send out a heartbeat
+      // immediately, since we are not up to date with TSKs?
       return VerificationResult::UNKNOWN_SIGNING_KEY;
     }
     if (tsk->pb().expire_unix_epoch_seconds() < now) {
@@ -135,6 +140,25 @@ VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& sign
   }
 
   return VerificationResult::VALID;
+}
+
+const char* VerificationResultToString(VerificationResult r) {
+  switch (r) {
+    case security::VerificationResult::VALID:
+      return "valid";
+    case security::VerificationResult::INVALID_TOKEN:
+      return "invalid authentication token";
+    case security::VerificationResult::INVALID_SIGNATURE:
+      return "invalid authentication token signature";
+    case security::VerificationResult::EXPIRED_TOKEN:
+      return "authentication token expired";
+    case security::VerificationResult::EXPIRED_SIGNING_KEY:
+      return "authentication token signing key expired";
+    case security::VerificationResult::UNKNOWN_SIGNING_KEY:
+      return "authentication token signed with unknown key";
+    case security::VerificationResult::INCOMPATIBLE_FEATURE:
+      return "authentication token uses incompatible feature";
+  }
 }
 
 } // namespace security
