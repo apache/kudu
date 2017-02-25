@@ -765,21 +765,22 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
           s = VerifyLinkedListAtLatestRemote(
               expected, last_attempt, boost::bind(&LinkedListTester::ReturnOk, this, _1), &seen);
         }
-
-        if (!s.ok()) {
-          LOG(INFO) << "Table not yet ready: " << seen << "/" << expected << " rows"
-                    << " (status: " << s.ToString() << ")";
-          if (last_attempt) {
-            // We'll give it an equal amount of time to re-load the data as it took
-            // to write it in. Typically it completes much faster than that.
-            return Status::TimedOut("Timed out waiting for table to be accessible again",
-                                    s.ToString());
-          }
-
-          // Sleep and retry until timeout.
-          SleepFor(MonoDelta::FromMilliseconds(20));
-        }
         break;
+    }
+
+    if (!s.ok()) {
+      KLOG_EVERY_N(INFO, 10) << "Table not yet ready: " << seen << "/"
+                             << expected << " rows (status: "
+                             << s.ToString() << ")";
+      if (last_attempt) {
+        // We'll give it an equal amount of time to re-load the data as it took
+        // to write it in. Typically it completes much faster than that.
+        return Status::TimedOut("Timed out waiting for table to be accessible again",
+                                s.ToString());
+      }
+
+      // Sleep and retry until timeout.
+      SleepFor(MonoDelta::FromMilliseconds(20));
     }
   } while (!s.ok());
 
