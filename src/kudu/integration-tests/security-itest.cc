@@ -146,10 +146,13 @@ TEST_F(SecurityITest, TestNoKerberosCredentials) {
 
   client::sp::shared_ptr<KuduClient> client;
   Status s = cluster_->CreateClient(nullptr, &client);
+  // The error message differs on el6 from newer krb5 implementations,
+  // so we'll check for either one.
   ASSERT_STR_MATCHES(s.ToString(),
                      "Not authorized: Could not connect to the cluster: "
                      "Client connection negotiation failed: client connection "
-                     "to .*: No Kerberos credentials available");
+                     "to .*: (No Kerberos credentials available|"
+                     "Credentials cache file.*not found)");
 }
 
 // Test cluster access by a user who is not authorized as a client.
