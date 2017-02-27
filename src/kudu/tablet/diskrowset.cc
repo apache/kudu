@@ -185,7 +185,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     }
 
 #ifndef NDEBUG
-    CHECK_LT(Slice(prev_key).compare(enc_key), 0)
+    CHECK(prev_key.size() == 0 || Slice(prev_key).compare(enc_key) < 0)
       << KUDU_REDACT(enc_key.ToDebugString()) << " appended to file not > previous key "
       << KUDU_REDACT(Slice(prev_key).ToDebugString());
 #endif
@@ -213,7 +213,6 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   }
 
   // Save the last encoded (max) key
-  CHECK_GT(last_encoded_key_.size(), 0);
   Slice last_enc_slice(last_encoded_key_);
   std::string first_encoded_key =
       key_index_writer()->GetMetaValueOrDie(DiskRowSet::kMinKeyMetaEntryName);

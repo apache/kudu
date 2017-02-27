@@ -3950,6 +3950,82 @@ TEST_F(ClientTest, TestInsertTooLongEncodedPrimaryKey) {
             errors[0]->status().ToString());
 }
 
+// Test trying to insert a row with an empty string PK.
+// Regression test for KUDU-1899.
+TEST_F(ClientTest, TestInsertEmptyPK) {
+  const string kLongValue(10000, 'x');
+  const char* kTableName = "empty-pk";
+
+  // Create and open a table with a three-column composite PK.
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  KuduSchema schema;
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("k1")->Type(KuduColumnSchema::STRING)->NotNull();
+  schema_builder.AddColumn("v1")->Type(KuduColumnSchema::STRING)->NotNull();
+  schema_builder.SetPrimaryKey({"k1"});
+  ASSERT_OK(schema_builder.Build(&schema));
+  ASSERT_OK(table_creator->table_name(kTableName)
+            .schema(&schema)
+            .num_replicas(1)
+            .set_range_partition_columns({ "k1" })
+            .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  // Find the tablet.
+  scoped_refptr<TabletPeer> tablet_peer;
+  ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
+          GetFirstTabletId(table.get()), &tablet_peer));
+
+  // Utility function to get the current value of the row.
+  const auto ReadRowAsString = [&]() {
+    vector<string> rows;
+    ScanTableToStrings(table.get(), &rows);
+    if (rows.empty()) return string("<none>");
+    CHECK_EQ(1, rows.size());
+    return rows[0];
+  };
+
+  shared_ptr<KuduSession> session(client_->NewSession());
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // Insert a row with empty primary key.
+  {
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetString(0, ""));
+    ASSERT_OK(insert->mutable_row()->SetString(1, "initial"));
+    ASSERT_OK(session->Apply(insert.release()));
+    ASSERT_OK(session->Flush());
+  }
+  ASSERT_EQ("(string k1=\"\", string v1=\"initial\")", ReadRowAsString());
+
+  // Make sure that Flush works properly, and the data is still readable.
+  ASSERT_OK(tablet_peer->tablet()->Flush());
+  ASSERT_EQ("(string k1=\"\", string v1=\"initial\")", ReadRowAsString());
+
+  // Perform an update.
+  {
+    unique_ptr<KuduUpdate> update(table->NewUpdate());
+    ASSERT_OK(update->mutable_row()->SetString(0, ""));
+    ASSERT_OK(update->mutable_row()->SetString(1, "updated"));
+    ASSERT_OK(session->Apply(update.release()));
+    ASSERT_OK(session->Flush());
+  }
+  ASSERT_EQ("(string k1=\"\", string v1=\"updated\")", ReadRowAsString());
+  ASSERT_OK(tablet_peer->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
+  ASSERT_EQ("(string k1=\"\", string v1=\"updated\")", ReadRowAsString());
+
+  // Perform a delete.
+  {
+    unique_ptr<KuduDelete> del(table->NewDelete());
+    ASSERT_OK(del->mutable_row()->SetString(0, ""));
+    ASSERT_OK(session->Apply(del.release()));
+    ASSERT_OK(session->Flush());
+  }
+  ASSERT_EQ("<none>", ReadRowAsString());
+  ASSERT_OK(tablet_peer->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
+  ASSERT_EQ("<none>", ReadRowAsString());
+}
 
 // Check the behavior of the latest observed timestamp when performing
 // write and read operations.
