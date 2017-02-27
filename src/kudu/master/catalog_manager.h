@@ -17,6 +17,7 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -354,6 +355,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
       return leader_status_;
     }
 
+    // Check whether the consensus configuration term has changed from the term
+    // captured at object construction (initial_term_).
+    // Requires: leader_status() returns OK().
+    bool has_term_changed() const;
+
     // Check that the catalog manager is initialized. It may or may not be the
     // leader of its Raft configuration.
     //
@@ -376,6 +382,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     shared_lock<RWMutex> leader_shared_lock_;
     Status catalog_status_;
     Status leader_status_;
+    int64_t initial_term_;
 
     DISALLOW_COPY_AND_ASSIGN(ScopedLeaderSharedLock);
   };
@@ -541,8 +548,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
-  // becomes the leader of a consensus configuration. Executes VisitTablesAndTabletsTask
-  // via 'worker_pool_'.
+  // becomes the leader of a consensus configuration. Executes
+  // PrepareForLeadershipTask() via 'worker_pool_'.
   Status ElectedAsLeaderCb();
 
   // Loops and sleeps until one of the following conditions occurs:
@@ -557,9 +564,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // reading that data, to ensure consistency across failovers.
   Status WaitUntilCaughtUpAsLeader(const MonoDelta& timeout);
 
-  // Performs several checks before calling VisitTablesAndTablets to actually
-  // reload table/tablet metadata into memory.
-  void VisitTablesAndTabletsTask();
+  // Performs several checks before calling VisitTablesAndTablets() to actually
+  // reload table/tablet metadata into memory and do other work to update the
+  // internal state of this object upon becoming the leader.
+  void PrepareForLeadershipTask();
 
   // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
   // and 'tablet_map_'), loads tables metadata into memory and if successful
@@ -576,20 +584,35 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // This method is thread-safe.
   Status InitSysCatalogAsync(bool is_first_run);
 
-  // Load the internal Kudu certficate authority information from the system
+  // Initialize the IPKI certificate authority: load the CA information record
+  // from the system table. If the CA information record is not present in the
+  // table, generate and store a new one.
+  Status InitCertAuthority();
+
+  // Initialize the IPKI certificate authority with the specified private key
+  // and certificate.
+  Status InitCertAuthorityWith(std::unique_ptr<security::PrivateKey> key,
+                               std::unique_ptr<security::Cert> cert);
+
+  // Load the IPKI certficate authority information from the system
   // table: the private key and the certificate. If the CA info entry is not
   // found in the table, return Status::NotFound.
   Status LoadCertAuthorityInfo(std::unique_ptr<security::PrivateKey>* key,
                                std::unique_ptr<security::Cert>* cert);
 
-  // Initialize master's certificate authority with the specified private key
-  // and certificate.
-  Status InitCertAuthority(std::unique_ptr<security::PrivateKey> key,
-                           std::unique_ptr<security::Cert> cert);
-
-  // Store CA certificate information into the system table.
+  // Store the IPKI certificate authority information into the system table.
   Status StoreCertAuthorityInfo(const security::PrivateKey& key,
                                 const security::Cert& cert);
+
+  // 1. Initialize the TokenSigner (the component which signs authn tokens):
+  //      a. Load TSK records from the system table.
+  //      b. Import the newly loaded TSK records into the TokenSigner.
+  // 2. Check whether it's time to generate a new token signing key.
+  //    If yes, then:
+  //      a. Generate a new TSK.
+  //      b. Store the new TSK one into the system catalog table.
+  // 3. Purge expired TSKs from the system table.
+  Status InitTokenSigner();
 
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
@@ -627,9 +650,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
 
-  // Check if it's time to generate new Token Signing Key for TokenSigner.
-  // If so, generate one and persist it into the system table.
-  Status CheckGenerateNewTskUnlocked();
+  // Check if it's time to generate a new Token Signing Key for TokenSigner.
+  // If so, generate one and persist it into the system table. After that,
+  // push it into the TokenSigner's key queue.
+  Status TryGenerateNewTskUnlocked();
 
   // Load non-expired TSK entries from the system table.
   // Once done, initialize TokenSigner with the loaded entries.

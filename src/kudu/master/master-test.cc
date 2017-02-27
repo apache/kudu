@@ -702,7 +702,7 @@ TEST_F(MasterTest, TestShutdownDuringTableVisit) {
   ASSERT_OK(master_->catalog_manager()->ElectedAsLeaderCb());
 
   // Master will now shut down, potentially racing with
-  // CatalogManager::VisitTablesAndTabletsTask.
+  // CatalogManager::PrepareForLeadershipTask().
 }
 
 // Tests that the catalog manager handles spurious calls to ElectedAsLeaderCb()

@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -89,6 +90,7 @@
 #include "kudu/security/token_signing_key.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
@@ -199,6 +201,13 @@ DEFINE_bool(catalog_manager_delete_orphaned_tablets, false,
             "permanent tablet data loss under specific (and rare) cases of "
             "master failures!");
 TAG_FLAG(catalog_manager_delete_orphaned_tablets, advanced);
+
+DEFINE_int32(catalog_manager_inject_latency_prior_tsk_write_ms, 0,
+             "Injects a random sleep between 0 and this many milliseconds "
+             "prior to writing newly generated TSK into the system table. "
+             "This is a test-only flag, do not use in production.");
+TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, hidden);
+TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, unsafe);
 
 using std::pair;
 using std::set;
@@ -452,14 +461,6 @@ void CatalogManagerBgTasks::Run() {
                        << l.catalog_status().ToString();
         }
       } else if (l.leader_status().ok()) {
-        // If this is the leader master, check if it's time to generate
-        // and store a new TSK (Token Signing Key).
-        Status s = catalog_manager_->CheckGenerateNewTskUnlocked();
-        if (!s.ok()) {
-          LOG(ERROR) << "Error processing TSK entry (will try next time): "
-                     << s.ToString();
-        }
-
         // Get list of tablets not yet running.
         std::vector<scoped_refptr<TabletInfo>> to_process;
         catalog_manager_->ExtractTabletsToProcess(&to_process);
@@ -474,8 +475,32 @@ void CatalogManagerBgTasks::Run() {
             //
             // TODO(unknown): Add tests for this in the revision that makes
             // create/alter fault tolerant.
-            LOG(ERROR) << "Error processing pending assignments, "
-                "aborting the current task: " << s.ToString();
+            LOG(ERROR) << "Error processing pending assignments: " << s.ToString();
+          }
+        }
+
+        // If this is the leader master, check if it's time to generate
+        // and store a new TSK (Token Signing Key).
+        Status s = catalog_manager_->TryGenerateNewTskUnlocked();
+        if (!s.ok()) {
+          const TokenSigner* signer = catalog_manager_->master_->token_signer();
+          const string err_msg = "failed to refresh TSK: " + s.ToString() + ": ";
+          if (l.has_term_changed()) {
+            LOG(INFO) << err_msg
+                      << "ignoring the error since not the leader anymore";
+          } else if (signer->IsCurrentKeyValid()) {
+            LOG(WARNING) << err_msg << "will try again next cycle";
+          } else {
+            // The TokenSigner ended up with no valid key to use. If the catalog
+            // manager is still the leader, it would not be able to create valid
+            // authn token signatures. It's not clear how to properly resolve
+            // this situation and keep the process running. To avoid possible
+            // inconsistency, let's crash the process.
+            //
+            // NOTE: This can only happen in a multi-master Kudu cluster. In
+            //       that case, after this particular master crashes, another
+            //       master will take over as leader.
+            LOG(FATAL) << err_msg;
           }
         }
       }
@@ -715,7 +740,7 @@ Status CatalogManager::Init(bool is_first_run) {
 
 Status CatalogManager::ElectedAsLeaderCb() {
   return leader_election_pool_->SubmitClosure(
-      Bind(&CatalogManager::VisitTablesAndTabletsTask, Unretained(this)));
+      Bind(&CatalogManager::PrepareForLeadershipTask, Unretained(this)));
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
@@ -730,6 +755,125 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 
   // Wait for all transactions to be committed.
   RETURN_NOT_OK(sys_catalog_->tablet_replica()->transaction_tracker()->WaitForAllToFinish(timeout));
+  return Status::OK();
+}
+
+Status CatalogManager::InitCertAuthority() {
+  leader_lock_.AssertAcquiredForWriting();
+
+  unique_ptr<PrivateKey> key;
+  unique_ptr<Cert> cert;
+  const Status s = LoadCertAuthorityInfo(&key, &cert);
+  if (s.ok()) {
+    return InitCertAuthorityWith(std::move(key), std::move(cert));
+  }
+  if (s.IsNotFound()) {
+    // Status::NotFound is returned if no IPKI certificate authority record is
+    // found in the system catalog table. It can happen on the very first run
+    // of a secured Kudu cluster. If so, it's necessary to create and persist
+    // a new CA record which, if persisted, will be used for this and next runs.
+    //
+    // The subtlety here is that first it's necessary to store the newly
+    // generated IPKI CA information (the private key and the certificate) into
+    // the system table and only after that initialize the master certificate
+    // authority. This protects against a leadership change between the
+    // generation and the usage of the newly generated IPKI CA information
+    // by the master.
+    //
+    // An example of such 'leadership change in the middle' scenario:
+    //
+    // 1. The catalog manager starts generating Kudu  IPKI CA private key and
+    //    corresponding certificate. This takes some time since generating
+    //    a cryptographically strong private key requires many CPU cycles.
+    //
+    // 2. While the catalog manager is busy with generating the CA info, a new
+    //    election happens in the background and the catalog manager loses its
+    //    leadership role.
+    //
+    // 3. The catalog manager tries to write the newly generated information
+    //    into the system table. There are two possible cases at the time when
+    //    applying the write operation:
+    //
+    //      a. The catalog manager is not the system tablet's leader.
+    //
+    //      b. The catalog manager is the system tablet's leader.
+    //         It regained its leadership role by the time the write operation
+    //         is applied. That can happen if another election occurs before
+    //         the write operation is applied.
+    //
+    // 4. Essentially, the following responses are possible for the write
+    //    operation, enumerated in accordance with 3.{a,b} items above:
+    //
+    //      a. A failure happens and corresponding error message is logged;
+    //         the failure is ignored.
+    //
+    //      b. In the case when the catalog manager becomes the leader again,
+    //         there are two possible outcomes for the write operation:
+    //
+    //           i.  Success. The master completes the initialization process
+    //               and proceeds to serve client requests.
+    //
+    //           ii. Failure. This is when the former in-the-middle leader has
+    //               succeeded in writing its CA info into the system table.
+    //               That could happen if the former in-the-middle leader was
+    //               very fast because there were plenty of CPU resources
+    //               available for CA info generation. Since the CA info record
+    //               has pre-defined identifier, it's impossible to have more
+    //               than one CA info record in the system table. This is due to
+    //               the {record_id, record_type} uniqueness constraint.
+    //
+    // In case of the write operation's success (4.b.i), it's safe to proceed
+    // with loading the persisted CA information into the CertAuthority run-time
+    // object.
+    //
+    // In case of the write operation's failure (4.a, 4.b.ii), the generated
+    // CA information is no longer relevant and can be safely discarded. The
+    // crucial point is to not initialize the CertAuthority with non-persisted
+    // information. Otherwise that information could get into the run-time
+    // structures of some system components, cutting them off from communicating
+    // with the rest of the system which uses the genuine CA information.
+    //
+    // Once the CA information is persisted in the system table, a catalog
+    // manager reads and loads it into the CertAuthority every time it becomes
+    // an elected leader.
+    unique_ptr<PrivateKey> key(new PrivateKey);
+    unique_ptr<Cert> cert(new Cert);
+
+    // Generate new private key and corresponding CA certificate.
+    RETURN_NOT_OK(master_->cert_authority()->Generate(key.get(), cert.get()));
+    // If the leadership was lost, writing into the system table fails.
+    RETURN_NOT_OK(StoreCertAuthorityInfo(*key, *cert));
+    // Once the CA information is persisted, it's necessary to initialize
+    // the certificate authority sub-component with it. The leader master
+    // should not run without a CA certificate.
+    return InitCertAuthorityWith(std::move(key), std::move(cert));
+  }
+
+  return s;
+}
+
+// Initialize the master's certificate authority component with the specified
+// private key and certificate.
+Status CatalogManager::InitCertAuthorityWith(
+    unique_ptr<PrivateKey> key, unique_ptr<Cert> cert) {
+  leader_lock_.AssertAcquiredForWriting();
+  auto* ca = master_->cert_authority();
+  RETURN_NOT_OK_PREPEND(ca->Init(std::move(key), std::move(cert)),
+                        "could not init master CA");
+
+  auto* tls = master_->mutable_tls_context();
+  RETURN_NOT_OK_PREPEND(tls->AddTrustedCertificate(ca->ca_cert()),
+                        "could not trust master CA cert");
+  // If we haven't signed our own server cert yet, do so.
+  boost::optional<security::CertSignRequest> csr =
+      tls->GetCsrIfNecessary();
+  if (csr) {
+    Cert cert;
+    RETURN_NOT_OK_PREPEND(ca->SignServerCSR(*csr, &cert),
+                          "couldn't sign master cert with CA cert");
+    RETURN_NOT_OK_PREPEND(tls->AdoptSignedCert(cert),
+                          "couldn't adopt signed master cert");
+  }
   return Status::OK();
 }
 
@@ -755,31 +899,6 @@ Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
   return Status::OK();
 }
 
-// Initialize the master's certificate authority component with the specified
-// private key and certificate.
-Status CatalogManager::InitCertAuthority(unique_ptr<PrivateKey> key,
-                                         unique_ptr<Cert> cert) {
-  leader_lock_.AssertAcquiredForWriting();
-  auto* ca = master_->cert_authority();
-  RETURN_NOT_OK_PREPEND(ca->Init(std::move(key), std::move(cert)),
-                        "could not init master CA");
-
-  auto* tls = master_->mutable_tls_context();
-  RETURN_NOT_OK_PREPEND(tls->AddTrustedCertificate(ca->ca_cert()),
-                        "could not trust master CA cert");
-  // If we haven't signed our own server cert yet, do so.
-  boost::optional<security::CertSignRequest> csr =
-      tls->GetCsrIfNecessary();
-  if (csr) {
-    Cert cert;
-    RETURN_NOT_OK_PREPEND(ca->SignServerCSR(*csr, &cert),
-                          "couldn't sign master cert with CA cert");
-    RETURN_NOT_OK_PREPEND(tls->AdoptSignedCert(cert),
-                          "couldn't adopt signed master cert");
-  }
-  return Status::OK();
-}
-
 // Store internal Kudu CA cert authority information into the system table.
 Status CatalogManager::StoreCertAuthorityInfo(const PrivateKey& key,
                                               const Cert& cert) {
@@ -789,28 +908,37 @@ Status CatalogManager::StoreCertAuthorityInfo(const PrivateKey& key,
   RETURN_NOT_OK(key.ToString(info.mutable_private_key(), DataFormat::DER));
   RETURN_NOT_OK(cert.ToString(info.mutable_certificate(), DataFormat::DER));
   RETURN_NOT_OK(sys_catalog_->AddCertAuthorityEntry(info));
-  LOG(INFO) << "Successfully stored the newly generated cert authority "
-               "information into the system table.";
+  LOG(INFO) << "Generated new certificate authority record";
 
   return Status::OK();
 }
 
-void CatalogManager::VisitTablesAndTabletsTask() {
+Status CatalogManager::InitTokenSigner() {
+  leader_lock_.AssertAcquiredForWriting();
+
+  set<string> expired_tsk_entry_ids;
+  RETURN_NOT_OK(LoadTskEntries(&expired_tsk_entry_ids));
+  RETURN_NOT_OK(TryGenerateNewTskUnlocked());
+  return DeleteTskEntries(expired_tsk_entry_ids);
+}
+
+void CatalogManager::PrepareForLeadershipTask() {
   {
     // Hack to block this function until InitSysCatalogAsync() is finished.
     shared_lock<LockType> l(lock_);
   }
   const Consensus* consensus = sys_catalog_->tablet_replica()->consensus();
-  int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  const int64_t term_before_wait =
+      consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
-    if (leader_ready_term_ == term) {
+    if (leader_ready_term_ == term_before_wait) {
       // The term hasn't changed since the last time this master was the
       // leader. It's not possible for another master to be leader for the same
       // term, so there hasn't been any actual leadership change and thus
       // there's no reason to reload the on-disk metadata.
       VLOG(2) << Substitute("Term $0 hasn't changed, ignoring dirty callback",
-                            term);
+                            term_before_wait);
       return;
     }
   }
@@ -826,86 +954,91 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     return;
   }
 
-  int64_t term_after_wait = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
-  if (term_after_wait != term) {
+  const int64_t term =
+      consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  if (term_before_wait != term) {
     // If we got elected leader again while waiting to catch up then we will
     // get another callback to visit the tables and tablets, so bail.
-    LOG(INFO) << "Term change from " << term << " to " << term_after_wait
+    LOG(INFO) << "Term changed from " << term_before_wait << " to " << term
         << " while waiting for master leader catchup. Not loading sys catalog metadata";
     return;
   }
 
   {
+    // This lambda returns the result of calling the 'func', checking whether
+    // the error, if any, is fatal for the leader catalog. If the returned
+    // status is non-OK, the caller should bail on the leadership preparation
+    // task. If the error is considered fatal, LOG(FATAL) is called.
+    const auto check = [this](
+        std::function<Status()> func,
+        const Consensus& consensus,
+        int64_t start_term,
+        const char* op_description) {
+
+      leader_lock_.AssertAcquiredForWriting();
+      const Status s = func();
+      if (s.ok()) {
+        // Not an error at all.
+        return s;
+      }
+
+      {
+        std::lock_guard<simple_spinlock> l(state_lock_);
+        if (state_ == kClosing) {
+          // Errors on shutdown are not considered fatal.
+          LOG(INFO) << op_description
+                    << " failed due to the shutdown of the catalog: "
+                    << s.ToString();
+          return s;
+        }
+      }
+
+      const int64_t term =
+          consensus.ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+      if (term != start_term) {
+        // If the term has changed we assume the new leader catalog is about
+        // to do the necessary work in its leadership preparation task.
+        LOG(INFO) << op_description << " failed; "
+                  << Substitute("change in term detected: $0 vs $1: ",
+                                start_term, term)
+                  << s.ToString();
+        return s;
+      }
+
+      // In all other cases non-OK status is considered fatal.
+      LOG(FATAL) << op_description << " failed: " << s.ToString();
+      return s; // unreachable
+    };
+
     // Block new catalog operations, and wait for existing operations to finish.
     std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
 
-    LOG(INFO) << "Loading table and tablet metadata into memory...";
-    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
-                       "Loading metadata into memory") {
-      CHECK_OK(VisitTablesAndTabletsUnlocked());
-    }
-
-    // TODO(KUDU-1920): this should not be done in case of external PKI.
-    // TODO(KUDU-1919): some kind of tool to rotate the IPKI CA
-    LOG(INFO) << "Loading CA info into memory...";
-    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
-                       "Loading CA info into memory") {
-      unique_ptr<PrivateKey> key;
-      unique_ptr<Cert> cert;
-      const Status& s = LoadCertAuthorityInfo(&key, &cert);
-      if (s.ok()) {
-        // Once succesfully loaded, the CA information is supposed to be valid:
-        // the leader master should not be run without CA certificate.
-        CHECK_OK(InitCertAuthority(std::move(key), std::move(cert)));
-      } else if (s.IsNotFound()) {
-        LOG(INFO) << "Did not find CA certificate and key for Kudu IPKI, "
-                     "will generate new ones";
-        // No CA information record has been found in the table -- generate
-        // a new one. The subtlety here is that first it's necessary to store
-        // the newly generated information into the system table and only after
-        // that initialize master certificate authority. The reason is:
-        // if the master server loses its leadership role by that time, there
-        // will be an error on an attempt to write into the system table.
-        // If that happens, skip the rest of the sequence: when this callback
-        // is invoked next time, the system table should already contain
-        // CA certificate information written by other master.
-        unique_ptr<PrivateKey> private_key(new PrivateKey);
-        unique_ptr<Cert> cert(new Cert);
-
-        // Generate new private key and corresponding CA certificate.
-        CHECK_OK(master_->cert_authority()->Generate(private_key.get(),
-                                                     cert.get()));
-        // It the leadership role is lost at this moment, writing into the
-        // system table will fail.
-        const Status& s = StoreCertAuthorityInfo(*private_key, *cert);
-        if (s.ok()) {
-          // The leader master should not run without CA certificate.
-          CHECK_OK(InitCertAuthority(std::move(private_key), std::move(cert)));
-        } else {
-          LOG(WARNING) << "Failed to write newly generated CA information into "
-                          "the system table, assuming change of leadership: "
-                       << s.ToString();
-        }
-      } else {
-        CHECK_OK(s);
-      }
-    }
-
-    LOG(INFO) << "Loading token signing keys...";
-    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
-                       "Loading token signing keys...") {
-      set<string> expired_tsk_entry_ids;
-      CHECK_OK(LoadTskEntries(&expired_tsk_entry_ids));
-      Status s = CheckGenerateNewTskUnlocked();
-      if (!s.ok()) {
-        LOG(WARNING) << "Failed to generate and persist new TSK, "
-                        "assuming change of leadership: " << s.ToString();
+    static const char* const kLoadMetaOpDescription =
+        "Loading table and tablet metadata into memory";
+    LOG(INFO) << kLoadMetaOpDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kLoadMetaOpDescription) {
+      if (!check(std::bind(&CatalogManager::VisitTablesAndTabletsUnlocked, this),
+                 *consensus, term, kLoadMetaOpDescription).ok()) {
         return;
       }
-      s = DeleteTskEntries(expired_tsk_entry_ids);
-      if (!s.ok()) {
-        LOG(WARNING) << "Failed to purge expired TSK entries from system table, "
-                        "assuming change of leadership: " << s.ToString();
+    }
+
+    // TODO(KUDU-1920): update this once "BYO PKI" feature is supported.
+    static const char* const kCaInitOpDescription =
+        "Initializing Kudu internal certificate authority";
+    LOG(INFO) << kCaInitOpDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kCaInitOpDescription) {
+      if (!check(std::bind(&CatalogManager::InitCertAuthority, this),
+                 *consensus, term, kCaInitOpDescription).ok()) {
+        return;
+      }
+    }
+
+    static const char* const kTskOpDescription = "Loading token signing keys";
+    LOG(INFO) << kTskOpDescription << "...";
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kTskOpDescription) {
+      if (!check(std::bind(&CatalogManager::InitTokenSigner, this),
+                 *consensus, term, kTskOpDescription).ok()) {
         return;
       }
     }
@@ -3279,8 +3412,9 @@ void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& ta
     return;
   }
   const ConsensusStatePB& cstate = tablet_lock.data().pb.committed_consensus_state();
-  LOG(INFO) << "Sending DeleteTablet for " << cstate.config().peers().size()
-            << " replicas of tablet " << tablet->tablet_id();
+  LOG_WITH_PREFIX(INFO)
+      << "Sending DeleteTablet for " << cstate.config().peers().size()
+      << " replicas of tablet " << tablet->tablet_id();
   for (const auto& peer : cstate.config().peers()) {
     SendDeleteReplicaRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
                              boost::none, tablet->table(),
@@ -3318,6 +3452,8 @@ void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& table
               Substitute("Failed to send AddServer request for tablet $0", tablet->tablet_id()));
   // We can't access 'task' after calling Run() because it may delete itself
   // inside Run() in the case that the tablet has no known leader.
+  LOG_WITH_PREFIX(INFO)
+      << "Started AddServer task for tablet " << tablet->tablet_id();
 }
 
 void CatalogManager::ExtractTabletsToProcess(
@@ -3359,7 +3495,7 @@ void CatalogManager::ExtractTabletsToProcess(
 //   2) Try to write it to the system table.
 //   3) Pass it back to the TokenSigner on success.
 //   4) Check and switch TokenSigner to the new key if it's time to do so.
-Status CatalogManager::CheckGenerateNewTskUnlocked() {
+Status CatalogManager::TryGenerateNewTskUnlocked() {
   TokenSigner* signer = master_->token_signer();
   unique_ptr<security::TokenSigningPrivateKey> tsk;
   RETURN_NOT_OK(signer->CheckNeedKey(&tsk));
@@ -3369,9 +3505,10 @@ Status CatalogManager::CheckGenerateNewTskUnlocked() {
     tsk->ExportPB(&tsk_pb);
     SysTskEntryPB sys_entry;
     sys_entry.mutable_tsk()->Swap(&tsk_pb);
+    MAYBE_INJECT_RANDOM_LATENCY(
+        FLAGS_catalog_manager_inject_latency_prior_tsk_write_ms);
     RETURN_NOT_OK(sys_catalog_->AddTskEntry(sys_entry));
-    LOG(INFO) << "Saved newly generated TSK " << tsk->key_seq_num()
-              << " into the system table.";
+    LOG_WITH_PREFIX(INFO) << "Generated new TSK " << tsk->key_seq_num();
     // Then add the new TSK into the signer.
     RETURN_NOT_OK(signer->AddKey(std::move(tsk)));
   }
@@ -3381,6 +3518,9 @@ Status CatalogManager::CheckGenerateNewTskUnlocked() {
 Status CatalogManager::LoadTskEntries(set<string>* expired_entry_ids) {
   TskEntryLoader loader;
   RETURN_NOT_OK(sys_catalog_->VisitTskEntries(&loader));
+  for (const auto& key : loader.entries()) {
+    LOG_WITH_PREFIX(INFO) << "Loaded TSK: " << key.key_seq_num();
+  }
   if (expired_entry_ids) {
     set<string> ref(loader.expired_entry_ids());
     expired_entry_ids->swap(ref);
@@ -3431,9 +3571,10 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   // within the timeout. So the tablet will be replaced by a new one.
   scoped_refptr<TabletInfo> replacement = CreateTabletInfo(tablet->table().get(),
                                                            old_info.pb.partition());
-  LOG(WARNING) << "Tablet " << tablet->ToString() << " was not created within "
-               << "the allowed timeout. Replacing with a new tablet "
-               << replacement->tablet_id();
+  LOG_WITH_PREFIX(WARNING)
+      << "Tablet " << tablet->ToString() << " was not created within "
+      << "the allowed timeout. Replacing with a new tablet "
+      << replacement->tablet_id();
 
   // Mark old tablet as replaced.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
@@ -3484,12 +3625,15 @@ Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint3
   actions.table_to_update = table;
   Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
-    LOG(WARNING) << "An error occurred while updating sys-tables: " << s.ToString();
+    LOG_WITH_PREFIX(WARNING)
+        << "An error occurred while updating sys-tables: " << s.ToString();
     return s;
   }
 
   l.Commit();
-  LOG(INFO) << table->ToString() << " - Alter table completed version=" << current_version;
+  LOG_WITH_PREFIX(INFO)
+      << table->ToString() << " - Alter table completed version="
+      << current_version;
   return Status::OK();
 }
 
@@ -3572,7 +3716,8 @@ Status CatalogManager::ProcessPendingAssignments(
   }
 
   if (!s.ok()) {
-    LOG(WARNING) << "Aborting the current task due to error: " << s.ToString();
+    LOG_WITH_PREFIX(WARNING)
+        << "Aborting the current task due to error: " << s.ToString();
     // If there was an error, abort any mutations started by the
     // current task.
     unlocker_out.Abort();
@@ -3882,7 +4027,9 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
       StatusToPB(s, resp->mutable_error()->mutable_status());
       break;
     } else {
-      LOG(FATAL) << "Unexpected error while building tablet locations: " << s.ToString();
+      LOG_WITH_PREFIX(FATAL)
+          << "Unexpected error while building tablet locations: "
+          << s.ToString();
     }
   }
   resp->set_ttl_millis(FLAGS_table_locations_ttl_ms);
@@ -3968,7 +4115,6 @@ void CatalogManager::AbortAndWaitForAllTasks(
     t->WaitTasksCompletion();
   }
 }
-
 ////////////////////////////////////////////////////////////
 // CatalogManager::ScopedLeaderSharedLock
 ////////////////////////////////////////////////////////////
@@ -3976,7 +4122,10 @@ void CatalogManager::AbortAndWaitForAllTasks(
 CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
     CatalogManager* catalog)
     : catalog_(DCHECK_NOTNULL(catalog)),
-      leader_shared_lock_(catalog->leader_lock_, std::try_to_lock) {
+      leader_shared_lock_(catalog->leader_lock_, std::try_to_lock),
+      catalog_status_(Status::Uninitialized("")),
+      leader_status_(Status::Uninitialized("")),
+      initial_term_(-1) {
 
   // Check if the catalog manager is running.
   std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
@@ -3986,11 +4135,13 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
                    catalog_->state_));
     return;
   }
+  catalog_status_ = Status::OK();
 
   // Check if the catalog manager is the leader.
-  ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->consensus()->
-      ConsensusState(CONSENSUS_CONFIG_COMMITTED);
-  string uuid = catalog_->master_->fs_manager()->uuid();
+  const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
+      consensus()->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  initial_term_ = cstate.current_term();
+  const string& uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     leader_status_ = Status::IllegalState(
         Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
@@ -4003,6 +4154,14 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
         "Leader not yet ready to serve requests");
     return;
   }
+  leader_status_ = Status::OK();
+}
+
+bool CatalogManager::ScopedLeaderSharedLock::has_term_changed() const {
+  DCHECK(leader_status().ok());
+  const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
+      consensus()->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  return cstate.current_term() != initial_term_;
 }
 
 template<typename RespClass>

@@ -411,8 +411,6 @@ TEST_F(SysCatalogTest, LoadCertAuthorityInfo) {
 
 // Check that if the certificate authority information is already present,
 // it cannot be overwritten using SysCatalogTable::AddCertAuthorityInfo().
-// Basically, this is to verify that SysCatalogTable::AddCertAuthorityInfo()
-// can be called just once to store CA information on first cluster startup.
 TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
   // The system catalog should already contain newly generated CA private key
   // and certificate: the SetUp() method awaits for the catalog manager
@@ -422,7 +420,7 @@ TEST_F(SysCatalogTest, AttemptOverwriteCertAuthorityInfo) {
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->
             GetCertAuthorityEntry(&ca_entry));
   const Status s = master_->catalog_manager()->sys_catalog()->
-            AddCertAuthorityEntry(ca_entry);
+      AddCertAuthorityEntry(ca_entry);
   ASSERT_TRUE(s.IsCorruption()) << s.ToString();
   ASSERT_EQ("Corruption: One or more rows failed to write", s.ToString());
 }

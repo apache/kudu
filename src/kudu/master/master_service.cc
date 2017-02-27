@@ -50,6 +50,12 @@ DEFINE_bool(master_support_connect_to_master_rpc, true,
 TAG_FLAG(master_support_connect_to_master_rpc, unsafe);
 TAG_FLAG(master_support_connect_to_master_rpc, hidden);
 
+DEFINE_bool(master_non_leader_masters_propagate_tsk, false,
+            "Whether a non-leader master sends information about its TSKs in "
+            "response to a tablet server's heartbeat. This is intended for "
+            "tests scenarios only and should not be used elsewhere.");
+TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
+
 using kudu::security::SignedTokenPB;
 using google::protobuf::Message;
 using std::string;
@@ -191,9 +197,12 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
   }
 
-  // 7. Only leaders send public parts of non-expired TSK
-  // which the TS doesn't have.
-  if (is_leader_master && req->has_latest_tsk_seq_num()) {
+  // 7. Only leaders send public parts of non-expired TSK which the TS doesn't
+  //    have, except if the '--master_non_leader_masters_propagate_tsk'
+  //    test-only flag is set.
+  if ((is_leader_master ||
+       PREDICT_FALSE(FLAGS_master_non_leader_masters_propagate_tsk)) &&
+      req->has_latest_tsk_seq_num()) {
     auto tsk_public_keys = server_->token_signer()->verifier().ExportKeys(
         req->latest_tsk_seq_num());
     for (auto& key : tsk_public_keys) {
