@@ -183,7 +183,9 @@ set(CXX_FLAGS_FASTDEBUG "-ggdb -O1 -fno-omit-frame-pointer")
 set(CXX_FLAGS_RELEASE "-O3 -g -DNDEBUG -fno-omit-frame-pointer")
 
 if (NOT "${KUDU_USE_LTO}" STREQUAL "")
-  set(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} flto -fno-use-linker-plugin")
+  set(CXX_FLAGS_RELEASE "${CXX_FLAGS_RELEASE} -flto -fuse-ld=lld")
+  set(CMAKE_AR "llvm-ar")
+  set(CMAKE_RANLIB "llvm-ranlib")
 endif()
 
 set(CXX_FLAGS_PROFILE_GEN "${CXX_FLAGS_RELEASE} -fprofile-generate")
