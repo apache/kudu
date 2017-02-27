@@ -59,9 +59,10 @@ void SmokeTestKerberizedCluster(const ExternalMiniClusterOptions& opts) {
 
   // Sleep long enough to ensure that the tserver's ticket would have expired
   // if not for the renewal thread doing its thing.
-  SleepFor(MonoDelta::FromSeconds(10));
+  SleepFor(MonoDelta::FromSeconds(16));
 
-  // Re-kinit for the client, since the client's ticket would have expired as well.
+  // Re-kinit for the client, since the client's ticket would have expired as well
+  // since the renewal thread doesn't run for the test client.
   ASSERT_OK(cluster.kdc()->Kinit("test-admin"));
 
   // Restart the master, and make sure the tserver is still able to reconnect and
@@ -74,22 +75,26 @@ void SmokeTestKerberizedCluster(const ExternalMiniClusterOptions& opts) {
 }
 
 TEST_F(ExternalMiniClusterTest, TestKerberosRenewal) {
+  if (!AllowSlowTests()) return;
+
   ExternalMiniClusterOptions opts;
   opts.enable_kerberos = true;
   // Set the kerberos ticket lifetime as 5 seconds to force ticket renewal every 5 seconds.
-  opts.mini_kdc_options.ticket_lifetime = "5s";
+  opts.mini_kdc_options.ticket_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
   SmokeTestKerberizedCluster(opts);
 }
 
 TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
+  if (!AllowSlowTests()) return;
+
   ExternalMiniClusterOptions opts;
   opts.enable_kerberos = true;
   // Set the kerberos ticket lifetime and the renew lifetime as 5 seconds each, to force the
   // processes to acquire a new ticket instead of being able to renew the existing one.
-  opts.mini_kdc_options.ticket_lifetime = "5s";
-  opts.mini_kdc_options.renew_lifetime = "5s";
+  opts.mini_kdc_options.ticket_lifetime = "15s";
+  opts.mini_kdc_options.renew_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
   SmokeTestKerberizedCluster(opts);
