@@ -183,48 +183,50 @@ Status BinaryPlainBlockDecoder::ParseHeader() {
   const uint8_t *p = data_.data() + offsets_pos;
   const uint8_t *limit = data_.data() + data_.size();
 
-  offsets_.clear();
   // Reserve one extra element, which we'll fill in at the end
   // with an offset past the last element.
-  offsets_.reserve(num_elems_ + 1);
-
+  offsets_buf_.resize(sizeof(uint32_t) * (num_elems_ + 1));
+  uint32_t* dst_ptr = reinterpret_cast<uint32_t*>(offsets_buf_.data());
   size_t rem = num_elems_;
   while (rem >= 4) {
-    uint32_t ints[4];
-    if (p + 16 < limit) {
-      p = coding::DecodeGroupVarInt32_SSE(p, &ints[0], &ints[1], &ints[2], &ints[3]);
-    } else {
-      p = coding::DecodeGroupVarInt32_SlowButSafe(p, &ints[0], &ints[1], &ints[2], &ints[3]);
-    }
-    if (p > limit) {
-      LOG(WARNING) << "bad block: " << HexDump(data_);
-      return Status::Corruption(
-        StringPrintf("unable to decode offsets in block"));
-    }
+    if (PREDICT_TRUE(p + 16 < limit)) {
+      p = coding::DecodeGroupVarInt32_SSE(
+          p, &dst_ptr[0], &dst_ptr[1], &dst_ptr[2], &dst_ptr[3]);
 
-    offsets_.push_back(ints[0]);
-    offsets_.push_back(ints[1]);
-    offsets_.push_back(ints[2]);
-    offsets_.push_back(ints[3]);
+      // The above function should add at most 17 (4 32-bit ints plus a selector byte) to
+      // 'p'. Thus, since we checked that (p + 16 < limit) above, we are guaranteed that
+      // (p <= limit) now.
+      DCHECK_LE(p, limit);
+    } else {
+      p = coding::DecodeGroupVarInt32_SlowButSafe(
+          p, &dst_ptr[0], &dst_ptr[1], &dst_ptr[2], &dst_ptr[3]);
+      if (PREDICT_FALSE(p > limit)) {
+        // Only need to check 'p' overrun in the slow path, because 'p' may have
+        // been within 16 bytes of 'limit'.
+        LOG(WARNING) << "bad block: " << HexDump(data_);
+        return Status::Corruption(StringPrintf("unable to decode offsets in block"));
+      }
+    }
+    dst_ptr += 4;
     rem -= 4;
   }
 
   if (rem > 0) {
     uint32_t ints[4];
     p = coding::DecodeGroupVarInt32_SlowButSafe(p, &ints[0], &ints[1], &ints[2], &ints[3]);
-    if (p > limit) {
+    if (PREDICT_FALSE(p > limit)) {
       LOG(WARNING) << "bad block: " << HexDump(data_);
       return Status::Corruption(
         StringPrintf("unable to decode offsets in block"));
     }
 
     for (int i = 0; i < rem; i++) {
-      offsets_.push_back(ints[i]);
+      *dst_ptr++ = ints[i];
     }
   }
 
   // Add one extra entry pointing after the last item to make the indexing easier.
-  offsets_.push_back(offsets_pos);
+  *dst_ptr++ = offsets_pos;
 
   parsed_ = true;
 

@@ -122,9 +122,9 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
   }
 
   Slice string_at_index(size_t idx) const {
-    const uint32_t offset = offsets_[idx];
-    uint32_t len = offsets_[idx + 1] - offset;
-    return Slice(&data_[offset], len);
+    const uint32_t str_offset = offset(idx);
+    uint32_t len = offset(idx + 1) - str_offset;
+    return Slice(&data_[str_offset], len);
   }
 
   // Minimum length of a header.
@@ -139,13 +139,28 @@ class BinaryPlainBlockDecoder final : public BlockDecoder {
   template <typename CellHandler>
   Status HandleBatch(size_t* n, ColumnDataView* dst, CellHandler c);
 
+  // Return the offset within 'data_' where the string value with index 'idx'
+  // can be found.
+  uint32_t offset(int idx) const {
+    const uint8_t* p = &offsets_buf_[idx * sizeof(uint32_t)];
+    uint32_t ret;
+    memcpy(&ret, p, sizeof(uint32_t));
+    return ret;
+  }
+
   Slice data_;
   bool parsed_;
 
-  // The parsed offsets.
+  // A buffer for an array of 32-bit integers for the offsets of the underlying
+  // strings in 'data_'.
+  //
   // This array also contains one extra offset at the end, pointing
   // _after_ the last entry. This makes the code much simpler.
-  std::vector<uint32_t> offsets_;
+  //
+  // The array is stored inside a 'faststring' instead of a vector<uint32_t> to
+  // avoid the overhead of calling vector::push_back -- one would think it would
+  // be fully inlined away, but it's actually a perf win to do this.
+  faststring offsets_buf_;
 
   uint32_t num_elems_;
   rowid_t ordinal_pos_base_;
