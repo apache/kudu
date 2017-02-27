@@ -45,11 +45,15 @@ endif()
 # build/<first build directory>
 # build/<second build directory>
 # ...
-if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/[^/]+$")
-  if ("${CMAKE_CURRENT_BINARY_DIR}" MATCHES "^${CMAKE_CURRENT_SOURCE_DIR}/build/latest")
-    message(FATAL_ERROR "Should not run cmake inside the build/latest symlink. "
-            "First change directories into the destination of the symlink.")
-  endif()
+if ("${CMAKE_CURRENT_BINARY_DIR}" STREQUAL
+    "${CMAKE_CURRENT_SOURCE_DIR}/build/latest")
+  message(FATAL_ERROR "Should not run cmake inside the build/latest symlink. "
+    "First change directories into the destination of the symlink.")
+endif()
+string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/build/" ""
+  BLESSED_BUILD_SUBDIR "${CMAKE_CURRENT_BINARY_DIR}")
+string(FIND "${BLESSED_BUILD_SUBDIR}" "/" SLASH_POS)
+if (SLASH_POS EQUAL -1)
   if (NOT APPLE)
     set(MORE_ARGS "-T")
   endif()
