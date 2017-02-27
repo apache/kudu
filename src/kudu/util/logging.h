@@ -65,6 +65,10 @@
 #define KUDU_REDACT(expr) \
   (KUDU_SHOULD_REDACT() ? kudu::kRedactionMessage : (expr))
 
+// Like the above, but with the additional condition that redaction will only
+// be performed if 'cond' must be true.
+#define KUDU_MAYBE_REDACT_IF(cond, expr) \
+  ((KUDU_SHOULD_REDACT() && (cond)) ? kudu::kRedactionMessage : (expr))
 
 ////////////////////////////////////////
 // Redaction implementation details follow.

@@ -16,6 +16,8 @@
 // under the License.
 package jsonwriter_test;
 
+import "kudu/util/pb_util.proto";
+
 // This proto includes every type of field in both singular and repeated
 // forms. This is mostly copied from 'unittest.proto' in the protobuf source
 // (hence the odd field numbers which skip some).
@@ -45,7 +47,9 @@ message TestAllTypes {
   optional   double optional_double   = 12;
   optional     bool optional_bool     = 13;
   optional   string optional_string   = 14;
-  optional    bytes optional_bytes    = 15;
+  optional   string optional_redacted_string = 15 [ (kudu.REDACT) = true ];
+  optional    bytes optional_bytes    = 16;
+  optional    bytes optional_redacted_bytes = 17 [ (kudu.REDACT) = true ];
 
   optional NestedMessage optional_nested_message  = 18;
   optional NestedEnum optional_nested_enum     = 21;
@@ -66,6 +70,8 @@ message TestAllTypes {
   repeated     bool repeated_bool     = 43;
   repeated   string repeated_string   = 44;
   repeated    bytes repeated_bytes    = 45;
+  repeated   string repeated_redacted_string = 46 [ (kudu.REDACT) = true ];
+  repeated   string repeated_redacted_bytes = 47 [ (kudu.REDACT) = true ];
 
   repeated NestedMessage repeated_nested_message = 48;
   repeated NestedEnum repeated_nested_enum = 51;

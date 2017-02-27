@@ -17,8 +17,10 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/jsonwriter_test.pb.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/test_util.h"
 
 using jsonwriter_test::TestAllTypes;
@@ -33,6 +35,7 @@ TEST_F(TestJsonWriter, TestPBEmpty) {
 }
 
 TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
+  FLAGS_log_redact_user_data = true;
   TestAllTypes pb;
   pb.set_optional_int32(1);
   pb.set_optional_int64(2);
@@ -48,6 +51,7 @@ TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
   pb.set_optional_double(12);
   pb.set_optional_bool(true);
   pb.set_optional_string("hello world");
+  pb.set_optional_redacted_string("secret!");
   pb.set_optional_nested_enum(TestAllTypes::FOO);
   ASSERT_EQ("{\n"
             "    \"optional_int32\": 1,\n"
@@ -64,6 +68,7 @@ TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
             "    \"optional_double\": 12,\n"
             "    \"optional_bool\": true,\n"
             "    \"optional_string\": \"hello world\",\n"
+            "    \"optional_redacted_string\": \"<redacted>\",\n"
             "    \"optional_nested_enum\": \"FOO\"\n"
             "}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
   ASSERT_EQ("{"
@@ -81,15 +86,20 @@ TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
             "\"optional_double\":12,"
             "\"optional_bool\":true,"
             "\"optional_string\":\"hello world\","
+            "\"optional_redacted_string\":\"<redacted>\","
             "\"optional_nested_enum\":\"FOO\""
             "}", JsonWriter::ToJson(pb, JsonWriter::COMPACT));
 
 }
 
 TEST_F(TestJsonWriter, TestPBRepeatedPrimitives) {
+  FLAGS_log_redact_user_data = true;
   TestAllTypes pb;
   for (int i = 0; i <= 3; i++) {
     pb.add_repeated_int32(i);
+    pb.add_repeated_string(strings::Substitute("hi $0", i));
+    pb.add_repeated_redacted_string("secret!");
+    pb.add_repeated_redacted_bytes("secret!");
   }
   ASSERT_EQ("{\n"
             "    \"repeated_int32\": [\n"
@@ -97,9 +107,32 @@ TEST_F(TestJsonWriter, TestPBRepeatedPrimitives) {
             "        1,\n"
             "        2,\n"
             "        3\n"
+            "    ],\n"
+            "    \"repeated_string\": [\n"
+            "        \"hi 0\",\n"
+            "        \"hi 1\",\n"
+            "        \"hi 2\",\n"
+            "        \"hi 3\"\n"
+            "    ],\n"
+            "    \"repeated_redacted_string\": [\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\"\n"
+            "    ],\n"
+            "    \"repeated_redacted_bytes\": [\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\",\n"
+            "        \"<redacted>\"\n"
             "    ]\n"
             "}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
-  ASSERT_EQ("{\"repeated_int32\":[0,1,2,3]}",
+  ASSERT_EQ("{\"repeated_int32\":[0,1,2,3],"
+            "\"repeated_string\":[\"hi 0\",\"hi 1\",\"hi 2\",\"hi 3\"],"
+            "\"repeated_redacted_string\":[\"<redacted>\",\"<redacted>\","
+            "\"<redacted>\",\"<redacted>\"],"
+            "\"repeated_redacted_bytes\":[\"<redacted>\",\"<redacted>\","
+            "\"<redacted>\",\"<redacted>\"]}",
             JsonWriter::ToJson(pb, JsonWriter::COMPACT));
 }
 

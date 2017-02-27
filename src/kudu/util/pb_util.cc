@@ -567,7 +567,7 @@ class SecureFieldPrinter : public TextFormat::FieldValuePrinter {
   string PrintBytes(const string& val) const override {
     if (hide_next_string_) {
       hide_next_string_ = false;
-      return KUDU_REDACT(super::PrintString(val));
+      return KUDU_REDACT(super::PrintBytes(val));
     }
     return super::PrintBytes(val);
   }

@@ -66,6 +66,8 @@ class JsonWriter {
   void String(const char* str);
   void String(const std::string& str);
 
+  // Convert the given protobuf message to JSON.
+  // The output respects redaction for 'string' and 'bytes' fields.
   void Protobuf(const google::protobuf::Message& message);
 
   template<typename T>

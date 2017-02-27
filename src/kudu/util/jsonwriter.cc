@@ -22,9 +22,13 @@
 
 #include <glog/logging.h>
 #include <google/protobuf/descriptor.h>
+#include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/message.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/rapidjson.h>
+
+#include "kudu/util/logging.h"
+#include "kudu/util/pb_util.pb.h"
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Message;
@@ -213,7 +217,8 @@ void JsonWriter::ProtobufField(const Message& pb, const FieldDescriptor* field) 
       String(reflection->GetEnum(pb, field)->name());
       break;
     case FieldDescriptor::CPPTYPE_STRING:
-      String(reflection->GetString(pb, field));
+      String(KUDU_MAYBE_REDACT_IF(field->options().GetExtension(REDACT),
+                                  reflection->GetString(pb, field)));
       break;
     case FieldDescriptor::CPPTYPE_MESSAGE:
       Protobuf(reflection->GetMessage(pb, field));
@@ -251,7 +256,8 @@ void JsonWriter::ProtobufRepeatedField(const Message& pb, const FieldDescriptor*
       String(reflection->GetRepeatedEnum(pb, field, index)->name());
       break;
     case FieldDescriptor::CPPTYPE_STRING:
-      String(reflection->GetRepeatedString(pb, field, index));
+      String(KUDU_MAYBE_REDACT_IF(field->options().GetExtension(REDACT),
+                                  reflection->GetRepeatedString(pb, field, index)));
       break;
     case FieldDescriptor::CPPTYPE_MESSAGE:
       Protobuf(reflection->GetRepeatedMessage(pb, field, index));
