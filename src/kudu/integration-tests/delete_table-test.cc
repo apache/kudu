@@ -1053,6 +1053,12 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
       .num_replicas(1)
       .Create());
 
+  // Figure out the tablet id of the created tablet.
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts_map_.begin()->second, 1, timeout, &tablets));
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
   // Delete the master's metadata and start it back up. The tablet created
   // above is now unknown, but should not be deleted!
   cluster_->master()->Shutdown();
@@ -1096,7 +1102,10 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
         &METRIC_ENTITY_server, "kudu.tabletserver",
         &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
         "total_count", &num_delete_attempts));
-    ASSERT_EQ(1, num_delete_attempts);
+    // Sometimes the tablet server has time to report the orphaned tablet multiple times
+    // before the delete succeeds. This is ok because tablet deletion is idempotent.
+    ASSERT_GE(num_delete_attempts, 1);
+    ASSERT_OK(CheckTabletDeletedOnTS(0, tablet_id, SUPERBLOCK_NOT_EXPECTED));
   });
 
 }
