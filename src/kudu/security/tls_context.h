@@ -26,7 +26,8 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/mutex.h"
+#include "kudu/util/locks.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -75,7 +76,7 @@ class TlsContext {
   // Returns true if this TlsContext has been configured with a cert and key for
   // use with TLS-encrypted connections.
   bool has_cert() const {
-    MutexLock lock(lock_);
+    shared_lock<RWMutex> lock(lock_);
     return has_cert_;
   }
 
@@ -83,13 +84,13 @@ class TlsContext {
   // cert and key for use with TLS-encrypted connections. If this method returns
   // true, then 'has_trusted_cert' will also return true.
   bool has_signed_cert() const {
-    MutexLock lock(lock_);
+    shared_lock<RWMutex> lock(lock_);
     return has_cert_ && !csr_;
   }
 
   // Returns true if this TlsContext has at least one certificate in its trust store.
   bool has_trusted_cert() const {
-    MutexLock lock(lock_);
+    shared_lock<RWMutex> lock(lock_);
     return trusted_cert_count_ > 0;
   }
 
@@ -154,20 +155,21 @@ class TlsContext {
   // Return the number of certs that have been marked as trusted.
   // Used by tests.
   int trusted_cert_count_for_tests() const {
-    MutexLock lock(lock_);
+    shared_lock<RWMutex> lock(lock_);
     return trusted_cert_count_;
   }
 
  private:
 
-  Status VerifyCertChain(const Cert& cert) WARN_UNUSED_RESULT;
+  Status VerifyCertChainUnlocked(const Cert& cert) WARN_UNUSED_RESULT;
 
-  // Owned SSL context.
+  // Protects all members.
+  //
+  // Taken in write mode when any changes are modifying the underlying SSL_CTX
+  // using a mutating method (eg SSL_CTX_use_*) or when changing the value of
+  // any of our own member variables.
+  mutable RWMutex lock_;
   c_unique_ptr<SSL_CTX> ctx_;
-
-  // Protexts trusted_cert_count_, has_cert_ and csr_, as well as ctx_ when it
-  // needs to be updated transactionally with has_cert_ and csr_.
-  mutable Mutex lock_;
   int32_t trusted_cert_count_;
   bool has_cert_;
   boost::optional<CertSignRequest> csr_;

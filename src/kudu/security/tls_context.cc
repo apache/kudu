@@ -17,6 +17,7 @@
 
 #include "kudu/security/tls_context.h"
 
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,7 @@
 
 using strings::Substitute;
 using std::string;
+using std::unique_lock;
 
 DEFINE_int32(ipki_server_key_size, 2048,
              "the number of bits for server cert's private key. The server cert "
@@ -87,7 +89,8 @@ template<> struct SslTypeTraits<X509_STORE_CTX> {
 };
 
 TlsContext::TlsContext()
-    : trusted_cert_count_(0),
+    : lock_(RWMutex::Priority::PREFER_READING),
+      trusted_cert_count_(0),
       has_cert_(false) {
   security::InitializeOpenSSL();
 }
@@ -166,7 +169,7 @@ Status TlsContext::Init() {
   return Status::OK();
 }
 
-Status TlsContext::VerifyCertChain(const Cert& cert) {
+Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
   auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
 
@@ -197,15 +200,16 @@ Status TlsContext::VerifyCertChain(const Cert& cert) {
 }
 
 Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key) {
-  // Verify that the appropriate CA certs have been loaded into the context
-  // before we adopt a cert. Otherwise, client connections without the CA cert
-  // available would fail.
-  RETURN_NOT_OK(VerifyCertChain(cert));
-
   // Verify that the cert and key match.
   RETURN_NOT_OK(cert.CheckKeyMatch(key));
 
-  MutexLock lock(lock_);
+  std::unique_lock<RWMutex> lock(lock_);
+
+  // Verify that the appropriate CA certs have been loaded into the context
+  // before we adopt a cert. Otherwise, client connections without the CA cert
+  // available would fail.
+  RETURN_NOT_OK(VerifyCertChainUnlocked(cert));
+
   CHECK(!has_cert_);
 
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
@@ -219,6 +223,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
 Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   VLOG(2) << "Trusting certificate " << cert.SubjectName();
 
+  unique_lock<RWMutex> lock(lock_);
   ERR_clear_error();
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
   int rc = X509_STORE_add_cert(cert_store, cert.GetRawData());
@@ -233,12 +238,13 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
     }
     OPENSSL_RET_NOT_OK(rc, "failed to add trusted certificate");
   }
-  MutexLock lock(lock_);
   trusted_cert_count_ += 1;
   return Status::OK();
 }
 
 Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
+  shared_lock<RWMutex> lock(lock_);
+
   vector<string> ret;
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
 
@@ -316,7 +322,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   ignore_result(X509_check_ca(cert.GetRawData()));
 
   // Step 4: Adopt the new key and cert.
-  MutexLock lock(lock_);
+  unique_lock<RWMutex> lock(lock_);
   CHECK(!has_cert_);
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
@@ -328,7 +334,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
 }
 
 boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
-  MutexLock lock(lock_);
+  shared_lock<RWMutex> lock(lock_);
   if (csr_) {
     return csr_->Clone();
   }
@@ -336,12 +342,12 @@ boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
 }
 
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
+  unique_lock<RWMutex> lock(lock_);
+
   // Verify that the appropriate CA certs have been loaded into the context
   // before we adopt a cert. Otherwise, client connections without the CA cert
   // available would fail.
-  RETURN_NOT_OK(VerifyCertChain(cert));
-
-  MutexLock lock(lock_);
+  RETURN_NOT_OK(VerifyCertChainUnlocked(cert));
 
   if (!csr_) {
     // A signed cert has already been adopted.
@@ -392,7 +398,10 @@ Status TlsContext::InitiateHandshake(TlsHandshakeType handshake_type,
                                      TlsHandshake* handshake) const {
   CHECK(ctx_);
   CHECK(!handshake->ssl_);
-  handshake->adopt_ssl(ssl_make_unique(SSL_new(ctx_.get())));
+  {
+    shared_lock<RWMutex> lock(lock_);
+    handshake->adopt_ssl(ssl_make_unique(SSL_new(ctx_.get())));
+  }
   if (!handshake->ssl_) {
     return Status::RuntimeError("failed to create SSL handle", GetOpenSSLErrors());
   }

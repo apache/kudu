@@ -17,9 +17,12 @@
 
 #include "kudu/security/tls_handshake.h"
 
+#include <atomic>
 #include <functional>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
@@ -29,9 +32,11 @@
 #include "kudu/security/crypto.h"
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::vector;
 
 DECLARE_int32(ipki_server_key_size);
 
@@ -67,8 +72,7 @@ std::ostream& operator<<(std::ostream& o, Case c) {
   return o;
 }
 
-class TestTlsHandshake : public KuduTest,
-                         public ::testing::WithParamInterface<Case> {
+class TestTlsHandshakeBase : public KuduTest {
  public:
   void SetUp() override {
     KuduTest::SetUp();
@@ -124,6 +128,49 @@ class TestTlsHandshake : public KuduTest,
   string cert_path_;
   string key_path_;
 };
+
+class TestTlsHandshake : public TestTlsHandshakeBase,
+                   public ::testing::WithParamInterface<Case> {};
+
+class TestTlsHandshakeConcurrent : public TestTlsHandshakeBase,
+                   public ::testing::WithParamInterface<int> {};
+
+// Test concurrently running handshakes while changing the certificates on the TLS
+// context. We parameterize across different numbers of threads, because surprisingly,
+// fewer threads seems to trigger issues more easily in some cases.
+INSTANTIATE_TEST_CASE_P(NumThreads, TestTlsHandshakeConcurrent, ::testing::Values(1, 2, 4, 8));
+TEST_P(TestTlsHandshakeConcurrent, TestConcurrentAdoptCert) {
+  const int kNumThreads = GetParam();
+
+  ASSERT_OK(server_tls_.GenerateSelfSignedCertAndKey());
+  std::atomic<bool> done(false);
+  vector<std::thread> handshake_threads;
+  for (int i = 0; i < kNumThreads; i++) {
+    handshake_threads.emplace_back([&]() {
+        while (!done) {
+          RunHandshake(TlsVerificationMode::VERIFY_NONE, TlsVerificationMode::VERIFY_NONE);
+        }
+      });
+  }
+  auto c = MakeScopedCleanup([&](){
+      done = true;
+      for (std::thread& t : handshake_threads) {
+        t.join();
+      }
+    });
+
+  SleepFor(MonoDelta::FromMilliseconds(10));
+  {
+    PrivateKey ca_key;
+    Cert ca_cert;
+    ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
+    Cert cert;
+    ASSERT_OK(CertSigner(&ca_cert, &ca_key).Sign(*server_tls_.GetCsrIfNecessary(), &cert));
+    ASSERT_OK(server_tls_.AddTrustedCertificate(ca_cert));
+    ASSERT_OK(server_tls_.AdoptSignedCert(cert));
+  }
+  SleepFor(MonoDelta::FromMilliseconds(10));
+}
 
 TEST_F(TestTlsHandshake, TestHandshakeSequence) {
   PrivateKey ca_key;
