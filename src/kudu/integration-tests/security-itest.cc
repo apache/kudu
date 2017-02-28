@@ -139,7 +139,11 @@ TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
             s.ToString());
 }
 
+#ifndef __APPLE__
 // Test trying to access the cluster with no Kerberos credentials at all.
+// This test is ignored on macOS because the system Kerberos implementation
+// (Heimdal) caches the non-existence of client credentials, which causes
+// subsequent tests to fail.
 TEST_F(SecurityITest, TestNoKerberosCredentials) {
   StartCluster();
   ASSERT_OK(cluster_->kdc()->Kdestroy());
@@ -154,6 +158,7 @@ TEST_F(SecurityITest, TestNoKerberosCredentials) {
                      "to .*: (No Kerberos credentials available|"
                      "Credentials cache file.*not found)");
 }
+#endif
 
 // Test cluster access by a user who is not authorized as a client.
 TEST_F(SecurityITest, TestUnauthorizedClientKerberosCredentials) {

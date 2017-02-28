@@ -473,29 +473,12 @@ build_rapidjson() {
 }
 
 build_squeasel() {
-  # Determine location of OpenSSL header files if building on OS X.
-  # On OS X 10.11.x and newer, OpenSSL headers are not in /usr/include
-  # anymore.
-  if [ -n "$OS_OSX" ]; then
-    local openssl_cflags=
-    if openssl_cflags=$(pkg-config --cflags openssl) ; then
-      # Using pkg-config works if OpenSSL is built via MacPorts.
-      EXTRA_CFLAGS="$EXTRA_CFLAGS $openssl_cflags"
-    fi
-    if [ -z $openssl_cflags ]; then
-      # If OpenSSL is built via brew, pkg-config does not report on cflags.
-      local brew_openssl_include_dir=/usr/local/opt/openssl/include
-      if [ -d $brew_openssl_include_dir ]; then
-        EXTRA_CFLAGS="$EXTRA_CFLAGS -I$brew_openssl_include_dir"
-      fi
-    fi
-  fi
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
   SQUEASEL_BDIR=$TP_BUILD_DIR/$SQUEASEL_NAME$MODE_SUFFIX
   mkdir -p $SQUEASEL_BDIR
   pushd $SQUEASEL_BDIR
-  ${CC:-gcc} $EXTRA_CFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c "$SQUEASEL_SOURCE/squeasel.c"
+  ${CC:-gcc} $EXTRA_CFLAGS $OPENSSL_CFLAGS $OPENSSL_LDFLAGS -std=c99 -O3 -DNDEBUG -fPIC -c "$SQUEASEL_SOURCE/squeasel.c"
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
   cp $SQUEASEL_SOURCE/squeasel.h $PREFIX/include/
@@ -509,21 +492,11 @@ build_curl() {
   mkdir -p $CURL_BDIR
   pushd $CURL_BDIR
 
-  # If the el6 workaround openssl is present, we must build curl against that
-  # version of openssl, not the system version, because at test runtime we use
-  # the workaround openssl.
-  local CURL_EXTRA_CPPFLAGS=""
-  local CURL_EXTRA_LDFLAGS=""
-  if [ -d "$OPENSSL_WORKAROUND_DIR" ]; then
-    CURL_EXTRA_CPPFLAGS="-I$OPENSSL_WORKAROUND_DIR/usr/include"
-    CURL_EXTRA_LDFLAGS="-L$OPENSSL_WORKAROUND_DIR/usr/lib64 -Wl,-rpath,$OPENSSL_WORKAROUND_DIR/usr/lib64"
-  fi
-
   # Note: curl shows a message asking for CPPFLAGS to be used for include
   # directories, not CFLAGS.
   CFLAGS="$EXTRA_CFLAGS" \
-    CPPFLAGS="$CURL_EXTRA_CPPFLAGS" \
-    LDFLAGS="$EXTRA_LDFLAGS $CURL_EXTRA_LDFLAGS" \
+    CPPFLAGS="$EXTRA_CPPFLAGS $OPENSSL_CFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS $OPENSSL_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     $CURL_SOURCE/configure \
     --prefix=$PREFIX \

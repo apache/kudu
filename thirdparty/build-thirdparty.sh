@@ -142,6 +142,14 @@ if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
   DYLIB_SUFFIX="so"
   PARALLEL=${PARALLEL:-$(grep -c processor /proc/cpuinfo)}
+
+  if [ -d "$OPENSSL_WORKAROUND_DIR" ]; then
+    # If the el6 workaround openssl is present, we must build dependencies
+    # against that version of openssl, not the system version, because at test
+    # runtime we use the workaround openssl.
+    OPENSSL_CFLAGS="-I$OPENSSL_WORKAROUND_DIR/usr/include"
+    OPENSSL_LDFLAGS="-L$OPENSSL_WORKAROUND_DIR/usr/lib64 -Wl,-rpath,$OPENSSL_WORKAROUND_DIR/usr/lib64"
+  fi
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
   DYLIB_SUFFIX="dylib"
@@ -153,6 +161,18 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -stdlib=libc++"
   EXTRA_LDFLAGS="$EXTRA_LDFLAGS -stdlib=libc++"
   EXTRA_LIBS="$EXTRA_LIBS -lc++ -lc++abi"
+
+  # Build against the Macports or Homebrew OpenSSL versions, in order to match
+  # the Kudu build.
+  OPENSSL_CFLAGS=$(pkg-config --cflags openssl)
+  if [ -z $OPENSSL_CFLAGS ]; then
+    # If OpenSSL is built via Homebrew, pkg-config does not report on cflags.
+    homebrew_openssl_dir=/usr/local/opt/openssl
+    if [ -d $homebrew_openssl_dir ]; then
+      OPENSSL_CFLAGS="-I$homebrew_openssl_dir/include"
+      OPENSSL_LDFLAGS="-L$homebrew_openssl_dir/lib"
+    fi
+  fi
 
   # TSAN doesn't work on macOS. If it was explicitly asked for, respond with an
   # error. Otherwise, just disable it silently.
@@ -296,11 +316,11 @@ fi
 
 restore_env
 
-# If we're on MacOs best to exit here, otherwise single dependency builds will try to
+# If we're on macOS best to exit here, otherwise single dependency builds will try to
 # build the tsan version of the dependency (and fail).
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
-  echo "Not building tsan dependencies on MacOs."
+  echo "Not building tsan dependencies on macOS."
   finish
 fi
 

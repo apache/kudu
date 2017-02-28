@@ -94,8 +94,12 @@ TEST_F(MiniKdcTest, TestBasicOperation) {
     ASSERT_OK(security::MapPrincipalToLocalName("foo/host@KRBTEST.COM", &local_user));
     ASSERT_EQ("foo", local_user);
 
+    // The Heimdal implementation in macOS does not correctly implement auth to
+    // local mapping (see init.cc).
+#ifndef __APPLE__
     ASSERT_OK(security::MapPrincipalToLocalName("foo@OTHERREALM.COM", &local_user));
     ASSERT_EQ("other-foo", local_user);
+#endif
   }
 }
 
