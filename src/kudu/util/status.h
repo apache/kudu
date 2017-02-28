@@ -89,6 +89,8 @@
     KUDU_DCHECK(_s.ok()) << (msg) << ": " << _s.ToString();  \
   } while (0);
 
+/// @brief If the status is bad, DCHECK immediately, appending the status to the
+///   logged 'Bad status' message.
 #define KUDU_DCHECK_OK(s) KUDU_DCHECK_OK_PREPEND(s, "Bad status")
 
 /// @file status.h
@@ -309,11 +311,11 @@ class KUDU_EXPORT Status {
   std::string ToString() const;
 
   /// @return A string representation of the status code, without the message
-  ///   text or posix code information.
+  ///   text or POSIX code information.
   std::string CodeAsString() const;
 
   /// This is similar to ToString, except that it does not include
-  /// the stringified error code or posix code.
+  /// the stringified error code or POSIX code.
   ///
   /// @note The returned Slice is only valid as long as this Status object
   ///   remains live and unchanged.
@@ -400,7 +402,7 @@ inline Status::Status(const Status& s) {
 }
 inline void Status::operator=(const Status& s) {
   // The following condition catches both aliasing (when this == &s),
-  // and the common case where both s and *this are ok.
+  // and the common case where both s and *this are OK.
   if (state_ != s.state_) {
     delete[] state_;
     state_ = (s.state_ == NULL) ? NULL : CopyState(s.state_);

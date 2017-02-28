@@ -230,6 +230,7 @@ class KUDU_EXPORT KuduClientBuilder {
   ///   The serialized authentication credentials, provided by a call to
   ///   @c KuduClient.ExportAuthenticationCredentials in the C++ client or
   ///   @c KuduClient#exportAuthenticationCredentials in the Java client.
+  /// @return Reference to the updated object.
   KuduClientBuilder& import_authentication_credentials(std::string authn_creds);
 
   /// Create a client object.
@@ -494,7 +495,8 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// Java client via @c KuduClient#importAuthenticationCredentials.
   ///
   /// @param [out] authn_creds
-  ///   The resulting binary authentication credsentials.
+  ///   The resulting binary authentication credentials.
+  /// @return Status object for the operation.
   Status ExportAuthenticationCredentials(std::string* authn_creds) const;
 
  private:
@@ -1029,7 +1031,7 @@ class KUDU_EXPORT KuduTableAlterer {
   /// @param [in] name
   ///   Name of the column to alter.
   /// @return Pointer to the result ColumnSpec object. The alterer keeps
-  ///   owhership of the newly created object.
+  ///   ownership of the newly created object.
   KuduColumnSpec* AlterColumn(const std::string& name);
 
   /// Drops an existing column from the table.
@@ -1544,7 +1546,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   /// @endcode
   /// ... @c callback_2 will be triggered once @c b has been inserted,
   /// regardless of whether @c a has completed or not. That means there might be
-  /// pending operations left in prior batches even after the the callback
+  /// pending operations left in prior batches even after the callback
   /// has been invoked to report on the flush status of the latest batch.
   ///
   /// @note This also means that, if FlushAsync is called twice in succession,
@@ -1565,7 +1567,7 @@ class KUDU_EXPORT KuduSession : public sp::enable_shared_from_this<KuduSession> 
   void FlushAsync(KuduStatusCallback* cb);
 
   /// @return Status of the session closure. In particular, an error is returned
-  ///   if there are unflushed or in-flight operations.
+  ///   if there are non-flushed or in-flight operations.
   Status Close() WARN_UNUSED_RESULT;
 
   /// Check if there are any pending operations in this session.
@@ -1863,7 +1865,7 @@ class KUDU_EXPORT KuduScanner {
   /// for an additional time-to-live (set by a configuration flag on
   /// the tablet server). This is useful if the interval in between
   /// NextBatch() calls is big enough that the remote scanner might be garbage
-  /// collected (default ttl is set to 60 secs.).
+  /// collected (default TTL is set to 60 secs.).
   /// This does not invalidate any previously fetched results.
   ///
   /// @return Operation result status. In particular, this method returns
