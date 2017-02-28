@@ -144,7 +144,8 @@ class KUDU_EXPORT Status {
   ///
   /// @param [in] s
   ///   The status object to assign from.
-  void operator=(const Status& s);
+  /// @return The reference to the modified object.
+  Status& operator=(const Status& s);
 
 #if __cplusplus >= 201103L
   /// Move the specified status (C++11).
@@ -157,7 +158,8 @@ class KUDU_EXPORT Status {
   ///
   /// @param [in] s
   ///   rvalue reference to a Status object.
-  void operator=(Status&& s);
+  /// @return The reference to the modified object.
+  Status& operator=(Status&& s);
 #endif
 
   /// @return A success status.
@@ -400,13 +402,15 @@ class KUDU_EXPORT Status {
 inline Status::Status(const Status& s) {
   state_ = (s.state_ == NULL) ? NULL : CopyState(s.state_);
 }
-inline void Status::operator=(const Status& s) {
+
+inline Status& Status::operator=(const Status& s) {
   // The following condition catches both aliasing (when this == &s),
   // and the common case where both s and *this are OK.
   if (state_ != s.state_) {
     delete[] state_;
     state_ = (s.state_ == NULL) ? NULL : CopyState(s.state_);
   }
+  return *this;
 }
 
 #if __cplusplus >= 201103L
@@ -414,12 +418,13 @@ inline Status::Status(Status&& s) : state_(s.state_) {
   s.state_ = nullptr;
 }
 
-inline void Status::operator=(Status&& s) {
+inline Status& Status::operator=(Status&& s) {
   if (state_ != s.state_) {
     delete[] state_;
     state_ = s.state_;
     s.state_ = nullptr;
   }
+  return *this;
 }
 #endif
 
