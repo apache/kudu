@@ -193,6 +193,21 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
                         "No Kerberos credentials|"
                         ".*No such file or directory)");
   }
+
+  // Test that if we inject a fault into a tablet server's boot process
+  // ExternalTabletServer::Restart() still returns OK, even if the tablet server crashed.
+  ts->Shutdown();
+  ts->mutable_flags()->push_back("--fault_before_start=1.0");
+  ASSERT_OK(ts->Restart());
+  ASSERT_FALSE(ts->IsProcessAlive());
+  // Since the process should have already crashed, waiting for an injected crash with no
+  // timeout should still return OK.
+  ASSERT_OK(ts->WaitForInjectedCrash(MonoDelta::FromSeconds(0)));
+  ts->mutable_flags()->pop_back();
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+  ASSERT_TRUE(ts->IsProcessAlive());
+
   cluster.Shutdown();
 }
 

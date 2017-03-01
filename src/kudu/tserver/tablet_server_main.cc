@@ -20,7 +20,9 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/version_info.h"
@@ -30,6 +32,12 @@ using kudu::tserver::TabletServer;
 DECLARE_string(rpc_bind_addresses);
 DECLARE_int32(rpc_num_service_threads);
 DECLARE_int32(webserver_port);
+
+DEFINE_double(fault_before_start, 0.0,
+              "Fake fault flag that always causes a crash on startup. "
+              "Used to test the test infrastructure. Should never be set outside of tests.");
+TAG_FLAG(fault_before_start, hidden);
+TAG_FLAG(fault_before_start, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -62,6 +70,8 @@ static int TabletServerMain(int argc, char** argv) {
   TabletServer server(opts);
   LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
+
+  MAYBE_FAULT(FLAGS_fault_before_start);
 
   LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());

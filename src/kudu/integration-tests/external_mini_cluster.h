@@ -433,6 +433,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
 
+  // Starts a process with the given flags.
   Status StartProcess(const std::vector<std::string>& user_flags);
 
   // Wait for the process to exit, and then call 'wait_status_predicate'

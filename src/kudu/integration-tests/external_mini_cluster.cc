@@ -705,11 +705,20 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
-    Status s = p->WaitNoBlock();
+    int wait_status;
+    Status s = p->WaitNoBlock(&wait_status);
     if (s.IsTimedOut()) {
       // The process is still running.
       continue;
     }
+
+    // If the process exited with expected exit status we need to still swap() the process
+    // and exit as if it had succeeded.
+    if (WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == fault_injection::kExitStatus) {
+      process_.swap(p);
+      return Status::OK();
+    }
+
     RETURN_NOT_OK_PREPEND(s, Substitute("Failed waiting on $0", exe_));
     string exit_info;
     RETURN_NOT_OK(p->GetExitStatus(nullptr, &exit_info));
@@ -1152,8 +1161,7 @@ Status ExternalTabletServer::Restart() {
                                bound_http_.host()));
   }
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
-  RETURN_NOT_OK(StartProcess(flags));
-  return Status::OK();
+  return StartProcess(flags);
 }
 
 
