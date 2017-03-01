@@ -68,7 +68,6 @@ DEFINE_bool(is_test_child, false,
             "Used by tests which require clean processes. "
             "See TestDisableInit.");
 DECLARE_bool(rpc_encrypt_loopback_connections);
-DECLARE_int32(server_rsa_key_length_bits);
 
 using std::string;
 using std::thread;

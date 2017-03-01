@@ -37,9 +37,8 @@
 #include "kudu/util/status.h"
 
 DEFINE_int32(tsk_num_rsa_bits, 2048,
-             "Number of bits used for token signing keys");
-// TODO(PKI) is 1024 enough for TSKs since they rotate frequently?
-// maybe it would verify faster?
+             "Number of bits in RSA keys used for token signing.");
+TAG_FLAG(tsk_num_rsa_bits, experimental);
 
 using std::lock_guard;
 using std::map;

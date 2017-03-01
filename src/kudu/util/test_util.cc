@@ -71,9 +71,16 @@ KuduTest::KuduTest()
     {"never_fsync", "true"},
     // Disable log redaction.
     {"redact", "flag"},
-    // Reduce default RSA key length for faster tests.
+    // Reduce default RSA key length for faster tests. We are using strong/high
+    // TLS v1.2 cipher suites, so minimum possible for TLS-related RSA keys is
+    // 768 bits. However, for the external mini cluster we use 1024 bits because
+    // Java default security policies require at least 1024 bits for RSA keys
+    // used in certificates. For uniformity, here 1024 RSA bit keys are used
+    // as well. As for the TSK keys, 512 bits is the minimum since the SHA256
+    // digest is used for token signing/verification.
     {"ipki_server_key_size", "1024"},
-    {"ipki_ca_key_size", "1024"}
+    {"ipki_ca_key_size", "1024"},
+    {"tsk_num_rsa_bits", "512"},
   };
   for (const auto& e : flags_for_tests) {
     // We don't check for errors here, because we have some default flags that

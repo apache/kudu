@@ -84,12 +84,6 @@ Status GenerateTokenSigningKey(int64_t seq_num,
 } // anonymous namespace
 
 class TokenTest : public KuduTest {
- public:
-  void SetUp() override {
-    KuduTest::SetUp();
-    // Set the key length smaller to make tests run faster.
-    FLAGS_tsk_num_rsa_bits = 512;
-  }
 };
 
 TEST_F(TokenTest, TestInit) {

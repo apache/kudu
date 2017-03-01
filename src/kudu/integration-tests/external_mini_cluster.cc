@@ -634,7 +634,12 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Generate smaller RSA keys -- generating a 1024-bit key is faster
   // than generating the default 2048-bit key, and we don't care about
   // strong encryption in tests. Setting it lower (e.g. 512 bits) results
-  // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122.
+  // in OpenSSL errors RSA_sign:digest too big for rsa key:rsa_sign.c:122
+  // since we are using strong/high TLS v1.2 cipher suites, so the minimum
+  // size of TLS-related RSA key is 768 bits (due to the usage of
+  // the ECDHE-RSA-AES256-GCM-SHA384 suite). However, to work with Java
+  // client it's necessary to have at least 1024 bits for certificate RSA key
+  // due to Java security policies.
   argv.push_back("--ipki_server_key_size=1024");
 
   // Disable minidumps by default since many tests purposely inject faults.
@@ -1016,18 +1021,10 @@ ExternalMaster::~ExternalMaster() {
 }
 
 Status ExternalMaster::Start() {
-  vector<string> flags;
-
-  // Generate smaller RSA keys. See note above for server_rsa_key_length_bits.
-  flags.push_back("--ipki_ca_key_size=1024");
-
-  flags.push_back("--fs_wal_dir=" + data_dir_);
-  flags.push_back("--fs_data_dirs=" + data_dir_);
-  flags.push_back("--rpc_bind_addresses=" + get_rpc_bind_address());
-  flags.push_back("--webserver_interface=localhost");
+  vector<string> flags(GetCommonFlags());
   flags.push_back("--webserver_port=0");
-  RETURN_NOT_OK(StartProcess(flags));
-  return Status::OK();
+  flags.push_back("--rpc_bind_addresses=" + get_rpc_bind_address());
+  return StartProcess(flags);
 }
 
 Status ExternalMaster::Restart() {
@@ -1035,14 +1032,12 @@ Status ExternalMaster::Restart() {
   if (bound_rpc_.port() == 0) {
     return Status::IllegalState("Master cannot be restarted. Must call Shutdown() first.");
   }
-  vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + data_dir_);
-  flags.push_back("--fs_data_dirs=" + data_dir_);
-  flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
-  flags.push_back("--webserver_interface=localhost");
+
+  vector<string> flags(GetCommonFlags());
   flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
-  RETURN_NOT_OK(StartProcess(flags));
-  return Status::OK();
+  flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
+
+  return StartProcess(flags);
 }
 
 Status ExternalMaster::WaitForCatalogManager() {
@@ -1085,6 +1080,22 @@ Status ExternalMaster::WaitForCatalogManager() {
                    bound_rpc_addr().ToString()));
   }
   return Status::OK();
+}
+
+vector<string> ExternalMaster::GetCommonFlags() const {
+  return {
+    "--fs_wal_dir=" + data_dir_,
+    "--fs_data_dirs=" + data_dir_,
+    "--webserver_interface=localhost",
+
+    // See the in-line comment for "--ipki_server_key_size" flag in
+    // ExternalDaemon::StartProcess() method.
+    "--ipki_ca_key_size=1024",
+
+    // As for the TSK keys, 512 bits is the minimum since we are using the SHA256
+    // digest for token signing/verification.
+    "--tsk_num_rsa_bits=512",
+  };
 }
 
 

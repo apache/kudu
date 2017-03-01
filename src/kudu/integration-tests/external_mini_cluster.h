@@ -515,6 +515,8 @@ class ExternalMaster : public ExternalDaemon {
   Status WaitForCatalogManager() WARN_UNUSED_RESULT;
 
  private:
+  std::vector<std::string> GetCommonFlags() const;
+
   friend class RefCountedThreadSafe<ExternalMaster>;
   virtual ~ExternalMaster();
 };

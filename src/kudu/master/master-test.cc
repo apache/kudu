@@ -1326,7 +1326,8 @@ TEST_F(MasterTest, TestConnectToMaster) {
   ASSERT_EQ(1, resp.ca_cert_der_size()) << "should have one cert";
   EXPECT_GT(resp.ca_cert_der(0).size(), 100) << "CA cert should be at least 100 bytes";
   ASSERT_TRUE(resp.has_authn_token()) << "should return an authn token";
-  EXPECT_EQ(256, resp.authn_token().signature().size());
+  // Using 512 bit RSA key and SHA256 digest results in 64 byte signature.
+  EXPECT_EQ(64, resp.authn_token().signature().size());
   ASSERT_TRUE(resp.authn_token().has_signing_key_seq_num());
   EXPECT_GT(resp.authn_token().signing_key_seq_num(), -1);
 
