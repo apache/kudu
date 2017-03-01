@@ -2183,7 +2183,10 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
       break;
     case DEAD_TSERVER:
       ASSERT_TRUE(error->status().IsTimedOut());
-      ASSERT_STR_CONTAINS(error->status().ToString(), "Connection refused");
+      // TODO(KUDU-1466) Re-enable this assertion once the jira gets solved. We can't actually
+      // make an assertion on the reason for the timeout since sometimes tablet server connection
+      // errors get reported as GetTabletLocations timeouts.
+      // ASSERT_STR_CONTAINS(error->status().ToString(), "Connection refused");
       break;
   }
 
