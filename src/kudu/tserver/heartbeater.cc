@@ -306,13 +306,15 @@ Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
                         "Failed to add RPC addresses to registration");
 
   addrs.clear();
-  RETURN_NOT_OK_PREPEND(CHECK_NOTNULL(server_->web_server())->GetBoundAddresses(&addrs),
-                        "Unable to get bound HTTP addresses");
-  RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_http_addresses()),
-                        "Failed to add HTTP addresses to registration");
+  if (server_->web_server()) {
+    RETURN_NOT_OK_PREPEND(server_->web_server()->GetBoundAddresses(&addrs),
+                          "Unable to get bound HTTP addresses");
+    RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_http_addresses()),
+                          "Failed to add HTTP addresses to registration");
+    reg->set_https_enabled(server_->web_server()->IsSecure());
+  }
   reg->set_software_version(VersionInfo::GetShortVersionString());
 
-  reg->set_https_enabled(server_->web_server()->IsSecure());
   return Status::OK();
 }
 

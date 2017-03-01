@@ -268,9 +268,11 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
       METRIC_involuntary_context_switches.InstantiateFunctionGauge(metrics,
         Bind(&GetInVoluntaryContextSwitches)));
 
-  WebCallbackRegistry::PathHandlerCallback thread_callback =
-      bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
-  DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", "Threads", thread_callback);
+  if (web) {
+    WebCallbackRegistry::PathHandlerCallback thread_callback =
+        bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
+    DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", "Threads", thread_callback);
+  }
   return Status::OK();
 }
 

@@ -354,7 +354,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
 };
 
 // Registers /threadz with the debug webserver, and creates thread-tracking metrics under
-// the given entity.
+// the given entity. If 'web' is NULL, does not register the path handler.
 Status StartThreadInstrumentation(const scoped_refptr<MetricEntity>& server_metrics,
                                   WebCallbackRegistry* web);
 } // namespace kudu

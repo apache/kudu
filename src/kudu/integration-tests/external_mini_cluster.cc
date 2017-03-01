@@ -915,7 +915,9 @@ Sockaddr ExternalDaemon::bound_rpc_addr() const {
 
 HostPort ExternalDaemon::bound_http_hostport() const {
   CHECK(status_);
-  CHECK_GE(status_->bound_http_addresses_size(), 1);
+  if (status_->bound_http_addresses_size() == 0) {
+    return HostPort();
+  }
   HostPort ret;
   CHECK_OK(HostPortFromPB(status_->bound_http_addresses(0), &ret));
   return ret;
@@ -936,6 +938,7 @@ Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
                                       const MetricPrototype* metric_proto,
                                       const char* value_field,
                                       int64_t* value) const {
+  CHECK(bound_http_hostport().Initialized());
   // Fetch metrics whose name matches the given prototype.
   string url = Substitute(
       "http://$0/jsonmetricz?metrics=$1",
@@ -1034,7 +1037,9 @@ Status ExternalMaster::Restart() {
   }
 
   vector<string> flags(GetCommonFlags());
-  flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
+  if (bound_http_.Initialized()) {
+    flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
+  }
   flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
 
   return StartProcess(flags);
@@ -1141,9 +1146,11 @@ Status ExternalTabletServer::Restart() {
   flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              get_rpc_bind_address()));
-  flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
-  flags.push_back(Substitute("--webserver_interface=$0",
-                             bound_http_.host()));
+  if (bound_http_.Initialized()) {
+    flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
+    flags.push_back(Substitute("--webserver_interface=$0",
+                               bound_http_.host()));
+  }
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();

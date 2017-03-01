@@ -112,7 +112,9 @@ Status Master::Init() {
 
   RETURN_NOT_OK(ServerBase::Init());
 
-  RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+  if (web_server_) {
+    RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+  }
 
   // The certificate authority object is initialized upon loading
   // CA private key and certificate from the system table when the server
@@ -233,12 +235,14 @@ Status Master::InitMasterRegistration() {
   RETURN_NOT_OK_PREPEND(rpc_server()->GetBoundAddresses(&rpc_addrs),
                         "Couldn't get RPC addresses");
   RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg.mutable_rpc_addresses()));
-  vector<Sockaddr> http_addrs;
-  web_server()->GetBoundAddresses(&http_addrs);
-  RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
-  reg.set_software_version(VersionInfo::GetShortVersionString());
 
-  reg.set_https_enabled(web_server()->IsSecure());
+  if (web_server()) {
+    vector<Sockaddr> http_addrs;
+    web_server()->GetBoundAddresses(&http_addrs);
+    RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
+    reg.set_https_enabled(web_server()->IsSecure());
+  }
+  reg.set_software_version(VersionInfo::GetShortVersionString());
 
   registration_.Swap(&reg);
   registration_initialized_.store(true);

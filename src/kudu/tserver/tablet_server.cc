@@ -88,7 +88,9 @@ Status TabletServer::Init() {
   RETURN_NOT_OK(ValidateMasterAddressResolution());
 
   RETURN_NOT_OK(ServerBase::Init());
-  RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+  if (web_server_) {
+    RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
+  }
 
   heartbeater_.reset(new Heartbeater(opts_, this));
 

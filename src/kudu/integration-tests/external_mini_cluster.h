@@ -345,7 +345,11 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   HostPort bound_rpc_hostport() const;
   Sockaddr bound_rpc_addr() const;
+
+  // Return the host/port that this daemon is bound to for HTTP.
+  // May return an uninitialized HostPort if HTTP is disabled.
   HostPort bound_http_hostport() const;
+
   const NodeInstancePB& instance_id() const;
   const std::string& uuid() const;
 

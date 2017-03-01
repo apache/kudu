@@ -90,11 +90,10 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
-  // TODO(KUDU-418): we don't currently support changing IPs or hosts since the
+  // TODO(KUDU-418): we don't currently support changing RPC addresses since the
   // host/port is stored persistently in each tablet's metadata.
   if (registration_ &&
-      (!HostPortPBsEqual(registration_->rpc_addresses(), registration.rpc_addresses()) ||
-       !HostPortPBsEqual(registration_->http_addresses(), registration.http_addresses()))) {
+      !HostPortPBsEqual(registration_->rpc_addresses(), registration.rpc_addresses())) {
     string msg = strings::Substitute(
         "Tablet server $0 is attempting to re-register with a different host/port. "
         "This is not currently supported. Old: {$1} New: {$2}",
@@ -105,10 +104,9 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
     return Status::InvalidArgument(msg);
   }
 
-  if (registration.rpc_addresses().empty() ||
-      registration.http_addresses().empty()) {
+  if (registration.rpc_addresses().empty()) {
     return Status::InvalidArgument(
-        "invalid registration: must have at least one RPC and one HTTP address",
+        "invalid registration: must have at least one RPC address",
         SecureShortDebugString(registration));
   }
 
