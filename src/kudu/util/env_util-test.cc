@@ -33,7 +33,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int64(disk_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 
 using std::string;
@@ -47,20 +46,39 @@ namespace env_util {
 class EnvUtilTest: public KuduTest {
 };
 
+// Assert that Status 's' indicates there is not enough space left on the
+// device for the request.
+static void AssertNoSpace(const Status& s) {
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_EQ(ENOSPC, s.posix_code());
+  ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");
+}
+
 TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
-  const int64_t kRequestedBytes = 0;
+  const int64_t kZeroRequestedBytes = 0;
+  const int64_t kRequestOnePercentReservation = -1;
   int64_t reserved_bytes = 0;
-  ASSERT_OK(VerifySufficientDiskSpace(env_, test_dir_, kRequestedBytes, reserved_bytes));
+  ASSERT_OK(VerifySufficientDiskSpace(env_, test_dir_, kZeroRequestedBytes, reserved_bytes));
+
+  // Check 1% reservation logic. We loop this in case there are other FS
+  // operations happening concurrent with this test.
+  NO_FATALS(AssertEventually([&] {
+    SpaceInfo space_info;
+    ASSERT_OK(env_->GetSpaceInfo(test_dir_, &space_info));
+    // Try for 1 less byte than 1% free. This request should be rejected.
+    int64_t target_free_bytes = (space_info.capacity_bytes / 100) - 1;
+    int64_t bytes_to_request = std::max(0L, space_info.free_bytes - target_free_bytes);
+    NO_FATALS(AssertNoSpace(VerifySufficientDiskSpace(env_, test_dir_, bytes_to_request,
+                                                      kRequestOnePercentReservation)));
+  }));
 
   // Make it seem as if the disk is full and specify that we should have
   // reserved 200 bytes. Even asking for 0 bytes should return an error
   // indicating we are out of space.
   FLAGS_disk_reserved_bytes_free_for_testing = 0;
   reserved_bytes = 200;
-  Status s = VerifySufficientDiskSpace(env_, test_dir_, kRequestedBytes, reserved_bytes);
-  ASSERT_TRUE(s.IsIOError());
-  ASSERT_EQ(ENOSPC, s.posix_code());
-  ASSERT_STR_CONTAINS(s.ToString(), "Insufficient disk space");
+  NO_FATALS(AssertNoSpace(VerifySufficientDiskSpace(env_, test_dir_, kZeroRequestedBytes,
+                                                    reserved_bytes)));
 }
 
 // Ensure that we can recursively create directories using both absolute and

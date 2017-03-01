@@ -116,8 +116,14 @@ DEFINE_double(log_inject_io_error_on_preallocate_fraction, 0.0,
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, unsafe);
 TAG_FLAG(log_inject_io_error_on_preallocate_fraction, runtime);
 
-DEFINE_int64(fs_wal_dir_reserved_bytes, 0,
-             "Number of bytes to reserve on the log directory filesystem for non-Kudu usage");
+DEFINE_int64(fs_wal_dir_reserved_bytes, -1,
+             "Number of bytes to reserve on the log directory filesystem for "
+             "non-Kudu usage. The default, which is represented by -1, is that "
+             "1% of the disk space on each disk will be reserved. Any other "
+             "value specified represents the number of bytes reserved and must "
+             "be greater than or equal to 0. Explicit percentages to reserve "
+             "are not currently supported");
+DEFINE_validator(fs_wal_dir_reserved_bytes, [](const char* /*n*/, int64_t v) { return v >= -1; });
 TAG_FLAG(fs_wal_dir_reserved_bytes, runtime);
 TAG_FLAG(fs_wal_dir_reserved_bytes, evolving);
 
