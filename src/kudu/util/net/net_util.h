@@ -33,6 +33,10 @@ class HostPort {
   HostPort(std::string host, uint16_t port);
   explicit HostPort(const Sockaddr& addr);
 
+  bool Initialized() const {
+    return !host_.empty();
+  }
+
   // Parse a "host:port" pair into this object.
   // If there is no port specified in the string, then 'default_port' is used.
   Status ParseString(const std::string& str, uint16_t default_port);

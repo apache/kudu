@@ -76,6 +76,11 @@ TAG_FLAG(min_negotiation_threads, advanced);
 DEFINE_int32(max_negotiation_threads, 50, "Maximum number of connection negotiation threads.");
 TAG_FLAG(max_negotiation_threads, advanced);
 
+DEFINE_bool(webserver_enabled, true, "Whether to enable the web server on this daemon. "
+            "NOTE: disabling the web server is also likely to prevent monitoring systems "
+            "from properly capturing metrics.");
+TAG_FLAG(webserver_enabled, advanced);
+
 DEFINE_string(superuser_acl, "",
               "The list of usernames to allow as super users, comma-separated. "
               "A '*' entry indicates that all authenticated users are allowed. "
@@ -129,7 +134,6 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(),
                                                       metric_namespace)),
       rpc_server_(new RpcServer(options.rpc_opts)),
-      web_server_(new Webserver(options.webserver_opts)),
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
@@ -146,6 +150,10 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
     clock_ = new HybridClock();
   } else {
     clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
+  }
+
+  if (FLAGS_webserver_enabled) {
+    web_server_.reset(new Webserver(options.webserver_opts));
   }
 
   CHECK_OK(StartThreadInstrumentation(metric_entity_, web_server_.get()));
@@ -166,6 +174,7 @@ Sockaddr ServerBase::first_rpc_address() const {
 }
 
 Sockaddr ServerBase::first_http_address() const {
+  CHECK(web_server_);
   vector<Sockaddr> addrs;
   WARN_NOT_OK(web_server_->GetBoundAddresses(&addrs),
               "Couldn't get bound webserver addresses");
@@ -287,7 +296,7 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
   }
 
   // HTTP ports
-  {
+  if (web_server_) {
     vector<Sockaddr> addrs;
     CHECK_OK(web_server_->GetBoundAddresses(&addrs));
     for (const Sockaddr& addr : addrs) {
@@ -443,12 +452,14 @@ Status ServerBase::Start() {
 
   RETURN_NOT_OK(rpc_server_->Start());
 
-  AddDefaultPathHandlers(web_server_.get());
-  AddRpczPathHandlers(messenger_, web_server_.get());
-  RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
-  TracingPathHandlers::RegisterHandlers(web_server_.get());
-  web_server_->set_footer_html(FooterHtml());
-  RETURN_NOT_OK(web_server_->Start());
+  if (web_server_) {
+    AddDefaultPathHandlers(web_server_.get());
+    AddRpczPathHandlers(messenger_, web_server_.get());
+    RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
+    TracingPathHandlers::RegisterHandlers(web_server_.get());
+    web_server_->set_footer_html(FooterHtml());
+    RETURN_NOT_OK(web_server_->Start());
+  }
 
   if (!options_.dump_info_path.empty()) {
     RETURN_NOT_OK_PREPEND(DumpServerInfo(options_.dump_info_path, options_.dump_info_format),
@@ -466,7 +477,9 @@ void ServerBase::Shutdown() {
   if (excess_log_deleter_thread_) {
     excess_log_deleter_thread_->Join();
   }
-  web_server_->Stop();
+  if (web_server_) {
+    web_server_->Stop();
+  }
   rpc_server_->Shutdown();
 }
 

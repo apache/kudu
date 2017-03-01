@@ -39,11 +39,12 @@ namespace kudu {
 
 class SecurityITest : public KuduTest {
  public:
+  SecurityITest() {
+    cluster_opts_.enable_kerberos = true;
+    cluster_opts_.num_tablet_servers = 3;
+  }
   void StartCluster() {
-    ExternalMiniClusterOptions opts;
-    opts.enable_kerberos = true;
-    opts.num_tablet_servers = 3;
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(cluster_opts_));
     ASSERT_OK(cluster_->Start());
   }
 
@@ -62,6 +63,9 @@ class SecurityITest : public KuduTest {
     req.set_value("xx");
     return proxy.SetFlag(req, &resp, &controller);
   }
+
+  // Create a table, insert a row, scan it back, and delete the table.
+  void SmokeTestCluster();
 
   Status TryRegisterAsTS() {
     // Make a new messenger so that we don't reuse any cached connections from
@@ -89,16 +93,12 @@ class SecurityITest : public KuduTest {
   }
 
  protected:
+  ExternalMiniClusterOptions cluster_opts_;
   unique_ptr<ExternalMiniCluster> cluster_;
 };
 
-// Test creating a table, writing some data, reading data, and dropping
-// the table.
-TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
+void SecurityITest::SmokeTestCluster() {
   const char* kTableName = "test-table";
-  StartCluster();
-
-  ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
   client::sp::shared_ptr<KuduClient> client;
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
 
@@ -127,6 +127,15 @@ TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
 
   // Delete the table.
   ASSERT_OK(client->DeleteTable(kTableName));
+}
+
+// Test creating a table, writing some data, reading data, and dropping
+// the table.
+TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
+  StartCluster();
+
+  ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
+  NO_FATALS(SmokeTestCluster());
 
   // Non-superuser clients should not be able to set flags.
   Status s = TrySetFlagOnTS();
@@ -186,6 +195,15 @@ TEST_F(SecurityITest, TestAuthorizedSuperuser) {
   ASSERT_EQ("Remote error: Not authorized: unauthorized access to method: TSHeartbeat",
             s.ToString());
 
+}
+
+// Test that the web UIs can be entirely disabled, for users who feel they
+// are a security risk.
+TEST_F(SecurityITest, TestDisableWebUI) {
+  cluster_opts_.extra_master_flags.push_back("--webserver_enabled=0");
+  cluster_opts_.extra_tserver_flags.push_back("--webserver_enabled=0");
+  StartCluster();
+  NO_FATALS(SmokeTestCluster());
 }
 
 
