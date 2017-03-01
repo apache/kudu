@@ -35,6 +35,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
@@ -139,6 +140,7 @@ Status GetBinaryPath(const string& binary, string* path) {
 
 
 Status MiniKdc::Start() {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, "starting KDC");
   CHECK(!kdc_process_);
   VLOG(1) << "Starting Kerberos KDC: " << options_.ToString();
 
@@ -254,6 +256,7 @@ Status MiniKdc::CreateKrb5Conf() const {
 }
 
 Status MiniKdc::WaitForKdcPorts() {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("waiting for KDC ports"));
   // We have to use 'lsof' to figure out which ports the KDC bound to if we
   // requested ephemeral ones. The KDC doesn't log the bound port or expose it
   // in any other fashion, and re-implementing lsof involves parsing a lot of
@@ -307,6 +310,7 @@ Status MiniKdc::WaitForKdcPorts() {
 }
 
 Status MiniKdc::CreateUserPrincipal(const string& username) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating user principal $0", username));
   string kadmin;
   RETURN_NOT_OK(GetBinaryPath("kadmin.local", &kadmin));
   RETURN_NOT_OK(Subprocess::Call(MakeArgv({
@@ -316,6 +320,7 @@ Status MiniKdc::CreateUserPrincipal(const string& username) {
 
 Status MiniKdc::CreateServiceKeytab(const string& spn,
                                     string* path) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("creating service keytab for $0", spn));
   string kt_path = spn;
   StripString(&kt_path, "/", '_');
   kt_path = JoinPathSegments(options_.data_root, kt_path) + ".keytab";
@@ -331,6 +336,7 @@ Status MiniKdc::CreateServiceKeytab(const string& spn,
 }
 
 Status MiniKdc::Kinit(const string& username) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("kinit for $0", username));
   string kinit;
   RETURN_NOT_OK(GetBinaryPath("kinit", &kinit));
   Subprocess::Call(MakeArgv({ kinit, username }), username);
@@ -338,6 +344,7 @@ Status MiniKdc::Kinit(const string& username) {
 }
 
 Status MiniKdc::Kdestroy() {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, "kdestroy");
   string kdestroy;
   RETURN_NOT_OK(GetBinaryPath("kdestroy", &kdestroy));
   return Subprocess::Call(MakeArgv({ kdestroy, "-A" }));
