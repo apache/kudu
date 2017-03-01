@@ -418,18 +418,22 @@ void CheckFlagsAllowed() {
 }
 
 // Redact the flag tagged as 'sensitive', if --redact is set
-// with 'flag'. Otherwise, return its value as-is.
-string CheckFlagAndRedact(const CommandLineFlagInfo& flag) {
-  string retval;
+// with 'flag'. Otherwise, return its value as-is. If EscapeMode
+// is set to HTML, return HTML escaped string.
+string CheckFlagAndRedact(const CommandLineFlagInfo& flag, EscapeMode mode) {
+  string ret_value;
   unordered_set<string> tags;
   GetFlagTags(flag.name, &tags);
 
   if (ContainsKey(tags, "sensitive") && g_should_redact_flag) {
-    retval += kRedactionMessage;
+    ret_value = kRedactionMessage;
   } else {
-    retval += flag.current_value;
+    ret_value = flag.current_value;
   }
-  return retval;
+  if (mode == EscapeMode::HTML) {
+    ret_value = EscapeForHtmlToString(ret_value);
+  }
+  return ret_value;
 }
 
 void SetUmask() {
@@ -482,19 +486,23 @@ void HandleCommonFlags() {
 #endif
 }
 
-string CommandlineFlagsIntoString() {
-  string retval;
+string CommandlineFlagsIntoString(EscapeMode mode) {
+  string ret_value;
   vector<CommandLineFlagInfo> flags;
   GetAllFlags(&flags);
 
   for (const auto& f : flags) {
-    retval += "--";
-    retval += f.name;
-    retval += "=";
-    retval += CheckFlagAndRedact(f);
-    retval += "\n";
+    ret_value += "--";
+    if (mode == EscapeMode::HTML) {
+      ret_value += EscapeForHtmlToString(f.name);
+    } else if (mode == EscapeMode::NONE) {
+      ret_value += f.name;
+    }
+    ret_value += "=";
+    ret_value += CheckFlagAndRedact(f, mode);
+    ret_value += "\n";
   }
-  return retval;
+  return ret_value;
 }
 
 string GetNonDefaultFlags(const GFlagsMap& default_flags) {
@@ -517,8 +525,8 @@ string GetNonDefaultFlags(const GFlagsMap& default_flags) {
 
         // Redact the flags tagged as sensitive, if --redact is set
         // with 'flag'.
-        string flagValue = CheckFlagAndRedact(flag);
-        args << "--" << flag.name << '=' << flagValue;
+        string flag_value = CheckFlagAndRedact(flag, EscapeMode::NONE);
+        args << "--" << flag.name << '=' << flag_value;
       }
     }
   }

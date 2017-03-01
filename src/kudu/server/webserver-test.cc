@@ -131,7 +131,12 @@ TEST_F(WebserverTest, TestDefaultPaths) {
 }
 
 TEST_F(WebserverTest, TestRedactFlagsDump) {
-  // Test varz -- check for the sensitive flag is redacted.
+  // Test varz -- check for the sensitive flag is redacted and HTML-escaped.
+  ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/varz", addr_.ToString()),
+                           &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "--test_sensitive_flag=&lt;redacted&gt;");
+
+  // Test varz?raw -- check for the sensitive flag is redacted and not HTML-escaped.
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/varz?raw=1", addr_.ToString()),
                            &buf_));
   ASSERT_STR_CONTAINS(buf_.ToString(), strings::Substitute("--test_sensitive_flag=$0",

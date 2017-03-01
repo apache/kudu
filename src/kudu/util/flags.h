@@ -50,10 +50,16 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
 // google::ParseCommandLineNonHelpFlags().
 void HandleCommonFlags();
 
+enum class EscapeMode {
+  HTML,
+  NONE
+};
+
 // Stick the flags into a string. If --redact is set with 'flag',
 // the values of flags tagged as sensitive will be redacted. Otherwise,
-// the values will be written to the string as-is.
-std::string CommandlineFlagsIntoString();
+// the values will be written to the string as-is. The values will
+// be HTML escaped if EscapeMode is HTML.
+std::string CommandlineFlagsIntoString(EscapeMode mode);
 
 typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
 

@@ -111,14 +111,18 @@ static void LogsHandler(const Webserver::WebRequest& req, std::ostringstream* ou
   }
 }
 
-// Registered to handle "/flags", and prints out all command-line flags and their values
-// If --redact is set with 'flag', the values of flags tagged as sensitive will
-// be redacted.
+// Registered to handle "/flags", and prints out all command-line flags and their HTML
+// escaped values. If --redact is set with 'flag', the values of flags tagged as
+// sensitive will be redacted. The values would not be HTML escaped if in the raw text
+// mode, e.g. "/varz?raw".
 static void FlagsHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
+
   (*output) << tags.header << "Command-line Flags" << tags.end_header;
-  (*output) << tags.pre_tag << CommandlineFlagsIntoString() << tags.end_pre_tag;
+  (*output) << tags.pre_tag
+            << CommandlineFlagsIntoString(as_text ? EscapeMode::NONE : EscapeMode::HTML)
+            << tags.end_pre_tag;
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
