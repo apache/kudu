@@ -196,6 +196,10 @@ class ColumnPredicate {
     LOG(FATAL) << "unknown predicate type";
   }
 
+  // Evaluate the predicate on a single cell. Used if the physical type is only known at run-time.
+  // Otherwise, use EvaluateCell<DataType>.
+  bool EvaluateCell(DataType type, const void* cell) const;
+
   // Print the predicate for debugging.
   std::string ToString() const;
 
