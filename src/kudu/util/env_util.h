@@ -42,7 +42,8 @@ Status OpenFileForSequential(Env *env, const std::string &path,
 // Returns Status::IOError with POSIX code ENOSPC if there is not sufficient
 // disk space to write 'bytes' bytes to the file system represented by 'path'.
 // Otherwise returns OK.
-
+// If 'reserved_bytes' equals -1, it is interpreted as a 1% reservation. No
+// other values less than 0 are supported at this time.
 Status VerifySufficientDiskSpace(Env *env, const std::string& path,
                                  int64_t requested_bytes, int64_t reserved_bytes);
 

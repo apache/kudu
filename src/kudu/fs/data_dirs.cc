@@ -51,8 +51,14 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
-DEFINE_int64(fs_data_dirs_reserved_bytes, 0,
-             "Number of bytes to reserve on each data directory filesystem for non-Kudu usage.");
+DEFINE_int64(fs_data_dirs_reserved_bytes, -1,
+             "Number of bytes to reserve on each data directory filesystem for "
+             "non-Kudu usage. The default, which is represented by -1, is that "
+             "1% of the disk space on each disk will be reserved. Any other "
+             "value specified represents the number of bytes reserved and must "
+             "be greater than or equal to 0. Explicit percentages to reserve "
+             "are not currently supported");
+DEFINE_validator(fs_data_dirs_reserved_bytes, [](const char* /*n*/, int64_t v) { return v >= -1; });
 TAG_FLAG(fs_data_dirs_reserved_bytes, runtime);
 TAG_FLAG(fs_data_dirs_reserved_bytes, evolving);
 
