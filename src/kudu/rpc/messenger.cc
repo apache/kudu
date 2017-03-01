@@ -76,8 +76,8 @@ DEFINE_string(rpc_encryption, "optional",
               "encryption will not be used, and RPC authentication "
               "(--rpc_authentication) must also be disabled as well. "
               "Secure clusters should use 'required'.");
-TAG_FLAG(rpc_authentication, stable);
-TAG_FLAG(rpc_encryption, stable);
+TAG_FLAG(rpc_authentication, evolving);
+TAG_FLAG(rpc_encryption, evolving);
 
 DEFINE_string(rpc_certificate_file, "",
               "Path to a PEM encoded X509 certificate to use for securing RPC "
