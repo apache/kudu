@@ -42,6 +42,11 @@ class KuduWriteOperation;
 template<typename KeyTypeWrapper> struct SliceKeysTestSetup;
 template<typename KeyTypeWrapper> struct IntKeysTestSetup;
 } // namespace client
+
+namespace tablet {
+template<typename KeyTypeWrapper> struct SliceTypeRowOps;
+template<typename KeyTypeWrapper> struct NumTypeRowOps;
+}  // namespace tablet
 /// @endcond
 
 class Schema;
@@ -478,6 +483,8 @@ class KUDU_EXPORT KuduPartialRow {
   friend class TestScanSpec;
   template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
+  template<typename KeyTypeWrapper> friend struct tablet::SliceTypeRowOps;
+  template<typename KeyTypeWarpper> friend struct tablet::NumTypeRowOps;
   FRIEND_TEST(TestPartitionPruner, TestPrimaryKeyRangePruning);
   FRIEND_TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning);
 

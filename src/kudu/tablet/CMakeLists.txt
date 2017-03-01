@@ -96,6 +96,7 @@ ADD_KUDU_TEST(compaction_policy-test
   # Can't use dist-test because it relies on a data file.
   LABELS no_dist_test)
 
+ADD_KUDU_TEST(all_types-scan-correctness-test)
 ADD_KUDU_TEST(diskrowset-test)
 ADD_KUDU_TEST(mt-diskrowset-test RUN_SERIAL true)
 ADD_KUDU_TEST(memrowset-test)

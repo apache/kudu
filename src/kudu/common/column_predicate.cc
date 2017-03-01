@@ -519,6 +519,24 @@ void ColumnPredicate::EvaluateForPhysicalType(const ColumnBlock& block,
   LOG(FATAL) << "unknown predicate type";
 }
 
+bool ColumnPredicate::EvaluateCell(DataType type, const void* cell) const {
+  switch (type) {
+    case BOOL: return EvaluateCell<BOOL>(cell);
+    case INT8: return EvaluateCell<INT8>(cell);
+    case INT16: return EvaluateCell<INT16>(cell);
+    case INT32: return EvaluateCell<INT32>(cell);
+    case INT64: return EvaluateCell<INT64>(cell);
+    case UINT8: return EvaluateCell<UINT8>(cell);
+    case UINT16: return EvaluateCell<UINT16>(cell);
+    case UINT32: return EvaluateCell<UINT32>(cell);
+    case UINT64: return EvaluateCell<UINT64>(cell);
+    case FLOAT: return EvaluateCell<FLOAT>(cell);
+    case DOUBLE: return EvaluateCell<DOUBLE>(cell);
+    case BINARY: return EvaluateCell<BINARY>(cell);
+    default: LOG(FATAL) << "unknown physical type: " << GetTypeInfo(type)->name();
+  }
+}
+
 void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) const {
   DCHECK(sel);
   switch (block.type_info()->physical_type()) {
@@ -534,7 +552,7 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) c
     case FLOAT: return EvaluateForPhysicalType<FLOAT>(block, sel);
     case DOUBLE: return EvaluateForPhysicalType<DOUBLE>(block, sel);
     case BINARY: return EvaluateForPhysicalType<BINARY>(block, sel);
-    default: LOG(FATAL) << "unknown physical type: " << block.type_info()->physical_type();
+    default: LOG(FATAL) << "unknown physical type: " << block.type_info()->name();
   }
 }
 

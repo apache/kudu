@@ -487,7 +487,14 @@ Status DefaultColumnValueIterator::Scan(ColumnMaterializationContext* ctx) {
     ColumnDataView dst_view(dst);
     dst_view.SetNullBits(dst->nrows(), value_ != nullptr);
   }
+  // The vector can be cleared if there is a read_default and it does not satisfy the predicate.
   if (value_ != nullptr) {
+    if (ctx->DecoderEvalNotDisabled() &&
+        !ctx->pred()->EvaluateCell(typeinfo_->physical_type(), value_)) {
+      SelectionVectorView sel_view(ctx->sel());
+      sel_view.ClearBits(dst->nrows());
+      return Status::OK();
+    }
     if (typeinfo_->physical_type() == BINARY) {
       const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
       Slice dst_slice;
@@ -501,6 +508,13 @@ Status DefaultColumnValueIterator::Scan(ColumnMaterializationContext* ctx) {
       for (size_t i = 0; i < dst->nrows(); ++i) {
         dst->SetCellValue(i, value_);
       }
+    }
+  } else {
+    // If the read_default is null and there is a predicate on this block, remove the rows in this
+    // block from the result set.
+    if (ctx->DecoderEvalNotDisabled()) {
+      SelectionVectorView sel_view(ctx->sel());
+      sel_view.ClearBits(dst->nrows());
     }
   }
   return Status::OK();
