@@ -87,8 +87,7 @@ import org.apache.kudu.util.SecurityUtil;
  */
 @InterfaceAudience.Private
 public class Negotiator extends SimpleChannelUpstreamHandler {
-
-  static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);
+  static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
   private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
@@ -102,8 +101,6 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * the server and also succeeds to initialize.
    */
   private static final String[] PRIORITIZED_MECHS = new String[] { "GSSAPI", "PLAIN" };
-
-  static final String USER_AND_PASSWORD = "java_client";
 
   static final int CONNECTION_CTX_CALL_ID = -3;
   static final int SASL_CALL_ID = -33;
@@ -625,8 +622,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
     // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
     RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
-    userBuilder.setEffectiveUser(Negotiator.USER_AND_PASSWORD);
-    userBuilder.setRealUser(Negotiator.USER_AND_PASSWORD);
+    String user = System.getProperty("user.name");
+    userBuilder.setEffectiveUser(user);
+    userBuilder.setRealUser(user);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
     RpcHeader.ConnectionContextPB pb = builder.build();
     RpcHeader.RequestHeader.Builder header =
@@ -653,9 +651,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
       for (Callback callback : callbacks) {
         if (callback instanceof NameCallback) {
-          ((NameCallback) callback).setName(USER_AND_PASSWORD);
+          ((NameCallback) callback).setName(System.getProperty("user.name"));
         } else if (callback instanceof PasswordCallback) {
-          ((PasswordCallback) callback).setPassword(USER_AND_PASSWORD.toCharArray());
+          ((PasswordCallback) callback).setPassword(new char[0]);
         } else {
           throw new UnsupportedCallbackException(callback,
                                                  "Unrecognized SASL client callback");

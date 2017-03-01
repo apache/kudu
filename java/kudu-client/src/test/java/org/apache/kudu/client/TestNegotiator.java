@@ -55,8 +55,12 @@ import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TestNegotiator {
+  static final Logger LOG = LoggerFactory.getLogger(TestNegotiator.class);
+
   private DecoderEmbedder<Object> embedder;
   private SecurityContext secContext;
   private SSLEngine serverEngine;
@@ -137,7 +141,7 @@ public class TestNegotiator {
     RpcOutboundMessage msg = (RpcOutboundMessage)embedder.poll();
     ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
     assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
-    assertEquals("java_client", connCtx.getDEPRECATEDUserInfo().getRealUser());
+    assertEquals(System.getProperty("user.name"), connCtx.getDEPRECATEDUserInfo().getRealUser());
 
     // Expect the client to also emit a negotiation Result.
     Result result = (Result)embedder.poll();
@@ -207,8 +211,8 @@ public class TestNegotiator {
   }
 
   private static CallResponse runServerStep(SSLEngine engine,
-      ByteString clientTlsMessage) throws SSLException {
-    Negotiator.LOG.info("Handling TLS message from client: {}", clientTlsMessage.toByteArray());
+                                            ByteString clientTlsMessage) throws SSLException {
+    LOG.debug("Handling TLS message from client: {}", Bytes.hex(clientTlsMessage.toByteArray()));
     ByteBuffer dst = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
     ByteBuffer src = clientTlsMessage.asReadOnlyByteBuffer();
     do {
