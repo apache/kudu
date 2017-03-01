@@ -576,7 +576,8 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
 TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   vector<string> ts_flags = {
       "--enable_leader_failure_detection=false",  // Make test deterministic.
-      "--log_segment_size_mb=1"                   // Faster log rolls.
+      "--log_segment_size_mb=1",                  // Faster log rolls.
+      "--log_compression_codec=NO_COMPRESSION"    // Faster log rolls.
   };
   vector<string> master_flags = {
       "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
@@ -1178,6 +1179,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   flags.push_back("--log_segment_size_mb=1");
   flags.push_back("--log_async_preallocate_segments=false");
   flags.push_back("--log_min_segments_to_retain=3");
+  flags.push_back("--log_compression_codec=NO_COMPRESSION");
   NO_FATALS(StartCluster(flags));
   const string fault_flag = GetParam();
   LOG(INFO) << "Running with fault flag: " << fault_flag;
