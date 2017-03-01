@@ -54,6 +54,10 @@ class EasyCurl {
     verify_peer_ = verify;
   }
 
+  void set_return_headers(bool v) {
+    return_headers_ = v;
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -64,6 +68,9 @@ class EasyCurl {
 
   // Whether to verify the server certificate.
   bool verify_peer_ = true;
+
+  // Whether to return the HTTP headers with the response.
+  bool return_headers_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };

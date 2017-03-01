@@ -95,8 +95,12 @@ class SslWebserverTest : public WebserverTest {
 };
 
 TEST_F(WebserverTest, TestIndexPage) {
+  curl_.set_return_headers(true);
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
                            &buf_));
+  // Check expected header.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: DENY");
+
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 
