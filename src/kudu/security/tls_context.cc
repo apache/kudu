@@ -223,6 +223,22 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
 Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   VLOG(2) << "Trusting certificate " << cert.SubjectName();
 
+  {
+    // Workaround for a leak in OpenSSL <1.0.1:
+    //
+    // If we start trusting a cert, and its internal public-key field hasn't
+    // yet been populated, then the first time it's used for verification will
+    // populate it. In the case that two threads try to populate it at the same time,
+    // one of the thread's copies will be leaked.
+    //
+    // To avoid triggering the race, we populate the internal public key cache
+    // field up front before adding it to the trust store.
+    //
+    // See OpenSSL commit 33a688e80674aaecfac6d9484ec199daa0ee5b61.
+    PublicKey k;
+    CHECK_OK(cert.GetPublicKey(&k));
+  }
+
   unique_lock<RWMutex> lock(lock_);
   ERR_clear_error();
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
