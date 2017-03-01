@@ -78,6 +78,9 @@ Status EasyCurl::DoRequest(const std::string& url,
       curl_, CURLOPT_SSL_VERIFYPEER,
       static_cast<long>(verify_peer_)))); // NOLINT(runtime/int)
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_URL, url.c_str())));
+  if (return_headers_) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_HEADER, 1)));
+  }
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, WriteCallback)));
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_WRITEDATA,
                                                 static_cast<void *>(dst))));

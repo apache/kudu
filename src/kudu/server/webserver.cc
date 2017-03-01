@@ -64,6 +64,11 @@ DEFINE_int32(webserver_max_post_length_bytes, 1024 * 1024,
 TAG_FLAG(webserver_max_post_length_bytes, advanced);
 TAG_FLAG(webserver_max_post_length_bytes, runtime);
 
+DEFINE_string(webserver_x_frame_options, "DENY",
+              "The webserver will add an 'X-Frame-Options' HTTP header with this value "
+              "to all responses. This can help prevent clickjacking attacks.");
+TAG_FLAG(webserver_x_frame_options, advanced);
+
 namespace kudu {
 
 Webserver::Webserver(const WebserverOptions& opts)
@@ -385,19 +390,17 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
   string str = output.str();
   // Without styling, render the page as plain text
-  if (!use_style) {
-    sq_printf(connection, "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: %zd\r\n"
-              "\r\n", str.length());
-  } else {
-    sq_printf(connection, "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/html\r\n"
-              "Content-Length: %zd\r\n"
-              "\r\n", str.length());
-  }
-
+  string headers = strings::Substitute(
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: $0\r\n"
+      "Content-Length: $1\r\n"
+      "X-Frame-Options: $2\r\n"
+      "\r\n",
+      use_style ? "text/html" : "text/plain",
+      str.length(),
+      FLAGS_webserver_x_frame_options);
   // Make sure to use sq_write for printing the body; sq_printf truncates at 8kb
+  sq_write(connection, headers.c_str(), headers.length());
   sq_write(connection, str.c_str(), str.length());
   return 1;
 }
