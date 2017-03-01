@@ -50,7 +50,7 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
 // google::ParseCommandLineNonHelpFlags().
 void HandleCommonFlags();
 
-// Stick the flags into a string. If --redact_sensitive_flags is true,
+// Stick the flags into a string. If --redact is set with 'flag',
 // the values of flags tagged as sensitive will be redacted. Otherwise,
 // the values will be written to the string as-is.
 std::string CommandlineFlagsIntoString();
@@ -59,7 +59,7 @@ typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
 
 // Get all the flags different from their defaults. The output is a nicely
 // formatted string with --flag=value pairs per line. Redact any flags that
-// are tagged as sensitive, if --redact_sensitive_flags is true.
+// are tagged as sensitive, if --redact is set with 'flag'.
 std::string GetNonDefaultFlags(const GFlagsMap& default_flags);
 
 GFlagsMap GetFlagsMap();

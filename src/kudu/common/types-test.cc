@@ -34,8 +34,6 @@ using std::string;
 using std::tuple;
 using std::vector;
 
-DECLARE_bool(log_redact_user_data);
-
 namespace kudu {
 
 class TestTypes : public KuduTest {};
@@ -78,9 +76,9 @@ TEST_F(TestTypes, TestTimestampPrinting) {
   result = "";
 
   {
-    // Check that row values are redacted when the log_redact_user_data flag is set.
+    // Check that row values are redacted when --redact is set with 'log'.
     google::FlagSaver flag_saver;
-    FLAGS_log_redact_user_data = true;
+    ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
     time = 0;
     info->AppendDebugStringForValue(&time, &result);
     ASSERT_EQ("<redacted>", result);

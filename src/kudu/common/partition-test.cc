@@ -41,8 +41,6 @@ using std::pair;
 using std::string;
 using std::vector;
 
-DECLARE_bool(log_redact_user_data);
-
 namespace kudu {
 
 namespace {
@@ -282,8 +280,8 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
   }
 
   {
-    // Check that row values are redacted when the log_redact_user_data flag is set.
-    FLAGS_log_redact_user_data = true;
+    // Check that row values are redacted when the log redact flag is set.
+    ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
     string key;
     KuduPartialRow row(&schema);
     ASSERT_OK(row.SetInt32("a", 1));
@@ -296,8 +294,8 @@ TEST_F(PartitionTest, TestPartitionKeyEncoding) {
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(row));
     EXPECT_EQ(expected, partition_schema.PartitionKeyDebugString(key, schema));
 
-    // Check that row values are redacted from error messages when the
-    // log_redact_user_data flag is set.
+    // Check that row values are redacted from error messages when
+    // --redact is set with 'log'.
 
     EXPECT_EQ("<hash-decode-error>",
               partition_schema.PartitionKeyDebugString(string("\0\1\0\1", 4), schema));
@@ -469,7 +467,7 @@ TEST_F(PartitionTest, TestCreatePartitions) {
   // Explicitly enable redaction. It should have no effect on the subsequent
   // partition pretty printing tests, as partitions are metadata and thus not
   // redacted.
-  FLAGS_log_redact_user_data = true;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
 
   // CREATE TABLE t (a VARCHAR, b VARCHAR, c VARCHAR, PRIMARY KEY (a, b, c))
   // PARITITION BY [HASH BUCKET (a), HASH BUCKET (b), RANGE (a, b, c)];

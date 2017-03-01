@@ -112,7 +112,7 @@ static void LogsHandler(const Webserver::WebRequest& req, std::ostringstream* ou
 }
 
 // Registered to handle "/flags", and prints out all command-line flags and their values
-// If --redact_sensitive_flags is true, the values of flags tagged as sensitive will
+// If --redact is set with 'flag', the values of flags tagged as sensitive will
 // be redacted.
 static void FlagsHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());

@@ -35,7 +35,7 @@ TEST_F(TestJsonWriter, TestPBEmpty) {
 }
 
 TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
-  FLAGS_log_redact_user_data = true;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   TestAllTypes pb;
   pb.set_optional_int32(1);
   pb.set_optional_int64(2);
@@ -93,7 +93,7 @@ TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
 }
 
 TEST_F(TestJsonWriter, TestPBRepeatedPrimitives) {
-  FLAGS_log_redact_user_data = true;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   TestAllTypes pb;
   for (int i = 0; i <= 3; i++) {
     pb.add_repeated_int32(i);

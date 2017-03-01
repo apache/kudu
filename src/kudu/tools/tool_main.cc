@@ -38,7 +38,6 @@ DECLARE_bool(help);
 DECLARE_bool(helppackage);
 DECLARE_bool(helpshort);
 DECLARE_bool(helpxml);
-DECLARE_bool(log_redact_user_data);
 DECLARE_string(helpmatch);
 DECLARE_string(helpon);
 
@@ -225,7 +224,7 @@ int main(int argc, char** argv) {
   // Disable redaction by default so that user data printed to the console will be shown
   // in full.
   CHECK_NE("",  google::SetCommandLineOptionWithMode(
-      "log_redact_user_data", "false", google::SET_FLAGS_DEFAULT));
+      "redact", "", google::SET_FLAGS_DEFAULT));
 
   FLAGS_logtostderr = true;
   bool show_help = ParseCommandLineFlags(&argc, &argv);

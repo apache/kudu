@@ -39,7 +39,6 @@ DEFINE_bool(test_sensitive_flag, false, "a sensitive flag");
 TAG_FLAG(test_sensitive_flag, sensitive);
 
 DECLARE_bool(never_fsync);
-DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 

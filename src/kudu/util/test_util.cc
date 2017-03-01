@@ -70,7 +70,7 @@ KuduTest::KuduTest()
     // tests rely on cutting power to a machine or equivalent.
     {"never_fsync", "true"},
     // Disable log redaction.
-    {"log_redact_user_data", "false"},
+    {"redact", "flag"},
     // Reduce default RSA key length for faster tests.
     {"ipki_server_key_size", "1024"},
     {"ipki_ca_key_size", "1024"}

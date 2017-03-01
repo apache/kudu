@@ -25,6 +25,7 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/status.h"
 
@@ -58,12 +59,12 @@
 // Evaluates to 'true' if the caller should redact any user data in the current scope.
 // Most callers should instead use KUDU_REDACT(...) defined below, but this can be useful
 // to short-circuit expensive logic.
-#define KUDU_SHOULD_REDACT() (FLAGS_log_redact_user_data && kudu::tls_redact_user_data)
+#define KUDU_SHOULD_REDACT() (kudu::g_should_redact_log && kudu::tls_redact_user_data)
 
 // Either evaluate and return 'expr', or return the string "<redacted>", depending on whether
 // redaction is enabled in the current scope.
 #define KUDU_REDACT(expr) \
-  (KUDU_SHOULD_REDACT() ? kudu::kRedactionMessage : (expr))
+  (KUDU_SHOULD_REDACT() ? kRedactionMessage : (expr))
 
 // Like the above, but with the additional condition that redaction will only
 // be performed if 'cond' must be true.
@@ -73,7 +74,6 @@
 ////////////////////////////////////////
 // Redaction implementation details follow.
 ////////////////////////////////////////
-DECLARE_bool(log_redact_user_data);
 
 namespace kudu {
 
@@ -85,6 +85,12 @@ extern __thread bool tls_redact_user_data;
 
 // Redacted log messages are replaced with this constant.
 extern const char* const kRedactionMessage;
+
+// Flag for checking if log redaction is enabled or disabled.
+extern bool g_should_redact_log;
+
+// Flag for checking if flag redaction is enabled or disabled.
+extern bool g_should_redact_flag;
 
 class ScopedDisableRedaction {
  public:

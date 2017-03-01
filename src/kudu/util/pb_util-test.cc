@@ -36,8 +36,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(log_redact_user_data);
-
 namespace kudu {
 namespace pb_util {
 
@@ -585,7 +583,7 @@ TEST_F(TestPBUtil, TestOverwriteExistingPB) {
 }
 
 TEST_F(TestPBUtil, TestRedaction) {
-  FLAGS_log_redact_user_data = true;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   TestSecurePrintingPB pb;
 
   pb.set_insecure1("public 1");
@@ -605,7 +603,7 @@ TEST_F(TestPBUtil, TestRedaction) {
   }
 
   // If we disable redaction, we should see the private fields.
-  FLAGS_log_redact_user_data = false;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", ""));
   ASSERT_STR_CONTAINS(SecureDebugString(pb), "private");
 }
 

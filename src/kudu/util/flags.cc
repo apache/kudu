@@ -30,21 +30,26 @@
 #include <gperftools/heap-profiler.h>
 
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 
 using google::CommandLineFlagInfo;
+
 using std::cout;
 using std::endl;
 using std::string;
 using std::stringstream;
 using std::unordered_set;
+
+using strings::Substitute;
 
 // Because every binary initializes its flags here, we use it as a convenient place
 // to offer some global flags as well.
@@ -91,8 +96,8 @@ static bool ValidateUmask(const char* /*flagname*/, const string& value) {
   }
   return true;
 }
-static bool dummy = google::RegisterFlagValidator(&FLAGS_umask, &ValidateUmask);
 
+DEFINE_validator(umask, &ValidateUmask);
 
 DEFINE_bool(unlock_experimental_flags, false,
             "Unlock flags marked as 'experimental'. These flags are not guaranteed to "
@@ -108,12 +113,65 @@ DEFINE_bool(unlock_unsafe_flags, false,
 TAG_FLAG(unlock_unsafe_flags, advanced);
 TAG_FLAG(unlock_unsafe_flags, stable);
 
-DEFINE_bool(redact_sensitive_flags, true,
-            "Sensitive flags marked as 'sensitive'. The value of these flags will "
-            "be redacted when logging the configuration at daemon startup.");
-TAG_FLAG(redact_sensitive_flags, advanced);
-TAG_FLAG(redact_sensitive_flags, evolving);
+DEFINE_string(redact, "all",
+              "Comma-separated list of redactions. Supported redactions are 'flag', "
+              "'log' and 'all'. If 'flag' is specified, configuration flags which may "
+              "include sensitive data will be redacted whenever server configuration "
+              "is emitted. If 'log' is specified, row data will be redacted from log "
+              "and error messages. If 'all' is specified, all of above will be redacted.");
+TAG_FLAG(redact, advanced);
+TAG_FLAG(redact, evolving);
 
+static bool ValidateRedact(const char* /*flagname*/, const string& value) {
+  // Empty value is valid.
+  if (value.empty()) {
+    kudu::g_should_redact_log = false;
+    kudu::g_should_redact_flag = false;
+    return true;
+  }
+
+  // Flag value is case insensitive
+  string redact_flags;
+  kudu::ToUpperCase(value, &redact_flags);
+  // "ALL" is valid, "ALL, LOG" is not valid
+  if (redact_flags.compare("ALL") == 0) {
+    kudu::g_should_redact_log = true;
+    kudu::g_should_redact_flag = true;
+    return true;
+  }
+
+  // If use specific flag value, it can only be "FLAG"
+  // or "LOG".
+  vector<string> enabled_redact_types = strings::Split(redact_flags, ",",
+                                                       strings::SkipEmpty());
+  vector<string>::const_iterator iter;
+  bool is_valid = true;
+  bool enabled_redact_log = false;
+  bool enabled_redact_flag = false;
+  for (const auto& t : enabled_redact_types) {
+    if (t.compare("LOG") == 0) {
+      enabled_redact_log = true;
+    } else {
+      if (t.compare("FLAG") == 0) {
+        enabled_redact_flag = true;
+      } else {
+        is_valid = false;
+      }
+    }
+  }
+  if (!is_valid) {
+    LOG(ERROR) << Substitute("Invalid redaction type: $0. Available types are 'flag', "
+                             "'log', 'all'.", value);
+  } else {
+    // If the value of --redact flag is valid, set
+    // g_should_redact_log and g_should_redact_flag accordingly.
+    kudu::g_should_redact_log = enabled_redact_log;
+    kudu::g_should_redact_flag = enabled_redact_flag;
+  }
+  return is_valid;
+}
+
+DEFINE_validator(redact, &ValidateRedact);
 // Tag a bunch of the flags that we inherit from glog/gflags.
 
 //------------------------------------------------------------
@@ -359,14 +417,14 @@ void CheckFlagsAllowed() {
   }
 }
 
-// Redact the flag tagged as 'sensitive', if --redact_sensitive_flags
-// is true. Otherwise, return its value as-is.
+// Redact the flag tagged as 'sensitive', if --redact is set
+// with 'flag'. Otherwise, return its value as-is.
 string CheckFlagAndRedact(const CommandLineFlagInfo& flag) {
   string retval;
   unordered_set<string> tags;
   GetFlagTags(flag.name, &tags);
 
-  if (ContainsKey(tags, "sensitive") && FLAGS_redact_sensitive_flags) {
+  if (ContainsKey(tags, "sensitive") && g_should_redact_flag) {
     retval += kRedactionMessage;
   } else {
     retval += flag.current_value;
@@ -457,8 +515,8 @@ string GetNonDefaultFlags(const GFlagsMap& default_flags) {
           args << '\n';
         }
 
-        // Redact the flags tagged as sensitive, if --redact_sensitive_flags
-        // is true.
+        // Redact the flags tagged as sensitive, if --redact is set
+        // with 'flag'.
         string flagValue = CheckFlagAndRedact(flag);
         args << "--" << flag.name << '=' << flagValue;
       }

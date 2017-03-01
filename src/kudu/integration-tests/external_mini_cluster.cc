@@ -641,7 +641,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.push_back("--enable_minidumps=false");
 
   // Disable log redaction.
-  argv.push_back("--log_redact_user_data=false");
+  argv.push_back("--redact=flag");
 
   // Enable metrics logging.
   argv.push_back("--metrics_log_interval_ms=1000");

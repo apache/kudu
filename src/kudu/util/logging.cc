@@ -64,11 +64,6 @@ DEFINE_int32(max_log_files, 10,
 TAG_FLAG(max_log_files, runtime);
 TAG_FLAG(max_log_files, experimental);
 
-DEFINE_bool(log_redact_user_data, true,
-    "Whether log and error messages will have row data redacted.");
-TAG_FLAG(log_redact_user_data, runtime);
-TAG_FLAG(log_redact_user_data, experimental);
-
 #define PROJ_NAME "kudu"
 
 bool logging_initialized = false;
@@ -82,6 +77,8 @@ using base::SpinLockHolder;
 namespace kudu {
 
 __thread bool tls_redact_user_data = true;
+bool g_should_redact_log;
+bool g_should_redact_flag;
 const char* const kRedactionMessage = "<redacted>";
 
 namespace {

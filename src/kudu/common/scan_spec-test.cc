@@ -31,8 +31,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(log_redact_user_data);
-
 namespace kudu {
 
 class TestScanSpec : public KuduTest {
@@ -371,7 +369,7 @@ TEST_F(CompositeIntKeysTest, TestInListPushdownWithRange) {
             spec.ToString(schema_));
 
   // Test redaction.
-  FLAGS_log_redact_user_data = true;
+  ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   EXPECT_EQ("PK >= (int8 a=<redacted>, int8 b=<redacted>, int8 c=<redacted>) AND "
             "PK < (int8 a=<redacted>, int8 b=<redacted>, int8 c=<redacted>) AND "
             "`b` IN (<redacted>, <redacted>)",
