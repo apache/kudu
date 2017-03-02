@@ -106,7 +106,6 @@ class RetriableRpc : public Rpc {
 
   scoped_refptr<ServerPicker<Server>> server_picker_;
   scoped_refptr<RequestTracker> request_tracker_;
-  const MonoTime deadline_;
   std::shared_ptr<Messenger> messenger_;
 
   // The sequence number for this RPC.
