@@ -27,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
@@ -371,6 +372,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     private static final Log LOG = LogFactory.getLog(Generator.class);
 
+    private CommandLineParser parser;
+    private KuduClient client;
+
     static class GeneratorInputFormat extends InputFormat<BytesWritable,NullWritable> {
 
       static class GeneratorInputSplit extends InputSplit implements Writable {
@@ -660,57 +664,58 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     public int run(int numMappers, long numNodes, int numTablets, Path tmpOutput,
                    Integer width, Integer wrapMultiplier) throws Exception {
-      int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMultiplier);
-      if (ret > 0) {
-        return ret;
+      parser = new CommandLineParser(getConf());
+      client = parser.getClient();
+      try {
+        int ret = runRandomInputGenerator(numMappers, numNodes, tmpOutput, width, wrapMultiplier);
+        if (ret > 0) {
+          return ret;
+        }
+        return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
+      } finally {
+        client.close();
+        client = null;
       }
-      return runGenerator(numMappers, numNodes, numTablets, tmpOutput, width, wrapMultiplier);
     }
 
-    protected void createTables(int numTablets) throws Exception {
 
+    private void createTables(int numTablets) throws Exception {
       createSchema(getTableName(getConf()), getTableSchema(), numTablets);
       createSchema(getHeadsTable(getConf()), getHeadsTableSchema(), numTablets);
     }
 
-    protected void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
-      CommandLineParser parser = new CommandLineParser(getConf());
-      KuduClient client = parser.getClient();
-      try {
-        if (numTablets < 1) {
-          numTablets = 1;
-        }
-
-        if (client.tableExists(tableName)) {
-          return;
-        }
-
-        CreateTableOptions builder =
-            new CreateTableOptions().setNumReplicas(parser.getNumReplicas())
-                                    .setRangePartitionColumns(ImmutableList.of("key1", "key2"));
-        if (numTablets > 1) {
-          BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
-          BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
-          BigInteger step = max.multiply(BigInteger.valueOf(2))
-              .divide(BigInteger.valueOf(numTablets));
-          LOG.info(min.longValue());
-          LOG.info(max.longValue());
-          LOG.info(step.longValue());
-          PartialRow splitRow = schema.newPartialRow();
-          splitRow.addLong("key2", Long.MIN_VALUE);
-          for (int i = 1; i < numTablets; i++) {
-            long key = min.add(step.multiply(BigInteger.valueOf(i))).longValue();
-            LOG.info("key " + key);
-            splitRow.addLong("key1", key);
-            builder.addSplitRow(splitRow);
-          }
-        }
-
-        client.createTable(tableName, schema, builder);
-      } finally {
-        // Done with this client.
-        client.shutdown();
+    private void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
+      Preconditions.checkNotNull(client);
+      if (numTablets < 1) {
+        numTablets = 1;
       }
+
+      if (client.tableExists(tableName)) {
+        return;
+      }
+
+      CreateTableOptions builder =
+          new CreateTableOptions().setNumReplicas(parser.getNumReplicas())
+                                  .setRangePartitionColumns(ImmutableList.of("key1", "key2"));
+      if (numTablets > 1) {
+        BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
+        BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
+        BigInteger step = max.multiply(BigInteger.valueOf(2))
+            .divide(BigInteger.valueOf(numTablets));
+        LOG.info(min.longValue());
+        LOG.info(max.longValue());
+        LOG.info(step.longValue());
+        PartialRow splitRow = schema.newPartialRow();
+        splitRow.addLong("key2", Long.MIN_VALUE);
+        for (int i = 1; i < numTablets; i++) {
+          long key = min.add(step.multiply(BigInteger.valueOf(i))).longValue();
+          LOG.info("key " + key);
+          splitRow.addLong("key1", key);
+          builder.addSplitRow(splitRow);
+        }
+      }
+
+      client.createTable(tableName, schema, builder);
     }
 
     public int runRandomInputGenerator(int numMappers, long numNodes, Path tmpOutput,
