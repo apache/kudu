@@ -774,7 +774,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       // Lack of YARN-445 means we can't auto-jstack on timeout, so disabling the timeout gives
       // us a chance to do it manually.
       job.getConfiguration().setInt("mapreduce.task.timeout", 0);
+
       KuduTableMapReduceUtil.addDependencyJars(job);
+      KuduTableMapReduceUtil.addCredentialsToJob(client, job);
 
       boolean success = job.waitForCompletion(true);
 

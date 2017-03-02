@@ -119,6 +119,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     this.client = new KuduClient.KuduClientBuilder(masterAddress)
         .defaultOperationTimeoutMs(operationTimeoutMs)
         .build();
+    KuduTableMapReduceUtil.importCredentialsFromCurrentSubject(client);
     try {
       this.table = client.openTable(tableName);
     } catch (Exception ex) {

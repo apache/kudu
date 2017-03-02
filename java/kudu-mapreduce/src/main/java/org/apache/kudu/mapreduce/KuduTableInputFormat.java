@@ -211,6 +211,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     this.client = new KuduClient.KuduClientBuilder(masterAddresses)
                                 .defaultOperationTimeoutMs(operationTimeoutMs)
                                 .build();
+    KuduTableMapReduceUtil.importCredentialsFromCurrentSubject(client);
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 

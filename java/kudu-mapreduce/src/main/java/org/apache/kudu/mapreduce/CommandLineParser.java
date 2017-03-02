@@ -18,7 +18,6 @@
 package org.apache.kudu.mapreduce;
 
 import org.apache.hadoop.conf.Configuration;
-
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;
@@ -118,11 +117,13 @@ public class CommandLineParser {
    * @return a kudu client
    */
   public KuduClient getClient() {
-    return new KuduClient.KuduClientBuilder(getMasterAddresses())
+    KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddresses())
         .defaultOperationTimeoutMs(getOperationTimeoutMs())
         .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
         .defaultSocketReadTimeoutMs(getSocketReadTimeoutMs())
         .build();
+    KuduTableMapReduceUtil.importCredentialsFromCurrentSubject(c);
+    return c;
   }
 
   /**

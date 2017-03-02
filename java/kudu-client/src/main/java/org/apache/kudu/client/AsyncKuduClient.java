@@ -48,6 +48,7 @@ import javax.annotation.concurrent.GuardedBy;
 import javax.security.auth.Subject;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
@@ -576,6 +577,14 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public long getDefaultSocketReadTimeoutMs() {
     return defaultSocketReadTimeoutMs;
+  }
+
+  /**
+   * @return the list of master addresses, stringified using commas to separate
+   * them
+   */
+  public String getMasterAddressesAsString() {
+    return Joiner.on(",").join(masterAddresses);
   }
 
   /**
