@@ -1082,6 +1082,25 @@ TEST_F(ClientTest, TestScanCloseProxy) {
   }
 }
 
+// Check that the client scanner does not redact rows.
+TEST_F(ClientTest, TestRowPtrNoRedaction) {
+  google::SetCommandLineOption("redact", "log");
+
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+  ASSERT_OK(scanner.Open());
+
+  ASSERT_TRUE(scanner.HasMoreRows());
+  KuduScanBatch batch;
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&batch));
+    for (const KuduScanBatch::RowPtr& row : batch) {
+      ASSERT_NE("(int32 key=<redacted>)", row.ToString());
+    }
+  }
+}
+
 namespace internal {
 
 static void ReadBatchToStrings(KuduScanner* scanner, vector<string>* rows) {
