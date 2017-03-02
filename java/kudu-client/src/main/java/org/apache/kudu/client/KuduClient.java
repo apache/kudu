@@ -298,6 +298,14 @@ public class KuduClient implements AutoCloseable {
     return asyncClient.getDefaultAdminOperationTimeoutMs();
   }
 
+  /**
+   * @return the list of master addresses, stringified using commas to separate
+   * them
+   */
+  public String getMasterAddressesAsString() {
+    return asyncClient.getMasterAddressesAsString();
+  }
+
   // Helper method to handle joining and transforming the Exception we receive.
   static <R> R joinAndHandleException(Deferred<R> deferred) throws KuduException {
     try {

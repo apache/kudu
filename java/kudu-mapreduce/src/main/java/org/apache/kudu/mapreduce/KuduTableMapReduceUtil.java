@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -29,6 +30,8 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import javax.security.auth.Subject;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.net.util.Base64;
@@ -36,17 +39,25 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.util.StringUtils;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.kudu.client.ColumnRangePredicate;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
+
+import com.google.common.base.Preconditions;
 
 /**
  * Utility class to setup MR jobs that use Kudu as an input and/or output.
@@ -57,6 +68,14 @@ public class KuduTableMapReduceUtil {
   // Mostly lifted from HBase's TableMapReduceUtil
 
   private static final Log LOG = LogFactory.getLog(KuduTableMapReduceUtil.class);
+
+  /**
+   * "Secret key alias" used in Job Credentials to store the Kudu authentication
+   * credentials. This acts as a key in a Hadoop Credentials object.
+   */
+  private static final Text AUTHN_CREDENTIALS_ALIAS = new Text("kudu.authn.credentials");
+
+  private static final Text KUDU_TOKEN_KIND = new Text("kudu-authn-data");
 
   /**
    * Doesn't need instantiation
@@ -93,6 +112,19 @@ public class KuduTableMapReduceUtil {
     public S addDependencies(boolean addDependencies) {
       this.addDependencies = addDependencies;
       return (S) this;
+    }
+
+    /**
+     * Add credentials to the job so that tasks run as the user that submitted
+     * the job.
+     */
+    protected void addCredentialsToJob(String masterAddresses, long operationTimeoutMs)
+        throws KuduException {
+      try (KuduClient client = new KuduClient.KuduClientBuilder(masterAddresses)
+          .defaultOperationTimeoutMs(operationTimeoutMs)
+          .build()) {
+        KuduTableMapReduceUtil.addCredentialsToJob(client, job);
+      }
     }
 
     /**
@@ -137,6 +169,7 @@ public class KuduTableMapReduceUtil {
       if (addDependencies) {
         addDependencyJars(job);
       }
+      addCredentialsToJob(masterAddresses, operationTimeoutMs);
     }
   }
 
@@ -202,6 +235,8 @@ public class KuduTableMapReduceUtil {
       if (addDependencies) {
         addDependencyJars(job);
       }
+
+      addCredentialsToJob(masterAddresses, operationTimeoutMs);
     }
   }
 
@@ -360,6 +395,75 @@ public class KuduTableMapReduceUtil {
   public static KuduTable getTableFromContext(TaskInputOutputContext context) {
     String multitonKey = context.getConfiguration().get(KuduTableOutputFormat.MULTITON_KEY);
     return KuduTableOutputFormat.getKuduTable(multitonKey);
+  }
+
+  /**
+   * Export the credentials from a {@link KuduClient} and store them in the given MapReduce
+   * {@link Job} so that {@link KuduClient}s created from within tasks of that job can
+   * authenticate to Kudu.
+   *
+   * This must be used before submitting a job when running against a Kudu cluster
+   * configured to require authentication. If using {@link TableInputFormatConfigurator},
+   * {@link TableOutputFormatConfigurator} or another such utility class, this is called
+   * automatically and does not need to be called.
+   *
+   * @param client the client whose credentials to export
+   * @param job the job to configure
+   * @throws KuduException if credentials cannot be exported
+   */
+  public static void addCredentialsToJob(KuduClient client, Job job)
+      throws KuduException {
+    Preconditions.checkNotNull(client);
+    Preconditions.checkNotNull(job);
+
+    byte[] authnCreds = client.exportAuthenticationCredentials();
+    Text service = new Text(client.getMasterAddressesAsString());
+    job.getCredentials().addToken(AUTHN_CREDENTIALS_ALIAS,
+        new Token<TokenIdentifier>(null, authnCreds, KUDU_TOKEN_KIND, service));
+  }
+
+  /**
+   * Import credentials from the current thread's JAAS {@link Subject} into the provided
+   * {@link KuduClient}.
+   *
+   * This must be called for any clients created within a MapReduce job in order to
+   * adopt the credentials added by {@link #addCredentialsToJob(KuduClient, Job)}.
+   * When using {@link KuduTableInputFormat} or {@link KuduTableOutputFormat}, the
+   * implementation automatically handles creating the client and importing necessary
+   * credentials. As such, this is only necessary in jobs that explicitly create a
+   * {@link KuduClient}.
+   *
+   * If no appropriate credentials are found, does nothing.
+   */
+  public static void importCredentialsFromCurrentSubject(KuduClient client) {
+    Subject subj = Subject.getSubject(AccessController.getContext());
+    if (subj == null) {
+      return;
+    }
+    Text service = new Text(client.getMasterAddressesAsString());
+    // Find the Hadoop credentials stored within the JAAS subject.
+    Set<Credentials> credSet = subj.getPrivateCredentials(Credentials.class);
+    if (credSet == null) {
+      return;
+    }
+    for (Credentials creds : credSet) {
+      for (Token<?> tok : creds.getAllTokens()) {
+        if (!tok.getKind().equals(KUDU_TOKEN_KIND)) {
+          continue;
+        }
+        // Only import credentials relevant to the service corresponding to
+        // 'client'. This is necessary if we want to support a job which
+        // reads from one cluster and writes to another.
+        if (!tok.getService().equals(service)) {
+          LOG.debug("Not importing credentials for service " + service +
+              "(expecting service " + service + ")");
+          continue;
+        }
+        LOG.debug("Importing credentials for service " + service);
+        client.importAuthenticationCredentials(tok.getPassword());
+        return;
+      }
+    }
   }
 
   /**
