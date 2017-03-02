@@ -242,8 +242,8 @@ TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
   work.set_payload_bytes(10000);
   work.Setup();
   work.Start();
-  while (work.rows_inserted() < 100) {
-    SleepFor(MonoDelta::FromMilliseconds(100));
+  while (work.rows_inserted() < 50) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
   }
   work.StopAndJoin();
 
