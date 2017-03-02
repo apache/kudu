@@ -464,6 +464,12 @@ Status InitKerberosForServer() {
   setenv("KRB5CCNAME", "MEMORY:kudu", 1);
   setenv("KRB5_KTNAME", FLAGS_keytab_file.c_str(), 1);
 
+  // KUDU-1897: disable the Kerberos replay cache. The KRPC protocol includes a
+  // per-connection server-generated nonce to protect against replay attacks
+  // when authenticating via Kerberos. The replay cache has many performance and
+  // implementation issues.
+  setenv("KRB5RCACHETYPE", "none", 1);
+
   g_kinit_ctx = new KinitContext();
   string principal;
   RETURN_NOT_OK(GetConfiguredPrincipal(&principal));
