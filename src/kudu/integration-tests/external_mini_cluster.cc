@@ -76,7 +76,7 @@ static const char* const kWildcardIpAddr = "0.0.0.0";
 static const char* const kLoopbackIpAddr = "127.0.0.1";
 static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 15.0;
-static double kMasterCatalogManagerTimeoutSeconds = 30.0;
+static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 
 #if defined(__APPLE__)
 static ExternalMiniClusterOptions::BindMode kBindMode =
