@@ -36,6 +36,12 @@ struct RandomAccessFileOptions;
 struct RWFileOptions;
 struct WritableFileOptions;
 
+// Returned by Env::GetSpaceInfo().
+struct SpaceInfo {
+  int64_t capacity_bytes; // Capacity of a filesystem, in bytes.
+  int64_t free_bytes;     // Bytes available to non-privileged processes.
+};
+
 class Env {
  public:
   // Governs if/how the file is created.
@@ -191,10 +197,10 @@ class Env {
   // *block_size. fname must exist but it may be a file or a directory.
   virtual Status GetBlockSize(const std::string& fname, uint64_t* block_size) = 0;
 
-  // Determine the number of bytes free on the filesystem specified by 'path'.
-  // "Free space" accounting on the underlying filesystem may be more coarse
-  // than single bytes.
-  virtual Status GetBytesFree(const std::string& path, int64_t* bytes_free) = 0;
+  // Determine the capacity and number of bytes free on the filesystem
+  // specified by 'path'. "Free space" accounting on the underlying filesystem
+  // may be more coarse than single bytes.
+  virtual Status GetSpaceInfo(const std::string& path, SpaceInfo* space_info) = 0;
 
   // Rename file src to target.
   virtual Status RenameFile(const std::string& src,

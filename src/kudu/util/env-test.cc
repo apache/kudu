@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
@@ -802,28 +803,40 @@ TEST_F(TestEnv, TestTempRWFile) {
   ASSERT_OK(env_->DeleteFile(path));
 }
 
-TEST_F(TestEnv, TestGetBytesFree) {
+// Test that when we write data to disk we see SpaceInfo.free_bytes go down.
+TEST_F(TestEnv, TestGetSpaceInfoFreeBytes) {
   const string kDataDir = GetTestPath("parent");
   const string kTestFilePath = JoinPathSegments(kDataDir, "testfile");
   const int kFileSizeBytes = 256;
-  int64_t orig_bytes_free;
-  int64_t cur_bytes_free;
   ASSERT_OK(env_->CreateDir(kDataDir));
 
-  // Loop several times in case there are concurrent tests running that are
-  // modifying the filesystem.
-  const int kIters = 100;
-  for (int i = 0; i < kIters; i++) {
+  // Loop in case there are concurrent tests running that are modifying the
+  // filesystem.
+  NO_FATALS(AssertEventually([&] {
     if (env_->FileExists(kTestFilePath)) {
-      ASSERT_OK(env_->DeleteFile(kTestFilePath));
+      ASSERT_OK(env_->DeleteFile(kTestFilePath)); // Clean up the previous iteration.
     }
-    ASSERT_OK(env_->GetBytesFree(kDataDir, &orig_bytes_free));
+    SpaceInfo before_space_info;
+    ASSERT_OK(env_->GetSpaceInfo(kDataDir, &before_space_info));
+
     NO_FATALS(WriteTestFile(env_, kTestFilePath, kFileSizeBytes));
-    ASSERT_OK(env_->GetBytesFree(kDataDir, &cur_bytes_free));
-    if (orig_bytes_free - cur_bytes_free >= kFileSizeBytes) break;
-  }
-  ASSERT_GE(orig_bytes_free - cur_bytes_free, kFileSizeBytes)
-      << "Failed after " << kIters << " attempts";
+
+    SpaceInfo after_space_info;
+    ASSERT_OK(env_->GetSpaceInfo(kDataDir, &after_space_info));
+    ASSERT_GE(before_space_info.free_bytes - after_space_info.free_bytes, kFileSizeBytes);
+  }));
+}
+
+// Basic sanity check for GetSpaceInfo().
+TEST_F(TestEnv, TestGetSpaceInfoBasicInvariants) {
+  string path = GetTestDataDirectory();
+  SpaceInfo space_info;
+  ASSERT_OK(env_->GetSpaceInfo(path, &space_info));
+  ASSERT_GT(space_info.capacity_bytes, 0);
+  ASSERT_LE(space_info.free_bytes, space_info.capacity_bytes);
+  VLOG(1) << "Path " << path << " has capacity "
+          << HumanReadableNumBytes::ToString(space_info.capacity_bytes)
+          << " (" << HumanReadableNumBytes::ToString(space_info.free_bytes) << " free)";
 }
 
 TEST_F(TestEnv, TestChangeDir) {

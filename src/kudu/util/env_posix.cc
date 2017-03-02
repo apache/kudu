@@ -1020,15 +1020,12 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  virtual Status GetBytesFree(const string& path, int64_t* bytes_free) OVERRIDE {
-    TRACE_EVENT1("io", "PosixEnv::GetBytesFree", "path", path);
+  virtual Status GetSpaceInfo(const string& path, SpaceInfo* space_info) OVERRIDE {
+    TRACE_EVENT1("io", "PosixEnv::GetSpaceInfo", "path", path);
     struct statvfs buf;
     RETURN_NOT_OK(StatVfs(path, &buf));
-    if (geteuid() == 0) {
-      *bytes_free = buf.f_frsize * buf.f_bfree;
-    } else {
-      *bytes_free = buf.f_frsize * buf.f_bavail;
-    }
+    space_info->capacity_bytes = buf.f_frsize * buf.f_blocks;
+    space_info->free_bytes = buf.f_frsize * buf.f_bavail;
     return Status::OK();
   }
 
