@@ -371,8 +371,9 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   scoped_refptr<Trace> trace(new Trace());
   ADOPT_TRACE(trace.get());
   TRACE("Submitting negotiation task for $0", conn->ToString());
+  auto authentication = reactor()->messenger()->authentication();
   RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
-        Bind(&Negotiation::RunNegotiation, conn, deadline)));
+        Bind(&Negotiation::RunNegotiation, conn, authentication, deadline)));
   return Status::OK();
 }
 

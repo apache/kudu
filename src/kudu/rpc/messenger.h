@@ -224,6 +224,8 @@ class Messenger {
     authn_token_ = token;
   }
 
+  RpcAuthentication authentication() const { return authentication_; }
+
   ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
