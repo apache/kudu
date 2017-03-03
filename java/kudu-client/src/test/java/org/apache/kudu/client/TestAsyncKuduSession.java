@@ -150,8 +150,9 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       // Wait until tablet is deleted on TS.
       while (true) {
         ListTabletsRequest req = new ListTabletsRequest();
+        Deferred<ListTabletsResponse> d = req.getDeferred();
         tc.sendRpc(req);
-        ListTabletsResponse resp = req.getDeferred().join();
+        ListTabletsResponse resp = d.join();
         if (!resp.getTabletsList().contains(tabletId)) {
           break;
         }

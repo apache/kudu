@@ -683,8 +683,9 @@ public class AsyncKuduClient implements AutoCloseable {
           " will retry after a delay");
       return delayedSendRpcToTablet(nextRequest, new RecoverableException(statusRemoteError));
     }
+    Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
     client.sendRpc(nextRequest);
-    return nextRequest.getDeferred();
+    return d;
   }
 
   /**
