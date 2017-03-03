@@ -236,6 +236,10 @@ class TokenSigner {
 
   const TokenVerifier& verifier() const { return *verifier_; }
 
+  // Check if the current TSK is valid: return 'true' if current key is present
+  // and it's not yet expired, return 'false' otherwise.
+  bool IsCurrentKeyValid() const;
+
  private:
   FRIEND_TEST(TokenTest, TestEndToEnd_InvalidCases);
 

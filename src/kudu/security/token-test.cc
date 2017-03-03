@@ -122,6 +122,31 @@ TEST_F(TokenTest, TestGenerateAuthToken) {
   ASSERT_STR_CONTAINS(s.ToString(), "no username provided for authn token");
 }
 
+TEST_F(TokenTest, TestIsCurrentKeyValid) {
+  static const int64_t kAuthnTokenValiditySeconds = 1;
+  static const int64_t kKeyRotationSeconds = 1;
+  static const int64_t kKeyValiditySeconds =
+      kAuthnTokenValiditySeconds + kKeyRotationSeconds;
+
+  TokenSigner signer(kAuthnTokenValiditySeconds, kKeyRotationSeconds);
+  EXPECT_FALSE(signer.IsCurrentKeyValid());
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    // No keys are available yet, so should be able to add.
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
+  EXPECT_TRUE(signer.IsCurrentKeyValid());
+  SleepFor(MonoDelta::FromSeconds(kKeyValiditySeconds));
+  // The key should expire after its validity interval.
+  EXPECT_FALSE(signer.IsCurrentKeyValid());
+
+  // Anyway, current implementation allows to use an expired key to sign tokens.
+  SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+  EXPECT_OK(signer.SignToken(&token));
+}
+
 TEST_F(TokenTest, TestTokenSignerAddKeys) {
   {
     TokenSigner signer(10, 10);
@@ -385,6 +410,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
     }
 
     SignedTokenPB signed_token = MakeUnsignedToken(WallTime_Now() + 600);
+    // Current implementation allows to use an expired key to sign tokens.
     ASSERT_OK(signer.SignToken(&signed_token));
     TokenPB token;
     ASSERT_EQ(VerificationResult::EXPIRED_SIGNING_KEY,

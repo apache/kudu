@@ -151,9 +151,17 @@ Status TokenSigner::SignToken(SignedTokenPB* token) const {
   if (tsk_deque_.empty()) {
     return Status::IllegalState("no token signing key");
   }
-  TokenSigningPrivateKey* key = tsk_deque_.front().get();
+  const TokenSigningPrivateKey* key = tsk_deque_.front().get();
   RETURN_NOT_OK_PREPEND(key->Sign(token), "could not sign authn token");
   return Status::OK();
+}
+
+bool TokenSigner::IsCurrentKeyValid() const {
+  shared_lock<RWMutex> l(lock_);
+  if (tsk_deque_.empty()) {
+    return false;
+  }
+  return (tsk_deque_.front()->expire_time() > WallTime_Now());
 }
 
 Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const {
