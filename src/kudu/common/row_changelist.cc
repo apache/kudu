@@ -158,9 +158,11 @@ Status RowChangeListDecoder::Init() {
 
   remaining_.remove_prefix(1);
 
-  // We should discard empty REINSERT/UPDATE RowChangeLists, so if after getting
+  // We should discard empty UPDATE RowChangeLists, so if after getting
   // the type remaining_ is empty() return an error.
-  if (!is_delete() && remaining_.empty()) {
+  // Note that REINSERTs might have empty changelists when reinserting a row on a tablet that
+  // has only primary key columns.
+  if (is_update() && remaining_.empty()) {
     return Status::Corruption("empty changelist - expected column updates");
   }
   return Status::OK();
