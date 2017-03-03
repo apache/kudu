@@ -152,6 +152,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
+    Preconditions.checkArgument(rpc.hasDeferred());
     rpc.addTrace(
         new RpcTraceFrame.RpcTraceFrameBuilder(
             rpc.method(),

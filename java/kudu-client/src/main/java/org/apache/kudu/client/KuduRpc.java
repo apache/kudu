@@ -223,6 +223,7 @@ public abstract class KuduRpc<R> {
   private void handleCallback(final Object result) {
     final Deferred<R> d = deferred;
     if (d == null) {
+      LOG.debug("Handling a callback on RPC {} with no deferred attached!", this);
       return;
     }
     deferred = null;
@@ -297,6 +298,10 @@ public abstract class KuduRpc<R> {
       deferred = new Deferred<R>();
     }
     return deferred;
+  }
+
+  boolean hasDeferred() {
+    return deferred != null;
   }
 
   RemoteTablet getTablet() {
