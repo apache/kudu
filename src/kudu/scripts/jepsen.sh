@@ -91,12 +91,12 @@ cd $SRC_ROOT
 
 echo
 echo "Removing logs from prior runs"
-echo ------------------------------------------------------------
+echo "--------------------------------------------------------------------"
 rm -rf java/kudu-jepsen/store
 
 echo
 echo "Building third-party components"
-echo ------------------------------------------------------------
+echo "--------------------------------------------------------------------"
 $SRC_ROOT/build-support/enable_devtoolset.sh \
   $SRC_ROOT/thirdparty/build-if-necessary.sh
 
@@ -107,7 +107,7 @@ pushd $BUILD_TYPE
 
 echo
 echo "Building Kudu C++ components (no tests)"
-echo ------------------------------------------------------------
+echo "--------------------------------------------------------------------"
 $SRC_ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake \
   -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
   -DKUDU_LINK=$KUDU_LINK \
@@ -121,14 +121,14 @@ set -x
 
 pushd $SRC_ROOT/java
 echo
-echo "Building Kudu Java client and kudu-jepsen"
-echo ------------------------------------------------------------
-mvn $MVN_FLAGS -Pjepsen clean compile test-compile
-pushd kudu-jepsen
+echo "Building Kudu Java packages and installing into local mvn repository"
+echo "--------------------------------------------------------------------"
+mvn $MVN_FLAGS -Pjepsen -DskipTests clean install
 
 echo
-echo "Building kudu-jepsen and running the consistency tests"
-echo ------------------------------------------------------------
+echo "Building and running kudu-jepsen consistency tests"
+echo "--------------------------------------------------------------------"
+pushd kudu-jepsen
 mvn $MVN_FLAGS clojure:run \
   -DmasterNodes="$KUDU_MASTER_NODES" \
   -DtserverNodes="$KUDU_TSERVER_NODES" \
