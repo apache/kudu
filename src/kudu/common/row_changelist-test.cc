@@ -199,12 +199,6 @@ TEST_F(TestRowChangeList, TestInvalid_TooLongDelete) {
                       "Corruption: DELETE changelist too long");
 }
 
-TEST_F(TestRowChangeList, TestInvalid_TooShortReinsert) {
-  RowChangeListDecoder decoder(RowChangeList(Slice("\x03")));
-  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
-                      "Corruption: empty changelist - expected column updates");
-}
-
 TEST_F(TestRowChangeList, TestInvalid_SetNullForNonNullableColumn) {
   faststring buf;
   RowChangeListEncoder rcl(&buf);
