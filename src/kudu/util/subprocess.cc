@@ -46,6 +46,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/signal.h"
 #include "kudu/util/status.h"
 
 using std::string;
@@ -72,41 +73,10 @@ static const char* kProcSelfFd =
 #if defined(__linux__)
 #define READDIR readdir64
 #define DIRENT dirent64
-typedef sighandler_t SignalHandlerCallback;
 #else
 #define READDIR readdir
 #define DIRENT dirent
-typedef sig_t SignalHandlerCallback;
 #endif
-
-// Convenience wrapper for sigaction().
-void SetSignalHandler(int signal, SignalHandlerCallback handler) {
-  struct sigaction act;
-  act.sa_handler = handler;
-  sigemptyset(&act.sa_mask);
-  act.sa_flags = 0;
-  PCHECK(sigaction(signal, &act, nullptr) == 0);
-}
-
-void IgnoreSigPipe() {
-  SetSignalHandler(SIGPIPE, SIG_IGN);
-}
-
-void ResetSigPipeHandlerToDefault() {
-  SetSignalHandler(SIGPIPE, SIG_DFL);
-}
-
-void EnsureSigPipeIgnored() {
-  static GoogleOnceType once = GOOGLE_ONCE_INIT;
-  GoogleOnceInit(&once, &IgnoreSigPipe);
-}
-
-// We unblock all signal masks since they are inherited.
-void ResetAllSignalMasksToUnblocked() {
-  sigset_t signals;
-  PCHECK(sigfillset(&signals) == 0);
-  PCHECK(sigprocmask(SIG_UNBLOCK, &signals, nullptr) == 0);
-}
 
 // Since opendir() calls malloc(), this must be called before fork().
 // This function is not async-signal-safe.
@@ -339,7 +309,9 @@ Status Subprocess::Start() {
   if (argv_.empty()) {
     return Status::InvalidArgument("argv must have at least one elem");
   }
-  EnsureSigPipeIgnored();
+
+  // We explicitly set SIGPIPE to SIG_IGN here because we are using UNIX pipes.
+  IgnoreSigPipe();
 
   vector<char*> argv_ptrs;
   for (const string& arg : argv_) {
@@ -429,9 +401,10 @@ Status Subprocess::Start() {
 
     // Ensure we are not ignoring or blocking signals in the child process.
     ResetAllSignalMasksToUnblocked();
-    // Reset SIGPIPE to its default disposition because we previously set it to
-    // SIG_IGN via EnsureSigPipeIgnored(). At the time of writing, we don't
-    // explicitly ignore any other signals in Kudu.
+
+    // Reset the disposition of SIGPIPE to SIG_DFL because we routinely set its
+    // disposition to SIG_IGN via IgnoreSigPipe(). At the time of writing, we
+    // don't explicitly ignore any other signals in Kudu.
     ResetSigPipeHandlerToDefault();
 
     // Set the environment for the subprocess. This is more portable than

@@ -175,6 +175,7 @@ set(UTIL_SRCS
   rw_mutex.cc
   rwc_lock.cc
   ${SEMAPHORE_CC}
+  signal.cc
   slice.cc
   spinlock_profiling.cc
   status.cc

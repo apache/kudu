@@ -25,6 +25,7 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/minidump.h"
+#include "kudu/util/signal.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
@@ -70,6 +71,10 @@ int main(int argc, char **argv) {
   // We don't use InitGoogleLoggingSafe() because gtest initializes glog, so we
   // need to block SIGUSR1 explicitly in order to test minidump generation.
   CHECK_OK(kudu::BlockSigUSR1());
+
+  // Ignore SIGPIPE for all tests so that threads writing to TLS
+  // sockets do not crash when writing to a closed socket. See KUDU-1910.
+  kudu::IgnoreSigPipe();
 
   // InitGoogleTest() must precede ParseCommandLineFlags(), as the former
   // removes gtest-related flags from argv that would trip up the latter.

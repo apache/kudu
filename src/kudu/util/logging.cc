@@ -41,6 +41,7 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/minidump.h"
+#include "kudu/util/signal.h"
 #include "kudu/util/status.h"
 
 DEFINE_string(log_filename, "",
@@ -264,6 +265,10 @@ void InitGoogleLoggingSafe(const char* arg) {
   // Stderr logging threshold: FLAGS_stderrthreshold.
   // Sink logging: off.
   initial_stderr_severity = FLAGS_stderrthreshold;
+
+  // Ignore SIGPIPE early in the startup process so that threads writing to TLS
+  // sockets do not crash when writing to a closed socket. See KUDU-1910.
+  IgnoreSigPipe();
 
   // For minidump support. Must be called before logging threads started.
   CHECK_OK(BlockSigUSR1());
