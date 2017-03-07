@@ -19,6 +19,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <memory>
 #include <unordered_set>
 
@@ -67,7 +68,7 @@ TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
     ASSERT_OK(env_->GetSpaceInfo(test_dir_, &space_info));
     // Try for 1 less byte than 1% free. This request should be rejected.
     int64_t target_free_bytes = (space_info.capacity_bytes / 100) - 1;
-    int64_t bytes_to_request = std::max(0L, space_info.free_bytes - target_free_bytes);
+    int64_t bytes_to_request = std::max<int64_t>(0, space_info.free_bytes - target_free_bytes);
     NO_FATALS(AssertNoSpace(VerifySufficientDiskSpace(env_, test_dir_, bytes_to_request,
                                                       kRequestOnePercentReservation)));
   }));
