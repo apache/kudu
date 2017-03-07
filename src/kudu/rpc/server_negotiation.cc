@@ -777,17 +777,13 @@ Status ServerNegotiation::RecvConnectionContext(faststring* recv_buf) {
     Status s;
     // Validate that the client returned the correct SASL protected nonce.
     if (!conn_context.has_encoded_nonce()) {
-      s = Status::NotAuthorized("ConnectionContextPB wrapped nonce missing");
-      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-      return s;
+      return Status::NotAuthorized("ConnectionContextPB wrapped nonce missing");
     }
 
     string decoded_nonce;
     s = SaslDecode(sasl_conn_.get(), conn_context.encoded_nonce(), &decoded_nonce);
     if (!s.ok()) {
-      s = Status::NotAuthorized("failed to decode nonce", s.message());
-      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-      return s;
+      return Status::NotAuthorized("failed to decode nonce", s.message());
     }
 
     if (*nonce_ != decoded_nonce) {
@@ -796,9 +792,7 @@ Status ServerNegotiation::RecvConnectionContext(faststring* recv_buf) {
       LOG(WARNING) << "Received an invalid connection nonce from client "
                    << addr.ToString()
                    << ", this could indicate a replay attack";
-      s = Status::NotAuthorized("nonce mismatch");
-      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-      return s;
+      return Status::NotAuthorized("nonce mismatch");
     }
   }
 
