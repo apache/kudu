@@ -199,7 +199,7 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
 // but before writing its header, the TS would previously crash on restart.
 // Instead, it should ignore the uninitialized segment.
 TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
-  NO_FATALS(StartCluster({ "--log_segment_size_mb=1" }));
+  NO_FATALS(StartCluster({ "--log_segment_size_mb=1", "--log_compression_codec=NO_COMPRESSION" }));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
