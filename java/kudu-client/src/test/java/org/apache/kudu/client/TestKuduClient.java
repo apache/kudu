@@ -24,6 +24,7 @@ import static org.apache.kudu.client.RowResult.timestampToString;
 import static org.junit.Assert.*;
 import static org.junit.matchers.JUnitMatchers.containsString;
 
+import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -34,12 +35,15 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.log4j.AppenderSkeleton;
 
 public class TestKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
@@ -786,6 +790,25 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(1, countRowsInScan(scanner));
   }
 
+  /**
+   * Regression test for some log spew which occurred in short-lived client instances which
+   * had outbound connections.
+   */
+  @Test(timeout = 100000)
+  public void testCloseShortlyAfterOpen() throws Exception {
+    CapturingLogAppender cla = new CapturingLogAppender();
+    try (Closeable c = cla.attach()) {
+      try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+        // Force the client to connect to the masters.
+        localClient.exportAuthenticationCredentials();
+      }
+      // Wait a little bit since the "channel disconnected" exceptions could come
+      // from threads that don't get synchronously joined by client.close().
+      Thread.sleep(500);
+    }
+    assertFalse(cla.getAppendedText(), cla.getAppendedText().contains("Exception"));
+  }
+
   @Test(timeout = 100000)
   public void testCustomNioExecutor() throws Exception {
     long startTime = System.nanoTime();
@@ -829,4 +852,6 @@ public class TestKuduClient extends BaseKuduTest {
   public void testNoDefaultPartitioning() throws Exception {
     syncClient.createTable(tableName, basicSchema, new CreateTableOptions());
   }
+
+
 }
