@@ -26,6 +26,7 @@
 
 package org.apache.kudu.client;
 
+import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -143,6 +144,13 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   private final RequestTracker requestTracker;
 
   private final ServerInfo serverInfo;
+
+  /**
+   * Set to true when the client initiates a disconnect. The channelDisconnected
+   * event handler then knows not to log any warning about unexpected disconnection
+   * from the peer.
+   */
+  private volatile boolean closedByClient;
 
   public TabletClient(AsyncKuduClient client, ServerInfo serverInfo) {
     this.kuduClient = client;
@@ -293,6 +301,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
     // added to a ChannelPipeline, which synchronously fires the channelOpen()
     // event.
     Preconditions.checkNotNull(chan);
+    closedByClient = true;
     return Channels.disconnect(chan);
   }
 
@@ -689,6 +698,10 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
           " ignore this if we're shutting down", e);
     } else if (e instanceof ReadTimeoutException) {
       LOG.debug(getPeerUuidLoggingString() + "Encountered a read timeout, will close the channel");
+    } else if (e instanceof ClosedChannelException) {
+      if (!closedByClient) {
+        LOG.info(getPeerUuidLoggingString() + "Lost connection to peer");
+      }
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
     }
