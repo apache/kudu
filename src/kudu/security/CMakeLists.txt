@@ -93,7 +93,7 @@ if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
     security-test-util.cc
     test/mini_kdc.cc
-    test/test_certs.cc)
+    test/test_certs.cc test/test_pass.cc)
 
   add_library(security-test ${SECURITY_TEST_SRCS})
   target_link_libraries(security-test

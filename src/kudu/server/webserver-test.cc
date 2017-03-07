@@ -24,6 +24,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/security/test/test_certs.h"
+#include "kudu/security/test/test_pass.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/curl_util.h"
@@ -50,6 +51,11 @@ void SetSslOptions(WebserverOptions* opts) {
                                         &password));
   opts->private_key_password_cmd = strings::Substitute("echo $0", password);
 }
+
+void SetHTPasswdOptions(WebserverOptions* opts) {
+  CHECK_OK(security::CreateTestHTPasswd(GetTestDataDirectory(),
+                                        &opts->password_file));
+}
 } // anonymous namespace
 
 class WebserverTest : public KuduTest {
@@ -66,6 +72,7 @@ class WebserverTest : public KuduTest {
     opts.port = 0;
     opts.doc_root = static_dir_;
     if (use_ssl()) SetSslOptions(&opts);
+    if (use_htpasswd()) SetHTPasswdOptions(&opts);
     server_.reset(new Webserver(opts));
 
     AddDefaultPathHandlers(server_.get());
@@ -80,6 +87,7 @@ class WebserverTest : public KuduTest {
  protected:
   // Overridden by subclasses.
   virtual bool use_ssl() const { return false; }
+  virtual bool use_htpasswd() const { return false; }
 
   EasyCurl curl_;
   faststring buf_;
@@ -93,6 +101,19 @@ class SslWebserverTest : public WebserverTest {
  protected:
   bool use_ssl() const override { return true; }
 };
+
+class PasswdWebserverTest : public WebserverTest {
+ protected:
+  bool use_htpasswd() const override { return true; }
+};
+
+// Send a HTTP request with no username and password. It should reject
+// the request as the .htpasswd is presented to webserver.
+TEST_F(PasswdWebserverTest, TestPasswd) {
+  Status status = curl_.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
+                                 &buf_);
+  ASSERT_EQ("Remote error: HTTP 401", status.ToString());
+}
 
 TEST_F(WebserverTest, TestIndexPage) {
   curl_.set_return_headers(true);
