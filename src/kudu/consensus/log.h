@@ -58,24 +58,12 @@ typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQue
 // Kudu as a normal Write Ahead Log and also plays the role of persistent
 // storage for the consensus state machine.
 //
-// Note: This class is not thread safe, the caller is expected to synchronize
-// Log::Reserve() and Log::Append() calls.
-//
 // Log uses group commit to improve write throughput and latency
-// without compromising ordering and durability guarantees.
+// without compromising ordering and durability guarantees. A single background
+// thread per Log instance is responsible for accumulating pending writes
+// and flushing them to the log.
 //
-// To add operations to the log, the caller must obtain the lock and
-// call Reserve() with the collection of operations to be added. Then,
-// the caller may release the lock and call AsyncAppend(). Reserve()
-// reserves a slot on a queue for the log entry; AsyncAppend()
-// indicates that the entry in the slot is safe to write to disk and
-// adds a callback that will be invoked once the entry is written and
-// synchronized to disk.
-//
-// For sample usage see mt-log-test.cc
-//
-// Methods on this class are _not_ thread-safe and must be externally
-// synchronized unless otherwise noted.
+// This class is thread-safe unless otherwise noted.
 //
 // Note: The Log needs to be Close()d before any log-writing class is
 // destroyed, otherwise the Log might hold references to these classes
@@ -98,24 +86,6 @@ class Log : public RefCountedThreadSafe<Log> {
                      scoped_refptr<Log> *log);
 
   ~Log();
-
-  // Reserves a spot in the log's queue for 'entry_batch'.
-  //
-  // 'reserved_entry' is initialized by this method and any resources
-  // associated with it will be released in AsyncAppend().  In order
-  // to ensure correct ordering of operations across multiple threads,
-  // calls to this method must be externally synchronized.
-  //
-  // WARNING: the caller _must_ call AsyncAppend() or else the log
-  // will "stall" and will never be able to make forward progress.
-  Status Reserve(LogEntryTypePB type,
-                 gscoped_ptr<LogEntryBatchPB> entry_batch,
-                 LogEntryBatch** reserved_entry);
-
-  // Asynchronously appends 'entry_batch' to the log. Once the append
-  // completes and is synced, 'callback' will be invoked.
-  void AsyncAppend(LogEntryBatch* entry_batch,
-                   const StatusCallback& callback);
 
   // Synchronously append a new entry to the log.
   // Log does not take ownership of the passed 'entry'.
@@ -281,6 +251,15 @@ class Log : public RefCountedThreadSafe<Log> {
   // Make segments roll over.
   Status RollOver();
 
+  static Status CreateBatchFromPB(LogEntryTypePB type,
+                                  std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                                  std::unique_ptr<LogEntryBatch>* entry_batch);
+
+  // Asynchronously appends 'entry_batch' to the log. Once the append
+  // completes and is synced, 'callback' will be invoked.
+  Status AsyncAppend(std::unique_ptr<LogEntryBatch> entry_batch,
+                     const StatusCallback& callback);
+
   // Writes the footer and closes the current segment.
   Status CloseCurrentSegment();
 
@@ -300,9 +279,7 @@ class Log : public RefCountedThreadSafe<Log> {
   Status PreAllocateNewSegment();
 
   // Writes serialized contents of 'entry' to the log. Called inside
-  // AppenderThread. If 'caller_owns_operation' is true, then the
-  // 'operation' field of the entry will be released after the entry
-  // is appended.
+  // AppenderThread.
   Status DoAppend(LogEntryBatch* entry_batch);
 
   // Update footer_builder_ to reflect the log indexes seen in 'batch'.
@@ -391,8 +368,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // The maximum segment size, in bytes.
   uint64_t max_segment_size_;
 
-  // The queue used to communicate between the thread calling
-  // Reserve() and the Log Appender thread
+  // The queue used to communicate between the threads appending operations
+  // and the thread which actually appends them to the log.
   LogEntryBatchQueue entry_batch_queue_;
 
   // Thread writing to the log
@@ -468,7 +445,8 @@ class LogEntryBatch {
   friend class MultiThreadedLogTest;
 
   LogEntryBatch(LogEntryTypePB type,
-                gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count);
+                std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                size_t count);
 
   // Serializes contents of the entry to an internal buffer.
   void Serialize();
@@ -485,27 +463,10 @@ class LogEntryBatch {
     return callback_;
   }
 
-  bool failed_to_append() const {
-    return state_ == kEntryFailedToAppend;
-  }
-
-  void set_failed_to_append() {
-    state_ = kEntryFailedToAppend;
-  }
-
-  // Mark the entry as reserved, but not yet ready to write to the log.
-  void MarkReserved();
-
-  // Mark the entry as ready to write to log.
-  void MarkReady();
-
-  // Wait (currently, by spinning on ready_lock_) until ready.
-  void WaitForReady();
 
   // Returns a Slice representing the serialized contents of the
   // entry.
   Slice data() const {
-    DCHECK_EQ(state_, kEntryReady);
     return Slice(buffer_);
   }
 
@@ -533,7 +494,7 @@ class LogEntryBatch {
   const LogEntryTypePB type_;
 
   // Contents of the log entries that will be written to disk.
-  gscoped_ptr<LogEntryBatchPB> entry_batch_pb_;
+  std::unique_ptr<LogEntryBatchPB> entry_batch_pb_;
 
    // Total size in bytes of all entries
   const uint32_t total_size_bytes_;
@@ -551,25 +512,9 @@ class LogEntryBatch {
   // synced to disk.
   StatusCallback callback_;
 
-  // Used to coordinate the synchronizer thread and the caller
-  // thread: this lock starts out locked, and is unlocked by the
-  // caller thread (i.e., inside AppendThread()) once the entry is
-  // fully initialized (once the callback is set and data is
-  // serialized)
-  base::SpinLock ready_lock_;
-
   // Buffer to which 'phys_entries_' are serialized by call to
   // 'Serialize()'
   faststring buffer_;
-
-  enum LogEntryState {
-    kEntryInitialized,
-    kEntryReserved,
-    kEntrySerialized,
-    kEntryReady,
-    kEntryFailedToAppend
-  };
-  LogEntryState state_;
 
   DISALLOW_COPY_AND_ASSIGN(LogEntryBatch);
 };

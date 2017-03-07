@@ -216,18 +216,17 @@ void Log::AppendThread::RunThread() {
 
     bool is_all_commits = true;
     for (LogEntryBatch* entry_batch : entry_batches) {
-      entry_batch->WaitForReady();
       TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
       Status s = log_->DoAppend(entry_batch);
       if (PREDICT_FALSE(!s.ok())) {
         LOG_WITH_PREFIX(ERROR) << "Error appending to the log: " << s.ToString();
-        entry_batch->set_failed_to_append();
         // TODO(af): If a single transaction fails to append, should we
         // abort all subsequent transactions in this batch or allow
         // them to be appended? What about transactions in future
         // batches?
         if (!entry_batch->callback().is_null()) {
           entry_batch->callback().Run(s);
+          entry_batch->callback_.Reset();
         }
       }
       if (is_all_commits && entry_batch->type_ != COMMIT) {
@@ -251,8 +250,7 @@ void Log::AppendThread::RunThread() {
       VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
       SCOPED_WATCH_STACK(100);
       for (LogEntryBatch* entry_batch : entry_batches) {
-        if (PREDICT_TRUE(!entry_batch->failed_to_append()
-                         && !entry_batch->callback().is_null())) {
+        if (PREDICT_TRUE(!entry_batch->callback().is_null())) {
           entry_batch->callback().Run(Status::OK());
         }
         // It's important to delete each batch as we see it, because
@@ -433,85 +431,54 @@ Status Log::RollOver() {
   return Status::OK();
 }
 
-Status Log::Reserve(LogEntryTypePB type,
-                    gscoped_ptr<LogEntryBatchPB> entry_batch,
-                    LogEntryBatch** reserved_entry) {
-  TRACE_EVENT0("log", "Log::Reserve");
-  DCHECK(reserved_entry != nullptr);
-  {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
-    CHECK_EQ(kLogWriting, log_state_);
-  }
+Status Log::CreateBatchFromPB(LogEntryTypePB type,
+                              unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                              unique_ptr<LogEntryBatch>* entry_batch) {
+  int num_ops = entry_batch_pb->entry_size();
+  unique_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(
+      type, std::move(entry_batch_pb), num_ops));
+  new_entry_batch->Serialize();
+  TRACE("Serialized $0 byte log entry", new_entry_batch->total_size_bytes());
 
-  // In DEBUG builds, verify that all of the entries in the batch match the specified type.
-  // In non-debug builds the foreach loop gets optimized out.
-  #ifndef NDEBUG
-  for (const LogEntryPB& entry : entry_batch->entry()) {
-    DCHECK_EQ(entry.type(), type) << "Bad batch: " << SecureDebugString(*entry_batch);
-  }
-  #endif
-
-  int num_ops = entry_batch->entry_size();
-  gscoped_ptr<LogEntryBatch> new_entry_batch(new LogEntryBatch(
-      type, std::move(entry_batch), num_ops));
-  new_entry_batch->MarkReserved();
-
-  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(new_entry_batch.get()))) {
-    return kLogShutdownStatus;
-  }
-
-  // Release the memory back to the caller: this will be freed when
-  // the entry is removed from the queue.
-  //
-  // TODO (perf) Use a ring buffer instead of a blocking queue and set
-  // 'reserved_entry' to a pre-allocated slot in the buffer.
-  *reserved_entry = new_entry_batch.release();
+  *entry_batch = std::move(new_entry_batch);
   return Status::OK();
 }
 
-void Log::AsyncAppend(LogEntryBatch* entry_batch, const StatusCallback& callback) {
+Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch, const StatusCallback& callback) {
   TRACE_EVENT0("log", "Log::AsyncAppend");
-  {
-    shared_lock<rw_spinlock> l(state_lock_.get_lock());
-    CHECK_EQ(kLogWriting, log_state_);
-  }
 
-  entry_batch->Serialize();
   entry_batch->set_callback(callback);
-  TRACE("Serialized $0 byte log entry", entry_batch->total_size_bytes());
-  TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch);
-  entry_batch->MarkReady();
+  TRACE_EVENT_FLOW_BEGIN0("log", "Batch", entry_batch.get());
+  if (PREDICT_FALSE(!entry_batch_queue_.BlockingPut(entry_batch.get()))) {
+    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
+    return kLogShutdownStatus;
+  }
+  entry_batch.release();
+  return Status::OK();
 }
 
 Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& replicates,
                                   const StatusCallback& callback) {
-  gscoped_ptr<LogEntryBatchPB> batch;
-  CreateBatchFromAllocatedOperations(replicates, &batch);
+  unique_ptr<LogEntryBatchPB> batch_pb = CreateBatchFromAllocatedOperations(replicates);
 
-  LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(REPLICATE, std::move(batch), &reserved_entry_batch));
-  // If we're able to reserve set the vector of replicate scoped ptrs in
-  // the LogEntryBatch. This will make sure there's a reference for each
-  // replicate while we're appending.
-  reserved_entry_batch->SetReplicates(replicates);
-
-  AsyncAppend(reserved_entry_batch, callback);
-  return Status::OK();
+  unique_ptr<LogEntryBatch> batch;
+  RETURN_NOT_OK(CreateBatchFromPB(REPLICATE, std::move(batch_pb), &batch));
+  batch->SetReplicates(replicates);
+  return AsyncAppend(std::move(batch), callback);
 }
 
 Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
   MAYBE_FAULT(FLAGS_fault_crash_before_append_commit);
 
-  gscoped_ptr<LogEntryBatchPB> batch(new LogEntryBatchPB);
-  LogEntryPB* entry = batch->add_entry();
+  unique_ptr<LogEntryBatchPB> batch_pb(new LogEntryBatchPB);
+  LogEntryPB* entry = batch_pb->add_entry();
   entry->set_type(COMMIT);
   entry->set_allocated_commit(commit_msg.release());
 
-  LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(COMMIT, std::move(batch), &reserved_entry_batch));
-
-  AsyncAppend(reserved_entry_batch, callback);
+  unique_ptr<LogEntryBatch> entry_batch;
+  RETURN_NOT_OK(CreateBatchFromPB(COMMIT, std::move(batch_pb), &entry_batch));
+  AsyncAppend(std::move(entry_batch), callback);
   return Status::OK();
 }
 
@@ -696,12 +663,10 @@ Status Log::GetSegmentsToGCUnlocked(RetentionIndexes retention_indexes,
 }
 
 Status Log::Append(LogEntryPB* entry) {
-  gscoped_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
+  unique_ptr<LogEntryBatchPB> entry_batch_pb(new LogEntryBatchPB);
   entry_batch_pb->mutable_entry()->AddAllocated(entry);
   LogEntryBatch entry_batch(entry->type(), std::move(entry_batch_pb), 1);
-  entry_batch.state_ = LogEntryBatch::kEntryReserved;
   entry_batch.Serialize();
-  entry_batch.state_ = LogEntryBatch::kEntryReady;
   Status s = DoAppend(&entry_batch);
   if (s.ok()) {
     s = Sync();
@@ -713,12 +678,12 @@ Status Log::Append(LogEntryPB* entry) {
 Status Log::WaitUntilAllFlushed() {
   // In order to make sure we empty the queue we need to use
   // the async api.
-  gscoped_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
+  unique_ptr<LogEntryBatchPB> entry_batch(new LogEntryBatchPB);
   entry_batch->add_entry()->set_type(log::FLUSH_MARKER);
-  LogEntryBatch* reserved_entry_batch;
-  RETURN_NOT_OK(Reserve(FLUSH_MARKER, std::move(entry_batch), &reserved_entry_batch));
+  unique_ptr<LogEntryBatch> reserved_entry_batch;
+  RETURN_NOT_OK(CreateBatchFromPB(FLUSH_MARKER, std::move(entry_batch), &reserved_entry_batch));
   Synchronizer s;
-  AsyncAppend(reserved_entry_batch, s.AsStatusCallback());
+  AsyncAppend(std::move(reserved_entry_batch), s.AsStatusCallback());
   return s.Wait();
 }
 
@@ -1022,14 +987,14 @@ Log::~Log() {
 }
 
 LogEntryBatch::LogEntryBatch(LogEntryTypePB type,
-                             gscoped_ptr<LogEntryBatchPB> entry_batch_pb, size_t count)
+                             unique_ptr<LogEntryBatchPB> entry_batch_pb,
+                             size_t count)
     : type_(type),
       entry_batch_pb_(std::move(entry_batch_pb)),
       total_size_bytes_(
           PREDICT_FALSE(count == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER) ?
           0 : entry_batch_pb_->ByteSize()),
-      count_(count),
-      state_(kEntryInitialized) {
+      count_(count) {
 }
 
 LogEntryBatch::~LogEntryBatch() {
@@ -1042,36 +1007,16 @@ LogEntryBatch::~LogEntryBatch() {
   }
 }
 
-void LogEntryBatch::MarkReserved() {
-  DCHECK_EQ(state_, kEntryInitialized);
-  ready_lock_.Lock();
-  state_ = kEntryReserved;
-}
-
 void LogEntryBatch::Serialize() {
-  DCHECK_EQ(state_, kEntryReserved);
-  buffer_.clear();
+  DCHECK_EQ(buffer_.size(), 0);
   // FLUSH_MARKER LogEntries are markers and are not serialized.
   if (PREDICT_FALSE(count() == 1 && entry_batch_pb_->entry(0).type() == FLUSH_MARKER)) {
-    state_ = kEntrySerialized;
     return;
   }
   buffer_.reserve(total_size_bytes_);
   pb_util::AppendToString(*entry_batch_pb_, &buffer_);
-  state_ = kEntrySerialized;
 }
 
-void LogEntryBatch::MarkReady() {
-  DCHECK_EQ(state_, kEntrySerialized);
-  state_ = kEntryReady;
-  ready_lock_.Unlock();
-}
-
-void LogEntryBatch::WaitForReady() {
-  ready_lock_.Lock();
-  DCHECK_EQ(state_, kEntryReady);
-  ready_lock_.Unlock();
-}
 
 }  // namespace log
 }  // namespace kudu

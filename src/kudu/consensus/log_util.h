@@ -473,12 +473,10 @@ class WritableLogSegment {
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };
 
-// Sets 'batch' to a newly created batch that contains the pre-allocated
+// Return a newly created batch that contains the pre-allocated
 // ReplicateMsgs in 'msgs'.
-// We use C-style passing here to avoid having to allocate a vector
-// in some hot paths.
-void CreateBatchFromAllocatedOperations(const std::vector<consensus::ReplicateRefPtr>& msgs,
-                                        gscoped_ptr<LogEntryBatchPB>* batch);
+std::unique_ptr<LogEntryBatchPB> CreateBatchFromAllocatedOperations(
+    const std::vector<consensus::ReplicateRefPtr>& msgs);
 
 // Checks if 'fname' is a correctly formatted name of log segment file.
 bool IsLogFileName(const std::string& fname);
