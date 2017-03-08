@@ -80,6 +80,11 @@ class PeerMessageQueue {
           needs_tablet_copy(false),
           last_seen_term_(0) {}
 
+    TrackedPeer() = default;
+
+    // Copy a given TrackedPeer.
+    TrackedPeer& operator=(const TrackedPeer& tracked_peer) = default;
+
     // Check that the terms seen from a given peer only increase
     // monotonically.
     void CheckMonotonicTerms(int64_t term) {
@@ -90,7 +95,7 @@ class PeerMessageQueue {
     std::string ToString() const;
 
     // UUID of the peer.
-    const std::string uuid;
+    std::string uuid;
 
     // Whether this is a newly tracked peer.
     bool is_new;
