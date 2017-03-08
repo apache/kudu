@@ -590,13 +590,12 @@ Status SysCatalogTable::AddCertAuthorityEntry(
 
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, CERT_AUTHORITY_INFO));
-  CHECK_OK(row.SetString(kSysCatalogTableColId, kSysCertAuthorityEntryId));
-  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, kSysCertAuthorityEntryId));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
-  RETURN_NOT_OK(SyncWrite(&req, &resp));
 
-  return Status::OK();
+  return SyncWrite(&req, &resp);
 }
 
 Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
@@ -613,11 +612,14 @@ Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
   faststring metadata_buf;
   pb_util::SerializeToString(entry, &metadata_buf);
 
+  // This is crucial to keep entry_id alive until its put into the
+  // WriteRequestPB object by RowOperationsPBEncoder.
+  const string entry_id = TskSeqNumberToEntryId(entry.tsk().key_seq_num());
+
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TSK_ENTRY));
-  CHECK_OK(row.SetString(kSysCatalogTableColId,
-                         TskSeqNumberToEntryId(entry.tsk().key_seq_num())));
-  CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, entry_id));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   enc.Add(RowOperationsPB::INSERT, row);
 
@@ -633,7 +635,7 @@ Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
   for (const auto& id : entry_ids) {
     KuduPartialRow row(&schema_);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TSK_ENTRY));
-    CHECK_OK(row.SetString(kSysCatalogTableColId, id));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, id));
     RowOperationsPBEncoder enc(req.mutable_row_operations());
     enc.Add(RowOperationsPB::DELETE, row);
   }
