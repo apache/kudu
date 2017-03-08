@@ -18,6 +18,7 @@
 #include <glog/logging.h>
 #include <gperftools/heap-checker.h>
 
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
 #include "kudu/util/thread_restrictions.h"
@@ -41,6 +42,9 @@ struct LocalThreadRestrictions {
 };
 
 LocalThreadRestrictions* LoadTLS() {
+  // Disable leak check. LSAN sometimes gets false positives on thread locals.
+  // See: https://github.com/google/sanitizers/issues/757
+  debug::ScopedLeakCheckDisabler d;
   BLOCK_STATIC_THREAD_LOCAL(LocalThreadRestrictions, local_thread_restrictions);
   return local_thread_restrictions;
 }

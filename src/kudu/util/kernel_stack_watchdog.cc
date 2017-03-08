@@ -23,6 +23,7 @@
 #include <string>
 
 #include "kudu/util/debug-util.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
@@ -154,6 +155,9 @@ void KernelStackWatchdog::RunThread() {
 }
 
 KernelStackWatchdog::TLS* KernelStackWatchdog::GetTLS() {
+  // Disable leak check. LSAN sometimes gets false positives on thread locals.
+  // See: https://github.com/google/sanitizers/issues/757
+  debug::ScopedLeakCheckDisabler d;
   INIT_STATIC_THREAD_LOCAL(KernelStackWatchdog::TLS, tls_);
   return tls_;
 }
