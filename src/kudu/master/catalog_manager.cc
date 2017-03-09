@@ -845,8 +845,8 @@ void CatalogManager::VisitTablesAndTabletsTask() {
       CHECK_OK(VisitTablesAndTabletsUnlocked());
     }
 
-    // TODO(PKI): this should not be done in case of external PKI.
-    // TODO(PKI): should be there a flag to reset already existing CA info?
+    // TODO(KUDU-1920): this should not be done in case of external PKI.
+    // TODO(KUDU-1919): some kind of tool to rotate the IPKI CA
     LOG(INFO) << "Loading CA info into memory...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() +
                        "Loading CA info into memory") {

@@ -124,8 +124,6 @@ class TokenVerifier;
 // period longer than or equal to 3 days, without risking that the
 // signing/verification key would expire before the token.
 //
-// TODO(PKI): should we try to enforce this constraint in code?
-//
 // NOTE: One other result of the above is that the first key (Key 1) is actually
 //       active for longer than the rest. This has some potential security
 //       implications, so it's worth considering rolling twice at startup.

@@ -268,7 +268,7 @@ class Messenger {
 
   // Whether to require authentication and encryption on the connections managed
   // by this messenger.
-  // TODO(PKI): scope these to individual proxies, so that messengers can be
+  // TODO(KUDU-1928): scope these to individual proxies, so that messengers can be
   // reused by different clients.
   RpcAuthentication authentication_;
   RpcEncryption encryption_;

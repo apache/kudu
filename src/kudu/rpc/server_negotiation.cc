@@ -377,7 +377,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
       tls_context_->has_signed_cert()) {
     // If the client supports it and we are locally configured with TLS and have
     // a CA-signed cert, choose cert authn.
-    // TODO(PKI): consider adding the fingerprint of the CA cert which signed
+    // TODO(KUDU-1924): consider adding the fingerprint of the CA cert which signed
     // the client's cert to the authentication message.
     negotiated_authn_ = AuthenticationType::CERTIFICATE;
   } else if (ContainsKey(authn_types, AuthenticationType::TOKEN) &&
@@ -385,7 +385,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
              tls_context_->has_signed_cert()) {
     // If the client supports it, we have a TSK to verify the client's token,
     // and we have a signed-cert so the client can verify us, choose token authn.
-    // TODO(PKI): consider adding the TSK sequence number to the authentication
+    // TODO(KUDU-1924): consider adding the TSK sequence number to the authentication
     // message.
     negotiated_authn_ = AuthenticationType::TOKEN;
   } else {
@@ -548,7 +548,7 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
     Status s = Status::NotAuthorized("TOKEN_EXCHANGE message must include an authentication token");
   }
 
-  // TODO(PKI): propagate the specific token verification failure back to the client,
+  // TODO(KUDU-1924): propagate the specific token verification failure back to the client,
   // so it knows how to intelligently retry.
   security::TokenPB token;
   auto verification_result = token_verifier_->VerifyTokenSignature(pb.authn_token(), &token);

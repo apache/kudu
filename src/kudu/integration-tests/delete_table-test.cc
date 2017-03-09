@@ -1091,7 +1091,7 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
   // won't be able to authenticate to the new master, due to it having a new
   // CA certificate which the old tserver doesn't trust.
   //
-  // TODO(PKI): perhaps this is actually a feature? should we have tablet servers
+  // TODO(KUDU-65): perhaps this is actually a feature? should we have tablet servers
   // remember the CA cert persistently so that it's impossible to connect an
   // old tserver to a new cluster?
   cluster_->Shutdown();

@@ -48,6 +48,11 @@ enum class VerificationResult;
 // and is not yet expired. Any business rules around authorization or
 // authentication are left up to callers.
 //
+// NOTE: old tokens are never removed from the underlying storage of this
+// class. The assumption is that tokens rotate so infreqeuently that this
+// slow leak is not worrisome. If this class is adopted for any use cases
+// with frequent rotation, GC of expired tokens will need to be added.
+//
 // This class is thread-safe.
 class TokenVerifier {
  public:
@@ -76,12 +81,6 @@ class TokenVerifier {
   // contents into 'token'.
   VerificationResult VerifyTokenSignature(const SignedTokenPB& signed_token,
                                           TokenPB* token) const;
-
-  // TODO(PKI): should expire out old key versions at some point. eg only
-  // keep old key versions until their expiration is an hour or two in the past?
-  // Not sure where we'll call this from, and likely the "slow leak" isn't
-  // critical for first implementation.
-  // void ExpireOldKeys();
 
  private:
   typedef std::map<int64_t, std::unique_ptr<TokenSigningPublicKey>> KeysMap;

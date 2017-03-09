@@ -127,8 +127,6 @@ VerificationResult TokenVerifier::VerifyTokenSignature(const SignedTokenPB& sign
     shared_lock<RWMutex> l(lock_);
     auto* tsk = FindPointeeOrNull(keys_by_seq_, signed_token.signing_key_seq_num());
     if (!tsk) {
-      // TODO(pki): should this notify the heartbeater to send out a heartbeat
-      // immediately, since we are not up to date with TSKs?
       return VerificationResult::UNKNOWN_SIGNING_KEY;
     }
     if (tsk->pb().expire_unix_epoch_seconds() < now) {

@@ -164,7 +164,7 @@ Status TlsContext::Init() {
 #endif
 #endif
 
-  // TODO(PKI): is it possible to disable client-side renegotiation? it seems there
+  // TODO(KUDU-1926): is it possible to disable client-side renegotiation? it seems there
   // have been various CVEs related to this feature that we don't need.
   return Status::OK();
 }

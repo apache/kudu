@@ -168,7 +168,7 @@ Status ClientNegotiation::Negotiate() {
   }
 
   // Step 3: if both ends support TLS, do a TLS handshake.
-  // TODO(PKI): allow the client to require TLS.
+  // TODO(KUDU-1921): allow the client to require TLS.
   if (ContainsKey(server_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
@@ -266,8 +266,8 @@ Status ClientNegotiation::SendConnectionHeader() {
 Status ClientNegotiation::InitSaslClient() {
   RETURN_NOT_OK(SaslInit());
 
-  // TODO(unknown): Support security flags.
-  unsigned secflags = 0;
+  // TODO(KUDU-1922): consider setting SASL_SUCCESS_DATA
+  unsigned flags = 0;
 
   sasl_conn_t* sasl_conn = nullptr;
   RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
@@ -277,7 +277,7 @@ Status ClientNegotiation::InitSaslClient() {
           nullptr,                      // Local and remote IP address strings. (we don't use
           nullptr,                      // any mechanisms which require this info.)
           &callbacks_[0],               // Connection-specific callbacks.
-          secflags,                     // Security flags.
+          flags,
           &sasl_conn);
     }), "Unable to create new SASL client");
   sasl_conn_.reset(sasl_conn);
@@ -307,7 +307,7 @@ Status ClientNegotiation::SendNegotiate() {
     msg.add_authn_types()->mutable_certificate();
   }
   if (authn_token_ && tls_context_->has_trusted_cert()) {
-    // TODO(PKI): check that the authn token is not expired. Can this be done
+    // TODO(KUDU-1924): check that the authn token is not expired. Can this be done
     // reliably on clients?
     msg.add_authn_types()->mutable_token();
   }
@@ -414,7 +414,7 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
     return Status::NotAuthorized(msg);
   }
 
-  // TODO(PKI): allow the client to require authentication.
+  // TODO(KUDU-1921): allow the client to require authentication.
   if (ContainsKey(common_mechs, SaslMechanism::GSSAPI)) {
     negotiated_mech_ = SaslMechanism::GSSAPI;
   } else {

@@ -249,8 +249,8 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
     if (!FLAGS_rpc_certificate_file.empty()) {
       CHECK(!FLAGS_rpc_private_key_file.empty());
       CHECK(!FLAGS_rpc_ca_certificate_file.empty());
-      // TODO(PKI): should we try and enforce that the server UUID and/or
-      // hostname is in the subject or alt names of the cert?
+      // TODO(KUDU-1920): should we try and enforce that the server
+      // is in the subject or alt names of the cert?
       RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ca_certificate_file));
       RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_certificate_file,
                                                        FLAGS_rpc_private_key_file));

@@ -399,7 +399,7 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   resp->set_role(role);
 
   if (l.leader_status().ok()) {
-    // TODO(PKI): it seems there is some window when 'role' is LEADER but
+    // TODO(KUDU-1924): it seems there is some window when 'role' is LEADER but
     // in fact we aren't done initializing (and we don't have a CA cert).
     // In that case, if we respond with the 'LEADER' role to a client, but
     // don't pass back the CA cert, then the client won't be able to trust

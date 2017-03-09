@@ -372,9 +372,6 @@ Status Heartbeater::Thread::DoHeartbeat() {
     VLOG(1) << "Sending a CSR to the master in the next heartbeat";
   }
 
-  // TODO(PKI): send the version number of the latest CA cert which we know about.
-  // The response should include new CA certs.
-
   // Send the most recently known TSK sequence number so that the master can
   // send us knew ones if they exist.
   req.set_latest_tsk_seq_num(server_->token_verifier().GetMaxKnownKeySequenceNumber());

@@ -108,9 +108,10 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
   // Keep trying to generate a unique ID until we get one.
   bool success = false;
   while (!success) {
-    // TODO(security): are these UUIDs predictable? If so, we should
+    // TODO(KUDU-1918): are these UUIDs predictable? If so, we should
     // probably generate random numbers instead, since we can safely
-    // just retry until we avoid a collision.
+    // just retry until we avoid a collision. Alternatively we could
+    // verify that the requestor userid does not change mid-scan.
     string id = oid_generator_.Next();
     scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
