@@ -51,7 +51,7 @@ class TokenVerifier;
 // (a.k.a. next key) is not used. Rather, the second-most-recent key, if exists,
 // is used. This ensures that there is plenty of time to transmit the public
 // part of the new TSK to all TokenVerifiers (e.g. on other servers via
-// heatbeats or by other means), before the new key enters usage.
+// heartbeats or by other means), before the new key enters usage.
 //
 // On a fresh instance, with only one key, there is no "second most recent"
 // key. Thus, we fall back to signing tokens with the only available key.
@@ -64,7 +64,7 @@ class TokenVerifier;
 // key rotation is performed more frequently than the validity period
 // of the key, so that at any given point in time there are several valid keys.
 //
-// Below is the lifecycle of a TSK (token signing key):
+// Below is the life cycle of a TSK (token signing key):
 //
 //      <---AAAAA===============>
 //      ^                       ^
@@ -213,25 +213,46 @@ class TokenSigner {
 
   // Check whether it's time to generate and add a new key. If so, the new key
   // is generated and output into the 'tsk' parameter so it's possible to
-  // examine and otherwise process the key as needed (e.g. store it).
-  // After that, use AddKey() method to actually add the key into the
-  // TokenSigner's key queue.
+  // examine and process the key as needed (e.g. store it). After that, use the
+  // AddKey() method to actually add the key into the TokenSigner's key queue.
   //
-  // Every non-null key returned by this methods has key sequence number.
-  // The key sequence number always increases with newly generated keys.
+  // Every non-null key returned by this method has key sequence number.
   // It's not a problem to call this method multiple times but call the AddKey()
   // method only once, effectively discarding all the generated keys except for
-  // the key passed to the AddKey() call as a parameter. In other words,
-  // it's possible and not a problem to have 'holes' in the key sequence
-  // numbers. Other components working with verification of the signed tokens
-  // should take that into account.
+  // the key passed to the AddKey() call as a parameter. The key sequence number
+  // always increments with every newly added key (i.e. every successful call of
+  // the AddKey() method). The result key number sequence would not contain
+  // any 'holes'.
+  //
+  // In other words, sequence of calls like
+  //
+  //   CheckNeedKey(k);
+  //   CheckNeedKey(k);
+  //   ...
+  //   CheckNeedKey(k);
+  //   AddKey(k);
+  //
+  // would increase the key sequence number just by 1. Due to that fact, the
+  // following sequence of calls to CheckNeedKey()/AddKey() would work fine:
+  //
+  //   CheckNeedKey(k0);
+  //   AddKey(k0);
+  //   CheckNeedKey(k1);
+  //   AddKey(k1);
+  //
+  // but the sequence below would fail at AddKey(k1):
+  //
+  //   CheckNeedKey(k0);
+  //   CheckNeedKey(k1);
+  //   AddKey(k0);
+  //   AddKey(k1);
   //
   // See the class comment above for more information about the intended usage.
   Status CheckNeedKey(std::unique_ptr<TokenSigningPrivateKey>* tsk) const
       WARN_UNUSED_RESULT;
 
   // Add the new key into the token signing keys queue. Call TryRotateKey()
-  // to make this key active when it's time.
+  // to make the newly added key active when it's time.
   //
   // See the class comment above for more information about the intended usage.
   Status AddKey(std::unique_ptr<TokenSigningPrivateKey> tsk) WARN_UNUSED_RESULT;
@@ -282,12 +303,8 @@ class TokenSigner {
   // Protects next_seq_num_ and tsk_deque_ members.
   mutable RWMutex lock_;
 
-  // The sequence number to assign to next generated key.
-  // It's allowable to have 'holes' in the key sequence numbers, i.e. it's
-  // acceptable to have sequence numbers which do not correspond to any
-  // existing TSK. The only crucial point is to keep the key sequence numbers
-  // increasing.
-  mutable int64_t next_key_seq_num_;
+  // The sequence number of the last generated/imported key.
+  int64_t last_key_seq_num_;
 
   // The currently active key is in the front of the queue,
   // the newly added ones are pushed into back of the queue.

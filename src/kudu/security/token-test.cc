@@ -81,6 +81,32 @@ Status GenerateTokenSigningKey(int64_t seq_num,
   return Status::OK();
 }
 
+void CheckAndAddNextKey(int iter_num,
+                        TokenSigner* signer,
+                        int64_t* key_seq_num) {
+  ASSERT_NE(nullptr, signer);
+  ASSERT_NE(nullptr, key_seq_num);
+  int64_t seq_num;
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer->CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    seq_num = key->key_seq_num();
+  }
+
+  for (int i = 0; i < iter_num; ++i) {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer->CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_EQ(seq_num, key->key_seq_num());
+    if (i + 1 == iter_num) {
+      // Finally, add the key to the TokenSigner.
+      ASSERT_OK(signer->AddKey(std::move(key)));
+    }
+  }
+  *key_seq_num = seq_num;
+}
+
 } // anonymous namespace
 
 class TokenTest : public KuduTest {
@@ -114,7 +140,190 @@ TEST_F(TokenTest, TestInit) {
   ASSERT_TRUE(token.has_signature());
 }
 
-TEST_F(TokenTest, TestGenerateAuthToken) {
+// Verify that TokenSigner does not allow 'holes' in the sequence numbers
+// of the generated keys. The idea is to not allow sequences like '1, 5, 6'.
+// In general, calling the CheckNeedKey() method multiple times and then calling
+// the AddKey() method once should advance the key sequence number only by 1
+// regardless of number CheckNeedKey() calls.
+//
+// This is to make sure that the sequence numbers are not sparse in case if
+// running scenarios CheckNeedKey()-try-to-store-key-AddKey() over and over
+// again, given that the 'try-to-store-key' part can fail sometimes.
+TEST_F(TokenTest, TestTokenSignerNonSparseSequenceNumbers) {
+  static const int kIterNum = 3;
+  static const int64_t kAuthnTokenValiditySeconds = 1;
+  static const int64_t kKeyRotationSeconds = 1;
+
+  TokenSigner signer(kAuthnTokenValiditySeconds, kKeyRotationSeconds);
+
+  int64_t seq_num_first_key;
+  NO_FATALS(CheckAndAddNextKey(kIterNum, &signer, &seq_num_first_key));
+
+  SleepFor(MonoDelta::FromSeconds(kKeyRotationSeconds + 1));
+
+  int64_t seq_num_second_key;
+  NO_FATALS(CheckAndAddNextKey(kIterNum, &signer, &seq_num_second_key));
+
+  ASSERT_EQ(seq_num_first_key + 1, seq_num_second_key);
+}
+
+// Verify the behavior of the TokenSigner::ImportKeys() method. In general,
+// it should tolerate mix of expired and non-expired keys, even if their
+// sequence numbers are intermixed: keys with greater sequence numbers could
+// be already expired but keys with lesser sequence numbers could be still
+// valid. The idea is to correctly import TSKs generated with different
+// validity period settings. This is to address scenarios when the system
+// was run with long authn token validity interval and then switched to
+// a shorter one.
+//
+// After importing keys, the TokenSigner should contain only the valid ones.
+// In addition, the sequence number of the very first key generated after the
+// import should be greater than any sequence number the TokenSigner has seen
+// during the import.
+TEST_F(TokenTest, TestTokenSignerAddKeyAfterImport) {
+  static const int64_t kAuthnTokenValiditySeconds = 8;
+  static const int64_t kKeyRotationSeconds = 8;
+  static const int64_t kKeyValiditySeconds =
+      kAuthnTokenValiditySeconds + 2 * kKeyRotationSeconds;
+
+  TokenSigner signer(kAuthnTokenValiditySeconds, kKeyRotationSeconds);
+  const TokenVerifier& verifier(signer.verifier());
+
+  static const int64_t kExpiredKeySeqNum = 100;
+  static const int64_t kKeySeqNum = kExpiredKeySeqNum - 1;
+  {
+    // First, try to import already expired key to check that internal key
+    // sequence number advances correspondingly.
+    PrivateKey private_key;
+    ASSERT_OK(GeneratePrivateKey(512, &private_key));
+    string private_key_str_der;
+    ASSERT_OK(private_key.ToString(&private_key_str_der, DataFormat::DER));
+    TokenSigningPrivateKeyPB pb;
+    pb.set_rsa_key_der(private_key_str_der);
+    pb.set_key_seq_num(kExpiredKeySeqNum);
+    pb.set_expire_unix_epoch_seconds(WallTime_Now() - 1);
+
+    ASSERT_OK(signer.ImportKeys({pb}));
+  }
+
+  {
+    // Check the result of importing keys: there should be no keys because
+    // the only one we tried to import was already expired.
+    vector<TokenSigningPublicKeyPB> public_keys(verifier.ExportKeys());
+    ASSERT_TRUE(public_keys.empty());
+  }
+
+  {
+    // Now import valid (not yet expired) key, but with sequence number less
+    // than of the expired key.
+    PrivateKey private_key;
+    ASSERT_OK(GeneratePrivateKey(512, &private_key));
+    string private_key_str_der;
+    ASSERT_OK(private_key.ToString(&private_key_str_der, DataFormat::DER));
+    TokenSigningPrivateKeyPB pb;
+    pb.set_rsa_key_der(private_key_str_der);
+    pb.set_key_seq_num(kKeySeqNum);
+    // Set the TSK's expiration time: make the key valid but past its activity
+    // interval.
+    pb.set_expire_unix_epoch_seconds(
+        WallTime_Now() + (kKeyValiditySeconds - 2 * kKeyRotationSeconds - 1));
+
+    ASSERT_OK(signer.ImportKeys({pb}));
+  }
+
+  {
+    // Check the result of importing keys.
+    vector<TokenSigningPublicKeyPB> public_keys(verifier.ExportKeys());
+    ASSERT_EQ(1, public_keys.size());
+    ASSERT_EQ(kKeySeqNum, public_keys[0].key_seq_num());
+  }
+
+  {
+    // The newly imported key should be used to sign tokens.
+    SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+    ASSERT_OK(signer.SignToken(&token));
+    ASSERT_TRUE(token.has_signature());
+    ASSERT_TRUE(token.has_signing_key_seq_num());
+    EXPECT_EQ(kKeySeqNum, token.signing_key_seq_num());
+  }
+
+  {
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_EQ(kExpiredKeySeqNum + 1, key->key_seq_num());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+    bool has_rotated = false;
+    ASSERT_OK(signer.TryRotateKey(&has_rotated));
+    ASSERT_TRUE(has_rotated);
+  }
+  {
+    // Check the result of generating the new key: the identifier of the new key
+    // should be +1 increment from the identifier of the expired imported key.
+    vector<TokenSigningPublicKeyPB> public_keys(verifier.ExportKeys());
+    ASSERT_EQ(2, public_keys.size());
+    EXPECT_EQ(kKeySeqNum, public_keys[0].key_seq_num());
+    EXPECT_EQ(kExpiredKeySeqNum + 1, public_keys[1].key_seq_num());
+  }
+
+  // At this point the new key should be used to sign tokens.
+  SignedTokenPB token = MakeUnsignedToken(WallTime_Now());
+  ASSERT_OK(signer.SignToken(&token));
+  ASSERT_TRUE(token.has_signature());
+  ASSERT_TRUE(token.has_signing_key_seq_num());
+  EXPECT_EQ(kExpiredKeySeqNum + 1, token.signing_key_seq_num());
+}
+
+// The AddKey() method should not allow to add a key with the sequence number
+// less or equal to the sequence number of the most 'recent' key.
+TEST_F(TokenTest, TestAddKeyConstraints) {
+  {
+    TokenSigner signer(1, 1);
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    ASSERT_OK(signer.AddKey(std::move(key)));
+  }
+  {
+    TokenSigner signer(1, 1);
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    const int64_t key_seq_num = key->key_seq_num();
+    key->key_seq_num_ = key_seq_num - 1;
+    Status s = signer.AddKey(std::move(key));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        ": invalid key sequence number, should be at least ");
+  }
+  {
+    TokenSigner signer(1, 1);
+    static const int64_t kKeySeqNum = 100;
+    PrivateKey private_key;
+    ASSERT_OK(GeneratePrivateKey(512, &private_key));
+    string private_key_str_der;
+    ASSERT_OK(private_key.ToString(&private_key_str_der, DataFormat::DER));
+    TokenSigningPrivateKeyPB pb;
+    pb.set_rsa_key_der(private_key_str_der);
+    pb.set_key_seq_num(kKeySeqNum);
+    // Make the key already expired.
+    pb.set_expire_unix_epoch_seconds(WallTime_Now() - 1);
+    ASSERT_OK(signer.ImportKeys({pb}));
+
+    std::unique_ptr<TokenSigningPrivateKey> key;
+    ASSERT_OK(signer.CheckNeedKey(&key));
+    ASSERT_NE(nullptr, key.get());
+    const int64_t key_seq_num = key->key_seq_num();
+    ASSERT_GT(key_seq_num, kKeySeqNum);
+    key->key_seq_num_ = kKeySeqNum;
+    Status s = signer.AddKey(std::move(key));
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        ": invalid key sequence number, should be at least ");
+  }
+}
+
+TEST_F(TokenTest, TestGenerateAuthTokenNoUserName) {
   TokenSigner signer(10, 10);
   SignedTokenPB signed_token_pb;
   const Status& s = signer.GenerateAuthnToken("", &signed_token_pb);
@@ -210,7 +419,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
   }
 }
 
-// Test how test rotation works.
+// Test how key rotation works.
 TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
   // Key rotation interval 0 allows adding 2 keys in a row with no delay.
   TokenSigner signer(10, 0);

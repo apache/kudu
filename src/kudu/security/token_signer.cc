@@ -27,6 +27,7 @@
 
 #include <gflags/gflags.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/token.pb.h"
@@ -47,6 +48,7 @@ using std::string;
 using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace security {
@@ -60,7 +62,7 @@ TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
       key_rotation_seconds_(key_rotation_seconds),
       // The TSK propagation interval is equal to the rotation interval.
       key_validity_seconds_(2 * key_rotation_seconds_ + authn_token_validity_seconds_),
-      next_key_seq_num_(0) {
+      last_key_seq_num_(-1) {
   CHECK_GE(key_rotation_seconds_, 0);
   CHECK_GE(authn_token_validity_seconds_, 0);
   CHECK(verifier_);
@@ -85,8 +87,13 @@ Status TokenSigner::ImportKeys(const vector<TokenSigningPrivateKeyPB>& keys) {
     const int64_t key_seq_num = key.key_seq_num();
     unique_ptr<TokenSigningPrivateKey> tsk(new TokenSigningPrivateKey(key));
 
-    // Advance the key sequence number, if needed.
-    next_key_seq_num_ = std::max(next_key_seq_num_, key_seq_num + 1);
+    // Advance the key sequence number, if needed. For the use case when the
+    // history of keys sequence numbers is important, the generated keys are
+    // persisted when TokenSigner is active and then the keys are imported from
+    // the store when TokenSigner is initialized (e.g., on restart). It's
+    // crucial to take into account sequence numbers of all previously persisted
+    // keys even if they have expired at the moment of importing.
+    last_key_seq_num_ = std::max(last_key_seq_num_, key_seq_num);
     const int64_t key_expire_time = tsk->expire_time();
     if (key_expire_time <= now) {
       // Do nothing else with an expired TSK.
@@ -172,7 +179,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
   unique_lock<RWMutex> l(lock_);
   if (tsk_deque_.empty()) {
     // No active key: need a new one.
-    const int64 key_seq_num = next_key_seq_num_++;
+    const int64 key_seq_num = last_key_seq_num_ + 1;
     const int64 key_expiration = now + key_validity_seconds_;
     // Generation of cryptographically strong key takes many CPU cycles;
     // do not want to block other parallel activity.
@@ -204,7 +211,7 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
   const auto key_creation_time = key->expire_time() - key_validity_seconds_;
   if (key_creation_time + key_rotation_seconds_ <= now) {
     // It's time to create and start propagating next key.
-    const int64 key_seq_num = next_key_seq_num_++;
+    const int64 key_seq_num = last_key_seq_num_ + 1;
     const int64 key_expiration = now + key_validity_seconds_;
     // Generation of cryptographically strong key takes many CPU cycles:
     // do not want to block other parallel activity.
@@ -219,16 +226,21 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
 
 Status TokenSigner::AddKey(unique_ptr<TokenSigningPrivateKey> tsk) {
   CHECK(tsk);
-  const int64_t seq_num = tsk->key_seq_num();
-  if (seq_num < 0) {
-    return Status::InvalidArgument("invalid key sequence number");
-  }
+  const int64_t key_seq_num = tsk->key_seq_num();
   if (tsk->expire_time() <= WallTime_Now()) {
     return Status::InvalidArgument("key has already expired");
   }
 
   lock_guard<RWMutex> l(lock_);
-  next_key_seq_num_ = std::max(next_key_seq_num_, seq_num + 1);
+  if (key_seq_num < last_key_seq_num_ + 1) {
+    // The AddKey() method is designed for adding new keys: that should be done
+    // using CheckNeedKey()/AddKey() sequence. Use the ImportKeys() method
+    // for importing keys in bulk.
+    return Status::InvalidArgument(
+        Substitute("$0: invalid key sequence number, should be at least $1",
+                   key_seq_num, last_key_seq_num_ + 1));
+  }
+  last_key_seq_num_ = std::max(last_key_seq_num_, key_seq_num);
   // Register the public part of the key in TokenVerifier first.
   TokenSigningPublicKeyPB public_key_pb;
   tsk->ExportPublicKeyPB(&public_key_pb);
@@ -245,7 +257,7 @@ Status TokenSigner::TryRotateKey(bool* has_rotated) {
     *has_rotated = false;
   }
   if (tsk_deque_.size() < 2) {
-    // No next key to rotate to.
+    // There isn't next key to rotate to.
     return Status::OK();
   }
 
