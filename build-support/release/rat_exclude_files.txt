@@ -20,10 +20,10 @@ java/kudu-client/src/main/java/org/apache/kudu/client/HasFailedRpcException.java
 java/kudu-client/src/main/java/org/apache/kudu/client/InvalidResponseException.java
 java/kudu-client/src/main/java/org/apache/kudu/client/KuduException.java
 java/kudu-client/src/main/java/org/apache/kudu/client/KuduRpc.java
+java/kudu-client/src/main/java/org/apache/kudu/client/Negotiator.java
 java/kudu-client/src/main/java/org/apache/kudu/client/NonRecoverableException.java
 java/kudu-client/src/main/java/org/apache/kudu/client/PleaseThrottleException.java
 java/kudu-client/src/main/java/org/apache/kudu/client/RecoverableException.java
-java/kudu-client/src/main/java/org/apache/kudu/client/SecureRpcHelper.java
 java/kudu-client/src/main/java/org/apache/kudu/client/TabletClient.java
 java/kudu-client/src/test/resources/flags
 python/MANIFEST.in
@@ -142,6 +142,8 @@ src/kudu/gutil/threading/thread_collision_warner.h
 src/kudu/gutil/utf/rune.c
 src/kudu/gutil/utf/utf.h
 src/kudu/gutil/utf/utfdef.h
+src/kudu/security/x509_check_host.cc
+src/kudu/security/x509_check_host.h
 src/kudu/twitter-demo/example-deletes.txt
 src/kudu/twitter-demo/example-tweets.txt
 src/kudu/util/cache.h
@@ -160,8 +162,6 @@ src/kudu/util/slice.h
 src/kudu/util/status-test.cc
 src/kudu/util/status.cc
 src/kudu/util/status.h
-src/kudu/util/x509_check_host.cc
-src/kudu/util/x509_check_host.h
 src/kudu/util/debug/trace_event.h
 src/kudu/util/debug/trace_event_impl.cc
 src/kudu/util/debug/trace_event_impl.h
