@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.2.0 Release Notes
+= Apache Kudu 1.3.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,209 +28,181 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.2.0]]
+[[rn_1.3.0]]
 
-[[rn_1.2.0_new_features]]
+[[rn_1.3.0_new_features]]
 == New features
 
-* Kudu clients and servers now redact user data such as cell values
-  from log messages, Java exception messages, and `Status` strings.
-  User metadata such as table names, column names, and partition
-  bounds are not redacted.
-+
-Redaction is enabled by default, but may be disabled by setting the new
-`log_redact_user_data` flag to `false`.
-// TODO(danburkert): this flag is marked experimental, should we not doc it?
+* Kudu 1.3 adds support for strong authentication based on Kerberos. This optional feature
+  allows users to authenticate themselves using Kerberos tickets, and also provides
+  mutual authentication of servers using Kerberos credentials stored in keytabs. This
+  feature is optional, but recommended for deployments requiring security.
 
-* Kudu's ability to provide consistency guarantees has been substantially
-improved:
+* Kudu 1.3 adds support for encryption of data on the network using Transport Layer Security
+  (TLS). Kudu will now use TLS to encrypt all network traffic between clients and servers as
+  well as any internal traffic among servers, with the exception of traffic determined to
+  be within a localhost network connection. Encryption is enabled by default whenever it can
+  be determined that both the client and server support the feature.
 
-** Replicas now correctly track their "safe timestamp". This timestamp
-   is the maximum timestamp at which reads are guaranteed to be
-   repeatable.
+* Kudu 1.3 adds coarse-grained service-level authorization of access to the cluster.
+  The operator may set up lists of permitted users who may act as administrators and
+  as clients of the cluster. Combined with the strong authentication feature described
+  above, this can enable a secure environment for some use cases. Note that fine-grained
+  access control (e.g. table-level or column-level) is not yet supported.
 
-** A scan created using the `SCAN_AT_SNAPSHOT` mode will now
-   either wait for the requested snapshot to be "safe" at the replica
-   being scanned, or be re-routed to a replica where the requested
-   snapshot is "safe". This ensures that all such scans are repeatable.
+* Kudu 1.3 adds a background task to tablet servers which removes historical versions of
+  data which have fallen behind the configured data retention time. This reduces disk space
+  usage in all workloads, but particularly in those with a higher volume of updates or
+  upserts.
 
-** Kudu Tablet Servers now properly retain historical data when a row
-   with a given primary key is inserted and deleted, followed by the
-   insertion of a new row with the same key. Previous versions of Kudu
-   would not retain history in such situations. This allows the server
-   to return correct results for snapshot scans with a timestamp in the
-   past, even in the presence of such "reinsertion" scenarios.
+* Kudu now incorporates Google Breakpad, a library which writes crash reports in
+  the case of a server crash. These reports can be found within the configured log directory,
+  and can be useful during bug diagnosis.
 
-** The Kudu clients now automatically retain the timestamp of their latest
-   successful read or write operation. Scans using the `READ_AT_SNAPSHOT` mode
-   without a client-provided timestamp automatically assign a timestamp
-   higher than the timestamp of their most recent write. Writes also propagate
-   the timestamp, ensuring that sequences of operations with causal dependencies
-   between them are assigned increasing timestamps. Together, these changes
-   allow clients to achieve read-your-writes consistency, and also ensure
-   that snapshot scans performed by other clients return causally-consistent
-   results.
-
-* Kudu servers now automatically limit the number of log files.
-  The number of log files retained can be configured using the
-  `max_log_files` flag. By default, 10 log files will be retained
-  at each severity level.
-// TODO(danburkert): this new flag is marked experimental, should we make it
-// stable or evolving? Or should we not document that it's configurable?
 
 == Optimizations and improvements
 
-* The logging in the Java and {cpp} clients has been substantially quieted.
-  Clients no longer log messages in normal operation unless there
-  is some kind of error.
+* Kudu servers will now change the file permissions of data directories and contained
+  data files based on a new configuration flag `--umask`. As a result, after upgrading,
+  permissions on disk may be more restrictive than in previous versions. The new default
+  configuration improves data security.
 
-* The {cpp} client now includes a `KuduSession::SetErrorBufferSpace`
-  API which can limit the amount of memory used to buffer
-  errors from asynchronous operations.
+* Kudu's web UI will now redact strings which may include sensitive user data. For example,
+  the monitoring page which shows in-progress scans no longer includes the scanner predicate
+  values. The tracing and RPC diagnostics endpoints no longer include contents of RPCs which
+  may include table data.
 
-* The Java client now fetches tablet locations from the Kudu Master
-  in batches of 1000, increased from batches of 10 in prior versions.
-  This can substantially improve the performance of Spark and Impala
-  queries running against Kudu tables with large numbers of tablets.
+* By default, Kudu now reserves 1% of each configured data volume as free space. If a volume
+  is seen to have less than 1% of disk space free, Kudu will stop writing to that volume
+  to avoid completely filling up the disk.
 
-* Table metadata lock contention in the Kudu Master was substantially
-  reduced. This improves the performance of tablet location lookups on
-  large clusters with a high degree of concurrency.
+* The default encoding for numeric columns (int, float, and double) has been changed
+  to `BIT_SHUFFLE`. The default encoding for binary and string columns has been
+  changed to `DICT_ENCODING`. Dictionary encoding automatically falls back to the old
+  default (`PLAIN`) when cardinality is too high to be effectively encoded.
++
+These new defaults match the default behavior of other storage mechanisms such as
+  Apache Parquet and are likely to perform better out of the box.
 
-* Lock contention in the Kudu Tablet Server during high-concurrency
-  write workloads was also reduced. This can reduce CPU consumption and
-  improve performance when a large number of concurrent clients are writing
-  to a smaller number of a servers.
+* Kudu now uses `LZ4` compression when writing its Write Ahead Log (WAL). This improves
+  write performance and stability for many use cases.
 
-* Lock contention when writing log messages has been substantially reduced.
-  This source of contention could cause high tail latencies on requests,
-  and when under high load could contribute to cluster instability
-  such as election storms and request timeouts.
+* Kudu now uses `LZ4` compression when writing delta files. This can improve both
+  read and write performance as well as save substantial disk usage, especially
+  for workloads involving a high number of updates or upserts containing compressible
+  data.
 
-* The `BITSHUFFLE` column encoding has been optimized to use the `AVX2`
-  instruction set present on processors including Intel(R) Sandy Bridge
-  and later. Scans on `BITSHUFFLE`-encoded columns are now up to 30% faster.
+* The Kudu API now supports the ability to express `IS NULL` and `IS NOT NULL` predicates
+  on scanners. The Spark DataSource integration will take advantage of these new
+  predicates when possible.
 
-* The `kudu` tool now accepts hyphens as an alternative to underscores
-  when specifying actions. For example, `kudu local-replica copy-from-remote`
-  may be used as an alternative to `kudu local_replica copy_from_remote`.
+* Both {cpp} and Java clients have been optimized to prune partitions more effectively
+  when performing scans using the `IN (...)` predicate.
 
-[[rn_1.2.0_fixed_issues]]
+* The exception messages produced by the Java client are now truncated to a maximum length
+  of 32KB.
+
+[[rn_1.3.0_fixed_issues]]
 == Fixed Issues
 
-* link:https://issues.apache.org/jira/browse/KUDU-1508[KUDU-1508]
-  Fixed a long-standing issue in which running Kudu on `ext4` file systems
-  could cause file system corruption.
 
-* link:https://issues.apache.org/jira/browse/KUDU-1399[KUDU-1399]
-  Implemented an LRU cache for open files, which prevents running out of
-  file descriptors on long-lived Kudu clusters. By default, Kudu will
-  limit its file descriptor usage to half of its configured `ulimit`.
+* link:https://issues.apache.org/jira/browse/KUDU-1893[KUDU-1893]
+  Fixed a critical bug in which wrong results would be returned when evaluating
+  predicates applied to columns added using the `ALTER TABLE` operation.
 
-* link:http://gerrit.cloudera.org:8080/5192[Gerrit #5192]
-  Fixed an issue which caused data corruption and crashes in the case that
-  a table had a non-composite (single-column) primary key, and that column
-  was specified to use `DICT_ENCODING` or `BITSHUFFLE` encodings. If a
-  table with an affected schema was written in previous versions of Kudu,
-  the corruption will not be automatically repaired; users are encouraged
-  to re-insert such tables after upgrading to Kudu 1.2 or later.
+* link:https://issues.apache.org/jira/browse/KUDU-1905[KUDU-1905]
+  Fixed a crash after inserting a row sharing a primary key with a recently-deleted
+  row in tables where the primary key is comprised of all of the columns.
 
-* link:http://gerrit.cloudera.org:8080/5541[Gerrit #5541]
-  Fixed a bug in the Spark `KuduRDD` implementation which could cause
-  rows in the result set to be silently skipped in some cases.
+* link:https://issues.apache.org/jira/browse/KUDU-1899[KUDU-1899]
+  Fixed a crash after inserting a row with an empty string as the single-column
+  primary key.
 
-* link:https://issues.apache.org/jira/browse/KUDU-1551[KUDU-1551]
-  Fixed an issue in which the tablet server would crash on restart in the
-  case that it had previously crashed during the process of allocating
-  a new WAL segment.
+* link:https://issues.apache.org/jira/browse/KUDU-1904[KUDU-1904]
+  Fixed a potential crash when performing random reads against a column using RLE
+  encoding and containing long runs of NULL values.
 
-* link:https://issues.apache.org/jira/browse/KUDU-1764[KUDU-1764]
-  Fixed an issue where Kudu servers would leak approximately 16-32MB of disk
-  space for every 10GB of data written to disk. After upgrading to Kudu
-  1.2 or later, any disk space leaked in previous versions will be
-  automatically recovered on startup.
+* link:https://issues.apache.org/jira/browse/KUDU-1853[KUDU-1853]
+  Fixed an issue where disk space could be leaked on servers which experienced an error
+  during the process of copying tablet data from another server.
 
-* link:https://issues.apache.org/jira/browse/KUDU-1750[KUDU-1750]
-  Fixed an issue where the API to drop a range partition would drop any
-  partition with a matching lower _or_ upper bound, rather than any partition
-  with matching lower _and_ upper bound.
+* link:https://issues.apache.org/jira/browse/KUDU-1856[KUDU-1856]
+  Fixed an issue in which disk space could be leaked by Kudu servers storing data on
+  partitions using the XFS file system. Any leaked disk space will be automatically
+  recovered upon upgrade.
 
-* link:https://issues.apache.org/jira/browse/KUDU-1766[KUDU-1766]
-  Fixed an issue in the Java client where equality predicates which compared
-  an integer column to its maximum possible value (e.g. `Integer.MAX_VALUE`)
-  would return incorrect results.
-
-* link:https://issues.apache.org/jira/browse/KUDU-1780[KUDU-1780]
-  Fixed the `kudu-client` Java artifact to properly shade classes in the
-  `com.google.thirdparty` namespace. The lack of proper shading in prior
-  releases could cause conflicts with certain versions of Google Guava.
-
-* link:http://gerrit.cloudera.org:8080/5327[Gerrit #5327]
-  Fixed shading issues in the `kudu-flume-sink` Java artifact. The sink
-  now expects that Hadoop dependencies are provided by Flume, and properly
-  shades the Kudu client's dependencies.
-
-* Fixed a few issues using the Python client library from Python 3.
+* link:https://issues.apache.org/jira/browse/KUDU-1888[KUDU-1888],
+  link:https://issues.apache.org/jira/browse/KUDU-1906[KUDU-1906]
+  Fixed multiple issues in the Java client where operation callbacks would never be
+  triggered, causing the client to hang.
 
 
-[[rn_1.2.0_wire_compatibility]]
+[[rn_1.3.0_wire_compatibility]]
 == Wire Protocol compatibility
 
-Kudu 1.2.0 is wire-compatible with previous versions of Kudu:
+Kudu 1.3.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.2 clients may connect to servers running Kudu 1.0. If the client uses features
+* Kudu 1.3 clients may connect to servers running Kudu 1.0. If the client uses features
   that are not available on the target server, an error will be returned.
-* Kudu 1.0 clients may connect to servers running Kudu 1.2 without limitations.
-* Rolling upgrade between Kudu 1.1 and Kudu 1.2 servers is believed to be possible
+* Kudu 1.0 clients may connect to servers running Kudu 1.3 with the exception of the
+  below-mentioned restrictions regarding secure clusters.
+* Rolling upgrade between Kudu 1.2 and Kudu 1.3 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
 
-[[rn_1.2.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.2.0
+The authentication features newly introduced in Kudu 1.3 place the following limitations
+on wire compatibility with older versions:
 
-* The replication factor of tables is now limited to a maximum of 7. In addition,
-  it is no longer allowed to create a table with an even replication factor.
+* If a Kudu 1.3 cluster is configured with authentication or encryption set to "required",
+  older clients will be unable to connect.
+* If a Kudu 1.3 cluster is configured with authentication and encryption set to "optional"
+  or "disabled", older clients will still be able to connect.
 
-* The `GROUP_VARINT` encoding is now deprecated. Kudu servers have never supported
-  this encoding, and now the client-side constant has been deprecated to match the
-  server's capabilities.
 
-=== New Restrictions on Data, Schemas, and Identifiers
+[[rn_1.3.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.3.0
 
-Kudu 1.2.0 introduces several new restrictions on schemas, cell size, and identifiers:
+* Due to storage format changes in Kudu 1.3, downgrade from Kudu 1.3 to earlier versions
+  is not supported. After upgrading to Kudu 1.3, attempting to restart with an earlier
+  version will result in an error.
 
-Number of Columns:: By default, Kudu will not permit the creation of tables with
-more than 300 columns. We recommend schema designs that use fewer columns for best
-performance.
+* In order to support running MapReduce and Spark jobs on secure clusters, these
+  frameworks now connect to the cluster at job submission time to retrieve authentication
+  credentials which can later be used by the tasks to be spawned. This means that
+  the process submitting jobs to Kudu clusters must have direct access to that cluster.
 
-Size of Cells:: No individual cell may be larger than 64KB. The cells making up a
-a composite key are limited to a total of 16KB after the internal composite-key encoding
-done by Kudu. Inserting rows not conforming to these limitations will result in errors
-being returned to the client.
+* The embedded web servers in Kudu processes now specify the `X-Frame-Options: DENY` HTTP
+  header which prevents embedding Kudu web pages in HTML `iframe` elements.
 
-Valid Identifiers:: Identifiers such as column and table names are now restricted to
-be valid UTF-8 strings. Additionally, a maximum length of 256 characters is enforced.
-
-[[rn_1.2.0_client_compatibility]]
+[[rn_1.3.0_client_compatibility]]
 === Client Library Compatibility
 
-* The Kudu 1.2 Java client is API- and ABI-compatible with Kudu 1.1. Applications
-  written against Kudu 1.1 will compile and run against the Kudu 1.2 client and
-  vice-versa.
+* The Kudu 1.3 Java client library is API- and ABI-compatible with Kudu 1.2. Applications
+  written against Kudu 1.2 will compile and run against the Kudu 1.3 client library and
+  vice-versa, unless one of the following newly added APIs is used:
+** `[Async]KuduClient.exportAuthenticationCredentials(...)` (unstable API)
+** `[Async]KuduClient.importAuthenticationCredentials(...)` (unstable API)
+** `[Async]KuduClient.getMasterAddressesAsString()`
+** `KuduPredicate.newIsNotNullPredicate()`
+** `KuduPredicate.newIsNullPredicate()`
 
-* The Kudu 1.2 {cpp} client is API- and ABI-forward-compatible with Kudu 1.1.
-  Applications written and compiled against the Kudu 1.1 client will run without
-  modification against the Kudu 1.2 client. Applications written and compiled
-  against the Kudu 1.2 client will run without modification against the Kudu 1.1
-  client unless they use one of the following new APIs:
-** `kudu::DisableSaslInitialization()`
-** `KuduSession::SetErrorBufferSpace(...)`
+* The Kudu 1.3 {cpp} client is API- and ABI-forward-compatible with Kudu 1.2.
+  Applications written and compiled against the Kudu 1.2 client library will run without
+  modification against the Kudu 1.3 client library. Applications written and compiled
+  against the Kudu 1.3 client library will run without modification against the Kudu 1.2
+  client library unless they use one of the following new APIs:
+** `kudu::DisableOpenSSLInitialization()`
+** `KuduClientBuilder::import_authentication_credentials(...)`
+** `KuduClient::ExportAuthenticationCredentials(...)`
+** `KuduClient::NewIsNotNullPredicate(...)`
+** `KuduClient::NewIsNullPredicate(...)`
 
-* The Kudu 1.2 Python client is API-compatible with Kudu 1.1. Applications
-  written against Kudu 1.1 will continue to run against the Kudu 1.2 client
+* The Kudu 1.3 Python client is API-compatible with Kudu 1.2. Applications
+  written against Kudu 1.2 will continue to run against the Kudu 1.3 client
   and vice-versa.
 
-[[rn_1.2.0_known_issues]]
+
+[[rn_1.3.0_known_issues]]
 
 == Known Issues and Limitations
 

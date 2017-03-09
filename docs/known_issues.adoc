@@ -80,9 +80,21 @@ space immediately.
 
 == Security Limitations
 
-* Authentication and authorization features are not implemented.
-* Data encryption is not built in. Kudu has been reported to run correctly
+* Authorization is only available at a system-wide, coarse-grained level. Table-level,
+  column-level, and row-level authorization features are not available.
+
+* Data encryption at rest is not built in. Kudu has been reported to run correctly
   on systems using local block device encryption (e.g. `dmcrypt`).
+
+* Kudu server Kerberos principals must follow the pattern `kudu/<HOST>@DEFAULT.REALM`.
+  Configuring an alternate Kerberos principal is not supported.
+
+* Kudu's integration with Apache Flume does not support writing to Kudu clusters that
+  require Kerberos authentication.
+
+* Kudu client instances retrieve authentication tokens upon first contact with the
+  cluster. These tokens expire after one week. Use of a single Kudu client instance
+  for more than one week is not supported.
 
 == Other Known Issues
 
