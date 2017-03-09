@@ -408,7 +408,7 @@ under the following 3-clause BSD license:
 
 src/kudu/util/x509_check_host.*: OpenSSL software license:
 
-LICENSE ISSUES
+  LICENSE ISSUES
   ==============
 
   The OpenSSL toolkit stays under a dual license, i.e. both the conditions of
