@@ -364,29 +364,6 @@ Status GetConfiguredPrincipal(string* principal) {
   *principal = p;
   return Status::OK();
 }
-
-// macOS's Heimdal library has a no-op implementation of
-// krb5_aname_to_localname, so instead this does a crude approximation by
-// grabbing the username from the principal.
-#ifdef __APPLE__
-// Grabs the username from a krb5 principal, and writes it to the provided
-// buffer with a null terminator.
-krb5_error_code principal_to_username(krb5_const_principal princ,
-                                      int len,
-                                      char* buf) {
-  if (princ->length == 0) {
-    return KRB5_LNAME_NOTRANS;
-  }
-  auto username = princ->data[0];
-  if (username.length + 1 > len) {
-    return KRB5_CONFIG_NOTENUFSPACE;
-  }
-  // Copy username and a trailing null byte.
-  memcpy(buf, username.data, username.length);
-  username.data[username.length + 1] = 0;
-  return 0;
-}
-#endif
 } // anonymous namespace
 
 
@@ -420,7 +397,10 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
 #ifndef __APPLE__
   rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
 #else
-  rc = principal_to_username(princ, arraysize(buf), buf);
+  // macOS's Heimdal library has a no-op implementation of
+  // krb5_aname_to_localname, so instead we fall down to below and grab the
+  // first component of the principal.
+  rc = KRB5_LNAME_NOTRANS;
 #endif
   if (rc == KRB5_LNAME_NOTRANS) {
     // No name mapping specified. We fall back to simply taking the first component
