@@ -313,5 +313,10 @@ void InboundCall::DiscardTransfer() {
   transfer_.reset();
 }
 
+size_t InboundCall::GetTransferSize() {
+  if (!transfer_) return 0;
+  return transfer_->data().size();
+}
+
 } // namespace rpc
 } // namespace kudu

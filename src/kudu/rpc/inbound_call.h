@@ -195,6 +195,10 @@ class InboundCall {
   // access sidecars or serialized_request() after this method is called.
   void DiscardTransfer();
 
+  // Returns the size of the transfer buffer that backs this call. If the transfer does
+  // not exist (e.g. GetTransferSize() is called after DiscardTransfer()), returns 0.
+  size_t GetTransferSize();
+
  private:
   friend class RpczStore;
 
