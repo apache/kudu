@@ -155,11 +155,13 @@ static Status DisableSocketTimeouts(Socket* socket) {
 // Perform client negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoClientNegotiation(Connection* conn,
                                   RpcAuthentication authentication,
+                                  RpcEncryption encryption,
                                   MonoTime deadline) {
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
   ClientNegotiation client_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
-                                       messenger->authn_token());
+                                       messenger->authn_token(),
+                                       encryption);
 
   // Note that the fqdn is an IP address here: we've already lost whatever DNS
   // name the client was attempting to use. Unless krb5 is configured with 'rdns
@@ -214,6 +216,7 @@ static Status DoClientNegotiation(Connection* conn,
 // Perform server negotiation. We don't LOG() anything, we leave that to our caller.
 static Status DoServerNegotiation(Connection* conn,
                                   RpcAuthentication authentication,
+                                  RpcEncryption encryption,
                                   const MonoTime& deadline) {
   if (authentication == RpcAuthentication::REQUIRED &&
       FLAGS_keytab_file.empty() &&
@@ -233,7 +236,8 @@ static Status DoServerNegotiation(Connection* conn,
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
   ServerNegotiation server_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
-                                       &messenger->token_verifier());
+                                       &messenger->token_verifier(),
+                                       encryption);
 
   if (authentication != RpcAuthentication::DISABLED && !FLAGS_keytab_file.empty()) {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());
@@ -259,12 +263,13 @@ static Status DoServerNegotiation(Connection* conn,
 
 void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                                  RpcAuthentication authentication,
+                                 RpcEncryption encryption,
                                  MonoTime deadline) {
   Status s;
   if (conn->direction() == Connection::SERVER) {
-    s = DoServerNegotiation(conn.get(), authentication, deadline);
+    s = DoServerNegotiation(conn.get(), authentication, encryption, deadline);
   } else {
-    s = DoClientNegotiation(conn.get(), authentication, deadline);
+    s = DoClientNegotiation(conn.get(), authentication, encryption, deadline);
   }
 
   if (PREDICT_FALSE(!s.ok())) {

@@ -206,5 +206,15 @@ TEST_F(SecurityITest, TestDisableWebUI) {
   NO_FATALS(SmokeTestCluster());
 }
 
+// Test disabling authentication and encryption.
+TEST_F(SecurityITest, TestDisableAuthenticationEncryption) {
+  cluster_opts_.extra_master_flags.push_back("--rpc_authentication=disabled");
+  cluster_opts_.extra_tserver_flags.push_back("--rpc_authentication=disabled");
+  cluster_opts_.extra_master_flags.push_back("--rpc_encryption=disabled");
+  cluster_opts_.extra_tserver_flags.push_back("--rpc_encryption=disabled");
+  cluster_opts_.enable_kerberos = false;
+  StartCluster();
+  NO_FATALS(SmokeTestCluster());
+}
 
 } // namespace kudu

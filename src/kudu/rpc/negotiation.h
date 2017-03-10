@@ -27,6 +27,7 @@ namespace rpc {
 
 class Connection;
 enum class RpcAuthentication;
+enum class RpcEncryption;
 
 enum class AuthenticationType {
   INVALID,
@@ -44,6 +45,7 @@ class Negotiation {
   // Perform negotiation for a connection (either server or client)
   static void RunNegotiation(const scoped_refptr<Connection>& conn,
                              RpcAuthentication authentication,
+                             RpcEncryption encryption,
                              MonoTime deadline);
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(Negotiation);

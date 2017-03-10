@@ -372,8 +372,9 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   ADOPT_TRACE(trace.get());
   TRACE("Submitting negotiation task for $0", conn->ToString());
   auto authentication = reactor()->messenger()->authentication();
+  auto encryption = reactor()->messenger()->encryption();
   RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
-        Bind(&Negotiation::RunNegotiation, conn, authentication, deadline)));
+        Bind(&Negotiation::RunNegotiation, conn, authentication, encryption, deadline)));
   return Status::OK();
 }
 

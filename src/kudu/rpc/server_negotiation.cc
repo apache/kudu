@@ -33,6 +33,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -75,10 +76,12 @@ static int ServerNegotiationPlainAuthCb(sasl_conn_t* conn,
 
 ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
-                                     const security::TokenVerifier* token_verifier)
+                                     const security::TokenVerifier* token_verifier,
+                                     RpcEncryption encryption)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
       tls_context_(tls_context),
+      encryption_(encryption),
       tls_negotiated_(false),
       token_verifier_(token_verifier),
       negotiated_authn_(AuthenticationType::INVALID),
@@ -137,8 +140,9 @@ Status ServerNegotiation::Negotiate() {
   }
 
   // Step 3: if both ends support TLS, do a TLS handshake.
-  // TODO(dan): allow the server to require TLS.
-  if (tls_context_->has_cert() && ContainsKey(client_features_, TLS)) {
+  if (encryption_ != RpcEncryption::DISABLED &&
+      tls_context_->has_cert() &&
+      ContainsKey(client_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::SERVER,
                                                   &tls_handshake_));
 
@@ -191,7 +195,7 @@ Status ServerNegotiation::PreflightCheckGSSAPI() {
   //
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
-  ServerNegotiation server(nullptr, nullptr, nullptr);
+  ServerNegotiation server(nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -336,6 +340,13 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     }
   }
 
+  if (encryption_ == RpcEncryption::REQUIRED &&
+      !ContainsKey(client_features_, RpcFeatureFlag::TLS)) {
+    Status s = Status::NotAuthorized("client does not support required TLS encryption");
+    RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
+    return s;
+  }
+
   // Find the set of mutually supported authentication types.
   set<AuthenticationType> authn_types;
   if (request.authn_types().empty()) {
@@ -373,7 +384,8 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     }
   }
 
-  if (ContainsKey(authn_types, AuthenticationType::CERTIFICATE) &&
+  if (encryption_ != RpcEncryption::DISABLED &&
+      ContainsKey(authn_types, AuthenticationType::CERTIFICATE) &&
       tls_context_->has_signed_cert()) {
     // If the client supports it and we are locally configured with TLS and have
     // a CA-signed cert, choose cert authn.
@@ -382,6 +394,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
     negotiated_authn_ = AuthenticationType::CERTIFICATE;
   } else if (ContainsKey(authn_types, AuthenticationType::TOKEN) &&
              token_verifier_->GetMaxKnownKeySequenceNumber() >= 0 &&
+             encryption_ != RpcEncryption::DISABLED &&
              tls_context_->has_signed_cert()) {
     // If the client supports it, we have a TSK to verify the client's token,
     // and we have a signed-cert so the client can verify us, choose token authn.
@@ -400,7 +413,7 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
 
   // Tell the client which features we support.
   server_features_ = kSupportedServerRpcFeatureFlags;
-  if (tls_context_->has_cert()) {
+  if (tls_context_->has_cert() && encryption_ != RpcEncryption::DISABLED) {
     server_features_.insert(TLS);
     // If the remote peer is local, then we allow using TLS for authentication
     // without encryption or integrity.

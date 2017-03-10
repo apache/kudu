@@ -58,9 +58,10 @@ class ClientNegotiation {
   // 'release_socket'.
   //
   // The provided TlsContext must outlive this negotiation instance.
-  explicit ClientNegotiation(std::unique_ptr<Socket> socket,
-                             const security::TlsContext* tls_context,
-                             const boost::optional<security::SignedTokenPB>& authn_token);
+  ClientNegotiation(std::unique_ptr<Socket> socket,
+                    const security::TlsContext* tls_context,
+                    const boost::optional<security::SignedTokenPB>& authn_token,
+                    RpcEncryption encryption);
 
   // Enable PLAIN authentication.
   // Must be called before Negotiate().
@@ -213,6 +214,7 @@ class ClientNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
+  const RpcEncryption encryption_;
   bool tls_negotiated_;
 
   // TSK state.
