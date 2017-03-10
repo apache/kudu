@@ -337,7 +337,13 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
         request, &resp, &controller);
     ASSERT_TRUE(status.IsNetworkError()) << "Unexpected error: " << status.ToString();
     // Remote responds to extra-large payloads by closing the connection.
-    ASSERT_STR_CONTAINS(status.ToString(), "Connection reset by peer");
+    ASSERT_STR_MATCHES(status.ToString(),
+                       // Linux
+                       "Connection reset by peer"
+                       // macOS, while reading from socket.
+                       "|got EOF from remote"
+                       // macOS, while writing to socket.
+                       "|Protocol wrong type for socket");
   }
 }
 

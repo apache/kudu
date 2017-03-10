@@ -527,7 +527,7 @@ Status ClientNegotiation::AuthenticateByToken(faststring* recv_buf) {
 }
 
 Status ClientNegotiation::SendSaslInitiate() {
-  TRACE("Initiating SASL $0 handshake", negotiated_mech_);
+  TRACE("Initiating SASL $0 handshake", SaslMechanism::name_of(negotiated_mech_));
 
   // At this point we've already chosen the SASL mechanism to use
   // (negotiated_mech_), but we need to let the SASL library know. SASL likes to
