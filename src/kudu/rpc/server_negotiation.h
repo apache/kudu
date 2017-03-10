@@ -55,9 +55,10 @@ class ServerNegotiation {
   // release_socket().
   //
   // The provided TlsContext must outlive this negotiation instance.
-  explicit ServerNegotiation(std::unique_ptr<Socket> socket,
-                             const security::TlsContext* tls_context,
-                             const security::TokenVerifier* token_verifier);
+  ServerNegotiation(std::unique_ptr<Socket> socket,
+                    const security::TlsContext* tls_context,
+                    const security::TokenVerifier* token_verifier,
+                    RpcEncryption encryption);
 
   // Enable PLAIN authentication.
   // Despite PLAIN authentication taking a username and password, we disregard
@@ -215,6 +216,7 @@ class ServerNegotiation {
   // TLS state.
   const security::TlsContext* tls_context_;
   security::TlsHandshake tls_handshake_;
+  const RpcEncryption encryption_;
   bool tls_negotiated_;
 
   // TSK state.

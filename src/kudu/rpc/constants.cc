@@ -26,13 +26,13 @@ const char* const kMagicNumber = "hrpc";
 const char* const kSaslAppName = "kudu";
 const char* const kSaslProtoName = "kudu";
 
-// The server supports the TLS flag if there is a TLS certificate available.
-// The flag is added during negotiation if this is the case.
+// NOTE: the TLS flag is dynamically added based on the local encryption
+// configuration.
 //
-// NOTE: the TLS_AUTHENTICATION_ONLY flag is dynamically added on both sides
-// based on the remote peer's address.
+// NOTE: the TLS_AUTHENTICATION_ONLY flag is dynamically added on both
+// sides based on the remote peer's address.
 set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
-set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS, TLS };
+set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
 
 } // namespace rpc
 } // namespace kudu

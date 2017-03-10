@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_helper.h"
@@ -104,10 +105,12 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
-                                     const boost::optional<security::SignedTokenPB>& authn_token)
+                                     const boost::optional<security::SignedTokenPB>& authn_token,
+                                     RpcEncryption encryption)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
       tls_context_(tls_context),
+      encryption_(encryption),
       tls_negotiated_(false),
       authn_token_(authn_token),
       psecret_(nullptr, std::free),
@@ -169,7 +172,8 @@ Status ClientNegotiation::Negotiate() {
 
   // Step 3: if both ends support TLS, do a TLS handshake.
   // TODO(KUDU-1921): allow the client to require TLS.
-  if (ContainsKey(server_features_, TLS)) {
+  if (encryption_ != RpcEncryption::DISABLED &&
+      ContainsKey(server_features_, TLS)) {
     RETURN_NOT_OK(tls_context_->InitiateHandshake(security::TlsHandshakeType::CLIENT,
                                                   &tls_handshake_));
 
@@ -290,10 +294,14 @@ Status ClientNegotiation::SendNegotiate() {
 
   // Advertise our supported features.
   client_features_ = kSupportedClientRpcFeatureFlags;
-  // If the remote peer is local, then we allow using TLS for authentication
-  // without encryption or integrity.
-  if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
-    client_features_.insert(TLS_AUTHENTICATION_ONLY);
+
+  if (encryption_ != RpcEncryption::DISABLED) {
+    client_features_.insert(TLS);
+    // If the remote peer is local, then we allow using TLS for authentication
+    // without encryption or integrity.
+    if (socket_->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections) {
+      client_features_.insert(TLS_AUTHENTICATION_ONLY);
+    }
   }
 
   for (RpcFeatureFlag feature : client_features_) {
@@ -335,6 +343,11 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
     if (feature_flag != UNKNOWN) {
       server_features_.insert(feature_flag);
     }
+  }
+
+  if (encryption_ == RpcEncryption::REQUIRED &&
+      !ContainsKey(server_features_, RpcFeatureFlag::TLS)) {
+    return Status::NotAuthorized("server does not support required TLS encryption");
   }
 
   // Get the authentication type which the server would like to use.
