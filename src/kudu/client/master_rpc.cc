@@ -176,7 +176,6 @@ void ConnectToMasterRpc::SendRpcCb(const Status& status) {
       out_->set_role(RaftPeerPB::FOLLOWER);
       new_status = Status::OK();
     } else {
-      out_->mutable_error()->CopyFrom(out_->error().status());
       new_status = StatusFromPB(out_->error().status());
     }
   }
