@@ -88,8 +88,8 @@ Status TabletCopySourceSession::Init() {
   // Anchor the data blocks by opening them and adding them to the cache.
   //
   // All subsequent requests should reuse the opened blocks.
-  vector<BlockIdPB> data_blocks;
-  TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
+  vector<BlockIdPB> data_blocks =
+      TabletMetadata::CollectBlockIdPBs(tablet_superblock_);
   for (const BlockIdPB& block_id : data_blocks) {
     VLOG(1) << "Opening block " << SecureDebugString(block_id);
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));

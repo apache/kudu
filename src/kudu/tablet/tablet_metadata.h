@@ -92,8 +92,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const TabletDataState& initial_tablet_data_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
-  static void CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
-                                std::vector<BlockIdPB>* block_ids);
+  static std::vector<BlockIdPB> CollectBlockIdPBs(
+      const TabletSuperBlockPB& superblock);
+
+  std::vector<BlockId> CollectBlockIds();
 
   const std::string& tablet_id() const {
     DCHECK_NE(state_, kNotLoadedYet);

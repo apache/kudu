@@ -129,25 +129,37 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   }
 }
 
-void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
-                                       std::vector<BlockIdPB>* block_ids) {
+vector<BlockIdPB> TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock) {
+  vector<BlockIdPB> block_ids;
   for (const RowSetDataPB& rowset : superblock.rowsets()) {
     for (const ColumnDataPB& column : rowset.columns()) {
-      block_ids->push_back(column.block());
+      block_ids.push_back(column.block());
     }
     for (const DeltaDataPB& redo : rowset.redo_deltas()) {
-      block_ids->push_back(redo.block());
+      block_ids.push_back(redo.block());
     }
     for (const DeltaDataPB& undo : rowset.undo_deltas()) {
-      block_ids->push_back(undo.block());
+      block_ids.push_back(undo.block());
     }
     if (rowset.has_bloom_block()) {
-      block_ids->push_back(rowset.bloom_block());
+      block_ids.push_back(rowset.bloom_block());
     }
     if (rowset.has_adhoc_index_block()) {
-      block_ids->push_back(rowset.adhoc_index_block());
+      block_ids.push_back(rowset.adhoc_index_block());
     }
   }
+  return block_ids;
+}
+
+vector<BlockId> TabletMetadata::CollectBlockIds() {
+  vector<BlockId> block_ids;
+  for (const auto& r : rowsets_) {
+    vector<BlockId> rowset_block_ids = r->GetAllBlocks();
+    block_ids.insert(block_ids.begin(),
+                     rowset_block_ids.begin(),
+                     rowset_block_ids.end());
+  }
+  return block_ids;
 }
 
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,

@@ -41,6 +41,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -217,6 +218,26 @@ class ToolTest : public KuduTest {
     }
   }
 
+  void RunFsCheck(const string& arg_str,
+                  int expected_num_blocks,
+                  int expected_num_missing,
+                  int expected_num_orphaned) {
+    string stdout;
+    string stderr;
+    Status s = RunTool(arg_str, &stdout, &stderr, nullptr, nullptr);
+    SCOPED_TRACE(stdout);
+    SCOPED_TRACE(stderr);
+    if (expected_num_missing) {
+      ASSERT_TRUE(s.IsRuntimeError());
+      ASSERT_STR_CONTAINS(stderr, "Corruption");
+    } else {
+      ASSERT_TRUE(s.ok());
+    }
+    ASSERT_STR_CONTAINS(stdout, Substitute("$0 blocks", expected_num_blocks));
+    ASSERT_STR_CONTAINS(stdout, Substitute("$0 missing", expected_num_missing));
+    ASSERT_STR_CONTAINS(stdout, Substitute("$0 orphaned", expected_num_orphaned));
+  }
+
  protected:
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
@@ -279,6 +300,7 @@ TEST_F(ToolTest, TestTopLevelHelp) {
 TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kFsModeRegexes = {
+        "check.*Kudu filesystem for inconsistencies",
         "format.*new Kudu filesystem",
         "dump.*Dump a Kudu filesystem"
     };
@@ -416,6 +438,93 @@ TEST_F(ToolTest, TestActionHelp) {
   NO_FATALS(RunTestHelp("fs format --help", kFormatActionRegexes));
   NO_FATALS(RunTestHelp("fs format extra_arg", kFormatActionRegexes,
       Status::InvalidArgument("too many arguments: 'extra_arg'")));
+}
+
+TEST_F(ToolTest, TestFsCheck) {
+  const string kTestDir = GetTestPath("test");
+  const string kTabletId = "test-tablet";
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  // Create a local replica, flush some rows a few times, and collect all
+  // of the created block IDs.
+  vector<BlockId> block_ids;
+  {
+    TabletHarness::Options opts(kTestDir);
+    opts.tablet_id = kTabletId;
+    TabletHarness harness(kSchemaWithIds, opts);
+    ASSERT_OK(harness.Create(true));
+    ASSERT_OK(harness.Open());
+    LocalTabletWriter writer(harness.tablet().get(), &kSchema);
+    KuduPartialRow row(&kSchemaWithIds);
+
+    for (int num_flushes = 0; num_flushes < 10; num_flushes++) {
+      for (int i = 0; i < 10; i++) {
+        ASSERT_OK(row.SetInt32(0, num_flushes * i));
+        ASSERT_OK(row.SetInt32(1, num_flushes * i * 10));
+        ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
+        writer.Insert(row);
+      }
+      harness.tablet()->Flush();
+    }
+    block_ids = harness.tablet()->metadata()->CollectBlockIds();
+    harness.tablet()->Shutdown();
+  }
+
+  // Check the filesystem; all the blocks should be accounted for, and there
+  // should be no blocks missing or orphaned.
+  NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
+                       block_ids.size(), 0, 0));
+
+  // Delete half of the blocks. Upon the next check we can only find half, and
+  // the other half are deemed missing.
+  {
+    FsManager fs(env_, kTestDir);
+    ASSERT_OK(fs.Open());
+    for (int i = 0; i < block_ids.size(); i += 2) {
+      ASSERT_OK(fs.DeleteBlock(block_ids[i]));
+    }
+  }
+  NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
+                       block_ids.size() / 2, block_ids.size() / 2, 0));
+
+  // Delete the tablet superblock. The next check finds half of the blocks,
+  // though without the superblock they're all considered to be orphaned.
+  //
+  // Here we check twice to show that if --repair isn't provided, there should
+  // be no effect.
+  {
+    FsManager fs(env_, kTestDir);
+    ASSERT_OK(fs.Open());
+    ASSERT_OK(env_->DeleteFile(fs.GetTabletMetadataPath(kTabletId)));
+  }
+  for (int i = 0; i < 2; i++) {
+    NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
+                         block_ids.size() / 2, 0, block_ids.size() / 2));
+  }
+
+  // Repair the filesystem. The remaining half of all blocks were found, deemed
+  // to be orphaned, and deleted. The next check shows no remaining blocks.
+  NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0 --repair", kTestDir),
+                       block_ids.size() / 2, 0, block_ids.size() / 2));
+  NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
+                       0, 0, 0));
+}
+
+TEST_F(ToolTest, TestFsCheckLiveServer) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_data_dir = cluster_->GetDataPath("master-0");
+  string args = Substitute("fs check --fs_wal_dir $0", master_data_dir);
+  NO_FATALS(RunFsCheck(args, 0, 0, 0));
+  args += " --repair";
+  string stdout;
+  string stderr;
+  Status s = RunTool(args, &stdout, &stderr, nullptr, nullptr);
+  SCOPED_TRACE(stdout);
+  SCOPED_TRACE(stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_TRUE(stdout.empty());
+  ASSERT_STR_CONTAINS(stderr, "Could not lock");
 }
 
 TEST_F(ToolTest, TestFsFormat) {
