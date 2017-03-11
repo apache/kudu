@@ -94,6 +94,8 @@ class FileBlockManager : public BlockManager {
 
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
+  virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) OVERRIDE;
+
  private:
   friend class internal::FileBlockLocation;
   friend class internal::FileReadableBlock;

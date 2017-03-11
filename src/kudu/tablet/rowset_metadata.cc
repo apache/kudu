@@ -191,8 +191,8 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
     }
 
     // Remove undo blocks.
-    std::unordered_set<BlockId, BlockIdHash> undos_to_remove(update.remove_undo_blocks_.begin(),
-                                                             update.remove_undo_blocks_.end());
+    BlockIdSet undos_to_remove(update.remove_undo_blocks_.begin(),
+                               update.remove_undo_blocks_.end());
     int64_t num_removed = 0;
     auto iter = undo_delta_blocks_.begin();
     while (iter != undo_delta_blocks_.end()) {

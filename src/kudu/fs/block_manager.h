@@ -19,8 +19,8 @@
 #define KUDU_FS_BLOCK_MANAGER_H
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <stdint.h>
 #include <string>
 #include <vector>
 
@@ -238,6 +238,15 @@ class BlockManager {
   //
   // On success, guarantees that outstanding data is durable.
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) = 0;
+
+  // Retrieves the IDs of all blocks under management by this block manager.
+  // These include ReadableBlocks as well as WritableBlocks.
+  //
+  // Returned block IDs are not guaranteed to be in any particular order,
+  // nor is the order guaranteed to be deterministic. Furthermore, if
+  // concurrent operations are ongoing, some of the blocks themselves may not
+  // even exist after the call.
+  virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) = 0;
 };
 
 // Closes a group of blocks.

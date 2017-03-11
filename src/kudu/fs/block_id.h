@@ -19,6 +19,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <glog/logging.h>
@@ -100,6 +101,8 @@ struct BlockIdEqual {
     return first.id() == second.id();
   }
 };
+
+typedef std::unordered_set<BlockId, BlockIdHash, BlockIdEqual> BlockIdSet;
 
 } // namespace kudu
 #endif /* KUDU_FS_BLOCK_ID_H */

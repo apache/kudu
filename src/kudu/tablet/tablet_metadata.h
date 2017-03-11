@@ -328,7 +328,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   std::vector<Schema*> old_schemas_;
 
   // Protected by 'data_lock_'.
-  std::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
+  BlockIdSet orphaned_blocks_;
 
   // The current state of tablet copy for the tablet.
   TabletDataState tablet_data_state_;

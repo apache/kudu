@@ -144,7 +144,11 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
  private:
   friend class RefCountedThreadSafe<TabletCopySourceSession>;
 
-  typedef std::unordered_map<BlockId, ImmutableReadableBlockInfo*, BlockIdHash> BlockMap;
+  typedef std::unordered_map<
+      BlockId,
+      ImmutableReadableBlockInfo*,
+      BlockIdHash,
+      BlockIdEqual> BlockMap;
   typedef std::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
 
   ~TabletCopySourceSession();

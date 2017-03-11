@@ -1077,11 +1077,18 @@ TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
   fs::LogBlockManager* lbm = down_cast<fs::LogBlockManager*>(
       harness_->fs_manager()->block_manager());
 
-  int64_t before_count = lbm->CountBlocksForTests();
+  vector<BlockId> before_block_ids;
+  ASSERT_OK(lbm->GetAllBlockIds(&before_block_ids));
   ASSERT_OK(tablet()->Flush());
-  int64_t after_count = lbm->CountBlocksForTests();
+  vector<BlockId> after_block_ids;
+  ASSERT_OK(lbm->GetAllBlockIds(&after_block_ids));
 
-  ASSERT_EQ(after_count, before_count);
+  // Sort the two collections before the comparison as GetAllBlockIds() does
+  // not guarantee a deterministic order.
+  std::sort(before_block_ids.begin(), before_block_ids.end(), BlockIdCompare());
+  std::sort(after_block_ids.begin(), after_block_ids.end(), BlockIdCompare());
+
+  ASSERT_EQ(after_block_ids, before_block_ids);
 }
 
 } // namespace tablet

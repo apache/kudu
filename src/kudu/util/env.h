@@ -265,7 +265,7 @@ class Env {
   //
   // Returning an error won't halt the walk, but it will cause it to return
   // with an error status when it's done.
-  typedef Callback<Status(FileType,const std::string&, const std::string&)> WalkCallback;
+  typedef Callback<Status(FileType, const std::string&, const std::string&)> WalkCallback;
 
   // Whether to walk directories in pre-order or post-order.
   enum DirectoryOrder {

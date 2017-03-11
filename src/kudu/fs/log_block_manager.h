@@ -180,8 +180,7 @@ class LogBlockManager : public BlockManager {
 
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
-  // Return the number of blocks stored in the block manager.
-  int64_t CountBlocksForTests() const;
+  virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) OVERRIDE;
 
  private:
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
@@ -317,7 +316,7 @@ class LogBlockManager : public BlockManager {
   //
   // Together with blocks_by_block_id's keys, used to prevent collisions
   // when creating new anonymous blocks.
-  std::unordered_set<BlockId, BlockIdHash> open_block_ids_;
+  BlockIdSet open_block_ids_;
 
   // Holds (and owns) all containers loaded from disk.
   std::vector<internal::LogBlockContainer*> all_containers_;

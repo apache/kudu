@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -856,7 +857,9 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
     created_blocks.push_back(last_block_id);
     ASSERT_OK(writer->Close());
   }
-  ASSERT_EQ(4, bm_->CountBlocksForTests());
+  vector<BlockId> block_ids;
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(4, block_ids.size());
   gscoped_ptr<ReadableBlock> block;
   ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
   ASSERT_OK(block->Close());
@@ -892,7 +895,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
                                      shared_ptr<MemTracker>(),
                                      { this->test_dir_ },
                                      false));
-  ASSERT_EQ(4, bm_->CountBlocksForTests());
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(4, block_ids.size());
   ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
   ASSERT_OK(block->Close());
 
@@ -904,7 +908,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // metadata file of the originally-written container, since we append a
   // delete record to the metadata.
   ASSERT_OK(bm_->DeleteBlock(created_blocks[0]));
-  ASSERT_EQ(3, bm_->CountBlocksForTests());
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(3, block_ids.size());
 
   ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
   good_meta_size = cur_meta_size;
@@ -917,7 +922,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
     created_blocks.push_back(last_block_id);
     ASSERT_OK(writer->Close());
   }
-  ASSERT_EQ(4, bm_->CountBlocksForTests());
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(4, block_ids.size());
   ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
   ASSERT_GT(cur_meta_size, good_meta_size);
   uint64_t prev_good_meta_size = good_meta_size; // Store previous size.
@@ -947,7 +953,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
   ASSERT_EQ(good_meta_size, cur_meta_size);
 
-  ASSERT_EQ(3, bm_->CountBlocksForTests());
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(3, block_ids.size());
   Status s = bm_->OpenBlock(last_block_id, &block);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Can't find block");
@@ -961,7 +968,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
     ASSERT_OK(writer->Close());
   }
 
-  ASSERT_EQ(4, bm_->CountBlocksForTests());
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  ASSERT_EQ(4, block_ids.size());
   ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
   ASSERT_OK(block->Close());
 
@@ -1217,7 +1225,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   // 2. Try to delete every other block.
   // 3. Read and test every block.
   // 4. Restart the block manager, forcing the on-disk metadata to be reloaded.
-  unordered_set<BlockId, BlockIdHash> ids;
+  BlockIdSet ids;
   for (int attempt = 0; attempt < kNumTries; attempt++) {
     int num_created = 0;
     for (int i = 0; i < kNumBlockTries; i++) {
@@ -1261,6 +1269,37 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
                                        { GetTestDataDirectory() },
                                        false));
   }
+}
+
+TYPED_TEST(BlockManagerTest, TestGetAllBlockIds) {
+  vector<BlockId> ids;
+  for (int i = 0; i < 100; i++) {
+    gscoped_ptr<WritableBlock> block;
+    ASSERT_OK(this->bm_->CreateBlock(&block));
+    ASSERT_OK(block->Close());
+    ids.push_back(block->id());
+  }
+
+  // The file block manager should skip these; they shouldn't appear in
+  // 'retrieved_ids' below.
+  for (const auto& s : { string("abcde"), // not numeric
+                         string("12345"), // not a real block ID
+                         ids.begin()->ToString() }) { // not in a block directory
+    unique_ptr<WritableFile> writer;
+    ASSERT_OK(this->env_->NewWritableFile(
+        JoinPathSegments(this->test_dir_, s), &writer));
+    ASSERT_OK(writer->Close());
+  }
+
+  vector<BlockId> retrieved_ids;
+  ASSERT_OK(this->bm_->GetAllBlockIds(&retrieved_ids));
+
+  // Sort the two collections before the comparison as GetAllBlockIds() does
+  // not guarantee a deterministic order.
+  std::sort(ids.begin(), ids.end(), BlockIdCompare());
+  std::sort(retrieved_ids.begin(), retrieved_ids.end(), BlockIdCompare());
+
+  ASSERT_EQ(ids, retrieved_ids);
 }
 
 TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {

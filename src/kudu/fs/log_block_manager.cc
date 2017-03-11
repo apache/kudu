@@ -1481,9 +1481,11 @@ Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
   return Status::OK();
 }
 
-int64_t LogBlockManager::CountBlocksForTests() const {
+Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
   std::lock_guard<simple_spinlock> l(lock_);
-  return blocks_by_block_id_.size();
+  block_ids->assign(open_block_ids_.begin(), open_block_ids_.end());
+  AppendKeysFromMap(blocks_by_block_id_, block_ids);
+  return Status::OK();
 }
 
 void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {

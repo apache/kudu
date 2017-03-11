@@ -23,6 +23,7 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
@@ -671,6 +672,79 @@ Status FileBlockManager::CloseBlocks(const vector<WritableBlock*>& blocks) {
   // Now close each block, waiting for each to become durable.
   for (WritableBlock* block : blocks) {
     RETURN_NOT_OK(block->Close());
+  }
+  return Status::OK();
+}
+
+namespace {
+
+Status GetAllBlockIdsForDataDirCb(DataDir* dd,
+                                  vector<BlockId>* block_ids,
+                                  Env::FileType file_type,
+                                  const string& dirname,
+                                  const string& basename) {
+  if (file_type != Env::FILE_TYPE) {
+    // Skip directories.
+    return Status::OK();
+  }
+
+  uint64_t numeric_id;
+  if (!safe_strtou64(basename, &numeric_id)) {
+    // Skip files with non-numerical names.
+    return Status::OK();
+  }
+
+  // Verify that this block ID look-alike is, in fact, a block ID.
+  //
+  // We could also verify its contents, but that'd be quite expensive.
+  BlockId block_id(numeric_id);
+  internal::FileBlockLocation loc(
+      internal::FileBlockLocation::FromBlockId(dd, block_id));
+  if (loc.GetFullPath() != JoinPathSegments(dirname, basename)) {
+    return Status::OK();
+  }
+
+  block_ids->push_back(block_id);
+  return Status::OK();
+}
+
+void GetAllBlockIdsForDataDir(Env* env,
+                              DataDir* dd,
+                              vector<BlockId>* block_ids,
+                              Status* status) {
+  *status = env->Walk(dd->dir(), Env::PRE_ORDER,
+                      Bind(&GetAllBlockIdsForDataDirCb, dd, block_ids));
+}
+
+} // anonymous namespace
+
+Status FileBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
+  const auto& dds = dd_manager_.data_dirs();
+  block_ids->clear();
+
+  // The FBM does not maintain block listings in memory, so off we go to the
+  // filesystem. The search is parallelized across data directories.
+  vector<vector<BlockId>> block_id_vecs(dds.size());
+  vector<Status> statuses(dds.size());
+  for (int i = 0; i < dds.size(); i++) {
+    dds[i]->ExecClosure(Bind(&GetAllBlockIdsForDataDir,
+                             env_,
+                             dds[i].get(),
+                             &block_id_vecs[i],
+                             &statuses[i]));
+  }
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    dd->WaitOnClosures();
+  }
+
+  // A failure on any data directory is fatal.
+  for (const auto& s : statuses) {
+    RETURN_NOT_OK(s);
+  }
+
+  // Collect the results into 'blocks'.
+  for (const auto& ids : block_id_vecs) {
+    block_ids->insert(block_ids->begin(), ids.begin(), ids.end());
   }
   return Status::OK();
 }

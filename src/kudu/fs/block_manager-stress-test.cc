@@ -191,7 +191,7 @@ class BlockManagerStressTest : public KuduTest {
   //
   // Each entry is a block id and the number of in-progress openers. To delete
   // a block, there must be no openers.
-  unordered_map<BlockId, int, BlockIdHash> written_blocks_;
+  unordered_map<BlockId, int, BlockIdHash, BlockIdEqual> written_blocks_;
 
   // Protects written_blocks_.
   simple_spinlock lock_;
