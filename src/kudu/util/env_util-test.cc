@@ -63,7 +63,7 @@ TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
 
   // Check 1% reservation logic. We loop this in case there are other FS
   // operations happening concurrent with this test.
-  NO_FATALS(AssertEventually([&] {
+  AssertEventually([&] {
     SpaceInfo space_info;
     ASSERT_OK(env_->GetSpaceInfo(test_dir_, &space_info));
     // Try for 1 less byte than 1% free. This request should be rejected.
@@ -71,7 +71,7 @@ TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
     int64_t bytes_to_request = std::max<int64_t>(0, space_info.free_bytes - target_free_bytes);
     NO_FATALS(AssertNoSpace(VerifySufficientDiskSpace(env_, test_dir_, bytes_to_request,
                                                       kRequestOnePercentReservation)));
-  }));
+  });
 
   // Make it seem as if the disk is full and specify that we should have
   // reserved 200 bytes. Even asking for 0 bytes should return an error

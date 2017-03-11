@@ -812,7 +812,7 @@ TEST_F(TestEnv, TestGetSpaceInfoFreeBytes) {
 
   // Loop in case there are concurrent tests running that are modifying the
   // filesystem.
-  NO_FATALS(AssertEventually([&] {
+  AssertEventually([&] {
     if (env_->FileExists(kTestFilePath)) {
       ASSERT_OK(env_->DeleteFile(kTestFilePath)); // Clean up the previous iteration.
     }
@@ -824,7 +824,7 @@ TEST_F(TestEnv, TestGetSpaceInfoFreeBytes) {
     SpaceInfo after_space_info;
     ASSERT_OK(env_->GetSpaceInfo(kDataDir, &after_space_info));
     ASSERT_GE(before_space_info.free_bytes - after_space_info.free_bytes, kFileSizeBytes);
-  }));
+  });
 }
 
 // Basic sanity check for GetSpaceInfo().
