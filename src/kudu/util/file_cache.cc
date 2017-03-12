@@ -337,7 +337,25 @@ class Descriptor<RandomAccessFile> : public RandomAccessFile {
   }
 
   size_t memory_footprint() const override {
-    return kudu_malloc_usable_size(this) +
+    // Normally we would use kudu_malloc_usable_size(this). However, that's
+    // not safe because 'this' was allocated via std::make_shared(), which
+    // means it isn't necessarily the base of the memory allocation; it may be
+    // preceded by the shared_ptr control block.
+    //
+    // It doesn't appear possible to get the base of the allocation via any
+    // shared_ptr APIs, so we'll use sizeof(*this) + 16 instead. The 16 bytes
+    // represent the shared_ptr control block. Overall the object size is still
+    // undercounted as it doesn't account for any internal heap fragmentation,
+    // but at least it's safe.
+    //
+    // Some anecdotal memory measurements taken inside gdb:
+    // - glibc 2.23 malloc_usable_size() on make_shared<FileType>: 88 bytes.
+    // - tcmalloc malloc_usable_size() on make_shared<FileType>: 96 bytes.
+    // - sizeof(std::_Sp_counted_base<>) with libstdc++ 5.4: 16 bytes.
+    // - sizeof(std::__1::__shared_ptr_emplace<>) with libc++ 3.9: 16 bytes.
+    // - sizeof(*this): 72 bytes.
+    return sizeof(*this) +
+        16 + // shared_ptr control block
         once_.memory_footprint_excluding_this() +
         base_.filename().capacity();
   }

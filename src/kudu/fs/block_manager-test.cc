@@ -435,6 +435,10 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
   ASSERT_EQ(test_data, data);
 
+  // We don't actually do anything with the result of this call; we just want
+  // to make sure it doesn't trigger a crash (see KUDU-1931).
+  LOG(INFO) << "Block memory footprint: " << read_block->memory_footprint();
+
   // Delete the block.
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)

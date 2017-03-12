@@ -288,4 +288,19 @@ TYPED_TEST(FileCacheTest, TestNoRecursiveDeadlock) {
   }
 }
 
+class RandomAccessFileCacheTest : public FileCacheTest<RandomAccessFile> {
+};
+
+TEST_F(RandomAccessFileCacheTest, TestMemoryFootprintDoesNotCrash) {
+  const string kFile = this->GetTestPath("foo");
+  ASSERT_OK(this->WriteTestFile(kFile, "test data"));
+
+  shared_ptr<RandomAccessFile> f;
+  ASSERT_OK(this->cache_->OpenExistingFile(kFile, &f));
+
+  // This used to crash due to a kudu_malloc_usable_size() call on a memory
+  // address that wasn't the start of an actual heap allocation.
+  LOG(INFO) << f->memory_footprint();
+}
+
 } // namespace kudu
