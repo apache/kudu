@@ -35,11 +35,17 @@ namespace kudu {
 class RpcLineItemDAO {
  public:
   class Scanner;
+  enum PartitionStrategy {
+    RANGE,
+    HASH
+  };
 
   RpcLineItemDAO(std::string master_address,
                  std::string table_name,
                  int batch_op_num_max,
-                 int timeout_ms = 5000,
+                 int timeout_ms,
+                 PartitionStrategy partition_strategy,
+                 int num_buckets,
                  std::vector<const KuduPartialRow*> tablet_splits = {});
   ~RpcLineItemDAO();
   void Init();
@@ -91,6 +97,10 @@ class RpcLineItemDAO {
   const std::string table_name_;
   const MonoDelta timeout_;
   const int batch_op_num_max_;
+
+  const PartitionStrategy partition_strategy_;
+  const int num_buckets_;
+
   const std::vector<const KuduPartialRow*> tablet_splits_;
   int batch_op_num_;
   simple_spinlock lock_;

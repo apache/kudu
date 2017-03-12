@@ -54,7 +54,11 @@ class RpcLineItemDAOTest : public KuduTest {
 
     // Create the table and Connect to it.
     string master_address(cluster_->mini_master()->bound_rpc_addr_str());
-    dao_.reset(new kudu::RpcLineItemDAO(master_address, kTableName, 5));
+    dao_.reset(new kudu::RpcLineItemDAO(master_address, kTableName,
+                                        /* batch size */ 5,
+                                        /* timeout_ms */ 5000,
+                                        RpcLineItemDAO::RANGE,
+                                        /* num_buckets */ 1));
     dao_->Init();
   }
 

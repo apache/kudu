@@ -261,8 +261,10 @@ int main(int argc, char **argv) {
     master_address = FLAGS_master_address;
   }
 
-  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(master_address, FLAGS_table_name,
-                                                                 FLAGS_tpch_max_batch_size));
+  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(
+      master_address, FLAGS_table_name, FLAGS_tpch_max_batch_size,
+      /* timeout = */ 5000, kudu::RpcLineItemDAO::RANGE,
+      /* num_buckets = */ 1));
   dao->Init();
 
   kudu::WarmupScanCache(dao.get());

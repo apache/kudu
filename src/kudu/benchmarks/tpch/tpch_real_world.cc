@@ -95,6 +95,13 @@ DEFINE_string(tpch_path_to_ts_flags_file, "",
               "a mini cluster. Doesn't use one by default.");
 DEFINE_string(tpch_table_name, "tpch_real_world",
               "Table name to use during the test");
+DEFINE_string(tpch_partition_strategy, "range",
+              "The partitioning strategy to use for the lineitem table. If 'range' is selected, "
+              "each writer thread inserts sequentially into its own tablet, creating an ideal "
+              "workload for maximum throughput. 'hash' partitioning creates the same number of "
+              "tablets, but hash-partitions them so that each writer thread writes to all "
+              "tablets. This is less ideal, but more faithfully represents a lot of write "
+              "workloads.");
 
 namespace kudu {
 
@@ -249,11 +256,20 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
 
   KuduSchema schema(tpch::CreateLineItemSchema());
   vector<const KuduPartialRow*> split_rows;
-  for (int64_t i = 1; i < FLAGS_tpch_num_inserters; i++) {
-    KuduPartialRow* row = schema.NewRow();
-    CHECK_OK(row->SetInt64(tpch::kOrderKeyColName, i * increment));
-    CHECK_OK(row->SetInt32(tpch::kLineNumberColName, 0));
-    split_rows.push_back(row);
+
+  RpcLineItemDAO::PartitionStrategy strategy;
+  if (FLAGS_tpch_partition_strategy == "hash") {
+    strategy = RpcLineItemDAO::HASH;
+  } else if (FLAGS_tpch_partition_strategy == "range") {
+    strategy = RpcLineItemDAO::RANGE;
+    for (int64_t i = 1; i < FLAGS_tpch_num_inserters; i++) {
+      KuduPartialRow* row = schema.NewRow();
+      CHECK_OK(row->SetInt64(tpch::kOrderKeyColName, i * increment));
+      CHECK_OK(row->SetInt32(tpch::kLineNumberColName, 0));
+      split_rows.push_back(row);
+    }
+  } else {
+    LOG(FATAL) << "Unknown partition strategy: " << FLAGS_tpch_partition_strategy;
   }
 
   gscoped_ptr<RpcLineItemDAO> dao(
@@ -261,6 +277,8 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
                            FLAGS_tpch_table_name,
                            FLAGS_tpch_max_batch_size,
                            FLAGS_tpch_test_client_timeout_msec,
+                           strategy,
+                           FLAGS_tpch_num_inserters,
                            split_rows));
   dao->Init();
   return std::move(dao);
