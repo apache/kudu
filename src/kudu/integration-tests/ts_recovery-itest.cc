@@ -15,18 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
+#include <string>
+
 #include "kudu/client/client.h"
+#include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/server/clock.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
 
-#include <string>
-
 using std::string;
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -37,6 +47,14 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
+using consensus::ConsensusMetadata;
+using consensus::OpId;
+using consensus::RECEIVED_OPID;
+using log::AppendNoOpsToLogSync;
+using log::Log;
+using log::LogOptions;
+using server::Clock;
+using server::HybridClock;
 
 namespace {
 // Generate a row key such that an increasing sequence (0...N) ends up spreading writes
@@ -55,7 +73,7 @@ class TsRecoveryITest : public KuduTest {
   }
 
  protected:
-  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
+  void StartCluster(const vector<string>& extra_tserver_flags = {},
                     int num_tablet_servers = 1);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
@@ -281,6 +299,125 @@ TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
                                        MonoDelta::FromSeconds(60)));
 }
 
+class TsRecoveryITestDeathTest : public TsRecoveryITest {};
+
+// Test that tablet bootstrap can automatically repair itself if it finds an
+// overflowed OpId index written to the log caused by KUDU-1933.
+// Also serves as a regression itest for KUDU-1933 by writing ops with a high
+// term and index.
+TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
+#if defined(THREAD_SANITIZER)
+  // TSAN cannot handle spawning threads after fork().
+  return;
+#endif
+
+  // Create the initial tablet files on disk, then shut down the cluster so we
+  // can meddle with the WAL.
+  NO_FATALS(StartCluster());
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  std::unordered_map<std::string, itest::TServerDetails*> ts_map;
+  ValueDeleter del(&ts_map);
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+                                         cluster_->messenger(),
+                                         &ts_map));
+  vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  auto* ets = cluster_->tablet_server(0);
+  auto* ts = ts_map[ets->uuid()];
+  ASSERT_OK(ListTablets(ts, MonoDelta::FromSeconds(10), &tablets));
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  cluster_->Shutdown();
+
+  const int64_t kOverflowedIndexValue = static_cast<int64_t>(INT32_MIN);
+  const int64_t kDesiredIndexValue = static_cast<int64_t>(INT32_MAX) + 1;
+  const int kNumOverflowedEntriesToWrite = 4;
+
+  {
+    // Append a no-op to the WAL with an overflowed term and index to simulate a
+    // crash after KUDU-1933.
+    gscoped_ptr<FsManager> fs_manager(new FsManager(env_, ets->data_dir()));
+    ASSERT_OK(fs_manager->Open());
+    scoped_refptr<Clock> clock(new HybridClock());
+    ASSERT_OK(clock->Init());
+
+    OpId opid;
+    opid.set_term(kOverflowedIndexValue);
+    opid.set_index(kOverflowedIndexValue);
+
+    ASSERT_DEATH({
+      scoped_refptr<Log> log;
+      ASSERT_OK(Log::Open(LogOptions(),
+                          fs_manager.get(),
+                          tablet_id,
+                          SchemaBuilder(GetSimpleTestSchema()).Build(),
+                          0, // schema_version
+                          nullptr,
+                          &log));
+
+      // Write a series of negative OpIds.
+      // This will cause a crash, but only after they have been written to disk.
+      ASSERT_OK(AppendNoOpsToLogSync(clock, log.get(), &opid, kNumOverflowedEntriesToWrite));
+    }, "Check failed: log_index > 0");
+
+    // We also need to update the ConsensusMetadata to match with the term we
+    // want to end up with.
+    unique_ptr<ConsensusMetadata> cmeta;
+    ConsensusMetadata::Load(fs_manager.get(), tablet_id, fs_manager->uuid(), &cmeta);
+    cmeta->set_current_term(kDesiredIndexValue);
+    ASSERT_OK(cmeta->Flush());
+  }
+
+  // Don't become leader because that will append another NO_OP to the log.
+  ets->mutable_flags()->push_back("--enable_leader_failure_detection=false");
+  ASSERT_OK(cluster_->Restart());
+
+  OpId last_written_opid;
+  AssertEventually([&] {
+    // Tablet bootstrap should have converted the negative OpIds to positive ones.
+    ASSERT_OK(itest::GetLastOpIdForReplica(tablet_id, ts, RECEIVED_OPID, MonoDelta::FromSeconds(5),
+                                           &last_written_opid));
+    ASSERT_TRUE(last_written_opid.IsInitialized());
+    OpId expected_opid;
+    expected_opid.set_term(kDesiredIndexValue);
+    expected_opid.set_index(static_cast<int64_t>(INT32_MAX) + kNumOverflowedEntriesToWrite);
+    ASSERT_OPID_EQ(expected_opid, last_written_opid);
+  });
+  NO_FATALS();
+
+  // Now, write some records that will have a higher opid than INT32_MAX and
+  // ensure they get written. This checks for overflows in the write path.
+
+  // We have to first remove the flag disabling failure detection.
+  cluster_->Shutdown();
+  ets->mutable_flags()->pop_back();
+  ASSERT_OK(cluster_->Restart());
+
+  // Write a few records.
+  workload.Start();
+  while (workload.batches_completed() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // Validate.
+  OpId prev_written_opid = last_written_opid;
+  AssertEventually([&] {
+    ASSERT_OK(itest::GetLastOpIdForReplica(tablet_id, ts, RECEIVED_OPID, MonoDelta::FromSeconds(5),
+                                           &last_written_opid));
+    ASSERT_TRUE(last_written_opid.IsInitialized());
+    ASSERT_GT(last_written_opid.term(), INT32_MAX);
+    ASSERT_GT(last_written_opid.index(), INT32_MAX);
+    // Term will increase because of an election.
+    ASSERT_GT(last_written_opid.term(), prev_written_opid.term());
+    ASSERT_GT(last_written_opid.index(), prev_written_opid.index());
+  });
+  NO_FATALS();
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
 
 // A set of threads which pick rows which are known to exist in the table
 // and issue random updates against them.

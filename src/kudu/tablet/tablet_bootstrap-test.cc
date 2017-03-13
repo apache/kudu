@@ -171,6 +171,29 @@ TEST_F(BootstrapTest, TestBootstrap) {
   ASSERT_EQ(1, results.size());
 }
 
+// Test that we don't overflow opids. Regression test for KUDU-1933.
+TEST_F(BootstrapTest, TestBootstrapHighOpIdIndex) {
+  // Start appending with a log index 3 under the int32 max value.
+  // Append 6 log entries, which will roll us right through the int32 max.
+  const int64_t first_log_index = std::numeric_limits<int32_t>::max() - 3;
+  const int kNumEntries = 6;
+  ASSERT_OK(BuildLog());
+  current_index_ = first_log_index;
+  for (int i = 0; i < kNumEntries; i++) {
+    AppendReplicateBatchAndCommitEntryPairsToLog(1);
+  }
+
+  // Kick off tablet bootstrap and ensure everything worked.
+  shared_ptr<Tablet> tablet;
+  ConsensusBootstrapInfo boot_info;
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  OpId last_opid;
+  last_opid.set_term(1);
+  last_opid.set_index(current_index_ - 1);
+  ASSERT_OPID_EQ(last_opid, boot_info.last_id);
+  ASSERT_OPID_EQ(last_opid, boot_info.last_committed_id);
+}
+
 // Tests attempting a local bootstrap of a tablet that was in the middle of a
 // tablet copy before "crashing".
 TEST_F(BootstrapTest, TestIncompleteTabletCopy) {
