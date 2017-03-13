@@ -984,6 +984,27 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
   }
 }
 
+// Ensure that we can read replicate messages from the LogReader with a very
+// high (> 32 bit) log index and term. Regression test for KUDU-1933.
+TEST_F(LogTest, TestReadReplicatesHighIndex) {
+  const int64_t first_log_index = std::numeric_limits<int32_t>::max() - 3;
+  const int kSequenceLength = 10;
+
+  ASSERT_OK(BuildLog());
+  OpId op_id;
+  op_id.set_term(first_log_index);
+  op_id.set_index(first_log_index);
+  ASSERT_OK(AppendNoOps(&op_id, kSequenceLength));
+
+  shared_ptr<LogReader> reader = log_->reader();
+  vector<ReplicateMsg*> replicates;
+  ElementDeleter deleter(&replicates);
+  ASSERT_OK(reader->ReadReplicatesInRange(first_log_index, first_log_index + kSequenceLength - 1,
+                                          LogReader::kNoSizeLimit, &replicates));
+  ASSERT_EQ(kSequenceLength, replicates.size());
+  ASSERT_GT(op_id.index(), INT32_MAX);
+}
+
 // Test various situations where we expect different segments depending on what the
 // min log index is.
 TEST_F(LogTest, TestGetGCableDataSize) {

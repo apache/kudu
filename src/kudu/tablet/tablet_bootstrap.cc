@@ -60,6 +60,8 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 
+DECLARE_int32(group_commit_queue_size_bytes);
+
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
 TAG_FLAG(skip_remove_old_recovery_dir, hidden);
@@ -810,9 +812,33 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
   return Status::OK();
 }
 
+// Repair overflow issue reported in KUDU-1933.
+void CheckAndRepairOpIdOverflow(OpId* opid) {
+  if (PREDICT_FALSE(opid->term() < consensus::kMinimumTerm)) {
+    int64_t overflow = opid->term() - INT32_MIN + 1LL;
+    CHECK_GE(overflow, 1) << OpIdToString(*opid);
+    opid->set_term(static_cast<int64_t>(INT32_MAX) + overflow);
+  }
+  if (PREDICT_FALSE(opid->index() < consensus::kMinimumOpIdIndex &&
+                    opid->index() != consensus::kInvalidOpIdIndex)) {
+    int64_t overflow = opid->index() - INT32_MIN + 1LL;
+    CHECK_GE(overflow, 1) << OpIdToString(*opid);
+    // Sanity check. Even with the bug in KUDU-1933, the number of bytes
+    // allowed in a single group commit is a generous upper bound on how far a
+    // log index may have overflowed before causing a crash.
+    CHECK_LT(overflow, FLAGS_group_commit_queue_size_bytes) << OpIdToString(*opid);
+    opid->set_index(static_cast<int64_t>(INT32_MAX) + overflow);
+  }
+}
+
 // Takes ownership of 'replicate_entry' on OK status.
 Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry) {
   stats_.ops_read++;
+
+  DCHECK(replicate_entry->has_replicate());
+
+  // Fix overflow if necessary (see KUDU-1933).
+  CheckAndRepairOpIdOverflow(replicate_entry->mutable_replicate()->mutable_id());
 
   const ReplicateMsg& replicate = replicate_entry->replicate();
   RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate));
@@ -857,6 +883,9 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
 Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
   DCHECK(commit_entry->has_commit()) << "Not a commit message: "
                                      << SecureDebugString(*commit_entry);
+
+  // Fix overflow if necessary (see KUDU-1933).
+  CheckAndRepairOpIdOverflow(commit_entry->mutable_commit()->mutable_commited_op_id());
 
   // Match up the COMMIT record with the original entry that it's applied to.
   const OpId& committed_op_id = commit_entry->commit().commited_op_id();
