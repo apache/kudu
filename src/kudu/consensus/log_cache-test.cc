@@ -86,14 +86,12 @@ class LogCacheTest : public KuduTest {
     CHECK_OK(s);
   }
 
-  Status AppendReplicateMessagesToCache(
-    int first,
-    int count,
-    int payload_size = 0) {
+  Status AppendReplicateMessagesToCache(int64_t first, int64_t count,
+                                        size_t payload_size = 0) {
 
-    for (int i = first; i < first + count; i++) {
-      int term = i / 7;
-      int index = i;
+    for (int64_t cur_index = first; cur_index < first + count; cur_index++) {
+      int64_t term = cur_index / 7;
+      int64_t index = cur_index;
       vector<ReplicateRefPtr> msgs;
       msgs.push_back(make_scoped_refptr_replicate(
                        CreateDummyReplicate(term, index, clock_->Now(), payload_size).release()));

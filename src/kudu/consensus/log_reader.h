@@ -89,7 +89,7 @@ class LogReader {
       int64_t up_to,
       int64_t max_bytes_to_read,
       std::vector<consensus::ReplicateMsg*>* replicates) const;
-  static const int kNoSizeLimit;
+  static const int64_t kNoSizeLimit;
 
   // Look up the OpId for the given operation index.
   // Returns a bad Status if the log index fails to load (eg. due to an IO error).

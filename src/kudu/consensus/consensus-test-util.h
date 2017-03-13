@@ -57,10 +57,10 @@ namespace consensus {
 using log::Log;
 using strings::Substitute;
 
-inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
-                                                      int index,
+inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
+                                                      int64_t index,
                                                       const Timestamp& timestamp,
-                                                      int payload_size) {
+                                                      int64_t payload_size) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg);
     OpId* id = msg->mutable_id();
     id->set_term(term);
@@ -89,13 +89,13 @@ inline RaftPeerPB FakeRaftPeerPB(const std::string& uuid) {
 inline void AppendReplicateMessagesToQueue(
     PeerMessageQueue* queue,
     const scoped_refptr<server::Clock>& clock,
-    int first,
-    int count,
-    int payload_size = 0) {
+    int64_t first,
+    int64_t count,
+    int64_t payload_size = 0) {
 
-  for (int i = first; i < first + count; i++) {
-    int term = i / 7;
-    int index = i;
+  for (int64_t i = first; i < first + count; i++) {
+    int64_t term = i / 7;
+    int64_t index = i;
     CHECK_OK(queue->AppendOperation(make_scoped_refptr_replicate(
         CreateDummyReplicate(term, index, clock->Now(), payload_size).release())));
   }
