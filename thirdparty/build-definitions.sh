@@ -678,3 +678,10 @@ build_boost() {
   fi
   popd
 }
+
+build_sparsehash() {
+  # This library is header-only, so we just copy the headers
+  pushd $SPARSEHASH_SOURCE
+  rsync -av --delete sparsehash/ $PREFIX/include/sparsehash/
+  popd
+}

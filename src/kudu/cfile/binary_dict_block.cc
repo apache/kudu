@@ -17,18 +17,20 @@
 
 #include "kudu/cfile/binary_dict_block.h"
 
-#include <glog/logging.h>
 #include <algorithm>
+#include <limits>
 
+#include <glog/logging.h>
+
+#include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/bshuf_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/coding.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
@@ -37,11 +39,15 @@ namespace kudu {
 namespace cfile {
 
 BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
-  : options_(options),
-    dict_block_(options_),
-    dictionary_strings_arena_(1024, 32*1024*1024),
-    mode_(kCodeWordMode) {
+    : options_(options),
+      dict_block_(options_),
+      dictionary_strings_arena_(1024, 32*1024*1024),
+      mode_(kCodeWordMode) {
   data_builder_.reset(new BShufBlockBuilder<UINT32>(options_));
+  // We use this invalid StringPiece for the "empty key". It's safe to build such
+  // a string and use it in equality comparisons.
+  dictionary_.set_empty_key(StringPiece(static_cast<const char*>(nullptr),
+                                        std::numeric_limits<int>::max()));
   Reset();
 }
 
@@ -91,40 +97,40 @@ int BinaryDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
   DCHECK_GT(count, 0);
   size_t i;
 
+  const Slice* src = reinterpret_cast<const Slice*>(vals);
   if (data_builder_->Count() == 0) {
-    const Slice* first = reinterpret_cast<const Slice*>(vals);
-    first_key_.assign_copy(first->data(), first->size());
+    first_key_.assign_copy(src->data(), src->size());
   }
 
-  for (i = 0; i < count; i++) {
-    const Slice* src = reinterpret_cast<const Slice*>(vals);
+  for (i = 0; i < count; i++, src++) {
     const char* c_str = reinterpret_cast<const char*>(src->data());
     StringPiece current_item(c_str, src->size());
     uint32_t codeword;
 
-    if (!FindCopy(dictionary_, current_item, &codeword)) {
-      // The dictionary block is full
-      if (dict_block_.Add(vals, 1) == 0) {
+    if (PREDICT_FALSE(!FindCopy(dictionary_, current_item, &codeword))) {
+      // Not already in dictionary, try to add it if there is space.
+      if (PREDICT_FALSE(!AddToDict(*src, &codeword))) {
         break;
       }
-      const uint8_t* s_ptr = dictionary_strings_arena_.AddSlice(*src);
-      if (s_ptr == nullptr) {
-        // Arena does not have enough space for string content
-        // Ideally, this should not happen.
-        LOG(ERROR) << "Arena of Dictionary Encoder does not have enough memory for strings";
-        break;
-      }
-      const char* s_content = reinterpret_cast<const char*>(s_ptr);
-      codeword = dict_block_.Count() - 1;
-      InsertOrDie(&dictionary_, StringPiece(s_content, src->size()), codeword);
     }
-    // The data block is full
-    if (data_builder_->Add(reinterpret_cast<const uint8_t*>(&codeword), 1) == 0) {
+    if (PREDICT_FALSE(data_builder_->Add(reinterpret_cast<const uint8_t*>(&codeword), 1) == 0)) {
+      // The data block is full
       break;
     }
-    vals += sizeof(Slice);
   }
   return i;
+}
+
+bool BinaryDictBlockBuilder::AddToDict(Slice val, uint32_t* codeword) {
+  if (PREDICT_FALSE(dict_block_.Add(reinterpret_cast<const uint8_t*>(&val), 1) == 0)) {
+    // The dictionary block is full
+    return false;
+  }
+  const uint8_t* s_ptr = CHECK_NOTNULL(dictionary_strings_arena_.AddSlice(val));
+  const char* s_content = reinterpret_cast<const char*>(s_ptr);
+  *codeword = dict_block_.Count() - 1;
+  InsertOrDie(&dictionary_, StringPiece(s_content, val.size()), *codeword);
+  return true;
 }
 
 int BinaryDictBlockBuilder::Add(const uint8_t* vals, size_t count) {

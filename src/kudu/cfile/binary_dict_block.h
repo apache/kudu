@@ -37,13 +37,14 @@
 #define KUDU_CFILE_BINARY_DICT_BLOCK_H
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
+#include <sparsehash/dense_hash_map>
+
+#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -91,6 +92,9 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
  private:
   int AddCodeWords(const uint8_t* vals, size_t count);
 
+  ATTRIBUTE_COLD
+  bool AddToDict(Slice val, uint32_t* codeword);
+
   faststring buffer_;
   bool finished_;
   const WriterOptions* options_;
@@ -102,7 +106,7 @@ class BinaryDictBlockBuilder final : public BlockBuilder {
   // They should NOT be cleared in the Reset() method.
   BinaryPlainBlockBuilder dict_block_;
 
-  std::unordered_map<StringPiece, uint32_t, GoodFastHash<StringPiece> > dictionary_;
+  google::dense_hash_map<StringPiece, uint32_t, GoodFastHash<StringPiece> > dictionary_;
   // Memory to hold the actual content for strings in the dictionary_.
   //
   // The size of it should be bigger than the size limit for dictionary block

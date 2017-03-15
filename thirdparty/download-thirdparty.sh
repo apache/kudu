@@ -305,5 +305,9 @@ if [ ! -d "$BREAKPAD_SOURCE" ]; then
   fetch_and_expand breakpad-${BREAKPAD_VERSION}.tar.gz
 fi
 
+if [ ! -d "$SPARSEHASH_SOURCE" ]; then
+  fetch_and_expand sparsehash-c11-${SPARSEHASH_VERSION}.tar.gz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

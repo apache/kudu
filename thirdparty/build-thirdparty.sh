@@ -92,6 +92,7 @@ else
       "nvml")         F_NVML=1 ;;
       "boost")        F_BOOST=1 ;;
       "breakpad")     F_BREAKPAD=1 ;;
+      "sparsehash")   F_SPARSEHASH=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -215,6 +216,10 @@ fi
 
 if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
   build_trace_viewer
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_SPARSEHASH" ]; then
+  build_sparsehash
 fi
 
 ### Build C dependencies without instrumentation
