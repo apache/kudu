@@ -109,4 +109,41 @@ TEST_F(MiniKdcTest, TestStopDrop) {
   MiniKdc kdc(options);
 }
 
+TEST_F(MiniKdcTest, TestOperationsWhenKdcNotRunning) {
+  MiniKdcOptions options;
+  MiniKdc kdc(options);
+  ASSERT_OK(kdc.Start());
+  ASSERT_OK(kdc.Stop());
+
+  // MiniKdc::CreateUserPrincipal() works directly with the local files,
+  // so it should work fine even if KDC is shut down.
+  ASSERT_OK(kdc.CreateUserPrincipal("alice"));
+
+  {
+    // Without running KDC it should not be possible to obtain and cache an
+    // initial ticket-granting ticket for principal.
+    const Status s = kdc.Kinit("alice");
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
+  }
+  {
+    // Without running KDC klist should fail.
+    string klist;
+    const Status s = kdc.Klist(&klist);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
+  }
+
+  ASSERT_OK(kdc.Start());
+
+  // Once KDC has started, 'kinit' and 'klist' should work with no issues.
+  ASSERT_OK(kdc.Kinit("alice"));
+  {
+    // Check that alice is kinit'd.
+    string klist;
+    ASSERT_OK(kdc.Klist(&klist));
+    ASSERT_STR_CONTAINS(klist, "alice@KRBTEST.COM");
+  }
+}
+
 } // namespace kudu

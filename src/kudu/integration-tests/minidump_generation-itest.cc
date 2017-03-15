@@ -55,13 +55,13 @@ TEST_F(MinidumpGenerationITest, TestCreateMinidumpOnCrash) {
   // Test kudu-tserver.
   ExternalTabletServer* ts = cluster_->tablet_server(0);
   string dir = Substitute("$0/$1/$2", ts->log_dir(), "minidumps", "kudu-tserver");
-  ts->process()->Kill(SIGABRT);
+  ASSERT_OK(ts->process()->Kill(SIGABRT));
   NO_FATALS(WaitForMinidumps(1, dir));
 
   // Test kudu-master.
   ExternalMaster* master = cluster_->master();
   dir = Substitute("$0/$1/$2", master->log_dir(), "minidumps", "kudu-master");
-  master->process()->Kill(SIGABRT);
+  ASSERT_OK(master->process()->Kill(SIGABRT));
   NO_FATALS(WaitForMinidumps(1, dir));
 }
 
@@ -72,7 +72,7 @@ TEST_F(MinidumpGenerationITest, TestCreateMinidumpOnSIGUSR1) {
   // Enable minidumps and ensure SIGUSR1 generates them.
   ExternalTabletServer* ts = cluster_->tablet_server(0);
   string dir = Substitute("$0/$1/$2", ts->log_dir(), "minidumps", "kudu-tserver");
-  ts->process()->Kill(SIGUSR1);
+  ASSERT_OK(ts->process()->Kill(SIGUSR1));
   NO_FATALS(WaitForMinidumps(1, dir));
   NO_FATALS(cluster_->AssertNoCrashes());
   cluster_->Shutdown();
@@ -82,7 +82,7 @@ TEST_F(MinidumpGenerationITest, TestCreateMinidumpOnSIGUSR1) {
   ASSERT_OK(env_->DeleteRecursively(dir));
   ASSERT_OK(env_->CreateDir(dir));
   ASSERT_OK(cluster_->Restart());
-  ts->process()->Kill(SIGUSR1);
+  ASSERT_OK(ts->process()->Kill(SIGUSR1));
   NO_FATALS(cluster_->AssertNoCrashes());
   NO_FATALS(WaitForMinidumps(0, dir)); // There should be no dumps.
 }

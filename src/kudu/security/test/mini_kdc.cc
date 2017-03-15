@@ -145,6 +145,7 @@ Status MiniKdc::Start() {
   VLOG(1) << "Starting Kerberos KDC: " << options_.ToString();
 
   if (!Env::Default()->FileExists(options_.data_root)) {
+    VLOG(1) << "Creating KDC database and configuration files";
     RETURN_NOT_OK(Env::Default()->CreateDir(options_.data_root));
 
     RETURN_NOT_OK(CreateKdcConf());
@@ -174,10 +175,13 @@ Status MiniKdc::Start() {
 
   RETURN_NOT_OK(kdc_process_->Start());
 
-  // If we asked for an ephemeral port, grab the actual ports and
-  // rewrite the configuration so that clients can connect.
-  if (options_.port == 0) {
-    RETURN_NOT_OK(WaitForKdcPorts());
+  const bool need_config_update = (options_.port == 0);
+  // Wait for KDC to start listening on its ports and commencing operation.
+  RETURN_NOT_OK(WaitForKdcPorts());
+
+  if (need_config_update) {
+    // If we asked for an ephemeral port, grab the actual ports and
+    // rewrite the configuration so that clients can connect.
     RETURN_NOT_OK(CreateKrb5Conf());
     RETURN_NOT_OK(CreateKdcConf());
   }
@@ -267,7 +271,7 @@ Status MiniKdc::WaitForKdcPorts() {
   string lsof;
   RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
-  vector<string> cmd = {
+  const vector<string> cmd = {
     lsof, "-wbnP", "-Ffn",
     "-p", std::to_string(kdc_process_->pid()),
     "-a", "-i", "4UDP"};
@@ -304,8 +308,15 @@ Status MiniKdc::WaitForKdcPorts() {
   }
   CHECK(port > 0 && port < std::numeric_limits<uint16_t>::max())
       << "parsed invalid port: " << port;
-  options_.port = port;
-  VLOG(1) << "Determined bound KDC port: " << options_.port;
+  VLOG(1) << "Determined bound KDC port: " << port;
+  if (options_.port == 0) {
+    options_.port = port;
+  } else {
+    // Sanity check: if KDC's port is already established, it's supposed to be
+    // written into the configuration files, so the process must bind to the
+    // already established port.
+    CHECK(options_.port == port);
+  }
   return Status::OK();
 }
 
@@ -339,7 +350,7 @@ Status MiniKdc::Kinit(const string& username) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("kinit for $0", username));
   string kinit;
   RETURN_NOT_OK(GetBinaryPath("kinit", &kinit));
-  Subprocess::Call(MakeArgv({ kinit, username }), username);
+  RETURN_NOT_OK(Subprocess::Call(MakeArgv({ kinit, username }), username));
   return Status::OK();
 }
 
