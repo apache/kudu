@@ -1131,6 +1131,7 @@ Status FlushCompactionInput(CompactionInput* input,
     if (n > 0) {
       block.Resize(n);
       RETURN_NOT_OK(out->AppendBlock(block));
+      block.Resize(block.row_capacity());
     }
 
     RETURN_NOT_OK(input->FinishBlock());
