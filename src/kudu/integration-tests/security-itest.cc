@@ -42,10 +42,12 @@ class SecurityITest : public KuduTest {
   SecurityITest() {
     cluster_opts_.enable_kerberos = true;
     cluster_opts_.num_tablet_servers = 3;
+    cluster_opts_.extra_master_flags.push_back("--rpc_trace_negotiation");
+    cluster_opts_.extra_tserver_flags.push_back("--rpc_trace_negotiation");
   }
-  void StartCluster() {
+  Status StartCluster() {
     cluster_.reset(new ExternalMiniCluster(cluster_opts_));
-    ASSERT_OK(cluster_->Start());
+    return cluster_->Start();
   }
 
   Status TrySetFlagOnTS() {
@@ -132,7 +134,7 @@ void SecurityITest::SmokeTestCluster() {
 // Test creating a table, writing some data, reading data, and dropping
 // the table.
 TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
-  StartCluster();
+  ASSERT_OK(StartCluster());
 
   ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
   NO_FATALS(SmokeTestCluster());
@@ -154,7 +156,7 @@ TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
 // (Heimdal) caches the non-existence of client credentials, which causes
 // subsequent tests to fail.
 TEST_F(SecurityITest, TestNoKerberosCredentials) {
-  StartCluster();
+  ASSERT_OK(StartCluster());
   ASSERT_OK(cluster_->kdc()->Kdestroy());
 
   client::sp::shared_ptr<KuduClient> client;
@@ -171,7 +173,7 @@ TEST_F(SecurityITest, TestNoKerberosCredentials) {
 
 // Test cluster access by a user who is not authorized as a client.
 TEST_F(SecurityITest, TestUnauthorizedClientKerberosCredentials) {
-  StartCluster();
+  ASSERT_OK(StartCluster());
   ASSERT_OK(cluster_->kdc()->Kinit("joe-interloper"));
   client::sp::shared_ptr<KuduClient> client;
   Status s = cluster_->CreateClient(nullptr, &client);
@@ -182,7 +184,7 @@ TEST_F(SecurityITest, TestUnauthorizedClientKerberosCredentials) {
 
 // Test superuser actions when authorized as a superuser.
 TEST_F(SecurityITest, TestAuthorizedSuperuser) {
-  StartCluster();
+  ASSERT_OK(StartCluster());
 
   ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
 
@@ -202,7 +204,7 @@ TEST_F(SecurityITest, TestAuthorizedSuperuser) {
 TEST_F(SecurityITest, TestDisableWebUI) {
   cluster_opts_.extra_master_flags.push_back("--webserver_enabled=0");
   cluster_opts_.extra_tserver_flags.push_back("--webserver_enabled=0");
-  StartCluster();
+  ASSERT_OK(StartCluster());
   NO_FATALS(SmokeTestCluster());
 }
 
@@ -213,7 +215,7 @@ TEST_F(SecurityITest, TestDisableAuthenticationEncryption) {
   cluster_opts_.extra_master_flags.push_back("--rpc_encryption=disabled");
   cluster_opts_.extra_tserver_flags.push_back("--rpc_encryption=disabled");
   cluster_opts_.enable_kerberos = false;
-  StartCluster();
+  ASSERT_OK(StartCluster());
   NO_FATALS(SmokeTestCluster());
 }
 
