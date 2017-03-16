@@ -20,6 +20,8 @@
 #include <krb5/krb5.h>
 
 #include <algorithm>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <string>
@@ -124,7 +126,11 @@ class KinitContext {
 
 Status Krb5CallToStatus(krb5_context ctx, krb5_error_code code) {
   if (code == 0) return Status::OK();
-  return Status::RuntimeError(krb5_get_error_message(ctx, code));
+
+  std::unique_ptr<const char, std::function<void(const char*)>> err_msg(
+      krb5_get_error_message(ctx, code),
+      std::bind(krb5_free_error_message, ctx, std::placeholders::_1));
+  return Status::RuntimeError(err_msg.get());
 }
 #define KRB5_RETURN_NOT_OK_PREPEND(call, prepend) \
   RETURN_NOT_OK_PREPEND(Krb5CallToStatus(g_krb5_ctx, (call)), (prepend))
