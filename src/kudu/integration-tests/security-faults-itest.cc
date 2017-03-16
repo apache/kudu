@@ -53,9 +53,9 @@ class SecurityComponentsFaultsITest : public KuduTest {
  public:
   SecurityComponentsFaultsITest()
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
-      : krb_lifetime_seconds_(15),
+      : krb_lifetime_seconds_(64),
 #else
-      : krb_lifetime_seconds_(5),
+      : krb_lifetime_seconds_(16),
 #endif
         num_masters_(3),
         num_tservers_(3) {
@@ -128,6 +128,8 @@ class SecurityComponentsFaultsITest : public KuduTest {
   }
 
  protected:
+  // The ticket lifetime should be long enough to start the cluster and run a
+  // single iteration of smoke test workload.
   const int krb_lifetime_seconds_;
   const int num_masters_;
   const int num_tservers_;
@@ -138,6 +140,11 @@ class SecurityComponentsFaultsITest : public KuduTest {
 // Check how the system behaves when KDC is not available upon start-up
 // of Kudu server-side components.
 TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
   // Start with the KDC first: let's generate generate keytabs, get initial
   // kerberos tickets, etc.
   ASSERT_OK(StartCluster());
@@ -174,6 +181,11 @@ TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
 // Check that restarting KDC does not affect running master and tablet servers:
 // they are able to operate with no issues past ticket TTL once KDC is back.
 TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
   // Enable KRPC negotiation tracing for the Kudu client running smoke test
   // workload.
   FLAGS_rpc_trace_negotiation = true;
