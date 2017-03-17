@@ -749,7 +749,6 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
 
 Status DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
                                                                int64_t* bytes) {
-  TRACE_EVENT0("tablet", "DiskRowSet::EstimateBytesInPotentiallyAncientUndoDeltas");
   return delta_tracker_->EstimateBytesInPotentiallyAncientUndoDeltas(ancient_history_mark, bytes);
 }
 
