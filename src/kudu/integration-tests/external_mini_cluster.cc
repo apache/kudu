@@ -533,16 +533,16 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
   return results;
 }
 
-std::shared_ptr<rpc::Messenger> ExternalMiniCluster::messenger() {
+std::shared_ptr<rpc::Messenger> ExternalMiniCluster::messenger() const {
   return messenger_;
 }
 
-std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
+std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() const {
   CHECK_EQ(masters_.size(), 1);
   return master_proxy(0);
 }
 
-std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) {
+std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) const {
   CHECK_LT(idx, masters_.size());
   return std::shared_ptr<MasterServiceProxy>(
       new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));

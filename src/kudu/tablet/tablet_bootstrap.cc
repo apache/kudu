@@ -57,6 +57,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
@@ -176,9 +177,16 @@ class TabletBootstrap {
   // A successful call will yield the rebuilt tablet and the rebuilt log.
   Status Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                    scoped_refptr<Log>* rebuilt_log,
-                   ConsensusBootstrapInfo* results);
+                   ConsensusBootstrapInfo* consensus_info);
 
  private:
+
+  // The method that does the actual work of tablet bootstrap. Bootstrap() is
+  // actually a wrapper method that is responsible for pinning and unpinning
+  // the tablet metadata flush.
+  Status RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
+                      scoped_refptr<Log>* rebuilt_log,
+                      ConsensusBootstrapInfo* consensus_info);
 
   // Opens the tablet.
   // Sets '*has_blocks' to true if there was any data on disk for this tablet.
@@ -212,9 +220,9 @@ class TabletBootstrap {
   Status OpenNewLog();
 
   // Finishes bootstrap, setting 'rebuilt_log' and 'rebuilt_tablet'.
-  Status FinishBootstrap(const string& message,
-                         scoped_refptr<log::Log>* rebuilt_log,
-                         shared_ptr<Tablet>* rebuilt_tablet);
+  void FinishBootstrap(const string& message,
+                       scoped_refptr<log::Log>* rebuilt_log,
+                       shared_ptr<Tablet>* rebuilt_tablet);
 
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
@@ -438,6 +446,43 @@ TabletBootstrap::TabletBootstrap(
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<Log>* rebuilt_log,
                                   ConsensusBootstrapInfo* consensus_info) {
+  // We pin (prevent) metadata flush at the beginning of the bootstrap process
+  // and always unpin it at the end.
+  meta_->PinFlush();
+
+  // Now run the actual bootstrap process.
+  Status bootstrap_status = RunBootstrap(rebuilt_tablet, rebuilt_log, consensus_info);
+
+  // Add a callback to TabletMetadata that makes sure that each time we flush the metadata
+  // we also wait for in-flights to finish and for their wal entry to be fsynced.
+  // This might be a bit conservative in some situations but it will prevent us from
+  // ever flushing the metadata referring to tablet data blocks containing data whose
+  // commit entries are not durable, a pre-requisite for recovery.
+  CHECK((*rebuilt_tablet && *rebuilt_log) || !bootstrap_status.ok())
+      << "Tablet and Log not initialized";
+  if (bootstrap_status.ok()) {
+    meta_->SetPreFlushCallback(
+        Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
+             make_scoped_refptr(new FlushInflightsToLogCallback(
+                 rebuilt_tablet->get(), *rebuilt_log))));
+  }
+
+  // This will cause any pending TabletMetadata flush to be executed.
+  Status unpin_status = meta_->UnPinFlush();
+
+  constexpr char kFailedUnpinMsg[] = "Failed to flush after unpinning";
+  if (PREDICT_FALSE(!bootstrap_status.ok() && !unpin_status.ok())) {
+    LOG_WITH_PREFIX(WARNING) << kFailedUnpinMsg << ": " << unpin_status.ToString();
+    return bootstrap_status;
+  }
+  RETURN_NOT_OK(bootstrap_status);
+  RETURN_NOT_OK_PREPEND(unpin_status, Substitute("$0$1", LogPrefix(), kFailedUnpinMsg));
+  return Status::OK();
+}
+
+Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
+                                     scoped_refptr<Log>* rebuilt_log,
+                                     ConsensusBootstrapInfo* consensus_info) {
   string tablet_id = meta_->tablet_id();
 
   // Replay requires a valid Consensus metadata file to exist in order to
@@ -456,8 +501,6 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                               "TabletMetadata bootstrap state is " +
                               TabletDataState_Name(tablet_data_state));
   }
-
-  meta_->PinFlush();
 
   StatusMessage("Bootstrap starting.");
 
@@ -482,9 +525,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   if (!has_blocks && !needs_recovery) {
     LOG_WITH_PREFIX(INFO) << "No blocks or log segments found. Creating new log.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
-    RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
-                                  rebuilt_log,
-                                  rebuilt_tablet));
+    FinishBootstrap("No bootstrap required, opened a new log", rebuilt_log, rebuilt_tablet);
     consensus_info->last_id = MinimumOpId();
     consensus_info->last_committed_id = MinimumOpId();
     return Status::OK();
@@ -505,29 +546,18 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   cmeta_->Flush();
 
   RETURN_NOT_OK(RemoveRecoveryDir());
-  RETURN_NOT_OK(FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet));
+  FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet);
 
   return Status::OK();
 }
 
-Status TabletBootstrap::FinishBootstrap(const string& message,
-                                        scoped_refptr<log::Log>* rebuilt_log,
-                                        shared_ptr<Tablet>* rebuilt_tablet) {
-  // Add a callback to TabletMetadata that makes sure that each time we flush the metadata
-  // we also wait for in-flights to finish and for their wal entry to be fsynced.
-  // This might be a bit conservative in some situations but it will prevent us from
-  // ever flushing the metadata referring to tablet data blocks containing data whose
-  // commit entries are not durable, a pre-requisite for recovery.
-  meta_->SetPreFlushCallback(
-      Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
-           make_scoped_refptr(new FlushInflightsToLogCallback(tablet_.get(),
-                                                              log_))));
+void TabletBootstrap::FinishBootstrap(const string& message,
+                                      scoped_refptr<log::Log>* rebuilt_log,
+                                      shared_ptr<Tablet>* rebuilt_tablet) {
   tablet_->MarkFinishedBootstrapping();
-  RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->swap(log_);
-  return Status::OK();
 }
 
 Status TabletBootstrap::OpenTablet(bool* has_blocks) {

@@ -48,14 +48,6 @@ class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
 
-namespace master {
-class MasterServiceProxy;
-} // namespace master
-
-namespace rpc {
-class Messenger;
-} // namespace rpc
-
 namespace server {
 class ServerStatusPB;
 } // namespace server
@@ -233,17 +225,9 @@ class ExternalMiniCluster : public MiniClusterBase {
     return masters_.size();
   }
 
-  // Return the client messenger used by the ExternalMiniCluster.
-  std::shared_ptr<rpc::Messenger> messenger();
-
-  // If the cluster is configured for a single non-distributed master,
-  // return a proxy to that master. Requires that the single master is
-  // running.
-  std::shared_ptr<master::MasterServiceProxy> master_proxy();
-
-  // Returns an RPC proxy to the master at 'idx'. Requires that the
-  // master at 'idx' is running.
-  std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
+  std::shared_ptr<rpc::Messenger> messenger() const override;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
 
   // Wait until the number of registered tablet servers reaches the given count
   // on all of the running masters. Returns Status::TimedOut if the desired

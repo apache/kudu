@@ -23,6 +23,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
@@ -41,8 +42,8 @@ namespace kudu {
 using client::KuduClient;
 using client::KuduClientBuilder;
 using master::CatalogManager;
+using master::MasterServiceProxy;
 using master::MiniMaster;
-using master::TabletLocationsPB;
 using master::TSDescriptor;
 using std::shared_ptr;
 using tserver::MiniTabletServer;
@@ -95,6 +96,12 @@ Status MiniCluster::Start() {
 
   RETURN_NOT_OK_PREPEND(WaitForTabletServerCount(num_ts_initial_),
                         "Waiting for tablet servers to start");
+
+  RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
+                        .set_num_reactors(1)
+                        .set_max_negotiation_threads(1)
+                        .Build(&messenger_),
+                        "Failed to start Messenger for minicluster");
 
   running_ = true;
   return Status::OK();
@@ -320,6 +327,20 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
 
   *idx = leader_idx;
   return Status::OK();
+}
+
+std::shared_ptr<rpc::Messenger> MiniCluster::messenger() const {
+  return messenger_;
+}
+
+std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy() const {
+  CHECK_EQ(1, mini_masters_.size());
+  return master_proxy(0);
+}
+
+std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy(int idx) const {
+  return std::shared_ptr<MasterServiceProxy>(
+      new MasterServiceProxy(messenger_, CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr()));
 }
 
 } // namespace kudu
