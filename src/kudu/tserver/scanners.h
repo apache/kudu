@@ -167,9 +167,9 @@ class ScopedUnregisterScanner {
 // An open scanner on the server side.
 class Scanner {
  public:
-  explicit Scanner(std::string id,
-                   const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                   std::string requestor_string, ScannerMetrics* metrics);
+  Scanner(std::string id,
+          const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+          std::string requestor_string, ScannerMetrics* metrics);
   ~Scanner();
 
   // Attach an actual iterator and a ScanSpec to this Scanner.
@@ -214,9 +214,9 @@ class Scanner {
   // Return the ScanSpec associated with this Scanner.
   const ScanSpec& spec() const;
 
-  const std::string tablet_id() const {
+  const std::string& tablet_id() const {
     // scanners-test passes a null tablet_peer.
-    return tablet_peer_ ? tablet_peer_->tablet_id() : "null tablet";
+    return tablet_peer_ ? tablet_peer_->tablet_id() : kNullTabletId;
   }
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const { return tablet_peer_; }
@@ -274,6 +274,8 @@ class Scanner {
 
  private:
   friend class ScannerManager;
+
+  static const std::string kNullTabletId;
 
   // The unique ID of this scanner.
   const std::string id_;

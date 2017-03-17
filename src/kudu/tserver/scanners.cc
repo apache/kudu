@@ -16,17 +16,19 @@
 // under the License.
 #include "kudu/tserver/scanners.h"
 
-#include <gflags/gflags.h>
 #include <mutex>
+
+#include <gflags/gflags.h>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/thread.h"
 
 DEFINE_int32(scanner_ttl_ms, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
@@ -42,6 +44,8 @@ METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Active Scanners",
                          kudu::MetricUnit::kScanners,
                          "Number of scanners that are currently active");
+
+using strings::Substitute;
 
 namespace kudu {
 
@@ -153,30 +157,34 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
 
 void ScannerManager::RemoveExpiredScanners() {
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
+  const MonoTime now = MonoTime::Now();
 
   for (ScannerMapStripe* stripe : scanner_maps_) {
     std::lock_guard<RWMutex> l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
-      SharedScanner& scanner = it->second;
-      MonoDelta time_live =
-          scanner->TimeSinceLastAccess(MonoTime::Now());
-      if (time_live > scanner_ttl) {
-        // TODO: once we have a metric for the number of scanners expired, make this a
-        // VLOG(1).
-        LOG(INFO) << "Expiring scanner id: " << it->first << ", of tablet " << scanner->tablet_id()
-                  << ", after " << time_live.ToMicroseconds()
-                  << " us of inactivity, which is > TTL ("
-                  << scanner_ttl.ToMicroseconds() << " us).";
-        it = stripe->scanners_by_id_.erase(it);
-        if (metrics_) {
-          metrics_->scanners_expired->Increment();
-        }
-      } else {
+      const SharedScanner& scanner = it->second;
+      MonoDelta idle_time = scanner->TimeSinceLastAccess(now);
+      if (idle_time <= scanner_ttl) {
         ++it;
+        continue;
+      }
+
+      // The scanner has expired because of inactivity.
+      VLOG(1) << Substitute("Expiring scanner id: $0, of tablet $1, "
+                            "after $2 ms of inactivity, which is > TTL ($3 ms).",
+                            it->first,
+                            scanner->tablet_id(),
+                            idle_time.ToMilliseconds(),
+                            scanner_ttl.ToMilliseconds());
+      it = stripe->scanners_by_id_.erase(it);
+      if (metrics_) {
+        metrics_->scanners_expired->Increment();
       }
     }
   }
 }
+
+const std::string Scanner::kNullTabletId = "null tablet";
 
 Scanner::Scanner(string id, const scoped_refptr<TabletPeer>& tablet_peer,
                  string requestor_string, ScannerMetrics* metrics)
