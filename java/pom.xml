@@ -321,20 +321,10 @@
              Kudu supports integration with Spark2/Scala2.11 *and* Spark1/Scala2.10
              with the same module, so we use profiles to control which mode to compile in. -->
         <profile>
-            <id>spark_2.10</id>
+            <id>spark2_2.11</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
-            <properties>
-                <spark.version>${spark1.version}</spark.version>
-                <spark.version.label>spark</spark.version.label>
-                <scala.version>${scala-2.10.version}</scala.version>
-                <scala.binary.version>2.10</scala.binary.version>
-                <kudu-spark.compat.src>src/main/spark1</kudu-spark.compat.src>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark2_2.11</id>
             <properties>
                 <spark.version>${spark2.version}</spark.version>
                 <spark.version.label>spark2</spark.version.label>
@@ -346,6 +336,16 @@
                 <!-- kudu-spark-tools is only compatible with Spark2 -->
                 <module>kudu-spark-tools</module>
             </modules>
+        </profile>
+        <profile>
+            <id>spark_2.10</id>
+            <properties>
+                <spark.version>${spark1.version}</spark.version>
+                <spark.version.label>spark</spark.version.label>
+                <scala.version>${scala-2.10.version}</scala.version>
+                <scala.binary.version>2.10</scala.binary.version>
+                <kudu-spark.compat.src>src/main/spark1</kudu-spark.compat.src>
+            </properties>
         </profile>
     </profiles>
 </project>

@@ -360,12 +360,12 @@ if [ "$BUILD_JAVA" == "1" ]; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Java build/test failed\n'
   fi
-  # Test kudu-spark and kudu-spark-tools with Spark 2.x + Scala 2.11 profile
+  # Test kudu-spark with Spark 1.x + Scala 2.10 profile
   # This won't work if there are ever Spark integration tests!
   rm -rf kudu-spark/target/
-  if ! mvn $MVN_FLAGS -Pspark2_2.11 -Dtest="org.apache.kudu.spark.*.*" test; then
+  if ! mvn $MVN_FLAGS -Pspark_2.10 -Dtest="org.apache.kudu.spark.*.*" test; then
     EXIT_STATUS=1
-    FAILURES="$FAILURES"$'spark2 build/test failed\n'
+    FAILURES="$FAILURES"$'spark build/test failed\n'
   fi
   set +x
   popd
