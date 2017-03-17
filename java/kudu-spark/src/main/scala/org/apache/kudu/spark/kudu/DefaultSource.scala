@@ -80,8 +80,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val kuduRelation = createRelation(sqlContext, parameters)
     mode match {
       case SaveMode.Append => kuduRelation.asInstanceOf[KuduRelation].insert(data, false)
-      case _ => throw new UnsupportedOperationException(
-        "Currently, only Append is supported")
+      case _ => throw new UnsupportedOperationException("Currently, only Append is supported")
     }
 
     kuduRelation

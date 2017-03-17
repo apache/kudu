@@ -72,6 +72,12 @@
         <protobuf.version>2.6.1</protobuf.version>
         <slf4j.version>1.7.12</slf4j.version>
 
+        <!-- Scala Library dependencies -->
+        <spark1.version>1.6.1</spark1.version>
+        <spark2.version>2.0.1</spark2.version>
+        <scala-2.10.version>2.10.4</scala-2.10.version>
+        <scala-2.11.version>2.11.6</scala-2.11.version>
+
         <!-- Misc variables -->
         <testdata.dir>target/testdata</testdata.dir>
         <testArgLine>-enableassertions -Xmx1900m
@@ -272,42 +278,74 @@
     </build>
 
     <pluginRepositories>
-      <!-- For maven-protoc-plugin -->
-      <pluginRepository>
-        <id>protoc-plugin</id>
-        <url>http://maven.davidtrott.com/repository</url>
-        <name>Protoc Plugin Repository</name>
-      </pluginRepository>
-      <!-- For schema-validator-maven-plugin -->
-      <pluginRepository>
-        <id>schema-validator-maven-plugin</id>
-        <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
-        <name>Cloudera Plugin Repositories</name>
-      </pluginRepository>
+        <!-- For maven-protoc-plugin -->
+        <pluginRepository>
+            <id>protoc-plugin</id>
+            <url>http://maven.davidtrott.com/repository</url>
+            <name>Protoc Plugin Repository</name>
+        </pluginRepository>
+        <!-- For schema-validator-maven-plugin -->
+        <pluginRepository>
+            <id>schema-validator-maven-plugin</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
+            <name>Cloudera Plugin Repositories</name>
+        </pluginRepository>
     </pluginRepositories>
 
-  <repositories>
-    <repository>
-      <id>cdh.repo</id>
-      <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
-      <name>Cloudera Repositories</name>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
- </repositories>
+    <repositories>
+        <repository>
+            <id>cdh.repo</id>
+            <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
+            <name>Cloudera Repositories</name>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
 
-  <profiles>
-    <!-- Build the jepsen test for Kudu.
+    <profiles>
+        <!-- Build the jepsen test for Kudu.
 
-         Disabled by default since Java 8 and maven >= 3.3.6 is required to
-         build the kudu-jepsen artifact.  To enable, add '-Pjepsen'
-         to the maven command line. -->
-    <profile>
-      <id>jepsen</id>
-      <modules>
-        <module>kudu-jepsen</module>
-      </modules>
-    </profile>
-  </profiles>
+             Disabled by default since Java 8 and maven >= 3.3.6 is required to
+             build the kudu-jepsen artifact.  To enable, add '-Pjepsen'
+             to the maven command line. -->
+        <profile>
+            <id>jepsen</id>
+            <modules>
+                <module>kudu-jepsen</module>
+            </modules>
+        </profile>
+
+        <!-- Manage Scala and Spark versions.
+
+             Kudu supports integration with Spark2/Scala2.11 *and* Spark1/Scala2.10
+             with the same module, so we use profiles to control which mode to compile in. -->
+        <profile>
+            <id>spark_2.10</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <spark.version>${spark1.version}</spark.version>
+                <spark.version.label>spark</spark.version.label>
+                <scala.version>${scala-2.10.version}</scala.version>
+                <scala.binary.version>2.10</scala.binary.version>
+                <kudu-spark.compat.src>src/main/spark1</kudu-spark.compat.src>
+            </properties>
+        </profile>
+        <profile>
+            <id>spark2_2.11</id>
+            <properties>
+                <spark.version>${spark2.version}</spark.version>
+                <spark.version.label>spark2</spark.version.label>
+                <scala.version>${scala-2.11.version}</scala.version>
+                <scala.binary.version>2.11</scala.binary.version>
+                <kudu-spark.compat.src>src/main/spark2</kudu-spark.compat.src>
+            </properties>
+            <modules>
+                <!-- kudu-spark-tools is only compatible with Spark2 -->
+                <module>kudu-spark-tools</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
