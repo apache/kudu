@@ -162,6 +162,10 @@ class MiniCluster : public MiniClusterBase {
   // last result may not be valid.
   Status GetLeaderMasterIndex(int* idx) const;
 
+  std::shared_ptr<rpc::Messenger> messenger() const override;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
+
  private:
   enum {
     kRegistrationWaitTimeSeconds = 15,
@@ -179,6 +183,8 @@ class MiniCluster : public MiniClusterBase {
 
   std::vector<std::shared_ptr<master::MiniMaster> > mini_masters_;
   std::vector<std::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;
+
+  std::shared_ptr<rpc::Messenger> messenger_;
 
   DISALLOW_COPY_AND_ASSIGN(MiniCluster);
 };

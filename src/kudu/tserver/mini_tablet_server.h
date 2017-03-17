@@ -87,6 +87,9 @@ class MiniTabletServer {
   const TabletServer* server() const { return server_.get(); }
   TabletServer* server() { return server_.get(); }
 
+  // Return TS uuid.
+  const std::string& uuid() const;
+
   bool is_started() const { return started_; }
 
   void FailHeartbeats();

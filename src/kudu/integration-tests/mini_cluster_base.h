@@ -24,7 +24,15 @@ class Status;
 namespace client {
 class KuduClient;
 class KuduClientBuilder;
-}
+} // namespace client
+
+namespace master {
+class MasterServiceProxy;
+} // namespace master
+
+namespace rpc {
+class Messenger;
+} // namespace rpc
 
 // Mode to which node types a certain action (like Shutdown()) should apply.
 enum class ClusterNodes {
@@ -65,6 +73,18 @@ class MiniClusterBase {
   // REQUIRES: the cluster must have already been Start()ed.
   virtual Status CreateClient(client::KuduClientBuilder* builder,
                               client::sp::shared_ptr<client::KuduClient>* client) const = 0;
+
+  // Return a messenger for use by clients.
+  virtual std::shared_ptr<rpc::Messenger> messenger() const = 0;
+
+  // If the cluster is configured for a single non-distributed master,
+  // return a proxy to that master. Requires that the single master is
+  // running.
+  virtual std::shared_ptr<master::MasterServiceProxy> master_proxy() const = 0;
+
+  // Returns an RPC proxy to the master at 'idx'. Requires that the
+  // master at 'idx' is running.
+  virtual std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const = 0;
 };
 
 } // namespace kudu

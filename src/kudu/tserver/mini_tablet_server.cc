@@ -135,5 +135,10 @@ const Sockaddr MiniTabletServer::bound_http_addr() const {
   return server_->first_http_address();
 }
 
+const string& MiniTabletServer::uuid() const {
+  CHECK(started_);
+  return server_->fs_manager()->uuid();
+}
+
 } // namespace tserver
 } // namespace kudu
