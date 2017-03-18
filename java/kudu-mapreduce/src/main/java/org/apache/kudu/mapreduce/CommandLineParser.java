@@ -18,6 +18,7 @@
 package org.apache.kudu.mapreduce;
 
 import org.apache.hadoop.conf.Configuration;
+
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.AsyncKuduClient;

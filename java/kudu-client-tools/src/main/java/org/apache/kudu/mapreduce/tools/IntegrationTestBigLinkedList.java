@@ -534,8 +534,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       @Override
       protected void cleanup(Context context) throws KuduException {
-          session.close();
-          client.shutdown();
+        session.close();
+        client.shutdown();
       }
 
       @Override

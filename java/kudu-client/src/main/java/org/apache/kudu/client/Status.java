@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
+
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -34,7 +35,7 @@ public class Status {
 
   // Limit the message size we get from the servers as it can be quite large.
   @VisibleForTesting
-  static final int MAX_MESSAGE_LENGTH = 32*1024;
+  static final int MAX_MESSAGE_LENGTH = 32 * 1024;
   @VisibleForTesting
   static final String ABBREVIATION_CHARS = "...";
   @VisibleForTesting
@@ -53,10 +54,11 @@ public class Status {
 
     if (msg.length() > MAX_MESSAGE_LENGTH) {
       // Truncate the message and indicate that it was abbreviated.
-      this.message =  msg.substring(0, MAX_MESSAGE_LENGTH - ABBREVIATION_CHARS_LENGTH)
-          + ABBREVIATION_CHARS;
-    } else
+      this.message =  msg.substring(0, MAX_MESSAGE_LENGTH - ABBREVIATION_CHARS_LENGTH) +
+          ABBREVIATION_CHARS;
+    } else {
       this.message = msg;
+    }
   }
 
   private Status(WireProtocol.AppStatusPB appStatusPB) {

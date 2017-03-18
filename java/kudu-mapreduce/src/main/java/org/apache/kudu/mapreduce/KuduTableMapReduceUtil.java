@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import com.google.common.base.Preconditions;
 import javax.security.auth.Subject;
 
 import org.apache.commons.logging.Log;
@@ -56,8 +57,6 @@ import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
-
-import com.google.common.base.Preconditions;
 
 /**
  * Utility class to setup MR jobs that use Kudu as an input and/or output.
