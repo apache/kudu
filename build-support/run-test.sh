@@ -242,7 +242,7 @@ if [ -n "$COREFILES" ]; then
   done
 fi
 
-popd
+popd >/dev/null
 rm -Rf $TEST_WORKDIR
 
 exit $STATUS
