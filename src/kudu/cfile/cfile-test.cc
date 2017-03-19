@@ -21,9 +21,9 @@
 #include <list>
 
 #include "kudu/cfile/cfile-test-base.h"
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/columnblock.h"
@@ -31,8 +31,8 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 
 DECLARE_string(block_cache_type);
 DECLARE_string(cfile_do_on_finish);

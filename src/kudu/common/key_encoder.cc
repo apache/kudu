@@ -16,8 +16,8 @@
 // under the License.
 
 #include <functional>
+#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "kudu/common/common.pb.h"
@@ -26,22 +26,22 @@
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/faststring.h"
 
-using std::shared_ptr;
-using std::unordered_map;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
-
 
 // A resolver for Encoders
 template <typename Buffer>
 class EncoderResolver {
  public:
   const KeyEncoder<Buffer>& GetKeyEncoder(DataType t) {
-    return *FindOrDie(encoders_, t);
+    DCHECK(HasKeyEncoderForType(t));
+    return *encoders_[t];
   }
 
   const bool HasKeyEncoderForType(DataType t) {
-    return ContainsKey(encoders_, t);
+    return t < encoders_.size() && encoders_[t];
   }
 
  private:
@@ -59,11 +59,18 @@ class EncoderResolver {
 
   template<DataType Type> void AddMapping() {
     KeyEncoderTraits<Type, Buffer> traits;
-    InsertOrDie(&encoders_, Type, shared_ptr<KeyEncoder<Buffer> >(new KeyEncoder<Buffer>(traits)));
+    if (encoders_.size() <= Type) {
+      encoders_.resize(static_cast<size_t>(Type) + 1);
+    }
+    CHECK(!encoders_[Type]) << "already have mapping for " << DataType_Name(Type);
+    encoders_[Type].reset(new KeyEncoder<Buffer>(traits));
   }
 
   friend class Singleton<EncoderResolver<Buffer> >;
-  unordered_map<DataType, shared_ptr<KeyEncoder<Buffer> >, std::hash<size_t> > encoders_;
+  // We use a vector instead of a map here since this shows up in some hot paths
+  // and we know that the valid data types all have low enough IDs that the
+  // vector will be small.
+  vector<unique_ptr<KeyEncoder<Buffer>>> encoders_;
 };
 
 template <typename Buffer>
