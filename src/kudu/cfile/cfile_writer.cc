@@ -442,13 +442,6 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
   return s;
 }
 
-size_t CFileWriter::written_size() const {
-  // This is a low estimate, but that's OK -- this is checked after every block
-  // write during flush/compact, so better to give a fast slightly-inaccurate result
-  // than spend a lot of effort trying to improve accuracy by a few KB.
-  return off_;
-}
-
 Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
                              BlockPointer *block_ptr,
                              const char *name_for_log) {
