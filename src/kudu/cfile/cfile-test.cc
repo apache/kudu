@@ -30,6 +30,7 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -48,6 +49,7 @@ METRIC_DECLARE_entity(server);
 
 using std::shared_ptr;
 using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -291,6 +293,24 @@ class TestCFile : public CFileTestBase {
   }
 #endif
 
+  void TestWriteDictEncodingLowCardinalityStrings(int64_t num_rows) {
+    BlockId block_id;
+    LOG_TIMING(INFO, Substitute("writing $0 strings with dupes", num_rows)) {
+      LOG(INFO) << "Starting writefile";
+      // The second parameter specify how many distinct strings are there
+      DuplicateStringDataGenerator<false> generator("hello %zu", 256);
+      WriteTestFile(&generator, DICT_ENCODING, NO_COMPRESSION, num_rows, NO_FLAGS, &block_id);
+      LOG(INFO) << "Done writing";
+    }
+
+    LOG_TIMING(INFO, Substitute("reading $0 strings with dupes", num_rows)) {
+      LOG(INFO) << "Starting readfile";
+      size_t n;
+      TimeReadFile(fs_manager_.get(), block_id, &n);
+      ASSERT_EQ(num_rows, n);
+      LOG(INFO) << "End readfile";
+    }
+  }
 };
 
 // Subclass of TestCFile which is parameterized on the block cache type.
@@ -393,8 +413,12 @@ TEST_P(TestCFileBothCacheTypes, TestWrite100MFileStringsPrefixEncoding) {
   TestWrite100MFileStrings(PREFIX_ENCODING);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MFileStringsDictEncoding) {
+TEST_P(TestCFileBothCacheTypes, TestWrite100MUniqueStringsDictEncoding) {
   TestWrite100MFileStrings(DICT_ENCODING);
+}
+
+TEST_P(TestCFileBothCacheTypes, TestWrite100MLowCardinalityStringsDictEncoding) {
+  TestWriteDictEncodingLowCardinalityStrings(100 * 1e6);
 }
 
 TEST_P(TestCFileBothCacheTypes, TestWrite100MFileStringsPlainEncoding) {
@@ -423,24 +447,8 @@ TEST_P(TestCFileBothCacheTypes, TestWrite1MUniqueFileStringsDictEncoding) {
 }
 
 // Write and Read 1 million strings, which contains duplicates with dictionary encoding
-TEST_P(TestCFileBothCacheTypes, TestWrite1MDuplicateFileStringsDictEncoding) {
-  BlockId block_id;
-  LOG_TIMING(INFO, "writing 1M duplicate strings") {
-    LOG(INFO) << "Starting writefile";
-
-    // The second parameter specify how many distinct strings are there
-    DuplicateStringDataGenerator<false> generator("hello %zu", 256);
-    WriteTestFile(&generator, DICT_ENCODING, NO_COMPRESSION, 1000000, NO_FLAGS, &block_id);
-    LOG(INFO) << "Done writing";
-  }
-
-  LOG_TIMING(INFO, "reading 1M strings") {
-    LOG(INFO) << "Starting readfile";
-    size_t n;
-    TimeReadFile(fs_manager_.get(), block_id, &n);
-    ASSERT_EQ(1000000, n);
-    LOG(INFO) << "End readfile";
-  }
+TEST_P(TestCFileBothCacheTypes, TestWrite1MLowCardinalityStringsDictEncoding) {
+  TestWriteDictEncodingLowCardinalityStrings(1000000);
 }
 
 TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt32) {

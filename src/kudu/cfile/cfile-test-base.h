@@ -370,8 +370,10 @@ class CFileTestBase : public KuduTest {
 
     ASSERT_OK(w.Start());
 
-    // Append given number of values to the test tree
-    const size_t kBufferSize = 8192;
+    // Append given number of values to the test tree. We use 100 to match
+    // the output block size of compaction (kCompactionOutputBlockNumRows in
+    // compaction.cc, unfortunately not linkable from the cfile/ module)
+    const size_t kBufferSize = 100;
     size_t i = 0;
     while (i < num_entries) {
       int towrite = std::min(num_entries - i, kBufferSize);
