@@ -290,7 +290,7 @@ Status Tablet::GetMappedReadProjection(const Schema& projection,
   return cur_schema->GetMappedReadProjection(projection, mapped_projection);
 }
 
-BloomFilterSizing Tablet::bloom_sizing() const {
+BloomFilterSizing Tablet::DefaultBloomSizing() {
   return BloomFilterSizing::BySizeAndFPRate(FLAGS_tablet_bloom_block_size,
                                             FLAGS_tablet_bloom_target_fp_rate);
 }
@@ -1182,7 +1182,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   shared_ptr<CompactionInput> merge;
   RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema(), &merge));
 
-  RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
+  RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), DefaultBloomSizing(),
                                compaction_policy_->target_rowset_size());
   RETURN_NOT_OK_PREPEND(drsw.Open(), "Failed to open DiskRowSet for flush");
 

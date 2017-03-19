@@ -390,6 +390,9 @@ class Tablet {
 
   std::string LogPrefix() const;
 
+  // Return the default bloom filter sizing parameters, configured by server flags.
+  static BloomFilterSizing DefaultBloomSizing();
+
  private:
   friend class Iterator;
   friend class TabletPeerTest;
@@ -495,8 +498,6 @@ class Tablet {
   // TODO: Document me.
   Status FlushInternal(const RowSetsInCompaction& input,
                        const std::shared_ptr<MemRowSet>& old_ms);
-
-  BloomFilterSizing bloom_sizing() const;
 
   // Convert the specified read client schema (without IDs) to a server schema (with IDs)
   // This method is used by NewRowIterator().
