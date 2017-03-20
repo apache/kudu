@@ -170,12 +170,13 @@ void ScannerManager::RemoveExpiredScanners() {
       }
 
       // The scanner has expired because of inactivity.
-      VLOG(1) << Substitute("Expiring scanner id: $0, of tablet $1, "
-                            "after $2 ms of inactivity, which is > TTL ($3 ms).",
-                            it->first,
-                            scanner->tablet_id(),
-                            idle_time.ToMilliseconds(),
-                            scanner_ttl.ToMilliseconds());
+      LOG(INFO) << Substitute(
+          "Expiring scanner id: $0, of tablet $1, "
+          "after $2 ms of inactivity, which is > TTL ($3 ms).",
+          it->first,
+          scanner->tablet_id(),
+          idle_time.ToMilliseconds(),
+          scanner_ttl.ToMilliseconds());
       it = stripe->scanners_by_id_.erase(it);
       if (metrics_) {
         metrics_->scanners_expired->Increment();
