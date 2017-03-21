@@ -261,6 +261,11 @@ void UpdateScanDeltaCompactionTest::UpdateRows(CountDownLatch* stop_latch) {
 void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
   while (stop_latch->count() > 0) {
     KuduScanner scanner(table_.get());
+    // Sometimes use fault-tolerant scans, to get more coverage of the
+    // MergeIterator code paths.
+    if (rand() % 2 == 1) {
+      CHECK_OK(scanner.SetFaultTolerant());
+    }
     LOG_TIMING(INFO, "Scan") {
       CHECK_OK(scanner.Open());
       vector<KuduRowResult> rows;

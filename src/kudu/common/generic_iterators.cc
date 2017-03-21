@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -51,6 +52,17 @@ TAG_FLAG(materializing_iterator_decoder_eval, hidden);
 TAG_FLAG(materializing_iterator_decoder_eval, runtime);
 
 namespace kudu {
+namespace {
+void AddIterStats(const RowwiseIterator& iter,
+                  std::vector<IteratorStats>* stats) {
+  vector<IteratorStats> iter_stats;
+  iter.GetIteratorStats(&iter_stats);
+  DCHECK_EQ(stats->size(), iter_stats.size());
+  for (int i = 0; i < iter_stats.size(); i++) {
+    (*stats)[i].AddStats(iter_stats[i]);
+  }
+}
+} // anonymous namespace
 
 ////////////////////////////////////////////////////////////
 // Merge iterator
@@ -64,13 +76,13 @@ static const int kMergeRowBuffer = 1000;
 // such that all returned rows are valid.
 class MergeIterState {
  public:
-  explicit MergeIterState(const shared_ptr<RowwiseIterator> &iter) :
-    iter_(iter),
-    arena_(1024, 256*1024),
-    read_block_(iter->schema(), kMergeRowBuffer, &arena_),
-    next_row_idx_(0),
-    num_advanced_(0),
-    num_valid_(0)
+  explicit MergeIterState(shared_ptr<RowwiseIterator> iter) :
+      iter_(std::move(iter)),
+      arena_(1024, 256*1024),
+      read_block_(iter_->schema(), kMergeRowBuffer, &arena_),
+      next_row_idx_(0),
+      num_advanced_(0),
+      num_valid_(0)
   {}
 
   const RowBlockRow& next_row() {
@@ -158,13 +170,15 @@ class MergeIterState {
 
 
 MergeIterator::MergeIterator(
-  const Schema &schema,
-  const vector<shared_ptr<RowwiseIterator> > &iters)
-  : schema_(schema),
-    initted_(false) {
-  CHECK_GT(iters.size(), 0);
+    const Schema& schema,
+    vector<shared_ptr<RowwiseIterator>> iters)
+    : schema_(schema),
+      initted_(false),
+      orig_iters_(std::move(iters)),
+      finished_iter_stats_by_col_(schema_.num_columns()),
+      num_orig_iters_(orig_iters_.size()) {
+  CHECK_GT(orig_iters_.size(), 0);
   CHECK_GT(schema.num_key_columns(), 0);
-  orig_iters_.assign(iters.begin(), iters.end());
 }
 
 MergeIterator::~MergeIterator() {}
@@ -202,8 +216,9 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   for (shared_ptr<RowwiseIterator> &iter : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
-    iters_.push_back(unique_ptr<MergeIterState>(new MergeIterState(iter)));
+    iters_.push_back(unique_ptr<MergeIterState>(new MergeIterState(std::move(iter))));
   }
+  orig_iters_.clear();
 
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
@@ -272,6 +287,8 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     RETURN_NOT_OK(smallest->Advance());
 
     if (smallest->IsFullyExhausted()) {
+      std::lock_guard<rw_spinlock> l(iters_lock_);
+      AddIterStats(*smallest->iter(), &finished_iter_stats_by_col_);
       iters_.erase(iters_.begin() + smallest_idx);
     }
   }
@@ -280,18 +297,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
 }
 
 string MergeIterator::ToString() const {
-  string s;
-  s.append("Merge(");
-  bool first = true;
-  for (const shared_ptr<RowwiseIterator> &iter : orig_iters_) {
-    s.append(iter->ToString());
-    if (!first) {
-      s.append(", ");
-    }
-    first = false;
-  }
-  s.append(")");
-  return s;
+  return strings::Substitute("Merge($0 iters)", num_orig_iters_);
 }
 
 const Schema& MergeIterator::schema() const {
@@ -300,19 +306,12 @@ const Schema& MergeIterator::schema() const {
 }
 
 void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
+  shared_lock<rw_spinlock> l(iters_lock_);
   CHECK(initted_);
-  vector<vector<IteratorStats> > stats_by_iter;
-  for (const shared_ptr<RowwiseIterator>& iter : orig_iters_) {
-    vector<IteratorStats> stats_for_iter;
-    iter->GetIteratorStats(&stats_for_iter);
-    stats_by_iter.push_back(stats_for_iter);
-  }
-  for (size_t idx = 0; idx < schema_.num_columns(); ++idx) {
-    IteratorStats stats_for_col;
-    for (const vector<IteratorStats>& stats_for_iter : stats_by_iter) {
-      stats_for_col.AddStats(stats_for_iter[idx]);
-    }
-    stats->push_back(stats_for_col);
+  *stats = finished_iter_stats_by_col_;
+
+  for (const auto& iter_state : iters_) {
+    AddIterStats(*iter_state->iter(), stats);
   }
 }
 
@@ -321,12 +320,11 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
 // Union iterator
 ////////////////////////////////////////////////////////////
 
-UnionIterator::UnionIterator(const vector<shared_ptr<RowwiseIterator> > &iters)
+UnionIterator::UnionIterator(vector<shared_ptr<RowwiseIterator>> iters)
   : initted_(false),
-    iters_(iters.size()) {
-  CHECK_GT(iters.size(), 0);
-  iters_.assign(iters.begin(), iters.end());
-  all_iters_.assign(iters.begin(), iters.end());
+    iters_(std::make_move_iterator(iters.begin()),
+           std::make_move_iterator(iters.end())) {
+  CHECK_GT(iters_.size(), 0);
 }
 
 Status UnionIterator::Init(ScanSpec *spec) {
@@ -347,6 +345,7 @@ Status UnionIterator::Init(ScanSpec *spec) {
         + " vs " + iter->schema().ToString());
     }
   }
+  finished_iter_stats_by_col_.resize(schema_->num_columns());
 
   initted_ = true;
   return Status::OK();
@@ -388,7 +387,7 @@ void UnionIterator::PrepareBatch() {
 
   while (!iters_.empty() &&
          !iters_.front()->HasNext()) {
-    iters_.pop_front();
+    PopFront();
   }
 }
 
@@ -399,10 +398,15 @@ Status UnionIterator::MaterializeBlock(RowBlock *dst) {
 void UnionIterator::FinishBatch() {
   if (!iters_.front()->HasNext()) {
     // Iterator exhausted, remove it.
-    iters_.pop_front();
+    PopFront();
   }
 }
 
+void UnionIterator::PopFront() {
+  std::lock_guard<rw_spinlock> l(iters_lock_);
+  AddIterStats(*iters_.front(), &finished_iter_stats_by_col_);
+  iters_.pop_front();
+}
 
 string UnionIterator::ToString() const {
   string s;
@@ -421,18 +425,10 @@ string UnionIterator::ToString() const {
 
 void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
   CHECK(initted_);
-  vector<vector<IteratorStats> > stats_by_iter;
-  for (const shared_ptr<RowwiseIterator>& iter : all_iters_) {
-    vector<IteratorStats> stats_for_iter;
-    iter->GetIteratorStats(&stats_for_iter);
-    stats_by_iter.push_back(stats_for_iter);
-  }
-  for (size_t idx = 0; idx < schema_->num_columns(); ++idx) {
-    IteratorStats stats_for_col;
-    for (const vector<IteratorStats>& stats_for_iter : stats_by_iter) {
-      stats_for_col.AddStats(stats_for_iter[idx]);
-    }
-    stats->push_back(stats_for_col);
+  shared_lock<rw_spinlock> l(iters_lock_);
+  *stats = finished_iter_stats_by_col_;
+  if (!iters_.empty()) {
+    AddIterStats(*iters_.front(), stats);
   }
 }
 

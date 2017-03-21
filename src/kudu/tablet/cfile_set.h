@@ -207,7 +207,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   // Iterator for the key column in the underlying data.
   gscoped_ptr<CFileIterator> key_iter_;
-  std::vector<ColumnIterator*> col_iters_;
+  std::vector<std::unique_ptr<ColumnIterator>> col_iters_;
 
   bool initted_;
 

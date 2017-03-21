@@ -90,10 +90,10 @@ Status DuplicatingRowSet::NewRowIterator(const Schema *projection,
 
   switch (order) {
     case ORDERED:
-      out->reset(new MergeIterator(*projection, iters));
+      out->reset(new MergeIterator(*projection, std::move(iters)));
       break;
     case UNORDERED:
-      out->reset(new UnionIterator(iters));
+      out->reset(new UnionIterator(std::move(iters)));
       break;
     default:
       LOG(FATAL) << "unknown order: " << order;
