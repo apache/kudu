@@ -578,6 +578,24 @@ $ git clean -fdx
 $ thirdparty/build-if-necessary.sh
 ----
 
+  - Some combinations of Homebrew installations and system upgrades can result with a
+different kind of error:
++
+----
+libtool: Version mismatch error.  This is libtool 2.4.6, but the
+libtool: definition of this LT_INIT comes from libtool 2.4.2.
+libtool: You should recreate aclocal.m4 with macros from libtool 2.4.6
+libtool: and run autoconf again.
+----
++
+As described in this link:https://github.com/Homebrew/legacy-homebrew/issues/43874[thread],
+a possible fix is to uninstall and reinstall libtool:
++
+[source,bash]
+----
+$ brew uninstall libtool && brew install libtool
+----
+
 . Build Kudu. Choose a build directory for the intermediate output, which can be
 anywhere in your filesystem except for the `kudu` directory itself.
 +
