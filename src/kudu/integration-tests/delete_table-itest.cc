@@ -18,7 +18,6 @@
 #include <memory>
 #include <string>
 #include <tuple>
-#include <unordered_map>
 
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
@@ -68,7 +67,6 @@ using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
 using std::unique_ptr;
-using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -78,7 +76,7 @@ METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_D
 
 namespace kudu {
 
-class DeleteTableTest : public ExternalMiniClusterITestBase {
+class DeleteTableITest : public ExternalMiniClusterITestBase {
  protected:
   enum IsCMetaExpected {
     CMETA_NOT_EXPECTED = 0,
@@ -132,14 +130,14 @@ class DeleteTableTest : public ExternalMiniClusterITestBase {
                    ErrorDumpStackSelector selector = ON_ERROR_DUMP_STACKS);
 };
 
-string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
+string DeleteTableITest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
   ConsensusStatePB cstate;
   CHECK_OK(itest::GetConsensusState(ts_map_[ts_uuid], tablet_id, CONSENSUS_CONFIG_COMMITTED,
                                     MonoDelta::FromSeconds(10), &cstate));
   return cstate.leader_uuid();
 }
 
-Status DeleteTableTest::CheckTabletTombstonedOrDeletedOnTS(
+Status DeleteTableITest::CheckTabletTombstonedOrDeletedOnTS(
       int index,
       const string& tablet_id,
       TabletDataState data_state,
@@ -166,21 +164,21 @@ Status DeleteTableTest::CheckTabletTombstonedOrDeletedOnTS(
   return Status::OK();
 }
 
-Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
+Status DeleteTableITest::CheckTabletTombstonedOnTS(int index,
                                                   const string& tablet_id,
                                                   IsCMetaExpected is_cmeta_expected) {
   return CheckTabletTombstonedOrDeletedOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED,
                                             is_cmeta_expected, SUPERBLOCK_EXPECTED);
 }
 
-Status DeleteTableTest::CheckTabletDeletedOnTS(int index,
+Status DeleteTableITest::CheckTabletDeletedOnTS(int index,
                                                const string& tablet_id,
                                                IsSuperBlockExpected is_superblock_expected) {
   return CheckTabletTombstonedOrDeletedOnTS(index, tablet_id, TABLET_DATA_DELETED,
                                             CMETA_NOT_EXPECTED, is_superblock_expected);
 }
 
-void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
+void DeleteTableITest::WaitForTabletTombstonedOnTS(int index,
                                                   const string& tablet_id,
                                                   IsCMetaExpected is_cmeta_expected) {
   Status s;
@@ -192,7 +190,7 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
   ASSERT_OK(s);
 }
 
-void DeleteTableTest::WaitForTabletDeletedOnTS(int index,
+void DeleteTableITest::WaitForTabletDeletedOnTS(int index,
                                                const string& tablet_id,
                                                IsSuperBlockExpected is_superblock_expected) {
   Status s;
@@ -204,24 +202,24 @@ void DeleteTableTest::WaitForTabletDeletedOnTS(int index,
   ASSERT_OK(s);
 }
 
-void DeleteTableTest::WaitForTSToCrash(int index) {
+void DeleteTableITest::WaitForTSToCrash(int index) {
   auto ts = cluster_->tablet_server(index);
   SCOPED_TRACE(ts->instance_id().permanent_uuid());
   ASSERT_OK(ts->WaitForInjectedCrash(MonoDelta::FromSeconds(60)));
 }
 
-void DeleteTableTest::WaitForAllTSToCrash() {
+void DeleteTableITest::WaitForAllTSToCrash() {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     NO_FATALS(WaitForTSToCrash(i));
   }
 }
 
-void DeleteTableTest::WaitUntilTabletRunning(int index, const std::string& tablet_id) {
+void DeleteTableITest::WaitUntilTabletRunning(int index, const std::string& tablet_id) {
   ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(index)->uuid()],
                                           tablet_id, MonoDelta::FromSeconds(60)));
 }
 
-void DeleteTableTest::DeleteTable(const string& table_name,
+void DeleteTableITest::DeleteTable(const string& table_name,
                                   ErrorDumpStackSelector selector) {
   Status s = client_->DeleteTable(table_name);
   if (s.IsTimedOut() && (ON_ERROR_DUMP_STACKS == selector)) {
@@ -233,7 +231,7 @@ void DeleteTableTest::DeleteTable(const string& table_name,
 
 // Test deleting an empty table, and ensure that the tablets get removed,
 // and the master no longer shows the table as existing.
-TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
+TEST_F(DeleteTableITest, TestDeleteEmptyTable) {
   NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
   // as a convenient way to create it.
@@ -291,7 +289,7 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 }
 
 // Test that a DeleteTablet RPC is rejected without a matching destination UUID.
-TEST_F(DeleteTableTest, TestDeleteTabletDestUuidValidation) {
+TEST_F(DeleteTableITest, TestDeleteTabletDestUuidValidation) {
   NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
   // as a convenient way to create it.
@@ -321,7 +319,7 @@ TEST_F(DeleteTableTest, TestDeleteTabletDestUuidValidation) {
 }
 
 // Test the atomic CAS argument to DeleteTablet().
-TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
+TEST_F(DeleteTableITest, TestAtomicDeleteTablet) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
@@ -378,7 +376,7 @@ TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
   inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_DELETED });
 }
 
-TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
+TEST_F(DeleteTableITest, TestDeleteTableWithConcurrentWrites) {
   NO_FATALS(StartCluster());
   int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
@@ -413,7 +411,7 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 // Test that a tablet replica is automatically tombstoned on startup if a local
 // crash occurs in the middle of Tablet Copy. Additionally acts as a regression
 // test for KUDU-1605.
-TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
+TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   // Set up flags to flush frequently, so that we get data on disk.
   vector<string> ts_flags = {
     "--flush_threshold_mb=0",
@@ -573,7 +571,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
 // Test that a tablet replica automatically tombstones itself if the remote
 // server fails in the middle of the Tablet Copy process.
 // Also test that we can Copy Tablet over a tombstoned tablet.
-TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
+TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   vector<string> ts_flags = {
       "--enable_leader_failure_detection=false",  // Make test deterministic.
       "--log_segment_size_mb=1",                  // Faster log rolls.
@@ -692,7 +690,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
 }
 
 // Test for correct Tablet Copy merge of consensus metadata.
-TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
+TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
   // Enable manual leader selection.
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
@@ -804,7 +802,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
 // Regression test for KUDU-987, a bug where followers with transactions in
 // REPLICATING state, which means they have not yet been committed to a
 // majority, cannot shut down during a DeleteTablet() call.
-TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
+TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingTransaction) {
   if (!AllowSlowTests()) {
     // We will typically wait at least 5 seconds for timeouts to occur.
     LOG(INFO) << "Skipping test in fast-test mode.";
@@ -873,7 +871,7 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
 
 // Test that orphaned blocks are cleared from the superblock when a tablet is
 // tombstoned.
-TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
+TEST_F(DeleteTableITest, TestOrphanedBlocksClearedOnDelete) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
   ts_flags.push_back("--enable_leader_failure_detection=false");
@@ -963,7 +961,7 @@ int PrintOpenTabletFiles(pid_t pid, const string& tablet_id) {
 }
 
 // Regression test for tablet deletion FD leak. See KUDU-1288.
-TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
+TEST_F(DeleteTableITest, TestFDsNotLeakedOnTabletTombstone) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
 
   NO_FATALS(StartCluster({}, {}, 1));
@@ -998,7 +996,7 @@ TEST_F(DeleteTableTest, TestFDsNotLeakedOnTabletTombstone) {
 
 // Regression test for KUDU-1545: crash when visiting the tablet page for a
 // tombstoned tablet.
-TEST_F(DeleteTableTest, TestWebPageForTombstonedTablet) {
+TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
 
   NO_FATALS(StartCluster({}, {}, 1));
@@ -1039,7 +1037,7 @@ TEST_F(DeleteTableTest, TestWebPageForTombstonedTablet) {
 }
 
 
-TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
+TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   // Speed up heartbeating so that the unknown tablet is detected faster.
   vector<string> extra_ts_flags = { "--heartbeat_interval_ms=10" };
 
@@ -1112,7 +1110,7 @@ TEST_F(DeleteTableTest, TestUnknownTabletsAreNotDeleted) {
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.
-class DeleteTableDeletedParamTest : public DeleteTableTest,
+class DeleteTableDeletedParamTest : public DeleteTableITest,
                                     public ::testing::WithParamInterface<const char*> {
 };
 
@@ -1163,7 +1161,7 @@ INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableDeletedParamTest,
                         ::testing::ValuesIn(deleted_faults));
 
 // Parameterized test case for TABLET_DATA_TOMBSTONED deletions.
-class DeleteTableTombstonedParamTest : public DeleteTableTest,
+class DeleteTableTombstonedParamTest : public DeleteTableITest,
                                        public ::testing::WithParamInterface<const char*> {
 };
 
@@ -1320,7 +1318,7 @@ INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableTombstonedParamTest,
 
 
 class DeleteTableWhileScanInProgressParamTest :
-    public DeleteTableTest,
+    public DeleteTableITest,
     public ::testing::WithParamInterface<
         std::tuple<KuduScanner::ReadMode, KuduClient::ReplicaSelection>> {
 };
