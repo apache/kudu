@@ -1149,6 +1149,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // sanity check.
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
+    // We update the lag metrics here in addition to after appending to the queue so the
+    // metrics get updated even when the operation is rejected.
+    queue_->UpdateLastIndexAppendedToLeader(request->last_idx_appended_to_leader());
+
     // Also prohibit voting for anyone for the minimum election timeout.
     withhold_votes_until_ = MonoTime::Now() + MinimumElectionTimeout();
 

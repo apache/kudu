@@ -61,8 +61,6 @@ extern const char kConsensusQueueParentTrackerId[];
 // This also takes care of pushing requests to peers as new operations are
 // added, and notifying RaftConsensus when the commit index advances.
 //
-// This class is used only on the LEADER side.
-//
 // TODO(todd): Right now this class is able to track one outstanding operation
 // per peer. If we want to have more than one outstanding RPC we need to
 // modify it.
@@ -245,6 +243,14 @@ class PeerMessageQueue {
   void UpdateFollowerWatermarks(int64_t committed_index,
                                 int64_t all_replicated_index);
 
+  // Update the metric that measures how many ops behind the leader the local
+  // replica believes it is (0 if leader).
+  void UpdateLagMetrics();
+
+  // Updates the last op appended to the leader and the corresponding lag metric.
+  // This should not be called by a leader.
+  void UpdateLastIndexAppendedToLeader(int64_t last_idx_appended_to_leader);
+
   // Closes the queue, peers are still allowed to call UntrackPeer() and
   // ResponseFromPeer() but no additional peers can be tracked or messages
   // queued.
@@ -286,6 +292,9 @@ class PeerMessageQueue {
     scoped_refptr<AtomicGauge<int64_t> > num_majority_done_ops;
     // Keeps track of the number of ops. that are still in progress (IsDone() returns false).
     scoped_refptr<AtomicGauge<int64_t> > num_in_progress_ops;
+    // Keeps track of the number of ops. behind the leader the peer is, measured as the difference
+    // between the latest appended op index on this peer versus on the leader (0 if leader).
+    scoped_refptr<AtomicGauge<int64_t> > num_ops_behind_leader;
 
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
   };
@@ -294,7 +303,9 @@ class PeerMessageQueue {
 
  private:
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
+  FRIEND_TEST(ConsensusQueueTest, TestQueueMovesWatermarksBackward);
   FRIEND_TEST(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics);
+  FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
 
   // Mode specifies how the queue currently behaves:
   // LEADER - Means the queue tracks remote peers and replicates whatever messages
@@ -325,6 +336,10 @@ class PeerMessageQueue {
 
     // The index of the last operation to be considered committed.
     int64_t committed_index;
+
+    // The index of the last operation appended to the leader. A follower will use this to
+    // determine how many ops behind the leader it is, as a soft metric for follower lag.
+    int64_t last_idx_appended_to_leader;
 
     // The opid of the last operation appended to the queue.
     OpId last_appended;

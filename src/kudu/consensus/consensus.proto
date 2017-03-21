@@ -340,7 +340,7 @@ message ConsensusRequestPB {
   // committed during the same request.
   repeated ReplicateMsg ops = 6;
 
-  // The lowest index that is known to be replicated by all members of
+  // The highest index that is known to be replicated by all members of
   // the configuration.
   //
   // NOTE: this is not necessarily monotonically increasing. For example, if a node is in
@@ -354,6 +354,10 @@ message ConsensusRequestPB {
   // the "safe time" past the timestamp of the last committed message and answer snapshot scans
   // in the present in the absense of writes.
   optional fixed64 safe_timestamp = 10;
+
+  // The index of the most recent operation appended to the leader.
+  // Followers can use this to determine roughly how far behind they are from the leader.
+  optional int64 last_idx_appended_to_leader = 11;
 }
 
 message ConsensusResponsePB {

@@ -957,13 +957,13 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   scoped_refptr<RaftConsensus> follower;
   CHECK_OK(peers_->GetPeerByIdx(0, &follower));
 
-
   req.set_caller_uuid(leader->peer_uuid());
   req.set_caller_term(last_op_id.term());
   req.mutable_preceding_id()->CopyFrom(last_op_id);
   req.set_committed_index(last_op_id.index());
   req.set_all_replicated_index(0);
 
+  // Send a request with the next index.
   ReplicateMsg* replicate = req.add_ops();
   replicate->set_timestamp(clock_->Now().ToUint64());
   OpId* id = replicate->mutable_id();
@@ -971,10 +971,14 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   id->set_index(last_op_id.index() + 1);
   replicate->set_op_type(NO_OP);
 
+  // Since the req adds the next op, the leader must have also appended it.
+  req.set_last_idx_appended_to_leader(id->index());
+
   // Appending this message to peer0 should work and update
   // its 'last_received' to 'id'.
   ASSERT_OK(follower->Update(&req, &resp));
   ASSERT_TRUE(OpIdEquals(resp.status().last_received(), *id));
+  ASSERT_EQ(0, follower->queue_->metrics_.num_ops_behind_leader->value());
 
   // Now skip one message in the same term. The replica should
   // complain with the right error message.
@@ -985,7 +989,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   ASSERT_OK(follower->Update(&req, &resp));
   ASSERT_TRUE(resp.has_status());
   ASSERT_TRUE(resp.status().has_error());
-  ASSERT_EQ(resp.status().error().code(), ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
+  ASSERT_EQ(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH, resp.status().error().code());
   ASSERT_STR_CONTAINS(resp.status().error().status().message(),
                       "Log matching property violated");
 }

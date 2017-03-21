@@ -244,10 +244,15 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(2));
 
   // helper to estimate request size so that we can set the max batch size appropriately
+  // Note: This estimator must be precise, as it is used to set the max batch size.
+  // In order for the estimate to be correct, all members of the request protobuf must be set.
+  // If not all fields are set, this will set the batch size to be too small to hold the expected
+  // number of ops.
   ConsensusRequestPB page_size_estimator;
   page_size_estimator.set_caller_term(14);
   page_size_estimator.set_committed_index(0);
   page_size_estimator.set_all_replicated_index(0);
+  page_size_estimator.set_last_idx_appended_to_leader(0);
   page_size_estimator.mutable_preceding_id()->CopyFrom(MinimumOpId());
 
   // We're going to add 100 messages to the queue so we make each page fetch 9 of those,
@@ -625,7 +630,8 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetNonLeaderMode();
-  // Append a bunch of messages.
+  // Append a bunch of messages and update as if they were also appeneded to the leader.
+  queue_->UpdateLastIndexAppendedToLeader(10);
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
   log_->WaitUntilAllFlushed();
 
@@ -639,6 +645,9 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   // Wait for the operation to be in the log.
   ASSERT_OK(synch.Wait());
 
+  // Having appended index 5, the follower is still 5 ops behind the leader.
+  ASSERT_EQ(5, queue_->metrics_.num_ops_behind_leader->value());
+
   // Without the fix the following append would trigger a check failure
   // in log cache.
   synch.Reset();
@@ -650,9 +659,12 @@ TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
   // Wait for the operation to be in the log.
   ASSERT_OK(synch.Wait());
 
+  // Having appended index 6, the follower is still 4 ops behind the leader.
+  ASSERT_EQ(4, queue_->metrics_.num_ops_behind_leader->value());
+
   // The replication watermark on a follower should not advance by virtue of appending
   // entries to the log.
-  ASSERT_EQ(queue_->GetAllReplicatedIndex(), 0);
+  ASSERT_EQ(0, queue_->GetAllReplicatedIndex());
 }
 
 // Tests that we're advancing the watermarks properly and only when the peer
@@ -821,21 +833,28 @@ TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
   queue_->Init(MinimumOpId(), MinimumOpId());
   queue_->SetNonLeaderMode();
 
+  // Emulate a follower sending a request to replicate 10 messages.
+  queue_->UpdateLastIndexAppendedToLeader(10);
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
   WaitForLocalPeerToAckIndex(10);
 
   // The committed_index should be MinimumOpId() since UpdateFollowerCommittedIndex
   // has not been called.
-  ASSERT_EQ(queue_->GetCommittedIndex(), 0);
+  ASSERT_EQ(0, queue_->GetCommittedIndex());
 
   // Update the committed index. In real life, this would be done by the consensus
   // implementation when it receives an updated committed index from the leader.
   queue_->UpdateFollowerWatermarks(10, 10);
-  ASSERT_EQ(queue_->GetCommittedIndex(), 10);
+  ASSERT_EQ(10, queue_->GetCommittedIndex());
 
   // Check the metrics have the right values based on the updated committed index.
-  ASSERT_EQ(queue_->metrics_.num_majority_done_ops->value(), 0);
-  ASSERT_EQ(queue_->metrics_.num_in_progress_ops->value(), 0);
+  ASSERT_EQ(0, queue_->metrics_.num_majority_done_ops->value());
+  ASSERT_EQ(0, queue_->metrics_.num_in_progress_ops->value());
+  ASSERT_EQ(0, queue_->metrics_.num_ops_behind_leader->value());
+
+  // Emulate the leader appending up to index 15. The num_ops_behind_leader should jump to 5.
+  queue_->UpdateLastIndexAppendedToLeader(15);
+  ASSERT_EQ(5, queue_->metrics_.num_ops_behind_leader->value());
 }
 
 }  // namespace consensus

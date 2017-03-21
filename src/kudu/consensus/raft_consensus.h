@@ -178,6 +178,7 @@ class RaftConsensus : public Consensus,
  private:
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
+  FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
 
   // Control whether printing of log messages should be done for a particular
   // function call.

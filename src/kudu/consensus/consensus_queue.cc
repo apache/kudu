@@ -83,6 +83,9 @@ METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Operations in Progress",
                           MetricUnit::kOperations,
                           "Number of operations in the peer's queue ack'd by a minority of "
                           "peers.");
+METRIC_DEFINE_gauge_int64(tablet, ops_behind_leader, "Operations Behind Leader",
+                          MetricUnit::kOperations,
+                          "Number of operations this server believes it is behind the leader.");
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, Is new: $1, Last received: $2, Next index: $3, "
@@ -98,7 +101,8 @@ std::string PeerMessageQueue::TrackedPeer::ToString() const {
   x.Instantiate(metric_entity, 0)
 PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
   : num_majority_done_ops(INSTANTIATE_METRIC(METRIC_majority_done_ops)),
-    num_in_progress_ops(INSTANTIATE_METRIC(METRIC_in_progress_ops)) {
+    num_in_progress_ops(INSTANTIATE_METRIC(METRIC_in_progress_ops)),
+    num_ops_behind_leader(INSTANTIATE_METRIC(METRIC_ops_behind_leader)) {
 }
 #undef INSTANTIATE_METRIC
 
@@ -119,6 +123,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   queue_state_.committed_index = 0;
   queue_state_.all_replicated_index = 0;
   queue_state_.majority_replicated_index = 0;
+  queue_state_.last_idx_appended_to_leader = 0;
   queue_state_.state = kQueueConstructed;
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = -1;
@@ -173,6 +178,9 @@ void PeerMessageQueue::SetNonLeaderMode() {
   queue_state_.active_config.reset();
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = -1;
+
+  // Update this when stepping down, since it doesn't get tracked as LEADER.
+  queue_state_.last_idx_appended_to_leader = queue_state_.last_appended.index();
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Queue going to NON_LEADER mode. State: "
       << queue_state_.ToString();
   time_manager_->SetNonLeaderMode();
@@ -367,6 +375,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
     request->set_committed_index(queue_state_.committed_index);
     request->set_all_replicated_index(queue_state_.all_replicated_index);
+    request->set_last_idx_appended_to_leader(queue_state_.last_appended.index());
     request->set_caller_term(current_term);
     unreachable_time = MonoTime::Now() - peer.last_successful_communication_time;
   }
@@ -588,6 +597,17 @@ void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
   queue_state_.committed_index = committed_index;
   queue_state_.all_replicated_index = all_replicated_index;
   UpdateMetrics();
+}
+
+void PeerMessageQueue::UpdateLagMetrics() {
+  metrics_.num_ops_behind_leader->set_value(queue_state_.mode == LEADER ? 0 :
+      queue_state_.last_idx_appended_to_leader - queue_state_.last_appended.index());
+}
+
+void PeerMessageQueue::UpdateLastIndexAppendedToLeader(int64_t last_idx_appended_to_leader) {
+  DCHECK_EQ(queue_state_.mode, NON_LEADER);
+  queue_state_.last_idx_appended_to_leader = last_idx_appended_to_leader;
+  UpdateLagMetrics();
 }
 
 void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid) {
@@ -852,6 +872,8 @@ void PeerMessageQueue::UpdateMetrics() {
     : 0);
   metrics_.num_in_progress_ops->set_value(
     queue_state_.last_appended.index() - queue_state_.committed_index);
+
+  UpdateLagMetrics();
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
@@ -1024,10 +1046,10 @@ string PeerMessageQueue::LogPrefixUnlocked() const {
 
 string PeerMessageQueue::QueueState::ToString() const {
   return Substitute("All replicated index: $0, Majority replicated index: $1, "
-      "Committed index: $2, Last appended: $3, Current term: $4, Majority size: $5, "
-      "State: $6, Mode: $7$8",
+      "Committed index: $2, Last appended: $3, Last appended by leader: $4, Current term: $5, "
+      "Majority size: $6, State: $7, Mode: $8$9",
       all_replicated_index, majority_replicated_index,
-      committed_index, OpIdToString(last_appended), current_term,
+      committed_index, OpIdToString(last_appended), last_idx_appended_to_leader, current_term,
       majority_size_, state, (mode == LEADER ? "LEADER" : "NON_LEADER"),
       active_config ? ", active raft config: " + SecureShortDebugString(*active_config) : "");
 }
