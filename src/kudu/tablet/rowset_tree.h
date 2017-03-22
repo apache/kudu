@@ -73,6 +73,16 @@ class RowSetTree {
   void FindRowSetsWithKeyInRange(const Slice &encoded_key,
                                  std::vector<RowSet *> *rowsets) const;
 
+  // Call 'cb(rowset, index)' for each (rowset, index) pair such that
+  // 'encoded_keys[index]' may be within the bounds of 'rowset'.
+  //
+  // See IntervalTree::ForEachIntervalContainingPoints for additional
+  // information on the particular order in which the callback will be called.
+  //
+  // REQUIRES: 'encoded_keys' must be in sorted order.
+  void ForEachRowSetContainingKeys(const std::vector<Slice>& encoded_keys,
+                                   const std::function<void(RowSet*, int)>& cb) const;
+
   void FindRowSetsIntersectingInterval(const Slice &lower_bound,
                                        const Slice &upper_bound,
                                        std::vector<RowSet *> *rowsets) const;

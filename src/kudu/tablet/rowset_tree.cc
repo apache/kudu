@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -49,6 +50,14 @@ bool RSEndpointBySliceCompare(const RowSetTree::RSEndpoint& a,
   return false;
 }
 
+// Wrapper used when making batch queries into the interval tree.
+struct QueryStruct {
+  // The slice of the operation performing the query.
+  Slice slice;
+  // The original index of this slice in the incoming batch.
+  int idx;
+};
+
 } // anonymous namespace
 
 // Entry for use in the interval tree.
@@ -74,6 +83,15 @@ struct RowSetIntervalTraits {
   static int compare(const Slice &a, const Slice &b) {
     return a.compare(b);
   }
+
+  static int compare(const Slice &a, const QueryStruct &b) {
+    return a.compare(b.slice);
+  }
+
+  static int compare(const QueryStruct &a, const Slice &b) {
+    return -compare(b, a);
+  }
+
 };
 
 RowSetTree::RowSetTree()
@@ -190,6 +208,37 @@ void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
     rowsets->push_back(rs->rowset);
   }
 }
+
+void RowSetTree::ForEachRowSetContainingKeys(
+    const std::vector<Slice>& encoded_keys,
+    const std::function<void(RowSet*, int)>& cb) const {
+
+  DCHECK(std::is_sorted(encoded_keys.cbegin(), encoded_keys.cend(),
+                        Slice::Comparator()));
+  // All rowsets with unknown bounds need to be checked.
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
+    for (int i = 0; i < encoded_keys.size(); i++) {
+      cb(rs.get(), i);
+    }
+  }
+
+  // The interval tree batch query callback would naturally just give us back
+  // the matching Slices, but that won't allow us to easily tell the caller
+  // which specific operation _index_ matched the RowSet. So, we make a vector
+  // of QueryStructs to pair the Slice with its original index.
+  vector<QueryStruct> queries;
+  queries.resize(encoded_keys.size());
+  for (int i = 0; i < encoded_keys.size(); i++) {
+    queries[i] = {encoded_keys[i], i};
+  }
+
+  tree_->ForEachIntervalContainingPoints(
+      queries,
+      [&](const QueryStruct& qs, RowSetWithBounds* rs) {
+        cb(rs->rowset, qs.idx);
+      });
+}
+
 
 RowSetTree::~RowSetTree() {
   STLDeleteElements(&entries_);

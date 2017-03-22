@@ -104,28 +104,85 @@ TEST_F(TestRowSetTree, TestTree) {
   ASSERT_EQ(vec[2].get(), out[3]);
 }
 
-TEST_F(TestRowSetTree, TestPerformance) {
-  const int kNumRowSets = 200;
-  const int kNumQueries = AllowSlowTests() ? 1000000 : 10000;
+class TestRowSetTreePerformance : public TestRowSetTree,
+                                  public testing::WithParamInterface<std::tuple<int, int>> {
+};
+INSTANTIATE_TEST_CASE_P(
+    Parameters, TestRowSetTreePerformance,
+    testing::Combine(
+        // Number of rowsets.
+        // Up to 500 rowsets (500*32MB = 16GB tablet)
+        testing::Values(10, 100, 250, 500),
+        // Number of query points in a batch.
+        testing::Values(10, 100, 500, 1000, 5000)));
+
+TEST_P(TestRowSetTreePerformance, TestPerformance) {
+  const int kNumRowSets = std::get<0>(GetParam());
+  const int kNumQueries = std::get<1>(GetParam());
+  const int kNumIterations = AllowSlowTests() ? 1000 : 10;
   SeedRandom();
 
-  // Create a bunch of rowsets, each of which spans about 10% of the "row space".
-  // The row space here is 4-digit 0-padded numbers.
-  RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
+  Stopwatch one_at_time_timer;
+  Stopwatch batch_timer;
+  for (int i = 0; i < kNumIterations; i++) {
+    // Create a bunch of rowsets, each of which spans about 10% of the "row space".
+    // The row space here is 4-digit 0-padded numbers.
+    RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
 
-  RowSetTree tree;
-  ASSERT_OK(tree.Reset(vec));
+    RowSetTree tree;
+    ASSERT_OK(tree.Reset(vec));
 
-  LOG_TIMING(INFO, StringPrintf("Querying rowset %d times", kNumQueries)) {
-    vector<RowSet *> out;
-    char buf[32];
+    vector<string> queries;
     for (int i = 0; i < kNumQueries; i++) {
-      out.clear();
       int query = rand() % 10000;
-      snprintf(buf, arraysize(buf), "%04d", query);
-      tree.FindRowSetsWithKeyInRange(Slice(buf, 4), &out);
+      queries.emplace_back(StringPrintf("%04d", query));
     }
+
+    int individual_matches = 0;
+    one_at_time_timer.resume();
+    {
+      vector<RowSet *> out;
+      for (const auto& q : queries) {
+        out.clear();
+        tree.FindRowSetsWithKeyInRange(Slice(q), &out);
+        individual_matches += out.size();
+      }
+    }
+    one_at_time_timer.stop();
+
+    vector<Slice> query_slices;
+    for (const auto& q : queries) {
+      query_slices.emplace_back(q);
+    }
+
+    batch_timer.resume();
+    std::sort(query_slices.begin(), query_slices.end(), Slice::Comparator());
+    int bulk_matches = 0;
+    {
+      vector<RowSet *> out;
+      tree.ForEachRowSetContainingKeys(
+          query_slices, [&](RowSet* rs, int slice_idx) {
+            bulk_matches++;
+          });
+    }
+    batch_timer.stop();
+
+    ASSERT_EQ(bulk_matches, individual_matches);
   }
+
+  double batch_total = batch_timer.elapsed().user;
+  double oat_total = one_at_time_timer.elapsed().user;
+  const string& case_desc = StringPrintf("Q=% 5d R=% 5d", kNumQueries, kNumRowSets);
+  const string& ratio = StringPrintf("%.2fx", batch_total / oat_total);
+  LOG(INFO) << StringPrintf("%s %10s %d ms",
+                            case_desc.c_str(),
+                            "1-by-1",
+                            static_cast<int>(oat_total/1e6));
+  LOG(INFO) << StringPrintf("%s %10s %d ms (%.2fx)",
+                            case_desc.c_str(),
+                            "batched",
+                            static_cast<int>(batch_total/1e6),
+                            oat_total / batch_total);
 }
 
 TEST_F(TestRowSetTree, TestEndpointsConsistency) {
