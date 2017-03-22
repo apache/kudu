@@ -84,15 +84,59 @@ class IntervalTree {
   // Find all intervals in the tree which contain the query point.
   // The resulting intervals are added to the 'results' vector.
   // The vector is not cleared first.
-  void FindContainingPoint(const point_type &query,
+  //
+  // NOTE: 'QueryPointType' is usually point_type, but can be any other
+  // type for which there exists the appropriate Traits::Compare(...) method.
+  template<class QueryPointType>
+  void FindContainingPoint(const QueryPointType &query,
                            IntervalVector *results) const;
+
+  // For each of the query points in the STL container 'queries', find all
+  // intervals in the tree which may contain those points. Calls 'cb(point, interval)'
+  // for each such interval.
+  //
+  // The points in the query container must be comparable to 'point_type'
+  // using Traits::Compare().
+  //
+  // The implementation sequences the calls to 'cb' with the following guarantees:
+  // 1) all of the results corresponding to a given interval will be yielded in at
+  //    most two "groups" of calls (i.e. sub-sequences of calls with the same interval).
+  // 2) within each "group" of calls, the query points will be in ascending order.
+  //
+  // For example, the callback sequence may be:
+  //
+  //  cb(q1, interval_1) -
+  //  cb(q2, interval_1)  | first group of interval_1
+  //  cb(q6, interval_1)  |
+  //  cb(q7, interval_1) -
+  //
+  //  cb(q2, interval_2) -
+  //  cb(q3, interval_2)  | first group of interval_2
+  //  cb(q4, interval_2) -
+  //
+  //  cb(q3, interval_1) -
+  //  cb(q4, interval_1)  | second group of interval_1
+  //  cb(q5, interval_1) -
+  //
+  //  cb(q2, interval_3) -
+  //  cb(q3, interval_3)  | first group of interval_3
+  //  cb(q4, interval_3) -
+  //
+  //  cb(q5, interval_2) -
+  //  cb(q6, interval_2)  | second group of interval_2
+  //  cb(q7, interval_2) -
+  //
+  // REQUIRES: The input points must be pre-sorted or else this will return invalid
+  // results.
+  template<class Callback, class QueryContainer>
+  void ForEachIntervalContainingPoints(const QueryContainer& queries,
+                                       const Callback& cb) const;
 
   // Find all intervals in the tree which intersect the given interval.
   // The resulting intervals are added to the 'results' vector.
   // The vector is not cleared first.
   void FindIntersectingInterval(const interval_type &query,
                                 IntervalVector *results) const;
-
  private:
   static void Partition(const IntervalVector &in,
                         point_type *split_point,
