@@ -78,12 +78,10 @@ DEFINE_string(fs_data_dirs, "",
               "block directory.");
 TAG_FLAG(fs_data_dirs, stable);
 
-DECLARE_string(umask);
-
 using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
-using kudu::fs::CreateBlockOptions;
 using kudu::fs::FileBlockManager;
+using kudu::fs::FsReport;
 using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
@@ -233,7 +231,7 @@ void FsManager::InitBlockManager() {
   }
 }
 
-Status FsManager::Open() {
+Status FsManager::Open(FsReport* report) {
   RETURN_NOT_OK(Init());
 
   // Remove leftover tmp files and fix permissions.
@@ -256,7 +254,7 @@ Status FsManager::Open() {
   }
 
   LOG_TIMING(INFO, "opening block manager") {
-    RETURN_NOT_OK(block_manager_->Open());
+    RETURN_NOT_OK(block_manager_->Open(report));
   }
   LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
             << std::endl << SecureDebugString(*metadata_);

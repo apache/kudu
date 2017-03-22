@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -63,7 +64,10 @@ class LogBlockManagerTest : public KuduTest {
 
   void SetUp() override {
     CHECK_OK(bm_->Create());
-    CHECK_OK(bm_->Open());
+
+    // Pass in a report to prevent the block manager from logging unnecessarily.
+    FsReport report;
+    CHECK_OK(bm_->Open(&report));
   }
 
  protected:
@@ -77,7 +81,7 @@ class LogBlockManagerTest : public KuduTest {
   Status ReopenBlockManager(
       const scoped_refptr<MetricEntity>& metric_entity = scoped_refptr<MetricEntity>()) {
     bm_.reset(CreateBlockManager(metric_entity));
-    return bm_->Open();
+    return bm_->Open(nullptr);
   }
 
   void GetOnlyContainerDataFile(string* data_file) {
@@ -253,7 +257,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
     ASSERT_OK(writer->Close());
   }
 
-  ASSERT_EQ(4, bm_->all_containers_.size());
+  ASSERT_EQ(4, bm_->all_containers_by_name_.size());
 
   // Delete the original blocks.
   for (const BlockId& b : block_ids) {
@@ -315,7 +319,8 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Start corrupting the metadata file in different ways.
 
-  string path = LogBlockManager::ContainerPathForTests(bm_->all_containers_[0]);
+  string path = LogBlockManager::ContainerPathForTests(
+      bm_->all_containers_by_name_.begin()->second);
   string metadata_path = path + LogBlockManager::kContainerMetadataFileSuffix;
   string data_path = path + LogBlockManager::kContainerDataFileSuffix;
 
@@ -421,7 +426,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   good_meta_size = cur_meta_size;
 
   // Ensure that we only ever created a single container.
-  ASSERT_EQ(1, bm_->all_containers_.size());
+  ASSERT_EQ(1, bm_->all_containers_by_name_.size());
   ASSERT_EQ(1, bm_->available_containers_by_data_dir_.size());
   ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
 

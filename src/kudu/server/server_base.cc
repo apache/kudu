@@ -28,6 +28,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -208,16 +209,18 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(security::InitKerberosForServer());
 
-  Status s = fs_manager_->Open();
+  fs::FsReport report;
+  Status s = fs_manager_->Open(&report);
   if (s.IsNotFound()) {
     LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
     LOG(INFO) << "Creating new FS layout";
     is_first_run_ = true;
     RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
                           "Could not create new FS layout");
-    s = fs_manager_->Open();
+    s = fs_manager_->Open(&report);
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
+  RETURN_NOT_OK(report.LogAndCheckForFatalErrors());
 
   RETURN_NOT_OK(InitAcls());
 

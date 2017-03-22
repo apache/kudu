@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "kudu/fs/file_block_manager.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -104,7 +105,7 @@ class BlockManagerStressTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     CHECK_OK(bm_->Create());
-    CHECK_OK(bm_->Open());
+    CHECK_OK(bm_->Open(nullptr));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -423,7 +424,9 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   this->RunTest(FLAGS_test_duration_secs / 2);
   LOG(INFO) << "Running on populated block manager";
   this->bm_.reset(this->CreateBlockManager());
-  ASSERT_OK(this->bm_->Open());
+  FsReport report;
+  ASSERT_OK(this->bm_->Open(&report));
+  ASSERT_OK(report.LogAndCheckForFatalErrors());
   this->RunTest(FLAGS_test_duration_secs / 2);
   checker.Stop();
 

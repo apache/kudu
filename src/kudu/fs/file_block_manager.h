@@ -41,6 +41,7 @@ class RandomAccessFile;
 class WritableFile;
 
 namespace fs {
+struct FsReport;
 
 namespace internal {
 class FileBlockLocation;
@@ -80,7 +81,7 @@ class FileBlockManager : public BlockManager {
 
   Status Create() override;
 
-  Status Open() override;
+  Status Open(FsReport* report) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;

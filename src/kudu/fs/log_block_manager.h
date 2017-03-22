@@ -50,6 +50,7 @@ class RWFile;
 class ThreadPool;
 
 namespace fs {
+struct FsReport;
 
 namespace internal {
 class LogBlock;
@@ -166,7 +167,7 @@ class LogBlockManager : public BlockManager {
 
   Status Create() override;
 
-  Status Open() override;
+  Status Open(FsReport* report) override;
 
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
@@ -257,15 +258,25 @@ class LogBlockManager : public BlockManager {
   // Parses a block record, adding or removing it in 'block_map', and
   // accounting for it in the metadata for 'container'.
   //
-  // Returns a bad status if the record is malformed in some way.
-  Status ProcessBlockRecord(const BlockRecordPB& record,
-                            internal::LogBlockContainer* container,
-                            UntrackedBlockMap* block_map);
+  // If any record is malformed, it is written to 'report'.
+  void ProcessBlockRecord(const BlockRecordPB& record,
+                          FsReport* report,
+                          internal::LogBlockContainer* container,
+                          UntrackedBlockMap* block_map);
 
-  // Open a particular data directory belonging to the block manager.
+  // Repairs any inconsistencies described in 'report'.
+  //
+  // Returns an error if repairing a fatal inconsistency failed.
+  Status Repair(FsReport* report);
+
+  // Opens a particular data directory belonging to the block manager. The
+  // results of consistency checking (and repair, if applicable) are written to
+  // 'report'.
   //
   // Success or failure is set in 'result_status'.
-  void OpenDataDir(DataDir* dir, Status* result_status);
+  void OpenDataDir(DataDir* dir,
+                   FsReport* report,
+                   Status* result_status);
 
   // Perform basic initialization.
   Status Init();
@@ -321,7 +332,8 @@ class LogBlockManager : public BlockManager {
   BlockIdSet open_block_ids_;
 
   // Holds (and owns) all containers loaded from disk.
-  std::vector<internal::LogBlockContainer*> all_containers_;
+  std::unordered_map<std::string,
+                     internal::LogBlockContainer*> all_containers_by_name_;
 
   // Holds only those containers that are currently available for writing,
   // excluding containers that are either in use or full.

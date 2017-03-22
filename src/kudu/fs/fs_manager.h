@@ -31,8 +31,6 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 
-DECLARE_bool(enable_data_block_fsync);
-
 namespace google {
 namespace protobuf {
 class Message;
@@ -48,6 +46,7 @@ namespace fs {
 class BlockManager;
 class ReadableBlock;
 class WritableBlock;
+struct FsReport;
 } // namespace fs
 
 namespace itest {
@@ -102,11 +101,19 @@ class FsManager {
   FsManager(Env* env, const FsManagerOpts& opts);
   ~FsManager();
 
-  // Initialize and load the basic filesystem metadata.
-  // If the file system has not been initialized, returns NotFound.
-  // In that case, CreateInitialFileSystemLayout may be used to initialize
-  // the on-disk structures.
-  Status Open();
+  // Initialize and load the basic filesystem metadata, checking it for
+  // inconsistencies. If found, and if the FsManager was not constructed in
+  // read-only mode, an attempt will be made to repair them.
+  //
+  // If 'report' is not nullptr, it will be populated with the results of the
+  // check (and repair, if applicable); otherwise, the results of the check
+  // will be logged and the presence of fatal inconsistencies will manifest as
+  // a returned error.
+  //
+  // If the filesystem has not been initialized, returns NotFound. In that
+  // case, CreateInitialFileSystemLayout() may be used to initialize the
+  // on-disk structures.
+  Status Open(fs::FsReport* report = nullptr);
 
   // Create the initial filesystem layout. If 'uuid' is provided, uses it as
   // uuid of the filesystem. Otherwise generates one at random.

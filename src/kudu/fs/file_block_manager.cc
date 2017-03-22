@@ -23,6 +23,7 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
@@ -535,7 +536,7 @@ Status FileBlockManager::Create() {
       FLAGS_enable_data_block_fsync ? DataDirManager::FLAG_CREATE_FSYNC : 0);
 }
 
-Status FileBlockManager::Open() {
+Status FileBlockManager::Open(FsReport* report) {
   DataDirManager::LockMode mode;
   if (!FLAGS_block_manager_lock_dirs) {
     mode = DataDirManager::LockMode::NONE;
@@ -548,6 +549,18 @@ Status FileBlockManager::Open() {
 
   if (file_cache_) {
     RETURN_NOT_OK(file_cache_->Init());
+  }
+
+  // Prepare the filesystem report and either return or log it.
+  FsReport local_report;
+  for (const auto& dd : dd_manager_.data_dirs()) {
+    // TODO(adar): probably too expensive to fill out the stats/checks.
+    local_report.data_dirs.push_back(dd->dir());
+  }
+  if (report) {
+    *report = std::move(local_report);
+  } else {
+    RETURN_NOT_OK(local_report.LogAndCheckForFatalErrors());
   }
   return Status::OK();
 }

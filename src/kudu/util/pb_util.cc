@@ -836,7 +836,7 @@ Status ReadablePBContainerFile::Open() {
   protos_.reset(sup_header.release_protos());
   pb_type_ = sup_header.pb_type();
   state_ = FileState::OPEN;
-  return Status::OK();;
+  return Status::OK();
 }
 
 Status ReadablePBContainerFile::ReadNextPB(Message* msg) {

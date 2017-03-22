@@ -22,6 +22,7 @@
 
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
@@ -89,7 +90,10 @@ class BlockManagerTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     CHECK_OK(bm_->Create());
-    CHECK_OK(bm_->Open());
+    // Pass in a report to prevent the block manager from logging
+    // unnecessarily.
+    FsReport report;
+    CHECK_OK(bm_->Open(&report));
   }
 
  protected:
@@ -111,7 +115,8 @@ class BlockManagerTest : public KuduTest {
     if (create) {
       RETURN_NOT_OK(bm_->Create());
     }
-    return bm_->Open();
+    RETURN_NOT_OK(bm_->Open(nullptr));
+    return Status::OK();
   }
 
   void RunMultipathTest(const vector<string>& paths);
@@ -125,7 +130,10 @@ template <>
 void BlockManagerTest<LogBlockManager>::SetUp() {
   RETURN_NOT_LOG_BLOCK_MANAGER();
   CHECK_OK(bm_->Create());
-  CHECK_OK(bm_->Open());
+  // Pass in a report to prevent the block manager from logging
+  // unnecessarily.
+  FsReport report;
+  CHECK_OK(bm_->Open(&report));
 }
 
 template <>
@@ -463,7 +471,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
       scoped_refptr<MetricEntity>(),
       MemTracker::CreateTracker(-1, "other tracker"),
       { this->test_dir_ }));
-  ASSERT_OK(new_bm->Open());
+  ASSERT_OK(new_bm->Open(nullptr));
 
   // Test that the state of all three blocks is properly reflected.
   unique_ptr<ReadableBlock> read_block;

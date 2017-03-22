@@ -33,6 +33,7 @@ add_library(kudu_fs
   data_dirs.cc
   file_block_manager.cc
   fs_manager.cc
+  fs_report.cc
   log_block_manager.cc)
 
 target_link_libraries(kudu_fs

@@ -42,6 +42,7 @@ class Slice;
 namespace fs {
 
 class BlockManager;
+struct FsReport;
 
 // The smallest unit of Kudu data that is backed by the local filesystem.
 //
@@ -194,10 +195,18 @@ class BlockManager {
   // Returns an error if one already exists or cannot be created.
   virtual Status Create() = 0;
 
-  // Opens an existing on-disk representation of this block manager.
+  // Opens an existing on-disk representation of this block manager and
+  // checks it for inconsistencies. If found, and if the block manager was not
+  // constructed in read-only mode, an attempt will be made to repair them.
   //
-  // Returns an error if one does not exist or cannot be opened.
-  virtual Status Open() = 0;
+  // If 'report' is not nullptr, it will be populated with the results of the
+  // check (and repair, if applicable); otherwise, the results of the check
+  // will be logged and the presence of fatal inconsistencies will manifest as
+  // a returned error.
+  //
+  // Returns an error if an on-disk representation does not exist or cannot be
+  // opened.
+  virtual Status Open(FsReport* report) = 0;
 
   // Creates a new block using the provided options and opens it for
   // writing. The block's ID will be generated.

@@ -33,6 +33,8 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/fs_report.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -49,8 +51,6 @@ DEFINE_string(uuid, "",
               "If not provided, one is generated");
 DEFINE_bool(repair, false,
             "Repair any inconsistencies in the filesystem.");
-DEFINE_bool(verbose, false,
-            "Provide verbose output.");
 
 namespace kudu {
 namespace tools {
@@ -58,6 +58,8 @@ namespace tools {
 using cfile::CFileReader;
 using cfile::CFileIterator;
 using cfile::ReaderOptions;
+using fs::FsReport;
+using fs::ReadableBlock;
 using std::cout;
 using std::endl;
 using std::string;
@@ -73,7 +75,15 @@ Status Check(const RunnerContext& /*context*/) {
   FsManagerOpts opts;
   opts.read_only = !FLAGS_repair;
   FsManager fs_manager(Env::Default(), opts);
-  RETURN_NOT_OK(fs_manager.Open());
+  FsReport report;
+  RETURN_NOT_OK(fs_manager.Open(&report));
+
+  // Stop now if we've already found a fatal error. Otherwise, continue;
+  // we'll modify the report with our own check results and print it fully
+  // at the end.
+  if (report.HasFatalErrors()) {
+    RETURN_NOT_OK(report.PrintAndCheckForFatalErrors());
+  }
 
   // Get the "live" block IDs (i.e. those referenced by a tablet).
   vector<BlockId> live_block_ids;
@@ -113,31 +123,36 @@ Status Check(const RunnerContext& /*context*/) {
                       all_block_ids.begin(), all_block_ids.end(),
                       std::back_inserter(missing_block_ids), BlockIdCompare());
 
-  if (FLAGS_verbose) {
-    for (const auto& id : missing_block_ids) {
-      cout << Substitute("Block $0 (referenced by tablet $1) is missing\n",
-                         id.ToString(),
-                         FindOrDie(live_block_id_to_tablet, id));
-    }
+  // Add missing blocks to the report.
+  report.missing_block_check.emplace();
+  for (const auto& id : missing_block_ids) {
+    report.missing_block_check->entries.emplace_back(
+        id, FindOrDie(live_block_id_to_tablet, id));
   }
 
+  // Add orphaned blocks to the report after attempting to repair them.
+  report.orphaned_block_check.emplace();
   for (const auto& id : orphaned_block_ids) {
-    if (FLAGS_verbose) {
-      cout << Substitute("Block $0 is not referenced by any tablets$1\n",
-                         id.ToString(), FLAGS_repair ? " (deleting)" : "");
+    // Opening a block isn't free, but the number of orphaned blocks shouldn't
+    // be extraordinarily high.
+    uint64_t size;
+    {
+      unique_ptr<ReadableBlock> block;
+      RETURN_NOT_OK(fs_manager.OpenBlock(id, &block));
+      RETURN_NOT_OK(block->Size(&size));
     }
-    if (FLAGS_repair) {
-      RETURN_NOT_OK(fs_manager.DeleteBlock(id));
-    }
-  }
+    fs::OrphanedBlockCheck::Entry entry(id, size);
 
-  cout << Substitute("Summary: $0 blocks total ($1 missing, $2 orphaned$3)\n",
-                     all_block_ids.size(),
-                     missing_block_ids.size(),
-                     orphaned_block_ids.size(),
-                     FLAGS_repair ? " and deleted" : "");
-  return missing_block_ids.empty() ? Status::OK() :
-      Status::Corruption("Irreparable filesystem corruption detected");
+    if (FLAGS_repair) {
+      Status s = fs_manager.DeleteBlock(id);
+      WARN_NOT_OK(s, "Could not delete orphaned block");
+      if (s.ok()) {
+        entry.repaired = true;
+      }
+    }
+    report.orphaned_block_check->entries.emplace_back(entry);
+  }
+  return report.PrintAndCheckForFatalErrors();
 }
 
 Status Format(const RunnerContext& /*context*/) {
@@ -246,7 +261,6 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("repair")
-      .AddOptionalParameter("verbose")
       .Build();
 
   unique_ptr<Action> format =
