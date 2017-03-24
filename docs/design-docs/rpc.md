@@ -129,8 +129,10 @@ one except that they are type-safe and do not require the method name to be pass
 The generated ServiceIf class contains pure virtual methods for each of the RPCs
 in the service. Each method to be implemented has an API like:
 
+```
   void MethodName(const RequestPB *req,
      ResponsePB *resp, ::kudu::rpc::RpcContext *context);
+```
 
 The request PB is the user-provided request, and the response PB is a cleared
 protobuf ready to store the RPC response. Once the RPC response has been filled in,
@@ -163,6 +165,7 @@ Exactly once semantics can be enabled for RPCs that require them by using
 the 'track_rpc_result' option when declaring a service interface method.
 
 Example:
+
 ```
 service CalculatorService {
   rpc AddExactlyOnce(ExactlyOnceRequestPB) returns (ExactlyOnceResponsePB) {
@@ -379,13 +382,13 @@ identifies the negotiation protocol step. Each `NegotiatePB` is framed as usual
 using `RequestHeader` or `ResponseHeader` messages with `call_id` -33.
 
 The Kudu negotiation protocol allows the client and server to communicate
-supported RPC feature flags and supported SASL authentication mechanisms,
-initiate an optional TLS handshake, and perform SASL negotiation.
+supported RPC feature flags, initiate an optional TLS handshake, and perform
+authentication.
 
-#### Step 1: Negotiate
+### Step 1: Negotiate
 
-The client and server swap RPC feature flags and supported SASL mechanisms. This
-step always takes exactly one round trip.
+The client and server swap RPC feature flags, supported authentication types,
+and supported SASL mechanisms. This step always takes exactly one round trip.
 
 ```
 Client                                                                    Server
@@ -393,13 +396,15 @@ Client                                                                    Server
    | +----NegotiatePB-----------------------------+                         |
    | | step = NEGOTIATE                           |                         |
    | | supported_features = <client RPC features> | ----------------------> |
-   | | mechanisms = <client SASL mechanisms>      |                         |
+   | | authn_types = <client authn types>         |                         |
+   | | sasl_mechanisms = <client SASL mechanisms> |                         |
    | +--------------------------------------------+                         |
    |                                                                        |
    |                         +----NegotiatePB-----------------------------+ |
    |                         | step = NEGOTIATE                           | |
    | <---------------------- | supported_features = <server RPC features> | |
-   |                         | mechanisms = <server SASL mechanisms>      | |
+   |                         | authn_types = <preferred authn type>       | |
+   |                         | sasl_mechanisms = <server SASL mechanisms> | |
    |                         +--------------------------------------------+ |
 ```
 
@@ -418,7 +423,7 @@ of using feature flags over version numbers for this purpose:
 * the set of supported features can be determined by code-level support as well
   as conditionally based on configuration or machine capability.
 
-#### Step 2: TLS Handshake
+### Step 2: TLS Handshake
 
 If both the server and client support the `TLS` RPC feature flag, the client
 initiates a TLS handshake, after which both sides wrap the socket in the TLS
@@ -442,12 +447,11 @@ Client                                                                    Server
    |            <...repeat until TLS handshake is complete...>              |
 ```
 
-The client and server repeat `TLS_HANDSHAKE` round-trips until the TLS handshake
-is complete. After the handshake is complete, in the absence of the
-`TLS_AUTHENTICATION_ONLY` feature described belowq, the client and server
-wrap the socket connection such that all further traffic is encrypted via TLS.
+After the handshake is complete, in the absence of the `TLS_AUTHENTICATION_ONLY`
+feature described below, the client and server wrap the socket connection such
+that all further traffic is encrypted via TLS.
 
-##### `TLS_AUTHENTICATION_ONLY`
+#### `TLS_AUTHENTICATION_ONLY`
 
 In many cases, RPC connections are made between a client and server running
 on the same machine. For example, the schedulers in Spark, MapReduce,
@@ -465,16 +469,72 @@ client and server advertise the flag, then after completing the TLS handshake,
 the peers will _not_ wrap the socket with TLS. All other behavior remains
 the same, including channel binding as described below.
 
+### Step 3: Authentication
 
-#### Step 3: SASL Negotiation
+The client and server now authenticate to each other. There are three
+authentication types (SASL, token, and TLS/PKI certificate), and the SASL
+authentication type has two possible mechanisms (GSSAPI and PLAIN). Of these,
+all are considered strong or secure authentication types with the exception of
+SASL PLAIN. The client sends the server its supported authentication types and
+sasl mechanisms in the negotiate step above. The server responds in the
+negotiate step with its preferred authentication type and supported mechanisms.
+The server is thus responsible for choosing the authentication type if there
+are multiple to choose from. Which type is chosen for a particular connection by
+the server depends on configuration and the available credentials:
 
-The client and server now initiate a SASL handshake. The client is responsible
+```
++----------------------+       +----------------------+
+|                      |       |                      |       +----------------------+
+| Does the server have |  yes  | Does the client have |  yes  |                      |
+| a CA-signed TLS      +-------> a CA-signed TLS      +-------> Authenticate via TLS |
+| certificate?         |       | certificate?         |       |                      |
+|                      |       |                      |       +----------------------+
++------+---------------+       +---------+------------+
+       |                                 |
+       |                                 |no
+       |                                 |
+       |                       +---------v------------+       +----------------------+
+       |                       |                      |       |                      |
+       |no                no   | Does the client have |  yes  | Authenticate via     |
+       |      +----------------+ an authentication    +-------> authentication token |
+       |      |                | token?               |       |                      |
+       |      |                |                      |       +----------------------+
+       |      |                +----------------------+
+       |      |
++------v------v--------+       +-----------------------+       +------------------+
+|                      |       |                       |       |                  |
+| Does the server have |  yes  | Does the client have  |  yes  | Authenticate via |
+| a Kerberos keytab?   +-------> Kerberos credentials? +-------> SASL GSSAPI      |
+|                      |       |                       |       |                  |
++------+---------------+       +----------+------------+       +------------------+
+       |                  no              |
+       |no    +---------------------------+                   +------------------+
+       |      |                                               |                  |
+       |      |                                               | Authenticate via |
++------v------v------+                   no                   | SASL PLAIN       |
+|                    +---------------------------------------->                  |
+| Is authentication  |                                        +------------------+
+| required?          |                   yes
+|                    |------------------------------+         +---------------------+
++--------------------+                              |         |                     |
+                                                    +---------> Fail authentication |
+                                                              |                     |
+                                                              +---------------------+
+```
+
+The client will initiate the type-specific authentiation handshake.
+
+#### SASL Handshake
+
+When the server includes the SASL authentication type in the `NEGOTIATE` step
+response, the client will initiate a SASL handshake. The client is responsible
 for choosing which SASL mechanism is used, with the restriction that it must be
 in the set of mutually supported SASL mechanisms exchanged in the `NEGOTIATE`
-step. Depending on the mechanism, SASL negotiation may serve to authenticate the
-client to the server, and vice versa.
+step. The `GSSAPI` (Kerberos) mechanism allows the client and server to
+mutually authenticate. The `PLAIN` mechanism is used when connecting without
+secure authentication.
 
-SASL negotiation may take one or more round trips. The first and last messages
+The SASL handshake may take one or more round trips. The first and last messages
 are always a `SASL_INITIATE` from the client and a `SASL_SUCCESS` from the
 server, respectively. In between `SASL_INITIATE` and `SASL_SUCCESS`, zero or
 more pairs of `SASL_CHALLENGE` and `SASL_RESPONSE` messages from server and
@@ -507,22 +567,7 @@ Client                                                                    Server
    |                                                +---------------------+ |
 ```
 
-### Authentication
-
-When security is enabled, the negotiation process is responsible for mutually
-authenticating the client and server to each other. There are three distinct
-methods of mutual authentication, one of which will be chosen during
-negotiation. Which method is chosen for a particular connection depends on the
-configuration of the client and server. All authentication methods require the
-connection to be protected with TLS encryption.
-
-| server authentication of client | client authentication of server | notes |
-|---|---|---|
-| Kerberos | Kerberos | Kerberos provides strong mutual authentication, channel binding ties the Kerberos authentication to the TLS channel |
-| Certificate | Certificate | client and server authenticate via certs signed by mutually trusted CA |
-| Token | Certificate | client authenticates by passing a token signed by a key which is trusted by the server |
-
-#### Kerberos Authentication
+##### Kerberos
 
 Kerberos authentication requires the client and server to be configured with
 Kerberos principal credentials. Typically the client must have an active TGT
@@ -547,12 +592,10 @@ negotiation.
 #### Certificate Authentication
 
 When the client and server are configured with certificates signed by a mutually
-trusted certificate authority (CA), certificate authentication can be used
-to authenticate the client and server.
-
-TODO(dan): explain how the two sides decide on certificate authentication.
-           Probably via a special SASL mechanism (`KUDU_CERTIFICATE`) which
-           short-circuits any actual SASL messages.
+trusted certificate authority (CA), certificate authentication can be used to
+authenticate the client and server. Certificate authentication is nothing more
+than a mutually-verified TLS handshake, so no additional message need to be
+exchanged.
 
 #### Token Authentication
 
@@ -561,9 +604,22 @@ and the client to be configured with a token. The server's certificate must be
 signed by a CA trusted by the client, and the client's token must be signed by a
 token-signing-key which is trusted by the server.
 
-TODO(dan): explain how the two sides decide on token authentication.
-           Probably via a special SASL mechanism (`KUDU_TOKEN`) which sends a
-           single round of SASL messages containing the token and a reply ack.
+The client sends its authentication token to the server in a `TOKEN_EXCHANGE`
+response step negotiation message, and the server responds with an empty
+`TOKEN_EXCHANGE` message on success.
+
+```
+Client                                                                    Server
+   |                                                                        |
+   | +----NegotiatePB---------------------+                                 |
+   | | step = TOKEN_EXCHANGE              |                                 |
+   | | authn_token = <client token>       | ------------------------------> |
+   | +------------------------------------+                                 |
+   |                                                                        |
+   |                                              +----NegotiatePB--------+ |
+   | <------------------------------------------- | step = TOKEN_EXCHANGE | |
+   |                                              +-----------------------+ |
+```
 
 ## Connection Context
 
