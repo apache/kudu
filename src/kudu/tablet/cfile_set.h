@@ -17,10 +17,10 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
+#include <boost/container/flat_map.hpp>
 #include <gtest/gtest_prod.h>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "kudu/cfile/bloomfile.h"
@@ -119,7 +119,9 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   std::string max_encoded_key_;
 
   // Map of column ID to reader. These are lazily initialized as needed.
-  typedef std::unordered_map<int, std::shared_ptr<CFileReader> > ReaderMap;
+  // We use flat_map here since it's the most memory-compact while
+  // still having good performance for small maps.
+  typedef boost::container::flat_map<int, std::unique_ptr<CFileReader>> ReaderMap;
   ReaderMap readers_by_col_id_;
 
   // A file reader for an ad-hoc index, i.e. an index that sits in its own file

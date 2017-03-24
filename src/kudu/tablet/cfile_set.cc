@@ -45,6 +45,7 @@ using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
 using fs::ReadableBlock;
 using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
@@ -104,10 +105,11 @@ Status CFileSet::DoOpen() {
                              parent_mem_tracker_,
                              rowset_metadata_->column_data_block_for_col_id(col_id),
                              &reader));
-    readers_by_col_id_[col_id] = shared_ptr<CFileReader>(reader.release());
+    readers_by_col_id_[col_id] = unique_ptr<CFileReader>(reader.release());
     VLOG(1) << "Successfully opened cfile for column id " << col_id
             << " in " << rowset_metadata_->ToString();
   }
+  readers_by_col_id_.shrink_to_fit();
 
   if (rowset_metadata_->has_adhoc_index_block()) {
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
@@ -196,9 +198,8 @@ Status CFileSet::GetBounds(string* min_encoded_key,
 
 uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
-  for (const ReaderMap::value_type& e : readers_by_col_id_) {
-    const shared_ptr<CFileReader> &reader = e.second;
-    ret += reader->file_size();
+  for (const auto& e : readers_by_col_id_) {
+    ret += e.second->file_size();
   }
   return ret;
 }
