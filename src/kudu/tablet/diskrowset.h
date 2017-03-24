@@ -420,7 +420,7 @@ class DiskRowSet : public RowSet {
   TabletMemTrackers mem_trackers_;
 
   // Base data for this rowset.
-  mutable percpu_rwlock component_lock_;
+  mutable rw_spinlock component_lock_;
   std::shared_ptr<CFileSet> base_data_;
   gscoped_ptr<DeltaTracker> delta_tracker_;
 

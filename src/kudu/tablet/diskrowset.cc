@@ -551,7 +551,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
                                mem_trackers_.tablet_tracker,
                                &new_base));
   {
-    std::lock_guard<percpu_rwlock> lock(component_lock_);
+    std::lock_guard<rw_spinlock> lock(component_lock_);
     CHECK_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
     base_data_.swap(new_base);
   }
@@ -566,7 +566,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
                                            HistoryGcOpts history_gc_opts,
                                            gscoped_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
 
   const Schema* schema = &rowset_metadata_->tablet_schema();
 
@@ -594,7 +594,7 @@ Status DiskRowSet::NewRowIterator(const Schema *projection,
                                   OrderMode /*order*/,
                                   gscoped_ptr<RowwiseIterator>* out) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
 
   shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(projection));
   gscoped_ptr<ColumnwiseIterator> col_iter;
@@ -618,7 +618,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
                              ProbeStats* stats,
                              OperationResultPB* result) {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx, stats));
@@ -640,7 +640,7 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                                    bool* present,
                                    ProbeStats* stats) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
 
   rowid_t row_idx;
   RETURN_NOT_OK(base_data_->CheckRowPresent(probe, present, &row_idx, stats));
@@ -658,7 +658,7 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
 
 Status DiskRowSet::CountRows(rowid_t *count) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
 
   return base_data_->CountRows(count);
 }
@@ -666,25 +666,25 @@ Status DiskRowSet::CountRows(rowid_t *count) const {
 Status DiskRowSet::GetBounds(std::string* min_encoded_key,
                              std::string* max_encoded_key) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->EstimateOnDiskSize();
 }
 
 uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
   return delta_tracker_->EstimateOnDiskSize();
 }
 
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_.get_lock());
+  shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateOnDiskSize();
 }
 
