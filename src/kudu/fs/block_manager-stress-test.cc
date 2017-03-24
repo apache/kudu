@@ -25,6 +25,7 @@
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/fs/log_block_manager-test-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -49,6 +50,8 @@ DEFINE_int32(block_group_bytes, 32 * 1024,
              "Total amount of data (in bytes) to write per block group");
 DEFINE_int32(num_bytes_per_write, 32,
              "Number of bytes to write at a time");
+DEFINE_int32(num_inconsistencies, 16,
+             "Number of on-disk inconsistencies to inject in between test runs");
 DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "use for block storage. If empty, will use the default unit "
               "test path");
@@ -99,6 +102,13 @@ class BlockManagerStressTest : public KuduTest {
     // Ensure the file cache is under stress too.
     FLAGS_block_manager_max_open_files = 512;
 
+    if (FLAGS_block_manager_paths.empty()) {
+      data_dirs_.push_back(test_dir_);
+    } else {
+      data_dirs_ = strings::Split(FLAGS_block_manager_paths, ",",
+                                  strings::SkipEmpty());
+    }
+
     // Defer block manager creation until after the above flags are set.
     bm_.reset(CreateBlockManager());
   }
@@ -112,23 +122,16 @@ class BlockManagerStressTest : public KuduTest {
     // If non-standard paths were provided we need to delete them in
     // between test runs.
     if (!FLAGS_block_manager_paths.empty()) {
-      vector<string> paths = strings::Split(FLAGS_block_manager_paths, ",",
-                                            strings::SkipEmpty());
-      for (const string& path : paths) {
-        WARN_NOT_OK(env_->DeleteRecursively(path),
-                    Substitute("Couldn't recursively delete $0", path));
+      for (const auto& dd : data_dirs_) {
+        WARN_NOT_OK(env_->DeleteRecursively(dd),
+                    Substitute("Couldn't recursively delete $0", dd));
       }
     }
   }
 
   BlockManager* CreateBlockManager() {
     BlockManagerOptions opts;
-    if (FLAGS_block_manager_paths.empty()) {
-      opts.root_paths.push_back(test_dir_);
-    } else {
-      opts.root_paths = strings::Split(FLAGS_block_manager_paths, ",",
-                                       strings::SkipEmpty());
-    }
+    opts.root_paths = data_dirs_;
     return new T(env_, opts);
   }
 
@@ -181,7 +184,18 @@ class BlockManagerStressTest : public KuduTest {
 
   int GetMaxFdCount() const;
 
+  // Adds FLAGS_num_inconsistencies randomly chosen inconsistencies to the
+  // block manager's on-disk representation, assuming the block manager in
+  // question supports inconsistency detection and repair.
+  //
+  // The block manager should be idle while this is called, and it should be
+  // restarted afterwards so that detection and repair have a chance to run.
+  void InjectNonFatalInconsistencies();
+
  protected:
+  // Directories where blocks will be written.
+  vector<string> data_dirs_;
+
   // Used to generate random data. All PRNG instances are seeded with this
   // value to ensure that the test is reproducible.
   int rand_seed_;
@@ -400,6 +414,21 @@ int BlockManagerStressTest<LogBlockManager>::GetMaxFdCount() const {
       (FLAGS_num_writer_threads * FLAGS_block_group_size * 2);
 }
 
+template <>
+void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
+  // Do nothing; the FBM has no repairable inconsistencies.
+}
+
+template <>
+void BlockManagerStressTest<LogBlockManager>::InjectNonFatalInconsistencies() {
+  LBMCorruptor corruptor(env_, data_dirs_, rand_seed_);
+  ASSERT_OK(corruptor.Init());
+
+  for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
+    ASSERT_OK(corruptor.InjectRandomNonFatalInconsistency());
+  }
+}
+
 // What kinds of BlockManagers are supported?
 #if defined(__linux__)
 typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
@@ -411,6 +440,7 @@ TYPED_TEST_CASE(BlockManagerStressTest, BlockManagers);
 TYPED_TEST(BlockManagerStressTest, StressTest) {
   OverrideFlagForSlowTests("test_duration_secs", "30");
   OverrideFlagForSlowTests("block_group_size", "16");
+  OverrideFlagForSlowTests("num_inconsistencies", "128");
 
   if ((FLAGS_block_group_size & (FLAGS_block_group_size - 1)) != 0) {
     LOG(FATAL) << "block_group_size " << FLAGS_block_group_size
@@ -422,6 +452,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   LOG(INFO) << "Running on fresh block manager";
   checker.Start();
   this->RunTest(FLAGS_test_duration_secs / 2);
+  NO_FATALS(this->InjectNonFatalInconsistencies());
   LOG(INFO) << "Running on populated block manager";
   this->bm_.reset(this->CreateBlockManager());
   FsReport report;

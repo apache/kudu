@@ -41,8 +41,16 @@ target_link_libraries(kudu_fs
   kudu_util
   gutil)
 
+add_library(kudu_fs_test_util
+  log_block_manager-test-util.cc)
+
+target_link_libraries(kudu_fs_test_util
+  fs_proto
+  kudu_util
+  gutil)
+
 # Tests
-set(KUDU_TEST_LINK_LIBS kudu_fs ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS kudu_fs kudu_fs_test_util ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager_util-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)

@@ -17,14 +17,17 @@
 
 #include <algorithm>
 #include <memory>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/fs/log_block_manager-test-util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env_util.h"
@@ -39,6 +42,7 @@ using kudu::pb_util::ReadablePBContainerFile;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -78,39 +82,100 @@ class LogBlockManagerTest : public KuduTest {
     return new LogBlockManager(env_, opts);
   }
 
-  Status ReopenBlockManager(
-      const scoped_refptr<MetricEntity>& metric_entity = scoped_refptr<MetricEntity>()) {
-    bm_.reset(CreateBlockManager(metric_entity));
-    return bm_->Open(nullptr);
+  Status ReopenBlockManager(FsReport* report = nullptr) {
+    bm_.reset(CreateBlockManager(scoped_refptr<MetricEntity>()));
+    RETURN_NOT_OK(bm_->Open(report));
+    return Status::OK();
   }
 
+  // Returns the only container data file in the test directory. Yields an
+  // assert failure if more than one is found.
   void GetOnlyContainerDataFile(string* data_file) {
-    // The expected directory contents are dot, dotdot, test metadata, instance
-    // file, and one container file pair.
-    string container_data_filename;
-    vector<string> children;
-    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
-    ASSERT_EQ(6, children.size());
-    for (const string& child : children) {
-      if (HasSuffixString(child, ".data")) {
-        ASSERT_TRUE(container_data_filename.empty());
-        container_data_filename = JoinPathSegments(GetTestDataDirectory(), child);
-        break;
-      }
-    }
-    ASSERT_FALSE(container_data_filename.empty());
-    *data_file = container_data_filename;
+    vector<string> data_files;
+    DoGetContainers(DATA_FILES, &data_files);
+    ASSERT_EQ(1, data_files.size());
+    *data_file = data_files[0];
   }
 
+  // Like GetOnlyContainerDataFile(), but returns a container name (i.e. data
+  // or metadata file with the file suffix removed).
+  void GetOnlyContainer(string* container) {
+    vector<string> containers;
+    DoGetContainers(CONTAINER_NAMES, &containers);
+    ASSERT_EQ(1, containers.size());
+    *container = containers[0];
+  }
+
+  // Returns the names of all of the containers found in the test directory.
+  void GetContainerNames(vector<string>* container_names) {
+    DoGetContainers(CONTAINER_NAMES, container_names);
+  }
+
+  // Asserts that 'expected_num_containers' are found in the test directory.
   void AssertNumContainers(int expected_num_containers) {
-    // The expected directory contents are dot, dotdot, test metadata, instance
-    // file, and a file pair per container.
-    vector<string> children;
-    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
-    ASSERT_EQ(4 + (2 * expected_num_containers), children.size());
+    vector<string> containers;
+    DoGetContainers(CONTAINER_NAMES, &containers);
+    ASSERT_EQ(expected_num_containers, containers.size());
+  }
+
+  // Asserts that 'report' contains no inconsistencies.
+  void AssertEmptyReport(const FsReport& report) {
+    ASSERT_TRUE(report.full_container_space_check->entries.empty());
+    ASSERT_TRUE(report.incomplete_container_check->entries.empty());
+    ASSERT_TRUE(report.malformed_record_check->entries.empty());
+    ASSERT_TRUE(report.misaligned_block_check->entries.empty());
+    ASSERT_TRUE(report.partial_record_check->entries.empty());
   }
 
   unique_ptr<LogBlockManager> bm_;
+
+ private:
+  enum GetMode {
+    DATA_FILES,
+    METADATA_FILES,
+    CONTAINER_NAMES,
+  };
+  void DoGetContainers(GetMode mode, vector<string>* out) {
+    // Populate 'data_files' and 'metadata_files'.
+    vector<string> data_files;
+    vector<string> metadata_files;
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
+    for (const string& child : children) {
+      if (HasSuffixString(child, LogBlockManager::kContainerDataFileSuffix)) {
+        data_files.push_back(JoinPathSegments(GetTestDataDirectory(), child));
+      } else if (HasSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix)) {
+        metadata_files.push_back(JoinPathSegments(GetTestDataDirectory(), child));
+      }
+    }
+
+    switch (mode) {
+      case DATA_FILES:
+        *out = std::move(data_files);
+        break;
+      case METADATA_FILES:
+        *out = std::move(metadata_files);
+        break;
+      case CONTAINER_NAMES:
+        // Build the union of 'data_files' and 'metadata_files' with suffixes
+        // stripped.
+        unordered_set<string> container_names;
+        for (const auto& df : data_files) {
+          string c;
+          ASSERT_TRUE(TryStripSuffixString(
+              df, LogBlockManager::kContainerDataFileSuffix, &c));
+          container_names.emplace(std::move(c));
+        }
+        for (const auto& mdf : metadata_files) {
+          string c;
+          ASSERT_TRUE(TryStripSuffixString(
+              mdf, LogBlockManager::kContainerMetadataFileSuffix, &c));
+          container_names.emplace(std::move(c));
+        }
+        out->assign(container_names.begin(), container_names.end());
+        break;
+    }
+  }
 };
 
 static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
@@ -133,7 +198,8 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
 TEST_F(LogBlockManagerTest, MetricsTest) {
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
-  ASSERT_OK(ReopenBlockManager(entity));
+  bm_.reset(CreateBlockManager(entity));
+  ASSERT_OK(bm_->Open(nullptr));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
 
   // Lower the max container size so that we can more easily test full
@@ -179,7 +245,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   // persistent information so they should be the same.
   MetricRegistry new_registry;
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
-  ASSERT_OK(ReopenBlockManager(new_entity));
+  bm_.reset(CreateBlockManager(new_entity));
+  ASSERT_OK(bm_->Open(nullptr));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
   // Delete a block. Its contents should no longer be under management.
@@ -691,6 +758,184 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
 
   ASSERT_OK(create_some_blocks());
   NO_FATALS(AssertNumContainers(4));
+}
+
+TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
+  FLAGS_log_container_preallocate_bytes = 0;
+  FLAGS_log_container_max_size = 1;
+
+  const int kNumContainers = 10;
+
+  // Create several full containers.
+  {
+    ScopedWritableBlockCloser closer;
+    for (int i = 0; i < kNumContainers; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(&block));
+      ASSERT_OK(block->Append("a"));
+      closer.AddBlock(std::move(block));
+    }
+  }
+  vector<string> container_names;
+  NO_FATALS(GetContainerNames(&container_names));
+
+  // Corrupt one container.
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  ASSERT_OK(corruptor.PreallocateFullContainer());
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  // XXX: the LBM currently declares all full containers as having excess
+  // preallocated space. Using extent maps will clear that up.
+  ASSERT_EQ(kNumContainers, report.full_container_space_check->entries.size());
+  const LBMFullContainerSpaceCheck::Entry& fcs =
+      report.full_container_space_check->entries[0];
+  unordered_set<string> container_name_set(container_names.begin(),
+                                           container_names.end());
+  ASSERT_TRUE(ContainsKey(container_name_set, fcs.container));
+  // XXX: See above, excess can be zero.
+  ASSERT_GE(fcs.excess_bytes, 0);
+  ASSERT_TRUE(fcs.repaired);
+  report.full_container_space_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
+}
+
+TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
+  const int kNumContainers = 20;
+
+  // Create some incomplete containers. The corruptor will select between
+  // several variants of "incompleteness" at random (see
+  // LBMCorruptor::CreateIncompleteContainer() for details).
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  for (int i = 0; i < kNumContainers; i++) {
+    ASSERT_OK(corruptor.CreateIncompleteContainer());
+  }
+  vector<string> container_names;
+  NO_FATALS(GetContainerNames(&container_names));
+  ASSERT_EQ(kNumContainers, container_names.size());
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  ASSERT_EQ(kNumContainers, report.incomplete_container_check->entries.size());
+  unordered_set<string> container_name_set(container_names.begin(),
+                                           container_names.end());
+  for (const auto& ic : report.incomplete_container_check->entries) {
+    ASSERT_TRUE(ContainsKey(container_name_set, ic.container));
+    ASSERT_TRUE(ic.repaired);
+  }
+  report.incomplete_container_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
+}
+
+TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
+  const int kNumRecords = 50;
+
+  // Create one container.
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(bm_->CreateBlock(&block));
+  ASSERT_OK(block->Append("a"));
+  ASSERT_OK(block->Close());
+  string container_name;
+  NO_FATALS(GetOnlyContainer(&container_name));
+
+  // Add some malformed records. The corruptor will select between
+  // several variants of "malformedness" at random (see
+  // LBMCorruptor::AddMalformedRecordToContainer for details).
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  for (int i = 0; i < kNumRecords; i++) {
+    ASSERT_OK(corruptor.AddMalformedRecordToContainer());
+  }
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_TRUE(report.HasFatalErrors());
+  ASSERT_EQ(kNumRecords, report.malformed_record_check->entries.size());
+  for (const auto& mr : report.malformed_record_check->entries) {
+    ASSERT_EQ(container_name, mr.container);
+  }
+  report.malformed_record_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
+}
+
+TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
+  const int kNumBlocks = 50;
+
+  // Create one container.
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(bm_->CreateBlock(&block));
+  ASSERT_OK(block->Append("a"));
+  ASSERT_OK(block->Close());
+  string container_name;
+  NO_FATALS(GetOnlyContainer(&container_name));
+
+  // Add some misaligned blocks.
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  for (int i = 0; i < kNumBlocks; i++) {
+    ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
+  }
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  ASSERT_EQ(kNumBlocks, report.misaligned_block_check->entries.size());
+  uint64_t fs_block_size;
+  ASSERT_OK(env_->GetBlockSize(test_dir_, &fs_block_size));
+  for (const auto& mb : report.misaligned_block_check->entries) {
+    ASSERT_EQ(container_name, mb.container);
+  }
+  report.misaligned_block_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
+}
+
+TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
+  const int kNumContainers = 50;
+  const int kNumRecords = 10;
+
+  // Create some containers.
+  {
+    ScopedWritableBlockCloser closer;
+    for (int i = 0; i < kNumContainers; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(&block));
+      ASSERT_OK(block->Append("a"));
+      closer.AddBlock(std::move(block));
+    }
+  }
+  vector<string> container_names;
+  NO_FATALS(GetContainerNames(&container_names));
+  ASSERT_EQ(kNumContainers, container_names.size());
+
+  // Add some partial records.
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  for (int i = 0; i < kNumRecords; i++) {
+    ASSERT_OK(corruptor.AddPartialRecordToContainer());
+  }
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  ASSERT_EQ(kNumRecords, report.partial_record_check->entries.size());
+  unordered_set<string> container_name_set(container_names.begin(),
+                                           container_names.end());
+  for (const auto& pr : report.partial_record_check->entries) {
+    ASSERT_TRUE(ContainsKey(container_name_set, pr.container));
+    ASSERT_GT(pr.offset, 0);
+    ASSERT_TRUE(pr.repaired);
+  }
+  report.partial_record_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
 }
 
 } // namespace fs
