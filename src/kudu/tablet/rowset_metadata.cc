@@ -138,9 +138,11 @@ const string RowSetMetadata::ToString() const {
   return Substitute("RowSet($0)", id_);
 }
 
-void RowSetMetadata::SetColumnDataBlocks(const ColumnIdToBlockIdMap& blocks) {
+void RowSetMetadata::SetColumnDataBlocks(const std::map<ColumnId, BlockId>& blocks_by_col_id) {
+  ColumnIdToBlockIdMap new_map(blocks_by_col_id.begin(), blocks_by_col_id.end());
+  new_map.shrink_to_fit();
   std::lock_guard<LockType> l(lock_);
-  blocks_by_col_id_ = blocks;
+  blocks_by_col_id_ = std::move(new_map);
 }
 
 Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
@@ -234,6 +236,8 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       removed.push_back(old);
     }
   }
+
+  blocks_by_col_id_.shrink_to_fit();
 
   // Should only be NULL in tests.
   if (tablet_metadata()) {

@@ -18,6 +18,7 @@
 #include "kudu/tablet/delta_compaction.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -306,7 +307,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   }
 
   // Replace old column blocks with new ones
-  RowSetMetadata::ColumnIdToBlockIdMap new_column_blocks;
+  std::map<ColumnId, BlockId> new_column_blocks;
   base_data_writer_->GetFlushedBlocksByColumnId(&new_column_blocks);
 
   // NOTE: in the case that one of the columns being compacted is deleted,

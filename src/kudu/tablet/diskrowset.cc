@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/diskrowset.h"
+
 #include <algorithm>
-#include <glog/logging.h>
-#include <glog/stl_logging.h>
+#include <map>
 #include <mutex>
 #include <vector>
+
+#include <glog/logging.h>
+#include <glog/stl_logging.h>
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_writer.h"
@@ -34,7 +38,6 @@
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
@@ -228,7 +231,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(closer));
 
   // Put the column data blocks in the metadata.
-  RowSetMetadata::ColumnIdToBlockIdMap flushed_blocks;
+  std::map<ColumnId, BlockId> flushed_blocks;
   col_writer_->GetFlushedBlocksByColumnId(&flushed_blocks);
   rowset_metadata_->SetColumnDataBlocks(flushed_blocks);
 
