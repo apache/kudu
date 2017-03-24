@@ -1385,7 +1385,7 @@ Status LogBlockManager::Open() {
 }
 
 Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
-                                    gscoped_ptr<WritableBlock>* block) {
+                                    unique_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
   // Find a free container. If one cannot be found, create a new one.
@@ -1411,12 +1411,12 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   return Status::OK();
 }
 
-Status LogBlockManager::CreateBlock(gscoped_ptr<WritableBlock>* block) {
+Status LogBlockManager::CreateBlock(unique_ptr<WritableBlock>* block) {
   return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status LogBlockManager::OpenBlock(const BlockId& block_id,
-                                  gscoped_ptr<ReadableBlock>* block) {
+                                  unique_ptr<ReadableBlock>* block) {
   scoped_refptr<LogBlock> lb;
   {
     std::lock_guard<simple_spinlock> l(lock_);

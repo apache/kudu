@@ -76,7 +76,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       DeltaType type) {
   FsManager* fs = rowset_metadata_->fs_manager();
   for (const BlockId& block_id : blocks) {
-    gscoped_ptr<ReadableBlock> block;
+    unique_ptr<ReadableBlock> block;
     Status s = fs->OpenBlock(block_id, &block);
     if (!s.ok()) {
       LOG_WITH_PREFIX(ERROR) << "Failed to open " << DeltaType_Name(type)
@@ -346,7 +346,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
 
   // Open a writer for the new destination delta block
   FsManager* fs = rowset_metadata_->fs_manager();
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Could not allocate delta block");
   BlockId new_block_id(block->id());
@@ -478,7 +478,7 @@ Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
 }
 
 Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
-         gscoped_ptr<WritableBlock> block,
+         unique_ptr<WritableBlock> block,
          vector<shared_ptr<DeltaStore> > *compacted_stores,
          vector<BlockId> *compacted_blocks) {
   unique_ptr<DeltaIterator> inputs_merge;
@@ -612,7 +612,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                               MetadataFlushType flush_type) {
   // Open file for write.
   FsManager* fs = rowset_metadata_->fs_manager();
-  gscoped_ptr<WritableBlock> writable_block;
+  unique_ptr<WritableBlock> writable_block;
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&writable_block),
                         "Unable to allocate new delta data writable_block");
   BlockId block_id(writable_block->id());
@@ -630,7 +630,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                         << ", " << stats->max_timestamp() << "]";
 
   // Now re-open for read
-  gscoped_ptr<ReadableBlock> readable_block;
+  unique_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &readable_block));
   ReaderOptions options;
   options.parent_mem_tracker = mem_trackers_.tablet_tracker;

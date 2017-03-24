@@ -192,7 +192,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
   // Write ten blocks.
   const char* kTestData = "test data";
   for (int i = 0; i < 10; i++) {
-    gscoped_ptr<WritableBlock> written_block;
+    unique_ptr<WritableBlock> written_block;
     ASSERT_OK(bm_->CreateBlock(&written_block));
     ASSERT_OK(written_block->Append(kTestData));
     ASSERT_OK(written_block->Close());
@@ -216,7 +216,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   for (int i = 0; i < 3; i++) {
     ScopedWritableBlockCloser closer;
     for (int j = 0; j < paths.size() * 2; j++) {
-      gscoped_ptr<WritableBlock> block;
+      unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(&block));
       ASSERT_OK(block->Append(kTestData));
       closer.AddBlock(std::move(block));
@@ -270,7 +270,7 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   FLAGS_log_container_max_size = 1024;
 
   // One block --> one container.
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(&writer));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 1, 0));
 
@@ -285,7 +285,7 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
     Random rand(SeedRandom());
     ScopedWritableBlockCloser closer;
     for (int i = 0; i < 10; i++) {
-      gscoped_ptr<WritableBlock> b;
+      unique_ptr<WritableBlock> b;
       ASSERT_OK(bm_->CreateBlock(&b));
       if (saved_id.IsNull()) {
         saved_id = b->id();
@@ -334,7 +334,7 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
 
   // Create a block with some test data. This should also trigger
   // preallocation of the container, provided it's supported by the kernel.
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Append(kTestData));
   ASSERT_OK(written_block->Close());
@@ -381,7 +381,7 @@ void BlockManagerTest<FileBlockManager>::RunMemTrackerTest() {
   // The file block manager does not allocate memory for persistent data.
   int64_t initial_mem = tracker->consumption();
   ASSERT_EQ(initial_mem, 0);
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(&writer));
   ASSERT_OK(writer->Close());
   ASSERT_EQ(tracker->consumption(), initial_mem);
@@ -400,7 +400,7 @@ void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
   ASSERT_GT(initial_mem, 0);
 
   // Allocating a persistent block should increase the consumption.
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(&writer));
   ASSERT_OK(writer->Close());
   ASSERT_GT(tracker->consumption(), initial_mem);
@@ -417,7 +417,7 @@ TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
 // Test the entire lifecycle of a block.
 TYPED_TEST(BlockManagerTest, EndToEndTest) {
   // Create a block.
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
 
   // Write some data to it.
@@ -426,7 +426,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   ASSERT_OK(written_block->Close());
 
   // Read the data back.
-  gscoped_ptr<ReadableBlock> read_block;
+  unique_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
@@ -450,14 +450,14 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
 // (even if we can't open it again).
 TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   // Write a new block.
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Close());
 
   // Open it for reading, then delete it. Subsequent opens should fail.
-  gscoped_ptr<ReadableBlock> read_block;
+  unique_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
@@ -472,13 +472,13 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
 
 TYPED_TEST(BlockManagerTest, CloseTwiceTest) {
   // Create a new block and close it repeatedly.
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Close());
   ASSERT_OK(written_block->Close());
 
   // Open it for reading and close it repeatedly.
-  gscoped_ptr<ReadableBlock> read_block;
+  unique_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(read_block->Close());
   ASSERT_OK(read_block->Close());
@@ -501,7 +501,7 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
   LOG_TIMING(INFO, Substitute("creating $0 blocks", kNumBlocks)) {
     for (int i = 0; i < kNumBlocks; i++) {
       // Create a block.
-      gscoped_ptr<WritableBlock> written_block;
+      unique_ptr<WritableBlock> written_block;
       ASSERT_OK(this->bm_->CreateBlock(&written_block));
 
       // Write 64k bytes of random data into it.
@@ -523,7 +523,7 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
 // We can't really test that FlushDataAsync() "works", but we can test that
 // it doesn't break anything.
 TYPED_TEST(BlockManagerTest, FlushDataAsyncTest) {
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
@@ -531,7 +531,7 @@ TYPED_TEST(BlockManagerTest, FlushDataAsyncTest) {
 }
 
 TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
 
   // Common flow: CLEAN->DIRTY->CLOSED.
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
@@ -595,7 +595,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
                                      { this->test_dir_ },
                                      false));
 
-  gscoped_ptr<WritableBlock> written_block;
+  unique_ptr<WritableBlock> written_block;
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   string test_data = "test data";
   ASSERT_OK(written_block->Append(test_data));
@@ -620,9 +620,9 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // 1. Empty.
   // 2. Non-empty.
   // 3. Deleted.
-  gscoped_ptr<WritableBlock> written_block1;
-  gscoped_ptr<WritableBlock> written_block2;
-  gscoped_ptr<WritableBlock> written_block3;
+  unique_ptr<WritableBlock> written_block1;
+  unique_ptr<WritableBlock> written_block2;
+  unique_ptr<WritableBlock> written_block3;
   ASSERT_OK(this->bm_->CreateBlock(&written_block1));
   ASSERT_OK(written_block1->Close());
   ASSERT_OK(this->bm_->CreateBlock(&written_block2));
@@ -646,7 +646,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(new_bm->Open());
 
   // Test that the state of all three blocks is properly reflected.
-  gscoped_ptr<ReadableBlock> read_block;
+  unique_ptr<ReadableBlock> read_block;
   ASSERT_OK(new_bm->OpenBlock(written_block1->id(), &read_block));
   uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
@@ -684,11 +684,11 @@ static void CloseHelper(ReadableBlock* block) {
 
 // Tests that ReadableBlock::Close() is thread-safe and idempotent.
 TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(this->bm_->CreateBlock(&writer));
   ASSERT_OK(writer->Close());
 
-  gscoped_ptr<ReadableBlock> reader;
+  unique_ptr<ReadableBlock> reader;
   ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
 
   vector<scoped_refptr<Thread> > threads;
@@ -714,8 +714,8 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
   ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
 
   for (int i = 0; i < 3; i++) {
-    gscoped_ptr<WritableBlock> writer;
-    gscoped_ptr<ReadableBlock> reader;
+    unique_ptr<WritableBlock> writer;
+    unique_ptr<ReadableBlock> reader;
 
     // An open writer. Also reflected in total_writable_blocks.
     ASSERT_OK(this->bm_->CreateBlock(&writer));
@@ -784,7 +784,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   {
     ScopedWritableBlockCloser closer;
     for (int i = 0; i < 4; i++) {
-      gscoped_ptr<WritableBlock> writer;
+      unique_ptr<WritableBlock> writer;
       ASSERT_OK(bm_->CreateBlock(&writer));
       block_ids.push_back(writer->id());
       closer.AddBlock(std::move(writer));
@@ -794,7 +794,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 
   // Create one more block, which should reuse the first container.
   {
-    gscoped_ptr<WritableBlock> writer;
+    unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(&writer));
     ASSERT_OK(writer->Close());
   }
@@ -811,7 +811,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   // could produce this situation, and we still need to handle it on startup.
   bm_->next_block_id_.Store(1);
   for (int i = 0; i < 4; i++) {
-    gscoped_ptr<WritableBlock> writer;
+    unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(&writer));
     ASSERT_EQ(writer->id(), block_ids[i]);
     ASSERT_OK(writer->Close());
@@ -851,7 +851,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   vector<BlockId> created_blocks;
   BlockId last_block_id;
   for (int i = 0; i < 4; i++) {
-    gscoped_ptr<WritableBlock> writer;
+    unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(&writer));
     last_block_id = writer->id();
     created_blocks.push_back(last_block_id);
@@ -860,7 +860,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   vector<BlockId> block_ids;
   ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
   ASSERT_EQ(4, block_ids.size());
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
   ASSERT_OK(block->Close());
 
@@ -916,7 +916,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Add a new block, increasing the size of the container metadata file.
   {
-    gscoped_ptr<WritableBlock> writer;
+    unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(&writer));
     last_block_id = writer->id();
     created_blocks.push_back(last_block_id);
@@ -961,7 +961,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
 
   // Add a new block, increasing the size of the container metadata file.
   {
-    gscoped_ptr<WritableBlock> writer;
+    unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(&writer));
     last_block_id = writer->id();
     created_blocks.push_back(last_block_id);
@@ -1038,7 +1038,7 @@ TEST_F(LogBlockManagerTest, TestAppendExceedsPreallocation) {
   FLAGS_log_container_preallocate_bytes = 1;
 
   // Create a container, preallocate it by one byte, and append more than one.
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(&writer));
   ASSERT_OK(writer->Append("hello world"));
   ASSERT_OK(writer->Close());
@@ -1057,7 +1057,7 @@ TEST_F(LogBlockManagerTest, TestPreallocationAndTruncation) {
   FLAGS_log_container_preallocate_bytes = 32 * 1024 * 1024;
 
   // Fill up one container.
-  gscoped_ptr<WritableBlock> writer;
+  unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(&writer));
   unique_ptr<uint8_t[]> data(new uint8_t[FLAGS_log_container_max_size]);
   memset(data.get(), 0, FLAGS_log_container_max_size);
@@ -1141,7 +1141,7 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
     FLAGS_disk_reserved_bytes_free_for_testing = free_space;
 
     for (int attempt = 0; attempt < 3; attempt++) {
-      gscoped_ptr<WritableBlock> writer;
+      unique_ptr<WritableBlock> writer;
       LOG(INFO) << "Attempt #" << ++i;
       Status s = this->bm_->CreateBlock(&writer);
       if (FLAGS_disk_reserved_bytes_free_for_testing < FLAGS_fs_data_dirs_reserved_bytes) {
@@ -1193,7 +1193,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
 
   // Creates a block, writing the result to 'out' on success.
   auto create_a_block = [&](BlockId* out) -> Status {
-    gscoped_ptr<WritableBlock> block;
+    unique_ptr<WritableBlock> block;
     RETURN_NOT_OK(this->bm_->CreateBlock(&block));
     for (int i = 0; i < kNumAppends; i++) {
       RETURN_NOT_OK(block->Append(kTestData));
@@ -1205,7 +1205,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
 
   // Reads a block given by 'id', comparing its contents to kTestData.
   auto read_a_block = [&](const BlockId& id) -> Status {
-    gscoped_ptr<ReadableBlock> block;
+    unique_ptr<ReadableBlock> block;
     RETURN_NOT_OK(this->bm_->OpenBlock(id, &block));
     uint64_t size;
     RETURN_NOT_OK(block->Size(&size));
@@ -1274,7 +1274,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
 TYPED_TEST(BlockManagerTest, TestGetAllBlockIds) {
   vector<BlockId> ids;
   for (int i = 0; i < 100; i++) {
-    gscoped_ptr<WritableBlock> block;
+    unique_ptr<WritableBlock> block;
     ASSERT_OK(this->bm_->CreateBlock(&block));
     ASSERT_OK(block->Close());
     ids.push_back(block->id());
@@ -1332,7 +1332,7 @@ TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
   LOG(INFO) << Substitute("Creating $0 blocks", kNumBlocks);
   vector<BlockId> ids;
   for (int i = 0; i < kNumBlocks; i++) {
-    gscoped_ptr<WritableBlock> block;
+    unique_ptr<WritableBlock> block;
     ASSERT_OK(bm_->CreateBlock(&block));
     ASSERT_OK(block->Append("aaaa"));
     ASSERT_OK(block->Close());
@@ -1420,7 +1420,7 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
   // Creates 'kNumBlocks' blocks with minimal data.
   auto create_some_blocks = [&]() -> Status {
     for (int i = 0; i < kNumBlocks; i++) {
-      gscoped_ptr<WritableBlock> block;
+      unique_ptr<WritableBlock> block;
       RETURN_NOT_OK(bm_->CreateBlock(&block));
       RETURN_NOT_OK(block->Append("aaaa"));
       RETURN_NOT_OK(block->Close());

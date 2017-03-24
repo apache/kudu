@@ -55,8 +55,8 @@ using strings::Substitute;
 static Status OpenReader(FsManager* fs,
                          shared_ptr<MemTracker> parent_mem_tracker,
                          const BlockId& block_id,
-                         gscoped_ptr<CFileReader> *new_reader) {
-  gscoped_ptr<ReadableBlock> block;
+                         unique_ptr<CFileReader>* new_reader) {
+  unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
   ReaderOptions opts;
@@ -100,12 +100,12 @@ Status CFileSet::DoOpen() {
     ColumnId col_id = e.first;
     DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
 
-    gscoped_ptr<CFileReader> reader;
+    unique_ptr<CFileReader> reader;
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
                              parent_mem_tracker_,
                              rowset_metadata_->column_data_block_for_col_id(col_id),
                              &reader));
-    readers_by_col_id_[col_id] = unique_ptr<CFileReader>(reader.release());
+    readers_by_col_id_[col_id] = std::move(reader);
     VLOG(1) << "Successfully opened cfile for column id " << col_id
             << " in " << rowset_metadata_->ToString();
   }
@@ -130,7 +130,7 @@ Status CFileSet::DoOpen() {
 
 Status CFileSet::OpenBloomReader() {
   FsManager* fs = rowset_metadata_->fs_manager();
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
   ReaderOptions opts;

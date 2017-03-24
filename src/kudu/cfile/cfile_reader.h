@@ -18,6 +18,7 @@
 #ifndef KUDU_CFILE_CFILE_READER_H
 #define KUDU_CFILE_CFILE_READER_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -59,9 +60,9 @@ class CFileReader {
   // Fully open a cfile using a previously opened block.
   //
   // After this call, the reader is safe for use.
-  static Status Open(gscoped_ptr<fs::ReadableBlock> block,
+  static Status Open(std::unique_ptr<fs::ReadableBlock> block,
                      ReaderOptions options,
-                     gscoped_ptr<CFileReader>* reader);
+                     std::unique_ptr<CFileReader>* reader);
 
   // Lazily open a cfile using a previously opened block. A lazy open does
   // not incur additional I/O, nor does it validate the contents of the
@@ -69,9 +70,9 @@ class CFileReader {
   //
   // Init() must be called before most methods; the exceptions are documented
   // below.
-  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
+  static Status OpenNoInit(std::unique_ptr<fs::ReadableBlock> block,
                            ReaderOptions options,
-                           gscoped_ptr<CFileReader>* reader);
+                           std::unique_ptr<CFileReader>* reader);
 
   // Fully opens a previously lazily opened cfile, parsing and validating
   // its contents.
@@ -175,7 +176,7 @@ class CFileReader {
 
   CFileReader(ReaderOptions options,
               uint64_t file_size,
-              gscoped_ptr<fs::ReadableBlock> block);
+              std::unique_ptr<fs::ReadableBlock> block);
 
   // Callback used in 'init_once_' to initialize this cfile.
   Status InitOnce();
@@ -190,7 +191,7 @@ class CFileReader {
 #ifdef __clang__
   __attribute__((__unused__))
 #endif
-  const gscoped_ptr<fs::ReadableBlock> block_;
+  const std::unique_ptr<fs::ReadableBlock> block_;
   const uint64_t file_size_;
 
   uint8_t cfile_version_;

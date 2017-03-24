@@ -37,6 +37,7 @@ DEFINE_int32(n_verify, 1, "number of times to verify the updates"
 
 using std::is_sorted;
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -67,7 +68,7 @@ class TestDeltaFile : public KuduTest {
   }
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
-    gscoped_ptr<WritableBlock> block;
+    unique_ptr<WritableBlock> block;
     ASSERT_OK(fs_manager_->CreateNewBlock(&block));
     test_block_ = block->id();
     DeltaFileWriter dfw(std::move(block));
@@ -105,7 +106,7 @@ class TestDeltaFile : public KuduTest {
   }
 
   Status OpenDeltaFileReader(const BlockId& block_id, shared_ptr<DeltaFileReader>* out) {
-    gscoped_ptr<ReadableBlock> block;
+    unique_ptr<ReadableBlock> block;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
     return DeltaFileReader::Open(std::move(block), REDO, ReaderOptions(), out);
   }
@@ -217,7 +218,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   }
   ASSERT_OK(s);
 
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   BlockId block_id(block->id());
   DeltaFileWriter dfw(std::move(block));
@@ -332,10 +333,10 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   WriteTestFile();
 
   // Open it using a "counting" readable block.
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
   size_t bytes_read = 0;
-  gscoped_ptr<ReadableBlock> count_block(
+  unique_ptr<ReadableBlock> count_block(
       new CountingReadableBlock(std::move(block), &bytes_read));
 
   // Lazily opening the delta file should not trigger any reads.
@@ -364,7 +365,7 @@ TEST_F(TestDeltaFile, TestLazyInit) {
 // Check that, if a delta file is opened but no deltas are written,
 // Finish() will return Status::Aborted().
 TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   test_block_ = block->id();
   {
@@ -377,7 +378,7 @@ TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
   }
 
   // The block should have been deleted as well.
-  gscoped_ptr<ReadableBlock> rb;
+  unique_ptr<ReadableBlock> rb;
   Status s = fs_manager_->OpenBlock(test_block_, &rb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }

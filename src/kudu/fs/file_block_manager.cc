@@ -38,6 +38,7 @@
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -552,7 +553,7 @@ Status FileBlockManager::Open() {
 }
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
-                                     gscoped_ptr<WritableBlock>* block) {
+                                     unique_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
   DataDir* dir;
@@ -608,12 +609,12 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   return s;
 }
 
-Status FileBlockManager::CreateBlock(gscoped_ptr<WritableBlock>* block) {
+Status FileBlockManager::CreateBlock(unique_ptr<WritableBlock>* block) {
   return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,
-                                   gscoped_ptr<ReadableBlock>* block) {
+                                   unique_ptr<ReadableBlock>* block) {
   string path;
   if (!FindBlockPath(block_id, &path)) {
     return Status::NotFound(

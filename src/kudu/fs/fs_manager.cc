@@ -32,6 +32,7 @@
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
@@ -89,6 +90,7 @@ using kudu::fs::WritableBlock;
 using std::map;
 using std::stack;
 using std::string;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -568,13 +570,13 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 //  Data read/write interfaces
 // ==========================================================================
 
-Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
+Status FsManager::CreateNewBlock(unique_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
   return block_manager_->CreateBlock(block);
 }
 
-Status FsManager::OpenBlock(const BlockId& block_id, gscoped_ptr<ReadableBlock>* block) {
+Status FsManager::OpenBlock(const BlockId& block_id, unique_ptr<ReadableBlock>* block) {
   return block_manager_->OpenBlock(block_id, block);
 }
 
@@ -585,7 +587,7 @@ Status FsManager::DeleteBlock(const BlockId& block_id) {
 }
 
 bool FsManager::BlockExists(const BlockId& block_id) const {
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();
 }
 

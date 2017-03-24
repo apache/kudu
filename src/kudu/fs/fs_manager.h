@@ -27,7 +27,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
@@ -129,10 +128,10 @@ class FsManager {
   // Creates a new anonymous block.
   //
   // Block will be synced on close.
-  Status CreateNewBlock(gscoped_ptr<fs::WritableBlock>* block);
+  Status CreateNewBlock(std::unique_ptr<fs::WritableBlock>* block);
 
   Status OpenBlock(const BlockId& block_id,
-                   gscoped_ptr<fs::ReadableBlock>* block);
+                   std::unique_ptr<fs::ReadableBlock>* block);
 
   Status DeleteBlock(const BlockId& block_id);
 
@@ -279,9 +278,9 @@ class FsManager {
   std::set<std::string> canonicalized_data_fs_roots_;
   std::set<std::string> canonicalized_all_fs_roots_;
 
-  gscoped_ptr<InstanceMetadataPB> metadata_;
+  std::unique_ptr<InstanceMetadataPB> metadata_;
 
-  gscoped_ptr<fs::BlockManager> block_manager_;
+  std::unique_ptr<fs::BlockManager> block_manager_;
 
   bool initted_;
 

@@ -18,9 +18,11 @@
 #ifndef KUDU_CFILE_CFILE_WRITER_H
 #define KUDU_CFILE_CFILE_WRITER_H
 
-#include <unordered_map>
 #include <stdint.h>
+
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -95,7 +97,7 @@ class CFileWriter {
   explicit CFileWriter(const WriterOptions &options,
                        const TypeInfo* typeinfo,
                        bool is_nullable,
-                       gscoped_ptr<fs::WritableBlock> block);
+                       std::unique_ptr<fs::WritableBlock> block);
   ~CFileWriter();
 
   Status Start();
@@ -191,7 +193,7 @@ class CFileWriter {
   void FlushMetadataToPB(google::protobuf::RepeatedPtrField<FileMetadataPairPB> *field);
 
   // Block being written.
-  gscoped_ptr<fs::WritableBlock> block_;
+  std::unique_ptr<fs::WritableBlock> block_;
 
   // Current file offset.
   uint64_t off_;

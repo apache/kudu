@@ -29,6 +29,7 @@ namespace tserver {
 
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
+using std::unique_ptr;
 using tablet::TabletMetadata;
 
 class TabletCopyClientTest : public TabletCopyTest {
@@ -223,13 +224,13 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // FsManager than 'tablet_peer', so the only way an old block could end
   // up in ours is due to a tablet copy client bug.
   for (const BlockId& block_id : old_data_blocks) {
-    gscoped_ptr<fs::ReadableBlock> block;
+    unique_ptr<fs::ReadableBlock> block;
     Status s = fs_manager_->OpenBlock(block_id, &block);
     ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
   }
   // And the new blocks are all present.
   for (const BlockId& block_id : new_data_blocks) {
-    gscoped_ptr<fs::ReadableBlock> block;
+    unique_ptr<fs::ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   }
 }

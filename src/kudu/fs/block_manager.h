@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "kudu/fs/block_id.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -208,10 +207,10 @@ class BlockManager {
   //
   // Does not modify 'block' on error.
   virtual Status CreateBlock(const CreateBlockOptions& opts,
-                             gscoped_ptr<WritableBlock>* block) = 0;
+                             std::unique_ptr<WritableBlock>* block) = 0;
 
   // Like the above but uses default options.
-  virtual Status CreateBlock(gscoped_ptr<WritableBlock>* block) = 0;
+  virtual Status CreateBlock(std::unique_ptr<WritableBlock>* block) = 0;
 
   // Opens an existing block for reading.
   //
@@ -223,7 +222,7 @@ class BlockManager {
   //
   // Does not modify 'block' on error.
   virtual Status OpenBlock(const BlockId& block_id,
-                           gscoped_ptr<ReadableBlock>* block) = 0;
+                           std::unique_ptr<ReadableBlock>* block) = 0;
 
   // Deletes an existing block, allowing its space to be reclaimed by the
   // filesystem. The change is immediately made durable.
@@ -265,7 +264,7 @@ class ScopedWritableBlockCloser {
     STLDeleteElements(&blocks_);
   }
 
-  void AddBlock(gscoped_ptr<WritableBlock> block) {
+  void AddBlock(std::unique_ptr<WritableBlock> block) {
     blocks_.push_back(block.release());
   }
 

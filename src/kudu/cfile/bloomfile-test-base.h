@@ -70,7 +70,7 @@ class BloomFileTestBase : public KuduTest {
   }
 
   void WriteTestBloomFile() {
-    gscoped_ptr<WritableBlock> sink;
+    std::unique_ptr<WritableBlock> sink;
     ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id_ = sink->id();
 
@@ -90,7 +90,7 @@ class BloomFileTestBase : public KuduTest {
   }
 
   Status OpenBloomFile() {
-    gscoped_ptr<ReadableBlock> source;
+    std::unique_ptr<ReadableBlock> source;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id_, &source));
 
     return BloomFileReader::Open(std::move(source), ReaderOptions(), &bfr_);

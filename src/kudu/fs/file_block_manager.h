@@ -78,23 +78,23 @@ class FileBlockManager : public BlockManager {
 
   virtual ~FileBlockManager();
 
-  virtual Status Create() OVERRIDE;
+  Status Create() override;
 
-  virtual Status Open() OVERRIDE;
+  Status Open() override;
 
-  virtual Status CreateBlock(const CreateBlockOptions& opts,
-                             gscoped_ptr<WritableBlock>* block) OVERRIDE;
+  Status CreateBlock(const CreateBlockOptions& opts,
+                     std::unique_ptr<WritableBlock>* block) override;
 
-  virtual Status CreateBlock(gscoped_ptr<WritableBlock>* block) OVERRIDE;
+  Status CreateBlock(std::unique_ptr<WritableBlock>* block) override;
 
-  virtual Status OpenBlock(const BlockId& block_id,
-                           gscoped_ptr<ReadableBlock>* block) OVERRIDE;
+  Status OpenBlock(const BlockId& block_id,
+                   std::unique_ptr<ReadableBlock>* block) override;
 
-  virtual Status DeleteBlock(const BlockId& block_id) OVERRIDE;
+  Status DeleteBlock(const BlockId& block_id) override;
 
-  virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
+  Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
 
-  virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) OVERRIDE;
+  Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
  private:
   friend class internal::FileBlockLocation;
@@ -136,7 +136,7 @@ class FileBlockManager : public BlockManager {
 
   // Metric container for the block manager.
   // May be null if instantiated without metrics.
-  gscoped_ptr<internal::BlockManagerMetrics> metrics_;
+  std::unique_ptr<internal::BlockManagerMetrics> metrics_;
 
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting.

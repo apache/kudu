@@ -31,6 +31,8 @@
 
 DECLARE_bool(cfile_lazy_open);
 
+using std::unique_ptr;
+
 namespace kudu {
 namespace cfile {
 
@@ -42,7 +44,7 @@ using fs::WritableBlock;
 // Writer
 ////////////////////////////////////////////////////////////
 
-BloomFileWriter::BloomFileWriter(gscoped_ptr<WritableBlock> block,
+BloomFileWriter::BloomFileWriter(unique_ptr<WritableBlock> block,
                                  const BloomFilterSizing &sizing)
   : bloom_builder_(sizing) {
   cfile::WriterOptions opts;
@@ -139,7 +141,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
+Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
                              ReaderOptions options,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<BloomFileReader> bf_reader;
@@ -151,10 +153,10 @@ Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+Status BloomFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                    ReaderOptions options,
                                    gscoped_ptr<BloomFileReader> *reader) {
-  gscoped_ptr<CFileReader> cf_reader;
+  unique_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         options, &cf_reader));
   gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(
@@ -167,7 +169,7 @@ Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-BloomFileReader::BloomFileReader(gscoped_ptr<CFileReader> reader,
+BloomFileReader::BloomFileReader(unique_ptr<CFileReader> reader,
                                  ReaderOptions options)
   : reader_(std::move(reader)),
     mem_consumption_(std::move(options.parent_mem_tracker),

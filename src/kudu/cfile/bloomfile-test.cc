@@ -24,6 +24,7 @@ namespace kudu {
 namespace cfile {
 
 using fs::CountingReadableBlock;
+using std::unique_ptr;
 
 class BloomFileTest : public BloomFileTestBase {
 
@@ -94,10 +95,10 @@ TEST_F(BloomFileTest, TestLazyInit) {
   int64_t initial_mem_usage = tracker->consumption();
 
   // Open the bloom file using a "counting" readable block.
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   ASSERT_OK(fs_manager_->OpenBlock(block_id_, &block));
   size_t bytes_read = 0;
-  gscoped_ptr<ReadableBlock> count_block(
+  unique_ptr<ReadableBlock> count_block(
       new CountingReadableBlock(std::move(block), &bytes_read));
 
   // Lazily opening the bloom file should not trigger any reads.

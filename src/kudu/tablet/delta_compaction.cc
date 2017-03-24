@@ -247,7 +247,7 @@ Status MajorDeltaCompaction::OpenBaseDataWriter() {
 }
 
 Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create REDO delta output block");
   new_redo_delta_block_ = block->id();
@@ -256,7 +256,7 @@ Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
 }
 
 Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create UNDO delta output block");
   new_undo_delta_block_ = block->id();

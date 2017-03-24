@@ -68,7 +68,7 @@ class TestDeltaCompaction : public KuduTest {
 
   Status GetDeltaFileWriter(gscoped_ptr<DeltaFileWriter>* dfw,
                             BlockId* block_id) const {
-    gscoped_ptr<WritableBlock> block;
+    unique_ptr<WritableBlock> block;
     RETURN_NOT_OK(fs_manager_->CreateNewBlock(&block));
     *block_id = block->id();
     dfw->reset(new DeltaFileWriter(std::move(block)));
@@ -78,7 +78,7 @@ class TestDeltaCompaction : public KuduTest {
 
   Status GetDeltaFileReader(const BlockId& block_id,
                             shared_ptr<DeltaFileReader>* dfr) const {
-    gscoped_ptr<ReadableBlock> block;
+    unique_ptr<ReadableBlock> block;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &block));
     shared_ptr<DeltaFileReader> delta_reader;
     return DeltaFileReader::Open(std::move(block), REDO, ReaderOptions(), dfr);

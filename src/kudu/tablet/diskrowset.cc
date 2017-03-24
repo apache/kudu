@@ -101,7 +101,7 @@ Status DiskRowSetWriter::Open() {
 
 Status DiskRowSetWriter::InitBloomFileWriter() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::InitBloomFileWriter");
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Couldn't allocate a block for bloom filter");
@@ -114,7 +114,7 @@ Status DiskRowSetWriter::InitBloomFileWriter() {
 
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::InitAdHocIndexWriter");
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
                         "Couldn't allocate a block for compoound index");
@@ -311,8 +311,8 @@ Status RollingDiskRowSetWriter::RollWriter() {
   RETURN_NOT_OK(cur_writer_->Open());
 
   FsManager* fs = tablet_metadata_->fs_manager();
-  gscoped_ptr<WritableBlock> undo_data_block;
-  gscoped_ptr<WritableBlock> redo_data_block;
+  unique_ptr<WritableBlock> undo_data_block;
+  unique_ptr<WritableBlock> redo_data_block;
   RETURN_NOT_OK(fs->CreateNewBlock(&undo_data_block));
   RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_block));
   cur_undo_ds_block_id_ = undo_data_block->id();

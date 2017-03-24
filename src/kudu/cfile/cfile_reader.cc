@@ -20,6 +20,7 @@
 #include <glog/logging.h>
 
 #include <algorithm>
+#include <memory>
 
 #include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_cache.h"
@@ -51,6 +52,7 @@ TAG_FLAG(cfile_lazy_open, hidden);
 
 using kudu::fs::ReadableBlock;
 using strings::Substitute;
+using std::unique_ptr;
 
 namespace kudu {
 namespace cfile {
@@ -91,7 +93,7 @@ static Status ParseMagicAndLength(const Slice &data,
 
 CFileReader::CFileReader(ReaderOptions options,
                          uint64_t file_size,
-                         gscoped_ptr<ReadableBlock> block) :
+                         unique_ptr<ReadableBlock> block) :
   block_(std::move(block)),
   file_size_(file_size),
   codec_(nullptr),
@@ -99,31 +101,31 @@ CFileReader::CFileReader(ReaderOptions options,
                    memory_footprint()) {
 }
 
-Status CFileReader::Open(gscoped_ptr<ReadableBlock> block,
+Status CFileReader::Open(unique_ptr<ReadableBlock> block,
                          ReaderOptions options,
-                         gscoped_ptr<CFileReader> *reader) {
-  gscoped_ptr<CFileReader> reader_local;
+                         unique_ptr<CFileReader>* reader) {
+  unique_ptr<CFileReader> reader_local;
   RETURN_NOT_OK(OpenNoInit(std::move(block),
                            std::move(options),
                            &reader_local));
   RETURN_NOT_OK(reader_local->Init());
 
-  reader->reset(reader_local.release());
+  *reader = std::move(reader_local);
   return Status::OK();
 }
 
-Status CFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+Status CFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                ReaderOptions options,
-                               gscoped_ptr<CFileReader> *reader) {
+                               unique_ptr<CFileReader>* reader) {
   uint64_t block_size;
   RETURN_NOT_OK(block->Size(&block_size));
-  gscoped_ptr<CFileReader> reader_local(
+  unique_ptr<CFileReader> reader_local(
       new CFileReader(std::move(options), block_size, std::move(block)));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(reader_local->Init());
   }
 
-  reader->reset(reader_local.release());
+  *reader = std::move(reader_local);
   return Status::OK();
 }
 

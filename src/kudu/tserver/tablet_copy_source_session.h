@@ -66,7 +66,7 @@ struct ImmutableRandomAccessFileInfo {
 // Caches block size and holds an exclusive reference to a ReadableBlock.
 // Assumes that the block underlying the ReadableBlock is immutable.
 struct ImmutableReadableBlockInfo {
-  gscoped_ptr<fs::ReadableBlock> readable;
+  std::unique_ptr<fs::ReadableBlock> readable;
   int64_t size;
 
   ImmutableReadableBlockInfo(fs::ReadableBlock* readable,

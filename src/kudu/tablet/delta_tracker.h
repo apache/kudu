@@ -261,8 +261,8 @@ class DeltaTracker {
   // exclusive lock on 'compact_flush_lock_' before calling this
   // method in order to protect 'redo_delta_stores_'.
   Status DoCompactStores(size_t start_idx, size_t end_idx,
-                         gscoped_ptr<fs::WritableBlock> block,
-                         vector<std::shared_ptr<DeltaStore> > *compacted_stores,
+                         std::unique_ptr<fs::WritableBlock> block,
+                         std::vector<std::shared_ptr<DeltaStore>>* compacted_stores,
                          std::vector<BlockId>* compacted_blocks);
 
   // Creates a merge delta iterator and captures the delta stores and

@@ -47,6 +47,7 @@ using consensus::OpId;
 using fs::ReadableBlock;
 using log::ReadableLogSegment;
 using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 using tablet::TabletMetadata;
 using tablet::TabletPeer;
@@ -300,7 +301,7 @@ static Status AddImmutableFileToMap(Collection* const cache,
 Status TabletCopySourceSession::OpenBlockUnlocked(const BlockId& block_id) {
   session_lock_.AssertAcquired();
 
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   Status s = fs_manager_->OpenBlock(block_id, &block);
   if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << "Unable to open requested (existing) block file: "

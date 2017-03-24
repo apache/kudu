@@ -53,6 +53,7 @@ DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "test path");
 
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -226,7 +227,7 @@ void BlockManagerStressTest<T>::WriterThread() {
 
     // Create the blocks and write out the PRNG seeds.
     for (int i = 0; i < FLAGS_block_group_size; i++) {
-      gscoped_ptr<WritableBlock> block;
+      unique_ptr<WritableBlock> block;
       CHECK_OK(bm_->CreateBlock(&block));
 
       const uint32_t seed = rand.Next() + 1;
@@ -300,7 +301,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
       it->second++;
     }
 
-    gscoped_ptr<ReadableBlock> block;
+    unique_ptr<ReadableBlock> block;
     CHECK_OK(bm_->OpenBlock(block_id, &block));
 
     // Done opening the block, make it available for deleting.

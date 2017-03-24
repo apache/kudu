@@ -37,6 +37,7 @@
 DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
 
 using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_set;
 
 namespace kudu {
@@ -166,7 +167,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
 
   // Flush the delta file so that the stats get updated.
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());

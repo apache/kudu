@@ -127,7 +127,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // A file reader for an ad-hoc index, i.e. an index that sits in its own file
   // and is not embedded with the column's data blocks. This is used when the
   // index pertains to more than one column, as in the case of composite keys.
-  gscoped_ptr<CFileReader> ad_hoc_idx_reader_;
+  std::unique_ptr<CFileReader> ad_hoc_idx_reader_;
   gscoped_ptr<BloomFileReader> bloom_reader_;
 };
 

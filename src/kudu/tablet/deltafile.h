@@ -60,7 +60,7 @@ class DeltaFileWriter {
   // Construct a new delta file writer.
   //
   // The writer takes ownership of the block and will Close it in Finish().
-  explicit DeltaFileWriter(gscoped_ptr<fs::WritableBlock> block);
+  explicit DeltaFileWriter(std::unique_ptr<fs::WritableBlock> block);
 
   Status Start();
 
@@ -85,7 +85,7 @@ class DeltaFileWriter {
  private:
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
-  gscoped_ptr<cfile::CFileWriter> writer_;
+  std::unique_ptr<cfile::CFileWriter> writer_;
 
   // Buffer used as a temporary for storing the serialized form
   // of the deltas
@@ -110,7 +110,7 @@ class DeltaFileReader : public DeltaStore,
   // Fully open a delta file using a previously opened block.
   //
   // After this call, the delta reader is safe for use.
-  static Status Open(gscoped_ptr<fs::ReadableBlock> block,
+  static Status Open(std::unique_ptr<fs::ReadableBlock> block,
                      DeltaType delta_type,
                      cfile::ReaderOptions options,
                      std::shared_ptr<DeltaFileReader>* reader_out);
@@ -120,7 +120,7 @@ class DeltaFileReader : public DeltaStore,
   // the delta file.
   //
   // Init() must be called before using the file's stats.
-  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
+  static Status OpenNoInit(std::unique_ptr<fs::ReadableBlock> block,
                            DeltaType delta_type,
                            cfile::ReaderOptions options,
                            std::shared_ptr<DeltaFileReader>* reader_out);
@@ -173,7 +173,7 @@ class DeltaFileReader : public DeltaStore,
     return reader_;
   }
 
-  DeltaFileReader(gscoped_ptr<cfile::CFileReader> cf_reader,
+  DeltaFileReader(std::unique_ptr<cfile::CFileReader> cf_reader,
                   DeltaType delta_type);
 
   // Callback used in 'init_once_' to initialize this delta file.

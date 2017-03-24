@@ -107,7 +107,7 @@ class TabletCopyTest : public TabletServerTestBase {
   // Slice pointing to it.
   Status ReadLocalBlockFile(FsManager* fs_manager, const BlockId& block_id,
                             faststring* scratch, Slice* slice) {
-    gscoped_ptr<fs::ReadableBlock> block;
+    std::unique_ptr<fs::ReadableBlock> block;
     RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &block));
 
     uint64_t size = 0;

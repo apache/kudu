@@ -75,14 +75,14 @@ class FsManagerTestBase : public KuduTest {
     DCHECK_LT(data.size(), sizeof(buffer));
 
     // Test Write
-    gscoped_ptr<fs::WritableBlock> writer;
+    unique_ptr<fs::WritableBlock> writer;
     ASSERT_OK(fs_manager()->CreateNewBlock(&writer));
     ASSERT_OK(writer->Append(data));
     ASSERT_OK(writer->Close());
 
     // Test Read
     Slice result;
-    gscoped_ptr<fs::ReadableBlock> reader;
+    unique_ptr<fs::ReadableBlock> reader;
     ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader));
     ASSERT_OK(reader->Read(0, data.size(), &result, buffer));
     ASSERT_EQ(data.size(), result.size());

@@ -272,7 +272,7 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
       LOG(INFO) << "session block file has size of " << session_block_size
                 << " and CRC32C of " << session_crc << ": " << path;
 
-      gscoped_ptr<ReadableBlock> tablet_block;
+      unique_ptr<ReadableBlock> tablet_block;
       ASSERT_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
       uint64_t tablet_block_size = 0;
       ASSERT_OK(tablet_block->Size(&tablet_block_size));

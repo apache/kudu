@@ -451,9 +451,9 @@ Status ListLocalReplicas(const RunnerContext& context) {
 Status DumpCFileBlockInternal(FsManager* fs_manager,
                               const BlockId& block_id,
                               int indent) {
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &block));
-  gscoped_ptr<CFileReader> reader;
+  unique_ptr<CFileReader> reader;
   RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   cout << Indent(indent) << "CFile Header: "
@@ -477,7 +477,7 @@ Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
                                    DeltaType delta_type,
                                    int indent) {
   // Open the delta reader
-  gscoped_ptr<ReadableBlock> readable_block;
+  unique_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &readable_block));
   shared_ptr<DeltaFileReader> delta_reader;
   RETURN_NOT_OK(DeltaFileReader::Open(std::move(readable_block),

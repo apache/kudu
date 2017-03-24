@@ -610,7 +610,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
   ASSERT_OK(fs.CreateInitialFileSystemLayout());
   ASSERT_OK(fs.Open());
 
-  gscoped_ptr<WritableBlock> block;
+  unique_ptr<WritableBlock> block;
   ASSERT_OK(fs.CreateNewBlock(&block));
   BlockId block_id = block->id();
   StringDataGenerator<false> generator("hello %04d");

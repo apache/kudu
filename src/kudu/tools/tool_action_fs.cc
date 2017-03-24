@@ -172,10 +172,10 @@ Status DumpCFile(const RunnerContext& context) {
   FsManager fs_manager(Env::Default(), fs_opts);
   RETURN_NOT_OK(fs_manager.Open());
 
-  gscoped_ptr<fs::ReadableBlock> block;
+  unique_ptr<fs::ReadableBlock> block;
   RETURN_NOT_OK(fs_manager.OpenBlock(block_id, &block));
 
-  gscoped_ptr<CFileReader> reader;
+  unique_ptr<CFileReader> reader;
   RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {

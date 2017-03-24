@@ -70,7 +70,7 @@ namespace {
 
 } // namespace
 
-DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
+DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
 #ifndef NDEBUG
  : has_appended_(false)
 #endif
@@ -170,7 +170,7 @@ void DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
 // Reader
 ////////////////////////////////////////////////////////////
 
-Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
+Status DeltaFileReader::Open(unique_ptr<ReadableBlock> block,
                              DeltaType delta_type,
                              ReaderOptions options,
                              shared_ptr<DeltaFileReader>* reader_out) {
@@ -185,11 +185,11 @@ Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+Status DeltaFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                    DeltaType delta_type,
                                    ReaderOptions options,
                                    shared_ptr<DeltaFileReader>* reader_out) {
-  gscoped_ptr<CFileReader> cf_reader;
+  unique_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         std::move(options),
                                         &cf_reader));
@@ -204,7 +204,7 @@ Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(gscoped_ptr<CFileReader> cf_reader,
+DeltaFileReader::DeltaFileReader(unique_ptr<CFileReader> cf_reader,
                                  DeltaType delta_type)
     : reader_(cf_reader.release()),
       delta_type_(delta_type) {}
@@ -263,7 +263,7 @@ bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
 Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
                                           const shared_ptr<MemTracker>& parent_mem_tracker,
                                           shared_ptr<DeltaFileReader>* out) const {
-  gscoped_ptr<ReadableBlock> block;
+  unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs_manager->OpenBlock(reader_->block_id(), &block));
   ReaderOptions options;
   options.parent_mem_tracker = parent_mem_tracker;

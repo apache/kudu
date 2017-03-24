@@ -18,6 +18,8 @@
 #ifndef KUDU_FS_FS_TEST_UTIL_H
 #define KUDU_FS_FS_TEST_UTIL_H
 
+#include <memory>
+
 #include "kudu/fs/block_manager.h"
 #include "kudu/util/malloc.h"
 
@@ -32,17 +34,17 @@ namespace fs {
 //
 // Sample usage:
 //
-//   gscoped_ptr<ReadableBlock> block;
+//   unique_ptr<ReadableBlock> block;
 //   fs_manager->OpenBlock("some block id", &block);
 //   size_t bytes_read = 0;
-//   gscoped_ptr<ReadableBlock> tr_block(new CountingReadableBlock(std::move(block), &bytes_read));
+//   unique_ptr<ReadableBlock> tr_block(new CountingReadableBlock(std::move(block), &bytes_read));
 //   tr_block->Read(0, 100, ...);
 //   tr_block->Read(0, 200, ...);
 //   ASSERT_EQ(300, bytes_read);
 //
 class CountingReadableBlock : public ReadableBlock {
  public:
-  CountingReadableBlock(gscoped_ptr<ReadableBlock> block, size_t* bytes_read)
+  CountingReadableBlock(std::unique_ptr<ReadableBlock> block, size_t* bytes_read)
     : block_(std::move(block)),
       bytes_read_(bytes_read) {
   }
@@ -71,7 +73,7 @@ class CountingReadableBlock : public ReadableBlock {
   }
 
  private:
-  gscoped_ptr<ReadableBlock> block_;
+  std::unique_ptr<ReadableBlock> block_;
   size_t* bytes_read_;
 };
 
