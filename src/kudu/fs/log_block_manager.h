@@ -29,6 +29,7 @@
 
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
+#include <sparsehash/sparse_hash_map>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -197,10 +198,12 @@ class LogBlockManager : public BlockManager {
       BlockIdHash,
       BlockIdEqual> UntrackedBlockMap;
 
+  // Type for the actual block map used to store all live blocks.
+  // We use sparse_hash_map<> here to reduce memory overhead.
   typedef MemTrackerAllocator<
       std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
-  typedef std::unordered_map<
-      const BlockId,
+  typedef google::sparse_hash_map<
+      BlockId,
       scoped_refptr<internal::LogBlock>,
       BlockIdHash,
       BlockIdEqual,

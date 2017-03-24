@@ -1248,6 +1248,7 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     read_only_(opts.read_only),
     buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1) {
+  blocks_by_block_id_.set_deleted_key(BlockId());
 
   int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
   if (file_cache_capacity != kint64max) {

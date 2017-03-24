@@ -1,0 +1,53 @@
+From 6c2e37ffdd85823549634ab53931bc412b297bde Mon Sep 17 00:00:00 2001
+From: Todd Lipcon <todd@cloudera.com>
+Date: Fri, 24 Mar 2017 15:14:31 -0700
+Subject: [PATCH] Add compatibily for gcc 4.x in traits
+
+gcc 4.x doesn't implement std::is_trivially_copy_constructible<>. In
+order to maintain compatibility with those versions, we switch to using
+the equivalent trait in boost.
+
+Tested by building a small test using gcc 4.8, gcc 5.4, and clang 3.9.
+
+This was discussed upstream at https://github.com/sparsehash/sparsehash-c11/pull/19
+but determined that it wasn't a good idea for the upstream project.
+---
+ sparsehash/traits | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/sparsehash/traits b/sparsehash/traits
+index 65135a6..e1e5648 100644
+--- a/sparsehash/traits
++++ b/sparsehash/traits
+@@ -30,6 +30,12 @@
+ #pragma once
+ #include <type_traits>
+ #include <utility>  // For pair
++#include <boost/move/detail/type_traits.hpp>
++
++// Work around lack of std::is_trivially_copy_constructible in gcc 4.x by
++// using the boost version.
++#define SPARSEHASH_IS_TRIVIALLY_COPY_CONSTRUCTIBLE(T) \
++  ::boost::move_detail::is_trivially_copy_constructible<T>::value
+ 
+ namespace google {
+ 
+@@ -43,7 +49,7 @@ namespace google {
+ template <class T>
+ struct is_relocatable
+     : std::integral_constant<bool,
+-                             (std::is_trivially_copy_constructible<T>::value &&
++                             (SPARSEHASH_IS_TRIVIALLY_COPY_CONSTRUCTIBLE(T) &&
+                               std::is_trivially_destructible<T>::value)> {};
+ template <class T, class U>
+ struct is_relocatable<std::pair<T, U>>
+@@ -52,4 +58,4 @@ struct is_relocatable<std::pair<T, U>>
+ 
+ template <class T>
+ struct is_relocatable<const T> : is_relocatable<T> {};
+-}
+\ No newline at end of file
++}
+-- 
+2.7.4
+
