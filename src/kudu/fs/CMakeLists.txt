@@ -46,3 +46,7 @@ ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager_util-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(fs_manager-test)
+if (NOT APPLE)
+  # Will only pass on Linux.
+  ADD_KUDU_TEST(log_block_manager-test)
+endif()
