@@ -412,6 +412,35 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   tx_state->SetMvccTx(std::move(mvcc_tx));
 }
 
+bool Tablet::ValidateOpOrMarkFailed(RowOp* op) const {
+  if (op->validated) return true;
+
+  Status s = ValidateOp(*op);
+  if (PREDICT_FALSE(!s.ok())) {
+    // TODO(todd): add a metric tracking the number of invalid ops.
+    op->SetFailed(s);
+    return false;
+  }
+  op->validated = true;
+  return true;
+}
+
+Status Tablet::ValidateOp(const RowOp& op) const {
+  switch (op.decoded_op.type) {
+    case RowOperationsPB::INSERT:
+    case RowOperationsPB::UPSERT:
+      return ValidateInsertOrUpsertUnlocked(op);
+
+    case RowOperationsPB::UPDATE:
+    case RowOperationsPB::DELETE:
+      return ValidateMutateUnlocked(op);
+
+    default:
+      LOG_WITH_PREFIX(FATAL) << RowOperationsPB::Type_Name(op.decoded_op.type);
+  }
+  abort(); // unreachable
+}
+
 Status Tablet::ValidateInsertOrUpsertUnlocked(const RowOp& op) const {
   // Check that no individual cell is larger than the specified max.
   ConstContiguousRow row(schema(), op.decoded_op.row_data);
@@ -476,33 +505,22 @@ Status Tablet::ValidateMutateUnlocked(const RowOp& op) const {
 Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
                                       RowOp* op,
                                       ProbeStats* stats) {
-
-  Status s = ValidateInsertOrUpsertUnlocked(*op);
-  if (PREDICT_FALSE(!s.ok())) {
-    // TODO(todd): add a metric tracking the number of invalid ops.
-    op->SetFailed(s);
-    return s;
-  }
+  DCHECK(op->checked_present);
+  DCHECK(op->validated);
 
   const bool is_upsert = op->decoded_op.type == RowOperationsPB::UPSERT;
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
-  // First, ensure that it is a unique key by checking all the open RowSets.
-  vector<RowSet *> to_check = FindRowSetsToCheck(op, comps);
-  for (RowSet *rowset : to_check) {
-    bool present = false;
-    RETURN_NOT_OK(rowset->CheckRowPresent(*op->key_probe, &present, stats));
-    if (present) {
-      if (is_upsert) {
-        return ApplyUpsertAsUpdate(tx_state, op, rowset, stats);
-      }
-      Status s = Status::AlreadyPresent("key already present");
-      if (metrics_) {
-        metrics_->insertions_failed_dup_key->Increment();
-      }
-      op->SetFailed(s);
-      return s;
+  if (op->present_in_rowset) {
+    if (is_upsert) {
+      return ApplyUpsertAsUpdate(tx_state, op, op->present_in_rowset, stats);
     }
+    Status s = Status::AlreadyPresent("key already present");
+    if (metrics_) {
+      metrics_->insertions_failed_dup_key->Increment();
+    }
+    op->SetFailed(s);
+    return s;
   }
 
   Timestamp ts = tx_state->timestamp();
@@ -513,7 +531,7 @@ Status Tablet::InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
 
   // Now try to op into memrowset. The memrowset itself will return
   // AlreadyPresent if it has already been oped there.
-  s = comps->memrowset->Insert(ts, row, tx_state->op_id());
+  Status s = comps->memrowset->Insert(ts, row, tx_state->op_id());
   if (s.ok()) {
     op->SetInsertSucceeded(comps->memrowset->mrs_id());
   } else {
@@ -577,7 +595,7 @@ Status Tablet::ApplyUpsertAsUpdate(WriteTransactionState* tx_state,
   return s;
 }
 
-vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* op,
+vector<RowSet*> Tablet::FindRowSetsToCheck(const RowOp* op,
                                            const TabletComponents* comps) {
   vector<RowSet*> to_check;
   if (PREDICT_TRUE(!op->orig_result_from_log_)) {
@@ -620,55 +638,32 @@ vector<RowSet*> Tablet::FindRowSetsToCheck(RowOp* op,
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate,
                                  ProbeStats* stats) {
-  // Validate the mutation.
-  Status s = ValidateMutateUnlocked(*mutate);
-  if (!s.ok()) {
-    mutate->SetFailed(s);
-    return s;
-  }
+  DCHECK(mutate->checked_present);
+  DCHECK(mutate->validated);
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
   Timestamp ts = tx_state->timestamp();
 
-  // First try to update in memrowset.
-  s = comps->memrowset->MutateRow(ts,
-                            *mutate->key_probe,
-                            mutate->decoded_op.changelist,
-                            tx_state->op_id(),
-                            stats,
-                            result.get());
-  if (s.ok()) {
+  // If we found the row in any existing RowSet, mutate it there. Otherwise
+  // attempt to mutate in the MRS.
+  RowSet* rs_to_attempt = mutate->present_in_rowset ?
+      mutate->present_in_rowset : comps->memrowset.get();
+  Status s = rs_to_attempt->MutateRow(ts,
+                                      *mutate->key_probe,
+                                      mutate->decoded_op.changelist,
+                                      tx_state->op_id(),
+                                      stats,
+                                      result.get());
+  if (PREDICT_TRUE(s.ok())) {
     mutate->SetMutateSucceeded(std::move(result));
-    return s;
-  }
-  if (!s.IsNotFound()) {
+  } else {
+    if (s.IsNotFound()) {
+      // Replace internal error messages with one more suitable for users.
+      s = Status::NotFound("key not found");
+    }
     mutate->SetFailed(s);
-    return s;
   }
-
-  // Next, check the disk rowsets.
-
-  vector<RowSet *> to_check = FindRowSetsToCheck(mutate, comps);
-  for (RowSet *rs : to_check) {
-    s = rs->MutateRow(ts,
-                      *mutate->key_probe,
-                      mutate->decoded_op.changelist,
-                      tx_state->op_id(),
-                      stats,
-                      result.get());
-    if (s.ok()) {
-      mutate->SetMutateSucceeded(std::move(result));
-      return s;
-    }
-    if (!s.IsNotFound()) {
-      mutate->SetFailed(s);
-      return s;
-    }
-  }
-
-  s = Status::NotFound("key not found");
-  mutate->SetFailed(s);
   return s;
 }
 
@@ -678,26 +673,148 @@ void Tablet::StartApplying(WriteTransactionState* tx_state) {
   tx_state->set_tablet_components(components_);
 }
 
-void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
-  // Allocate the ProbeStats objects from the transaction's arena, so
-  // they're all contiguous and we don't need to do any central allocation.
+void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
   int num_ops = tx_state->row_ops().size();
-  ProbeStats* stats_array = static_cast<ProbeStats*>(
-      tx_state->arena()->AllocateBytesAligned(sizeof(ProbeStats) * num_ops,
-                                              alignof(ProbeStats)));
 
-  StartApplying(tx_state);
-  int i = 0;
-  for (RowOp* row_op : tx_state->row_ops()) {
-    ProbeStats* stats = &stats_array[i++];
-    // Manually run the constructor to clear the stats to 0 before collecting
-    // them.
-    new (stats) ProbeStats();
-    ApplyRowOperation(tx_state, row_op, stats);
+  // TODO(todd) determine why we sometimes get empty writes!
+  if (PREDICT_FALSE(num_ops == 0)) return;
+
+  // The compiler seems to be bad at hoisting this load out of the loops,
+  // so load it up top.
+  RowOp* const * row_ops_base = tx_state->row_ops().data();
+
+  // Run all of the ops through the RowSetTree.
+  vector<pair<Slice, int>> keys_and_indexes;
+  keys_and_indexes.reserve(num_ops);
+  for (int i = 0; i < num_ops; i++) {
+    RowOp* op = row_ops_base[i];
+    // If the op already failed in validation, or if we've got the original result
+    // filled in already during replay, then we don't need to consult the RowSetTree.
+    if (op->has_result() || op->orig_result_from_log_) continue;
+    keys_and_indexes.emplace_back(op->key_probe->encoded_key_slice(), i);
   }
 
-  if (metrics_) {
-    metrics_->AddProbeStats(stats_array, num_ops, tx_state->arena());
+  // Sort the query points by their probe keys, retaining the equivalent indexes.
+  //
+  // It's important to do a stable-sort here so that the 'unique' call
+  // below retains only the _first_ op the user specified, instead of
+  // an arbitrary one.
+  //
+  // TODO(todd): benchmark stable_sort vs using sort() and falling back to
+  // comparing 'a.second' when a.first == b.first. Some microbenchmarks
+  // seem to indicate stable_sort is actually faster.
+  // TODO(todd): could also consider weaving in a check in the loop above to
+  // see if the incoming batch is already totally-ordered and in that case
+  // skip this sort and std::unique call.
+  std::stable_sort(keys_and_indexes.begin(), keys_and_indexes.end(),
+                   [](const pair<Slice, int>& a,
+                      const pair<Slice, int>& b) {
+                     return a.first.compare(b.first) < 0;
+                   });
+  // If the batch has more than one operation for the same row, then we can't
+  // use the up-front presence optimization on those operations, since the
+  // first operation may change the result of the later presence-checks.
+  keys_and_indexes.erase(std::unique(
+      keys_and_indexes.begin(), keys_and_indexes.end(),
+      [](const pair<Slice, int>& a,
+         const pair<Slice, int>& b) {
+        return a.first == b.first;
+      }), keys_and_indexes.end());
+
+  // Unzip the keys into a separate array (since the RowSetTree API just wants a vector of
+  // Slices)
+  vector<Slice> keys(keys_and_indexes.size());
+  for (int i = 0; i < keys.size(); i++) {
+    keys[i] = keys_and_indexes[i].first;
+  }
+
+  // Actually perform the presence checks. We use the "bulk query" functionality
+  // provided by RowSetTree::ForEachRowSetContainingKeys(), which yields results
+  // via a callback, with grouping guarantees that callbacks for the same RowSet
+  // will be grouped together with increasing query keys.
+  //
+  // We want to process each such "group" (set of subsequent calls for the same
+  // RowSet) one at a time. So, the callback itself aggregates results into
+  // 'pending_group' and then calls 'ProcessPendingGroup' when the next group
+  // begins.
+  vector<pair<RowSet*, int>> pending_group;
+  const auto& ProcessPendingGroup = [&]() {
+    if (pending_group.empty()) return;
+    // Check invariant of the batch RowSetTree query: within each output group
+    // we should have fully-sorted keys.
+    DCHECK(std::is_sorted(pending_group.begin(), pending_group.end(),
+                          [&](const pair<RowSet*, int>& a,
+                              const pair<RowSet*, int>& b) {
+                            auto s_a = keys[a.second];
+                            auto s_b = keys[b.second];
+                            return s_a.compare(s_b) < 0;
+                          }));
+    RowSet* rs = pending_group[0].first;
+    for (auto it = pending_group.begin();
+         it != pending_group.end();
+         ++it) {
+      DCHECK_EQ(it->first, rs) << "All results within a group should be for the same RowSet";
+      int op_idx = keys_and_indexes[it->second].second;
+      RowOp* op = row_ops_base[op_idx];
+      if (op->present_in_rowset) {
+        // Already found this op present somewhere.
+        continue;
+      }
+
+      // TODO(todd) is CHECK_OK correct? it used to be that errors here
+      // would just be silently ignored, so this seems at least an improvement.
+      bool present = false;
+      CHECK_OK(rs->CheckRowPresent(*op->key_probe, &present, tx_state->mutable_op_stats(op_idx)));
+      if (present) {
+        op->present_in_rowset = rs;
+      }
+    }
+    pending_group.clear();
+  };
+
+  const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
+  comps->rowsets->ForEachRowSetContainingKeys(
+      keys,
+      [&](RowSet* rs, int i) {
+        if (!pending_group.empty() && rs != pending_group.back().first) {
+          ProcessPendingGroup();
+        }
+        pending_group.emplace_back(rs, i);
+      });
+  // Process the last group.
+  ProcessPendingGroup();
+
+  // Mark all of the ops as having been checked.
+  // TODO(todd): this could potentially be weaved into the std::unique() call up
+  // above to avoid some cache misses.
+  for (auto& p : keys_and_indexes) {
+    row_ops_base[p.second]->checked_present = true;
+  }
+}
+
+void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+  int num_ops = tx_state->row_ops().size();
+
+  StartApplying(tx_state);
+
+  // Validate all of the ops.
+  for (RowOp* op : tx_state->row_ops()) {
+    ValidateOpOrMarkFailed(op);
+  }
+
+  BulkCheckPresence(tx_state);
+
+  // Actually apply the ops.
+  for (int op_idx = 0; op_idx < num_ops; op_idx++) {
+    RowOp* row_op = tx_state->row_ops()[op_idx];
+    if (row_op->has_result()) continue;
+
+    ApplyRowOperation(tx_state, row_op, tx_state->mutable_op_stats(op_idx));
+    DCHECK(row_op->has_result());
+  }
+
+  if (metrics_ && num_ops > 0) {
+    metrics_->AddProbeStats(tx_state->mutable_op_stats(0), num_ops, tx_state->arena());
   }
 }
 
@@ -709,6 +826,27 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
   DCHECK(tx_state != nullptr) << "must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
+
+  if (!ValidateOpOrMarkFailed(row_op)) {
+    return;
+  }
+
+  // If we were unable to check rowset presence in batch (e.g. because we are processing
+  // a batch which contains some duplicate keys) we need to do so now.
+  if (PREDICT_FALSE(!row_op->checked_present)) {
+    vector<RowSet *> to_check = FindRowSetsToCheck(row_op, tx_state->tablet_components());
+    for (RowSet *rowset : to_check) {
+      bool present = false;
+      // TODO(todd) is CHECK_OK correct? it used to be that errors here
+      // would just be silently ignored, so this seems at least an improvement.
+      CHECK_OK(rowset->CheckRowPresent(*row_op->key_probe, &present, stats));
+      if (present) {
+        row_op->present_in_rowset = rowset;
+        break;
+      }
+    }
+    row_op->checked_present = true;
+  }
 
   switch (row_op->decoded_op.type) {
     case RowOperationsPB::INSERT:

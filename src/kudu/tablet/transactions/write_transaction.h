@@ -26,6 +26,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/locks.h"
@@ -158,6 +159,13 @@ class WriteTransactionState : public TransactionState {
     return row_ops_;
   }
 
+  // Return the ProbeStats object collecting statistics for op index 'i'.
+  ProbeStats* mutable_op_stats(int i) {
+    DCHECK_LT(i, row_ops_.size());
+    DCHECK(stats_array_);
+    return &stats_array_[i];
+  }
+
   // Set the 'row_ops' member based on the given decoded operations.
   void SetRowOps(std::vector<DecodedRowOperation> decoded_ops);
 
@@ -191,6 +199,10 @@ class WriteTransactionState : public TransactionState {
   // The row operations which are decoded from the request during PREPARE
   // Protected by superclass's txn_state_lock_.
   std::vector<RowOp*> row_ops_;
+
+  // Array of ProbeStats for each of the operations in 'row_ops_'.
+  // Allocated from this transaction's arena during SetRowOps().
+  ProbeStats* stats_array_ = nullptr;
 
   // The MVCC transaction, set up during PREPARE phase
   gscoped_ptr<ScopedTransaction> mvcc_tx_;

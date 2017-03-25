@@ -414,6 +414,13 @@ class FuzzTest : public KuduTest {
   }
 
  protected:
+  // Validate that the given sequence is valid and would not cause any
+  // errors assuming that there are no bugs. For example, checks to make sure there
+  // aren't duplicate inserts with no intervening deletions.
+  //
+  // Useful when using the 'delta' test case reduction tool to allow
+  // it to skip invalid test cases.
+  void ValidateFuzzCase(const vector<TestOp>& test_ops);
   void RunFuzzCase(const vector<TestOp>& test_ops,
                    int update_multiplier);
 
@@ -569,8 +576,35 @@ string DumpTestCase(const vector<TestOp>& ops) {
   return JoinStrings(strs, ",\n");
 }
 
+void FuzzTest::ValidateFuzzCase(const vector<TestOp>& test_ops) {
+  vector<bool> exists(FLAGS_keyspace_size);
+  for (const auto& test_op : test_ops) {
+    switch (test_op.type) {
+      case TEST_INSERT:
+      case TEST_INSERT_PK_ONLY:
+        CHECK(!exists[test_op.val]) << "invalid case: inserting already-existing row";
+        exists[test_op.val] = true;
+        break;
+      case TEST_UPSERT:
+      case TEST_UPSERT_PK_ONLY:
+        exists[test_op.val] = true;
+        break;
+      case TEST_UPDATE:
+        CHECK(exists[test_op.val]) << "invalid case: updating non-existing row";
+        break;
+      case TEST_DELETE:
+        CHECK(exists[test_op.val]) << "invalid case: deleting non-existing row";
+        exists[test_op.val] = false;
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
                            int update_multiplier = 1) {
+  ValidateFuzzCase(test_ops);
   // Dump the test case, since we usually run a random one.
   // This dump format is easy for a developer to copy-paste back
   // into a test method in order to reproduce a failure.

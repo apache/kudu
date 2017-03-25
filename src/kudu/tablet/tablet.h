@@ -400,6 +400,13 @@ class Tablet {
 
   Status FlushUnlocked();
 
+  // Validate the contents of 'op' and return a bad Status if it is invalid.
+  Status ValidateOp(const RowOp& op) const;
+
+  // Validate 'op' as in 'ValidateOp()' above. If it is invalid, marks the op as failed
+  // and returns false. If valid, marks the op as validated and returns true.
+  bool ValidateOpOrMarkFailed(RowOp* op) const;
+
   // Validate the given insert/upsert operation. In particular, checks that the size
   // of any cells is not too large given the configured maximum on the server, and
   // that the encoded key is not too large.
@@ -432,9 +439,13 @@ class Tablet {
 
   // Return the list of RowSets that need to be consulted when processing the
   // given insertion or mutation.
-  static std::vector<RowSet*> FindRowSetsToCheck(RowOp* op,
+  static std::vector<RowSet*> FindRowSetsToCheck(const RowOp* op,
                                                  const TabletComponents* comps);
 
+  // For each of the operations in 'tx_state', check for the presence of their
+  // row keys in the RowSets in the current RowSetTree (as determined by the transaction's
+  // captured TabletComponents).
+  void BulkCheckPresence(WriteTransactionState* tx_state);
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //

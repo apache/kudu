@@ -262,6 +262,17 @@ void WriteTransactionState::SetRowOps(vector<DecodedRowOperation> decoded_ops) {
   for (DecodedRowOperation& op : decoded_ops) {
     row_ops_.push_back(arena->NewObject<RowOp>(std::move(op)));
   }
+
+  // Allocate the ProbeStats objects from the transaction's arena, so
+  // they're all contiguous and we don't need to do any central allocation.
+  stats_array_ = static_cast<ProbeStats*>(
+      arena->AllocateBytesAligned(sizeof(ProbeStats) * row_ops_.size(),
+                                  alignof(ProbeStats)));
+
+  // Manually run the constructor to clear the stats to 0 before collecting them.
+  for (int i = 0; i < row_ops_.size(); i++) {
+    new (&stats_array_[i]) ProbeStats();
+  }
 }
 
 void WriteTransactionState::StartApplying() {
