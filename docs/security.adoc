@@ -1,0 +1,243 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Security
+
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+Kudu includes security features which allow Kudu clusters to be hardened against
+access from unauthorized users. This guide describes the security features
+provided by Kudu. <<configuration>> lists essential configuration options when
+deploying a secure Kudu cluster. <<known-limitations>> contains a list of
+known deficiencies in Kudu's security capabilities.
+
+== Authentication
+
+Kudu can be configured to enforce secure authentication among servers, and
+between clients and servers. Authentication prevents untrusted actors from
+gaining access to Kudu, and securely identifies the connecting user or services
+for authorization checks. Authentication in Kudu is designed to interoperate
+with other secure Hadoop components by utilizing Kerberos.
+
+Authentication can be configured on Kudu servers using the
+`--rpc-authentication` flag, which can be set to `required`, `optional`, or
+`disabled`. By default, the flag is set to `optional`. When `required`, Kudu
+will reject connections from clients and servers who lack authentication
+credentials. When `optional`, Kudu will attempt to use strong authentication,
+but will allow unauthenticated connections. When `disabled`, Kudu will only
+allow unauthenticated connections.
+
+WARNING: When the `--rpc-authentication` flag is set to `optional`,
+the cluster does not prevent access from unauthenticated users. To secure a
+cluster, use `--rpc-authentication=required`.
+
+=== Internal PKI
+
+Kudu uses an internal PKI system to issue X.509 certificates to servers in
+the cluster. Connections between peers who have both obtained certificates will
+use TLS for authentication, which doesn't require contacting the Kerberos KDC.
+These certificates are _only_ used for internal communication among Kudu
+servers, and between Kudu clients and servers. The certificates are never
+presented in a public facing protocol.
+
+By using internally-issued certificates, Kudu offers strong authentication which
+scales to huge clusters, and allows TLS encryption to be used without requiring
+you to manually deploy certificates on every node.
+
+=== Authentication Tokens
+
+After authenticating to a secure cluster, the Kudu client will automatically
+request an authentication token from the Kudu master. An authentication token
+encapsulates the identity of the authenticated user and carries the master's
+RSA signature so that its authenticity can be verified.
+
+This token will be used to authenticate subsequent connections. By default,
+authentication tokens are only valid for seven days, so that even if a token
+were compromised, it could not be used indefinitely. For the most part,
+authentication tokens should be completely transparent to users. By using
+authentication tokens, Kudu takes advantage of strong authentication without
+paying the scalability cost of communicating with a central authority for every
+connection.
+
+When used with distributed compute frameworks such as Spark, authentication
+tokens can simplify configuration and improve security. For example, the Kudu
+Spark connector will automatically retrieve an authentication token during the
+planning stage, and distribute the token to tasks. This allows Spark to work
+against a secured Kudu cluster where only the planner node has Kerberos
+credentials.
+
+== Scalability
+
+Kudu authentication is designed to scale to thousands of nodes, which requires
+avoiding unnecessary coordination with a central authentication authority (such
+as the Kerberos KDC). Instead, Kudu servers and clients will use Kerberos to
+establish initial trust with the Kudu master, and then use alternate credentials
+for subsequent connections. In particular, the master will issue internal
+X.509 certificates to servers, and temporary authentication tokens to clients.
+
+== Encryption
+
+Kudu allows all communications among servers and between clients and servers
+to be encrypted with TLS.
+
+Encryption can be configured on Kudu servers using the `--rpc-encryption` flag,
+which can be set to `required`, `optional`, or `disabled`. By default, the flag
+is set to `optional`. When `required`, Kudu will reject unencrypted connections.
+When `optional`, Kudu will attempt to use encryption, but will allow unencrypted
+connections. When `disabled`, Kudu will never use encryption. To secure a
+cluster, use `--rpc-encryption=required`.
+
+NOTE: Kudu will automatically turn off encryption on local loopback connections,
+since traffic from these connections is never exposed externally. This allows
+locality-aware compute frameworks like Spark and Impala to avoid encryption
+overhead, while still ensuring data confidentiality.
+
+== Coarse-Grained Authorization
+
+Kudu supports coarse-grained authorization of client requests based on the
+authenticated client Kerberos principal (i.e. user or service). The two levels
+of access which can be configured are:
+
+* *Superuser* - principals authorized as a superuser are able to perform
+certain administrative functionality such as using the `kudu` command line tool
+to diagnose or repair cluster issues.
+
+* *User* - principals authorized as a user are able to access and modify all
+data in the Kudu cluster. This includes the ability to create, drop, and alter
+tables as well as read, insert, update, and delete data.
+
+NOTE: Internally, Kudu has a third access level for the daemons themselves.
+This ensures that users cannot connect to the cluster and pose as tablet
+servers.
+
+Access levels are granted using whitelist-style Access Control Lists (ACLs), one
+for each of the two levels. Each access control list either specifies a
+comma-separated list of users, or may be set to `*` to indicate that all
+authenticated users are able to gain access at the specified level. See
+<<configuration>> below for examples.
+
+NOTE: The default value for the User ACL is `*`, which allows all users access
+to the cluster. However, if authentication is enabled, this still restricts access
+to only those users who are able to successfully authenticate via Kerberos.
+Unauthenticated users on the same network as the Kudu servers will be unable
+to access the cluster.
+
+[[web-ui]]
+== Web UI Encryption
+
+The Kudu web UI can be configured to use secure HTTPS encryption by providing
+each server with TLS certificates. See <<configuration>> for more information on
+web UI HTTPS configuration.
+
+== Web UI Redaction
+
+To prevent sensitive data from being exposed in the web UI, all row data is
+redacted. Table metadata, such as table names, column names, and partitioning
+information is not redacted. The web UI can be completely disabled by setting
+the `--webserver-enabled=false` flag on Kudu servers.
+
+WARNING: Disabling the web UI will also disable REST endpoints such as
+`/metrics`. Monitoring systems rely on these endpoints to gather metrics data.
+
+[[logs]]
+== Log Security
+
+To prevent sensitive data from being included in Kudu server logs, all row data
+is redacted by default. This feature can be turned off configuring the
+`--redact` flag.
+// TODO(dan): add link to configuration reference.
+
+[[configuration]]
+== Configuring a Secure Kudu Cluster
+
+The following configuration parameters should be set on all servers (master and
+tablet server) in order to ensure that a Kudu cluster is secure:
+
+```
+# Connection Security
+#--------------------
+--rpc-authentication=required
+--rpc-encryption=required
+--keytab-file=<path-to-kerberos-keytab>
+
+# Web UI Security
+#--------------------
+--webserver-certificate-file=<path-to-cert-pem>
+--webserver-private-key-file=<path-to-key-pem>
+# optional
+--webserver-private-key-password-cmd=<password-cmd>
+
+# If you prefer to disable the web UI entirely:
+--webserver-enabled=false
+
+# Coarse-grained authorization
+#--------------------------------
+
+# This example ACL setup allows the 'impala' user as well as the
+# 'nightly_etl_service_account' principal access to all data in the
+# Kudu cluster. The 'hadoopadmin' user is allowed to use administrative
+# tooling. Note that, by granting access to 'impala', other users
+# may access data in Kudu via the Impala service subject to its own
+# authorization rules.
+--user-acl=impala,nightly_etl_service_account
+--admin-acl=hadoopadmin
+```
+
+Further information about these flags can be found in the configuration
+flag reference.
+// TODO(todd) add a link
+
+
+[[known-limitations]]
+== Known Limitations
+
+Kudu has a few known security limitations:
+
+// TODO(danburkert): add JIRA links for each of these.
+
+Long-lived Tokens:: Kudu clients do not automatically request fresh tokens after
+initial token expiration, so long-lived clients in secure clusters are not
+supported. Note that applications such as Apache Impala construct new clients
+for each query and thus this limitation only affects the runtime of any single
+query.
+
+Custom Kerberos Principal:: Kudu does not support setting a custom service
+principal for Kudu processes. The principal must be 'kudu'.
+
+External PKI:: Kudu does not support externally-issued certificates for internal
+wire encryption (server to server and client to server).
+
+Fine-grained Authorization:: Kudu does not have the ability to restrict access
+based on operation type or target (table, column, etc). ACLs currently do not
+support authorization based on membership in a group.
+
+On-disk Encryption:: Kudu does not have built-in on-disk encryption. However,
+Kudu can be used with whole-disk encryption tools such as dm-crypt.
+
+Web UI Authentication:: The Kudu web UI lacks Kerberos-based authentication
+(SPNEGO), so access cannot be restricted based on Kerberos principals.
+
+Flume Integration:: Flume integration is not supported with secure Kudu clusters
+which require authentication or encryption.
