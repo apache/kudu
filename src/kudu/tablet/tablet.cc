@@ -339,17 +339,10 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   RETURN_NOT_OK(dec.DecodeOperations(&ops));
   TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
-  // Create RowOp objects for each
-  vector<RowOp*> row_ops;
-  row_ops.reserve(ops.size());
-  for (const DecodedRowOperation& op : ops) {
-    row_ops.push_back(new RowOp(op));
-  }
-
   // Important to set the schema before the ops -- we need the
   // schema in order to stringify the ops.
   tx_state->set_schema_at_decode_time(schema());
-  tx_state->swap_row_ops(&row_ops);
+  tx_state->SetRowOps(std::move(ops));
 
   return Status::OK();
 }

@@ -158,10 +158,8 @@ class WriteTransactionState : public TransactionState {
     return row_ops_;
   }
 
-  void swap_row_ops(std::vector<RowOp*>* new_ops) {
-    std::lock_guard<simple_spinlock> l(txn_state_lock_);
-    row_ops_.swap(*new_ops);
-  }
+  // Set the 'row_ops' member based on the given decoded operations.
+  void SetRowOps(std::vector<DecodedRowOperation> decoded_ops);
 
   void UpdateMetricsForOp(const RowOp& op);
 

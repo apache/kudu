@@ -253,6 +253,17 @@ void WriteTransactionState::ReleaseSchemaLock() {
   TRACE("Released schema lock");
 }
 
+void WriteTransactionState::SetRowOps(vector<DecodedRowOperation> decoded_ops) {
+  std::lock_guard<simple_spinlock> l(txn_state_lock_);
+  row_ops_.clear();
+  row_ops_.reserve(decoded_ops.size());
+
+  Arena* arena = this->arena();
+  for (DecodedRowOperation& op : decoded_ops) {
+    row_ops_.push_back(arena->NewObject<RowOp>(std::move(op)));
+  }
+}
+
 void WriteTransactionState::StartApplying() {
   CHECK_NOTNULL(mvcc_tx_.get())->StartApplying();
 }
@@ -343,7 +354,11 @@ void WriteTransactionState::ResetRpcFields() {
   std::lock_guard<simple_spinlock> l(txn_state_lock_);
   request_ = nullptr;
   response_ = nullptr;
-  STLDeleteElements(&row_ops_);
+  // these are allocated from the arena, so just run the dtors.
+  for (RowOp* op : row_ops_) {
+    op->~RowOp();
+  }
+  row_ops_.clear();
 }
 
 string WriteTransactionState::ToString() const {
