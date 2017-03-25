@@ -59,16 +59,22 @@ limitations under the License.
 :sectlinks:
 :experimental:
 
-<xsl:if test="$support-level = 'stable'">
-[[<xsl:value-of select="$binary"/>_stable]]
+<!--start supported -->
+<xsl:if test="$support-level = 'supported'">
+[[<xsl:value-of select="$binary"/>_supported]]
 = `<xsl:value-of select="$binary"/>` Flags
 
+[[<xsl:value-of select="$binary"/>_stable]]
 == Stable Flags
 
 Flags tagged `stable` and not `advanced` are safe to use for common
 configuration tasks.
 
-<xsl:for-each select="flag"><xsl:if test="contains(tags, 'stable') and not(contains(tags, 'advanced')) and not(contains(tags, 'hidden'))">
+<xsl:for-each select="flag">
+  <xsl:if test="contains(tags, 'stable') and
+                not(contains(tags, 'advanced')) and
+                not(contains(tags, 'hidden')) and
+                not(contains(tags, 'unsafe'))">
 [[<xsl:value-of select="$binary"/>_<xsl:value-of select="name"/>]]
 === `--<xsl:value-of select="name"/>`
 
@@ -82,7 +88,7 @@ configuration tasks.
 |===
 {nbsp}
 
-</xsl:if>
+  </xsl:if>
 </xsl:for-each>
 
 
@@ -92,7 +98,11 @@ configuration tasks.
 Flags tagged `stable` and `advanced` are supported, but should be considered
 "expert" options and should be used carefully and after thorough testing.
 
-<xsl:for-each select="flag"><xsl:if test="contains(tags, 'stable') and contains(tags, 'advanced') and not(contains(tags, 'hidden'))">
+<xsl:for-each select="flag">
+  <xsl:if test="contains(tags, 'stable') and
+                contains(tags, 'advanced') and
+                not(contains(tags, 'hidden')) and
+                not(contains(tags, 'unsafe'))">
 [[<xsl:value-of select="$binary"/>_<xsl:value-of select="name"/>]]
 === `--<xsl:value-of select="name"/>`
 
@@ -106,21 +116,55 @@ Flags tagged `stable` and `advanced` are supported, but should be considered
 |===
 {nbsp}
 
-</xsl:if>
+  </xsl:if>
 </xsl:for-each>
+
+[[<xsl:value-of select="$binary"/>_evolving]]
+== Evolving Flags
+
+Flags tagged `evolving` (or not tagged with a stability tag) are not yet
+considered final, and while they may be useful for tuning, they are subject to
+being changed or removed without notice.
+
+<xsl:for-each select="flag">
+  <xsl:if test="not(contains(tags, 'stable')) and
+                not(contains(tags, 'experimental')) and
+                not(contains(tags, 'hidden')) and
+                not(contains(tags, 'unsafe'))">
+[[<xsl:value-of select="$binary"/>_<xsl:value-of select="name"/>]]
+=== `--<xsl:value-of select="name"/>`
+
+<xsl:value-of select="meaning"/>
+
+[cols="1h,3d", width="50%"]
+|===
+| Type | <xsl:value-of select="type"/>
+| Default | <xsl:choose><xsl:when test="default != ''">`<xsl:value-of select="default"/>`</xsl:when><xsl:otherwise>none</xsl:otherwise></xsl:choose>
+| Tags | <xsl:value-of select="tags"/>
+|===
+{nbsp}
+
+  </xsl:if>
+</xsl:for-each>
+
 '''
 </xsl:if>
-<!--end stable -->
+<!--end supported -->
 
 <!-- start unsupported -->
 <xsl:if test="$support-level = 'unsupported'">
 [[<xsl:value-of select="$binary"/>_unsupported]]
 = `<xsl:value-of select="$binary"/>` Unsupported Flags
 
-Flags marked `advanced` or `experimental` and not marked `stable`, or flags with no stability tag, are *unsupported* and are included
-for informational purposes only. They are subject to change or be removed without notice.
+Flags not marked `stable` or `evolving` are considered experimental and are
+*unsupported*. They are included here for informational purposes only and are
+subject to being changed or removed without notice.
 
-<xsl:for-each select="flag"><xsl:if test="not(contains(tags, 'stable')) and (contains(tags, 'advanced') or contains(tags, 'experimental')) and not(contains(tags, 'hidden'))">
+<xsl:for-each select="flag">
+  <xsl:if test="not(contains(tags, 'stable')) and
+                not(contains(tags, 'evolving')) and
+                not(contains(tags, 'hidden')) and
+                not(contains(tags, 'unsafe'))">
 [[<xsl:value-of select="$binary"/>_<xsl:value-of select="name"/>]]
 == `--<xsl:value-of select="name"/>`
 
@@ -132,7 +176,7 @@ for informational purposes only. They are subject to change or be removed withou
 | Default | <xsl:choose><xsl:when test="default != ''">`<xsl:value-of select="default"/>`</xsl:when><xsl:otherwise>none</xsl:otherwise></xsl:choose>
 | Tags | <xsl:value-of select="tags"/>
 |===
-</xsl:if>
+  </xsl:if>
 </xsl:for-each>
 '''
 </xsl:if>

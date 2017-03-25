@@ -146,7 +146,7 @@ for binary in ${binaries[@]}; do
   # Create the supported config reference
   xsltproc \
     --stringparam binary $binary \
-    --stringparam support-level stable \
+    --stringparam support-level supported \
     -o $GEN_DOC_DIR/${binary}_configuration_reference.adoc \
       $SOURCE_ROOT/docs/support/xsl/gflags_to_asciidoc.xsl \
     ${GEN_DOC_DIR}/$binary.xml
@@ -184,7 +184,7 @@ cp $SOURCE_ROOT/docs/images/* "$OUTPUT_DIR/images/"
 
 echo
 echo ----------------------------
-echo "Docs built in $OUTPUT_DIR."
+echo "Docs built in $OUTPUT_DIR"
 
 # If we're building the site, try to run Jekyll for them to make
 # it a bit easier to quickly preview the results.
