@@ -1095,10 +1095,10 @@ endif (UNIX)
 if (UNIX)
   if (NOT DOXYGEN_FOUND)
     add_custom_target(site
-      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh)
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh --no-doxygen)
   else ()
     add_custom_target(site
-      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh doxygen)
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/support/scripts/make_site.sh)
   endif ()
 endif (UNIX)
 

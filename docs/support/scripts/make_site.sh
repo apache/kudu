@@ -41,7 +41,7 @@ if [ $# -gt 0 ]; then
       "--no-doxygen")  OPT_DOXYGEN='' ;;
       "--help")        usage ;;
       "-h")            usage ;;
-      *)               echo "Unknown command-line option: $arg"; usage ;;
+      *)               echo "$0: Unknown command-line option: $arg"; usage ;;
     esac
   done
 fi
@@ -75,7 +75,7 @@ fi
 make -j$(getconf _NPROCESSORS_ONLN) $MAKE_TARGETS
 
 # Check out the gh-pages repo into $SITE_OUTPUT_DIR
-git clone -q $(git config --get remote.origin.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
+git clone -q $(git config --get remote.apache.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
 
 # Build the docs using the styles from the Jekyll site
 rm -Rf "$SITE_OUTPUT_DIR/docs"
