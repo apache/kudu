@@ -391,5 +391,7 @@ Commits which may affect performance should include before/after `perf-stat(1)` 
 
 
 == Documentation
-See link:style_guide.html[Documentation Style Guide] for guidelines about contributing
-to the official Kudu documentation.
+
+See the
+link:https://github.com/apache/kudu/blob/master/docs/design-docs/doc-style-guide.adoc[Documentation Style Guide]
+for guidelines about contributing to the official Kudu documentation.

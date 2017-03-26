@@ -19,7 +19,6 @@
 = Apache Kudu Documentation Style Guide
 
 :author: Kudu Team
-:imagesdir: ./images
 :icons: font
 :toc: left
 :toclevels: 3
@@ -30,7 +29,7 @@
 
 This document gives you the information you need to get started contributing to Kudu
 documentation. For code contribution guidelines, see
-link:contributing.html[Contributing to Kudu].
+link:https://kudu.apache.org/docs/contributing.html[Contributing to Kudu].
 
 == Asciidoc
 Kudu documentation is written in link:https://en.wikipedia.org/wiki/AsciiDoc[Asciidoc]
