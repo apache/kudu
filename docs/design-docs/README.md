@@ -41,3 +41,4 @@ made.
 | [Non-covering Range Partitions](non-covering-range-partitions.md) | Master, Client | [gerrit](http://gerrit.cloudera.org:8080/2772) |
 | [Permanent failure handling of masters for Kudu 1.0](master-perm-failure-1.0.md) | Master | |
 | [RPC Retry/Failover semantics](rpc-retry-and-failover.md) | Client/TS/Master | [gerrit](http://gerrit.cloudera.org:8080/2642) |
+| [Documentation Style Guide](doc-style-guide.adoc) | Documentation | |
