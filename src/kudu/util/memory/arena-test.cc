@@ -101,6 +101,18 @@ TEST(TestArena, TestAlignment) {
   }
 }
 
+TEST(TestArena, TestObjectAlignment) {
+  struct MyStruct {
+    int64_t v;
+  };
+  Arena a(256, 256 * 1024);
+  // Allocate a junk byte to ensure that the next allocation isn't "accidentally" aligned.
+  a.AllocateBytes(1);
+  void* v = a.NewObject<MyStruct>();
+  ASSERT_EQ(reinterpret_cast<uintptr_t>(v) % alignof(MyStruct), 0);
+}
+
+
 // MemTrackers update their ancestors when consuming and releasing memory to compute
 // usage totals. However, the lifetimes of parent and child trackers can be different.
 // Validate that child trackers can still correctly update their parent stats even when

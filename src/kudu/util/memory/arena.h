@@ -107,21 +107,12 @@ class ArenaBase {
   // Same as above.
   void * AddBytes(const void *data, size_t len);
 
-  // Handy wrapper for placement-new
-  template<class T>
-  T *NewObject();
-
-  // Handy wrapper for placement-new
-  template<class T, typename A1>
-  T *NewObject(A1 arg1);
-
-  // Handy wrapper for placement-new
-  template<class T, typename A1, typename A2>
-  T *NewObject(A1 arg1, A2 arg2);
-
-  // Handy wrapper for placement-new
-  template<class T, typename A1, typename A2, typename A3>
-  T *NewObject(A1 arg1, A2 arg2, A3 arg3);
+  // Handy wrapper for placement-new.
+  //
+  // This ensures that the returned object is properly aligned based on
+  // alignof(T).
+  template<class T, typename ... Args>
+  T *NewObject(Args&&... args);
 
   // Relocate the given Slice into the arena, setting 'dst' and
   // returning true if successful.
@@ -474,36 +465,11 @@ inline bool ArenaBase<THREADSAFE>::RelocateStringPiece(const StringPiece& src, S
 }
 
 template<bool THREADSAFE>
-template<class T>
-inline T *ArenaBase<THREADSAFE>::NewObject() {
-  void *mem = AllocateBytes(sizeof(T));
+template<class T, class ... Args>
+inline T *ArenaBase<THREADSAFE>::NewObject(Args&&... args) {
+  void *mem = AllocateBytesAligned(sizeof(T), alignof(T));
   if (mem == NULL) throw std::bad_alloc();
-  return new (mem) T();
-}
-
-template<bool THREADSAFE>
-template<class T, typename A1>
-inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1) {
-  void *mem = AllocateBytes(sizeof(T));
-  if (mem == NULL) throw std::bad_alloc();
-  return new (mem) T(arg1);
-}
-
-
-template<bool THREADSAFE>
-template<class T, typename A1, typename A2>
-inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2) {
-  void *mem = AllocateBytes(sizeof(T));
-  if (mem == NULL) throw std::bad_alloc();
-  return new (mem) T(arg1, arg2);
-}
-
-template<bool THREADSAFE>
-template<class T, typename A1, typename A2, typename A3>
-inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2, A3 arg3) {
-  void *mem = AllocateBytes(sizeof(T));
-  if (mem == NULL) throw std::bad_alloc();
-  return new (mem) T(arg1, arg2, arg3);
+  return new (mem) T(std::forward<Args>(args)...);
 }
 
 }  // namespace kudu
