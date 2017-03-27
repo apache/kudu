@@ -453,6 +453,20 @@ TestOpType PickOpAtRandom(TestOpSets sets) {
   }
 }
 
+bool IsMutation(const TestOpType& op) {
+  switch (op) {
+    case TEST_INSERT:
+    case TEST_INSERT_PK_ONLY:
+    case TEST_UPSERT:
+    case TEST_UPSERT_PK_ONLY:
+    case TEST_UPDATE:
+    case TEST_DELETE:
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Generate a random valid sequence of operations for use as a
 // fuzz test.
 void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
@@ -466,6 +480,13 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
   while (ops->size() < len) {
     TestOpType r = PickOpAtRandom(sets);
     int row_key = rand() % FLAGS_keyspace_size;
+
+    // When we perform a test mutation, we also call GetRow() which does a scan
+    // and thus increases the server's timestamp.
+    if (IsMutation(r)) {
+      op_timestamps++;
+    }
+
     switch (r) {
       case TEST_INSERT:
       case TEST_INSERT_PK_ONLY:
@@ -610,35 +631,13 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
   // into a test method in order to reproduce a failure.
   LOG(INFO) << "test case:\n" << DumpTestCase(test_ops);
 
-  // Keep the vector of timestamps we'll scan at so that we save the expected state at those times.
-  vector<int> timestamps_to_scan;
-  for (const TestOp& test_op : test_ops) {
-    if (test_op.type == TEST_SCAN_AT_TIMESTAMP) {
-      timestamps_to_scan.push_back(test_op.val);
-    }
-  }
-  // Sort the scan timestamps in reverse order so that we can keep popping from the back and remove
-  // duplicates.
-  sort(timestamps_to_scan.begin(), timestamps_to_scan.end(), std::greater<int>());
-  timestamps_to_scan.erase(unique(timestamps_to_scan.begin(),
-                                  timestamps_to_scan.end()),
-                           timestamps_to_scan.end() );
-
   vector<optional<ExpectedKeyValueRow>> cur_val(FLAGS_keyspace_size);
   vector<optional<ExpectedKeyValueRow>> pending_val(FLAGS_keyspace_size);
 
   int i = 0;
   for (const TestOp& test_op : test_ops) {
-    switch (test_op.type) {
-      case TEST_INSERT:
-      case TEST_INSERT_PK_ONLY:
-      case TEST_UPSERT:
-      case TEST_UPSERT_PK_ONLY:
-      case TEST_UPDATE:
-      case TEST_DELETE:
-        EXPECT_EQ(cur_val[test_op.val], GetRow(test_op.val));
-        break;
-      default: break;
+    if (IsMutation(test_op.type)) {
+      EXPECT_EQ(cur_val[test_op.val], GetRow(test_op.val));
     }
 
     LOG(INFO) << test_op.ToString();
@@ -664,12 +663,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
         cur_val = pending_val;
         int current_time = down_cast<kudu::server::LogicalClock*>(
             tablet()->clock().get())->GetCurrentTime();
-        // Check if the next snapshot scan has a time that is higher than the current time.
-        // If it is, then store the state so that we can match it later to the scanned state.
-        if (!timestamps_to_scan.empty() && current_time >= timestamps_to_scan.back()) {
-          saved_values_[current_time] = cur_val;
-          timestamps_to_scan.pop_back();
-        }
+        saved_values_[current_time] = cur_val;
         break;
       }
       case TEST_FLUSH_TABLET:
@@ -860,6 +854,18 @@ TEST_F(FuzzTest, TestFuzz4) {
     {TEST_FLUSH_OPS, 0},
     {TEST_FLUSH_TABLET, 0},
     {TEST_COMPACT_TABLET, 0},
+  };
+  RunFuzzCase(test_ops);
+}
+
+
+TEST_F(FuzzTest, TestFuzz5) {
+  CreateTabletAndStartClusterWithSchema(CreateKeyValueTestSchema());
+  vector<TestOp> test_ops = {
+    {TEST_UPSERT_PK_ONLY, 1},
+    {TEST_FLUSH_OPS, 0},
+    {TEST_INSERT, 0},
+    {TEST_SCAN_AT_TIMESTAMP, 5},
   };
   RunFuzzCase(test_ops);
 }
