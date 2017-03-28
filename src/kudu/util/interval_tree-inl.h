@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "kudu/util/interval_tree.h"
+
 namespace kudu {
 
 template<class Traits>
@@ -223,13 +225,12 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
 
     // Any intervals which start before the query point and overlap the split point
     // must therefore contain the query point.
-    for (const interval_type &interval : overlapping_by_asc_left_) {
-      if (Traits::compare(Traits::get_left(interval), query) <= 0) {
-        results->push_back(interval);
-      } else {
-        break;
-      }
-    }
+    auto p = std::partition_point(
+        overlapping_by_asc_left_.cbegin(), overlapping_by_asc_left_.cend(),
+        [&](const interval_type& interval) {
+          return Traits::compare(Traits::get_left(interval), query) <= 0;
+        });
+    results->insert(results->end(), overlapping_by_asc_left_.cbegin(), p);
   } else if (cmp > 0) {
     // None of the intervals in left_ may intersect this.
     if (right_ != NULL) {
@@ -238,13 +239,12 @@ void ITNode<Traits>::FindContainingPoint(const point_type &query,
 
     // Any intervals which end after the query point and overlap the split point
     // must therefore contain the query point.
-    for (const interval_type &interval : overlapping_by_desc_right_) {
-      if (Traits::compare(Traits::get_right(interval), query) >= 0) {
-        results->push_back(interval);
-      } else {
-        break;
-      }
-    }
+    auto p = std::partition_point(
+        overlapping_by_desc_right_.cbegin(), overlapping_by_desc_right_.cend(),
+        [&](const interval_type& interval) {
+          return Traits::compare(Traits::get_right(interval), query) >= 0;
+        });
+    results->insert(results->end(), overlapping_by_desc_right_.cbegin(), p);
   } else {
     DCHECK_EQ(cmp, 0);
     // The query is exactly our split point -- in this case we've already got
@@ -265,30 +265,32 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
     }
 
     // Any intervals whose left edge is <= the query interval's right edge
-    // intersect the query interval.
-    for (const interval_type &interval : overlapping_by_asc_left_) {
-      if (Traits::compare(Traits::get_left(interval),Traits::get_right(query)) <= 0) {
-        results->push_back(interval);
-      } else {
-        break;
-      }
-    }
+    // intersect the query interval. 'std::partition_point' returns the first
+    // such interval which does not meet that criterion, so we insert all
+    // up to that point.
+    auto first_greater = std::partition_point(
+        overlapping_by_asc_left_.cbegin(), overlapping_by_asc_left_.cend(),
+        [&](const interval_type& interval) {
+          return Traits::compare(Traits::get_left(interval), Traits::get_right(query)) <= 0;
+        });
+    results->insert(results->end(), overlapping_by_asc_left_.cbegin(), first_greater);
   } else if (Traits::compare(Traits::get_left(query), split_point_) > 0) {
     // The interval is fully right of the split point. So, it may not overlap
-    // with any in 'left_'
+    // with any in 'left_'.
     if (right_ != NULL) {
       right_->FindIntersectingInterval(query, results);
     }
 
     // Any intervals whose right edge is >= the query interval's left edge
-    // intersect the query interval.
-    for (const interval_type &interval : overlapping_by_desc_right_) {
-      if (Traits::compare(Traits::get_right(interval), Traits::get_left(query)) >= 0) {
-        results->push_back(interval);
-      } else {
-        break;
-      }
-    }
+    // intersect the query interval. 'std::partition_point' returns the first
+    // such interval which does not meet that criterion, so we insert all
+    // up to that point.
+    auto first_lesser = std::partition_point(
+        overlapping_by_desc_right_.cbegin(), overlapping_by_desc_right_.cend(),
+        [&](const interval_type& interval) {
+          return Traits::compare(Traits::get_right(interval), Traits::get_left(query)) >= 0;
+        });
+    results->insert(results->end(), overlapping_by_desc_right_.cbegin(), first_lesser);
   } else {
     // The query interval contains the split point. Therefore all other intervals
     // which also contain the split point are intersecting.
