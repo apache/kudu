@@ -74,15 +74,20 @@ be below a configurable threshold. The default value is 10 seconds, but it can b
 
 If NTP is not installed, or if the clock is reported as unsynchronized, Kudu will not
 start, and will emit a message such as:
+
 ----
 F0924 20:24:36.336809 14550 hybrid_clock.cc:191 Couldn't get the current time: Clock unsynchronized. Status: Service unavailable: Error reading clock. Clock considered unsynchronized.
 ----
+
 If NTP is installed and synchronized, but the maximum clock error is too high,
 the user will see a message such as:
+
 ----
 Sep 17, 8:13:09.873 PM FATAL hybrid_clock.cc:196 Couldn't get the current time: Clock synchronized, but error: 11130000, is past the maximum allowable error: 10000000
 ----
+
 or
+
 ----
 Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).
 ----
@@ -115,6 +120,50 @@ the user can increase the threshold to a higher value by setting the above
 mentioned flag. For example to increase the possible maximum error to
 20 seconds the flag should be set like: `--max_clock_sync_error_usec=20000000`
 
+[[crash_reporting]]
+== Reporting Kudu Crashes
+
+Kudu uses the
+link:https://chromium.googlesource.com/breakpad/breakpad/[Google Breakpad]
+library to generate a minidump whenever Kudu experiences a crash. These
+minidumps are typically only a few MB in size and are generated even if core
+dump generation is disabled. At this time, generating minidumps is only
+possible in Kudu on Linux builds.
+
+A minidump file contains important debugging information about the process that
+crashed, including shared libraries loaded and their versions, a list of
+threads running at the time of the crash, the state of the processor registers
+and a copy of the stack memory for each thread, and CPU and operating system
+version information.
+
+It is also possible to force Kudu to create a minidump without killing the
+process by sending a `USR1` signal to the `kudu-tserver` or `kudu-master`
+process. For example:
+
+[source,bash]
+----
+sudo pkill -USR1 kudu-tserver
+----
+
+By default, Kudu stores its minidumps in a subdirectory of its configured glog
+directory called `minidumps`. This location can be customized by setting the
+`--minidump_path` flag. Kudu will retain only a certain number of minidumps
+before deleting the oldest ones, in an effort to avoid filling up the disk with
+minidump files. The maximum number of minidumps that will be retained can be
+controlled by setting the `--max_minidumps` gflag.
+
+Minidumps contain information specific to the binary that created them and so
+are not usable without access to the exact binary that crashed, or a very
+similar binary.
+
+NOTE: A minidump can be emailed to a Kudu developer or attached to a JIRA in
+order to help a Kudu developer debug a crash. In order for it to be useful, the
+developer will need to know the exact version of Kudu and the operating system
+where the crash was observed. Note that while a minidump does not contain a
+heap memory dump, it does contain stack memory and therefore it is possible for
+application data to appear in a minidump. If confidential or personal
+information is stored on the cluster, do not share minidump files.
+
 == Troubleshooting Performance Issues
 
 [[kudu_tracing]]
@@ -127,6 +176,7 @@ framework. You can use tracing to help diagnose latency issues or other problems
 on Kudu servers.
 
 ==== Accessing the tracing interface
+
 The tracing interface is accessed via a web browser as part of the
 embedded web server in each of the Kudu daemons.
 
