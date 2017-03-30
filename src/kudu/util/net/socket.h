@@ -97,7 +97,8 @@ class Socket {
   Status GetSocketAddress(Sockaddr *cur_addr) const;
 
   // Call getpeername to get the address of the connected peer.
-  Status GetPeerAddress(Sockaddr *cur_addr) const;
+  // It is virtual so that tests can override.
+  virtual Status GetPeerAddress(Sockaddr *cur_addr) const;
 
   // Return true if this socket is determined to be a loopback connection
   // (i.e. the local and remote peer share an IP address).

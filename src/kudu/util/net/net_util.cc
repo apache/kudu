@@ -16,9 +16,10 @@
 // under the License.
 
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netdb.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
 
 #include <algorithm>
 #include <boost/functional/hash.hpp>
@@ -27,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/gutil/endian.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
@@ -41,6 +43,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/trace.h"
@@ -173,6 +176,50 @@ string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
   return JoinStrings(hostport_strs, ",");
 }
 
+Network::Network()
+  : addr_(0),
+    netmask_(0) {
+}
+
+Network::Network(uint32_t addr, uint32_t netmask)
+  : addr_(addr), netmask_(netmask) {}
+
+bool Network::WithinNetwork(const Sockaddr& addr) const {
+  return ((addr.addr().sin_addr.s_addr & netmask_) ==
+          (addr_ & netmask_));
+}
+
+Status Network::ParseCIDRString(const string& addr) {
+  std::pair<string, string> p = strings::Split(addr, strings::delimiter::Limit("/", 1));
+
+  kudu::Sockaddr sockaddr;
+  Status s = sockaddr.ParseString(p.first, 0);
+
+  uint32_t bits;
+  bool success = SimpleAtoi(p.second, &bits);
+
+  if (!s.ok() || !success || bits > 32) {
+    return Status::NetworkError("Unable to parse CIDR address", addr);
+  }
+
+  // Netmask in network byte order
+  uint32_t netmask = NetworkByteOrder::FromHost32(~(0xffffffff >> bits));
+  addr_ = sockaddr.addr().sin_addr.s_addr;
+  netmask_ = netmask;
+  return Status::OK();
+}
+
+Status Network::ParseCIDRStrings(const string& comma_sep_addrs,
+                                 vector<Network>* res) {
+  vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
+  for (const string& addr_string : addr_strings) {
+    Network network;
+    RETURN_NOT_OK(network.ParseCIDRString(addr_string));
+    res->push_back(network);
+  }
+  return Status::OK();
+}
+
 bool IsPrivilegedPort(uint16_t port) {
   return port <= 1024 && port != 0;
 }
@@ -212,6 +259,33 @@ Status GetHostname(string* hostname) {
                                 errno);
   }
   *hostname = name;
+  return Status::OK();
+}
+
+Status GetLocalNetworks(std::vector<Network>* net) {
+  struct ifaddrs *ifap = nullptr;
+
+  int ret = getifaddrs(&ifap);
+  auto cleanup = MakeScopedCleanup([&]() {
+    if (ifap) freeifaddrs(ifap);
+  });
+
+  if (ret != 0) {
+    return Status::NetworkError("Unable to determine local network addresses",
+                                ErrnoToString(errno),
+                                errno);
+  }
+
+  net->clear();
+  for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr->sa_family == AF_INET) {
+      Sockaddr addr(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr));
+      Sockaddr mask(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask));
+      Network network(addr.addr().sin_addr.s_addr, mask.addr().sin_addr.s_addr);
+      net->push_back(network);
+    }
+  }
+
   return Status::OK();
 }
 

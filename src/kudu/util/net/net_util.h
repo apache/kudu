@@ -91,6 +91,33 @@ struct HostPortEqualityPredicate {
   }
 };
 
+// A container for addr:mask pair.
+// Both addr and netmask are in big-endian byte order
+// (same as network byte order).
+class Network {
+ public:
+  Network();
+  Network(uint32_t addr, uint32_t netmask);
+
+  uint32_t addr() const { return addr_; }
+
+  uint32_t netmask() const { return netmask_; }
+
+  // Returns true if the address is within network.
+  bool WithinNetwork(const Sockaddr& addr) const;
+
+  // Parses a "addr/netmask" (CIDR notation) pair into this object.
+  Status ParseCIDRString(const std::string& addr);
+
+  // Parses a comma separated list of "addr/netmask" (CIDR notation)
+  // pairs into a vector of Network objects.
+  static Status ParseCIDRStrings(
+      const std::string& comma_sep_addrs, std::vector<Network>* res);
+ private:
+  uint32_t addr_;
+  uint32_t netmask_;
+};
+
 // Parse and resolve the given comma-separated list of addresses.
 //
 // The resulting addresses will be resolved, made unique, and added to
@@ -107,8 +134,11 @@ bool IsPrivilegedPort(uint16_t port);
 // Return the local machine's hostname.
 Status GetHostname(std::string* hostname);
 
+// Returns local subnets of all local network interfaces.
+Status GetLocalNetworks(std::vector<Network>* net);
+
 // Return the local machine's FQDN.
-Status GetFQDN(std::string* fqdn);
+Status GetFQDN(std::string* hostname);
 
 // Returns a single socket address from a HostPort.
 // If the hostname resolves to multiple addresses, returns the first in the

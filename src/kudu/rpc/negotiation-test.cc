@@ -122,6 +122,8 @@ struct NegotiationDescriptor {
   EndpointConfig client;
   EndpointConfig server;
 
+  bool use_test_socket;
+
   bool rpc_encrypt_loopback;
 
   // The expected client status from negotiating.
@@ -145,6 +147,14 @@ std::ostream& operator<<(std::ostream& o, NegotiationDescriptor c) {
     << "}, rpc-encrypt-loopback: " << bool_string(c.rpc_encrypt_loopback);
   return o;
 }
+
+class NegotiationTestSocket : public Socket {
+ public:
+  // Return an arbitrary public IP
+  Status GetPeerAddress(Sockaddr *cur_addr) const override {
+    return cur_addr->ParseString("8.8.8.8:12345", 0);
+  }
+};
 
 class TestNegotiation : public RpcTestBase,
                         public ::testing::WithParamInterface<NegotiationDescriptor> {
@@ -207,7 +217,10 @@ TEST_P(TestNegotiation, TestNegotiation) {
   ASSERT_OK(client_socket->Init(0));
   client_socket->Connect(server_addr);
 
-  unique_ptr<Socket> server_socket(new Socket());
+  unique_ptr<Socket> server_socket(desc.use_test_socket ?
+                                   new NegotiationTestSocket() :
+                                   new Socket());
+
   Sockaddr client_addr;
   CHECK_OK(listening_socket.Accept(server_socket.get(), &client_addr, 0));
 
@@ -270,9 +283,20 @@ TEST_P(TestNegotiation, TestNegotiation) {
   Status client_status;
   Status server_status;
   thread client_thread([&] () {
+      scoped_refptr<Trace> t(new Trace());
+      ADOPT_TRACE(t.get());
       client_status = client_negotiation.Negotiate();
       // Close the socket so that the server will not block forever on error.
       client_negotiation.socket()->Close();
+
+      if (FLAGS_rpc_trace_negotiation || !client_status.ok()) {
+        string msg = Trace::CurrentTrace()->DumpToString();
+        if (!client_status.ok()) {
+          LOG(WARNING) << "Failed client RPC negotiation. Client trace:\n" << msg;
+        } else {
+          LOG(INFO) << "RPC negotiation tracing enabled. Client trace:\n" << msg;
+        }
+      }
   });
   thread server_thread([&] () {
       scoped_refptr<Trace> t(new Trace());
@@ -284,9 +308,9 @@ TEST_P(TestNegotiation, TestNegotiation) {
       if (FLAGS_rpc_trace_negotiation || !server_status.ok()) {
         string msg = Trace::CurrentTrace()->DumpToString();
         if (!server_status.ok()) {
-          LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;
+          LOG(WARNING) << "Failed server RPC negotiation. Server trace:\n" << msg;
         } else {
-          LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
+          LOG(INFO) << "RPC negotiation tracing enabled. Server trace:\n" << msg;
         }
       }
   });
@@ -367,6 +391,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::OPTIONAL,
           },
           false,
+          false,
           Status::NotAuthorized(".*client is not configured with an authentication type"),
           Status::NetworkError(""),
           AuthenticationType::INVALID,
@@ -389,6 +414,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::OPTIONAL,
           },
+          false,
           false,
           Status::NotAuthorized(".* server mechanism list is empty"),
           Status::NotAuthorized(".* server mechanism list is empty"),
@@ -413,6 +439,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::DISABLED,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -435,6 +462,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::DISABLED,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -459,6 +487,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::DISABLED,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -481,6 +510,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::DISABLED,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -505,6 +535,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::DISABLED,
           },
           false,
+          false,
           Status::NotAuthorized(".*client does not have Kerberos enabled"),
           Status::NetworkError(""),
           AuthenticationType::INVALID,
@@ -528,6 +559,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::OPTIONAL,
           },
+          false,
           true,
           Status::OK(),
           Status::OK(),
@@ -554,6 +586,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::OPTIONAL,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -576,6 +609,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::OPTIONAL,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -600,6 +634,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::OPTIONAL,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::CERTIFICATE,
@@ -622,6 +657,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             true,
             RpcEncryption::OPTIONAL,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -649,6 +685,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::OPTIONAL,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -671,6 +708,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             true,
             RpcEncryption::OPTIONAL,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -695,6 +733,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::REQUIRED,
           },
           false,
+          false,
           Status::NotAuthorized(".*client does not support required TLS encryption"),
           Status::NotAuthorized(".*client does not support required TLS encryption"),
           AuthenticationType::SASL,
@@ -717,6 +756,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::DISABLED,
           },
+          false,
           false,
           Status::NotAuthorized(".*server does not support required TLS encryption"),
           Status::NetworkError(""),
@@ -741,6 +781,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::REQUIRED,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -763,6 +804,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::REQUIRED,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -787,6 +829,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::REQUIRED,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
@@ -809,6 +852,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             false,
             RpcEncryption::REQUIRED,
           },
+          false,
           false,
           Status::OK(),
           Status::OK(),
@@ -833,6 +877,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::REQUIRED,
           },
           false,
+          false,
           Status::NotAuthorized(".*client does not support required TLS encryption"),
           Status::NotAuthorized(".*client does not support required TLS encryption"),
           AuthenticationType::SASL,
@@ -856,11 +901,63 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
             RpcEncryption::REQUIRED,
           },
           false,
+          false,
           Status::OK(),
           Status::OK(),
           AuthenticationType::SASL,
           SaslMechanism::GSSAPI,
           true,
+        },
+
+        // client: PLAIN
+        // server: PLAIN
+        // connection from public routable IP
+        NegotiationDescriptor {
+            EndpointConfig {
+                PkiConfig::NONE,
+                { SaslMechanism::PLAIN },
+                false,
+                RpcEncryption::OPTIONAL
+            },
+            EndpointConfig {
+                PkiConfig::NONE,
+                { SaslMechanism::PLAIN },
+                false,
+                RpcEncryption::OPTIONAL
+            },
+            true,
+            false,
+            Status::NotAuthorized(".*unencrypted connections from publicly routable IPs"),
+            Status::NotAuthorized(".*unencrypted connections from publicly routable IPs"),
+            AuthenticationType::SASL,
+            SaslMechanism::PLAIN,
+            false,
+        },
+
+        // client: GSSAPI, TLS required, externally-signed cert
+        // server: GSSAPI, TLS required, externally-signed cert
+        // connection from public routable IP
+        NegotiationDescriptor {
+            EndpointConfig {
+                PkiConfig::EXTERNALLY_SIGNED,
+                { SaslMechanism::GSSAPI },
+                false,
+                RpcEncryption::REQUIRED,
+            },
+            EndpointConfig {
+                PkiConfig::EXTERNALLY_SIGNED,
+                { SaslMechanism::GSSAPI },
+                false,
+                RpcEncryption::REQUIRED,
+            },
+            true,
+            // true as no longer a loopback connection.
+            true,
+            Status::OK(),
+            Status::OK(),
+            AuthenticationType::SASL,
+            SaslMechanism::GSSAPI,
+            true,
         }
 ));
 

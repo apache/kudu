@@ -92,6 +92,31 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
   ASSERT_OK(hp.ResolveAddresses(nullptr));
 }
 
+TEST_F(NetUtilTest, TestWithinNetwork) {
+  Sockaddr addr;
+  Network network;
+
+  ASSERT_OK(addr.ParseString("10.0.23.0:12345", 0));
+  ASSERT_OK(network.ParseCIDRString("10.0.0.0/8"));
+  EXPECT_TRUE(network.WithinNetwork(addr));
+
+  ASSERT_OK(addr.ParseString("172.28.3.4:0", 0));
+  ASSERT_OK(network.ParseCIDRString("172.16.0.0/12"));
+  EXPECT_TRUE(network.WithinNetwork(addr));
+
+  ASSERT_OK(addr.ParseString("192.168.0.23", 0));
+  ASSERT_OK(network.ParseCIDRString("192.168.1.14/16"));
+  EXPECT_TRUE(network.WithinNetwork(addr));
+
+  ASSERT_OK(addr.ParseString("8.8.8.8:0", 0));
+  ASSERT_OK(network.ParseCIDRString("0.0.0.0/0"));
+  EXPECT_TRUE(network.WithinNetwork(addr));
+
+  ASSERT_OK(addr.ParseString("192.169.0.23", 0));
+  ASSERT_OK(network.ParseCIDRString("192.168.0.0/16"));
+  EXPECT_FALSE(network.WithinNetwork(addr));
+}
+
 // Ensure that we are able to do a reverse DNS lookup on various IP addresses.
 // The reverse lookups should never fail, but may return numeric strings.
 TEST_F(NetUtilTest, TestReverseLookup) {
