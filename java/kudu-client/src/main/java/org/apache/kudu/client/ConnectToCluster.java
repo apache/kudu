@@ -79,11 +79,12 @@ final class ConnectToCluster {
   }
 
   private static Deferred<ConnectToMasterResponsePB> connectToMaster(
+      final KuduTable masterTable,
       final TabletClient masterClient, KuduRpc<?> parentRpc,
       long defaultTimeoutMs) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
-    final ConnectToMasterRequest rpc = new ConnectToMasterRequest();
+    final ConnectToMasterRequest rpc = new ConnectToMasterRequest(masterTable);
     if (parentRpc != null) {
       rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
       rpc.setParentRpc(parentRpc);
@@ -124,6 +125,7 @@ final class ConnectToCluster {
    * Locate the leader master and retrieve the cluster information
    * (see {@link ConnectToClusterResponse}.
    *
+   * @param masterTable the "placeholder" table used by AsyncKuduClient
    * @param masterAddresses the addresses of masters to fetch from
    * @param parentRpc RPC that prompted a master lookup, can be null
    * @param connCache the client's connection cache, used for creating connections
@@ -132,6 +134,7 @@ final class ConnectToCluster {
    * @return a Deferred object for the cluster connection status
    */
   public static Deferred<ConnectToClusterResponse> run(
+      KuduTable masterTable,
       List<HostAndPort> masterAddresses,
       KuduRpc<?> parentRpc,
       ConnectionCache connCache,
@@ -150,7 +153,7 @@ final class ConnectToCluster {
         Status statusIOE = Status.IOError(message);
         d = Deferred.fromError(new NonRecoverableException(statusIOE));
       } else {
-        d = connectToMaster(client, parentRpc, defaultTimeoutMs);
+        d = connectToMaster(masterTable, client, parentRpc, defaultTimeoutMs);
       }
       d.addCallbacks(connector.callbackForNode(hostAndPort),
           connector.errbackForNode(hostAndPort));
