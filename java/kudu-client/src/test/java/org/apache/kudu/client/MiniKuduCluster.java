@@ -333,6 +333,18 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * Restart any master processes which are not currently running.
+   */
+  public void restartDeadMasters() throws Exception {
+    for (HostAndPort hostAndPort : masterHostPorts) {
+      if (!masterProcesses.containsKey(hostAndPort.getPort())) {
+        restartDeadProcessOnPort(hostAndPort.getPort(), masterProcesses);
+      }
+    }
+  }
+
+
+  /**
    * Starts a previously killed tablet server process on the specified port.
    * @param port which port the TS was listening on for RPCs
    * @throws Exception

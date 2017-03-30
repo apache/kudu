@@ -61,7 +61,7 @@ public class BaseKuduTest {
   // the seed it picks so that you can re-run tests with it.
   private static final Random randomForTSRestart = new Random();
 
-  private static MiniKuduCluster miniCluster;
+  protected static MiniKuduCluster miniCluster;
 
   // Expose the MiniKuduCluster builder so that subclasses can alter the builder.
   protected static final MiniKuduCluster.MiniKuduClusterBuilder miniClusterBuilder =

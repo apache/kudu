@@ -51,8 +51,9 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
    */
   private String method = CONNECT_TO_MASTER;
 
-  public ConnectToMasterRequest() {
-    super(null); // no KuduTable
+  public ConnectToMasterRequest(KuduTable masterTable) {
+    super(masterTable);
+    // TODO(todd): get rid of 'masterTable' hack
   }
 
   @Override
