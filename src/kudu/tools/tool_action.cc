@@ -28,6 +28,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/url-coding.h"
 
 using std::string;
 using std::unique_ptr;
@@ -61,8 +62,7 @@ string FakeDescribeOneFlag(const ActionArgsDescriptor::Arg& arg) {
 }
 
 string BuildUsageString(const vector<Mode*>& chain) {
-  string modes = JoinMapped(chain, [](Mode* a){ return a->name(); }, " ");
-  return Substitute("Usage: $0", modes);
+  return JoinMapped(chain, [](Mode* a){ return a->name(); }, " ");
 }
 
 
@@ -145,7 +145,8 @@ unique_ptr<Mode> ModeBuilder::Build() {
 // Get help for this mode, passing in its parent mode chain.
 string Mode::BuildHelp(const vector<Mode*>& chain) const {
   string msg;
-  msg += Substitute("$0 <command> [<args>]\n\n", BuildUsageString(chain));
+  msg += Substitute("Usage: $0 <command> [<args>]\n\n",
+                    BuildUsageString(chain));
   msg += "<command> can be one of the following:\n";
 
   vector<pair<string, string>> line_pairs;
@@ -168,6 +169,25 @@ string Mode::BuildHelp(const vector<Mode*>& chain) const {
 
   msg += "\n";
   return msg;
+}
+
+string Mode::BuildHelpXML(const vector<Mode*>& chain) const {
+  string xml;
+  xml += "<mode>";
+  xml += Substitute("<name>$0</name>", name());
+  xml += Substitute("<description>$0</description>",
+                    EscapeForHtmlToString(description()));
+  for (const auto& a : actions()) {
+    xml += a->BuildHelpXML(chain);
+  }
+
+  for (const auto& m : modes()) {
+    vector<Mode*> m_chain(chain);
+    m_chain.push_back(m.get());
+    xml += m->BuildHelpXML(m_chain);
+  }
+  xml += "</mode>";
+  return xml;
 }
 
 ActionBuilder::ActionBuilder(const string& name, const ActionRunner& runner)
@@ -228,7 +248,7 @@ Status Action::Run(const vector<Mode*>& chain,
 }
 
 string Action::BuildHelp(const vector<Mode*>& chain) const {
-  string usage_msg = Substitute("$0 $1", BuildUsageString(chain), name());
+  string usage_msg = Substitute("Usage: $0 $1", BuildUsageString(chain), name());
   string desc_msg;
   for (const auto& param : args_.required) {
     usage_msg += Substitute(" <$0>", param.name);
@@ -276,6 +296,75 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
   msg += "\n\n";
   msg += desc_msg;
   return msg;
+}
+
+string Action::BuildHelpXML(const vector<Mode*>& chain) const {
+  string usage = Substitute("$0 $1", BuildUsageString(chain), name());
+  string xml;
+  xml += "<action>";
+  xml += Substitute("<name>$0</name>", name());
+  xml += Substitute("<description>$0</description>",
+                    EscapeForHtmlToString(description()));
+  xml += Substitute("<extra_description>$0</extra_description>",
+                    EscapeForHtmlToString(extra_description()
+                                              .get_value_or("")));
+  for (const auto& r : args().required) {
+    usage += Substitute(" &lt;$0&gt;", r.name);
+    xml += "<argument>";
+    xml += "<kind>required</kind>";
+    xml += Substitute("<name>$0</name>", r.name);
+    xml += Substitute("<description>$0</description>",
+                      EscapeForHtmlToString(r.description));
+    xml += "<type>string</type>";
+    xml += "</argument>";
+  }
+
+  if (args().variadic) {
+    const ActionArgsDescriptor::Arg& v = args().variadic.get();
+    usage += Substitute(" &lt;$0&gt;...", v.name);
+    xml += "<argument>";
+    xml += "<kind>variadic</kind>";
+    xml += Substitute("<name>$0</name>", v.name);
+    xml += Substitute("<description>$0</description>",
+                      EscapeForHtmlToString(v.description));
+    xml += "<type>string</type>";
+    xml += "</argument>";
+  }
+
+  for (const auto& o : args().optional) {
+    google::CommandLineFlagInfo gflag_info =
+        google::GetCommandLineFlagInfoOrDie(o.c_str());
+
+    if (gflag_info.type == "bool") {
+      if (gflag_info.default_value == "false") {
+        usage += Substitute(" [-$0]", o);
+      } else {
+        usage += Substitute(" [-no$0]", o);
+      }
+    } else {
+      string noun;
+      string::size_type last_underscore_idx = o.rfind('_');
+      if (last_underscore_idx != string::npos &&
+          last_underscore_idx != o.size() - 1) {
+        noun = o.substr(last_underscore_idx + 1);
+      } else {
+        noun = o;
+      }
+      usage += Substitute(" [-$0=&lt;$1&gt;]", o, noun);
+    }
+
+    xml += "<argument>";
+    xml += "<kind>optional</kind>";
+    xml += Substitute("<name>$0</name>", gflag_info.name);
+    xml += Substitute("<description>$0</description>", gflag_info.description);
+    xml += Substitute("<type>$0</type>", gflag_info.type);
+    xml += Substitute("<default_value>$0</default_value>",
+                      gflag_info.default_value);
+    xml += "</argument>";
+  }
+  xml += Substitute("<usage>$0</usage>", EscapeForHtmlToString(usage));
+  xml += "</action>";
+  return xml;
 }
 
 } // namespace tools

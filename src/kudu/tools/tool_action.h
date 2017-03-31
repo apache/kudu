@@ -107,6 +107,9 @@ class Mode {
   // Returns the help for this mode given its parent mode chain.
   std::string BuildHelp(const std::vector<Mode*>& chain) const;
 
+  // Returns the help xml for this mode and all child modes
+  std::string BuildHelpXML(const std::vector<Mode*>& chain) const;
+
   const std::string& name() const { return name_; }
 
   const std::string& description() const { return description_; }
@@ -241,6 +244,9 @@ class Action {
 
   // Returns the help for this action given its parent mode chain.
   std::string BuildHelp(const std::vector<Mode*>& chain) const;
+
+  // Returns the help xml for this action
+  std::string BuildHelpXML(const std::vector<Mode*>& chain) const;
 
   // Runs the operation represented by this action, given a parent mode chain
   // and marshaled command line arguments.

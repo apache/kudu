@@ -32,6 +32,7 @@ set(LINK_LIBS
 add_library(kudu_tools_util
   color.cc
   data_gen_util.cc
+  tool_action.cc
   tool_action_common.cc
 )
 target_link_libraries(kudu_tools_util
@@ -56,7 +57,6 @@ target_link_libraries(ksck
 )
 
 add_executable(kudu
-  tool_action.cc
   tool_action_cluster.cc
   tool_action_fs.cc
   tool_action_local_replica.cc
@@ -112,3 +112,4 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
+ADD_KUDU_TEST(tool_action-test)
