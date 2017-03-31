@@ -117,6 +117,13 @@ Status GetLastOpIdForReplica(const std::string& tablet_id,
                              const MonoDelta& timeout,
                              consensus::OpId* op_id);
 
+// Wait until the latest op on the target replica is from the current term.
+Status WaitForOpFromCurrentTerm(TServerDetails* replica,
+                                const std::string& tablet_id,
+                                consensus::OpIdType opid_type,
+                                const MonoDelta& timeout,
+                                consensus::OpId* opid = nullptr);
+
 // Wait until all of the servers have converged on the same log index.
 // The converged index must be at least equal to 'minimum_index'.
 //

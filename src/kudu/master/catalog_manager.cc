@@ -2712,25 +2712,26 @@ Status RetryingTSRpcTask::Run() {
     return Status::RuntimeError("Async RPCs configured to fail");
   }
 
-  Status s = ResetTSProxy(); // This can fail if it's a replica we don't know about yet.
-  if (!s.ok()) {
-    MarkFailed();
-    UnregisterAsyncTask(); // May delete this.
-    return s.CloneAndPrepend("Failed to reset TS proxy");
-  }
-
   // Calculate and set the timeout deadline.
-  MonoTime timeout = MonoTime::Now() +
-      MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
+  MonoTime timeout = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
   const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
+  rpc_.Reset();
   rpc_.set_deadline(deadline);
 
-  if (!SendRequest(++attempt_)) {
-    if (!RescheduleWithBackoffDelay()) {
-      UnregisterAsyncTask();  // May call 'delete this'.
+  Status s = ResetTSProxy();
+  if (s.ok()) {
+    if (SendRequest(++attempt_)) {
+      return Status::OK();
     }
+  } else {
+    s = s.CloneAndPrepend("Failed to reset TS proxy");
   }
-  return Status::OK();
+
+  if (!RescheduleWithBackoffDelay()) {
+    MarkFailed();
+    UnregisterAsyncTask();  // May call 'delete this'.
+  }
+  return s;
 }
 
 void RetryingTSRpcTask::RpcCallback() {
@@ -3134,13 +3135,7 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
 
   virtual string type_name() const OVERRIDE { return "AddServer ChangeConfig"; }
 
-  virtual string description() const OVERRIDE {
-    return Substitute("AddServer ChangeConfig RPC for tablet $0 on TS $1 "
-                      "with cas_config_opid_index $2",
-                      tablet_->tablet_id(),
-                      target_ts_desc_->ToString(),
-                      cstate_.config().opid_index());
-  }
+  virtual string description() const OVERRIDE;
 
  protected:
   virtual bool SendRequest(int attempt) OVERRIDE;
@@ -3155,6 +3150,13 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
   consensus::ChangeConfigRequestPB req_;
   consensus::ChangeConfigResponsePB resp_;
 };
+
+string AsyncAddServerTask::description() const {
+  return Substitute("AddServer ChangeConfig RPC for tablet $0 "
+                    "with cas_config_opid_index $1",
+                    tablet_->tablet_id(),
+                    cstate_.config().opid_index());
+}
 
 bool AsyncAddServerTask::SendRequest(int attempt) {
   LOG(INFO) << "Sending request for AddServer on tablet " << tablet_->tablet_id()

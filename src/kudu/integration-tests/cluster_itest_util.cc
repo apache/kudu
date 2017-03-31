@@ -63,6 +63,7 @@ using consensus::GetLastOpIdResponsePB;
 using consensus::LeaderStepDownRequestPB;
 using consensus::LeaderStepDownResponsePB;
 using consensus::OpId;
+using consensus::OpIdType;
 using consensus::RaftPeerPB;
 using consensus::RunLeaderElectionResponsePB;
 using consensus::RunLeaderElectionRequestPB;
@@ -110,7 +111,7 @@ client::KuduSchema SimpleIntKeyKuduSchema() {
 
 Status GetLastOpIdForEachReplica(const string& tablet_id,
                                  const vector<TServerDetails*>& replicas,
-                                 consensus::OpIdType opid_type,
+                                 OpIdType opid_type,
                                  const MonoDelta& timeout,
                                  vector<OpId>* op_ids) {
   GetLastOpIdRequestPB opid_req;
@@ -138,7 +139,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
 
 Status GetLastOpIdForReplica(const std::string& tablet_id,
                              TServerDetails* replica,
-                             consensus::OpIdType opid_type,
+                             OpIdType opid_type,
                              const MonoDelta& timeout,
                              consensus::OpId* op_id) {
   vector<OpId> op_ids;
@@ -146,6 +147,42 @@ Status GetLastOpIdForReplica(const std::string& tablet_id,
   CHECK_EQ(1, op_ids.size());
   *op_id = op_ids[0];
   return Status::OK();
+}
+
+Status WaitForOpFromCurrentTerm(TServerDetails* replica,
+                                const string& tablet_id,
+                                OpIdType opid_type,
+                                const MonoDelta& timeout,
+                                OpId* opid) {
+  const MonoTime kStart = MonoTime::Now();
+  const MonoTime kDeadline = kStart + timeout;
+
+  Status s;
+  while (MonoTime::Now() < kDeadline) {
+    ConsensusStatePB cstate;
+    s = GetConsensusState(replica, tablet_id, CONSENSUS_CONFIG_ACTIVE, kDeadline - MonoTime::Now(),
+                          &cstate);
+    if (s.ok()) {
+      OpId tmp_opid;
+      s = GetLastOpIdForReplica(tablet_id, replica, opid_type, kDeadline - MonoTime::Now(),
+                                &tmp_opid);
+      if (s.ok()) {
+        if (tmp_opid.term() == cstate.current_term()) {
+          if (opid) {
+            opid->Swap(&tmp_opid);
+          }
+          return Status::OK();
+        }
+        s = Status::IllegalState(Substitute("Terms don't match. Current term: $0. Latest OpId: $1",
+                                 cstate.current_term(), OpIdToString(tmp_opid)));
+      }
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  return Status::TimedOut(Substitute("Timed out after $0 waiting for op from current term: $1",
+                                     (MonoTime::Now() - kStart).ToString(),
+                                     s.ToString()));
 }
 
 Status WaitForServersToAgree(const MonoDelta& timeout,
@@ -306,10 +343,10 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
     if (MonoTime::Now() > start + timeout) {
       break;
     }
-    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    SleepFor(MonoDelta::FromMilliseconds(1LLU << backoff_exp));
     backoff_exp = min(backoff_exp + 1, kMaxBackoffExp);
   }
-  return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1."
+  return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1. "
                                      "Last consensus state: $2. Last status: $3",
                                      config_size, timeout.ToString(),
                                      SecureShortDebugString(cstate), s.ToString()));
@@ -487,7 +524,7 @@ Status WaitUntilLeader(const TServerDetails* replica,
     if (MonoTime::Now() > deadline) {
       break;
     }
-    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    SleepFor(MonoDelta::FromMilliseconds(1LLU << backoff_exp));
     backoff_exp = min(backoff_exp + 1, kMaxBackoffExp);
   }
   return Status::TimedOut(Substitute("Replica $0 is not leader after waiting for $1: $2",

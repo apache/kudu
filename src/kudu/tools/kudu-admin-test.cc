@@ -42,9 +42,8 @@ using client::sp::shared_ptr;
 using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::ConsensusStatePB;
 using consensus::OpId;
-using consensus::RECEIVED_OPID;
+using consensus::COMMITTED_OPID;
 using itest::GetConsensusState;
-using itest::GetLastOpIdForReplica;
 using itest::TabletServerMap;
 using itest::TServerDetails;
 using itest::WAIT_FOR_LEADER;
@@ -198,7 +197,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
-  auto iter = tablet_replicas_.equal_range(tablet_id_);
+  auto iter = tablet_replicas_.equal_range(tablet_id);
   for (auto it = iter.first; it != iter.second; ++it) {
     InsertOrDie(&active_tablet_servers, it->second->uuid(), it->second);
   }
@@ -208,7 +207,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                            3, tablet_id_, kTimeout,
+                                            3, tablet_id, kTimeout,
                                             WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
@@ -216,50 +215,46 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
-  ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
+  ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id, kTimeout, &leader_ts));
+  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id, kTimeout, &followers));
+  OpId opid;
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout, &opid));
 
-  // Replace the config on follower1 after shutting down follower2 and leader.
+  // Shut down master so it doesn't interfere while we shut down the leader and
+  // one of the other followers.
+  cluster_->master()->Shutdown();
   cluster_->tablet_server_by_uuid(leader_ts->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(followers[1]->uuid())->Shutdown();
-  // Restart master to cleanup cache of dead servers from its list of candidate
-  // servers to trigger placement of new replicas on healthy servers.
-  cluster_->master()->Shutdown();
-  ASSERT_OK(cluster_->master()->Restart());
+
 
   LOG(INFO) << "Forcing unsafe config change on remaining follower " << followers[0]->uuid();
-  const string& follower1_addr = Substitute("$0:$1",
-                                            followers[0]->registration.rpc_addresses(0).host(),
-                                            followers[0]->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(followers[0]->uuid());
-  ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, follower1_addr, peer_uuid_list));
+  const string& follower0_addr =
+      cluster_->tablet_server_by_uuid(followers[0]->uuid())->bound_rpc_addr().ToString();
+  ASSERT_OK(RunUnsafeChangeConfig(tablet_id, follower0_addr, { followers[0]->uuid() }));
+  ASSERT_OK(WaitUntilLeader(followers[0], tablet_id, kTimeout));
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(1, followers[0], tablet_id, kTimeout));
 
-  // Check that new config is populated to a new follower.
-  vector<TServerDetails*> all_tservers;
-  TServerDetails *new_follower = nullptr;
-  AppendValuesFromMap(tablet_servers_, &all_tservers);
-  for (const auto& ts :all_tservers) {
-    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
-      new_follower = ts;
-      break;
-    }
-  }
-  ASSERT_TRUE(new_follower != nullptr);
+  LOG(INFO) << "Restarting master...";
 
-  // Master may try to add the servers which are down until tserver_unresponsive_timeout_ms,
-  // so it is safer to wait until consensus metadata has 3 voters on follower1.
-  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(3, new_follower, tablet_id_, kTimeout));
+  // Restart master so it can re-replicate the tablet to remaining tablet servers.
+  ASSERT_OK(cluster_->master()->Restart());
 
-  // Wait for the master to be notified of the config change.
-  LOG(INFO) << "Waiting for Master to see new config...";
+  // Wait for master to re-replicate.
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(3, followers[0], tablet_id, kTimeout));
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                            3, tablet_id_, kTimeout,
+                                            3, tablet_id, kTimeout,
                                             WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
-  LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
+  ASSERT_OK(WaitForOpFromCurrentTerm(followers[0], tablet_id, COMMITTED_OPID, kTimeout, &opid));
+
+  active_tablet_servers.clear();
+  unordered_set<string> replica_uuids;
+  for (const auto& loc : tablet_locations.replicas()) {
+    const string& uuid = loc.ts_info().permanent_uuid();
+    InsertOrDie(&active_tablet_servers, uuid, tablet_servers_[uuid]);
+  }
+  ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id, opid.index()));
 
   // Verify that two new servers are part of new config and old
   // servers are gone.
