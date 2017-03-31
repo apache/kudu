@@ -2607,34 +2607,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   }
 
   // Send the subclass RPC request.
-  Status Run() {
-    if (PREDICT_FALSE(FLAGS_catalog_manager_fail_ts_rpcs)) {
-      MarkFailed();
-      UnregisterAsyncTask(); // May delete this.
-      return Status::RuntimeError("Async RPCs configured to fail");
-    }
-
-    Status s = ResetTSProxy();
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to reset TS proxy: " << s.ToString();
-      MarkFailed();
-      UnregisterAsyncTask(); // May delete this.
-      return s.CloneAndPrepend("Failed to reset TS proxy");
-    }
-
-    // Calculate and set the timeout deadline.
-    MonoTime timeout = MonoTime::Now() +
-        MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
-    const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
-    rpc_.set_deadline(deadline);
-
-    if (!SendRequest(++attempt_)) {
-      if (!RescheduleWithBackoffDelay()) {
-        UnregisterAsyncTask();  // May call 'delete this'.
-      }
-    }
-    return Status::OK();
-  }
+  Status Run();
 
   // Abort this task.
   virtual void Abort() OVERRIDE {
@@ -2688,22 +2661,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   // Callback meant to be invoked from asynchronous RPC service proxy calls.
   //
   // Runs on a reactor thread, so should not block or do any IO.
-  void RpcCallback() {
-    if (!rpc_.status().ok()) {
-      LOG(WARNING) << "TS " << target_ts_desc_->ToString() << ": "
-                   << type_name() << " RPC failed for tablet "
-                   << tablet_id() << ": " << rpc_.status().ToString();
-    } else if (state() != kStateAborted) {
-      HandleResponse(attempt_); // Modifies state_.
-    }
-
-    // Schedule a retry if the RPC call was not successful.
-    if (RescheduleWithBackoffDelay()) {
-      return;
-    }
-
-    UnregisterAsyncTask();  // May call 'delete this'.
-  }
+  void RpcCallback();
 
   Master * const master_;
   const gscoped_ptr<TSPicker> replica_picker_;
@@ -2724,95 +2682,150 @@ class RetryingTSRpcTask : public MonitoredTask {
   // Returns false if the task was not rescheduled due to reaching the maximum
   // timeout or because the task is no longer in a running state.
   // Returns true if rescheduling the task was successful.
-  bool RescheduleWithBackoffDelay() {
-    if (state() != kStateRunning) return false;
-    MonoTime now = MonoTime::Now();
-    // We assume it might take 10ms to process the request in the best case,
-    // fail if we have less than that amount of time remaining.
-    int64_t millis_remaining = (deadline_ - now).ToMilliseconds() - 10;
-    // Exponential backoff with jitter.
-    int64_t base_delay_ms;
-    if (attempt_ <= 12) {
-      base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
-    } else {
-      base_delay_ms = 60 * 1000; // cap at 1 minute
-    }
-    int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
-    int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
-
-    if (delay_millis <= 0) {
-      LOG(WARNING) << "Request timed out: " << description();
-      MarkFailed();
-    } else {
-      LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
-                << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
-      master_->messenger()->ScheduleOnReactor(
-          boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
-          MonoDelta::FromMilliseconds(delay_millis));
-      return true;
-    }
-    return false;
-  }
+  bool RescheduleWithBackoffDelay();
 
   // Callback for Reactor delayed task mechanism. Called either when it is time
   // to execute the delayed task (with status == OK) or when the task
   // is cancelled, i.e. when the scheduling timer is shut down (status != OK).
-  void RunDelayedTask(const Status& status) {
-    if (!status.ok()) {
-      LOG(WARNING) << "Async tablet task " << description() << " failed or was cancelled: "
-                   << status.ToString();
-      UnregisterAsyncTask();   // May delete this.
-      return;
-    }
-
-    string desc = description();  // Save in case we need to log after deletion.
-    Status s = Run();             // May delete this.
-    if (!s.ok()) {
-      LOG(WARNING) << "Async tablet task " << desc << " failed: " << s.ToString();
-    }
-  }
+  void RunDelayedTask(const Status& status);
 
   // Clean up request and release resources. May call 'delete this'.
-  void UnregisterAsyncTask() {
-    end_ts_ = MonoTime::Now();
-    if (table_ != nullptr) {
-      table_->RemoveTask(this);
-    } else {
-      // This is a floating task (since the table does not exist)
-      // created as response to a tablet report.
-      Release();  // May call "delete this";
-    }
-  }
+  void UnregisterAsyncTask();
 
-  Status ResetTSProxy() {
-    // TODO: if there is no replica available, should we still keep the task running?
-    string ts_uuid;
-    RETURN_NOT_OK(replica_picker_->PickReplica(&ts_uuid));
-    shared_ptr<TSDescriptor> ts_desc;
-    if (!master_->ts_manager()->LookupTSByUUID(ts_uuid, &ts_desc)) {
-      return Status::NotFound(Substitute("Could not find TS for UUID $0",
-                                         ts_uuid));
-    }
-
-    // This assumes that TSDescriptors are never deleted by the master,
-    // so the task need not take ownership of the returned pointer.
-    target_ts_desc_ = ts_desc.get();
-
-    shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
-    RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));
-    ts_proxy_.swap(ts_proxy);
-
-    shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
-    RETURN_NOT_OK(target_ts_desc_->GetConsensusProxy(master_->messenger(), &consensus_proxy));
-    consensus_proxy_.swap(consensus_proxy);
-
-    rpc_.Reset();
-    return Status::OK();
-  }
+  // Find a new replica and construct the RPC proxy.
+  Status ResetTSProxy();
 
   // Use state() and MarkX() accessors.
   AtomicWord state_;
 };
+
+Status RetryingTSRpcTask::Run() {
+  if (PREDICT_FALSE(FLAGS_catalog_manager_fail_ts_rpcs)) {
+    MarkFailed();
+    UnregisterAsyncTask(); // May delete this.
+    return Status::RuntimeError("Async RPCs configured to fail");
+  }
+
+  Status s = ResetTSProxy(); // This can fail if it's a replica we don't know about yet.
+  if (!s.ok()) {
+    MarkFailed();
+    UnregisterAsyncTask(); // May delete this.
+    return s.CloneAndPrepend("Failed to reset TS proxy");
+  }
+
+  // Calculate and set the timeout deadline.
+  MonoTime timeout = MonoTime::Now() +
+      MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
+  const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
+  rpc_.set_deadline(deadline);
+
+  if (!SendRequest(++attempt_)) {
+    if (!RescheduleWithBackoffDelay()) {
+      UnregisterAsyncTask();  // May call 'delete this'.
+    }
+  }
+  return Status::OK();
+}
+
+void RetryingTSRpcTask::RpcCallback() {
+  if (!rpc_.status().ok()) {
+    LOG(WARNING) << "TS " << target_ts_desc_->ToString() << ": "
+                  << type_name() << " RPC failed for tablet "
+                  << tablet_id() << ": " << rpc_.status().ToString();
+  } else if (state() != kStateAborted) {
+    HandleResponse(attempt_); // Modifies state_.
+  }
+
+  // Schedule a retry if the RPC call was not successful.
+  if (RescheduleWithBackoffDelay()) {
+    return;
+  }
+
+  UnregisterAsyncTask();  // May call 'delete this'.
+}
+
+bool RetryingTSRpcTask::RescheduleWithBackoffDelay() {
+  if (state() != kStateRunning) return false;
+  MonoTime now = MonoTime::Now();
+  // We assume it might take 10ms to process the request in the best case,
+  // fail if we have less than that amount of time remaining.
+  int64_t millis_remaining = (deadline_ - now).ToMilliseconds() - 10;
+  // Exponential backoff with jitter.
+  int64_t base_delay_ms;
+  if (attempt_ <= 12) {
+    base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
+  } else {
+    base_delay_ms = 60 * 1000; // cap at 1 minute
+  }
+  int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
+  int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
+
+  if (delay_millis <= 0) {
+    LOG(WARNING) << "Request timed out: " << description();
+    MarkFailed();
+  } else {
+    LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
+              << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
+    master_->messenger()->ScheduleOnReactor(
+        boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
+        MonoDelta::FromMilliseconds(delay_millis));
+    return true;
+  }
+  return false;
+}
+
+void RetryingTSRpcTask::RunDelayedTask(const Status& status) {
+  if (!status.ok()) {
+    LOG(WARNING) << "Async tablet task " << description() << " failed or was cancelled: "
+                  << status.ToString();
+    UnregisterAsyncTask();   // May delete this.
+    return;
+  }
+
+  string desc = description();  // Save in case we need to log after deletion.
+  Status s = Run();             // May delete this.
+  if (!s.ok()) {
+    LOG(WARNING) << "Async tablet task " << desc << " failed: " << s.ToString();
+  }
+}
+
+void RetryingTSRpcTask::UnregisterAsyncTask() {
+  end_ts_ = MonoTime::Now();
+  if (table_ != nullptr) {
+    table_->RemoveTask(this);
+  } else {
+    // This is a floating task (since the table does not exist)
+    // created as response to a tablet report.
+    Release();  // May call "delete this";
+  }
+}
+
+Status RetryingTSRpcTask::ResetTSProxy() {
+  // TODO: if there is no replica available, should we still keep the task running?
+  string ts_uuid;
+  // TODO: don't pick replica we can't lookup???
+  RETURN_NOT_OK(replica_picker_->PickReplica(&ts_uuid));
+  shared_ptr<TSDescriptor> ts_desc;
+  if (!master_->ts_manager()->LookupTSByUUID(ts_uuid, &ts_desc)) {
+    return Status::NotFound(Substitute("Could not find TS for UUID $0",
+                                        ts_uuid));
+  }
+
+  // This assumes that TSDescriptors are never deleted by the master,
+  // so the task need not take ownership of the returned pointer.
+  target_ts_desc_ = ts_desc.get();
+
+  shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
+  RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));
+  ts_proxy_.swap(ts_proxy);
+
+  shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
+  RETURN_NOT_OK(target_ts_desc_->GetConsensusProxy(master_->messenger(), &consensus_proxy));
+  consensus_proxy_.swap(consensus_proxy);
+
+  rpc_.Reset();
+  return Status::OK();
+}
 
 // RetryingTSRpcTask subclass which always retries the same tablet server,
 // identified by its UUID.
@@ -3138,6 +3151,9 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
 };
 
 bool AsyncAddServerTask::SendRequest(int attempt) {
+  LOG(INFO) << "Sending request for AddServer on tablet " << tablet_->tablet_id()
+            << " (attempt " << attempt << ")";
+
   // Bail if we're retrying in vain.
   int64_t latest_index;
   {
@@ -3189,7 +3205,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
 void AsyncAddServerTask::HandleResponse(int attempt) {
   if (!resp_.has_error()) {
     MarkComplete();
-    LOG_WITH_PREFIX(INFO) << "Change config succeeded";
+    LOG_WITH_PREFIX(INFO) << "Config change to add server succeeded";
     return;
   }
 
@@ -3280,18 +3296,18 @@ void CatalogManager::SendDeleteReplicaRequest(
     // created as response to a tablet report.
     call->AddRef();
   }
-  WARN_NOT_OK(call->Run(), "Failed to send delete tablet request");
+  WARN_NOT_OK(call->Run(),
+              Substitute("Failed to send DeleteReplica request for tablet $0", tablet_id));
 }
 
 void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& tablet,
                                           const ConsensusStatePB& cstate) {
   auto task = new AsyncAddServerTask(master_, tablet, cstate);
   tablet->table()->AddTask(task);
-  WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
-
-  // We can't access 'task' here because it may delete itself inside Run() in the
-  // case that the tablet has no known leader.
-  LOG(INFO) << "Started AddServer task for tablet " << tablet->tablet_id();
+  WARN_NOT_OK(task->Run(),
+              Substitute("Failed to send AddServer request for tablet $0", tablet->tablet_id()));
+  // We can't access 'task' after calling Run() because it may delete itself
+  // inside Run() in the case that the tablet has no known leader.
 }
 
 void CatalogManager::ExtractTabletsToProcess(

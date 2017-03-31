@@ -39,10 +39,19 @@ using client::KuduClientBuilder;
 using client::KuduSchema;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
+using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::ConsensusStatePB;
 using consensus::OpId;
+using consensus::RECEIVED_OPID;
+using itest::GetConsensusState;
+using itest::GetLastOpIdForReplica;
 using itest::TabletServerMap;
 using itest::TServerDetails;
+using itest::WAIT_FOR_LEADER;
+using itest::WaitForReplicasReportedToMaster;
+using itest::WaitUntilCommittedOpIdIndexIs;
+using itest::WaitUntilTabletInState;
+using itest::WaitUntilTabletRunning;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -182,7 +191,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   FLAGS_num_replicas = 3;
   // tserver_unresponsive_timeout_ms is useful so that master considers
   // the live tservers for tablet re-replication.
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   LOG(INFO) << "Finding tablet leader and waiting for things to start...";
   string tablet_id = tablet_replicas_.begin()->first;
@@ -198,17 +207,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
 
@@ -246,10 +255,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
   // Verify that two new servers are part of new config and old
@@ -264,8 +273,8 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   // we should see the tablet in TOMBSTONED state on these servers.
   ASSERT_OK(cluster_->tablet_server_by_uuid(leader_ts->uuid())->Restart());
   ASSERT_OK(cluster_->tablet_server_by_uuid(followers[1]->uuid())->Restart());
-  ASSERT_OK(itest::WaitUntilTabletInState(leader_ts, tablet_id, tablet::SHUTDOWN, kTimeout));
-  ASSERT_OK(itest::WaitUntilTabletInState(followers[1], tablet_id, tablet::SHUTDOWN, kTimeout));
+  ASSERT_OK(WaitUntilTabletInState(leader_ts, tablet_id, tablet::SHUTDOWN, kTimeout));
+  ASSERT_OK(WaitUntilTabletInState(followers[1], tablet_id, tablet::SHUTDOWN, kTimeout));
 }
 
 // Test unsafe config change when there is one leader survivor in the cluster.
@@ -291,17 +300,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
 
@@ -340,10 +349,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -375,17 +384,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
 
@@ -423,10 +432,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -466,17 +475,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   5, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            5, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   ASSERT_EQ(followers.size(), 4);
@@ -515,10 +524,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   5, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            5, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -553,17 +562,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   ASSERT_EQ(followers.size(), 2);
@@ -612,10 +621,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -650,17 +659,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
 
@@ -718,10 +727,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -756,17 +765,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
 
@@ -824,10 +833,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(3, new_node, tablet_id_, kTimeout));
 
   // Wait for the master to be notified of the config change.
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -869,17 +878,17 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   5, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            5, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
   ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
   ASSERT_EQ(followers.size(), 4);
@@ -931,10 +940,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
 
   // Wait for the master to be notified of the config change.
   LOG(INFO) << "Waiting for Master to see new config...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   5, tablet_id_, kTimeout,
-                                                   itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            5, tablet_id_, kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
       tablet_locations.replicas()) {
@@ -951,9 +960,9 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
   ConsensusStatePB cstate;
   for (auto& ts : tservers) {
     RETURN_NOT_OK(
-        itest::GetConsensusState(ts, tablet_id,
-                                 consensus::CONSENSUS_CONFIG_COMMITTED,
-                                 MonoDelta::FromSeconds(10), &cstate));
+        GetConsensusState(ts, tablet_id,
+                          CONSENSUS_CONFIG_COMMITTED,
+                          MonoDelta::FromSeconds(10), &cstate));
     if (cstate.has_leader_uuid() && cstate.has_current_term()) {
       *current_term = cstate.current_term();
       return Status::OK();
@@ -972,9 +981,9 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
   for (auto& ts : tservers) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts,
-                                            tablet_id_,
-                                            MonoDelta::FromSeconds(10)));
+    ASSERT_OK(WaitUntilTabletRunning(ts,
+                                     tablet_id_,
+                                     MonoDelta::FromSeconds(10)));
   }
 
   int64 current_term;
@@ -1014,9 +1023,9 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
   for (auto& ts : tservers) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts,
-                                            tablet_id_,
-                                            MonoDelta::FromSeconds(10)));
+    ASSERT_OK(WaitUntilTabletRunning(ts,
+                                     tablet_id_,
+                                     MonoDelta::FromSeconds(10)));
   }
 
   int64 current_term;
