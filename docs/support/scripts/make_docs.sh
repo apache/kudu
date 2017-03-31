@@ -167,6 +167,30 @@ cp $SOURCE_ROOT/docs/configuration_reference* $GEN_DOC_DIR/
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference.adoc
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${GEN_DOC_DIR}/configuration_reference_unsupported.adoc
 
+# Create tool references
+echo "Running kudu --helpxml"
+(
+  # Reset environment to avoid affecting the default flag values.
+  for var in $(env | awk -F= '{print $1}' | egrep -i 'KUDU|GLOG'); do
+    echo "unset $var"
+    eval "unset $var"
+  done
+
+  # Create the XML file.
+  # This command exits with a nonzero value.
+  $BUILD_ROOT/bin/kudu --helpxml > ${GEN_DOC_DIR}/kudu.xml || true
+)
+
+# Create the supported config reference
+xsltproc \
+-o $GEN_DOC_DIR/command_line_tools.adoc \
+  $SOURCE_ROOT/docs/support/xsl/tool_to_asciidoc.xsl \
+${GEN_DOC_DIR}/kudu.xml
+
+# Add the includes to the cli tools reference files, replacing the template lines
+cp $SOURCE_ROOT/docs/command_line_tools_reference.adoc $GEN_DOC_DIR/
+sed -i "s#@@TOOLS_REFERENCE@@#include::command_line_tools.adoc[leveloffset=+1]\n#" ${GEN_DOC_DIR}/command_line_tools_reference.adoc
+
 # If we're generating the web site, pass the template which causes us
 # to generate Jekyll templates instead of full HTML.
 if [ -n "$SITE" ]; then

@@ -256,6 +256,41 @@ void ToolTest::StartMiniCluster(int num_masters,
   ASSERT_OK(mini_cluster_->Start());
 }
 
+TEST_F(ToolTest, TestHelpXML) {
+  string stdout;
+  string stderr;
+  Status s = RunTool("--helpxml", &stdout, &stderr, nullptr, nullptr);
+
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_FALSE(stdout.empty());
+  ASSERT_TRUE(stderr.empty());
+
+  // All wrapped in AllModes node
+  ASSERT_STR_MATCHES(stdout, "<\\?xml version=\"1.0\"\\?><AllModes>.*</AllModes>");
+
+  // Verify all modes are output
+  const vector<string> modes = {
+      "cluster",
+      "fs",
+      "local_replica",
+      "master",
+      "pbc",
+      "remote_replica",
+      "table",
+      "tablet",
+      "test",
+      "tserver",
+      "wal",
+      "dump",
+      "cmeta",
+      "change_config"
+  };
+
+  for (const auto& mode : modes) {
+    ASSERT_STR_MATCHES(stdout, Substitute(".*<mode><name>$0</name>.*</mode>.*", mode));
+  }
+}
+
 TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
       "cluster.*Kudu cluster",
