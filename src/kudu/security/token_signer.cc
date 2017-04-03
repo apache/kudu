@@ -58,7 +58,8 @@ TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
                          : std::make_shared<TokenVerifier>()),
       authn_token_validity_seconds_(authn_token_validity_seconds),
       key_rotation_seconds_(key_rotation_seconds),
-      key_validity_seconds_(key_rotation_seconds_ + authn_token_validity_seconds_),
+      // The TSK propagation interval is equal to the rotation interval.
+      key_validity_seconds_(2 * key_rotation_seconds_ + authn_token_validity_seconds_),
       next_key_seq_num_(0) {
   CHECK_GE(key_rotation_seconds_, 0);
   CHECK_GE(authn_token_validity_seconds_, 0);

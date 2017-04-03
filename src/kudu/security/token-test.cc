@@ -126,7 +126,7 @@ TEST_F(TokenTest, TestIsCurrentKeyValid) {
   static const int64_t kAuthnTokenValiditySeconds = 1;
   static const int64_t kKeyRotationSeconds = 1;
   static const int64_t kKeyValiditySeconds =
-      kAuthnTokenValiditySeconds + kKeyRotationSeconds;
+      kAuthnTokenValiditySeconds + 2 * kKeyRotationSeconds;
 
   TokenSigner signer(kAuthnTokenValiditySeconds, kKeyRotationSeconds);
   EXPECT_FALSE(signer.IsCurrentKeyValid());
@@ -276,9 +276,9 @@ TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
 TEST_F(TokenTest, TestExportKeys) {
   // Test that the exported public keys don't contain private key material,
   // and have an appropriate expiration.
-  const int64_t key_exp_seconds = 20;
+  const int64_t key_exp_seconds = 30;
   const int64_t key_rotation_seconds = 10;
-  TokenSigner signer(key_exp_seconds - key_rotation_seconds,
+  TokenSigner signer(key_exp_seconds - 2 * key_rotation_seconds,
                      key_rotation_seconds);
   int64_t key_seq_num;
   {
