@@ -33,10 +33,6 @@ using std::sort;
 using std::swap;
 using std::unique_ptr;
 
-DEFINE_int64(arena_warn_threshold_bytes, 256*1024*1024,
-             "Number of bytes beyond which to emit a warning for a large arena");
-TAG_FLAG(arena_warn_threshold_bytes, hidden);
-
 namespace kudu {
 
 template <bool THREADSAFE>
@@ -49,8 +45,7 @@ ArenaBase<THREADSAFE>::ArenaBase(
   size_t max_buffer_size)
     : buffer_allocator_(buffer_allocator),
       max_buffer_size_(max_buffer_size),
-      arena_footprint_(0),
-      warned_(false) {
+      arena_footprint_(0) {
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
@@ -58,8 +53,7 @@ template <bool THREADSAFE>
 ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_size)
     : buffer_allocator_(HeapBufferAllocator::Get()),
       max_buffer_size_(max_buffer_size),
-      arena_footprint_(0),
-      warned_(false) {
+      arena_footprint_(0) {
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
@@ -128,13 +122,6 @@ void ArenaBase<THREADSAFE>::AddComponent(ArenaBase::Component *component) {
   ReleaseStoreCurrent(component);
   arena_.push_back(unique_ptr<Component>(component));
   arena_footprint_ += component->size();
-  if (PREDICT_FALSE(arena_footprint_ > FLAGS_arena_warn_threshold_bytes) && !warned_) {
-    LOG(WARNING) << "Arena " << reinterpret_cast<const void *>(this)
-                 << " footprint (" << arena_footprint_ << " bytes) exceeded warning threshold ("
-                 << FLAGS_arena_warn_threshold_bytes << " bytes)\n"
-                 << GetStackTrace();
-    warned_ = true;
-  }
 }
 
 template <bool THREADSAFE>
@@ -149,7 +136,6 @@ void ArenaBase<THREADSAFE>::Reset() {
   }
   arena_.back()->Reset();
   arena_footprint_ = arena_.back()->size();
-  warned_ = false;
 
 #ifndef NDEBUG
   // In debug mode release the last component too for (hopefully) better

@@ -192,10 +192,6 @@ class ArenaBase {
   const size_t max_buffer_size_;
   size_t arena_footprint_;
 
-  // True if this Arena has already emitted a warning about surpassing
-  // the global warning size threshold.
-  bool warned_;
-
   // Lock covering 'slow path' allocation, when new components are
   // allocated and added to the arena's list. Also covers any other
   // mutation of the component data structure (eg Reset).
