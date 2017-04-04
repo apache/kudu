@@ -21,6 +21,7 @@
 #include <memory>
 #include <string>
 
+#include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
@@ -48,6 +49,22 @@ typedef struct x509_st X509;
   if ((call) == nullptr) { \
     return Status::RuntimeError((msg), GetOpenSSLErrors()); \
   }
+
+// Scoped helper which DCHECKs that on both scope entry and exit, there are no
+// pending OpenSSL errors for the current thread.
+//
+// This allows us to avoid calling ERR_clear_error() defensively before every
+// OpenSSL call, but rather call it only when we get an error code indicating
+// there may be some pending error.
+//
+// Example usage:
+//
+//    void MyFunc() {
+//      SCOPED_OPENSSL_NO_PENDING_ERRORS;
+//      ... use OpenSSL APIs ...
+//    }
+#define SCOPED_OPENSSL_NO_PENDING_ERRORS \
+  kudu::security::internal::ScopedCheckNoPendingSSLErrors _no_ssl_errors(__PRETTY_FUNCTION__)
 
 namespace kudu {
 namespace security {
@@ -78,7 +95,6 @@ std::string GetOpenSSLErrors();
 //
 // See man(3) SSL_get_error for more discussion.
 std::string GetSSLErrorDescription(int error_code);
-
 
 // A generic wrapper for OpenSSL structures.
 template <typename T>
@@ -146,5 +162,29 @@ class RawDataWrapper {
   c_unique_ptr<RawDataType> data_;
 };
 
+
+namespace internal {
+
+// Implementation of SCOPED_OPENSSL_NO_PENDING_ERRORS. Use the macro form
+// instead of directly instantiating the implementation class.
+struct ScopedCheckNoPendingSSLErrors {
+ public:
+  explicit ScopedCheckNoPendingSSLErrors(const char* func)
+      : func_(func) {
+    DCHECK_EQ(ERR_peek_error(), 0)
+        << "Expected no pending OpenSSL errors on " << func_
+        << " entry, but had: " << GetOpenSSLErrors();
+  }
+  ~ScopedCheckNoPendingSSLErrors() {
+    DCHECK_EQ(ERR_peek_error(), 0)
+        << "Expected no pending OpenSSL errors on " << func_
+        << " exit, but had: " << GetOpenSSLErrors();
+  }
+
+ private:
+  const char* const func_;
+};
+
+} // namespace internal
 } // namespace security
 } // namespace kudu

@@ -122,6 +122,7 @@ Status PublicKey::FromBIO(BIO* bio, DataFormat format) {
 Status PublicKey::VerifySignature(DigestType digest,
                                   const std::string& data,
                                   const std::string& signature) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   const EVP_MD* md = GetMessageDigest(digest);
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
 
@@ -141,10 +142,12 @@ Status PublicKey::VerifySignature(DigestType digest,
   const int rc = EVP_DigestVerifyFinal(md_ctx.get(), sig_data, signature.size());
   if (rc < 0 || rc > 1) {
     return Status::RuntimeError(
-        Substitute("error verifying data signature: $0",
-                   GetOpenSSLErrors()));
+        Substitute("error verifying data signature: $0", GetOpenSSLErrors()));
   }
   if (rc == 0) {
+    // No sense stringifying the internal OpenSSL error, since a bad verification
+    // is self-explanatory.
+    ERR_clear_error();
     return Status::Corruption("data signature verification failed");
   }
 
@@ -152,6 +155,7 @@ Status PublicKey::VerifySignature(DigestType digest,
 }
 
 Status PublicKey::Equals(const PublicKey& other, bool* equals) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   int cmp = EVP_PKEY_cmp(data_.get(), other.data_.get());
   switch (cmp) {
     case -2:
@@ -187,6 +191,7 @@ Status PrivateKey::FromFile(const std::string& fpath, DataFormat format) {
 // corresponding functionality to read public part from RSA private/public
 // keypair.
 Status PrivateKey::GetPublicKey(PublicKey* public_key) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(public_key);
   auto rsa = ssl_make_unique(EVP_PKEY_get1_RSA(CHECK_NOTNULL(data_.get())));
   if (PREDICT_FALSE(!rsa)) {
@@ -207,6 +212,7 @@ Status PrivateKey::GetPublicKey(PublicKey* public_key) const {
 Status PrivateKey::MakeSignature(DigestType digest,
                                  const std::string& data,
                                  std::string* signature) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(signature);
   const EVP_MD* md = GetMessageDigest(digest);
   auto md_ctx = ssl_make_unique(EVP_MD_CTX_create());
@@ -227,6 +233,7 @@ Status PrivateKey::MakeSignature(DigestType digest,
 }
 
 Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ret);
   InitializeOpenSSL();
   auto key = ssl_make_unique(EVP_PKEY_new());
@@ -246,6 +253,7 @@ Status GeneratePrivateKey(int num_bits, PrivateKey* ret) {
 }
 
 Status GenerateNonce(string* s) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK_NOTNULL(s);
   unsigned char buf[kNonceSize];
   OPENSSL_RET_NOT_OK(RAND_bytes(buf, sizeof(buf)), "failed to generate nonce");
