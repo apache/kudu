@@ -35,6 +35,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantLock;
 
 import javax.annotation.concurrent.GuardedBy;
+import javax.net.ssl.SSLException;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -358,7 +359,12 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       }
       // Send the queued RPCs after dropping the lock, so we don't end up calling
       // their callbacks/errbacks with the lock held.
-      sendQueuedRpcs(queuedRpcs);
+      //
+      // queuedRpcs may be null in the case that we disconnected the client just
+      // at the same time as the Negotiator was finishing up.
+      if (queuedRpcs != null) {
+        sendQueuedRpcs(queuedRpcs);
+      }
       return;
     }
     if (!(m instanceof CallResponse)) {
@@ -633,12 +639,14 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       // for negotiation to complete.
       if (pendingRpcs != null) {
         rpcsToFail.addAll(pendingRpcs);
+        pendingRpcs = null;
       }
-      pendingRpcs = null;
 
       // Similarly, we need to fail any that were already sent and in-flight.
-      rpcsToFail.addAll(rpcsInflight.values());
-      rpcsInflight = null;
+      if (rpcsInflight != null) {
+        rpcsToFail.addAll(rpcsInflight.values());
+        rpcsInflight = null;
+      }
     } finally {
       lock.unlock();
     }
@@ -702,6 +710,13 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
       if (!closedByClient) {
         LOG.info(getPeerUuidLoggingString() + "Lost connection to peer");
       }
+    } else if (e instanceof SSLException && closedByClient) {
+      // There's a race in Netty where, when we call Channel.close(), it tries
+      // to send a TLS 'shutdown' message and enters a shutdown state. If another
+      // thread races to send actual data on the channel, then Netty will get a
+      // bit confused that we are trying to send data and misinterpret it as a
+      // renegotiation attempt, and throw an SSLException. So, we just ignore any
+      // SSLException if we've already attempted to close.
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
     }
