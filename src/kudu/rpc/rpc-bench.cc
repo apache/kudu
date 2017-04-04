@@ -53,6 +53,9 @@ DEFINE_int32(server_reactors, 4,
 
 DEFINE_int32(run_seconds, 1, "Seconds to run the test");
 
+DECLARE_bool(rpc_encrypt_loopback_connections);
+DEFINE_bool(enable_encryption, false, "Whether to enable TLS encryption for rpc-bench");
+
 namespace kudu {
 namespace rpc {
 
@@ -70,7 +73,8 @@ class RpcBench : public RpcTestBase {
     n_server_reactor_threads_ = FLAGS_server_reactors;
 
     // Set up server.
-    StartTestServerWithGeneratedCode(&server_addr_);
+    FLAGS_rpc_encrypt_loopback_connections = FLAGS_enable_encryption;
+    StartTestServerWithGeneratedCode(&server_addr_, FLAGS_enable_encryption);
   }
 
   void SummarizePerf(CpuTimes elapsed, int total_reqs, bool sync) {
@@ -89,6 +93,7 @@ class RpcBench : public RpcTestBase {
 
     LOG(INFO) << "Worker threads:   " << FLAGS_worker_threads;
     LOG(INFO) << "Server reactors:  " << FLAGS_server_reactors;
+    LOG(INFO) << "Encryption:       " << FLAGS_enable_encryption;
     LOG(INFO) << "----------------------------------";
     LOG(INFO) << "Reqs/sec:         " << reqs_per_second;
     LOG(INFO) << "User CPU per req: " << user_cpu_micros_per_req << "us";
