@@ -40,6 +40,7 @@ TlsSocket::~TlsSocket() {
 
 Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   CHECK(ssl_);
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   if (PREDICT_FALSE(amt == 0)) {
     // Writing an empty buffer is a no-op. This happens occasionally, eg in the
@@ -49,7 +50,6 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
     return Status::OK();
   }
 
-  ERR_clear_error();
   errno = 0;
   int32_t bytes_written = SSL_write(ssl_.get(), buf, amt);
   if (bytes_written <= 0) {
@@ -67,8 +67,8 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
 }
 
 Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ssl_);
-  ERR_clear_error();
   int32_t total_written = 0;
   // Allows packets to be aggresively be accumulated before sending.
   RETURN_NOT_OK(SetTcpCork(1));
@@ -86,10 +86,10 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritt
 }
 
 Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   const char* kErrString = "failed to read from TLS socket";
 
   CHECK(ssl_);
-  ERR_clear_error();
   errno = 0;
   int32_t bytes_read = SSL_read(ssl_.get(), buf, amt);
   int save_errno = errno;
@@ -127,7 +127,7 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
 }
 
 Status TlsSocket::Close() {
-  ERR_clear_error();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   errno = 0;
 
   if (!ssl_) {

@@ -77,12 +77,16 @@ Status CheckOpenSSLInitialized() {
   }
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (!ctx) {
+    ERR_clear_error();
     return Status::RuntimeError("SSL library appears uninitialized (cannot create SSL_CTX)");
   }
   return Status::OK();
 }
 
 void DoInitializeOpenSSL() {
+  // In case the user's thread has left some error around, clear it.
+  ERR_clear_error();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   if (g_disable_ssl_init) {
     VLOG(2) << "Not initializing OpenSSL (disabled by application)";
     return;
@@ -102,6 +106,10 @@ void DoInitializeOpenSSL() {
     // which we check before overriding. They aren't thread-safe, however -- that's why
     // we try to get embedding applications to do the right thing here rather than risk a
     // potential initialization race.
+  } else {
+    // As expected, SSL is not initialized, so SSL_CTX_new() failed. Make sure
+    // it didn't leave anything in our error queue.
+    ERR_clear_error();
   }
 
   SSL_load_error_strings();

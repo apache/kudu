@@ -96,6 +96,7 @@ TlsContext::TlsContext()
 }
 
 Status TlsContext::Init() {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(!ctx_);
 
   // NOTE: 'SSLv23 method' sounds like it would enable only SSLv2 and SSLv3, but in fact
@@ -170,6 +171,7 @@ Status TlsContext::Init() {
 }
 
 Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
   auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
 
@@ -180,6 +182,7 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
     int err = X509_STORE_CTX_get_error(store_ctx.get());
     if (err == X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
       // It's OK to provide a self-signed cert.
+      ERR_clear_error(); // in case it left anything on the queue.
       return Status::OK();
     }
 
@@ -192,6 +195,7 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
                                 X509NameToString(X509_get_issuer_name(cur_cert)));
     }
 
+    ERR_clear_error(); // in case it left anything on the queue.
     return Status::RuntimeError(
         Substitute("could not verify certificate chain$0", cert_details),
         X509_verify_cert_error_string(err));
@@ -200,6 +204,7 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
 }
 
 Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // Verify that the cert and key match.
   RETURN_NOT_OK(cert.CheckKeyMatch(key));
 
@@ -221,6 +226,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
 }
 
 Status TlsContext::AddTrustedCertificate(const Cert& cert) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   VLOG(2) << "Trusting certificate " << cert.SubjectName();
 
   {
@@ -240,7 +246,6 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
   }
 
   unique_lock<RWMutex> lock(lock_);
-  ERR_clear_error();
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
   int rc = X509_STORE_add_cert(cert_store, cert.GetRawData());
   if (rc <= 0) {
@@ -259,6 +264,7 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
 }
 
 Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   shared_lock<RWMutex> lock(lock_);
 
   vector<string> ret;
@@ -284,6 +290,7 @@ Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
 
 namespace {
 Status SetCertAttributes(CertRequestGenerator::Config* config) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   RETURN_NOT_OK_PREPEND(GetFQDN(&config->cn), "could not determine FQDN for CSR");
 
   // If the server has logged in from a keytab, then we have a 'real' identity,
@@ -307,6 +314,7 @@ Status SetCertAttributes(CertRequestGenerator::Config* config) {
 } // anonymous namespace
 
 Status TlsContext::GenerateSelfSignedCertAndKey() {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CertRequestGenerator::Config config;
   RETURN_NOT_OK(SetCertAttributes(&config));
   // Step 1: generate the private key to be self signed.
@@ -336,6 +344,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   // get cached, so we don't hit the race later. 'VerifyCertChain' also has the
   // effect of triggering the racy codepath.
   ignore_result(X509_check_ca(cert.GetRawData()));
+  ERR_clear_error(); // in case it left anything on the queue.
 
   // Step 4: Adopt the new key and cert.
   unique_lock<RWMutex> lock(lock_);
@@ -350,6 +359,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
 }
 
 boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   shared_lock<RWMutex> lock(lock_);
   if (csr_) {
     return csr_->Clone();
@@ -358,6 +368,7 @@ boost::optional<CertSignRequest> TlsContext::GetCsrIfNecessary() const {
 }
 
 Status TlsContext::AdoptSignedCert(const Cert& cert) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   unique_lock<RWMutex> lock(lock_);
 
   // Verify that the appropriate CA certs have been loaded into the context
@@ -397,6 +408,7 @@ Status TlsContext::AdoptSignedCert(const Cert& cert) {
 
 Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
                                          const string& key_path) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   Cert c;
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
   PrivateKey k;
@@ -405,6 +417,7 @@ Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
 }
 
 Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   Cert c;
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
   return AddTrustedCertificate(c);
@@ -412,6 +425,7 @@ Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
 
 Status TlsContext::InitiateHandshake(TlsHandshakeType handshake_type,
                                      TlsHandshake* handshake) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ctx_);
   CHECK(!handshake->ssl_);
   {

@@ -70,6 +70,7 @@ CertRequestGenerator::~CertRequestGenerator() {
 
 Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
                                                  CertSignRequest* ret) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ret);
   CHECK(Initialized());
   auto req = ssl_make_unique(X509_REQ_new());
@@ -108,11 +109,10 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
 
 Status CertRequestGeneratorBase::PushExtension(stack_st_X509_EXTENSION* st,
                                                int32_t nid, StringPiece value) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   auto ex = ssl_make_unique(
       X509V3_EXT_conf_nid(nullptr, nullptr, nid, const_cast<char*>(value.data())));
-  if (!ex) {
-    return Status::RuntimeError("error configuring extension");
-  }
+  OPENSSL_RET_IF_NULL(ex, "error configuring extension");
   OPENSSL_RET_NOT_OK(sk_X509_EXTENSION_push(st, ex.release()),
       "error pushing extension into the stack");
   return Status::OK();
@@ -124,6 +124,7 @@ CertRequestGenerator::CertRequestGenerator(Config config)
 
 Status CertRequestGenerator::Init() {
   InitializeOpenSSL();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   CHECK(!is_initialized_);
   if (config_.cn.empty()) {
@@ -192,6 +193,7 @@ CaCertRequestGenerator::~CaCertRequestGenerator() {
 
 Status CaCertRequestGenerator::Init() {
   InitializeOpenSSL();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   lock_guard<simple_spinlock> guard(lock_);
   if (is_initialized_) {
@@ -279,6 +281,7 @@ CertSigner::CertSigner(const Cert* ca_cert,
 }
 
 Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   InitializeOpenSSL();
   CHECK(ret);
 
@@ -300,6 +303,7 @@ Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
 // This is modeled after code in copy_extensions() function from
 // $OPENSSL_ROOT/apps/apps.c with OpenSSL 1.0.2.
 Status CertSigner::CopyExtensions(X509_REQ* req, X509* x) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(req);
   CHECK(x);
   STACK_OF(X509_EXTENSION)* exts = X509_REQ_get_extensions(req);
@@ -325,6 +329,7 @@ Status CertSigner::CopyExtensions(X509_REQ* req, X509* x) {
 }
 
 Status CertSigner::FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(req);
   if (!req->req_info ||
       !req->req_info->pubkey ||
@@ -333,15 +338,15 @@ Status CertSigner::FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl) {
     return Status::RuntimeError("corrupted CSR: no public key");
   }
   auto pub_key = ssl_make_unique(X509_REQ_get_pubkey(req));
-  if (!pub_key) {
-    return Status::RuntimeError("error unpacking public key from CSR");
-  }
+  OPENSSL_RET_IF_NULL(pub_key, "error unpacking public key from CSR");
   const int rc = X509_REQ_verify(req, pub_key.get());
   if (rc < 0) {
-    return Status::RuntimeError("CSR signature verification error");
+    return Status::RuntimeError("CSR signature verification error",
+                                GetOpenSSLErrors());
   }
   if (rc == 0) {
-    return Status::RuntimeError("CSR signature mismatch");
+    return Status::RuntimeError("CSR signature mismatch",
+                                GetOpenSSLErrors());
   }
   OPENSSL_RET_NOT_OK(X509_set_subject_name(tmpl, X509_REQ_get_subject_name(req)),
       "error setting cert subject name");
@@ -357,6 +362,7 @@ Status CertSigner::DigestSign(const EVP_MD* md, EVP_PKEY* pkey, X509* x) {
 }
 
 Status CertSigner::GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   auto btmp = ssl_make_unique(BN_new());
   OPENSSL_RET_NOT_OK(BN_pseudo_rand(btmp.get(), 64, 0, 0),
       "error generating random number");
@@ -371,6 +377,7 @@ Status CertSigner::GenerateSerial(c_unique_ptr<ASN1_INTEGER>* ret) {
 
 Status CertSigner::DoSign(const EVP_MD* digest, int32_t exp_seconds,
                           X509* ret) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ret);
 
   // Version 3 (v3) of X509 certificates. The integer value is one less
