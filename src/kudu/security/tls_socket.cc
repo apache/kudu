@@ -147,7 +147,6 @@ Status TlsSocket::Close() {
   }
 
   ssl_.reset();
-  ERR_remove_state(0);
 
   // Close the underlying socket.
   RETURN_NOT_OK(Socket::Close());

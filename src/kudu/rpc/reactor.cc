@@ -152,6 +152,9 @@ void ReactorThread::ShutdownInternal() {
     task->Abort(aborted); // should also free the task.
   }
   scheduled_tasks_.clear();
+
+  // Remove the OpenSSL thread state.
+  ERR_remove_thread_state(nullptr);
 }
 
 ReactorTask::ReactorTask() {
