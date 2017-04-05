@@ -37,27 +37,26 @@
 (defn w   [_ _] {:type :invoke, :f :write, :value (rand-int 10)})
 
 (defn client
-  [table-created? kclient ktable]
+  [client-atom kclient ktable]
   (reify client/Client
     (setup! [_ test _]
-      ;; Create the client and create/open the table.
-      (let [kclient (kc/sync-client (:master-addresses test))
-            table-name (:table-name test)
-            ktable (locking table-created?
-                     (when (compare-and-set! table-created? false true)
-                       (kc/create-table
-                         kclient
-                         table-name
-                         kt/kv-table-schema
+      "Create the client and the test table. Use the same Kudu client instance "
+      "across all test actors to achieve timestamp propagation for all "
+      "operations."
+      (let [table-name (:table-name test)
+            kclient (locking client-atom
+                     (when (compare-and-set!
+                             client-atom nil (kc/sync-client (:master-addresses test)))
+                       (kc/create-table @client-atom table-name kt/kv-table-schema
                          (let [ranges (:table-ranges test)
                                rep-factor (:num-replicas test)]
                            (if (nil? ranges)
-                             (kt/kv-table-options-hash
-                               rep-factor (count (:tservers test)))
-                             (kt/kv-table-options-range
-                               rep-factor ranges)))))
-                       (kc/open-table kclient table-name))]
-        (client table-created? kclient ktable)))
+                             (kt/kv-table-options-hash rep-factor (count (:tservers test)))
+                             (kt/kv-table-options-range rep-factor ranges))))
+                       @client-atom)
+                       @client-atom)
+            ktable (kc/open-table kclient table-name)]
+        (client client-atom kclient ktable)))
 
     (invoke! [_ _ op]
       (case (:f op)
@@ -74,7 +73,7 @@
   (kudu/kudu-test
     (merge
       {:name    "rw-register"
-       :client (client (atom false) nil nil)
+       :client (client (atom nil) nil nil)
        :concurrency 10
        :num-replicas 5
        :nemesis  nemesis/noop
