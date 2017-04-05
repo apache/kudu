@@ -124,15 +124,13 @@ class BloomFileReader {
   // excluding the CFileReader, which is tracked independently.
   size_t memory_footprint_excluding_reader() const;
 
-  std::unique_ptr<CFileReader> reader_;
+  // Sequence number for the instance, generated from a global counter.
+  // Used for a ThreadLocalCache key.
+  // TODO(todd): if we want to conserve a bit of memory we could try to
+  // collapse this into the init_once_ object or some-such.
+  const uint64_t instance_nonce_;
 
-  // TODO: temporary workaround for the fact that
-  // the index tree iterator is a member of the Reader object.
-  // We need a big per-thread object which gets passed around so as
-  // to avoid this... Instead we'll use a per-CPU iterator as a
-  // lame hack.
-  std::vector<std::unique_ptr<cfile::IndexTreeIterator>> index_iters_;
-  gscoped_ptr<padded_spinlock[]> iter_locks_;
+  std::unique_ptr<CFileReader> reader_;
 
   KuduOnceDynamic init_once_;
 

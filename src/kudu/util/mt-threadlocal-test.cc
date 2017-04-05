@@ -17,6 +17,7 @@
 
 #include <glog/logging.h>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 
 #include "kudu/gutil/macros.h"
@@ -30,7 +31,9 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
+#include "kudu/util/threadlocal_cache.h"
 
+using std::string;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -316,6 +319,30 @@ TEST_F(ThreadLocalTest, TestTLSMember) {
   for (scoped_refptr<kudu::Thread> thread : threads) {
     CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
+}
+
+TEST_F(ThreadLocalTest, TestThreadLocalCache) {
+  using TLC = ThreadLocalCache<int, string>;
+  TLC* tlc = TLC::GetInstance();
+
+  // Lookup in an empty cache should return nullptr.
+  ASSERT_EQ(nullptr, tlc->Lookup(0));
+
+  // Insert more items than the cache capacity.
+  const int kLastItem = TLC::kItemCapacity * 2;
+  for (int i = 1; i <= kLastItem ; i++) {
+    auto* item = tlc->EmplaceNew(i);
+    ASSERT_NE(nullptr, item);
+    *item = Substitute("item $0", i);
+  }
+
+  // Looking up the most recent items should return them.
+  string* item = tlc->Lookup(kLastItem);
+  ASSERT_NE(nullptr, item);
+  EXPECT_EQ(*item, Substitute("item $0", kLastItem));
+
+  // Looking up evicted items should return nullptr.
+  ASSERT_EQ(nullptr, tlc->Lookup(1));
 }
 
 } // namespace threadlocal

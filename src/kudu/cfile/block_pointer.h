@@ -83,6 +83,10 @@ class BlockPointer {
     return size_;
   }
 
+  bool Equals(const BlockPointer& other) const {
+    return offset_ == other.offset_ && size_ == other.size_;
+  }
+
  private:
   uint64_t offset_;
   uint32_t size_;

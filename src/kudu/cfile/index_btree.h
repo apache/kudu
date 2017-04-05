@@ -86,6 +86,10 @@ class IndexTreeIterator {
     const CFileReader *reader,
     const BlockPointer &idx_root);
 
+  const CFileReader* cfile_reader() const {
+    return reader_;
+  }
+
  private:
   IndexBlockIterator *BottomIter();
   IndexBlockReader *BottomReader();

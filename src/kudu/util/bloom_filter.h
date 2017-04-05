@@ -169,6 +169,7 @@ class BloomFilterBuilder {
 // Wrapper around a byte array for reading it as a bloom filter.
 class BloomFilter {
  public:
+  BloomFilter() : bitmap_(nullptr) {}
   BloomFilter(const Slice &data, size_t n_hashes);
 
   // Return true if the filter may contain the given key.
