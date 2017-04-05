@@ -90,7 +90,6 @@
         <module>kudu-client</module>
         <module>kudu-client-tools</module>
         <module>kudu-mapreduce</module>
-        <module>kudu-spark</module>
         <module>kudu-flume-sink</module>
     </modules>
 
@@ -333,6 +332,8 @@
                 <kudu-spark.compat.src>src/main/spark2</kudu-spark.compat.src>
             </properties>
             <modules>
+                <module>kudu-spark</module>
+
                 <!-- kudu-spark-tools is only compatible with Spark2 -->
                 <module>kudu-spark-tools</module>
             </modules>
@@ -346,6 +347,9 @@
                 <scala.binary.version>2.10</scala.binary.version>
                 <kudu-spark.compat.src>src/main/spark1</kudu-spark.compat.src>
             </properties>
+            <modules>
+                <module>kudu-spark</module>
+            </modules>
         </profile>
     </profiles>
 </project>
