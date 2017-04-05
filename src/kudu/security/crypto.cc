@@ -182,9 +182,10 @@ Status PrivateKey::ToString(std::string* data, DataFormat format) const {
       data, format, data_.get());
 }
 
-Status PrivateKey::FromFile(const std::string& fpath, DataFormat format) {
+Status PrivateKey::FromFile(const std::string& fpath, DataFormat format,
+                            const PasswordCallback& password_cb) {
   return ::kudu::security::FromFile<RawDataType, RsaPrivateKeyTraits>(
-      fpath, format, &data_);
+      fpath, format, &data_, password_cb);
 }
 
 // The code is modeled after $OPENSSL_ROOT/apps/rsa.c code: there is

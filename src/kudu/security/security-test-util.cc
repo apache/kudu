@@ -22,6 +22,7 @@
 #include "kudu/security/ca/cert_management.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
+#include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/test_util.h"
@@ -77,12 +78,9 @@ Status ConfigureTlsContext(PkiConfig config,
       break;
     };
     case PkiConfig::EXTERNALLY_SIGNED: {
-      // Write certificate to file.
-      std::string cert_path = JoinPathSegments(GetTestDataDirectory(), "kudu-test-cert.pem");
-      RETURN_NOT_OK(CreateSSLServerCert(cert_path));
-      // Write private key to file.
-      std::string key_path = JoinPathSegments(GetTestDataDirectory(), "kudu-test-key.pem");
-      RETURN_NOT_OK(CreateSSLPrivateKey(key_path));
+      std::string cert_path, key_path;
+      // Write certificate and private key to file.
+      RETURN_NOT_OK(CreateTestSSLCertWithPlainKey(GetTestDataDirectory(), &cert_path, &key_path));
       RETURN_NOT_OK(tls_context->LoadCertificateAndKey(cert_path, key_path));
       RETURN_NOT_OK(tls_context->LoadCertificateAuthority(cert_path));
     };

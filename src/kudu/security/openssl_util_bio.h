@@ -53,15 +53,31 @@ Status ToBIO(BIO* bio, DataFormat format, TYPE* obj) {
   return Status::OK();
 }
 
+// The callback which is called by the OpenSSL library when trying to decrypt
+// a password protected private key.
+inline int TLSPasswordCB(char* buf, int size, int /* rwflag */, void* userdata) {
+  const auto* cb = reinterpret_cast<const PasswordCallback*>(userdata);
+  string pw = (*cb)();
+  if (pw.size() >= size) {
+    LOG(ERROR) << "Provided key password is longer than maximum length "
+               << size;
+    return -1;
+  }
+  strncpy(buf, pw.c_str(), size);
+  return pw.size();
+}
+
 template<typename TYPE, typename Traits = SslTypeTraits<TYPE>>
-Status FromBIO(BIO* bio, DataFormat format, c_unique_ptr<TYPE>* ret) {
+Status FromBIO(BIO* bio, DataFormat format, c_unique_ptr<TYPE>* ret,
+    const PasswordCallback& cb = PasswordCallback()) {
   CHECK(bio);
   switch (format) {
     case DataFormat::DER:
       *ret = ssl_make_unique(Traits::kReadDerFunc(bio, nullptr));
       break;
     case DataFormat::PEM:
-      *ret = ssl_make_unique(Traits::kReadPemFunc(bio, nullptr, nullptr, nullptr));
+      *ret = ssl_make_unique(Traits::kReadPemFunc(bio, nullptr, &TLSPasswordCB,
+          const_cast<PasswordCallback*>(&cb)));
       break;
   }
   if (PREDICT_FALSE(!*ret)) {
@@ -100,11 +116,11 @@ Status ToString(std::string* data, DataFormat format, Type* obj) {
 
 template<typename Type, typename Traits = SslTypeTraits<Type>>
 Status FromFile(const string& fpath, DataFormat format,
-                c_unique_ptr<Type>* ret) {
+                c_unique_ptr<Type>* ret, const PasswordCallback& cb = PasswordCallback()) {
   auto bio = ssl_make_unique(BIO_new(BIO_s_file()));
   OPENSSL_RET_NOT_OK(BIO_read_filename(bio.get(), fpath.c_str()),
       strings::Substitute("could not read data from file '$0'", fpath));
-  RETURN_NOT_OK_PREPEND((FromBIO<Type, Traits>(bio.get(), format, ret)),
+  RETURN_NOT_OK_PREPEND((FromBIO<Type, Traits>(bio.get(), format, ret, cb)),
       strings::Substitute("unable to load data from file '$0'", fpath));
   return Status::OK();
 }

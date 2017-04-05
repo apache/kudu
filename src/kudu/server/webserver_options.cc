@@ -73,8 +73,7 @@ DEFINE_string(webserver_private_key_file, "", "The full path to the private key 
 DEFINE_string(webserver_private_key_password_cmd, "", "A Unix command whose output "
     "returns the password used to decrypt the Webserver's certificate private key file "
     "specified in --webserver_private_key_file. If the PEM key file is not "
-    "password-protected, this command will not be invoked. The output of the command "
-    "will be truncated to 1024 bytes, and then all trailing whitespace will be trimmed "
+    "password-protected, this flag does not need to be set. Trailing whitespace will be trimmed "
     "before it is used to decrypt the private key");
 TAG_FLAG(webserver_certificate_file, stable);
 TAG_FLAG(webserver_private_key_file, stable);

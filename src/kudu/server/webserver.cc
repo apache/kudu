@@ -170,17 +170,8 @@ Status Webserver::Start() {
 
       string key_password;
       if (!opts_.private_key_password_cmd.empty()) {
-        vector<string> argv = strings::Split(opts_.private_key_password_cmd, " ",
-                                             strings::SkipEmpty());
-        if (argv.empty()) {
-          return Status::RuntimeError("invalid empty private key password command");
-        }
-        string stderr;
-        Status s = Subprocess::Call(argv, "" /* stdin */, &key_password, &stderr);
-        if (!s.ok()) {
-          return Status::RuntimeError("failed to run private key password command", stderr);
-        }
-        StripTrailingWhitespace(&key_password);
+        RETURN_NOT_OK(security::GetPasswordFromShellCommand(opts_.private_key_password_cmd,
+                                                            &key_password));
       }
       options.emplace_back("ssl_private_key_password");
       options.push_back(key_password); // maybe empty if not configured.

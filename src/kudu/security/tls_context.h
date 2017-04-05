@@ -145,6 +145,13 @@ class TlsContext {
   Status LoadCertificateAndKey(const std::string& certificate_path,
                                const std::string& key_path) WARN_UNUSED_RESULT;
 
+  // Load the server certificate and key (PEM encoded), and use the callback
+  // 'password_cb' to obtain the password that can decrypt the key.
+  Status LoadCertificateAndPasswordProtectedKey(const std::string& certificate_path,
+                                                const std::string& key_path,
+                                                const PasswordCallback& password_cb)
+                                                WARN_UNUSED_RESULT;
+
   // Load the certificate authority (PEM encoded).
   Status LoadCertificateAuthority(const std::string& certificate_path) WARN_UNUSED_RESULT;
 

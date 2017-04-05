@@ -47,10 +47,10 @@ namespace kudu {
 namespace {
 void SetSslOptions(WebserverOptions* opts) {
   string password;
-  CHECK_OK(security::CreateTestSSLCerts(GetTestDataDirectory(),
-                                        &opts->certificate_file,
-                                        &opts->private_key_file,
-                                        &password));
+  CHECK_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
+                                                       &opts->certificate_file,
+                                                       &opts->private_key_file,
+                                                       &password));
   opts->private_key_password_cmd = strings::Substitute("echo $0", password);
 }
 

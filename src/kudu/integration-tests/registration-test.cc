@@ -347,10 +347,10 @@ TEST_F(RegistrationTest, TestExposeHttpsURLs) {
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string password;
   WebserverOptions* opts = &ts->options()->webserver_opts;
-  ASSERT_OK(security::CreateTestSSLCerts(GetTestDataDirectory(),
-                                         &opts->certificate_file,
-                                         &opts->private_key_file,
-                                         &password));
+  ASSERT_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
+                                                        &opts->certificate_file,
+                                                        &opts->private_key_file,
+                                                        &password));
   opts->private_key_password_cmd = strings::Substitute("echo $0", password);
   ts->Shutdown();
   ASSERT_OK(ts->Start());

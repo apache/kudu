@@ -55,13 +55,18 @@ extern const char kSignatureShortSHA512[];
 extern const char kDataLong[];
 extern const char kSignatureLongSHA512[];
 
-// Creates a matching SSL certificate and private key file in 'dir', returning
-// their paths in '*cert_file' and '*key_file'. The password associated with
-// the private key is stored in '*key_password'.
-Status CreateTestSSLCerts(const std::string& dir,
-                          std::string* cert_file,
-                          std::string* key_file,
-                          std::string* key_password);
+// Creates a matching SSL certificate and unencrypted private key file in 'dir',
+// returning their paths in '*cert_file' and '*key_file'.
+Status CreateTestSSLCertWithPlainKey(const std::string& dir,
+                                     std::string* cert_file,
+                                     std::string* key_file);
+
+// Same as the CreateTestSSLCertWithPlainKey() except that the private key is
+// encrypted with a password that is returned in 'key_password'.
+Status CreateTestSSLCertWithEncryptedKey(const std::string& dir,
+                                          std::string* cert_file,
+                                          std::string* key_file,
+                                          std::string* key_password);
 
 } // namespace security
 } // namespace kudu

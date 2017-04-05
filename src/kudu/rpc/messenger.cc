@@ -94,6 +94,12 @@ DEFINE_string(rpc_ca_certificate_file, "",
               "Path to the PEM encoded X509 certificate of the trusted external "
               "certificate authority. The provided certificate should be the root "
               "issuer of the certificate passed in '--rpc_certificate_file'.");
+DEFINE_string(rpc_private_key_password_cmd, "", "A Unix command whose output "
+              "returns the password used to decrypt the RPC server's private key "
+              "file specified in --rpc_private_key_file. If the .PEM key file is "
+              "not password-protected, this flag does not need to be set. "
+              "Trailing whitespace will be trimmed before it is used to decrypt "
+              "the private key.");
 
 // Setting TLS certs and keys via CLI flags is only necessary for external
 // PKI-based security, which is not yet production ready. Instead, see
@@ -288,8 +294,21 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
       // TODO(KUDU-1920): should we try and enforce that the server
       // is in the subject or alt names of the cert?
       RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ca_certificate_file));
-      RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_certificate_file,
-                                                       FLAGS_rpc_private_key_file));
+      if (FLAGS_rpc_private_key_password_cmd.empty()) {
+        RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_certificate_file,
+                                                         FLAGS_rpc_private_key_file));
+      } else {
+        RETURN_NOT_OK(tls_context->LoadCertificateAndPasswordProtectedKey(
+            FLAGS_rpc_certificate_file, FLAGS_rpc_private_key_file,
+            [&](){
+              string ret;
+              WARN_NOT_OK(security::GetPasswordFromShellCommand(
+                  FLAGS_rpc_private_key_password_cmd, &ret),
+                  "could not get RPC password from configured command");
+              return ret;
+            }
+        ));
+      }
     } else {
       RETURN_NOT_OK(tls_context->GenerateSelfSignedCertAndKey());
     }

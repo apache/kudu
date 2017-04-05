@@ -418,6 +418,21 @@ Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
   return UseCertificateAndKey(c, k);
 }
 
+Status TlsContext::LoadCertificateAndPasswordProtectedKey(const string& certificate_path,
+                                                          const string& key_path,
+                                                          const PasswordCallback& password_cb) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  Cert c;
+  RETURN_NOT_OK_PREPEND(c.FromFile(certificate_path, DataFormat::PEM),
+                        "failed to load certificate");
+  PrivateKey k;
+  RETURN_NOT_OK_PREPEND(k.FromFile(key_path, DataFormat::PEM, password_cb),
+                        "failed to load private key file");
+  RETURN_NOT_OK(UseCertificateAndKey(c, k));
+  is_external_cert_ = true;
+  return Status::OK();
+}
+
 Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   if (has_cert_) DCHECK(is_external_cert_);

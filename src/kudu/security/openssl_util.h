@@ -69,6 +69,8 @@ typedef struct x509_st X509;
 namespace kudu {
 namespace security {
 
+using PasswordCallback = std::function<string(void)>;
+
 // Disable initialization of OpenSSL. Must be called before
 // any call to InitializeOpenSSL().
 Status DisableOpenSSLInitialization() WARN_UNUSED_RESULT;
@@ -95,6 +97,13 @@ std::string GetOpenSSLErrors();
 //
 // See man(3) SSL_get_error for more discussion.
 std::string GetSSLErrorDescription(int error_code);
+
+// Runs the shell command 'cmd' which should give a password to a private key file
+// as the output.
+//
+// 'password' is populated with the password string if the command was a success.
+// An error Status object is returned otherwise.
+Status GetPasswordFromShellCommand(const std::string& cmd, std::string* password);
 
 // A generic wrapper for OpenSSL structures.
 template <typename T>

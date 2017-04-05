@@ -22,16 +22,20 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 #include "kudu/util/thread.h"
 
 using std::ostringstream;
@@ -205,6 +209,22 @@ const string& DataFormatToString(DataFormat fmt) {
     default:
       return kStrFormatUnknown;
   }
+}
+
+Status GetPasswordFromShellCommand(const string& cmd, string* password) {
+  vector<string> argv = strings::Split(cmd, " ", strings::SkipEmpty());
+  if (argv.empty()) {
+    return Status::RuntimeError("invalid empty private key password command");
+  }
+  string stderr, stdout;
+  Status s = Subprocess::Call(argv, "" /* stdin */, &stdout, &stderr);
+  if (!s.ok()) {
+    return Status::RuntimeError(strings::Substitute(
+        "failed to run private key password command: $0", s.ToString()), stderr);
+  }
+  StripTrailingWhitespace(&stdout);
+  *password = stdout;
+  return Status::OK();
 }
 
 } // namespace security

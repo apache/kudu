@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/serialization.h"
+#include "kudu/security/test/test_certs.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -40,6 +41,10 @@ METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
+DECLARE_string(rpc_certificate_file);
+DECLARE_string(rpc_ca_certificate_file);
+DECLARE_string(rpc_private_key_file);
+DECLARE_string(rpc_private_key_password_cmd);
 
 using std::shared_ptr;
 using std::string;
@@ -145,6 +150,59 @@ TEST_P(TestRpc, TestCall) {
   for (int i = 0; i < 10; i++) {
     ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
   }
+}
+
+// Test making successful RPC calls while using a TLS certificate with a password protected
+// private key.
+TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
+  bool enable_ssl = GetParam();
+  // We're only interested in running this test with TLS enabled.
+  if (!enable_ssl) return;
+
+  string passwd;
+  CHECK_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
+                                                       &FLAGS_rpc_certificate_file,
+                                                       &FLAGS_rpc_private_key_file,
+                                                       &passwd));
+  FLAGS_rpc_ca_certificate_file = FLAGS_rpc_certificate_file;
+  FLAGS_rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
+                                                            "{remote=$0, user_credentials=",
+                                                        server_addr.ToString()));
+
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+  }
+}
+
+// Test that using a TLS certificate with a password protected private key and providing
+// the wrong password for that private key, causes a server startup failure.
+TEST_P(TestRpc, TestCallWithBadPasswordProtectedKey) {
+  bool enable_ssl = GetParam();
+  // We're only interested in running this test with TLS enabled.
+  if (!enable_ssl) return;
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+  string passwd;
+  CHECK_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
+                                                       &FLAGS_rpc_certificate_file,
+                                                       &FLAGS_rpc_private_key_file,
+                                                       &passwd));
+  // Overwrite the password with an invalid one.
+  passwd = "badpassword";
+  FLAGS_rpc_ca_certificate_file = FLAGS_rpc_certificate_file;
+  FLAGS_rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
+  // Verify that the server fails to start up.
+  Sockaddr server_addr;
+  ASSERT_DEATH(StartTestServer(&server_addr, enable_ssl), "failed to load private key file");
 }
 
 // Test that connecting to an invalid server properly throws an error.
