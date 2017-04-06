@@ -258,8 +258,8 @@ class TestClient(KuduTestBase, unittest.TestCase):
     def test_connect_timeouts(self):
         # it works! any other way to check
         kudu.connect(self.master_hosts, self.master_ports,
-                     admin_timeout_ms=100,
-                     rpc_timeout_ms=100)
+                     admin_timeout_ms=1000,
+                     rpc_timeout_ms=1000)
 
     def test_capture_kudu_error(self):
         pass
