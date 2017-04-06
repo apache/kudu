@@ -448,7 +448,6 @@ class RpcTestBase : public KuduTest {
 
     Slice first = GetSidecarPointer(controller, resp.sidecar1(), size1);
     Slice second = GetSidecarPointer(controller, resp.sidecar2(), size2);
-
     Random rng(kSeed);
     faststring expected;
 

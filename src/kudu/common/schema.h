@@ -391,9 +391,10 @@ class Schema {
                const vector<ColumnId>& ids,
                int key_columns);
 
-  // Return the number of bytes needed to represent a single row of this schema.
+  // Return the number of bytes needed to represent a single row of this schema, without
+  // accounting for the null bitmap if the Schema contains nullable values.
   //
-  // This size does not include any indirected (variable length) data (eg strings)
+  // This size does not include any indirected (variable length) data (eg strings).
   size_t byte_size() const {
     DCHECK(initialized());
     return col_offsets_.back();

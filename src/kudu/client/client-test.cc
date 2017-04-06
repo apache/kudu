@@ -368,9 +368,52 @@ class ClientTest : public KuduTest {
     }
   }
 
+  // Compares rows as obtained through a KuduScanBatch::RowPtr and through the
+  // the raw direct and indirect data blocks exposed by KuduScanBatch,
+  // asserting that they are the same.
+  void AssertRawDataMatches(const KuduSchema& projection_schema,
+                            const KuduScanBatch& batch,
+                            const KuduScanBatch::RowPtr& row,
+                            int row_idx,
+                            int num_projected_cols) {
+
+    const Schema& schema = *projection_schema.schema_;
+    size_t row_stride = ContiguousRowHelper::row_size(schema);
+    const uint8_t* row_data = batch.direct_data().data() + row_idx * row_stride;
+
+    int32_t raw_key_val = *reinterpret_cast<const int32_t*>(
+        ContiguousRowHelper::cell_ptr(schema, row_data, 0));
+    int key_val;
+    ASSERT_OK(row.GetInt32(0, &key_val));
+    EXPECT_EQ(key_val, raw_key_val);
+
+    // Test projections have either 1 or 4 columns.
+    if (num_projected_cols == 1) return;
+    ASSERT_EQ(4, num_projected_cols);
+
+    int32_t raw_int_col_val = *reinterpret_cast<const int32_t*>(
+        ContiguousRowHelper::cell_ptr(schema, row_data, 1));
+    int int_col_val;
+    ASSERT_OK(row.GetInt32(1, &int_col_val));
+    EXPECT_EQ(int_col_val, raw_int_col_val);
+
+    Slice raw_nullable_slice_col_val = *reinterpret_cast<const Slice*>(
+        DCHECK_NOTNULL(ContiguousRowHelper::nullable_cell_ptr(schema, row_data, 2)));
+    Slice nullable_slice_col_val;
+    ASSERT_OK(row.GetString(2, &nullable_slice_col_val));
+    EXPECT_EQ(nullable_slice_col_val, raw_nullable_slice_col_val);
+
+    int32_t raw_col_val = *reinterpret_cast<const int32_t*>(
+        ContiguousRowHelper::cell_ptr(schema, row_data, 3));
+    int col_val;
+    ASSERT_OK(row.GetInt32(3, &col_val));
+    EXPECT_EQ(col_val, raw_col_val);
+  }
+
   void DoTestScanWithoutPredicates() {
     KuduScanner scanner(client_table_.get());
     ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+
     LOG_TIMING(INFO, "Scanning with no predicates") {
       ASSERT_OK(scanner.Open());
 
@@ -379,10 +422,13 @@ class ClientTest : public KuduTest {
       uint64_t sum = 0;
       while (scanner.HasMoreRows()) {
         ASSERT_OK(scanner.NextBatch(&batch));
+        int count = 0;
         for (const KuduScanBatch::RowPtr& row : batch) {
           int32_t value;
           ASSERT_OK(row.GetInt32(0, &value));
           sum += value;
+          AssertRawDataMatches(
+              scanner.GetProjectionSchema(), batch, row, count++, 1 /* num projected cols */);
         }
       }
       // The sum should be the sum of the arithmetic series from
@@ -409,12 +455,15 @@ class ClientTest : public KuduTest {
       KuduScanBatch batch;
       while (scanner.HasMoreRows()) {
         ASSERT_OK(scanner.NextBatch(&batch));
+        int count = 0;
         for (const KuduScanBatch::RowPtr& row : batch) {
           Slice s;
           ASSERT_OK(row.GetString(2, &s));
           if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
             FAIL() << row.ToString();
           }
+          AssertRawDataMatches(
+              scanner.GetProjectionSchema(), batch, row, count++, 4 /* num projected cols */);
         }
       }
     }

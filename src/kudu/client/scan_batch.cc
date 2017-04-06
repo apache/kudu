@@ -54,6 +54,14 @@ const KuduSchema* KuduScanBatch::projection_schema() const {
   return data_->client_projection_;
 }
 
+Slice KuduScanBatch::direct_data() const {
+  return data_->direct_data_;
+}
+
+Slice KuduScanBatch::indirect_data() const {
+  return data_->indirect_data_;
+}
+
 ////////////////////////////////////////////////////////////
 // KuduScanBatch::RowPtr
 ////////////////////////////////////////////////////////////

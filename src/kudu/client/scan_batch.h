@@ -116,6 +116,28 @@ class KUDU_EXPORT KuduScanBatch {
   ///   to have this schema.
   const KuduSchema* projection_schema() const;
 
+  /// @name Advanced/Unstable API
+  ///
+  /// There are no guarantees on the stability of the format returned
+  /// by these methods, which might change at any given time.
+  ///
+  /// @note The Slices returned by both direct_data() and indirect_data()
+  ///   are only valid for the lifetime of the KuduScanBatch.
+  //
+  ///@{
+  /// Return a slice that points to the direct row data received from the
+  /// server. Users of this API must have knowledge of the data format in
+  /// order to decode the data.
+  ///
+  /// @return a Slice that points to the raw direct row data.
+  Slice direct_data() const;
+
+  /// Like the method above, but for indirect data.
+  ///
+  /// @return a Slice that points to the raw indirect row data.
+  Slice indirect_data() const;
+  ///@}
+
  private:
   class KUDU_NO_EXPORT Data;
   friend class KuduScanner;

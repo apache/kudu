@@ -37,6 +37,7 @@ class ReplicaDumper;
 }
 
 namespace client {
+class ClientTest;
 
 namespace internal {
 class GetTableSchemaRpc;
@@ -484,6 +485,7 @@ class KUDU_EXPORT KuduSchema {
   KuduPartialRow* NewRow() const;
 
  private:
+  friend class ClientTest;
   friend class KuduClient;
   friend class KuduScanner;
   friend class KuduScanToken;
