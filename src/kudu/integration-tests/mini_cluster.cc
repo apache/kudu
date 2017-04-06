@@ -299,10 +299,11 @@ Status MiniCluster::CreateClient(KuduClientBuilder* builder,
 }
 
 Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
-  const MonoTime kDeadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
+  const MonoTime deadline = MonoTime::Now() +
+      MonoDelta::FromSeconds(kMasterStartupWaitTimeSeconds);
 
   int leader_idx = -1;
-  while (MonoTime::Now() < kDeadline) {
+  while (MonoTime::Now() < deadline) {
     for (int i = 0; i < num_masters(); i++) {
       master::MiniMaster* mm = mini_master(i);
       if (!mm->is_running() || mm->master()->IsShutdown()) {
@@ -315,11 +316,10 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
         break;
       }
     }
-    if (leader_idx == -1) {
-      SleepFor(MonoDelta::FromMilliseconds(100));
-    } else {
+    if (leader_idx != -1) {
       break;
     }
+    SleepFor(MonoDelta::FromMilliseconds(100));
   }
   if (leader_idx == -1) {
     return Status::NotFound("Leader master was not found within deadline");

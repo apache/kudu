@@ -169,6 +169,7 @@ class MiniCluster : public MiniClusterBase {
  private:
   enum {
     kRegistrationWaitTimeSeconds = 15,
+    kMasterStartupWaitTimeSeconds = 30,
   };
 
   bool running_;
