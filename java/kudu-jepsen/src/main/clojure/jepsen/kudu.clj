@@ -18,20 +18,13 @@
 (ns jepsen.kudu
   "Tests for Apache Kudu"
   (:require [clojure.tools.logging :refer :all]
-            [clojure.java.io :as io]
-            [clojure.java.shell :refer [sh]]
-            [clojure.string :as str]
-            [clojure.pprint :refer [pprint]]
             [jepsen
-             [control :as c :refer [|]]
+             [control :as c]
              [db :as db]
              [net :as net]
-             [tests :as tests]
              [util :as util :refer [meh]]]
             [jepsen.control.net :as cnet :refer [heal]]
-            [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [jepsen.kudu.nemesis :as kn]
             [jepsen.kudu.util :as ku]))
 
 (defn db

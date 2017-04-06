@@ -20,15 +20,11 @@
   (:refer-clojure :exclude [test])
   (:require [jepsen
              [kudu :as kudu]
-             [client :as client]
-             [util :refer [majority]]
              [checker    :as checker]
              [generator  :as gen]
              [nemesis    :as nemesis]]
             [jepsen.kudu.client :as kc]
             [jepsen.kudu.table :as kt]
-            [jepsen.kudu.nemesis :as kn]
-            [clojure.tools.logging :refer :all]
             [knossos.model :as model]))
 
 (def register-key "x")
@@ -38,7 +34,7 @@
 
 (defn client
   [client-atom kclient ktable]
-  (reify client/Client
+  (reify jepsen.client/Client
     (setup! [_ test _]
       "Create the client and the test table. Use the same Kudu client instance "
       "across all test actors to achieve timestamp propagation for all "

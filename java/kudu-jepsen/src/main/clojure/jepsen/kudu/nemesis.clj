@@ -19,7 +19,6 @@
   "Nemeses for Apache Kudu."
   (:refer-clojure :exclude [test])
   (:require [jepsen
-             [client :as client]
              [control :as c]
              [nemesis :as nm]
              [net :as net]
@@ -33,7 +32,7 @@
   in response to :start operation: cut network links as defined by
   (grudge nodes), and restore them back in response to :stop operation."
   [grudge]
-  (reify client/Client
+  (reify jepsen.client/Client
     (setup! [this test _]
       (net/heal! (:net test) test)
       this)
@@ -66,7 +65,7 @@
       {:value {:n1 [:killed \"java\"]}}"
   [targeter start! stop!]
   (let [nodes (atom nil)]
-    (reify client/Client
+    (reify jepsen.client/Client
       (setup! [this test _] this)
 
       (invoke! [this test op]

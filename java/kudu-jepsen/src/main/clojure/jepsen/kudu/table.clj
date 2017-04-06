@@ -18,7 +18,6 @@
 (ns jepsen.kudu.table
   "Utilities to work with kudu tables, for testing."
   (:require [clojure.tools.logging :refer :all]
-            [clojure.pprint :refer [pprint]]
             [jepsen.kudu.client :as c])
   (:import [org.apache.kudu ColumnSchema
                             ColumnSchema$ColumnSchemaBuilder

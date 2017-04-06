@@ -17,8 +17,7 @@
 
 (ns jepsen.kudu.client
   "Thin wrappers around Kudu Java client."
-  (:require [clojure.tools.logging :refer :all]
-            [clojure.pprint :refer [pprint]])
+  (:require [clojure.tools.logging :refer :all])
   (:import [org.apache.kudu ColumnSchema
                             ColumnSchema$ColumnSchemaBuilder
                             Schema
