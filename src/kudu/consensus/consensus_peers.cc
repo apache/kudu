@@ -51,19 +51,17 @@ TAG_FLAG(consensus_rpc_timeout_ms, advanced);
 
 DEFINE_int32(raft_get_node_instance_timeout_ms, 30000,
              "Timeout for retrieving node instance data over RPC.");
-TAG_FLAG(consensus_rpc_timeout_ms, hidden);
-
-DECLARE_int32(raft_heartbeat_interval_ms);
+TAG_FLAG(raft_get_node_instance_timeout_ms, hidden);
 
 DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash just before sending an "
               "UpdateConsensus RPC. (For testing only!)");
+TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 DEFINE_double(fault_crash_after_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash on getting a response for an "
               "UpdateConsensus RPC. (For testing only!)");
-
-TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
+TAG_FLAG(fault_crash_after_leader_request_fraction, unsafe);
 
 
 // Allow for disabling Tablet Copy in unit tests where we want to test
@@ -73,6 +71,9 @@ DEFINE_bool(enable_tablet_copy, true,
             "detects that a follower is out of date or does not have a tablet "
             "replica. For testing purposes only.");
 TAG_FLAG(enable_tablet_copy, unsafe);
+
+DECLARE_int32(raft_heartbeat_interval_ms);
+
 
 namespace kudu {
 namespace consensus {
