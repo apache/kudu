@@ -486,8 +486,8 @@ the server depends on configuration and the available credentials:
 +----------------------+       +----------------------+
 |                      |       |                      |       +----------------------+
 | Does the server have |  yes  | Does the client have |  yes  |                      |
-| a CA-signed TLS      +-------> a CA-signed TLS      +-------> Authenticate via TLS |
-| certificate?         |       | certificate?         |       |                      |
+| an internally        +-------> an internally        +-------> Authenticate via TLS |
+| CA-signed TLS cert?  |       | CA-signed TLS cert?  |       |                      |
 |                      |       |                      |       +----------------------+
 +------+---------------+       +---------+------------+
        |                                 |

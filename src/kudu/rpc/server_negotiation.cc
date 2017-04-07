@@ -364,7 +364,11 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
           authn_types.insert(AuthenticationType::TOKEN);
           break;
         case AuthenticationTypePB::kCertificate:
-          authn_types.insert(AuthenticationType::CERTIFICATE);
+          // We only provide authenticated TLS if the certificates are generated
+          // by the internal CA.
+          if (!tls_context_->is_external_cert()) {
+            authn_types.insert(AuthenticationType::CERTIFICATE);
+          }
           break;
         case AuthenticationTypePB::TYPE_NOT_SET: {
           Sockaddr addr;

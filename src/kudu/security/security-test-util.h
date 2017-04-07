@@ -112,8 +112,10 @@ enum class PkiConfig {
   SELF_SIGNED,
   // The TLS context has no TLS cert and a trusted cert.
   TRUSTED,
-  // The TLS context has a signed TLS cert and trusts the corresonding signing cert.
+  // The TLS context has a signed TLS cert and trusts the corresponding signing cert.
   SIGNED,
+  // The TLS context has a externally signed TLS cert and trusts the corresponding signing cert.
+  EXTERNALLY_SIGNED,
 };
 
 // PkiConfig pretty-printer.

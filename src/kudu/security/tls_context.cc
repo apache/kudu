@@ -91,7 +91,8 @@ template<> struct SslTypeTraits<X509_STORE_CTX> {
 TlsContext::TlsContext()
     : lock_(RWMutex::Priority::PREFER_READING),
       trusted_cert_count_(0),
-      has_cert_(false) {
+      has_cert_(false),
+      is_external_cert_(false) {
   security::InitializeOpenSSL();
 }
 
@@ -413,11 +414,13 @@ Status TlsContext::LoadCertificateAndKey(const string& certificate_path,
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
   PrivateKey k;
   RETURN_NOT_OK(k.FromFile(key_path, DataFormat::PEM));
+  is_external_cert_ = true;
   return UseCertificateAndKey(c, k);
 }
 
 Status TlsContext::LoadCertificateAuthority(const string& certificate_path) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  if (has_cert_) DCHECK(is_external_cert_);
   Cert c;
   RETURN_NOT_OK(c.FromFile(certificate_path, DataFormat::PEM));
   return AddTrustedCertificate(c);

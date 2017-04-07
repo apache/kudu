@@ -159,6 +159,8 @@ class TlsContext {
     return trusted_cert_count_;
   }
 
+  bool is_external_cert() const { return is_external_cert_; }
+
  private:
 
   Status VerifyCertChainUnlocked(const Cert& cert) WARN_UNUSED_RESULT;
@@ -172,6 +174,7 @@ class TlsContext {
   c_unique_ptr<SSL_CTX> ctx_;
   int32_t trusted_cert_count_;
   bool has_cert_;
+  bool is_external_cert_;
   boost::optional<CertSignRequest> csr_;
 };
 

@@ -23,6 +23,8 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace security {
@@ -49,6 +51,7 @@ std::ostream& operator<<(std::ostream& o, PkiConfig c) {
       case PkiConfig::SELF_SIGNED: o << "SELF_SIGNED"; break;
       case PkiConfig::TRUSTED: o << "TRUSTED"; break;
       case PkiConfig::SIGNED: o << "SIGNED"; break;
+      case PkiConfig::EXTERNALLY_SIGNED: o << "EXTERNALLY_SIGNED"; break;
     }
     return o;
 }
@@ -72,6 +75,16 @@ Status ConfigureTlsContext(PkiConfig config,
       RETURN_NOT_OK(CertSigner(&ca_cert, &ca_key).Sign(*tls_context->GetCsrIfNecessary(), &cert));
       RETURN_NOT_OK(tls_context->AdoptSignedCert(cert));
       break;
+    };
+    case PkiConfig::EXTERNALLY_SIGNED: {
+      // Write certificate to file.
+      std::string cert_path = JoinPathSegments(GetTestDataDirectory(), "kudu-test-cert.pem");
+      RETURN_NOT_OK(CreateSSLServerCert(cert_path));
+      // Write private key to file.
+      std::string key_path = JoinPathSegments(GetTestDataDirectory(), "kudu-test-key.pem");
+      RETURN_NOT_OK(CreateSSLPrivateKey(key_path));
+      RETURN_NOT_OK(tls_context->LoadCertificateAndKey(cert_path, key_path));
+      RETURN_NOT_OK(tls_context->LoadCertificateAuthority(cert_path));
     };
   }
   return Status::OK();

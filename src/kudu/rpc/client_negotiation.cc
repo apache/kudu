@@ -311,7 +311,9 @@ Status ClientNegotiation::SendNegotiate() {
   if (!helper_.EnabledMechs().empty()) {
     msg.add_authn_types()->mutable_sasl();
   }
-  if (tls_context_->has_signed_cert()) {
+  if (tls_context_->has_signed_cert() && !tls_context_->is_external_cert()) {
+    // We only provide authenticated TLS if the certificates are generated
+    // by the internal CA.
     msg.add_authn_types()->mutable_certificate();
   }
   if (authn_token_ && tls_context_->has_trusted_cert()) {
