@@ -108,7 +108,7 @@ static void RunCheckIntegrityTest(Env* env,
   int i = 0;
   for (const PathSetPB& ps : path_sets) {
     gscoped_ptr<PathInstanceMetadataFile> instance(
-        new PathInstanceMetadataFile(env, "asdf", Substitute("$0", i)));
+        new PathInstanceMetadataFile(env, "asdf", Substitute("/tmp/$0/instance", i)));
     gscoped_ptr<PathInstanceMetadataPB> metadata(new PathInstanceMetadataPB());
     metadata->set_block_manager_type("asdf");
     metadata->set_filesystem_block_size_bytes(1);
@@ -144,7 +144,8 @@ TEST_F(KuduTest, CheckIntegrity) {
     path_sets_copy[1].set_uuid(path_sets_copy[0].uuid());
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
         env_, path_sets_copy,
-        "IO error: File 1 claimed uuid fee already claimed by file 0"));
+        "IO error: Data directories /tmp/0 and /tmp/1 have duplicate instance metadata UUIDs: "
+        "fee"));
   }
   {
     // Test where the path sets have duplicate UUIDs.
@@ -154,7 +155,8 @@ TEST_F(KuduTest, CheckIntegrity) {
     }
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
         env_, path_sets_copy,
-        "IO error: File 0 has duplicate uuids: fee,fi,fo,fum,fee"));
+        "IO error: Data directory /tmp/0 instance metadata path set contains duplicate UUIDs: "
+        "fee,fi,fo,fum,fee"));
   }
   {
     // Test where a path set claims a UUID that isn't in all_uuids.
@@ -162,8 +164,8 @@ TEST_F(KuduTest, CheckIntegrity) {
     path_sets_copy[1].set_uuid("something_else");
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
         env_, path_sets_copy,
-        "IO error: File 1 claimed uuid something_else which is not in "
-        "all_uuids (fee,fi,fo,fum)"));
+        "IO error: Data directory /tmp/1 instance metadata contains unexpected UUID: "
+        "something_else"));
   }
   {
     // Test where a path set claims a different all_uuids.
@@ -171,8 +173,16 @@ TEST_F(KuduTest, CheckIntegrity) {
     path_sets_copy[1].add_all_uuids("another_uuid");
     EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
         env_, path_sets_copy,
-        "IO error: File 1 claimed all_uuids fee,fi,fo,fum,another_uuid but "
-        "file 0 claimed all_uuids fee,fi,fo,fum"));
+        "IO error: Data directories /tmp/0 and /tmp/1 have different instance metadata UUID sets: "
+        "fee,fi,fo,fum vs fee,fi,fo,fum,another_uuid"));
+  }
+  {
+    // Test removing a path from the set.
+    vector<PathSetPB> path_sets_copy(path_sets);
+    path_sets_copy.resize(1);
+    EXPECT_NO_FATAL_FAILURE(RunCheckIntegrityTest(
+        env_, path_sets_copy,
+        "IO error: 1 data directories provided, but expected 4"));
   }
 }
 

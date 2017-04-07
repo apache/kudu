@@ -124,47 +124,63 @@ Status PathInstanceMetadataFile::Unlock() {
 
 Status PathInstanceMetadataFile::CheckIntegrity(
     const vector<PathInstanceMetadataFile*>& instances) {
+  CHECK(!instances.empty());
+
+  // Note: although this verification works at the level of UUIDs and instance
+  // files, the (user-facing) error messages are reported in terms of data
+  // directories, because UUIDs and instance files are internal details.
+
+  // Map of instance UUID to path instance structure. Tracks duplicate UUIDs.
   unordered_map<string, PathInstanceMetadataFile*> uuids;
-  pair<string, PathInstanceMetadataFile*> first_all_uuids;
+
+  // Set of UUIDs specified in the path set of the first instance. All instances
+  // will be compared against this one to make sure all path sets match.
+  set<string> all_uuids(instances[0]->metadata()->path_set().all_uuids().begin(),
+                        instances[0]->metadata()->path_set().all_uuids().end());
+
+  if (all_uuids.size() != instances.size()) {
+    return Status::IOError(
+        Substitute("$0 data directories provided, but expected $1",
+                   instances.size(), all_uuids.size()));
+  }
 
   for (PathInstanceMetadataFile* instance : instances) {
     const PathSetPB& path_set = instance->metadata()->path_set();
 
-    // Check that this instance's UUID wasn't already claimed.
-    PathInstanceMetadataFile** other =
-        InsertOrReturnExisting(&uuids, path_set.uuid(), instance);
+    // Check that the instance's UUID has not been claimed by another instance.
+    PathInstanceMetadataFile** other = InsertOrReturnExisting(&uuids, path_set.uuid(), instance);
     if (other) {
-      return Status::IOError(Substitute(
-          "File $0 claimed uuid $1 already claimed by file $2",
-          instance->filename_, path_set.uuid(), (*other)->filename_));
+      return Status::IOError(
+          Substitute("Data directories $0 and $1 have duplicate instance metadata UUIDs",
+                     (*other)->path(), instance->path()),
+          path_set.uuid());
     }
 
-    // Check that there are no duplicate UUIDs in all_uuids.
+    // Check that the instance's UUID is a member of all_uuids.
+    if (!ContainsKey(all_uuids, path_set.uuid())) {
+      return Status::IOError(
+          Substitute("Data directory $0 instance metadata contains unexpected UUID",
+                     instance->path()),
+          path_set.uuid());
+    }
+
+    // Check that the instance's UUID set does not contain duplicates.
     set<string> deduplicated_uuids(path_set.all_uuids().begin(),
                                    path_set.all_uuids().end());
     string all_uuids_str = JoinStrings(path_set.all_uuids(), ",");
     if (deduplicated_uuids.size() != path_set.all_uuids_size()) {
-      return Status::IOError(Substitute(
-          "File $0 has duplicate uuids: $1",
-          instance->filename_, all_uuids_str));
+      return Status::IOError(
+          Substitute("Data directory $0 instance metadata path set contains duplicate UUIDs",
+                     instance->path()),
+          JoinStrings(path_set.all_uuids(), ","));
     }
 
-    // Check that this instance's UUID is a member of all_uuids.
-    if (!ContainsKey(deduplicated_uuids, path_set.uuid())) {
-      return Status::IOError(Substitute(
-          "File $0 claimed uuid $1 which is not in all_uuids ($2)",
-          instance->filename_, path_set.uuid(), all_uuids_str));
-    }
-
-    // Check that every all_uuids is the same.
-    if (first_all_uuids.first.empty()) {
-      first_all_uuids.first = all_uuids_str;
-      first_all_uuids.second = instance;
-    } else if (first_all_uuids.first != all_uuids_str) {
-      return Status::IOError(Substitute(
-          "File $0 claimed all_uuids $1 but file $2 claimed all_uuids $3",
-          instance->filename_, all_uuids_str,
-          first_all_uuids.second->filename_, first_all_uuids.first));
+    // Check that the instance's UUID set matches the expected set.
+    if (deduplicated_uuids != all_uuids) {
+      return Status::IOError(
+          Substitute("Data directories $0 and $1 have different instance metadata UUID sets",
+                     instances[0]->path(), instance->path()),
+          Substitute("$0 vs $1", JoinStrings(all_uuids, ","), all_uuids_str));
     }
   }
 
