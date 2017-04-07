@@ -114,61 +114,49 @@ TAG_FLAG(unlock_unsafe_flags, advanced);
 TAG_FLAG(unlock_unsafe_flags, stable);
 
 DEFINE_string(redact, "all",
-              "Comma-separated list of redactions. Supported redactions are 'flag', "
-              "'log' and 'all'. If 'flag' is specified, configuration flags which may "
+              "Comma-separated list of redactions. Supported options are 'flag', "
+              "'log', 'all', and 'none'. If 'flag' is specified, configuration flags which may "
               "include sensitive data will be redacted whenever server configuration "
               "is emitted. If 'log' is specified, row data will be redacted from log "
-              "and error messages. If 'all' is specified, all of above will be redacted.");
+              "and error messages. If 'all' is specified, all of above will be redacted. "
+              "If 'none' is specified, no redaction will occur.");
 TAG_FLAG(redact, advanced);
 TAG_FLAG(redact, evolving);
 
 static bool ValidateRedact(const char* /*flagname*/, const string& value) {
-  // Empty value is valid.
-  if (value.empty()) {
-    kudu::g_should_redact_log = false;
-    kudu::g_should_redact_flag = false;
-    return true;
-  }
+  kudu::g_should_redact_log = false;
+  kudu::g_should_redact_flag = false;
 
-  // Flag value is case insensitive
+  // Flag value is case insensitive.
   string redact_flags;
   kudu::ToUpperCase(value, &redact_flags);
-  // "ALL" is valid, "ALL, LOG" is not valid
-  if (redact_flags.compare("ALL") == 0) {
+
+  // 'all', 'none', and '' must be specified without any other option.
+  if (redact_flags == "ALL") {
     kudu::g_should_redact_log = true;
     kudu::g_should_redact_flag = true;
     return true;
   }
+  if (redact_flags == "NONE" || redact_flags.empty()) {
+    return true;
+  }
 
-  // If use specific flag value, it can only be "FLAG"
-  // or "LOG".
-  vector<string> enabled_redact_types = strings::Split(redact_flags, ",",
-                                                       strings::SkipEmpty());
-  vector<string>::const_iterator iter;
-  bool is_valid = true;
-  bool enabled_redact_log = false;
-  bool enabled_redact_flag = false;
-  for (const auto& t : enabled_redact_types) {
-    if (t.compare("LOG") == 0) {
-      enabled_redact_log = true;
+  for (const auto& t : strings::Split(redact_flags, ",", strings::SkipEmpty())) {
+    if (t == "LOG") {
+      kudu::g_should_redact_log = true;
+    } else if (t == "FLAG") {
+      kudu::g_should_redact_flag = true;
+    } else if (t == "ALL" || t == "NONE") {
+      LOG(ERROR) << "Invalid redaction options: "
+                 << value << ", '" << t << "' must be specified by itself.";
+      return false;
     } else {
-      if (t.compare("FLAG") == 0) {
-        enabled_redact_flag = true;
-      } else {
-        is_valid = false;
-      }
+      LOG(ERROR) << "Invalid redaction type: " << t <<
+                    ". Available types are 'flag', 'log', 'all', and 'none'.";
+      return false;
     }
   }
-  if (!is_valid) {
-    LOG(ERROR) << Substitute("Invalid redaction type: $0. Available types are 'flag', "
-                             "'log', 'all'.", value);
-  } else {
-    // If the value of --redact flag is valid, set
-    // g_should_redact_log and g_should_redact_flag accordingly.
-    kudu::g_should_redact_log = enabled_redact_log;
-    kudu::g_should_redact_flag = enabled_redact_flag;
-  }
-  return is_valid;
+  return true;
 }
 
 DEFINE_validator(redact, &ValidateRedact);
