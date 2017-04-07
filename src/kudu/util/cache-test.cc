@@ -30,6 +30,8 @@
 DECLARE_string(nvm_cache_path);
 #endif // defined(__linux__)
 
+DECLARE_double(cache_memtracker_approximation_ratio);
+
 namespace kudu {
 
 // Conversions between numeric keys/values and the types expected by Cache.
@@ -69,6 +71,10 @@ class CacheTest : public KuduTest,
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
 #endif // defined(__linux__)
+
+    // Disable approximate tracking of cache memory since we make specific
+    // assertions on the MemTracker in this test.
+    FLAGS_cache_memtracker_approximation_ratio = 0;
 
     cache_.reset(NewLRUCache(GetParam(), kCacheSize, "cache_test"));
 

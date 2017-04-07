@@ -15,17 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/block_cache.h"
+
 #include <cstring>
 #include <memory>
 #include <ostream>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/cfile/block_cache.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/slice.h"
+
+DECLARE_double(cache_memtracker_approximation_ratio);
 
 namespace kudu {
 namespace cfile {
@@ -33,6 +37,10 @@ namespace cfile {
 static const char *DATA_TO_CACHE = "hello world";
 
 TEST(TestBlockCache, TestBasics) {
+  // Disable approximate tracking of cache memory since we make specific
+  // assertions on the MemTracker in this test.
+  FLAGS_cache_memtracker_approximation_ratio = 0;
+
   size_t data_size = strlen(DATA_TO_CACHE) + 1;
   BlockCache cache(512 * 1024 * 1024);
   BlockCache::FileId id(1234);
