@@ -52,11 +52,7 @@ namespace kudu {
 class SecurityComponentsFaultsITest : public KuduTest {
  public:
   SecurityComponentsFaultsITest()
-#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
       : krb_lifetime_seconds_(64),
-#else
-      : krb_lifetime_seconds_(16),
-#endif
         num_masters_(3),
         num_tservers_(3) {
 
@@ -77,10 +73,21 @@ class SecurityComponentsFaultsITest : public KuduTest {
     const vector<string> common_flags = {
       // Enable tracing of successful KRPC negotiations as well.
       "--rpc_trace_negotiation",
+
+      // Speed up Raft elections.
+      "--raft_heartbeat_interval_ms=25",
+      "--leader_failure_exp_backoff_max_delta_ms=1000",
     };
     std::copy(common_flags.begin(), common_flags.end(),
         std::back_inserter(cluster_opts_.extra_master_flags));
     std::copy(common_flags.begin(), common_flags.end(),
+        std::back_inserter(cluster_opts_.extra_tserver_flags));
+
+    const vector<string> tserver_flags = {
+      // Decreasing TS->master heartbeat interval speeds up the test.
+      "--heartbeat_interval_ms=25",
+    };
+    std::copy(tserver_flags.begin(), tserver_flags.end(),
         std::back_inserter(cluster_opts_.extra_tserver_flags));
   }
 
