@@ -367,8 +367,8 @@ are working properly, consider performing the following sanity checks:
   be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
   contents of /masters on each master should be the same.
 
-* Run a Kudu system check (ksck) on the cluster using the `kudu` command line tool. Help for ksck
-  can be viewed via `kudu cluster ksck --help`.
+* Run a Kudu system check (ksck) on the cluster using the `kudu` command line
+  tool. See <<ksck>> for more details.
 
 === Recovering from a dead Kudu Master in a Multi-Master Deployment
 
@@ -517,5 +517,71 @@ consider performing the following sanity checks:
   be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
   contents of /masters on each master should be the same.
 
-* Run a Kudu system check (ksck) on the cluster using the `kudu` command line tool. Help for ksck
-  can be viewed via `kudu cluster ksck --help`.
+* Run a Kudu system check (ksck) on the cluster using the `kudu` command line
+  tool. See <<ksck>> for more details.
+
+[[ksck]]
+=== Checking Cluster Health with `ksck`
+
+The `kudu` CLI includes a tool named `ksck` which can be used for checking
+cluster health and data integrity. `ksck` will identify issues such as
+under-replicated tablets, unreachable tablet servers, or tablets without a
+leader.
+
+`ksck` should be run from the command line, and requires the full list of master
+addresses to be specified:
+
+[source,bash]
+----
+$ kudu cluster ksck master-01.example.com,master-02.example.com,master-03.example.com
+----
+
+To see a full list of the options available with `ksck`, use the `--help` flag.
+If the cluster is healthy, `ksck` will print a success message, and return a
+zero (success) exit status.
+
+----
+Connected to the Master
+Fetched info from all 1 Tablet Servers
+Table IntegrationTestBigLinkedList is HEALTHY (1 tablet(s) checked)
+
+The metadata for 1 table(s) is HEALTHY
+OK
+----
+
+If the cluster is unhealthy, for instance if a tablet server process has
+stopped, `ksck` will report the issue(s) and return a non-zero exit status:
+
+----
+Connected to the Master
+WARNING: Unable to connect to Tablet Server 8a0b66a756014def82760a09946d1fce
+(tserver-01.example.com:7050): Network error: could not send Ping RPC to server: Client connection negotiation failed: client connection to 192.168.0.2:7050: connect: Connection refused (error 61)
+WARNING: Fetched info from 0 Tablet Servers, 1 weren't reachable
+Tablet ce3c2d27010d4253949a989b9d9bf43c of table 'IntegrationTestBigLinkedList'
+is unavailable: 1 replica(s) not RUNNING
+  8a0b66a756014def82760a09946d1fce (tserver-01.example.com:7050): TS unavailable [LEADER]
+
+  Table IntegrationTestBigLinkedList has 1 unavailable tablet(s)
+
+  WARNING: 1 out of 1 table(s) are not in a healthy state
+  ==================
+  Errors:
+  ==================
+  error fetching info from tablet servers: Network error: Not all Tablet Servers are reachable
+  table consistency check error: Corruption: 1 table(s) are bad
+
+  FAILED
+  Runtime error: ksck discovered errors
+----
+
+To verify data integrity, the optional `--checksum_scan` flag can be set, which
+will ensure the cluster has consistent data by scanning each tablet replica and
+comparing results. The `--tables` or `--tablets` flags can be used to limit the
+scope of the checksum scan to specific tables or tablets, respectively. For
+example, checking data integrity on the `IntegrationTestBigLinkedList` table can
+be done with the following command:
+
+[source,bash]
+----
+$ kudu cluster ksck --checksum_scan --tables IntegrationTestBigLinkedList master-01.example.com,master-02.example.com,master-03.example.com
+----
