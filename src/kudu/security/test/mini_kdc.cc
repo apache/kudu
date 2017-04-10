@@ -224,7 +224,7 @@ $1 = {
 Status MiniKdc::CreateKrb5Conf() const {
   static const string kFileTemplate = R"(
 [logging]
-    kdc = STDERR
+    kdc = FILE:/dev/stderr
 
 [libdefaults]
     default_realm = $1
