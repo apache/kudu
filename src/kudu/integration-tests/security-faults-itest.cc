@@ -217,6 +217,9 @@ TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
   // It seems different version of krb5 library handles the error differently:
   // in some cases, the error is about ticket expiration, in other -- failure
   // to contact KDC.
+  //
+  // Also, different versions of krb5 library have different error messages
+  // for the same error.
   const Status s = SmokeTestCluster();
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(),
@@ -224,7 +227,8 @@ TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
       "Client connection negotiation failed: client connection to .* ("
       "Cannot contact any KDC for realm .*|"
       "Ticket expired.*|"
-      "GSSAPI Error:  The context has expire.*)");
+      "GSSAPI Error:  The context has expire.*|"
+      "GSSAPI Error: The referenced context has expired .*)");
 #endif
 
   ASSERT_OK(cluster_->kdc()->Start());
