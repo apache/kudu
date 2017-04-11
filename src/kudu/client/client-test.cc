@@ -2507,48 +2507,66 @@ TEST_F(ClientTest, TestSessionMutationBufferMaxNum) {
   }
 }
 
+enum class RowSize {
+  CONSTANT,
+  RANDOM,
+};
+
+class FlushModeOpRatesTest : public ClientTest,
+                             public ::testing::WithParamInterface<RowSize> {
+};
+
 // A test scenario to compare rate of submission of small write operations
 // in AUTO_FLUSH and AUTO_FLUSH_BACKGROUND mode; all the operations have
 // the same pre-defined size.
-TEST_F(ClientTest, TestFlushModesCompareOpRatesFixedSize) {
-  const size_t kBufferSizeBytes = 1024;
-  const size_t kRowNum = 256;
-
-  vector<size_t> str_sizes(kRowNum, kBufferSizeBytes / 128);
-  CpuTimes t_afb;
-  TimeInsertOpBatch(KuduSession::AUTO_FLUSH_BACKGROUND,
-                    kBufferSizeBytes, 0, 2, str_sizes,
-                    &t_afb);
-  CpuTimes t_afs;
-  TimeInsertOpBatch(KuduSession::AUTO_FLUSH_SYNC,
-                    kBufferSizeBytes, 1, 2, str_sizes,
-                    &t_afs);
-  // AUTO_FLUSH_BACKGROUND should be faster than AUTO_FLUSH_SYNC.
-  EXPECT_GT(t_afs.wall, t_afb.wall);
-}
-
-// A test scenario to compare rate of submission of small write operations
-// in AUTO_FLUSH and AUTO_FLUSH_BACKGROUND mode with operations of random size.
-TEST_F(ClientTest, TestFlushModesCompareOpRatesRandomSize) {
-  const size_t kBufferSizeBytes = 1024;
-  const size_t kRowNum = 256;
-
-  SeedRandom();
-  vector<size_t> str_sizes(kRowNum);
-  for (size_t i = 0; i < kRowNum; ++i) {
-    str_sizes[i] = rand() % (kBufferSizeBytes / 128);
+TEST_P(FlushModeOpRatesTest, RunComparison) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
   }
-  CpuTimes t_afb;
-  TimeInsertOpBatch(KuduSession::AUTO_FLUSH_BACKGROUND,
-                    kBufferSizeBytes, 0, 2, str_sizes,
-                    &t_afb);
-  CpuTimes t_afs;
-  TimeInsertOpBatch(KuduSession::AUTO_FLUSH_SYNC,
-                    kBufferSizeBytes, 1, 2, str_sizes,
-                    &t_afs);
+
+  const size_t kBufferSizeBytes = 1024;
+  const size_t kRowNum = 256;
+
+  vector<size_t> str_sizes(kRowNum);
+  const RowSize mode = GetParam();
+  switch (mode) {
+    case RowSize::CONSTANT:
+      std::fill(str_sizes.begin(), str_sizes.end(), kBufferSizeBytes / 128);
+      break;
+
+    case RowSize::RANDOM:
+      SeedRandom();
+      std::generate(str_sizes.begin(), str_sizes.end(),
+                    [] { return rand() % (kBufferSizeBytes / 128); });
+      break;
+  }
+
+  // Run the scenario multiple times to factor out fluctuations of multi-tasking
+  // run-time environment and avoid test flakiness.
+  uint64_t t_afb_wall = 0;
+  uint64_t t_afs_wall = 0;
+  const size_t iter_num = 16;
+  for (size_t i = 0; i < iter_num; ++i) {
+    CpuTimes t_afb;
+    TimeInsertOpBatch(KuduSession::AUTO_FLUSH_BACKGROUND,
+                      kBufferSizeBytes, 2 * i, 2 * iter_num, str_sizes,
+                      &t_afb);
+    t_afb_wall += t_afb.wall;
+
+    CpuTimes t_afs;
+    TimeInsertOpBatch(KuduSession::AUTO_FLUSH_SYNC,
+                      kBufferSizeBytes, 2 * i + 1, 2 * iter_num, str_sizes,
+                      &t_afs);
+    t_afs_wall += t_afs.wall;
+  }
   // AUTO_FLUSH_BACKGROUND should be faster than AUTO_FLUSH_SYNC.
-  EXPECT_GT(t_afs.wall, t_afb.wall);
+  EXPECT_GT(t_afs_wall, t_afb_wall);
 }
+
+INSTANTIATE_TEST_CASE_P(,
+                        FlushModeOpRatesTest,
+                        ::testing::Values(RowSize::CONSTANT, RowSize::RANDOM));
 
 // A test to verify that it's safe to perform synchronous and/or asynchronous
 // flush while having the auto-flusher thread running in the background.
