@@ -585,3 +585,38 @@ be done with the following command:
 ----
 $ kudu cluster ksck --checksum_scan --tables IntegrationTestBigLinkedList master-01.example.com,master-02.example.com,master-03.example.com
 ----
+
+[[disk_failure_recovery]]
+=== Recovering from Disk Failure
+
+// TODO(dan): revise this once KUDU-616 is fixed.
+Kudu tablet servers are not resistent to disk failure. When a disk containing a
+data directory or the write-ahead log (WAL) dies, the entire tablet server must
+be rebuilt. Kudu will automatically re-replicate tablets on other servers after
+a tablet server fails, but manual intervention is needed in order to restore the
+failed tablet server to a running state.
+
+The first step to restoring a tablet server after a disk failure is to replace
+the failed disk, or remove the failed disk from the data-directory and/or WAL
+configuration. Next, the existing data directories and WAL directory must be
+removed. For example, if the tablet server is configured with
+`--fs_wal_dir=/data/0/kudu-tserver-wal` and
+`--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver`, the following
+commands will remove the existing data directories and WAL directory:
+
+[source,bash]
+----
+$ rm -rf /data/0/kudu-tserver-wal /data/1/kudu-tserver /data/2/kudu-tserver
+----
+
+After the WAL and data directories are removed, the tablet server process can be
+started. When Kudu is installed using system packages, `service` is typically
+used:
+
+[source,bash]
+----
+$ sudo service kudu-tserver start
+----
+
+Once the tablet server is running again, new tablet replicas will be created on
+it as necessary.
