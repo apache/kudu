@@ -652,8 +652,8 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   {
     vector<ListTabletsResponsePB::StatusAndSchemaPB> status_pbs;
     ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &status_pbs));
-    ASSERT_STR_MATCHES(status_pbs[0].tablet_status().last_status(),
-                       "Tablet Copy: Tombstoned tablet .*: Tablet copy aborted");
+    ASSERT_STR_CONTAINS(status_pbs[0].tablet_status().last_status(),
+                        "Tombstoned tablet: Tablet Copy: Unable to fetch data from remote peer");
   }
 
   // Now bring the other replicas back, re-elect the previous leader (TS-1),

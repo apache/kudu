@@ -23,13 +23,14 @@
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/fs/block_id.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class BlockId;
 class BlockIdPB;
 class FsManager;
 class HostPort;
@@ -94,20 +95,15 @@ class TabletCopyClient {
   // otherwise the TabletMetadata object resulting from the initial remote
   // bootstrap response is returned.
   Status Start(const HostPort& copy_source_addr,
-               scoped_refptr<tablet::TabletMetadata>* meta);
+               scoped_refptr<tablet::TabletMetadata>* metadata);
 
   // Runs a "full" tablet copy, copying the physical layout of a tablet
   // from the leader of the specified consensus configuration.
   Status FetchAll(tablet::TabletStatusListener* status_listener);
 
   // After downloading all files successfully, write out the completed
-  // replacement superblock. Must be called after Start() and FetchAll().
-  // Must not be called after Abort().
+  // replacement superblock.
   Status Finish();
-
-  // Abort an in-progress transfer and immediately delete the data blocks and
-  // WALs downloaded so far. Does nothing if called after Finish().
-  Status Abort();
 
  private:
   FRIEND_TEST(TabletCopyClientTest, TestBeginEndSession);
@@ -115,13 +111,6 @@ class TabletCopyClient {
   FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
-  FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);
-
-  enum State {
-    kInitialized,
-    kStarted,
-    kFinished,
-  };
 
   // Extract the embedded Status message from the given ErrorStatusPB.
   // The given ErrorStatusPB must extend TabletCopyErrorPB.
@@ -148,13 +137,11 @@ class TabletCopyClient {
   // downloaded as part of initiating the tablet copy session.
   Status WriteConsensusMetadata();
 
-  // Count the number of blocks contained in 'superblock_'.
-  int CountBlocks() const;
-
   // Download all blocks belonging to a tablet sequentially.
   //
-  // Blocks are given new IDs upon creation. On success, 'superblock_'
-  // is populated to reflect the new block IDs.
+  // Blocks are given new IDs upon creation. On success, 'new_superblock_'
+  // is populated to reflect the new block IDs and should be used in lieu
+  // of 'superblock_' henceforth.
   Status DownloadBlocks();
 
   // Download the block specified by 'block_id'.
@@ -190,8 +177,10 @@ class TabletCopyClient {
   FsManager* const fs_manager_;
   const std::shared_ptr<rpc::Messenger> messenger_;
 
-  // State of the progress of the tablet copy operation.
-  State state_;
+  // State flags that enforce the progress of tablet copy.
+  bool started_;            // Session started.
+  bool downloaded_wal_;     // WAL segments downloaded.
+  bool downloaded_blocks_;  // Data blocks downloaded.
 
   // Session-specific data items.
   bool replace_tombstoned_tablet_;
@@ -207,9 +196,9 @@ class TabletCopyClient {
   std::shared_ptr<TabletCopyServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
-  std::unique_ptr<tablet::TabletSuperBlockPB> old_superblock_;
-  std::unique_ptr<tablet::TabletSuperBlockPB> superblock_;
-  std::unique_ptr<consensus::ConsensusStatePB> remote_committed_cstate_;
+  gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
+  gscoped_ptr<tablet::TabletSuperBlockPB> new_superblock_;
+  gscoped_ptr<consensus::ConsensusStatePB> remote_committed_cstate_;
   std::vector<uint64_t> wal_seqnos_;
   int64_t start_time_micros_;
 
