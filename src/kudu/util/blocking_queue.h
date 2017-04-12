@@ -27,6 +27,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -101,12 +102,18 @@ class BlockingQueue {
 
   // Get all elements from the queue and append them to a vector.
   //
+  // If 'deadline' passes and no elements have been returned from the
+  // queue, returns Status::TimedOut(). If 'deadline' is uninitialized,
+  // no deadline is used.
+  //
   // If the queue has been shut down, but there are still elements waiting,
   // then it returns those elements as if the queue were not yet shut down.
   //
-  // Returns false if the queue has been shut down and has no more remaining
-  // elements.
-  bool BlockingDrainTo(std::vector<T>* out) {
+  // Returns:
+  // - OK if successful
+  // - TimedOut if the deadline passed
+  // - Aborted if the queue shut down
+  Status BlockingDrainTo(std::vector<T>* out, MonoTime deadline = MonoTime()) {
     MutexLock l(lock_);
     while (true) {
       if (!list_.empty()) {
@@ -117,12 +124,16 @@ class BlockingQueue {
         }
         list_.clear();
         not_full_.Signal();
-        return true;
+        return Status::OK();
       }
-      if (shutdown_) {
-        return false;
+      if (PREDICT_FALSE(shutdown_)) {
+        return Status::Aborted("");
       }
-      not_empty_.Wait();
+      if (!deadline.Initialized()) {
+        not_empty_.Wait();
+      } else if (PREDICT_FALSE(!not_empty_.TimedWait(deadline - MonoTime::Now()))) {
+        return Status::TimedOut("");
+      }
     }
   }
 

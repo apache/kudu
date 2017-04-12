@@ -1097,5 +1097,24 @@ TEST_F(LogTest, TestDiskSpaceCheck) {
   // detect that we are past the preallocation limit.
 }
 
+// Test that the append thread shuts itself down after it's idle.
+TEST_F(LogTest, TestAutoStopIdleAppendThread) {
+  ASSERT_OK(BuildLog());
+  OpId opid = MakeOpId(1, 1);
+
+  // Append something to the queue and ensure that the thread starts itself.
+  // We loop here in case for some reason this thread gets de-scheduled just
+  // after the append long enough for the append thread to shut itself down
+  // again.
+  ASSERT_EVENTUALLY([&]() {
+      AppendNoOpsToLogSync(clock_, log_.get(), &opid, 2);
+      ASSERT_TRUE(log_->append_thread_active_for_tests());
+    });
+  // After some time, the append thread should shut itself down.
+  ASSERT_EVENTUALLY([&]() {
+      ASSERT_FALSE(log_->append_thread_active_for_tests());
+    });
+}
+
 } // namespace log
 } // namespace kudu

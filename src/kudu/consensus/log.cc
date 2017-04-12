@@ -78,6 +78,12 @@ DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
 TAG_FLAG(group_commit_queue_size_bytes, advanced);
 
 
+DEFINE_int32(log_thread_idle_threshold_ms, 1000,
+             "Number of milliseconds after which the log append thread decides that a "
+             "log is idle, and considers shutting down. Used by tests.");
+TAG_FLAG(log_thread_idle_threshold_ms, experimental);
+TAG_FLAG(log_thread_idle_threshold_ms, hidden);
+
 // Compression configuration.
 // -----------------------------
 DEFINE_string(log_compression_codec, "LZ4",
@@ -96,12 +102,16 @@ DEFINE_int32(log_inject_latency_ms_mean, 100,
 DEFINE_int32(log_inject_latency_ms_stddev, 100,
              "The standard deviation of latency to inject in the log. "
              "Only takes effect if --log_inject_latency is true");
+DEFINE_int32(log_inject_thread_lifecycle_latency_ms, 0,
+             "Injection point for random latency during key thread lifecycle transition "
+             "points.");
 DEFINE_double(fault_crash_before_append_commit, 0.0,
               "Fraction of the time when the server will crash just before appending a "
               "COMMIT message to the log. (For testing only!)");
 TAG_FLAG(log_inject_latency, unsafe);
 TAG_FLAG(log_inject_latency_ms_mean, unsafe);
 TAG_FLAG(log_inject_latency_ms_stddev, unsafe);
+TAG_FLAG(log_inject_thread_lifecycle_latency_ms, unsafe);
 TAG_FLAG(fault_crash_before_append_commit, unsafe);
 
 DEFINE_double(log_inject_io_error_on_append_fraction, 0.0,
@@ -152,13 +162,33 @@ using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
 
-// This class is responsible for managing the thread that appends to
-// the log file.
+// Manages the thread which drains groups of batches from the log's queue and
+// appends them to the underlying log instance.
+//
+// Rather than being a long-running thread, this instead uses a threadpool with
+// size 1 to automatically start and stop a thread on demand. When the log
+// is idle for some amount of time, no task will be on the thread pool, and thus
+// the underlying thread may exit.
+//
+// The design of submitting tasks to the threadpool is slightly tricky in order
+// to achieve group commit and not have to submit one task per appended batch.
+// Instead, a generic 'DoWork()' task is used which loops collecting work until
+// it finds that it has been idle for a while, at which point the task finishes.
+//
+// The trick, then, lies in two areas:
+//
+// 1) after appending a batch, we need to ensure that a task is already running,
+//    and if not, start one. This is done in Wake().
+//
+// 2) when the task finds no more work to do and wants to go idle, it needs to
+//    ensure that it doesn't miss a concurrent wake-up. This is done in GoIdle().
+//
+// See the implementation comments in Wake() and GoIdle() for details.
 class Log::AppendThread {
  public:
   explicit AppendThread(Log* log);
 
-  // Initializes the objects and starts the thread.
+  // Initializes the objects and starts the thread pool.
   Status Init();
 
   // Waits until the last enqueued elements are processed, sets the
@@ -167,16 +197,47 @@ class Log::AppendThread {
   // method.
   void Shutdown();
 
+  // Wake up the appender task, if it is not already running.
+  // This should be called after each time that a new entry is
+  // appended to the log's queue.
+  void Wake();
+
+  bool active() const {
+    return base::subtle::NoBarrier_Load(&worker_state_) == WORKER_ACTIVE;
+  }
+
  private:
-  void RunThread();
+  // The task submitted to the threadpool which collects batches from the queue
+  // and appends them, until it determines that the queue is idle.
+  void DoWork();
+
+  // Tries to transition back to WORKER_STOPPED state. If successful, returns true.
+  //
+  // Otherwise, returns false to indicate that the task should keep running because
+  // a new task was enqueued just as we were trying to go idle.
+  bool GoIdle();
+
+  // Handle the actual appending of a group of entries. Responsible for deleting the
+  // LogEntryBatch* pointers.
+  void HandleGroup(vector<LogEntryBatch*> entry_batches);
 
   string LogPrefix() const;
 
   Log* const log_;
 
-  // Lock to protect access to thread_ during shutdown.
-  mutable std::mutex lock_;
-  scoped_refptr<Thread> thread_;
+  // Atomic state machine for whether there is any worker task currently
+  // queued or running on append_pool_. See Wake() and GoIdle() for more details.
+  enum WorkerState {
+    // No worker task is queued or running.
+    WORKER_STOPPED,
+    // A worker task is queued or running.
+    WORKER_ACTIVE
+  };
+  Atomic32 worker_state_ = WORKER_STOPPED;
+
+  // Pool with a single thread, which handles shutting down the thread
+  // when idle.
+  gscoped_ptr<ThreadPool> append_pool_;
 };
 
 
@@ -185,94 +246,161 @@ Log::AppendThread::AppendThread(Log *log)
 }
 
 Status Log::AppendThread::Init() {
-  DCHECK(!thread_) << "Already initialized";
+  DCHECK(!append_pool_) << "Already initialized";
   VLOG_WITH_PREFIX(1) << "Starting log append thread";
-  RETURN_NOT_OK(kudu::Thread::Create("log", "appender",
-      &AppendThread::RunThread, this, &thread_));
+  RETURN_NOT_OK(ThreadPoolBuilder("wal-append")
+                .set_min_threads(0)
+                // Only need one thread since we'll only schedule one
+                // task at a time.
+                .set_max_threads(1)
+                // No need for keeping idle threads, since the task itself
+                // handles waiting for work while idle.
+                .set_idle_timeout(MonoDelta::FromSeconds(0))
+                .Build(&append_pool_));
   return Status::OK();
 }
 
-void Log::AppendThread::RunThread() {
+void Log::AppendThread::Wake() {
+  DCHECK(append_pool_);
+  auto old_status = base::subtle::NoBarrier_CompareAndSwap(
+      &worker_state_, WORKER_STOPPED, WORKER_ACTIVE);
+  if (old_status == WORKER_STOPPED) {
+    CHECK_OK(append_pool_->SubmitClosure(Bind(&Log::AppendThread::DoWork, Unretained(this))));
+  }
+}
+
+bool Log::AppendThread::GoIdle() {
+  // Inject latency at key points in this function for the purposes of tests.
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
+
+  // Stopping is a bit tricky. We have to consider the following race:
+  //
+  // T1                         AppendThread
+  // ------------               -------------
+  //                            - state is TRIGGERED
+  //                            - BlockingDrainTo returns TimedOut()
+  // - queue.Put()
+  // - Wake() no-op because
+  //   it's already triggered
+
+  // So, we first transition back to STOPPED state, and then re-check to see
+  // if there has been something enqueued in the meantime.
+  auto old_state = base::subtle::NoBarrier_AtomicExchange(&worker_state_, WORKER_STOPPED);
+  DCHECK_EQ(old_state, WORKER_ACTIVE);
+  if (log_->entry_queue()->empty()) {
+    // Nothing got enqueued, which means there must not have been any missed wakeup.
+    // We are now in WORKER_STOPPED state.
+    return true;
+  }
+
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
+  // Someone enqueued something. We don't know whether their wakeup was successful
+  // or not, but we can just try to transition back to ACTIVE mode here.
+  if (base::subtle::NoBarrier_CompareAndSwap(&worker_state_, WORKER_STOPPED, WORKER_ACTIVE)
+      == WORKER_STOPPED) {
+    // Their wake-up was lost, but we've now marked ourselves as running.
+    MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
+    return false;
+  }
+
+  // Their wake-up was successful, meaning that there is another task on the
+  // queue behind us now, so we can exit this one.
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
+  return true;
+}
+
+void Log::AppendThread::DoWork() {
+  DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(worker_state_), WORKER_ACTIVE);
+  VLOG_WITH_PREFIX(2) << "WAL Appender going active";
   while (true) {
+    MonoTime deadline = MonoTime::Now() +
+        MonoDelta::FromMilliseconds(FLAGS_log_thread_idle_threshold_ms);
     vector<LogEntryBatch*> entry_batches;
-    ElementDeleter d(&entry_batches);
-
-    if (PREDICT_FALSE(!log_->entry_queue()->BlockingDrainTo(&entry_batches))) {
-      CHECK(entry_batches.empty());
+    Status s = log_->entry_queue()->BlockingDrainTo(&entry_batches, deadline);
+    if (PREDICT_FALSE(s.IsAborted())) {
       break;
+    } else if (PREDICT_FALSE(s.IsTimedOut())) {
+      if (GoIdle()) break;
+      continue;
     }
+    HandleGroup(std::move(entry_batches));
+  }
+  VLOG_WITH_PREFIX(2) << "WAL Appender going idle";
+}
 
-    if (log_->metrics_) {
-      log_->metrics_->entry_batches_per_group->Increment(entry_batches.size());
-    }
-    TRACE_EVENT1("log", "batch", "batch_size", entry_batches.size());
+void Log::AppendThread::HandleGroup(vector<LogEntryBatch*> entry_batches) {
+  if (log_->metrics_) {
+    log_->metrics_->entry_batches_per_group->Increment(entry_batches.size());
+  }
+  TRACE_EVENT1("log", "batch", "batch_size", entry_batches.size());
 
-    SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
+  SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
-    bool is_all_commits = true;
-    for (LogEntryBatch* entry_batch : entry_batches) {
-      TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
-      Status s = log_->DoAppend(entry_batch);
-      if (PREDICT_FALSE(!s.ok())) {
-        LOG_WITH_PREFIX(ERROR) << "Error appending to the log: " << s.ToString();
-        // TODO(af): If a single transaction fails to append, should we
-        // abort all subsequent transactions in this batch or allow
-        // them to be appended? What about transactions in future
-        // batches?
-        if (!entry_batch->callback().is_null()) {
-          entry_batch->callback().Run(s);
-          entry_batch->callback_.Reset();
-        }
-      }
-      if (is_all_commits && entry_batch->type_ != COMMIT) {
-        is_all_commits = false;
-      }
-    }
-
-    Status s;
-    if (!is_all_commits) {
-      s = log_->Sync();
-    }
+  bool is_all_commits = true;
+  for (LogEntryBatch* entry_batch : entry_batches) {
+    TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
+    Status s = log_->DoAppend(entry_batch);
     if (PREDICT_FALSE(!s.ok())) {
-      LOG_WITH_PREFIX(ERROR) << "Error syncing log: " << s.ToString();
-      for (LogEntryBatch* entry_batch : entry_batches) {
-        if (!entry_batch->callback().is_null()) {
-          entry_batch->callback().Run(s);
-        }
+      LOG_WITH_PREFIX(ERROR) << "Error appending to the log: " << s.ToString();
+      // TODO(af): If a single transaction fails to append, should we
+      // abort all subsequent transactions in this batch or allow
+      // them to be appended? What about transactions in future
+      // batches?
+      if (!entry_batch->callback().is_null()) {
+        entry_batch->callback().Run(s);
+        entry_batch->callback_.Reset();
       }
-    } else {
-      TRACE_EVENT0("log", "Callbacks");
-      VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
-      SCOPED_WATCH_STACK(100);
-      for (LogEntryBatch* entry_batch : entry_batches) {
-        if (PREDICT_TRUE(!entry_batch->callback().is_null())) {
-          entry_batch->callback().Run(Status::OK());
-        }
-        // It's important to delete each batch as we see it, because
-        // deleting it may free up memory from memory trackers, and the
-        // callback of a later batch may want to use that memory.
-        delete entry_batch;
-      }
-      entry_batches.clear();
+    }
+    if (is_all_commits && entry_batch->type_ != COMMIT) {
+      is_all_commits = false;
     }
   }
-  VLOG_WITH_PREFIX(1) << "Exiting AppendThread";
+
+  Status s;
+  if (!is_all_commits) {
+    s = log_->Sync();
+  }
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(ERROR) << "Error syncing log: " << s.ToString();
+    for (LogEntryBatch* entry_batch : entry_batches) {
+      if (!entry_batch->callback().is_null()) {
+        entry_batch->callback().Run(s);
+      }
+      delete entry_batch;
+    }
+  } else {
+    TRACE_EVENT0("log", "Callbacks");
+    VLOG_WITH_PREFIX(2) << "Synchronized " << entry_batches.size() << " entry batches";
+    SCOPED_WATCH_STACK(100);
+    for (LogEntryBatch* entry_batch : entry_batches) {
+      if (PREDICT_TRUE(!entry_batch->callback().is_null())) {
+        entry_batch->callback().Run(Status::OK());
+      }
+      // It's important to delete each batch as we see it, because
+      // deleting it may free up memory from memory trackers, and the
+      // callback of a later batch may want to use that memory.
+      delete entry_batch;
+    }
+  }
 }
 
 void Log::AppendThread::Shutdown() {
   log_->entry_queue()->Shutdown();
-  std::lock_guard<std::mutex> lock_guard(lock_);
-  if (thread_) {
-    VLOG_WITH_PREFIX(1) << "Shutting down log append thread";
-    CHECK_OK(ThreadJoiner(thread_.get()).Join());
-    VLOG_WITH_PREFIX(1) << "Log append thread is shut down";
-    thread_.reset();
+  if (append_pool_) {
+    append_pool_->Wait();
+    append_pool_->Shutdown();
   }
 }
 
 string Log::AppendThread::LogPrefix() const {
   return log_->LogPrefix();
 }
+
+// Return true if the append thread is currently active.
+bool Log::append_thread_active_for_tests() const {
+  return append_thread_->active();
+}
+
 
 // This task is submitted to allocation_pool_ in order to
 // asynchronously pre-allocate new log segments.
@@ -448,6 +576,7 @@ Status Log::AsyncAppend(unique_ptr<LogEntryBatch> entry_batch, const StatusCallb
     TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch.get());
     return kLogShutdownStatus;
   }
+  append_thread_->Wake();
   entry_batch.release();
   return Status::OK();
 }

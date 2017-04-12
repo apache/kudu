@@ -153,7 +153,6 @@ inline Status CorruptLogFile(Env* env, const string& log_path,
 
 class LogTestBase : public KuduTest {
  public:
-
   typedef pair<int, int> DeltaId;
 
   LogTestBase()
@@ -163,7 +162,7 @@ class LogTestBase : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    current_index_ = 1;
+    current_index_ = kStartIndex;
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
     metric_registry_.reset(new MetricRegistry());
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry_.get(), "log-test-base");
@@ -377,6 +376,10 @@ class LogTestBase : public KuduTest {
   }
 
  protected:
+  enum {
+    kStartIndex = 1
+  };
+
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<MetricRegistry> metric_registry_;

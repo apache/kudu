@@ -25,8 +25,9 @@
 
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/blocking_queue.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
-using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::vector;
@@ -59,14 +60,23 @@ TEST(BlockingQueueTest, TestBlockingDrainTo) {
   ASSERT_EQ(test_queue.Put(2), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(3), QUEUE_SUCCESS);
   vector<int32_t> out;
-  ASSERT_TRUE(test_queue.BlockingDrainTo(&out));
+  ASSERT_OK(test_queue.BlockingDrainTo(&out, MonoTime::Now() + MonoDelta::FromSeconds(30)));
   ASSERT_EQ(1, out[0]);
   ASSERT_EQ(2, out[1]);
   ASSERT_EQ(3, out[2]);
+
+  // Set a deadline in the past and ensure we time out.
+  Status s = test_queue.BlockingDrainTo(&out, MonoTime::Now() - MonoDelta::FromSeconds(1));
+  ASSERT_TRUE(s.IsTimedOut());
+
+  // Ensure that if the queue is shut down, we get Aborted status.
+  test_queue.Shutdown();
+  s = test_queue.BlockingDrainTo(&out, MonoTime::Now() - MonoDelta::FromSeconds(1));
+  ASSERT_TRUE(s.IsAborted());
 }
 
 // Test that, when the queue is shut down with elements still pending,
-// Drain still returns true until the elements are all gone.
+// Drain still returns OK until the elements are all gone.
 TEST(BlockingQueueTest, TestGetAndDrainAfterShutdown) {
   // Put some elements into the queue and then shut it down.
   BlockingQueue<int32_t> q(3);
@@ -80,13 +90,14 @@ TEST(BlockingQueueTest, TestGetAndDrainAfterShutdown) {
   ASSERT_TRUE(q.BlockingGet(&i));
   ASSERT_EQ(1, i);
 
-  // Drain should still return true, since it yielded elements.
+  // Drain should still return OK, since it yielded elements.
   vector<int32_t> out;
-  ASSERT_TRUE(q.BlockingDrainTo(&out));
+  ASSERT_OK(q.BlockingDrainTo(&out));
   ASSERT_EQ(2, out[0]);
 
-  // Now that it's empty, it should return false.
-  ASSERT_FALSE(q.BlockingDrainTo(&out));
+  // Now that it's empty, it should return Aborted.
+  Status s = q.BlockingDrainTo(&out);
+  ASSERT_TRUE(s.IsAborted()) << s.ToString();
   ASSERT_FALSE(q.BlockingGet(&i));
 }
 

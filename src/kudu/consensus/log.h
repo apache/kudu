@@ -202,6 +202,9 @@ class Log : public RefCountedThreadSafe<Log> {
     return active_segment_->path();
   }
 
+  // Return true if the append thread is currently active.
+  bool append_thread_active_for_tests() const;
+
   // Forces the Log to allocate a new segment and roll over.
   // This can be used to make sure all entries appended up to this point are
   // available in closed, readable segments.
