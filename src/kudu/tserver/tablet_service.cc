@@ -1041,10 +1041,11 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
   DCHECK(req->has_scanner_id());
   SharedScanner scanner;
   if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
-    resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
-    StatusToPB(Status::NotFound("Scanner not found"), resp->mutable_error()->mutable_status());
-    context->RespondSuccess();
-    return;
+      resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
+      StatusToPB(Status::NotFound("Scanner not found"),
+                 resp->mutable_error()->mutable_status());
+      context->RespondSuccess();
+      return;
   }
   scanner->UpdateAccessTime();
   context->RespondSuccess();

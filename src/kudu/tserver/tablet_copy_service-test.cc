@@ -365,7 +365,7 @@ TEST_F(TabletCopyServiceTest, TestFetchInvalidBlockOffset) {
   RpcController controller;
   // Impossible offset.
   uint64_t offset = std::numeric_limits<uint64_t>::max();
-  Status status = DoFetchData(session_id, AsDataTypeId(FirstColumnBlockId(&superblock)),
+  Status status = DoFetchData(session_id, AsDataTypeId(FirstColumnBlockId(superblock)),
                               &offset, nullptr, &resp, &controller);
   ASSERT_REMOTE_ERROR(status, controller.error_response(),
                       TabletCopyErrorPB::INVALID_TABLET_COPY_REQUEST,
@@ -379,7 +379,7 @@ TEST_F(TabletCopyServiceTest, TestFetchBlockAtOnce) {
   ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
 
   // Local.
-  BlockId block_id = FirstColumnBlockId(&superblock);
+  BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
   ASSERT_OK(ReadLocalBlockFile(mini_server_->server()->fs_manager(), block_id,
@@ -399,7 +399,7 @@ TEST_F(TabletCopyServiceTest, TestFetchBlockIncrementally) {
   tablet::TabletSuperBlockPB superblock;
   ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
 
-  BlockId block_id = FirstColumnBlockId(&superblock);
+  BlockId block_id = FirstColumnBlockId(superblock);
   Slice local_data;
   faststring scratch;
   ASSERT_OK(ReadLocalBlockFile(mini_server_->server()->fs_manager(), block_id,
