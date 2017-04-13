@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.3.0 Release Notes
+= Apache Kudu 1.3.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,6 +28,35 @@
 :sectlinks:
 :experimental:
 
+[[rn_1.3.1]]
+Apache Kudu 1.3.1 is a bug-fix release which fixes critical issues in Kudu 1.3.0.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1962[KUDU-1962]
+  Fixed a NullPointerException in the Java client in the case that the Kudu master
+  is overloaded at the time the client requests location information. This could
+  cause client applications to hang indefinitely regardless of configured timeouts.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1963[KUDU-1963]
+  Fixed cases in which the Java client could log NullPointerException or
+  SSLException stack traces in the case that it was closed while in the process
+  of connecting to a server.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1607[KUDU-1607]
+  Fixed a case in which a tablet replica on a tablet server could retain blocks
+  of data which prevented it from being fully deleted.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1933[KUDU-1933]
+  Fixed an issue in which a tablet server would crash and fail to restart after
+  a single tablet received more than two billion write operations. Upgrading to
+  Kudu 1.3.1 or later will allow a server which previously experienced this
+  issue to restart.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1968[KUDU-1968]
+  Fixed an issue in which the tablet server would delete an incorrect set of
+  data blocks after an aborted attempt to copy a tablet from another server.
+  This would produce data loss in unrelated tablets.
+
+= Apache Kudu 1.3.0 Release Notes
 [[rn_1.3.0]]
 
 [[rn_1.3.0_new_features]]
@@ -125,6 +154,8 @@ These new defaults match the default behavior of other storage mechanisms such a
 * link:https://issues.apache.org/jira/browse/KUDU-1853[KUDU-1853]
   Fixed an issue where disk space could be leaked on servers which experienced an error
   during the process of copying tablet data from another server.
+
+NOTE: The fix for KUDU-1853 resulted in a regression and was reverted in Kudu 1.3.1.
 
 * link:https://issues.apache.org/jira/browse/KUDU-1856[KUDU-1856]
   Fixed an issue in which disk space could be leaked by Kudu servers storing data on
