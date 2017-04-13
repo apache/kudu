@@ -204,6 +204,7 @@ Status MiniKdc::CreateKdcConf() const {
   static const string kFileTemplate = R"(
 [kdcdefaults]
 kdc_ports = $2
+kdc_tcp_ports = ""
 
 [realms]
 $1 = {

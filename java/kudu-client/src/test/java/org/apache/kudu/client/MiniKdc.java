@@ -262,6 +262,7 @@ public class MiniKdc implements Closeable {
     List<String> contents = ImmutableList.of(
         "[kdcdefaults]",
         "   kdc_ports = " + options.port,
+        "   kdc_tcp_ports = \"\"",
 
         "[realms]",
         options.realm + " = {",
