@@ -25,6 +25,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/hexdump.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -224,6 +225,98 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
     ConstContiguousRow row_roundtripped(&schema_, row_ptrs[i]);
     EXPECT_EQ(schema_.DebugRow(block.row(i)),
               schema_.DebugRow(row_roundtripped));
+  }
+}
+
+// Create a block of rows in columnar layout and ensure that it can be
+// converted to and from protobuf.
+TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
+  int kNumRows = 10;
+  Arena arena(1024, 1024 * 1024);
+  // Create a schema with multiple UNIXTIME_MICROS columns in different
+  // positions.
+  Schema tablet_schema({ ColumnSchema("key", UNIXTIME_MICROS),
+                         ColumnSchema("col1", STRING),
+                         ColumnSchema("col2", UNIXTIME_MICROS),
+                         ColumnSchema("col3", INT32, true /* nullable */),
+                         ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */)}, 1);
+  RowBlock block(tablet_schema, kNumRows, &arena);
+  block.selection_vector()->SetAllTrue();
+
+  for (int i = 0; i < block.nrows(); i++) {
+    RowBlockRow row = block.row(i);
+
+    *reinterpret_cast<int64_t*>(row.mutable_cell_ptr(0)) = i;
+    Slice col1;
+    // See: FillRowBlockWithTestRows() for the reason why we relocate these
+    // to 'test_data_arena_'.
+    CHECK(test_data_arena_.RelocateSlice("hello world col1", &col1));
+    *reinterpret_cast<Slice*>(row.mutable_cell_ptr(1)) = col1;
+    *reinterpret_cast<int64_t*>(row.mutable_cell_ptr(2)) = i;
+    *reinterpret_cast<int32_t*>(row.mutable_cell_ptr(3)) = i;
+    row.cell(3).set_null(false);
+    *reinterpret_cast<int64_t*>(row.mutable_cell_ptr(4)) = i;
+    row.cell(4).set_null(true);
+  }
+
+  // Have the projection schema have columns in a different order from the table schema.
+  Schema proj_schema({ ColumnSchema("col1", STRING),
+                       ColumnSchema("key",  UNIXTIME_MICROS),
+                       ColumnSchema("col2", UNIXTIME_MICROS),
+                       ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */),
+                       ColumnSchema("col3", INT32, true /* nullable */)}, 0);
+
+  // Convert to PB.
+  RowwiseRowBlockPB pb;
+  faststring direct, indirect;
+  SerializeRowBlock(block, &pb, &proj_schema, &direct, &indirect, true /* pad timestamps */);
+  SCOPED_TRACE(SecureDebugString(pb));
+  SCOPED_TRACE("Row data: " + HexDump(direct));
+  SCOPED_TRACE("Indirect data: " + HexDump(indirect));
+
+  // Convert back to a row, ensure that the resulting row is the same
+  // as the one we put in. Can't reuse the decoding methods since we
+  // won't support decoding padded rows within Kudu.
+  vector<const uint8_t*> row_ptrs;
+  Slice direct_sidecar = direct;
+  Slice indirect_sidecar = indirect;
+  ASSERT_OK(RewriteRowBlockPointers(proj_schema, pb, indirect_sidecar, &direct_sidecar, true));
+
+  // Row stride is the normal size for the schema + the number of UNIXTIME_MICROS columns * 8,
+  // the size of the padding per column.
+  size_t row_stride = ContiguousRowHelper::row_size(proj_schema) + 3 * 8;
+  ASSERT_EQ(direct_sidecar.size(), row_stride * kNumRows);
+  const uint8_t* base_data;
+  for (int i = 0; i < kNumRows; i++) {
+    base_data = direct_sidecar.data() + i * row_stride;
+    // With padding, the null bitmap is at offset 68.
+    // See the calculations below to understand why.
+    const uint8_t* null_bitmap = base_data + 68;
+
+    // 'col1' comes at 0 bytes offset in the projection schema.
+    const Slice* col1 = reinterpret_cast<const Slice*>(base_data);
+    ASSERT_EQ(col1->compare(Slice("hello world col1")), 0) << "Unexpected val for the "
+                                                           << i << "th row:"
+                                                           << col1->ToDebugString();
+    // 'key' comes at 16 bytes offset.
+    const int64_t key = *reinterpret_cast<const int64_t*>(base_data + 16);
+    EXPECT_EQ(key, i);
+
+    // 'col2' comes at 32 bytes offset: 16 bytes previous, 16 bytes 'key'
+    const int64_t col2 = *reinterpret_cast<const int64_t*>(base_data + 32);
+    EXPECT_EQ(col2, i);
+
+    // 'col4' is supposed to be null, but should also read 0 since we memsetted the
+    // memory to 0. It should come at 48 bytes offset:  32 bytes previous + 8 bytes 'col2' +
+    // 8 bytes padding.
+    const int64_t col4 = *reinterpret_cast<const int64_t*>(base_data + 48);
+    EXPECT_EQ(col4, 0);
+    EXPECT_TRUE(BitmapTest(null_bitmap, 3));
+
+    // 'col3' comes at 64 bytes offset: 48 bytes previous, 8 bytes 'col4', 8 bytes padding
+    const int32_t col3 = *reinterpret_cast<const int32_t*>(base_data + 64);
+    EXPECT_EQ(col3, i);
+    EXPECT_FALSE(BitmapTest(null_bitmap, 4));
   }
 }
 

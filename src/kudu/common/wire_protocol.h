@@ -123,18 +123,27 @@ Status ColumnPredicateFromPB(const Schema& schema,
 // If 'client_projection_schema' is not NULL, then only columns specified in
 // 'client_projection_schema' will be projected to 'data_buf'.
 //
+// If 'pad_unixtime_micros_to_16_bytes' is true, UNIXTIME_MICROS slots in the projection
+// schema will be padded to the right by 8 (zero'd) bytes for a total of 16 bytes.
+//
 // Requires that block.nrows() > 0
 void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
-                       const Schema* client_projection_schema,
-                       faststring* data_buf, faststring* indirect_data);
+                       const Schema* projection_schema,
+                       faststring* data_buf, faststring* indirect_data,
+                       bool pad_unixtime_micros_to_16_bytes = false);
 
 // Rewrites the data pointed-to by row data slice 'row_data_slice' by replacing
 // relative indirect data pointers with absolute ones in 'indirect_data_slice'.
 // At the time of this writing, this rewriting is only done for STRING types.
 //
+// It 'pad_unixtime_micros_to_16_bytes' is true, this function will take padding into
+// account when rewriting the block pointers.
+// See: SerializeRowBlock() for the actual format.
+//
 // Returns a bad Status if the provided data is invalid or corrupt.
 Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& rowblock_pb,
-                               const Slice& indirect_data_slice, Slice* row_data_slice);
+                               const Slice& indirect_data_slice, Slice* row_data_slice,
+                               bool pad_unixtime_micros_to_16_bytes = false);
 
 // Extract the rows stored in this protobuf, which must have exactly the
 // given Schema. This Schema may be obtained using ColumnPBsToSchema.
