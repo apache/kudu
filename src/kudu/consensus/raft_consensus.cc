@@ -43,6 +43,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
@@ -1188,7 +1189,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // This request contains at least one message, and is likely to increase
       // our memory pressure.
       double capacity_pct;
-      if (parent_mem_tracker_->AnySoftLimitExceeded(&capacity_pct)) {
+      if (process_memory::SoftLimitExceeded(&capacity_pct)) {
         follower_memory_pressure_rejections_->Increment();
         string msg = StringPrintf(
             "Soft memory limit exceeded (at %.2f%% of capacity)",

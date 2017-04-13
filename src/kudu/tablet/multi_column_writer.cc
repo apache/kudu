@@ -83,10 +83,10 @@ Status MultiColumnWriter::Open() {
     RETURN_NOT_OK_PREPEND(writer->Start(),
                           "Unable to Start() writer for column " + col.ToString());
 
-    LOG(INFO) << "Opened CFile writer for column " << col.ToString();
     cfile_writers_.push_back(writer.release());
     block_ids_.push_back(block_id);
   }
+  LOG(INFO) << "Opened CFile writers for " << cfile_writers_.size() << " column(s)";
 
   return Status::OK();
 }

@@ -15,14 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
 
+#include <gflags/gflags.h>
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -53,13 +54,15 @@ static const char kFakeUuid[] = "12345";
 class MaintenanceManagerTest : public KuduTest {
  public:
   void SetUp() override {
-    test_tracker_ = MemTracker::CreateTracker(1000, "test");
     MaintenanceManager::Options options;
     options.num_threads = 2;
     options.polling_interval_ms = 1;
     options.history_size = kHistorySize;
-    options.parent_mem_tracker = test_tracker_;
     manager_.reset(new MaintenanceManager(options));
+    manager_->set_memory_pressure_func_for_tests(
+        [&](double* consumption) {
+          return indicate_memory_pressure_.load();
+        });
     ASSERT_OK(manager_->Init(kFakeUuid));
   }
 
@@ -68,8 +71,8 @@ class MaintenanceManagerTest : public KuduTest {
   }
 
  protected:
-  shared_ptr<MemTracker> test_tracker_;
   shared_ptr<MaintenanceManager> manager_;
+  std::atomic<bool> indicate_memory_pressure_ { false };
 };
 
 // Just create the MaintenanceManager and then shut it down, to make sure
@@ -80,10 +83,9 @@ TEST_F(MaintenanceManagerTest, TestCreateAndShutdown) {
 class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
-                    IOUsage io_usage,
-                    const shared_ptr<MemTracker>& tracker)
+                    IOUsage io_usage)
     : MaintenanceOp(name, io_usage),
-      consumption_(tracker, 500),
+      ram_anchored_(500),
       logs_retained_bytes_(0),
       perf_improvement_(0),
       metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
@@ -124,7 +126,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     std::lock_guard<Mutex> guard(lock_);
     stats->set_runnable(remaining_runs_ > 0);
-    stats->set_ram_anchored(consumption_.consumption());
+    stats->set_ram_anchored(ram_anchored_);
     stats->set_logs_retained_bytes(logs_retained_bytes_);
     stats->set_perf_improvement(perf_improvement_);
   }
@@ -141,7 +143,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   void set_ram_anchored(uint64_t ram_anchored) {
     std::lock_guard<Mutex> guard(lock_);
-    consumption_.Reset(ram_anchored);
+    ram_anchored_ = ram_anchored;
   }
 
   void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
@@ -165,7 +167,7 @@ class TestMaintenanceOp : public MaintenanceOp {
  private:
   Mutex lock_;
 
-  ScopedTrackedConsumption consumption_;
+  uint64_t ram_anchored_;
   uint64_t logs_retained_bytes_;
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
@@ -187,8 +189,8 @@ class TestMaintenanceOp : public MaintenanceOp {
 // running and verify that UnregisterOp waits for it to finish before
 // proceeding.
 TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
-  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
-  op1.set_ram_anchored(1001);
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE);
+  op1.set_perf_improvement(10);
   // Register initially with no remaining runs. We'll later enable it once it's
   // already registered.
   op1.set_remaining_runs(0);
@@ -207,8 +209,8 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
 // Regression test for KUDU-1495: when an operation is being unregistered,
 // new instances of that operation should not be scheduled.
 TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
-  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
-  op1.set_ram_anchored(1001);
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE);
+  op1.set_perf_improvement(10);
 
   // Set the op to run up to 10 times, and each time should sleep for a second.
   op1.set_remaining_runs(10);
@@ -231,7 +233,7 @@ TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
 // Test that we'll run an operation that doesn't improve performance when memory
 // pressure gets high.
 TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
-  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
+  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE);
   op.set_ram_anchored(100);
   manager_->RegisterOp(&op);
 
@@ -239,16 +241,13 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
   SleepFor(MonoDelta::FromMilliseconds(20));
   ASSERT_EQ(0, op.DurationHistogram()->TotalCount());
 
-  // set the ram_anchored by the high mem op so high that we'll have to run it.
-  scoped_refptr<kudu::Thread> thread;
-  ASSERT_OK(Thread::Create("TestThread", "MaintenanceManagerTest",
-      boost::bind(&TestMaintenanceOp::set_ram_anchored, &op, 1100), &thread));
+  // Fake that the server is under memory pressure.
+  indicate_memory_pressure_ = true;
 
   AssertEventually([&]() {
       ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
     });
   manager_->UnregisterOp(&op);
-  ThreadJoiner(thread.get()).Join();
 }
 
 // Test that ops are prioritized correctly when we add log retention.
@@ -257,15 +256,15 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
 
   manager_->Shutdown();
 
-  TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE, test_tracker_);
+  TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE);
   op1.set_ram_anchored(0);
   op1.set_logs_retained_bytes(100 * kMB);
 
-  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE);
   op2.set_ram_anchored(100);
   op2.set_logs_retained_bytes(100 * kMB);
 
-  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE);
   op3.set_ram_anchored(200);
   op3.set_logs_retained_bytes(100 * kMB);
 
@@ -299,7 +298,7 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
   for (int i = 0; i < 5; i++) {
     string name = Substitute("op$0", i);
-    TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE, test_tracker_);
+    TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE);
     op.set_perf_improvement(1);
     op.set_ram_anchored(100);
     manager_->RegisterOp(&op);

@@ -38,12 +38,12 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/histogram.pb.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/jsonwriter.h"
+#include "kudu/util/process_memory.h"
 
-using boost::replace_all;
 using std::ifstream;
 using std::string;
 using std::endl;
@@ -138,13 +138,29 @@ static void MemUsageHandler(const Webserver::WebRequest& req, std::ostringstream
   MallocExtension::instance()->GetStats(buf, 2048);
   // Replace new lines with <br> for html
   string tmp(buf);
-  replace_all(tmp, "\n", tags.line_break);
+  boost::replace_all(tmp, "\n", tags.line_break);
   (*output) << tmp << tags.end_pre_tag;
 #endif
 }
 
 // Registered to handle "/mem-trackers", and prints out to handle memory tracker information.
-static void MemTrackersHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
+static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostringstream* output) {
+  *output << "<h1>Process memory usage</h1>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << Substitute("  <tr><th>Total consumption</th><td>$0</td></tr>\n",
+                        HumanReadableNumBytes::ToString(process_memory::CurrentConsumption()));
+  *output << Substitute("  <tr><th>Memory limit</th><td>$0</td></tr>\n",
+                        HumanReadableNumBytes::ToString(process_memory::HardLimit()));
+  *output << "</table>\n";
+#ifndef TCMALLOC_ENABLED
+  *output << R"(
+      <div class="alert alert-warning">
+        <strong>NOTE:</strong> This build of Kudu has not enabled tcmalloc.
+        The above process memory stats will be inaccurate.
+      </div>
+               )";
+#endif
+
   *output << "<h1>Memory usage by subsystem</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"

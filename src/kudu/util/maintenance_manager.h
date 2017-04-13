@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -42,7 +43,6 @@ template<class T>
 class AtomicGauge;
 class Histogram;
 class MaintenanceManager;
-class MemTracker;
 
 class MaintenanceOpStats {
  public:
@@ -259,7 +259,6 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
     int32_t num_threads;
     int32_t polling_interval_ms;
     uint32_t history_size;
-    std::shared_ptr<MemTracker> parent_mem_tracker;
   };
 
   explicit MaintenanceManager(const Options& options);
@@ -277,6 +276,11 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   void UnregisterOp(MaintenanceOp* op);
 
   void GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb);
+
+  void set_memory_pressure_func_for_tests(std::function<bool(double*)> f) {
+    std::lock_guard<Mutex> guard(lock_);
+    memory_pressure_func_ = std::move(f);
+  }
 
   static const Options DEFAULT_OPTIONS;
 
@@ -307,9 +311,12 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<CompletedOp> completed_ops_;
   int64_t completed_ops_count_;
-  std::shared_ptr<MemTracker> parent_mem_tracker_;
   std::string server_uuid_;
   Random rand_;
+
+  // Function which should return true if the server is under global memory pressure.
+  // This is indirected for testing purposes.
+  std::function<bool(double*)> memory_pressure_func_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };

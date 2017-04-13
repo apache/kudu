@@ -57,6 +57,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
@@ -747,7 +748,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   // Check for memory pressure; don't bother doing any additional work if we've
   // exceeded the limit.
   double capacity_pct;
-  if (tablet->mem_tracker()->AnySoftLimitExceeded(&capacity_pct)) {
+  if (process_memory::SoftLimitExceeded(&capacity_pct)) {
     tablet->metrics()->leader_memory_pressure_rejections->Increment();
     string msg = StringPrintf(
         "Soft memory limit exceeded (at %.2f%% of capacity)",

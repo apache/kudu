@@ -2251,8 +2251,14 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
 
   // Very low memory limit to ease testing.
+  // When using tcmalloc, we set it to 30MB, since we can get accurate process memory
+  // usage statistics. Otherwise, set to only 4MB, since we'll only be throttling based
+  // on our tracked memory.
+#ifdef TCMALLOC_ENABLED
+  ts_flags.push_back("--memory_limit_hard_bytes=30000000");
+#else
   ts_flags.push_back("--memory_limit_hard_bytes=4194304");
-
+#endif
   // Don't let transaction memory tracking get in the way.
   ts_flags.push_back("--tablet_transaction_memory_limit_mb=-1");
 

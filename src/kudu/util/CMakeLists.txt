@@ -169,6 +169,7 @@ set(UTIL_SRCS
   path_util.cc
   pb_util.cc
   pb_util-internal.cc
+  process_memory.cc
   random_util.cc
   resettable_heartbeater.cc
   rolling_log.cc
