@@ -137,6 +137,10 @@ struct ExternalMiniClusterOptions {
   // If true, sends logging output to stderr instead of a log file. Defaults to
   // true.
   bool logtostderr;
+
+  // Amount of time that may elapse between the creation of a daemon process
+  // and the process writing out its info file. Defaults to 30 seconds.
+  MonoDelta start_process_timeout;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
@@ -329,6 +333,7 @@ struct ExternalDaemonOptions {
   std::string log_dir;
   std::string perf_record_filename;
   std::vector<std::string> extra_flags;
+  MonoDelta start_process_timeout;
 };
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
@@ -459,6 +464,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   const std::string data_dir_;
   const std::string log_dir_;
   const std::string perf_record_filename_;
+  const MonoDelta start_process_timeout_;
   const bool logtostderr_;
   std::string exe_;
   std::vector<std::string> extra_flags_;

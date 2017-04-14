@@ -132,7 +132,7 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
   for (const auto& row : rows) {
     ASSERT_STR_MATCHES(row, "int32 key=");
     ASSERT_STR_MATCHES(row, "int32 int_val=");
-    ASSERT_STR_MATCHES(row, R"(string string_val="hello world")");
+    ASSERT_STR_MATCHES(row, "string string_val=");
     nrows++;
   }
   ASSERT_GE(nrows, kNumRows);

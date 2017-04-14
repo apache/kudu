@@ -19,7 +19,6 @@ namespace kudu {
 namespace random_internal {
 
 static const uint32_t M = 2147483647L;   // 2^31-1
-const double kTwoPi = 6.283185307179586476925286;
 
 } // namespace random_internal
 

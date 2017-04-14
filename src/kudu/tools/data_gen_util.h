@@ -44,8 +44,9 @@ void WriteValueToColumn(const client::KuduSchema& schema,
 
 // Generate row data for an arbitrary schema. Initial column value determined
 // by the value of 'record_id'.
+template<class RNG>
 void GenerateDataForRow(const client::KuduSchema& schema, uint64_t record_id,
-                        Random* random, KuduPartialRow* row);
+                        RNG* random, KuduPartialRow* row);
 
 } // namespace tools
 } // namespace kudu

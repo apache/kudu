@@ -45,7 +45,12 @@ void ExternalMiniClusterITestBase::StartCluster(
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_master_flags = extra_master_flags;
   opts.extra_tserver_flags = extra_ts_flags;
-  cluster_.reset(new ExternalMiniCluster(opts));
+  StartClusterWithOpts(std::move(opts));
+}
+
+void ExternalMiniClusterITestBase::StartClusterWithOpts(
+    ExternalMiniClusterOptions opts) {
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),

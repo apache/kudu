@@ -44,6 +44,7 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -77,7 +78,6 @@ static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tserver";
 static const char* const kWildcardIpAddr = "0.0.0.0";
 static const char* const kLoopbackIpAddr = "127.0.0.1";
-static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 15.0;
 static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 
@@ -94,7 +94,8 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       num_tablet_servers(1),
       bind_mode(kBindMode),
       enable_kerberos(false),
-      logtostderr(true) {
+      logtostderr(true),
+      start_process_timeout(MonoDelta::FromSeconds(30)) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
@@ -276,6 +277,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
   opts.extra_flags = SubstituteInFlags(opts_.extra_master_flags, 0);
+  opts.start_process_timeout = opts_.start_process_timeout;
   scoped_refptr<ExternalMaster> master = new ExternalMaster(opts);
   if (opts_.enable_kerberos) {
     RETURN_NOT_OK_PREPEND(master->EnableKerberos(kdc_.get(), Substitute("$0", kLoopbackIpAddr)),
@@ -318,6 +320,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
           Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
     }
     opts.extra_flags = SubstituteInFlags(flags, i);
+    opts.start_process_timeout = opts_.start_process_timeout;
 
     scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts, peer_addrs[i]);
     if (opts_.enable_kerberos) {
@@ -369,6 +372,7 @@ Status ExternalMiniCluster::AddTabletServer() {
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
   }
   opts.extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
+  opts.start_process_timeout = opts_.start_process_timeout;
 
   scoped_refptr<ExternalTabletServer> ts =
       new ExternalTabletServer(opts, bind_host, master_hostports);
@@ -616,6 +620,7 @@ ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
       data_dir_(std::move(opts.data_dir)),
       log_dir_(std::move(opts.log_dir)),
       perf_record_filename_(std::move(opts.perf_record_filename)),
+      start_process_timeout_(opts.start_process_timeout),
       logtostderr_(opts.logtostderr),
       exe_(std::move(opts.exe)),
       extra_flags_(std::move(opts.extra_flags)) {}
@@ -737,7 +742,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   Stopwatch sw;
   sw.start();
   bool success = false;
-  while (sw.elapsed().wall_seconds() < kProcessStartTimeoutSeconds) {
+  while (sw.elapsed().wall_seconds() < start_process_timeout_.ToSeconds()) {
     if (Env::Default()->FileExists(info_path)) {
       success = true;
       break;
@@ -768,7 +773,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     ignore_result(p->Kill(SIGKILL));
     return Status::TimedOut(
         Substitute("Timed out after $0s waiting for process ($1) to write info file ($2)",
-                   kProcessStartTimeoutSeconds, exe_, info_path));
+                   start_process_timeout_.ToString(), exe_, info_path));
   }
 
   status_.reset(new ServerStatusPB());

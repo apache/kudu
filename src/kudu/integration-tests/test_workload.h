@@ -18,9 +18,13 @@
 #define KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 
 #include <string>
+#include <thread>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -31,7 +35,6 @@
 namespace kudu {
 
 class MiniClusterBase;
-class Thread;
 
 // Utility class for generating a workload against a test cluster.
 //
@@ -101,6 +104,9 @@ class TestWorkload {
   void set_already_present_allowed(bool allowed) {
     already_present_allowed_ = allowed;
   }
+
+  // Override the default "simple" schema.
+  void set_schema(const client::KuduSchema& schema);
 
   void set_num_replicas(int r) {
     num_replicas_ = r;
@@ -199,7 +205,7 @@ class TestWorkload {
   client::sp::shared_ptr<client::KuduClient> client_;
   ThreadSafeRandom rng_;
 
-  int payload_bytes_;
+  boost::optional<int> payload_bytes_;
   int num_write_threads_;
   int num_read_threads_;
   int read_timeout_millis_;
@@ -210,6 +216,7 @@ class TestWorkload {
   bool already_present_allowed_;
   bool network_error_allowed_;
   WritePattern write_pattern_;
+  client::KuduSchema schema_;
 
   int num_replicas_;
   int num_tablets_;
@@ -221,7 +228,7 @@ class TestWorkload {
   AtomicInt<int64_t> batches_completed_;
   AtomicInt<int32_t> sequential_key_gen_;
 
-  std::vector<scoped_refptr<Thread> > threads_;
+  std::vector<std::thread> threads_;
 
   DISALLOW_COPY_AND_ASSIGN(TestWorkload);
 };

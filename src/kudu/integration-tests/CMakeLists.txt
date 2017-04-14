@@ -42,6 +42,7 @@ target_link_libraries(integration-tests
   kudu_curl_util
   kudu_fs
   kudu_test_util
+  kudu_tools_util
   security-test)
 add_dependencies(integration-tests
   kudu-tserver
@@ -61,9 +62,12 @@ ADD_KUDU_TEST(create-table-itest)
 ADD_KUDU_TEST(create-table-stress-test)
 ADD_KUDU_TEST(delete_table-itest)
 ADD_KUDU_TEST(delete_tablet-itest)
+ADD_KUDU_TEST(dense_node-itest)
 ADD_KUDU_TEST(disk_reservation-itest)
 ADD_KUDU_TEST(exactly_once_writes-itest)
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
+ADD_KUDU_TEST(flex_partitioning-itest)
+ADD_KUDU_TEST(full_stack-insert-scan-test RUN_SERIAL true)
 ADD_KUDU_TEST(fuzz-itest RUN_SERIAL true)
 ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(log-rolling-itest)
@@ -88,6 +92,7 @@ ADD_KUDU_TEST(tablet_replacement-itest)
 ADD_KUDU_TEST(token_signer-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(ts_recovery-itest)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
+ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
 ADD_KUDU_TEST(webserver-stress-itest)
 ADD_KUDU_TEST(write_throttling-itest)
 
@@ -97,9 +102,3 @@ endif()
 
 # Tests that should not be run automatically by ctest.
 ADD_KUDU_TEST_NO_CTEST(version_migration-test)
-
-# Some tests have additional dependencies
-set(KUDU_TEST_LINK_LIBS kudu_tools_util ${KUDU_TEST_LINK_LIBS})
-ADD_KUDU_TEST(flex_partitioning-itest)
-ADD_KUDU_TEST(full_stack-insert-scan-test RUN_SERIAL true)
-ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
