@@ -122,7 +122,7 @@ class ClientNegotiation {
   //
   // Returns OK on success, otherwise may return NotAuthorized, NotSupported, or
   // another non-OK status.
-  Status Negotiate();
+  Status Negotiate(std::unique_ptr<ErrorStatusPB>* rpc_error = nullptr);
 
   // SASL callback for plugin options, supported mechanisms, etc.
   // Returns SASL_FAIL if the option is not handled, which does not fail the handshake.
@@ -142,10 +142,13 @@ class ClientNegotiation {
 
   // Receive a negotiate response message from the server, deserializing it into 'msg'.
   // Validates that the response is not an error.
-  Status RecvNegotiatePB(NegotiatePB* msg, faststring* buffer) WARN_UNUSED_RESULT;
+  Status RecvNegotiatePB(NegotiatePB* msg,
+                         faststring* buffer,
+                         std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
 
   // Parse error status message from raw bytes of an ErrorStatusPB.
-  Status ParseError(const Slice& err_data) WARN_UNUSED_RESULT;
+  Status ParseError(const Slice& err_data,
+                    std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
 
   Status SendConnectionHeader() WARN_UNUSED_RESULT;
 
@@ -166,11 +169,13 @@ class ClientNegotiation {
 
   // Authenticate to the server using SASL.
   // 'recv_buf' allows a receive buffer to be reused.
-  Status AuthenticateBySasl(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status AuthenticateBySasl(faststring* recv_buf,
+                            std::unique_ptr<ErrorStatusPB>* rpc_error) WARN_UNUSED_RESULT;
 
   // Authenticate to the server using a token.
   // 'recv_buf' allows a receive buffer to be reused.
-  Status AuthenticateByToken(faststring* recv_buf) WARN_UNUSED_RESULT;
+  Status AuthenticateByToken(faststring* recv_buf,
+                             std::unique_ptr<ErrorStatusPB> *rpc_error) WARN_UNUSED_RESULT;
 
   // Send an SASL_INITIATE message to the server.
   // Returns:

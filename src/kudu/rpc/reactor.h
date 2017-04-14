@@ -185,7 +185,8 @@ class ReactorThread {
   // Transition back from negotiating to processing requests.
   // Must be called from the reactor thread.
   void CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
-                                     const Status& status);
+                                     const Status& status,
+                                     std::unique_ptr<ErrorStatusPB> rpc_error);
 
   // Collect metrics.
   // Must be called from the reactor thread.
@@ -213,7 +214,8 @@ class ReactorThread {
   // The connection is not explicitly deleted -- shared_ptr reference counting
   // may hold on to the object after this, but callers should assume that it
   // _may_ be deleted by this call.
-  void DestroyConnection(Connection *conn, const Status &conn_status);
+  void DestroyConnection(Connection *conn, const Status &conn_status,
+                         std::unique_ptr<ErrorStatusPB> rpc_error = {});
 
   // Scan any open connections for idle ones that have been idle longer than
   // connection_keepalive_time_

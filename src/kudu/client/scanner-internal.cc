@@ -30,6 +30,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/hexdump.h"
 
@@ -41,9 +42,9 @@ using std::string;
 
 namespace kudu {
 
+using rpc::CredentialsPolicy;
 using rpc::RpcController;
 using strings::Substitute;
-using strings::SubstituteAndAppend;
 using tserver::NewScanRequestPB;
 using tserver::TabletServerFeatures;
 
@@ -82,6 +83,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   bool mark_locations_stale = false;
   bool can_retry = true;
   bool backoff = false;
+  bool reacquire_authn_token = false;
   switch (err.result) {
     case ScanRpcStatus::SERVICE_UNAVAILABLE:
       backoff = true;
@@ -92,6 +94,11 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
       mark_ts_failed = true;
       break;
     case ScanRpcStatus::SCANNER_EXPIRED:
+      break;
+    case ScanRpcStatus::RPC_INVALID_AUTHENTICATION_TOKEN:
+      // Usually this happens if doing an RPC call with an expired auth token.
+      // Retrying with a new authn token should help.
+      reacquire_authn_token = true;
       break;
     case ScanRpcStatus::TABLET_NOT_RUNNING:
       blacklist_location = true;
@@ -121,6 +128,18 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
     remote_->MarkStale();
   }
 
+  if (reacquire_authn_token) {
+    // Re-connect to the cluster to get a new authn token.
+    KuduClient* c = table_->client();
+    const Status& s = c->data_->ConnectToCluster(
+        c, deadline, CredentialsPolicy::PRIMARY_CREDENTIALS);
+    if (!s.ok()) {
+      KLOG_EVERY_N_SECS(WARNING, 1)
+          << "Couldn't reconnect to the cluster: " << s.ToString();
+      backoff = true;
+    }
+  }
+
   if (backoff) {
     MonoDelta sleep =
         KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
@@ -136,6 +155,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
             << sleep.ToString() << "; attempt " << scan_attempts_;
     SleepFor(sleep);
   }
+
   if (can_retry) {
     return Status::OK();
   }
@@ -179,6 +199,16 @@ ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
               ScanRpcStatus::SERVICE_UNAVAILABLE, rpc_status};
         default:
           return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
+      }
+    }
+
+    if (rpc_status.IsNotAuthorized() && controller_.error_response()) {
+      switch (controller_.error_response()->code()) {
+        case rpc::ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN:
+          return ScanRpcStatus{
+              ScanRpcStatus::RPC_INVALID_AUTHENTICATION_TOKEN, rpc_status};
+        default:
+          return ScanRpcStatus{ScanRpcStatus::OTHER_TS_ERROR, rpc_status};
       }
     }
 
@@ -340,9 +370,8 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
       // No more tablets in the table.
       partition_pruner_.RemovePartitionKeyRange("");
       return Status::OK();
-    } else {
-      RETURN_NOT_OK(s);
     }
+    RETURN_NOT_OK(s);
 
     // Check if the meta cache returned a tablet covering a partition key range past
     // what we asked for. This can happen if the requested partition key falls

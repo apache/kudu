@@ -36,16 +36,16 @@ typedef rpc::RequestTracker::SequenceNumber SequenceNumber;
 
 // A base class for retriable RPCs that handles replica picking and retry logic.
 //
-// The 'Server' template parameter refers to the the type of the server that will be looked up
+// The 'Server' template parameter refers to the type of the server that will be looked up
 // and passed to the derived classes on Try(). For instance in the case of WriteRpc it's
 // RemoteTabletServer.
 //
-// TODO merge RpcRetrier into this class? Can't be done right now as the retrier is used
+// TODO(unknown): merge RpcRetrier into this class? Can't be done right now as the retrier is used
 // independently elsewhere, but likely possible when all replicated RPCs have a ReplicaPicker.
 //
-// TODO allow to target replicas other than the leader, if needed.
+// TODO(unknown): allow to target replicas other than the leader, if needed.
 //
-// TOOD once we have retry handling on all the RPCs merge this with rpc::Rpc.
+// TODO(unknown): once we have retry handling on all the RPCs merge this with rpc::Rpc.
 template <class Server, class RequestPB, class ResponsePB>
 class RetriableRpc : public Rpc {
  public:
@@ -68,6 +68,11 @@ class RetriableRpc : public Rpc {
   // Try() to actually send the request.
   void SendRpc() override;
 
+  // The callback to call upon retrieving (of failing to retrieve) a new authn
+  // token. This is the callback that subclasses should call in their custom
+  // implementation of the GetNewAuthnTokenAndRetry() method.
+  void GetNewAuthnTokenAndRetryCb(const Status& status);
+
  protected:
   // Subclasses implement this method to actually try the RPC.
   // The server been looked up and is ready to be used.
@@ -82,6 +87,15 @@ class RetriableRpc : public Rpc {
   // After this is called the RPC will be no longer retried.
   virtual void Finish(const Status& status) = 0;
 
+  // Returns 'true' if the RPC is to scheduled for retry with a new authn token,
+  // 'false' otherwise. For RPCs performed in the context of providing token
+  // for authentication it's necessary to implement this method. The default
+  // implementation returns 'false' meaning the calls returning
+  // INVALID_AUTHENTICATION_TOKEN RPC status are not retried.
+  virtual bool GetNewAuthnTokenAndRetry() {
+    return false;
+  }
+
   // Request body.
   RequestPB req_;
 
@@ -90,15 +104,16 @@ class RetriableRpc : public Rpc {
 
  private:
   friend class CalculatorServiceRpc;
-  // Decides whether to retry the RPC, based on the result of AnalyzeResponse() and retries
-  // if that is the case.
+
+  // Decides whether to retry the RPC, based on the result of AnalyzeResponse()
+  // and retries if that is the case.
   // Returns true if the RPC was retried or false otherwise.
   bool RetryIfNeeded(const RetriableRpcStatus& result, Server* server);
 
   // Called when the replica has been looked up.
   void ReplicaFoundCb(const Status& status, Server* server);
 
-  // Called when after the RPC was performed.
+  // Called after the RPC was performed.
   void SendRpcCb(const Status& status) override;
 
   // Performs final cleanup, after the RPC is done (independently of success).
@@ -132,8 +147,22 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
 }
 
 template <class Server, class RequestPB, class ResponsePB>
-bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableRpcStatus& result,
-                                                                Server* server) {
+void RetriableRpc<Server, RequestPB, ResponsePB>::GetNewAuthnTokenAndRetryCb(
+    const Status& status) {
+  if (status.ok()) {
+    // Perform the RPC call with the newly fetched authn token.
+    mutable_retrier()->mutable_controller()->Reset();
+    SendRpc();
+  } else {
+    // Back to the retry sequence, hoping for better conditions after some time.
+    VLOG(1) << "Failed to get new authn token: " << status.ToString();
+    mutable_retrier()->DelayedRetry(this, status);
+  }
+}
+
+template <class Server, class RequestPB, class ResponsePB>
+bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(
+    const RetriableRpcStatus& result, Server* server) {
   // Handle the cases where we retry.
   switch (result.result) {
     case RetriableRpcStatus::SERVICE_UNAVAILABLE:
@@ -141,7 +170,7 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableR
       // SERVICE_UNAVAILABLE error.
       break;
 
-    case RetriableRpcStatus::SERVER_NOT_ACCESSIBLE: {
+    case RetriableRpcStatus::SERVER_NOT_ACCESSIBLE:
       // TODO(KUDU-1745): not checking for null here results in a crash, since in the case
       // of a failed master lookup we have no tablet server corresponding to the error.
       //
@@ -153,22 +182,35 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableR
         server_picker_->MarkServerFailed(server, result.status);
       }
       break;
-    }
-      // The TabletServer was not part of the config serving the tablet.
-      // We mark our tablet cache as stale, forcing a master lookup on the next attempt.
-      // TODO: Don't backoff the first time we hit this error (see KUDU-1314).
-    case RetriableRpcStatus::RESOURCE_NOT_FOUND: {
-      server_picker_->MarkResourceNotFound(server);
 
+    case RetriableRpcStatus::RESOURCE_NOT_FOUND:
+      // The TabletServer was not part of the config serving the tablet.
+      // We mark our tablet cache as stale, forcing a master lookup on the
+      // next attempt.
+      //
+      // TODO(KUDU-1314): Don't backoff the first time we hit this error.
+      server_picker_->MarkResourceNotFound(server);
       break;
-    }
+
+    case RetriableRpcStatus::REPLICA_NOT_LEADER:
       // The TabletServer was not the leader of the quorum.
-    case RetriableRpcStatus::REPLICA_NOT_LEADER: {
       server_picker_->MarkReplicaNotLeader(server);
       break;
+
+    case RetriableRpcStatus::INVALID_AUTHENTICATION_TOKEN: {
+      // This is a special case for retry: first it's necessary to get a new
+      // authn token and then retry the operation with the new token.
+      if (GetNewAuthnTokenAndRetry()) {
+        // The RPC will be retried.
+        resp_.Clear();
+        return true;
+      }
+      // Do not retry.
+      return false;
     }
-      // For the OK and NON_RETRIABLE_ERROR cases we can't/won't retry.
+
     default:
+      // For the OK and NON_RETRIABLE_ERROR cases we can't/won't retry.
       return false;
   }
   resp_.Clear();
@@ -219,7 +261,7 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpcCb(const Status& status
 
   FinishInternal();
 
-  // From here on out the rpc has either succeeded of suffered a non-retriable
+  // From here on out the RPC has either succeeded of suffered a non-retriable
   // failure.
   Status final_status = result.status;
   if (!final_status.ok()) {

@@ -42,6 +42,8 @@
 #include "kudu/security/tls_handshake.h"
 #include "kudu/security/tls_socket.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -52,7 +54,17 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 
+// Fault injection flags.
+DEFINE_double(rpc_inject_invalid_authn_token_ratio, 0,
+              "If set higher than 0, AuthenticateByToken() randomly injects "
+              "errors replying with FATAL_INVALID_AUTHENTICATION_TOKEN code. "
+              "The flag's value corresponds to the probability of the fault "
+              "injection event. Used for only for tests.");
+TAG_FLAG(rpc_inject_invalid_authn_token_ratio, runtime);
+TAG_FLAG(rpc_inject_invalid_authn_token_ratio, unsafe);
+
 DECLARE_bool(rpc_encrypt_loopback_connections);
+
 
 namespace kudu {
 namespace rpc {
@@ -610,6 +622,33 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
     RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
     return s;
   }
+
+  if (PREDICT_FALSE(FLAGS_rpc_inject_invalid_authn_token_ratio > 0)) {
+    security::VerificationResult res;
+    int sel = rand() % 4;
+    switch (sel) {
+      case 0:
+        res = security::VerificationResult::INVALID_TOKEN;
+        break;
+      case 1:
+        res = security::VerificationResult::INVALID_SIGNATURE;
+        break;
+      case 2:
+        res = security::VerificationResult::EXPIRED_TOKEN;
+        break;
+      case 3:
+        res = security::VerificationResult::EXPIRED_SIGNING_KEY;
+        break;
+    }
+    const Status s = kudu::fault_injection::MaybeReturnFailure(
+        FLAGS_rpc_inject_invalid_authn_token_ratio,
+        Status::NotAuthorized(VerificationResultToString(res)));
+    if (!s.ok()) {
+      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
+      return s;
+    }
+  }
+
   authenticated_user_.SetAuthenticatedByToken(token.authn().username());
 
   // Respond with success message.

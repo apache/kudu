@@ -25,9 +25,9 @@
 #include <vector>
 
 #include <boost/function.hpp>
-#include <boost/optional.hpp>
 
 #include "kudu/client/client.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
@@ -49,7 +49,6 @@ class MasterServiceProxy;
 namespace rpc {
 class Messenger;
 class RequestTracker;
-class RpcController;
 } // namespace rpc
 
 namespace client {
@@ -141,7 +140,8 @@ class KuduClient::Data {
   // See also: ConnectToClusterAsync.
   void ConnectedToClusterCb(const Status& status,
                             const Sockaddr& leader_addr,
-                            const master::ConnectToMasterResponsePB& connect_response);
+                            const master::ConnectToMasterResponsePB& connect_response,
+                            rpc::CredentialsPolicy cred_policy);
 
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until
@@ -153,13 +153,17 @@ class KuduClient::Data {
   // Works with both a distributed and non-distributed configuration.
   void ConnectToClusterAsync(KuduClient* client,
                              const MonoTime& deadline,
-                             const StatusCallback& cb);
+                             const StatusCallback& cb,
+                             rpc::CredentialsPolicy creds_policy);
 
   // Synchronous version of ConnectToClusterAsync method above.
   //
   // NOTE: since this uses a Synchronizer, this may not be invoked by
   // a method that's on a reactor thread.
-  Status ConnectToCluster(KuduClient* client, const MonoTime& deadline);
+  Status ConnectToCluster(
+      KuduClient* client,
+      const MonoTime& deadline,
+      rpc::CredentialsPolicy creds_policy = rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const;
 
@@ -230,11 +234,13 @@ class KuduClient::Data {
   // Ref-counted RPC instance: since 'ConnectToClusterAsync' call
   // is asynchronous, we need to hold a reference in this class
   // itself, as to avoid a "use-after-free" scenario.
-  scoped_refptr<internal::ConnectToClusterRpc> leader_master_rpc_;
-  std::vector<StatusCallback> leader_master_callbacks_;
+  scoped_refptr<internal::ConnectToClusterRpc> leader_master_rpc_any_creds_;
+  std::vector<StatusCallback> leader_master_callbacks_any_creds_;
+  scoped_refptr<internal::ConnectToClusterRpc> leader_master_rpc_primary_creds_;
+  std::vector<StatusCallback> leader_master_callbacks_primary_creds_;
 
-  // Protects 'leader_master_rpc_', 'leader_master_hostport_',
-  // and master_proxy_
+  // Protects 'leader_master_rpc_{any,primary}_creds_',
+  // 'leader_master_hostport_', and 'master_proxy_'.
   //
   // See: KuduClient::Data::ConnectToClusterAsync for a more
   // in-depth explanation of why this is needed and how it works.

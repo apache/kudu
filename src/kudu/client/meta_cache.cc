@@ -17,9 +17,14 @@
 
 #include "kudu/client/meta_cache.h"
 
+#include <map>
+#include <mutex>
+#include <set>
+#include <string>
+#include <vector>
+
 #include <boost/bind.hpp>
 #include <glog/logging.h>
-#include <mutex>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
@@ -32,6 +37,8 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
@@ -53,8 +60,10 @@ using master::MasterServiceProxy;
 using master::TabletLocationsPB;
 using master::TabletLocationsPB_ReplicaPB;
 using master::TSInfoPB;
+using rpc::CredentialsPolicy;
 using rpc::Messenger;
 using rpc::Rpc;
+using rpc::ErrorStatusPB;
 using tserver::TabletServerServiceProxy;
 
 namespace client {
@@ -537,7 +546,7 @@ class LookupRpc : public Rpc {
     return table_->client()->data_->master_proxy();
   }
 
-  void ResetMasterLeaderAndRetry();
+  void ResetMasterLeaderAndRetry(CredentialsPolicy creds_policy);
 
   void NewLeaderMasterDeterminedCb(const Status& status);
 
@@ -671,12 +680,12 @@ string LookupRpc::ToString() const {
                     num_attempts());
 }
 
-void LookupRpc::ResetMasterLeaderAndRetry() {
+void LookupRpc::ResetMasterLeaderAndRetry(CredentialsPolicy creds_policy) {
   table_->client()->data_->ConnectToClusterAsync(
       table_->client(),
       retrier().deadline(),
-      Bind(&LookupRpc::NewLeaderMasterDeterminedCb,
-           Unretained(this)));
+      Bind(&LookupRpc::NewLeaderMasterDeterminedCb, Unretained(this)),
+      creds_policy);
 }
 
 void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
@@ -710,7 +719,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
         resp_.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
       if (meta_cache_->client_->IsMultiMaster()) {
         KLOG_EVERY_N_SECS(WARNING, 1) << "Leader Master has changed, re-trying...";
-        ResetMasterLeaderAndRetry();
+        ResetMasterLeaderAndRetry(CredentialsPolicy::ANY_CREDENTIALS);
         ignore_result(delete_me.release());
         return;
       }
@@ -723,7 +732,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
     if (MonoTime::Now() < retrier().deadline()) {
       if (meta_cache_->client_->IsMultiMaster()) {
         KLOG_EVERY_N_SECS(WARNING, 1) << "Leader Master timed out, re-trying...";
-        ResetMasterLeaderAndRetry();
+        ResetMasterLeaderAndRetry(CredentialsPolicy::ANY_CREDENTIALS);
         ignore_result(delete_me.release());
         return;
       }
@@ -738,7 +747,20 @@ void LookupRpc::SendRpcCb(const Status& status) {
     if (meta_cache_->client_->IsMultiMaster()) {
       KLOG_EVERY_N_SECS(WARNING, 1) << "Encountered a network error from the Master: "
                                     << new_status.ToString() << ", retrying...";
-      ResetMasterLeaderAndRetry();
+      ResetMasterLeaderAndRetry(CredentialsPolicy::ANY_CREDENTIALS);
+      ignore_result(delete_me.release());
+      return;
+    }
+  }
+
+  if (new_status.IsNotAuthorized()) {
+    const rpc::RpcController& controller(retrier().controller());
+    const ErrorStatusPB* err = controller.error_response();
+    if (err && err->has_code() &&
+        err->code() == ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN) {
+      KLOG_EVERY_N_SECS(INFO, 1)
+          << "Re-connecting to cluster in attempt to get new authn token";
+      ResetMasterLeaderAndRetry(CredentialsPolicy::PRIMARY_CREDENTIALS);
       ignore_result(delete_me.release());
       return;
     }

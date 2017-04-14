@@ -61,6 +61,11 @@ struct RetriableRpcStatus {
     // The server doesn't know the resource we're interacting with. For instance a TabletServer
     // is not part of the config for the tablet we're trying to write to.
     RESOURCE_NOT_FOUND,
+
+    // The authentication token supplied with the operation was found invalid
+    // by the server. Most likely, the token has expired. If so, get a new token
+    // using client credentials and retry the operation with it.
+    INVALID_AUTHENTICATION_TOKEN,
   };
 
   Result result;

@@ -25,6 +25,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -79,7 +80,9 @@ class ConnectToClusterRpc : public rpc::Rpc,
                       std::vector<Sockaddr> addrs,
                       MonoTime deadline,
                       MonoDelta rpc_timeout,
-                      std::shared_ptr<rpc::Messenger> messenger);
+                      std::shared_ptr<rpc::Messenger> messenger,
+                      rpc::CredentialsPolicy creds_policy =
+      rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
   virtual void SendRpc() OVERRIDE;
 

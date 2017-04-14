@@ -49,6 +49,7 @@
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
@@ -64,6 +65,7 @@ using strings::Substitute;
 
 namespace kudu {
 
+using rpc::CredentialsPolicy;
 using rpc::ErrorStatusPB;
 using rpc::Messenger;
 using rpc::RequestTracker;
@@ -219,6 +221,7 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
   void Try(RemoteTabletServer* replica, const ResponseCallback& callback) override;
   RetriableRpcStatus AnalyzeResponse(const Status& rpc_cb_status) override;
   void Finish(const Status& status) override;
+  bool GetNewAuthnTokenAndRetry() override;
 
  private:
   // Pointer back to the batcher. Processes the write response when it
@@ -354,6 +357,17 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     return result;
   }
 
+  // Check whether it's an invalid authn token. That's the error code the server
+  // sends back if authn token is expired.
+  if (result.status.IsNotAuthorized()) {
+    const ErrorStatusPB* err = mutable_retrier()->controller().error_response();
+    if (err && err->has_code() &&
+        err->code() == ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN) {
+      result.result = RetriableRpcStatus::INVALID_AUTHENTICATION_TOKEN;
+      return result;
+    }
+  }
+
   // Failover to a replica in the event of any network failure or of a DNS resolution problem.
   //
   // TODO(adar): This is probably too harsh; some network failures should be
@@ -394,6 +408,16 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     result.result = RetriableRpcStatus::NON_RETRIABLE_ERROR;
   }
   return result;
+}
+
+bool WriteRpc::GetNewAuthnTokenAndRetry() {
+  // To get a new authn token it's necessary to authenticate with the master
+  // using any other credentials but already existing authn token.
+  KuduClient* c = batcher_->client_;
+  c->data_->ConnectToClusterAsync(c, retrier().deadline(),
+      Bind(&RetriableRpc::GetNewAuthnTokenAndRetryCb, Unretained(this)),
+      CredentialsPolicy::PRIMARY_CREDENTIALS);
+  return true;
 }
 
 Batcher::Batcher(KuduClient* client,

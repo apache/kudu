@@ -19,8 +19,9 @@
 
 #include "kudu/client/master_rpc.h"
 
-#include <boost/bind.hpp>
 #include <mutex>
+
+#include <boost/bind.hpp>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -28,6 +29,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/scoped_cleanup.h"
 
@@ -43,6 +45,7 @@ using kudu::master::GetMasterRegistrationRequestPB;
 using kudu::master::GetMasterRegistrationResponsePB;
 using kudu::master::MasterErrorPB;
 using kudu::master::MasterServiceProxy;
+using kudu::rpc::CredentialsPolicy;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
 
@@ -68,6 +71,7 @@ class ConnectToMasterRpc : public rpc::Rpc {
                      const Sockaddr& addr,
                      const MonoTime& deadline,
                      std::shared_ptr<rpc::Messenger> messenger,
+                     CredentialsPolicy creds_policy,
                      ConnectToMasterResponsePB* out);
 
   ~ConnectToMasterRpc();
@@ -94,33 +98,37 @@ class ConnectToMasterRpc : public rpc::Rpc {
 };
 
 
-ConnectToMasterRpc::ConnectToMasterRpc(
-    StatusCallback user_cb, const Sockaddr& addr,const MonoTime& deadline,
-    shared_ptr<Messenger> messenger, ConnectToMasterResponsePB* out)
-    : Rpc(deadline, std::move(messenger)),
-      user_cb_(std::move(user_cb)),
-      addr_(addr),
-      out_(DCHECK_NOTNULL(out)) {}
+ConnectToMasterRpc::ConnectToMasterRpc(StatusCallback user_cb,
+    const Sockaddr& addr,
+    const MonoTime& deadline,
+    shared_ptr<Messenger> messenger,
+    rpc::CredentialsPolicy creds_policy,
+    ConnectToMasterResponsePB* out)
+      : Rpc(deadline, std::move(messenger)),
+        user_cb_(std::move(user_cb)),
+        addr_(addr),
+        out_(DCHECK_NOTNULL(out)) {
+  mutable_retrier()->mutable_controller()->set_credentials_policy(creds_policy);
+}
 
 ConnectToMasterRpc::~ConnectToMasterRpc() {
 }
 
 void ConnectToMasterRpc::SendRpc() {
-  MasterServiceProxy proxy(retrier().messenger(),
-                           addr_);
-  rpc::RpcController* rpc = mutable_retrier()->mutable_controller();
+  MasterServiceProxy proxy(retrier().messenger(), addr_);
+  rpc::RpcController* controller = mutable_retrier()->mutable_controller();
   // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
   // it doesn't seem to be.
   if (!trying_old_rpc_) {
     ConnectToMasterRequestPB req;
-    rpc->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
-    proxy.ConnectToMasterAsync(req, out_, rpc,
+    controller->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
+    proxy.ConnectToMasterAsync(req, out_, controller,
                                boost::bind(&ConnectToMasterRpc::SendRpcCb,
                                            this,
                                            Status::OK()));
   } else {
     GetMasterRegistrationRequestPB req;
-    proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, rpc,
+    proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, controller,
                                      boost::bind(&ConnectToMasterRpc::SendRpcCb,
                                                  this,
                                                  Status::OK()));
@@ -192,7 +200,8 @@ ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
                                          vector<Sockaddr> addrs,
                                          MonoTime deadline,
                                          MonoDelta rpc_timeout,
-                                         shared_ptr<Messenger> messenger)
+                                         shared_ptr<Messenger> messenger,
+                                         rpc::CredentialsPolicy creds_policy)
     : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
       addrs_(std::move(addrs)),
@@ -203,6 +212,7 @@ ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
 
   // Using resize instead of reserve to explicitly initialized the values.
   responses_.resize(addrs_.size());
+  mutable_retrier()->mutable_controller()->set_credentials_policy(creds_policy);
 }
 
 ConnectToClusterRpc::~ConnectToClusterRpc() {
@@ -231,6 +241,7 @@ void ConnectToClusterRpc::SendRpc() {
         addrs_[i],
         actual_deadline,
         retrier().messenger(),
+        retrier().controller().credentials_policy(),
         &responses_[i]);
     rpc->SendRpc();
     ++pending_responses_;

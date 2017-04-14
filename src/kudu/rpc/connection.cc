@@ -140,14 +140,16 @@ bool Connection::Idle() const {
   return true;
 }
 
-void Connection::Shutdown(const Status &status) {
+void Connection::Shutdown(const Status &status,
+                          unique_ptr<ErrorStatusPB> rpc_error) {
   DCHECK(reactor_thread_->IsCurrentThread());
   shutdown_status_ = status.CloneAndPrepend("RPC connection failed");
 
   if (inbound_ && inbound_->TransferStarted()) {
     double secs_since_active =
         (reactor_thread_->cur_time() - last_activity_time_).ToSeconds();
-    LOG(WARNING) << "Shutting down " << ToString() << " with pending inbound data ("
+    LOG(WARNING) << "Shutting down " << ToString()
+                 << " with pending inbound data ("
                  << inbound_->StatusAsString() << ", last active "
                  << HumanReadableElapsedTime::ToShortString(secs_since_active)
                  << " ago, status=" << status.ToString() << ")";
@@ -157,7 +159,12 @@ void Connection::Shutdown(const Status &status) {
   for (const car_map_t::value_type &v : awaiting_response_) {
     CallAwaitingResponse *c = v.second;
     if (c->call) {
-      c->call->SetFailed(status);
+      // Make sure every awaiting call receives the error info, if any.
+      unique_ptr<ErrorStatusPB> error;
+      if (rpc_error) {
+        error.reset(new ErrorStatusPB(*rpc_error));
+      }
+      c->call->SetFailed(status, error.release());
     }
     // And we must return the CallAwaitingResponse to the pool
     car_pool_.Destroy(c);
@@ -638,13 +645,18 @@ std::string Connection::ToString() const {
 // regular RPC handling. Destroys Connection on negotiation error.
 class NegotiationCompletedTask : public ReactorTask {
  public:
-  NegotiationCompletedTask(Connection* conn, Status negotiation_status)
+  NegotiationCompletedTask(Connection* conn,
+                           Status negotiation_status,
+                           std::unique_ptr<ErrorStatusPB> rpc_error)
     : conn_(conn),
-      negotiation_status_(std::move(negotiation_status)) {
+      negotiation_status_(std::move(negotiation_status)),
+      rpc_error_(std::move(rpc_error)) {
   }
 
   virtual void Run(ReactorThread *rthread) OVERRIDE {
-    rthread->CompleteConnectionNegotiation(conn_, negotiation_status_);
+    rthread->CompleteConnectionNegotiation(conn_,
+                                           negotiation_status_,
+                                           std::move(rpc_error_));
     delete this;
   }
 
@@ -658,10 +670,13 @@ class NegotiationCompletedTask : public ReactorTask {
  private:
   scoped_refptr<Connection> conn_;
   const Status negotiation_status_;
+  std::unique_ptr<ErrorStatusPB> rpc_error_;
 };
 
-void Connection::CompleteNegotiation(const Status& negotiation_status) {
-  auto task = new NegotiationCompletedTask(this, negotiation_status);
+void Connection::CompleteNegotiation(Status negotiation_status,
+                                     unique_ptr<ErrorStatusPB> rpc_error) {
+  auto task = new NegotiationCompletedTask(
+      this, std::move(negotiation_status), std::move(rpc_error));
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 

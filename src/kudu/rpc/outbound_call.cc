@@ -63,7 +63,8 @@ static const double kMicrosPerSecond = 1000000.0;
 OutboundCall::OutboundCall(const ConnectionId& conn_id,
                            const RemoteMethod& remote_method,
                            google::protobuf::Message* response_storage,
-                           RpcController* controller, ResponseCallback callback)
+                           RpcController* controller,
+                           ResponseCallback callback)
     : state_(READY),
       remote_method_(remote_method),
       conn_id_(conn_id),
@@ -282,11 +283,8 @@ void OutboundCall::SetFailed(const Status &status,
   {
     std::lock_guard<simple_spinlock> l(lock_);
     status_ = status;
-    if (status_.IsRemoteError()) {
-      CHECK(err_pb);
+    if (err_pb) {
       error_pb_.reset(err_pb);
-    } else {
-      CHECK(!err_pb);
     }
     set_state_unlocked(FINISHED_ERROR);
   }

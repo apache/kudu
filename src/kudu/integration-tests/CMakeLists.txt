@@ -53,6 +53,7 @@ set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(all_types-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(alter_table-randomized-test)
 ADD_KUDU_TEST(alter_table-test)
+ADD_KUDU_TEST(authn_token_expire-itest)
 ADD_KUDU_TEST(catalog_manager_tsk-itest)
 ADD_KUDU_TEST(client_failover-itest)
 ADD_KUDU_TEST(client-stress-test

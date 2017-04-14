@@ -90,9 +90,9 @@ class ClusterVerifier {
 
   ExternalMiniCluster* cluster_;
 
-  MonoDelta operations_timeout_;
-
   ChecksumOptions checksum_options_;
+
+  MonoDelta operations_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(ClusterVerifier);
 };

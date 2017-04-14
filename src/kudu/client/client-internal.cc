@@ -82,8 +82,8 @@ using master::ListTabletServersResponsePB;
 using master::MasterErrorPB;
 using master::MasterFeatures;
 using master::MasterServiceProxy;
+using rpc::CredentialsPolicy;
 using rpc::ErrorStatusPB;
-using rpc::Rpc;
 using rpc::RpcController;
 using strings::Substitute;
 
@@ -207,6 +207,23 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
         LOG(INFO) << "Determining the new leader Master and retrying...";
         WARN_NOT_OK(ConnectToCluster(client, deadline),
                     "Unable to determine the new leader Master");
+        continue;
+      }
+    }
+
+    if (s.IsNotAuthorized()) {
+      const ErrorStatusPB* err = rpc.error_response();
+      if (err && err->has_code() &&
+          err->code() == ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN) {
+        // Assuming the token has expired: it's necessary to get a new one.
+        LOG(INFO) << "Reconnecting to the cluster for a new authn token";
+        const Status connect_status = ConnectToCluster(
+            client, deadline, CredentialsPolicy::PRIMARY_CREDENTIALS);
+        if (PREDICT_FALSE(!connect_status.ok())) {
+          KLOG_EVERY_N_SECS(WARNING, 1)
+              << "Unable to reconnect to the cluster for a new authn token: "
+              << connect_status.ToString();
+        }
         continue;
       }
     }
@@ -609,7 +626,8 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
 void KuduClient::Data::ConnectedToClusterCb(
     const Status& status,
     const Sockaddr& leader_addr,
-    const master::ConnectToMasterResponsePB& connect_response) {
+    const master::ConnectToMasterResponsePB& connect_response,
+    CredentialsPolicy cred_policy) {
 
   // Ensure that all of the CAs reported by the master are trusted
   // in our local TLS configuration.
@@ -636,13 +654,19 @@ void KuduClient::Data::ConnectedToClusterCb(
   // Adopt the authentication token from the response, if it's been set.
   if (connect_response.has_authn_token()) {
     messenger_->set_authn_token(connect_response.authn_token());
+    LOG(INFO) << "Received and adopted authn token";
   }
 
   vector<StatusCallback> cbs;
   {
     std::lock_guard<simple_spinlock> l(leader_master_lock_);
-    cbs.swap(leader_master_callbacks_);
-    leader_master_rpc_.reset();
+    if (cred_policy == CredentialsPolicy::PRIMARY_CREDENTIALS) {
+      leader_master_rpc_primary_creds_.reset();
+      cbs.swap(leader_master_callbacks_primary_creds_);
+    } else {
+      leader_master_rpc_any_creds_.reset();
+      cbs.swap(leader_master_callbacks_any_creds_);
+    }
 
     if (status.ok()) {
       leader_master_hostport_ = HostPort(leader_addr);
@@ -656,15 +680,17 @@ void KuduClient::Data::ConnectedToClusterCb(
 }
 
 Status KuduClient::Data::ConnectToCluster(KuduClient* client,
-                                          const MonoTime& deadline) {
+                                          const MonoTime& deadline,
+                                          CredentialsPolicy creds_policy) {
   Synchronizer sync;
-  ConnectToClusterAsync(client, deadline, sync.AsStatusCallback());
+  ConnectToClusterAsync(client, deadline, sync.AsStatusCallback(), creds_policy);
   return sync.Wait();
 }
 
 void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
                                              const MonoTime& deadline,
-                                             const StatusCallback& cb) {
+                                             const StatusCallback& cb,
+                                             CredentialsPolicy creds_policy) {
   DCHECK(deadline.Initialized());
 
   vector<Sockaddr> master_sockaddrs;
@@ -690,29 +716,68 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     master_sockaddrs.push_back(addrs[0]);
   }
 
-  // This ensures that no more than one ConnectToClusterRpc is in
-  // flight at a time -- there isn't much sense in requesting this information
-  // in parallel, since the requests should end up with the same result.
-  // Instead, we simply piggy-back onto the existing request by adding our own
-  // callback to leader_master_callbacks_.
+  // This ensures that no more than one ConnectToClusterRpc of each credentials
+  // policy is in flight at any time -- there isn't much sense in requesting
+  // this information in parallel, since the requests should end up with the
+  // same result. Instead, simply piggy-back onto the existing request by adding
+  // our the callback to leader_master_callbacks_{any_creds,primary_creds}_.
   std::unique_lock<simple_spinlock> l(leader_master_lock_);
-  leader_master_callbacks_.push_back(cb);
-  if (!leader_master_rpc_) {
-    // No one is sending a request yet - we need to be the one to do it.
-    leader_master_rpc_.reset(new internal::ConnectToClusterRpc(
-        std::bind(&KuduClient::Data::ConnectedToClusterCb, this,
-                  std::placeholders::_1,
-                  std::placeholders::_2,
-                  std::placeholders::_3),
+
+  // Optimize sending out a new request in the presence of already existing
+  // requests to the leader master. Depending on the credentials policy for the
+  // request, we select different strategies:
+  //   * If the new request is of ANY_CREDENTIALS policy, piggy-back it on any
+  //     leader master request which is progress.
+  //   * If the new request is of PRIMARY_CREDENTIALS, it can by piggy-backed
+  //     only on the request of the same type.
+  //
+  // If this is a request to re-acquire authn token, we allow it to run in
+  // parallel with other requests of ANY_CREDENTIALS_TYPE policy, if any.
+  // Otherwise it's hard to guarantee that the token re-acquisition request
+  // will be sent: there might be other concurrent requests to leader master,
+  // they might have different timeout settings and they are retried
+  // independently of each other.
+  DCHECK(creds_policy == CredentialsPolicy::ANY_CREDENTIALS ||
+         creds_policy == CredentialsPolicy::PRIMARY_CREDENTIALS);
+
+  // Decide on which call to piggy-back the callback: if a call with primary
+  // credentials is available, piggy-back on that. Otherwise, piggy-back on
+  // any-credentials-policy request.
+  if (leader_master_rpc_primary_creds_) {
+    // Piggy-back on an existing connection with primary credentials.
+    leader_master_callbacks_primary_creds_.push_back(cb);
+  } else if (leader_master_rpc_any_creds_ &&
+             creds_policy == CredentialsPolicy::ANY_CREDENTIALS) {
+    // Piggy-back on an existing connection with any credentials.
+    leader_master_callbacks_any_creds_.push_back(cb);
+  } else {
+    // It's time to create a new request which would satisfy the credentials
+    // policy.
+    scoped_refptr<internal::ConnectToClusterRpc> rpc(
+        new internal::ConnectToClusterRpc(
+            std::bind(&KuduClient::Data::ConnectedToClusterCb, this,
+            std::placeholders::_1,
+            std::placeholders::_2,
+            std::placeholders::_3,
+            creds_policy),
         std::move(master_sockaddrs),
         deadline,
         client->default_rpc_timeout(),
-        messenger_));
+        messenger_,
+        creds_policy));
+
+    if (creds_policy == CredentialsPolicy::PRIMARY_CREDENTIALS) {
+      DCHECK(!leader_master_rpc_primary_creds_);
+      leader_master_rpc_primary_creds_ = rpc;
+      leader_master_callbacks_primary_creds_.push_back(cb);
+    } else {
+      DCHECK(!leader_master_rpc_any_creds_);
+      leader_master_rpc_any_creds_ = rpc;
+      leader_master_callbacks_any_creds_.push_back(cb);
+    }
     l.unlock();
-    leader_master_rpc_->SendRpc();
+    rpc->SendRpc();
   }
-
-
 }
 
 HostPort KuduClient::Data::leader_master_hostport() const {

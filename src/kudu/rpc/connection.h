@@ -46,6 +46,7 @@ namespace kudu {
 namespace rpc {
 
 class DumpRunningRpcsRequestPB;
+class ErrorStatusPB;
 class RpcConnectionPB;
 class ReactorThread;
 class RpczStore;
@@ -108,7 +109,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Fail any calls which are currently queued or awaiting response.
   // Prohibits any future calls (they will be failed immediately with this
   // same Status).
-  void Shutdown(const Status &status);
+  void Shutdown(const Status& status,
+                std::unique_ptr<ErrorStatusPB> rpc_error = {});
 
   // Queue a new call to be made. If the queueing fails, the call will be
   // marked failed.
@@ -165,7 +167,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   Socket* socket() { return socket_.get(); }
 
   // Go through the process of transferring control of the underlying socket back to the Reactor.
-  void CompleteNegotiation(const Status& negotiation_status);
+  void CompleteNegotiation(Status negotiation_status,
+                           std::unique_ptr<ErrorStatusPB> rpc_error);
 
   // Indicate that negotiation is complete and that the Reactor is now in control of the socket.
   void MarkNegotiationComplete();

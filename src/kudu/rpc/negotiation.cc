@@ -17,9 +17,10 @@
 
 #include "kudu/rpc/negotiation.h"
 
-#include <sys/time.h>
 #include <poll.h>
+#include <sys/time.h>
 
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -65,6 +66,7 @@ DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "an attacker.");
 TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
 
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -156,7 +158,8 @@ static Status DisableSocketTimeouts(Socket* socket) {
 static Status DoClientNegotiation(Connection* conn,
                                   RpcAuthentication authentication,
                                   RpcEncryption encryption,
-                                  MonoTime deadline) {
+                                  MonoTime deadline,
+                                  unique_ptr<ErrorStatusPB>* rpc_error) {
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
   // Prefer secondary credentials (such as authn token) if permitted by policy.
   const auto authn_token = (conn->credentials_policy() == CredentialsPolicy::PRIMARY_CREDENTIALS)
@@ -206,7 +209,7 @@ static Status DoClientNegotiation(Connection* conn,
 
   RETURN_NOT_OK(WaitForClientConnect(client_negotiation.socket(), deadline));
   RETURN_NOT_OK(client_negotiation.socket()->SetNonBlocking(false));
-  RETURN_NOT_OK(client_negotiation.Negotiate());
+  RETURN_NOT_OK(client_negotiation.Negotiate(rpc_error));
   RETURN_NOT_OK(DisableSocketTimeouts(client_negotiation.socket()));
 
   // Transfer the negotiated socket and state back to the connection.
@@ -274,10 +277,12 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                                  RpcEncryption encryption,
                                  MonoTime deadline) {
   Status s;
+  unique_ptr<ErrorStatusPB> rpc_error;
   if (conn->direction() == Connection::SERVER) {
     s = DoServerNegotiation(conn.get(), authentication, encryption, deadline);
   } else {
-    s = DoClientNegotiation(conn.get(), authentication, encryption, deadline);
+    s = DoClientNegotiation(conn.get(), authentication, encryption, deadline,
+                            &rpc_error);
   }
 
   if (PREDICT_FALSE(!s.ok())) {
@@ -304,7 +309,7 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
   if (conn->direction() == Connection::SERVER && s.IsNotAuthorized()) {
     LOG(WARNING) << "Unauthorized connection attempt: " << s.message().ToString();
   }
-  conn->CompleteNegotiation(s);
+  conn->CompleteNegotiation(std::move(s), std::move(rpc_error));
 }
 
 

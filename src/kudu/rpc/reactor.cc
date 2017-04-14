@@ -454,11 +454,13 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   return Status::OK();
 }
 
-void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection>& conn,
-                                                  const Status& status) {
+void ReactorThread::CompleteConnectionNegotiation(
+    const scoped_refptr<Connection>& conn,
+    const Status& status,
+    unique_ptr<ErrorStatusPB> rpc_error) {
   DCHECK(IsCurrentThread());
   if (PREDICT_FALSE(!status.ok())) {
-    DestroyConnection(conn.get(), status);
+    DestroyConnection(conn.get(), status, std::move(rpc_error));
     return;
   }
 
@@ -466,7 +468,7 @@ void ReactorThread::CompleteConnectionNegotiation(const scoped_refptr<Connection
   Status s = conn->SetNonBlocking(true);
   if (PREDICT_FALSE(!s.ok())) {
     LOG(DFATAL) << "Unable to set connection to non-blocking mode: " << s.ToString();
-    DestroyConnection(conn.get(), s);
+    DestroyConnection(conn.get(), s, std::move(rpc_error));
     return;
   }
 
@@ -504,10 +506,11 @@ Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote) {
 }
 
 void ReactorThread::DestroyConnection(Connection *conn,
-                                      const Status& conn_status) {
+                                      const Status& conn_status,
+                                      unique_ptr<ErrorStatusPB> rpc_error) {
   DCHECK(IsCurrentThread());
 
-  conn->Shutdown(conn_status);
+  conn->Shutdown(conn_status, std::move(rpc_error));
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {

@@ -169,7 +169,7 @@
 
 * Kudu client instances retrieve authentication tokens upon first contact with the
   cluster. These tokens expire after one week. Use of a single Kudu client instance
-  for more than one week is not supported.
+  for more than one week is only supported by the C++ client but not by the Java client.
 
 == Other Known Issues
 
