@@ -173,7 +173,6 @@ TEST_P(TestRowSetTreePerformance, TestPerformance) {
   double batch_total = batch_timer.elapsed().user;
   double oat_total = one_at_time_timer.elapsed().user;
   const string& case_desc = StringPrintf("Q=% 5d R=% 5d", kNumQueries, kNumRowSets);
-  const string& ratio = StringPrintf("%.2fx", batch_total / oat_total);
   LOG(INFO) << StringPrintf("%s %10s %d ms",
                             case_desc.c_str(),
                             "1-by-1",
