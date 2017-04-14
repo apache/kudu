@@ -446,7 +446,9 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   TRACE("Submitting negotiation task for $0", conn->ToString());
   auto authentication = reactor()->messenger()->authentication();
   auto encryption = reactor()->messenger()->encryption();
-  RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
+  ThreadPool* negotiation_pool =
+      reactor()->messenger()->negotiation_pool(conn->direction());
+  RETURN_NOT_OK(negotiation_pool->SubmitClosure(
         Bind(&Negotiation::RunNegotiation, conn, authentication, encryption, deadline)));
   return Status::OK();
 }

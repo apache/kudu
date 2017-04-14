@@ -525,6 +525,11 @@ class RpcTestBase : public KuduTest {
     DoStartTestServer<CalculatorService>(server_addr, enable_ssl);
   }
 
+  void StartTestServerWithCustomMessenger(Sockaddr *server_addr,
+      const std::shared_ptr<Messenger>& messenger, bool enable_ssl = false) {
+    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, messenger);
+  }
+
   // Start a simple socket listening on a local port, returning the address.
   // This isn't an RPC server -- just a plain socket which can be helpful for testing.
   Status StartFakeServer(Socket *listen_sock, Sockaddr *listen_addr) {
@@ -548,8 +553,14 @@ class RpcTestBase : public KuduTest {
   }
 
   template<class ServiceClass>
-  void DoStartTestServer(Sockaddr *server_addr, bool enable_ssl = false) {
-    server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_, enable_ssl);
+  void DoStartTestServer(Sockaddr *server_addr, bool enable_ssl = false,
+      const std::shared_ptr<Messenger>& messenger = nullptr) {
+    if (!messenger) {
+      server_messenger_ =
+          CreateMessenger("TestServer", n_server_reactor_threads_, enable_ssl);
+    } else {
+      server_messenger_ = messenger;
+    }
     std::shared_ptr<AcceptorPool> pool;
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
     ASSERT_OK(pool->Start(2));

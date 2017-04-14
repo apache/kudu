@@ -103,6 +103,30 @@ TEST_F(TestRpc, TestConnHeaderValidation) {
   ASSERT_OK(serialization::ValidateConnHeader(Slice(buf, conn_hdr_len)));
 }
 
+// Regression test for KUDU-2041
+TEST_P(TestRpc, TestNegotiationDeadlock) {
+  bool enable_ssl = GetParam();
+
+  // The deadlock would manifest in cases where the number of concurrent connection
+  // requests >= the number of threads. 1 thread and 1 cnxn to ourself is just the easiest
+  // way to reproduce the issue, because the server negotiation task must get queued after
+  // the client negotiation task if they share the same thread pool.
+  MessengerBuilder mb("TestRpc.TestNegotiationDeadlock");
+  mb.set_min_negotiation_threads(1)
+      .set_max_negotiation_threads(1)
+      .set_metric_entity(metric_entity_);
+  if (enable_ssl) mb.enable_inbound_tls();
+
+  shared_ptr<Messenger> messenger;
+  CHECK_OK(mb.Build(&messenger));
+
+  Sockaddr server_addr;
+  StartTestServerWithCustomMessenger(&server_addr, messenger, enable_ssl);
+
+  Proxy p(messenger, server_addr, GenericCalculatorService::static_service_name());
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+}
+
 // Test making successful RPC calls.
 TEST_P(TestRpc, TestCall) {
   // Set up server.

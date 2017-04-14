@@ -30,6 +30,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/connection.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
@@ -227,7 +228,7 @@ class Messenger {
   RpcAuthentication authentication() const { return authentication_; }
   RpcEncryption encryption() const { return encryption_; }
 
-  ThreadPool* negotiation_pool() const { return negotiation_pool_.get(); }
+  ThreadPool* negotiation_pool(Connection::Direction dir);
 
   RpczStore* rpcz_store() { return rpcz_store_.get(); }
 
@@ -287,7 +288,10 @@ class Messenger {
 
   std::vector<Reactor*> reactors_;
 
-  gscoped_ptr<ThreadPool> negotiation_pool_;
+  // Separate client and server negotiation pools to avoid possibility of distributed
+  // deadlock. See KUDU-2041.
+  gscoped_ptr<ThreadPool> client_negotiation_pool_;
+  gscoped_ptr<ThreadPool> server_negotiation_pool_;
 
   std::unique_ptr<security::TlsContext> tls_context_;
 
