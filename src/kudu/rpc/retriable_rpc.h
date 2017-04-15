@@ -136,10 +136,11 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(const RetriableR
                                                                 Server* server) {
   // Handle the cases where we retry.
   switch (result.result) {
-    // For writes, always retry a TOO_BUSY error on the same server.
-    case RetriableRpcStatus::SERVER_BUSY: {
+    case RetriableRpcStatus::SERVICE_UNAVAILABLE:
+      // For writes, always retry the request on the same server in case of the
+      // SERVICE_UNAVAILABLE error.
       break;
-    }
+
     case RetriableRpcStatus::SERVER_NOT_ACCESSIBLE: {
       // TODO(KUDU-1745): not checking for null here results in a crash, since in the case
       // of a failed master lookup we have no tablet server corresponding to the error.

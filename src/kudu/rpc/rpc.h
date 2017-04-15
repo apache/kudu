@@ -47,8 +47,12 @@ struct RetriableRpcStatus {
     // reaching the replica or a DNS resolution problem.
     SERVER_NOT_ACCESSIBLE,
 
-    // The server is too busy to serve the request.
-    SERVER_BUSY,
+    // The server received the request but it was not ready to serve it right
+    // away. It might happen that the server was too busy and did not have
+    // necessary resources or information to serve the request but it
+    // anticipates it should be ready to serve the request really soon, so it's
+    // worth retrying the request at a later time.
+    SERVICE_UNAVAILABLE,
 
     // For rpc's that are meant only for the leader of a shared resource, when the server
     // we're interacting with is not the leader.
@@ -56,7 +60,7 @@ struct RetriableRpcStatus {
 
     // The server doesn't know the resource we're interacting with. For instance a TabletServer
     // is not part of the config for the tablet we're trying to write to.
-    RESOURCE_NOT_FOUND
+    RESOURCE_NOT_FOUND,
   };
 
   Result result;

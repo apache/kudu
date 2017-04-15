@@ -98,6 +98,8 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
   switch (error.code()) {
     case ErrorStatusPB_RpcErrorCodePB_FATAL_UNAUTHORIZED:
       return Status::NotAuthorized(code_name, error.message());
+    case ErrorStatusPB_RpcErrorCodePB_ERROR_UNAVAILABLE:
+      return Status::ServiceUnavailable(code_name, error.message());
     default:
       return Status::RuntimeError(code_name, error.message());
   }

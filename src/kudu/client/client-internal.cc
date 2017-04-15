@@ -186,7 +186,10 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       const ErrorStatusPB* err = rpc.error_response();
       if (err &&
           err->has_code() &&
-          err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+          (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
+           err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
+        // The UNAVAILABLE error code is a broader counterpart of the
+        // SERVER_TOO_BUSY. In both cases it's necessary to retry a bit later.
         continue;
       }
     }

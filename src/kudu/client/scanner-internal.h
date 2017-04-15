@@ -46,8 +46,12 @@ struct ScanRpcStatus {
     // The request was malformed (e.g. bad schema, etc).
     INVALID_REQUEST,
 
-    // The server was busy (e.g. RPC queue overflow).
-    SERVER_BUSY,
+    // The server received the request but it was not ready to serve it right
+    // away. It might happen that the server was too busy and did not have
+    // necessary resources or information to serve the request but it
+    // anticipates it should be ready to serve the request really soon, so it's
+    // worth retrying the request at a later time.
+    SERVICE_UNAVAILABLE,
 
     // The deadline for the whole batch was exceeded.
     OVERALL_DEADLINE_EXCEEDED,

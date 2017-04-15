@@ -101,8 +101,8 @@ class RpcContext {
 
   // Respond with an RPC-level error. This typically manifests to the client as
   // a remote error, one whose handling is agnostic to the particulars of the
-  // sent RPC. For example, ERROR_SERVER_TOO_BUSY usually causes the client to
-  // retry the RPC at a later time.
+  // sent RPC. For example, both ERROR_SERVER_TOO_BUSY and ERROR_UNAVAILABLE
+  // usually cause the client to retry the RPC at a later time.
   //
   // After this method returns, this RpcContext object is destroyed. The request
   // and response protobufs are also destroyed.

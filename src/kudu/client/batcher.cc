@@ -30,13 +30,13 @@
 #include <glog/logging.h>
 
 #include "kudu/client/callbacks.h"
-#include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
+#include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/session-internal.h"
-#include "kudu/client/write_op.h"
 #include "kudu/client/write_op-internal.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
@@ -49,6 +49,7 @@
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/logging.h"
@@ -337,19 +338,25 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     result.status = mutable_retrier()->controller().status();
   }
 
+  // Check for specific RPC errors.
   if (result.status.IsRemoteError()) {
     const ErrorStatusPB* err = mutable_retrier()->controller().error_response();
-    if (err &&
-        err->has_code() &&
-        err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
-      result.result = RetriableRpcStatus::SERVER_BUSY;
+    if (err && err->has_code() &&
+        (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
+         err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
+      result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
       return result;
     }
   }
 
+  if (result.status.IsServiceUnavailable()) {
+    result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
+    return result;
+  }
+
   // Failover to a replica in the event of any network failure or of a DNS resolution problem.
   //
-  // TODO: This is probably too harsh; some network failures should be
+  // TODO(adar): This is probably too harsh; some network failures should be
   // retried on the current replica.
   if (result.status.IsNetworkError()) {
     result.result = RetriableRpcStatus::SERVER_NOT_ACCESSIBLE;

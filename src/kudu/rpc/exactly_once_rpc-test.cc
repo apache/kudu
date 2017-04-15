@@ -100,9 +100,9 @@ class CalculatorServiceRpc : public RetriableRpc<CalculatorServiceProxy,
           == ErrorStatusPB::ERROR_REQUEST_STALE) {
         return { RetriableRpcStatus::NON_RETRIABLE_ERROR,
               mutable_retrier()->controller().status() };
-      } else {
-        return { RetriableRpcStatus::SERVER_BUSY, mutable_retrier()->controller().status() };
       }
+      return { RetriableRpcStatus::SERVICE_UNAVAILABLE,
+               mutable_retrier()->controller().status() };
     }
 
     // If the controller is not finished we're in the ReplicaFoundCb() callback.
@@ -126,10 +126,17 @@ class CalculatorServiceRpc : public RetriableRpc<CalculatorServiceProxy,
       // the same reply back.
       int random = rand() % 4;
       switch (random) {
-        case 0: return { RetriableRpcStatus::SERVER_BUSY, Status::RemoteError("") };
-        case 1: return { RetriableRpcStatus::RESOURCE_NOT_FOUND, Status::RemoteError("") };
-        case 2: return { RetriableRpcStatus::SERVER_NOT_ACCESSIBLE, Status::RemoteError("") };
-        case 3: return { RetriableRpcStatus::OK, Status::OK() };
+        case 0:
+          return { RetriableRpcStatus::SERVICE_UNAVAILABLE,
+                   Status::RemoteError("") };
+        case 1:
+          return { RetriableRpcStatus::RESOURCE_NOT_FOUND,
+                   Status::RemoteError("") };
+        case 2:
+          return { RetriableRpcStatus::SERVER_NOT_ACCESSIBLE,
+                   Status::RemoteError("") };
+        case 3:
+          return { RetriableRpcStatus::OK, Status::OK() };
         default: LOG(FATAL) << "Unexpected value";
       }
     }

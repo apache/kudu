@@ -52,6 +52,7 @@ namespace kudu {
 class ClientStressTest_TestUniqueClientIds_Test;
 class LinkedListTester;
 class PartitionSchema;
+class SecurityUnknownTskTest;
 
 namespace tools {
 class LeaderMasterProxy;
@@ -527,6 +528,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class KuduTable;
   friend class KuduTableAlterer;
   friend class KuduTableCreator;
+  friend class ::kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);

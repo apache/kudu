@@ -83,7 +83,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   bool can_retry = true;
   bool backoff = false;
   switch (err.result) {
-    case ScanRpcStatus::SERVER_BUSY:
+    case ScanRpcStatus::SERVICE_UNAVAILABLE:
       backoff = true;
       break;
     case ScanRpcStatus::RPC_DEADLINE_EXCEEDED:
@@ -173,8 +173,10 @@ ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
       switch (controller_.error_response()->code()) {
         case rpc::ErrorStatusPB::ERROR_INVALID_REQUEST:
           return ScanRpcStatus{ScanRpcStatus::INVALID_REQUEST, rpc_status};
-        case rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY:
-          return ScanRpcStatus{ScanRpcStatus::SERVER_BUSY, rpc_status};
+        case rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY: // fall-through
+        case rpc::ErrorStatusPB::ERROR_UNAVAILABLE:
+          return ScanRpcStatus{
+              ScanRpcStatus::SERVICE_UNAVAILABLE, rpc_status};
         default:
           return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
       }

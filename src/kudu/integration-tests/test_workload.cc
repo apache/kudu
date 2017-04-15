@@ -32,6 +32,7 @@
 
 namespace kudu {
 
+using client::KuduClient;
 using client::KuduInsert;
 using client::KuduScanBatch;
 using client::KuduScanner;
@@ -51,6 +52,9 @@ TestWorkload::TestWorkload(MiniClusterBase* cluster)
     payload_bytes_(11),
     num_write_threads_(4),
     num_read_threads_(0),
+    // Set a high scanner timeout so that we're likely to have a chance to scan, even in
+    // high-stress workloads.
+    read_timeout_millis_(60000),
     write_batch_size_(50),
     write_timeout_millis_(20000),
     timeout_allowed_(false),
@@ -186,9 +190,7 @@ void TestWorkload::ReadThread() {
     SleepFor(MonoDelta::FromMilliseconds(150));
 
     KuduScanner scanner(table.get());
-    // Set a high scanner timeout so that we're likely to have a chance to scan, even in
-    // high-stress workloads.
-    CHECK_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */));
+    CHECK_OK(scanner.SetTimeoutMillis(read_timeout_millis_));
     CHECK_OK(scanner.SetFaultTolerant());
 
     int64_t expected_row_count = rows_inserted_.Load();
@@ -205,8 +207,15 @@ void TestWorkload::ReadThread() {
   }
 }
 
-void TestWorkload::Setup() {
+shared_ptr<KuduClient> TestWorkload::CreateClient() {
   CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
+  return client_;
+}
+
+void TestWorkload::Setup() {
+  if (!client_) {
+    CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
+  }
 
   bool table_exists;
 
@@ -284,6 +293,12 @@ void TestWorkload::Start() {
                                   &new_thread));
     threads_.push_back(new_thread);
   }
+}
+
+Status TestWorkload::Cleanup() {
+  // Should be run only when workload is inactive.
+  CHECK(!should_run_.Load() && threads_.empty());
+  return client_->DeleteTable(table_name_);
 }
 
 void TestWorkload::StopAndJoin() {

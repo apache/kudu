@@ -70,6 +70,10 @@ class TestWorkload {
     client_builder_.default_rpc_timeout(MonoDelta::FromMilliseconds(t));
   }
 
+  void set_read_timeout_millis(int t) {
+    read_timeout_millis_ = t;
+  }
+
   void set_write_timeout_millis(int t) {
     write_timeout_millis_ = t;
   }
@@ -153,6 +157,8 @@ class TestWorkload {
     }
   }
 
+  client::sp::shared_ptr<client::KuduClient> CreateClient();
+
   // Sets up the internal client and creates the table which will be used for
   // writing, if it doesn't already exist.
   void Setup();
@@ -162,6 +168,9 @@ class TestWorkload {
 
   // Stop the writers and wait for them to exit.
   void StopAndJoin();
+
+  // Delete created table, etc.
+  Status Cleanup();
 
   // Return the number of rows inserted so far. This may be called either
   // during or after the write workload.
@@ -178,6 +187,8 @@ class TestWorkload {
     return batches_completed_.Load();
   }
 
+  client::sp::shared_ptr<client::KuduClient> client() const { return client_; }
+
  private:
   void OpenTable(client::sp::shared_ptr<client::KuduTable>* table);
   void WriteThread();
@@ -191,6 +202,7 @@ class TestWorkload {
   int payload_bytes_;
   int num_write_threads_;
   int num_read_threads_;
+  int read_timeout_millis_;
   int write_batch_size_;
   int write_timeout_millis_;
   bool timeout_allowed_;

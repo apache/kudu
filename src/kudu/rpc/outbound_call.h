@@ -160,7 +160,7 @@ class OutboundCall {
   // should be set to the error returned by the remote server. Takes
   // ownership of 'err_pb'.
   void SetFailed(const Status& status,
-                 ErrorStatusPB* err_pb = NULL);
+                 ErrorStatusPB* err_pb = nullptr);
 
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
