@@ -453,7 +453,8 @@ TEST_F(ToolTest, TestModeHelp) {
     const vector<string> kTServerModeRegexes = {
         "set_flag.*Change a gflag value",
         "status.*Get the status",
-        "timestamp.*Get the current timestamp"
+        "timestamp.*Get the current timestamp",
+        "list.*List tablet servers"
     };
     NO_FATALS(RunTestHelp("tserver", kTServerModeRegexes));
   }
@@ -1354,6 +1355,62 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
     ASSERT_TRUE(tombstoned_opid.IsInitialized());
     ASSERT_EQ(last_logged_opid.term(), tombstoned_opid.term());
     ASSERT_EQ(last_logged_opid.index(), tombstoned_opid.index());
+  }
+}
+
+TEST_F(ToolTest, TestTserverList) {
+  NO_FATALS(StartExternalMiniCluster({}, {}, 1));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  const auto& tserver = cluster_->tablet_server(0);
+
+  { // TSV
+    string out;
+    NO_FATALS(RunActionStdoutString(Substitute("tserver list $0 --columns=uuid --format=tsv",
+                                              master_addr),
+                                    &out));
+
+    ASSERT_EQ(tserver->uuid(), out);
+  }
+
+  { // JSON
+    string out;
+    NO_FATALS(RunActionStdoutString(
+          Substitute("tserver list $0 --columns=uuid,rpc-addresses --format=json", master_addr),
+          &out));
+
+    ASSERT_EQ(Substitute("[{\"uuid\":\"$0\",\"rpc-addresses\":\"$1\"}]",
+                         tserver->uuid(), tserver->bound_rpc_hostport().ToString()),
+              out);
+  }
+
+  { // Pretty
+    string out;
+    NO_FATALS(RunActionStdoutString(
+          Substitute("tserver list $0 --columns=uuid,rpc-addresses", master_addr),
+          &out));
+
+    ASSERT_STR_CONTAINS(out, tserver->uuid());
+    ASSERT_STR_CONTAINS(out, tserver->bound_rpc_hostport().ToString());
+  }
+
+  { // Add a tserver
+    ASSERT_OK(cluster_->AddTabletServer());
+
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(
+          Substitute("tserver list $0 --columns=uuid --format=space", master_addr),
+          &lines));
+
+    vector<string> expected = {
+      tserver->uuid(),
+      cluster_->tablet_server(1)->uuid(),
+    };
+
+    std::sort(lines.begin(), lines.end());
+    std::sort(expected.begin(), expected.end());
+
+    ASSERT_EQ(expected, lines);
   }
 }
 

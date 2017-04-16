@@ -17,17 +17,24 @@
 
 #include "kudu/tools/tool_action_common.h"
 
+#include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/client/client-internal.h"
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -35,14 +42,18 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -66,14 +77,23 @@ DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "
              "before printing. Set to 0 to disable");
 
+DEFINE_string(columns, "", "Comma-separated list of column fields to include in output tables");
+DEFINE_string(format, "pretty",
+              "Format to use for printing list output tables.\n"
+              "Possible values: pretty, space, tsv, csv, and json");
+
 namespace kudu {
 namespace tools {
 
+using client::KuduClientBuilder;
 using consensus::ConsensusServiceProxy;
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
 using log::LogEntryReader;
 using log::ReadableLogSegment;
+using master::ListTabletServersRequestPB;
+using master::ListTabletServersResponsePB;
+using master::MasterServiceProxy;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RequestIdPB;
@@ -88,6 +108,8 @@ using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;
 using std::cout;
 using std::endl;
+using std::setfill;
+using std::setw;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -236,6 +258,10 @@ template
 Status BuildProxy(const string& address,
                   uint16_t default_port,
                   unique_ptr<TabletServerAdminServiceProxy>* proxy);
+template
+Status BuildProxy(const string& address,
+                  uint16_t default_port,
+                  unique_ptr<MasterServiceProxy>* proxy);
 
 Status GetServerStatus(const string& address, uint16_t default_port,
                        ServerStatusPB* status) {
@@ -341,6 +367,159 @@ Status PrintServerTimestamp(const string& address, uint16_t default_port) {
   cout << resp.timestamp() << endl;
   return Status::OK();
 }
+
+namespace {
+
+// Pretty print a table using the psql format. For example:
+//
+//                uuid               |         rpc-addresses          |      seqno
+// ----------------------------------+--------------------------------+------------------
+//  335d132897de4bdb9b87443f2c487a42 | 126.rack1.dc1.example.com:7050 | 1492596790237811
+//  7425c65d80f54f2da0a85494a5eb3e68 | 122.rack1.dc1.example.com:7050 | 1492596755322350
+//  dd23284d3a334f1a8306c19d89c1161f | 130.rack1.dc1.example.com:7050 | 1492596704536543
+//  d8009e07d82b4e66a7ab50f85e60bc30 | 136.rack1.dc1.example.com:7050 | 1492596696557549
+//  c108a85a68504c2bb9f49e4ee683d981 | 128.rack1.dc1.example.com:7050 | 1492596646623301
+void PrettyPrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+  CHECK_EQ(headers.size(), columns.size());
+  if (headers.empty()) return;
+  size_t num_columns = headers.size();
+
+  vector<size_t> widths;
+  for (int col = 0; col < num_columns; col++) {
+    size_t width = std::accumulate(columns[col].begin(), columns[col].end(), headers[col].size(),
+                                   [](size_t acc, const string& cell) {
+                                     return std::max(acc, cell.size());
+                                   });
+    widths.push_back(width);
+  }
+
+  // Print the header row.
+  for (int col = 0; col < num_columns; col++) {
+    int padding = widths[col] - headers[col].size();
+    cout << setw(padding / 2) << "" << " " << headers[col];
+    if (col != num_columns - 1) cout << setw((padding + 1) / 2) << "" << " |";
+  }
+  cout << endl;
+
+  // Print the separator row.
+  for (int col = 0; col < num_columns; col++) {
+    cout << setfill('-') << setw(widths[col] + 2) << "";
+    if (col != num_columns - 1) cout << "+";
+  }
+  cout << endl;
+
+  // Print the data rows.
+  int num_rows = columns.empty() ? 0 : columns[0].size();
+  for (int row = 0; row < num_rows; row++) {
+    for (int col = 0; col < num_columns; col++) {
+      const auto& value = columns[col][row];
+      cout << " " << value;
+      if (col != num_columns - 1) {
+        size_t padding = value.size() - widths[col];
+        cout << setw(padding) << " |";
+      }
+    }
+    cout << endl;
+  }
+}
+
+// Print a table using JSON formatting.
+//
+// The table is formatted as an array of objects. Each object corresponds
+// to a row whose fields are the column values.
+void JsonPrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+  std::ostringstream stream;
+  JsonWriter writer(&stream, JsonWriter::COMPACT);
+
+  int num_columns = columns.size();
+  int num_rows = columns.empty() ? 0 : columns[0].size();
+
+  writer.StartArray();
+  for (int row = 0; row < num_rows; row++) {
+    writer.StartObject();
+    for (int col = 0; col < num_columns; col++) {
+      writer.String(headers[col]);
+      writer.String(columns[col][row]);
+    }
+    writer.EndObject();
+  }
+  writer.EndArray();
+
+  cout << stream.str() << endl;
+}
+
+// Print the table using the provided separator. For example, with a comma
+// separator:
+//
+// 335d132897de4bdb9b87443f2c487a42,126.rack1.dc1.example.com:7050,1492596790237811
+// 7425c65d80f54f2da0a85494a5eb3e68,122.rack1.dc1.example.com:7050,1492596755322350
+// dd23284d3a334f1a8306c19d89c1161f,130.rack1.dc1.example.com:7050,1492596704536543
+// d8009e07d82b4e66a7ab50f85e60bc30,136.rack1.dc1.example.com:7050,1492596696557549
+// c108a85a68504c2bb9f49e4ee683d981,128.rack1.dc1.example.com:7050,1492596646623301
+void PrintTable(const vector<vector<string>>& columns, const string& separator) {
+  // TODO(dan): proper escaping of string values.
+  int num_columns = columns.size();
+  int num_rows = columns.empty() ? 0 : columns[0].size();
+  for (int row = 0; row < num_rows; row++) {
+      for (int col = 0; col < num_columns; col++) {
+        cout << columns[col][row];
+        if (col != num_columns - 1) cout << separator;
+      }
+      cout << endl;
+  }
+}
+
+} // anonymous namespace
+
+Status PrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+  if (boost::iequals(FLAGS_format, "pretty")) {
+    PrettyPrintTable(headers, columns);
+  } else if (boost::iequals(FLAGS_format, "space")) {
+    PrintTable(columns, " ");
+  } else if (boost::iequals(FLAGS_format, "tsv")) {
+    PrintTable(columns, "	");
+  } else if (boost::iequals(FLAGS_format, "csv")) {
+    PrintTable(columns, ",");
+  } else if (boost::iequals(FLAGS_format, "json")) {
+    JsonPrintTable(headers, columns);
+  } else {
+    return Status::InvalidArgument("unknown format (--format)", FLAGS_format);
+  }
+  return Status::OK();
+}
+
+Status LeaderMasterProxy::Init(const RunnerContext& context) {
+  const string& master_addrs_str = FindOrDie(context.required_args, kMasterAddressesArg);
+  auto master_addrs = strings::Split(master_addrs_str, ",");
+  auto timeout = MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
+
+  return KuduClientBuilder().master_server_addrs(master_addrs)
+                            .default_rpc_timeout(timeout)
+                            .default_admin_operation_timeout(timeout)
+                            .Build(&client_);
+}
+
+template<typename Req, typename Resp>
+Status LeaderMasterProxy::SyncRpc(const Req& req,
+                                  Resp* resp,
+                                  const char* func_name,
+                                  const boost::function<Status(master::MasterServiceProxy*,
+                                                               const Req&, Resp*,
+                                                               rpc::RpcController*)>& func) {
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
+  return client_->data_->SyncLeaderMasterRpc(deadline, client_.get(), req, resp,
+                                             func_name, func, {});
+}
+
+// Explicit specialization for callers outside this compilation unit.
+template
+Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
+                                  ListTabletServersResponsePB* resp,
+                                  const char* func_name,
+                                  const boost::function<Status(MasterServiceProxy*,
+                                                               const ListTabletServersRequestPB&,
+                                                               ListTabletServersResponsePB*,
+                                                               RpcController*)>& func);
 
 } // namespace tools
 } // namespace kudu

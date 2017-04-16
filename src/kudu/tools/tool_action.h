@@ -161,17 +161,24 @@ struct ActionArgsDescriptor {
     std::string description;
   };
 
+  // Holds an optional command line argument flag.
+  struct Flag {
+    // The gflag name.
+    std::string name;
+    // A default value to override the default gflag value.
+    boost::optional<std::string> default_value;
+    // A description to override the gflag description.
+    boost::optional<std::string> description;
+  };
+
   // Positional (required) command line arguments.
   std::vector<Arg> required;
 
-  // Key-value command line arguments. These must actually implemented as
-  // gflags, which means all that must be specified here are the gflag names.
-  // The gflag definitions themselves will be accessed to get the argument
-  // descriptions.
+  // Key-value command line arguments. These must correspond to defined gflags.
   //
   // Optional by definition, though some are required internally
   // (e.g. fs_wal_dir).
-  std::vector<std::string> optional;
+  std::vector<Flag> optional;
 
   // Variable length command line argument. There may be at most one per
   // Action, and it's always found at the end of the command line.
@@ -221,7 +228,13 @@ class ActionBuilder {
   // provided by the user at any point in the command line. It must match a
   // previously-defined gflag; if a gflag with the same name cannot be found,
   // the tool will crash.
-  ActionBuilder& AddOptionalParameter(const std::string& param);
+  //
+  // The default value and description of the flag can be optionally overriden,
+  // for cases where the values are action-dependent. Otherwise, the default
+  // value and description from the gflag declaration will be used.
+  ActionBuilder& AddOptionalParameter(std::string param,
+                                      boost::optional<std::string> default_value = boost::none,
+                                      boost::optional<std::string> description = boost::none);
 
   // Creates an action using builder state.
   std::unique_ptr<Action> Build();
@@ -268,6 +281,10 @@ class Action {
   friend class ActionBuilder;
 
   Action() = default;
+
+  // Sets optional flag parameter default value in cases where it has been
+  // overridden from the default gflag value.
+  void SetOptionalParameterDefaultValues() const;
 
   std::string name_;
 

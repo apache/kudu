@@ -19,11 +19,30 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <boost/function.hpp>
+
+#include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MonoTime;
+
+namespace client {
+class KuduClient;
+} // namespace client
+
+
+namespace master {
+class MasterServiceProxy;
+} // namespace master
+
+namespace rpc {
+class RpcController;
+} // namespace rpc
 
 namespace log {
 class ReadableLogSegment;
@@ -34,6 +53,8 @@ class ServerStatusPB;
 } // namespace server
 
 namespace tools {
+
+struct RunnerContext;
 
 // Constants for parameters and descriptions.
 extern const char* const kMasterAddressesArg;
@@ -83,6 +104,33 @@ Status PrintServerTimestamp(const std::string& address, uint16_t default_port);
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
+
+// Prints a table.
+Status PrintTable(const std::vector<std::string>& headers,
+                  const std::vector<std::vector<std::string>>& columns);
+
+// Wrapper around a Kudu client which allows calling proxy methods on the leader
+// master.
+class LeaderMasterProxy {
+ public:
+  // Initialize the leader master proxy given the provided tool context.
+  //
+  // Uses the required 'master_addresses' option for the master addresses, and
+  // the optional 'timeout_ms' flag to control admin and operation timeouts.
+  Status Init(const RunnerContext& context);
+
+  // Calls a master RPC service method on the current leader master.
+  template<typename Req, typename Resp>
+  Status SyncRpc(const Req& req,
+                 Resp* resp,
+                 const char* func_name,
+                 const boost::function<Status(master::MasterServiceProxy*,
+                                              const Req&, Resp*,
+                                              rpc::RpcController*)>& func);
+
+ private:
+  client::sp::shared_ptr<client::KuduClient> client_;
+};
 
 } // namespace tools
 } // namespace kudu
