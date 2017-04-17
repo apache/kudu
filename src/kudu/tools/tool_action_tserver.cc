@@ -125,6 +125,10 @@ Status ListTServers(const RunnerContext& context) {
       for (const auto& server : servers) {
         values.push_back(server.registration().software_version());
       }
+    } else if (boost::iequals(column, "heartbeat")) {
+      for (const auto& server : servers) {
+        values.push_back(strings::Substitute("$0ms", server.millis_since_heartbeat()));
+      }
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }
@@ -167,7 +171,8 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddOptionalParameter("columns", string("uuid,rpc-addresses"),
                             string("Comma-separated list of tserver info fields to "
                                    "include in output.\nPossible values: uuid, "
-                                   "rpc-addresses, http-addresses, version, and seqno"))
+                                   "rpc-addresses, http-addresses, version, seqno, "
+                                   "and heartbeat"))
       .AddOptionalParameter("format")
       .AddOptionalParameter("timeout_ms")
       .Build();

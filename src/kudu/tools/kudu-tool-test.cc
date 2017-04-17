@@ -1414,5 +1414,20 @@ TEST_F(ToolTest, TestTserverList) {
   }
 }
 
+TEST_F(ToolTest, TestMasterList) {
+  NO_FATALS(StartExternalMiniCluster({}, {}, 0));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  auto* master = cluster_->master();
+
+  string out;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("master list $0 --columns=uuid,rpc-addresses", master_addr),
+        &out));
+
+  ASSERT_STR_CONTAINS(out, master->uuid());
+  ASSERT_STR_CONTAINS(out, master->bound_rpc_hostport().ToString());
+}
+
 } // namespace tools
 } // namespace kudu

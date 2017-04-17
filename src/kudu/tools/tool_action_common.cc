@@ -93,6 +93,8 @@ using log::LogEntryReader;
 using log::ReadableLogSegment;
 using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
+using master::ListMastersRequestPB;
+using master::ListMastersResponsePB;
 using master::MasterServiceProxy;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
@@ -402,21 +404,23 @@ void PrettyPrintTable(const vector<string>& headers, const vector<vector<string>
   cout << endl;
 
   // Print the separator row.
+  cout << setfill('-');
   for (int col = 0; col < num_columns; col++) {
-    cout << setfill('-') << setw(widths[col] + 2) << "";
+    cout << setw(widths[col] + 2) << "";
     if (col != num_columns - 1) cout << "+";
   }
   cout << endl;
 
   // Print the data rows.
+  cout << setfill(' ');
   int num_rows = columns.empty() ? 0 : columns[0].size();
   for (int row = 0; row < num_rows; row++) {
     for (int col = 0; col < num_columns; col++) {
       const auto& value = columns[col][row];
       cout << " " << value;
       if (col != num_columns - 1) {
-        size_t padding = value.size() - widths[col];
-        cout << setw(padding) << " |";
+        size_t padding = widths[col] - value.size();
+        cout << setw(padding) << "" << " |";
       }
     }
     cout << endl;
@@ -519,6 +523,14 @@ Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
                                   const boost::function<Status(MasterServiceProxy*,
                                                                const ListTabletServersRequestPB&,
                                                                ListTabletServersResponsePB*,
+                                                               RpcController*)>& func);
+template
+Status LeaderMasterProxy::SyncRpc(const ListMastersRequestPB& req,
+                                  ListMastersResponsePB* resp,
+                                  const char* func_name,
+                                  const boost::function<Status(MasterServiceProxy*,
+                                                               const ListMastersRequestPB&,
+                                                               ListMastersResponsePB*,
                                                                RpcController*)>& func);
 
 } // namespace tools
