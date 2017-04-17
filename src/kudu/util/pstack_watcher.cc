@@ -132,9 +132,19 @@ Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
   string prog("gdb");
   vector<string> argv;
   argv.push_back(prog);
+  // Don't print introductory version/copyright messages.
   argv.push_back("-quiet");
+  // Exit after processing all of the commands below.
   argv.push_back("-batch");
+  // Don't run commands from .gdbinit
   argv.push_back("-nx");
+  // On RHEL6 and older Ubuntu, we occasionally would see gdb spin forever
+  // trying to collect backtraces. Setting a backtrace limit is a reasonable
+  // workaround, since we don't really expect >100-deep stacks anyway.
+  //
+  // See https://bugs.launchpad.net/ubuntu/+source/gdb/+bug/434168
+  argv.push_back("-ex");
+  argv.push_back("set backtrace limit 100");
   argv.push_back("-ex");
   argv.push_back("set print pretty on");
   argv.push_back("-ex");
