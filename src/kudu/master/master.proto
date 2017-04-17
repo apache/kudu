@@ -655,9 +655,11 @@ message ListMastersResponsePB {
   // An entry for each individual master server.
   repeated ServerEntryPB masters = 1;
 
-  // Set only if there's an error in retrieving the list of servers or
-  // in getting this server's own local registration information.
-  optional AppStatusPB error = 2;
+  // DEPRECATED, use 'error' field.
+  optional AppStatusPB DEPRECATED_error = 2;
+
+  // Set if there an error retrieving the registration information.
+  optional MasterErrorPB error = 3;
 }
 
 enum MasterFeatures {

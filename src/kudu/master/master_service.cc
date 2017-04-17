@@ -361,8 +361,11 @@ void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
   vector<ServerEntryPB> masters;
   Status s = server_->ListMasters(&masters);
   if (!s.ok()) {
-    StatusToPB(s, resp->mutable_error());
-    resp->mutable_error()->set_code(AppStatusPB::UNKNOWN_ERROR);
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+    resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+
+    // Continue setting deprecated error status in order to maintain backwards compat.
+    StatusToPB(s, resp->mutable_deprecated_error());
   } else {
     for (const ServerEntryPB& master : masters) {
       resp->add_masters()->CopyFrom(master);
