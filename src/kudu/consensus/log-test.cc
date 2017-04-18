@@ -1017,6 +1017,7 @@ TEST_P(LogTestOptionalCompression, TestReadReplicatesHighIndex) {
   ASSERT_OK(reader->ReadReplicatesInRange(first_log_index, first_log_index + kSequenceLength - 1,
                                           LogReader::kNoSizeLimit, &replicates));
   ASSERT_EQ(kSequenceLength, replicates.size());
+  ASSERT_GT(op_id.index(), std::numeric_limits<int32_t>::max());
 }
 
 // Test various situations where we expect different segments depending on what the
