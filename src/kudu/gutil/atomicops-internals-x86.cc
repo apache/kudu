@@ -60,12 +60,13 @@
 // Set the flags so that code will run correctly and conservatively
 // until InitGoogle() is called.
 struct AtomicOps_x86CPUFeatureStruct AtomicOps_Internalx86CPUFeatures = {
-  false,          // bug can't exist before process spawns multiple threads
   false,          // no SSE2
   false,          // no cmpxchg16b
 };
 
-// Initialize the AtomicOps_Internalx86CPUFeatures struct.
+// Initialize the AtomicOps_Internalx86CPUFeatures struct in any compilation
+// unit that links with this one.
+__attribute__((constructor))
 static void AtomicOps_Internalx86CPUFeaturesInit() {
   uint32 eax;
   uint32 ebx;
@@ -95,12 +96,16 @@ static void AtomicOps_Internalx86CPUFeaturesInit() {
   // non-locked read-modify-write instruction.  Rev F has this bug in
   // pre-release versions, but not in versions released to customers,
   // so we test only for Rev E, which is family 15, model 32..63 inclusive.
+  //
+  // Opteron Rev E is the first-generation Opteron (models 1xx, 2xx, 8xx)
+  // also known as "K8", released in 2003. These processors are old enough
+  // that we can just drop support for them instead of trying to work around
+  // the above bug.
   if (strcmp(vendor, "AuthenticAMD") == 0 &&       // AMD
       family == 15 &&
       32 <= model && model <= 63) {
-    AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug = true;
-  } else {
-    AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug = false;
+    LOG(FATAL) << "AMD Family 0fh model 32 through 63 not supported due to "
+               << "buggy atomic operations.";
   }
 
   // edx bit 26 is SSE2 which we use to tell use whether we can use mfence
@@ -108,19 +113,11 @@ static void AtomicOps_Internalx86CPUFeaturesInit() {
 
   // ecx bit 13 indicates whether the cmpxchg16b instruction is supported
   AtomicOps_Internalx86CPUFeatures.has_cmpxchg16b = ((ecx >> 13) & 1);
-
   VLOG(1) << "vendor " << vendor <<
              "  family " << family <<
              "  model " << model <<
-             "  amd_lock_mb_bug " <<
-                   AtomicOps_Internalx86CPUFeatures.has_amd_lock_mb_bug <<
              "  sse2 " << AtomicOps_Internalx86CPUFeatures.has_sse2 <<
              "  cmpxchg16b " << AtomicOps_Internalx86CPUFeatures.has_cmpxchg16b;
-}
-
-// AtomicOps initialisation routine for external use.
-void AtomicOps_x86CPUFeaturesInit() {
-  AtomicOps_Internalx86CPUFeaturesInit();
 }
 
 #endif
