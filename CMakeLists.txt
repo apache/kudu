@@ -54,17 +54,13 @@ string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/build/" ""
   BLESSED_BUILD_SUBDIR "${CMAKE_CURRENT_BINARY_DIR}")
 string(FIND "${BLESSED_BUILD_SUBDIR}" "/" SLASH_POS)
 if (SLASH_POS EQUAL -1)
-  if (NOT APPLE)
-    set(MORE_ARGS "-T")
-  endif()
-
   # Create the symlink both during cmake invocation and when the default target
   # ('all') is built. The former is useful for scripts that, after running
   # cmake, only build a single target (i.e. "make lint").
-  execute_process(COMMAND ln ${MORE_ARGS} -sf ${CMAKE_CURRENT_BINARY_DIR}
+  execute_process(COMMAND ln ${MORE_ARGS} -nsf ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/build/latest)
   add_custom_target(latest_symlink ALL
-    ln ${MORE_ARGS} -sf ${CMAKE_CURRENT_BINARY_DIR}
+    ln ${MORE_ARGS} -nsf ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/build/latest
     COMMENT "Recreating ../build/latest symlink")
 
