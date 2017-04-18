@@ -119,7 +119,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_client
 # For a detailed explanation of the kinds of C++ changes that would break ABI
 # compatibility, see:
 #
-#   https://techbase.kde.org/Policies/Binary_Compatibility_Issues_With_C++
+#   https://community.kde.org/Policies/Binary_Compatibility_Issues_With_C++
 #
 # For more background on library versions, see:
 #
