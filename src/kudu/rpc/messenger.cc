@@ -58,6 +58,7 @@
 
 using std::string;
 using std::shared_ptr;
+using std::make_shared;
 using strings::Substitute;
 
 DEFINE_string(rpc_authentication, "optional",
@@ -322,11 +323,11 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   RETURN_NOT_OK(sock.Bind(accept_addr));
   Sockaddr remote;
   RETURN_NOT_OK(sock.GetSocketAddress(&remote));
-  shared_ptr<AcceptorPool> acceptor_pool(new AcceptorPool(this, &sock, remote));
+  auto acceptor_pool(make_shared<AcceptorPool>(this, &sock, remote));
 
   std::lock_guard<percpu_rwlock> guard(lock_);
   acceptor_pools_.push_back(acceptor_pool);
-  *pool = acceptor_pool;
+  pool->swap(acceptor_pool);
   return Status::OK();
 }
 

@@ -2124,14 +2124,14 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
 TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
   RpcServerOptions opts;
   {
-    RpcServer server1(opts);
+    RpcServer server(opts);
   }
   {
-    RpcServer server2(opts);
+    RpcServer server(opts);
     MessengerBuilder mb("foo");
     shared_ptr<Messenger> messenger;
     ASSERT_OK(mb.Build(&messenger));
-    ASSERT_OK(server2.Init(messenger));
+    ASSERT_OK(server.Init(messenger));
   }
 }
 

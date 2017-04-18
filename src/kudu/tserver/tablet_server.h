@@ -19,7 +19,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/atomicops.h"

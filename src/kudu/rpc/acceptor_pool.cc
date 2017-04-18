@@ -17,14 +17,16 @@
 
 #include "kudu/rpc/acceptor_pool.h"
 
-#include <gflags/gflags.h>
-#include <glog/logging.h>
-#include <inttypes.h>
-#include <iostream>
 #include <pthread.h>
-#include <stdint.h>
+
+#include <cinttypes>
+#include <cstdint>
+#include <iostream>
 #include <string>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -112,6 +114,16 @@ void AcceptorPool::Shutdown() {
     CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
   threads_.clear();
+
+  // Close the socket: keeping the descriptor open and, possibly, receiving late
+  // not-to-be-read messages from the peer does not make much sense. The
+  // Socket::Close() method is called upon destruction of the aggregated socket_
+  // object as well. However, the typical ownership pattern of an AcceptorPool
+  // object includes two references wrapped via a shared_ptr smart pointer: one
+  // is held by Messenger, another by RpcServer. If not calling Socket::Close()
+  // here, it would  necessary to wait until Messenger::Shutdown() is called for
+  // the corresponding messenger object to close this socket.
+  ignore_result(socket_.Close());
 }
 
 Sockaddr AcceptorPool::bind_address() const {

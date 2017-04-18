@@ -81,16 +81,16 @@ Socket::~Socket() {
 }
 
 Status Socket::Close() {
-  if (fd_ < 0)
+  if (fd_ < 0) {
     return Status::OK();
-  int err, fd = fd_;
-  fd_ = -1;
+  }
+  int fd = fd_;
   if (::close(fd) < 0) {
-    err = errno;
+    int err = errno;
     return Status::NetworkError(std::string("close error: ") +
                                 ErrnoToString(err), Slice(), err);
   }
-  fd = -1;
+  fd_ = -1;
   return Status::OK();
 }
 

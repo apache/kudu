@@ -18,8 +18,6 @@
 #include "kudu/tserver/tablet_server.h"
 
 #include <glog/logging.h>
-#include <list>
-#include <vector>
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/fs/fs_manager.h"
@@ -29,19 +27,16 @@
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/scanners.h"
+#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver-path-handlers.h"
-#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 using kudu::rpc::ServiceIf;
-using kudu::tablet::TabletPeer;
-using std::shared_ptr;
-using std::vector;
 
 namespace kudu {
 namespace tserver {
@@ -132,16 +127,14 @@ Status TabletServer::Start() {
 }
 
 void TabletServer::Shutdown() {
-  LOG(INFO) << "TabletServer shutting down...";
-
   if (initted_) {
+    LOG(INFO) << "TabletServer shutting down...";
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
     ServerBase::Shutdown();
     tablet_manager_->Shutdown();
+    LOG(INFO) << "TabletServer shut down complete. Bye!";
   }
-
-  LOG(INFO) << "TabletServer shut down complete. Bye!";
 }
 
 } // namespace tserver
