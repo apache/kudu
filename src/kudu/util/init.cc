@@ -22,7 +22,6 @@
 
 #include <string>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/cpu.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
@@ -80,9 +79,6 @@ Status CheckCPUFlags() {
 void InitKuduOrDie() {
   CheckStandardFds();
   CHECK_OK(CheckCPUFlags());
-#ifndef THREAD_SANITIZER  // Thread Sanitizer uses its own special atomicops implementation.
-  AtomicOps_x86CPUFeaturesInit();
-#endif
   // NOTE: this function is called before flags are parsed.
   // Do not add anything in here which is flag-dependent.
 }
