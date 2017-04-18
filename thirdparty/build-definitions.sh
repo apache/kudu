@@ -515,7 +515,8 @@ build_curl() {
     --disable-smtp \
     --disable-telnet \
     --disable-tftp \
-    --without-librtmp
+    --without-librtmp \
+    --without-libssh2
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
