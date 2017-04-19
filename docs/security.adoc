@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-= Security
+[[security]]
+= Apache Kudu Security
 
 :author: Kudu Team
 :imagesdir: ./images
