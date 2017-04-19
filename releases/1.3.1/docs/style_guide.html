@@ -1,0 +1,754 @@
+---
+title: Apache Kudu Documentation Style Guide
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2017-02-03 10:13:21 PST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Documentation Style Guide</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>This document gives you the information you need to get started contributing to Kudu
+documentation. For code contribution guidelines, see
+<a href="contributing.html">Contributing to Kudu</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_asciidoc"><a class="link" href="#_asciidoc">Asciidoc</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu documentation is written in <a href="https://en.wikipedia.org/wiki/AsciiDoc">Asciidoc</a>
+and compiled into HTML and output using the <a href="http://asciidoctor.org/">Asciidoctor</a>
+toolchain. This provides several advantages. Among them:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Asciidoc is a superset of Markdown, so if you already know Markdown you can get
+started right away.</p>
+</li>
+<li>
+<p>Github includes support for Asciidoc in its Atom editor, as well as real-time
+simplified HTML rendering.</p>
+</li>
+<li>
+<p>Patch submissions are small and easy to review.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_code_standards"><a class="link" href="#_code_standards">Code Standards</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Within reason, try to adhere to these standards:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>100 or fewer columns per line</p>
+</li>
+<li>
+<p>2 spaces rather than tabs for indentation</p>
+</li>
+<li>
+<p>No more than 4 nested levels in the documentation if possible: <code>(Document &#8594; Chapter
+&#8594; Section &#8594; Subsection)</code></p>
+</li>
+<li>
+<p>When possible, provide the language that a code listing is in, using the
+<code>[source,&lt;language&gt;]</code> macro. for example, <code>[source,sql]</code></p>
+</li>
+<li>
+<p>In general, do not indent Asciidoc, as indentation is significant. Code listings
+are one exception.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_building_documentation"><a class="link" href="#_building_documentation">Building Documentation</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>To build the documentation locally, you need the Asciidoctor Ruby application. To build the
+entire Kudu documentation set, change to the <code>docs/</code> directory and run:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">asciidoctor -d book -D docs *.adoc</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This builds the HTML output in a new <em>docs/</em> directory within the current directory.
+Some content, such as the per-daemon configuration reference files, is not populated
+during a local build.</p>
+</div>
+<div class="paragraph">
+<p>To view the HTML, open <em>docs/index.html</em> in your local browser.</p>
+</div>
+<div class="paragraph">
+<p>You can also build only a single chapter. such as <em>release_notes.adoc</em>, by passing its name instead.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_asciidoc_style_guide"><a class="link" href="#_asciidoc_style_guide">Asciidoc Style Guide</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Asciidoc supports a lot of syntax that we do not need to use. When possible, stick
+with the following, adapted from the
+<a href="https://hbase.apache.org/book.html#_hbase_reference_guide_style_guide_and_cheat_sheet">HBase Reference Guide</a>:</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. AsciiDoc Cheat Sheet</caption>
+<colgroup>
+<col style="width: 33%;">
+<col style="width: 33%;">
+<col style="width: 33%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Element Type</th>
+<th class="tableblock halign-left valign-top">Desired Rendering</th>
+<th class="tableblock halign-left valign-top">How to do it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A paragraph</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a paragraph</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>Just type some text with a blank line at the top and bottom.</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Add line breaks within a paragraph without adding blank lines</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Manual line breaks</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>This will break + at the plus sign. Or prefix the whole paragraph with a line containing '[%hardbreaks]'</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Give a title to anything</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Colored italic bold differently-sized text</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+</div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In-Line Code or commands</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">monospace</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>`text`</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In-line literal content (things to be typed exactly as shown)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bold mono</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>*`typethis`*</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In-line replaceable content (things to substitute with your own values)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bold italic mono</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>*_typesomething_*</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Code blocks with highlighting</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">monospace, highlighted, preserve space</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>[source,java]
+----
+  myAwesomeCode() {
+}
+----</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Code block included from a separate file</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">included just as though it were part of the main file</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>[source,ruby]
+----
+include::path/to/app.rb[]
+----</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include only part of a separate file</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Similar to Javadoc</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>See <a href="http://asciidoctor.org/docs/user-manual/#by-tagged-regions" class="bare">http://asciidoctor.org/docs/user-manual/#by-tagged-regions</a></p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">File names, directory names, new terms</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">italic</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>_hbase-default.xml_</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">External naked URLs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A link with the URL as link text</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>http://www.google.com</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">External URLs with text</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A link with arbitrary link text</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>link:http://www.google.com[Google]</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Create an internal anchor to cross-reference</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">not rendered</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>[[anchor_name]]</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Cross-reference an existing anchor using its default title</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">an internal hyperlink using the element title if available, otherwise using the anchor name</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&lt;&lt;anchor_name&gt;&gt;</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Cross-reference an existing anchor using custom text</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">an internal hyperlink using arbitrary text</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&lt;&lt;anchor_name,Anchor Text&gt;&gt;</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A block image</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The image with alt text</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>image::sunset.jpg[Alt Text]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>(put the image in the src/main/site/resources/images directory)</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">An inline image</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The image with alt text, as part of the text flow</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>image:sunset.jpg [Alt Text]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>(only one colon)</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Link to a remote image</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">show an image hosted elsewhere</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>image::http://inkscape.org/doc/examples/tux.svg[Tux,250,350]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>(or <code>image:</code>)</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Add dimensions or a URL to the image</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">depends</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>inside the brackets after the alt text, specify width, height and/or link="http://my_link.com"</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A footnote</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">subscript link which takes you to the footnote</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Some text.footnote:[The footnote text.]</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A note or warning with no title</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The admonition image followed by the admonition</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>NOTE: My note here</pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>WARNING: My warning here</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A complex note</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The note has a title and/or multiple paragraphs and/or code blocks or lists, etc</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>.The Title
+[NOTE]
+====
+Here is the note text.
+Everything until the second set of four equals signs
+is part of the note.
+----
+some source code
+----
+====</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Bullet lists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bullet lists</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>* list item 1</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>(see <a href="http://asciidoctor.org/docs/user-manual/#unordered-lists" class="bare">http://asciidoctor.org/docs/user-manual/#unordered-lists</a>)</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Numbered lists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">numbered list</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>. list item 2</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>(see <a href="http://asciidoctor.org/docs/user-manual/#ordered-lists" class="bare">http://asciidoctor.org/docs/user-manual/#ordered-lists</a>)</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Checklists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Checked or unchecked boxes</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>Checked:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>- [*]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Unchecked:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>- [ ]</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Multiple levels of lists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bulleted or numbered or combo</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>. Numbered (1), at top level
+* Bullet (2), nested under 1
+* Bullet (3), nested under 1
+. Numbered (4), at top level
+* Bullet (5), nested under 4
+** Bullet (6), nested under 5
+- [x] Checked (7), at top level</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Labelled lists / variablelists</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a list item title or summary followed by content</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Title:: content
+
+Title::
+  content</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GUI menu cascades</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bold text with arrows to show levels</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>Use an ASCII arrow.</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>*File -&gt; Print*</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>renders like <strong>File &#8594; Print</strong></p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Sidebars, quotes, or other blocks of text</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a block of text, formatted differently from the default</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>Delimited using different delimiters, see <a href="http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary" class="bare">http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary</a>. Some of the examples above use delimiters like ...., ----,====.</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>[example]
+====
+This is an example block.
+====
+
+[source]
+----
+This is a source block.
+----
+
+[note]
+====
+This is a note block.
+====
+
+[quote]
+____
+This is a quote block.
+____</pre>
+</div>
+</div>
+<div class="paragraph">
+<p><strong>If you want to insert literal Asciidoc content that keeps being interpreted, when in doubt, use eight dots as the delimiter at the top and bottom.</strong></p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Nested Sections</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">chapter, section, sub-section, etc</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>= Book (or chapter if the chapter can be built alone, see leveloffset below)
+
+== Chapter (or section if the chapter is standalone)
+
+=== Section (or subsection, etc)
+
+==== Subsection</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>and so on up to 6 levels (think carefully about going deeper than 4 levels, maybe you can just titled paragraphs or lists instead). Note that you can include a book inside another book by adding the <code>:leveloffset:+1</code> macro directive directly before your include, and resetting it to 0 directly after. See the <em>book.adoc</em> source for examples, as this is how this guide handles chapters. <strong>Don&#8217;t do it for prefaces, glossaries, appendixes, or other special types of chapters.</strong></p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include one file from another</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Content is included as though it were inline</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>include::[/path/to/file.adoc]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For plenty of examples. see <em>docs/docs.adoc</em>.</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A table</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a table</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p>See <a href="http://asciidoctor.org/docs/user-manual/#tables" class="bare">http://asciidoctor.org/docs/user-manual/#tables</a>. Generally rows are separated by newlines and columns by pipes</p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comment out a single line</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A  line is skipped during rendering</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
+<p><code>// This line won&#8217;t show up</code></p>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comment out a block</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A section of the file is skipped during rendering</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>////
+Nothing between the slashes will show up.
+////</pre>
+</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Highlight text for review</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">text shows up with yellow background</p></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Test between #hash marks# is highlighted yellow.</pre>
+</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Documentation Style Guide</span>
+            <ul class="sectlevel1">
+<li><a href="#_asciidoc">Asciidoc</a></li>
+<li><a href="#_code_standards">Code Standards</a></li>
+<li><a href="#_building_documentation">Building Documentation</a></li>
+<li><a href="#_asciidoc_style_guide">Asciidoc Style Guide</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
