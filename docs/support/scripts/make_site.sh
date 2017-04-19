@@ -74,7 +74,7 @@ $SOURCE_ROOT/build-support/enable_devtoolset.sh \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
     $SOURCE_ROOT
-MAKE_TARGETS=all
+MAKE_TARGETS="kudu kudu-tserver kudu-master"
 if [ -n "$OPT_DOXYGEN" ]; then
   MAKE_TARGETS="$MAKE_TARGETS doxygen"
 fi
