@@ -191,11 +191,6 @@ concurrency at the expense of potential data and workload skew with range
 partitioning, or query throughput at the expense of concurrency through hash
 partitioning.
 
-#### Is there any limitation to the size of data that can be added to a column?
-
-There is no hard limit imposed by Kudu, but large values (10s of KB and above)
-are likely to perform poorly and may cause stability issues in current releases.
-
 #### Does Kudu support dynamic partitioning?
 
 Kudu is a storage engine, not a SQL engine. Dynamic partitions are created at
@@ -252,12 +247,8 @@ Neither "read committed" nor "READ_AT_SNAPSHOT" consistency modes permit dirty r
 
 #### Where is Kudu's Jepsen report?
 
-No one has yet run [Jepsen](https://github.com/aphyr/jepsen) on Kudu, but it
-would be a very welcome contribution. However, we know of
-[several issues](docs/transaction_semantics.html#known_issues)
-that need to be resolved before Kudu can pass a Jepsen serializable consistency
-test. We are committed to passing Jepsen, as well as other consistency-focused stress
-tests, before releasing Kudu 1.0.
+Kudu hasn't been publicly tested with Jepsen but it is possible to run a set of tests following
+[these instructions](https://github.com/apache/kudu/blob/master/java/kudu-jepsen/README.adoc).
 
 ### Working With Other Storage Systems
 
@@ -442,7 +433,11 @@ There is one WAL per tablet.
 
 #### How is security handled in Kudu?
 
-Kudu has no security features at the moment, but this is a goal for GA.
+Kudu supports strong authentication and is designed to interoperate with other
+secure Hadoop components by utilizing Kerberos. It also supports coarse-grained
+authorization of client requests and TLS encryption of communication among
+servers and between clients and servers. To learn more, please refer to the
+[security guide](https://kudu.apache.org/docs/security.html).
 
 ### Schema Design
 
