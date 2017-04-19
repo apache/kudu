@@ -28,10 +28,11 @@
 :sectlinks:
 :experimental:
 
-== Issues starting the Master or Tablet Server
+== Startup Errors
 
 [[req_hole_punching]]
 === Errors During Hole Punching Test
+
 Kudu requires hole punching capabilities in order to be efficient. Hole punching support
 depends upon your operation system kernel version and local filesystem implementation.
 
@@ -66,7 +67,8 @@ WARNING: The file block manager is known to scale and perform poorly, and should
 only be used for small-scale evaluation and development.
 
 [[ntp]]
-=== NTP clock synchronization
+=== NTP Clock Synchronization
+
 For the master and tablet server daemons, the server's clock must be synchronized using NTP.
 In addition, the *maximum clock error* (not to be mistaken with the estimated error)
 be below a configurable threshold. The default value is 10 seconds, but it can be set with the flag
@@ -164,7 +166,7 @@ heap memory dump, it does contain stack memory and therefore it is possible for
 application data to appear in a minidump. If confidential or personal
 information is stored on the cluster, do not share minidump files.
 
-== Troubleshooting Performance Issues
+== Performance Troubleshooting
 
 [[kudu_tracing]]
 === Kudu Tracing
