@@ -164,10 +164,13 @@ kuduContext.deleteTable("unwanted_table")
 - Kudu tables with a column name containing upper case or non-ascii characters
   may not be used with SparkSQL. Non-primary key columns may be renamed in Kudu
   to work around this issue.
-- `NULL`, `NOT NULL`, `<>`, `OR`, `LIKE`, and `IN` predicates are not pushed to
-  Kudu, and instead will be evaluated by the Spark task.
+- `<>` and `OR` predicates are not pushed to Kudu, and instead will be evaluated
+  by the Spark task. Only `LIKE` predicates with a suffix wildcard are pushed to
+  Kudu, meaning that `LIKE "FOO%"` is pushed down but `LIKE "FOO%BAR"` isn't.
 - Kudu does not support all types supported by Spark SQL, such as `Date`,
   `Decimal` and complex types.
+- Kudu tables may only be registered as temporary tables in SparkSQL.
+  Kudu tables may not be queried using HiveContext.
 
 
 == Kudu Python Client

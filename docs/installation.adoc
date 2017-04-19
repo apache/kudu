@@ -53,6 +53,7 @@ Linux::
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
       information.
     - ntp.
+    - xfs or ext4 formatted drives.
 macOS::
     - OS X 10.10 Yosemite, OS X 10.11 El Capitan, or macOS Sierra.
     - Prebuilt macOS packages are not provided.
