@@ -242,6 +242,13 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   # ATTRIBUTE_DEPRECATED in its signature.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wdocumentation-deprecated-sync")
 
+  # Avoid 'taking address of packed member' warnings, which pollute macOs/clang 4.0 builds.
+  # This is also done in chromium. See:
+  # https://bugs.chromium.org/p/chromium/issues/detail?id=619640
+  # Unfortunately older versions of clang complain about not knowing the warning, so
+  # this also disables the warning about unknown warnings.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unknown-warning-option -Wno-address-of-packed-member")
+
   # Only hardcode -fcolor-diagnostics if stderr is opened on a terminal. Otherwise
   # the color codes show up as noisy artifacts.
   #
