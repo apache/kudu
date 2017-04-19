@@ -27,14 +27,14 @@
 :sectlinks:
 :experimental:
 
-== Schema and Usage Limitations
-* Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
-  a single row contains multiple kilobytes of data.
+== Schema
 
-* The columns which make up the primary key must be listed first in the schema.
+=== Primary keys
 
 * The primary key may not be changed after the table is created.
   You must drop and recreate a table to select a new primary key.
+
+* The columns which make up the primary key must be listed first in the schema.
 
 * The primary key of a row may not be modified using the `UPDATE` functionality.
   To modify a row's primary key, the row must be deleted and re-inserted with
@@ -44,13 +44,50 @@
   primary key definition. Additionally, all columns that are part of a primary
   key definition must be `NOT NULL`.
 
-* Type and nullability of existing columns cannot be changed by altering the table.
+* Auto-generated primary keys are not supported.
+
+* Cells making up a composite primary key are limited to a total of 16KB after the internal
+  composite-key encoding done by Kudu.
+
+=== Columns
+
+* TIMESTAMP, DECIMAL, CHAR, VARCHAR, DATE, and complex types like ARRAY are not supported.
+
+* Type, nullability, compression, and encoding of existing columns cannot be changed by altering the table.
+
+* Tables can have a maximum of 300 columns.
+
+=== Tables
+
+* Tables must have an odd number of replicas, with a maximum of 7.
+
+* Replication factor (set at table creation time) cannot be changed.
+
+=== Cells (individual values)
+
+* Cells cannot be larger than 64KB.
+
+=== Other usage limitations
+
+* Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
+  a single row contains multiple kilobytes of data.
+
+* Secondary indexes are not supported.
+
+* Multi-row transactions are not supported.
+
+* Relational features, like foreign keys, are not supported.
+
+* Identifiers such as column and table names are restricted to be valid UTF-8 strings.
+  Additionally, a maximum length of 256 characters is enforced.
 
 * Dropping a column does not immediately reclaim space. Compaction must run first.
-There is no way to run compaction manually, but dropping the table will reclaim the
-space immediately.
+
+* There is no way to run compaction manually, but dropping the table will reclaim the
+  space immediately.
 
 == Partitioning Limitations
+
 * Tables must be manually pre-split into tablets using simple or compound primary
   keys. Automatic splitting is not yet possible. Range partitions may be added
   or dropped after a table has been created. See
@@ -60,21 +97,61 @@ space immediately.
   create a new table with the new partitioning and insert the contents of the old
   table.
 
+* Tablets that lose a majority of replicas (such as 1 left out of 3) require manual
+  intervention to be repaired.
+
+== Cluster management
+
+* Rack awareness is not supported.
+
+* Multi-datacenter is not supported.
+
+* Rolling restart is not supported.
+
+== Server management
+
+* Production deployments should configure a least 4GB of memory for tablet servers,
+  and ideally more than 10GB.
+
+* Write ahead logs (WAL) can only be stored on one disk.
+
+* Disk failures are not tolerated and tablets servers will crash as soon as one is detected.
+
+* Failed disks with unrecoverable data require the formatting of all the Kudu data for
+  that tablet server before it can be started again.
+
+* Data directories cannot be added/removed; all must be reformatted to change the set
+  of directories.
+
+* Tablet servers cannot be gracefully decommissioned.
+
+* Tablet servers can’t change address/port.
+
+* Kudu has a hard requirement on having up-to-date NTP. Kudu masters and tablet servers
+  will crash when out of sync.
+
+* Kudu releases are only tested with NTP. Other time synchronization providers like Chrony
+  may or may not work.
+
+== Scale
+
+* Recommended maximum number of tablet servers is 100.
+
+* Recommended maximum number of masters is 3.
+
+* Recommended maximum amount of stored data, post-replication and post-compression,
+  per tablet server is 4TB.
+
+* Recommended maximum number of tablets per tablet server is 1000, post-replication.
+
+* Maximum number of tablets per table for each tablet server is 60, post-replication,
+  at table-creation time.
+
 == Replication and Backup Limitations
+
 * Kudu does not currently include any built-in features for backup and restore.
   Users are encouraged to use tools such as Spark or Impala to export or import
   tables as necessary.
-
-== Impala Limitations
-
-* Updates, inserts, and deletes via Impala are non-transactional. If a query
-  fails part of the way through, its partial effects will not be rolled back.
-
-* No timestamp and decimal type support.
-
-* The maximum parallelism of a single query is limited to the number of tablets
-  in a table. For good analytic performance, aim for 10 or more tablets per host
-  or use large tables.
 
 == Security Limitations
 

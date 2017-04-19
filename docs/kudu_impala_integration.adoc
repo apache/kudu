@@ -743,3 +743,8 @@ The examples above have only explored a fraction of what you can do with Impala 
 - `NULL`, `NOT NULL`, `!=`, and `LIKE` predicates are not pushed to Kudu, and
   instead will be evaluated by the Impala scan node. This may decrease performance
   relative to other types of predicates.
+- Updates, inserts, and deletes via Impala are non-transactional. If a query
+  fails part of the way through, its partial effects will not be rolled back.
+- The maximum parallelism of a single query is limited to the number of tablets
+  in a table. For good analytic performance, aim for 10 or more tablets per host
+  or use large tables.
