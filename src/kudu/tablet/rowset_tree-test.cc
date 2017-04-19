@@ -181,7 +181,7 @@ TEST_P(TestRowSetTreePerformance, TestPerformance) {
                             case_desc.c_str(),
                             "batched",
                             static_cast<int>(batch_total/1e6),
-                            oat_total / batch_total);
+                            batch_total ? (oat_total / batch_total) : 0);
 }
 
 TEST_F(TestRowSetTree, TestEndpointsConsistency) {
