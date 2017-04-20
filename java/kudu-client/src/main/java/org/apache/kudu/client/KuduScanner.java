@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -110,6 +111,24 @@ public class KuduScanner {
   }
 
   /**
+   * Returns the RemoteTablet currently being scanned, if any.
+   */
+  @VisibleForTesting
+  RemoteTablet currentTablet() {
+    return asyncScanner.currentTablet();
+  }
+
+  /**
+   * Gets the replica selection mechanism being used.
+   *
+   * @return the replica selection mechanism
+   */
+  @VisibleForTesting
+  ReplicaSelection getReplicaSelection() {
+    return asyncScanner.getReplicaSelection();
+  }
+
+  /**
    * A Builder class to build {@link KuduScanner}.
    * Use {@link KuduClient#newScannerBuilder} in order to get a builder instance.
    */
@@ -128,7 +147,7 @@ public class KuduScanner {
      */
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
-          client, table, projectedColumnNames, projectedColumnIndexes, readMode, orderMode,
+          client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
           scanRequestTimeout, predicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           htTimestamp, batchSizeBytes, PartitionPruner.create(this), replicaSelection));

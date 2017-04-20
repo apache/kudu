@@ -340,32 +340,58 @@ public class BaseKuduTest {
    * @throws Exception
    */
   protected static void killTabletLeader(KuduTable table) throws Exception {
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
+    if (tablets.isEmpty() || tablets.size() > 1) {
+      fail("Currently only support killing leaders for tables containing 1 tablet, table " +
+      table.getName() + " has " + tablets.size());
+    }
+    LocatedTablet tablet = tablets.get(0);
+    if (tablet.getReplicas().size() == 1) {
+      fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
+    }
+
+    Integer port = findLeaderTabletServerPort(tablet);
+    miniCluster.killTabletServerOnPort(port);
+  }
+
+  /**
+   * Helper method to kill a tablet server that serves the given tablet's
+   * leader. The currently running test case will be failed if the tablet has no
+   * leader after some retries, or if the tablet server was already killed.
+   *
+   * This method is thread-safe.
+   * @param tablet a RemoteTablet which will get its leader killed
+   * @throws Exception
+   */
+  protected static void killTabletLeader(RemoteTablet tablet) throws Exception {
+    int port = findLeaderTabletServerPort(new LocatedTablet(tablet));
+    miniCluster.killTabletServerOnPort(port);
+  }
+
+  /**
+   * Finds the RPC port of the given tablet's leader tablet server.
+   * @param tablet a LocatedTablet
+   * @return the RPC port of the given tablet's leader tablet server.
+   * @throws Exception
+   */
+  private static int findLeaderTabletServerPort(LocatedTablet tablet)
+      throws Exception {
     LocatedTablet.Replica leader = null;
     DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(DEFAULT_SLEEP);
     while (leader == null) {
       if (deadlineTracker.timedOut()) {
-        fail("Timed out while trying to find a leader for this table: " + table.getName());
+        fail("Timed out while trying to find a leader for this table");
       }
-      List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
-      if (tablets.isEmpty() || tablets.size() > 1) {
-        fail("Currently only support killing leaders for tables containing 1 tablet, table " +
-            table.getName() + " has " + tablets.size());
-      }
-      LocatedTablet tablet = tablets.get(0);
-      if (tablet.getReplicas().size() == 1) {
-        fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
-      }
+
       leader = tablet.getLeaderReplica();
       if (leader == null) {
         LOG.info("Sleeping while waiting for a tablet LEADER to arise, currently slept " +
-            deadlineTracker.getElapsedMillis() + "ms");
+        deadlineTracker.getElapsedMillis() + "ms");
         Thread.sleep(50);
       }
     }
-
-    Integer port = leader.getRpcPort();
-    miniCluster.killTabletServerOnPort(port);
+    return leader.getRpcPort();
   }
 
   /**
@@ -420,6 +446,22 @@ public class BaseKuduTest {
     int port = tablet.getReplicas().get(
         randomForTSRestart.nextInt(tablet.getReplicas().size())).getRpcPort();
 
+    miniCluster.killTabletServerOnPort(port);
+
+    Thread.sleep(1000);
+
+    miniCluster.restartDeadTabletServerOnPort(port);
+  }
+
+  /**
+   * Kills a tablet server that serves the given tablet's leader and restarts it.
+   * Waits between killing and restarting the process.
+   *
+   * @param tablet a RemoteTablet which will get its leader killed and restarted
+   * @throws Exception
+   */
+  protected static void restartTabletServer(RemoteTablet tablet) throws Exception {
+    int port = findLeaderTabletServerPort(new LocatedTablet(tablet));
     miniCluster.killTabletServerOnPort(port);
 
     Thread.sleep(1000);

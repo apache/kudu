@@ -224,6 +224,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       builder.cacheBlocks(message.getCacheBlocks());
     }
 
+    if (message.hasFaultTolerant()) {
+      builder.setFaultTolerant(message.getFaultTolerant());
+    }
+
     return builder.build();
   }
 
@@ -326,6 +330,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       }
 
       proto.setCacheBlocks(cacheBlocks);
+      proto.setFaultTolerant(isFaultTolerant);
 
       try {
         PartitionPruner pruner = PartitionPruner.create(this);

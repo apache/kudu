@@ -509,16 +509,18 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
   private KuduException dispatchTSErrorOrReturnException(
       KuduRpc<?> rpc, Tserver.TabletServerErrorPB error,
       RpcTraceFrame.RpcTraceFrameBuilder traceBuilder) {
-    WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
+    Tserver.TabletServerErrorPB.Code errCode = error.getCode();
+    WireProtocol.AppStatusPB.ErrorCode errStatusCode = error.getStatus().getCode();
     Status status = Status.fromTabletServerErrorPB(error);
-    if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
+    if (errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
       kuduClient.handleTabletNotFound(rpc, new RecoverableException(status), this);
       // we're not calling rpc.callback() so we rely on the client to retry that RPC
-    } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
+    } else if (errCode == Tserver.TabletServerErrorPB.Code.TABLET_NOT_RUNNING ||
+        errStatusCode == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE) {
       kuduClient.handleRetryableError(rpc, new RecoverableException(status));
       // The following two error codes are an indication that the tablet isn't a leader.
-    } else if (code == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||
-        code == WireProtocol.AppStatusPB.ErrorCode.ABORTED) {
+    } else if (errStatusCode == WireProtocol.AppStatusPB.ErrorCode.ILLEGAL_STATE ||
+        errStatusCode == WireProtocol.AppStatusPB.ErrorCode.ABORTED) {
       kuduClient.handleNotLeader(rpc, new RecoverableException(status), this);
     } else {
       return new NonRecoverableException(status);

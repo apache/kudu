@@ -43,7 +43,7 @@ public abstract class AbstractKuduScannerBuilder
   final Map<String, KuduPredicate> predicates = new HashMap<>();
 
   AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
-  Common.OrderMode orderMode = Common.OrderMode.UNORDERED;
+  boolean isFaultTolerant = false;
   int batchSizeBytes = 1024 * 1024;
   long limit = Long.MAX_VALUE;
   boolean prefetching = false;
@@ -74,23 +74,27 @@ public abstract class AbstractKuduScannerBuilder
     return (S) this;
   }
 
-  /**
-   * Return scan results in primary key sorted order.
+ /**
+   * Make scans resumable at another tablet server if current server fails if
+   * isFaultTolerant is true.
+   * <p>
+   * Scans are by default non fault-tolerant, and scans will fail
+   * if scanning an individual tablet fails (for example, if a tablet server
+   * crashes in the middle of a tablet scan). If isFaultTolerant is set to true,
+   * scans will be resumed at another tablet server in the case of failure.
    *
-   * If the table is hash partitioned, the scan must have an equality predicate
-   * on all hashed columns.
+   * Fault-tolerant scans typically have lower throughput than non
+   * fault-tolerant scans. Fault tolerant scans use READ_AT_SNAPSHOT read mode.
+   * If no snapshot timestamp is provided, the server will pick one.
    *
-   * Package private until proper hash partitioning equality predicate checks
-   * are in place.
-   *
-   * Disabled by default.
+   * @param isFaultTolerant a boolean that indicates if scan is fault-tolerant
    * @return this instance
    */
-  @InterfaceAudience.Private
-  @InterfaceStability.Unstable
-  S sortResultsByPrimaryKey() {
-    orderMode = Common.OrderMode.ORDERED;
-    readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
+  public S setFaultTolerant(boolean isFaultTolerant) {
+    this.isFaultTolerant = isFaultTolerant;
+    if (isFaultTolerant) {
+      readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
+    }
     return (S) this;
   }
 

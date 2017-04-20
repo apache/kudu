@@ -17,13 +17,11 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 import java.util.Random;
 
 import com.google.common.collect.Lists;
 import org.junit.BeforeClass;
-import org.junit.Test;
 
 import org.apache.kudu.Schema;
 
@@ -35,11 +33,11 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
   private static final String TABLE_NAME =
       ITScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
-  private static final int ROW_COUNT = 20000;
-  private static final int TABLET_COUNT = 3;
+  protected static final int ROW_COUNT = 20000;
+  protected static final int TABLET_COUNT = 3;
 
   private static Schema schema = getBasicSchema();
-  private static KuduTable table;
+  protected static KuduTable table;
 
   private static Random random = new Random(1234);
 
@@ -75,45 +73,32 @@ public class ITScannerMultiTablet extends BaseKuduTest {
   }
 
   /**
-   * Test for KUDU-1343 with a multi-batch multi-tablet scan.
+   * Injecting failures (kill or restart TabletServer) while scanning, to verify:
+   * fault tolerant scanner will continue scan and non-fault tolerant scanner will throw
+   * {@link NonRecoverableException}.
+   *
+   * Also makes sure we pass all the correct information down to the server by verifying
+   * we get rows in order from 3 tablets. We detect those tablet boundaries when keys suddenly
+   * become smaller than what was previously seen.
+   *
+   * @param shouldRestart if true restarts TabletServer, otherwise kills TabletServer
+   * @param isFaultTolerant if true uses fault tolerant scanner, otherwise
+   *                        uses non fault-tolerant one
+   * @param finishFirstScan if true injects failure before finishing first tablet scan,
+   *                        otherwise in the middle of tablet scanning
+   * @throws Exception
    */
-  @Test(timeout = 100000)
-  public void testKudu1343() throws Exception {
+  void faultInjectionScanner(boolean shouldRestart, boolean isFaultTolerant,
+      boolean finishFirstScan) throws Exception {
     KuduScanner scanner = syncClient.newScannerBuilder(table)
-        .batchSizeBytes(1) // Just a hint, won't actually be that small
-        .build();
-
-    int rowCount = 0;
-    int loopCount = 0;
-    while(scanner.hasMoreRows()) {
-      loopCount++;
-      RowResultIterator rri = scanner.nextRows();
-      while (rri.hasNext()) {
-        rri.next();
-        rowCount++;
-      }
-    }
-
-    assertTrue(loopCount > TABLET_COUNT);
-    assertEquals(ROW_COUNT, rowCount);
-  }
-
-  /**
-   * Makes sure we pass all the correct information down to the server by verifying we get rows in
-   * order from 4 tablets. We detect those tablet boundaries when keys suddenly become smaller than
-   * what was previously seen.
-   */
-  @Test(timeout = 100000)
-  public void testSortResultsByPrimaryKey() throws Exception {
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
-        .sortResultsByPrimaryKey()
-        .setProjectedColumnIndexes(Lists.newArrayList(0))
-        .build();
+        .setFaultTolerant(isFaultTolerant)
+        .batchSizeBytes(1)
+        .setProjectedColumnIndexes(Lists.newArrayList(0)).build();
 
     int rowCount = 0;
     int previousRow = -1;
     int tableBoundariesCount = 0;
-    while(scanner.hasMoreRows()) {
+    if (scanner.hasMoreRows()) {
       RowResultIterator rri = scanner.nextRows();
       while (rri.hasNext()) {
         int key = rri.next().getInt(0);
@@ -124,6 +109,36 @@ public class ITScannerMultiTablet extends BaseKuduTest {
         rowCount++;
       }
     }
+
+    if (!finishFirstScan) {
+      if (shouldRestart) {
+        restartTabletServer(scanner.currentTablet());
+      } else {
+        killTabletLeader(scanner.currentTablet());
+      }
+    }
+
+    boolean failureInjected = false;
+    while (scanner.hasMoreRows()) {
+      RowResultIterator rri = scanner.nextRows();
+      while (rri.hasNext()) {
+        int key = rri.next().getInt(0);
+        if (key < previousRow) {
+          tableBoundariesCount++;
+          if (finishFirstScan && !failureInjected) {
+            if (shouldRestart) {
+              restartTabletServer(scanner.currentTablet());
+            } else {
+              killTabletLeader(scanner.currentTablet());
+            }
+            failureInjected = true;
+          }
+        }
+        previousRow = key;
+        rowCount++;
+      }
+    }
+
     assertEquals(ROW_COUNT, rowCount);
     assertEquals(TABLET_COUNT, tableBoundariesCount);
   }
