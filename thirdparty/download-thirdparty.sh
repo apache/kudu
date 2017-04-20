@@ -340,6 +340,39 @@ if [ ! -d "$SPARSEPP_SOURCE" ]; then
   popd
 fi
 
+THRIFT_PATCHLEVEL=0
+if [ ! -d "$THRIFT_SOURCE" ]; then
+  fetch_and_expand $THRIFT_NAME.tar.gz
+  pushd $THRIFT_SOURCE
+  touch patchlevel-$THRIFT_PATCHLEVEL
+  popd
+fi
+
+BISON_PATCHLEVEL=0
+if [ ! -d "$BISON_SOURCE" ]; then
+  fetch_and_expand $BISON_NAME.tar.gz
+  # This would normally call autoreconf, but it does not succeed with
+  # autoreconf 2.69 (RHEL 7): "autoreconf: 'configure.ac' or 'configure.in' is required".
+  pushd $BISON_SOURCE
+  touch patchlevel-$BISON_PATCHLEVEL
+  popd
+fi
+
+HIVE_PATCHLEVEL=0
+if [ ! -d "$HIVE_SOURCE" ]; then
+  fetch_and_expand $HIVE_NAME.tar.gz
+  pushd $HIVE_SOURCE
+  touch patchlevel-$HIVE_PATCHLEVEL
+  popd
+fi
+
+HADOOP_PATCHLEVEL=0
+if [ ! -d "$HADOOP_SOURCE" ]; then
+  fetch_and_expand $HADOOP_NAME.tar.gz
+  pushd $HADOOP_SOURCE
+  touch patchlevel-$HADOOP_PATCHLEVEL
+  popd
+fi
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

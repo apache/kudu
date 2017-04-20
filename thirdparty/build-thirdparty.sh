@@ -95,6 +95,10 @@ else
       "breakpad")     F_BREAKPAD=1 ;;
       "sparsehash")   F_SPARSEHASH=1 ;;
       "sparsepp")     F_SPARSEPP=1 ;;
+      "thrift")       F_THRIFT=1 ;;
+      "bison")        F_BISON=1 ;;
+      "hadoop")       F_HADOOP=1 ;;
+      "hive")         F_HIVE=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -237,6 +241,22 @@ if [ -n "$F_COMMON" -o -n "$F_SPARSEPP" ]; then
   build_sparsepp
 fi
 
+if [ -n "$F_COMMON" -o -n "$F_BISON" ]; then
+  build_bison
+fi
+
+# Install Hadoop and Hive by symlinking their source directories (which are
+# pre-built) into $PREFIX/opt.
+if [ -n "$F_COMMON" -o -n "$F_HADOOP" ]; then
+  mkdir -p $PREFIX/opt
+  ln -nsf $HADOOP_SOURCE $PREFIX/opt/hadoop
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_HIVE" ]; then
+  mkdir -p $PREFIX/opt
+  ln -nsf $HIVE_SOURCE $PREFIX/opt/hive
+fi
+
 ### Build C dependencies without instrumentation
 
 PREFIX=$PREFIX_DEPS
@@ -336,6 +356,10 @@ fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BREAKPAD" ]; then
   build_breakpad
+fi
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_THRIFT" ]; then
+  build_thrift
 fi
 
 restore_env
@@ -507,6 +531,10 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_BREAKPAD" ]; then
   build_breakpad
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_THRIFT" ]; then
+  build_thrift
 fi
 
 restore_env

@@ -619,7 +619,9 @@ Source: http://www.boost.org/
   ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
   DEALINGS IN THE SOFTWARE.
 
-
+--------------------------------------------------------------------------------
+thirdparty/thrift-*/: Apache License v2.0
+Source: https://thrift.apache.org
 
 ================================================================================
 BUILD-ONLY DEPENDENCIES
@@ -655,3 +657,17 @@ thirdparty/python-*: Python 2.7 license (https://www.python.org/download/release
 Source: http://www.python.org/
 NOTE: optional build-time dependency, not linked or bundled.
 
+--------------------------------------------------------------------------------
+thirdparty/bison: GPLv3 license (https://www.gnu.org/licenses/gpl.html)
+Source: https://www.gnu.org/software/bison
+NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/hadoop-*/: Apache License v2.0
+Source: https://hadoop.apache.org
+NOTE: build-time dependency
+
+--------------------------------------------------------------------------------
+thirdparty/hive-*/: Apache License v2.0
+Source: https://hive.apache.org
+NOTE: build-time dependency

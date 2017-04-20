@@ -90,6 +90,7 @@ BEGIN {
   muted["kudu/common/encoded_key-test.cc"]
   muted["kudu/common/schema.h"]
   muted["kudu/experiments/rwlock-perf.cc"]
+  muted["kudu/hms/hms_client.cc"]
   muted["kudu/rpc/reactor.cc"]
   muted["kudu/rpc/reactor.h"]
   muted["kudu/security/ca/cert_management.cc"]

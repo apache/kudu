@@ -72,6 +72,16 @@ DEPS_FOR_ALL = \
 
      # Tests that require tooling require this.
      "build/latest/bin/kudu",
+
+     # The HMS tests require the Hadoop and Hive libraries. These files are just
+     # symlinks, but dist-test will copy the entire directories they point to.
+     # The symlinks themselves won't be recreated, so we point to them with
+     # environment variables in run_dist_test.py.
+     "build/latest/bin/hive-home",
+     "build/latest/bin/hadoop-home",
+
+     # Add the Kudu HMS plugin.
+     "build/latest/bin/hms-plugin.jar",
      ]
 
 # The number of shards to split tests into. This is set on a per-test basis
@@ -183,10 +193,12 @@ def ldd_deps(exe):
   If the provided 'exe' is not a binary executable, returns
   an empty list.
   """
-  if (exe.endswith(".pl") or
+  if (exe.endswith(".jar") or
+      exe.endswith(".pl") or
       exe.endswith(".py") or
       exe.endswith(".sh") or
-      exe.endswith(".txt")):
+      exe.endswith(".txt") or
+      os.path.isdir(exe)):
     return []
   p = subprocess.Popen(["ldd", exe], stdout=subprocess.PIPE)
   out, err = p.communicate()

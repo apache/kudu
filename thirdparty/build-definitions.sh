@@ -728,3 +728,59 @@ build_sparsepp() {
   rsync -av --delete sparsepp/ $PREFIX/include/sparsepp/
   popd
 }
+
+build_thrift() {
+  THRIFT_BDIR=$TP_BUILD_DIR/$THRIFT_NAME$MODE_SUFFIX
+  mkdir -p $THRIFT_BDIR
+  pushd $THRIFT_BDIR
+  rm -Rf CMakeCache.txt CMakeFiles/
+
+  # Thrift depends on bison.
+  #
+  # Configure for a very minimal install - only the C++ client libraries are needed.
+  # Thrift requires C++11 when compiled on Linux against libc++ (see cxxfunctional.h).
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS -std=c++11" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    cmake \
+    -DBOOST_ROOT=$PREFIX \
+    -DBUILD_C_GLIB=OFF \
+    -DBUILD_COMPILER=ON \
+    -DBUILD_CPP=ON \
+    -DBUILD_EXAMPLES=OFF \
+    -DBUILD_HASKELL=OFF \
+    -DBUILD_JAVA=OFF \
+    -DBUILD_PYTHON=OFF \
+    -DBUILD_TESTING=OFF \
+    -DBUILD_TUTORIALS=OFF \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DWITH_BOOSTTHREADS=OFF \
+    -DWITH_LIBEVENT=OFF \
+    -DWITH_OPENSSL=OFF \
+    -DWITH_PLUGIN=OFF \
+    $EXTRA_CMAKE_FLAGS \
+    $THRIFT_SOURCE
+
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+
+  # Install fb303.thrift into the share directory.
+  mkdir -p $PREFIX/share/fb303/if
+  cp $THRIFT_SOURCE/contrib/fb303/if/fb303.thrift $PREFIX/share/fb303/if
+}
+
+build_bison() {
+  BISON_BDIR=$TP_BUILD_DIR/$BISON_NAME$MODE_SUFFIX
+  mkdir -p $BISON_BDIR
+  pushd $BISON_BDIR
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    $BISON_SOURCE/configure \
+    --prefix=$PREFIX
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}

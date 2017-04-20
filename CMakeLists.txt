@@ -791,13 +791,17 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
   endif()
 endfunction()
 
-# Look in thirdparty prefix paths before anywhere else for system dependencies.
-set(CMAKE_PREFIX_PATH ${THIRDPARTY_INSTALL_COMMON_DIR} ${CMAKE_PREFIX_PATH})
 if (${KUDU_USE_TSAN})
-  set(CMAKE_PREFIX_PATH ${THIRDPARTY_INSTALL_TSAN_DIR} ${CMAKE_PREFIX_PATH})
+  set(THIRDPARTY_INSTALL_CURRENT_DIR ${THIRDPARTY_INSTALL_DIR}/tsan)
 else()
-  set(CMAKE_PREFIX_PATH ${THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR} ${CMAKE_PREFIX_PATH})
+  set(THIRDPARTY_INSTALL_CURRENT_DIR ${THIRDPARTY_INSTALL_DIR}/uninstrumented)
 endif()
+
+# Look in thirdparty prefix paths before anywhere else for system dependencies.
+set(CMAKE_PREFIX_PATH
+    ${THIRDPARTY_INSTALL_COMMON_DIR}
+    ${THIRDPARTY_INSTALL_CURRENT_DIR}
+    ${CMAKE_PREFIX_PATH})
 
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
@@ -851,6 +855,22 @@ ADD_THIRDPARTY_LIB(protoc
   SHARED_LIB "${PROTOBUF_PROTOC_SHARED_LIBRARY}"
   DEPS protobuf)
 find_package(KRPC REQUIRED)
+
+## Thrift
+find_package(Thrift REQUIRED)
+include_directories(SYSTEM ${THRIFT_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(thrift
+  STATIC_LIB "${THRIFT_STATIC_LIBRARY}"
+  SHARED_LIB "${THRIFT_SHARED_LIBRARY}")
+
+if (NOT NO_TESTS)
+  # The HMS tests rely on JAVA_HOME being set in order to run the HMS, and
+  # the JDK 1.7 or later for compiling the Kudu metastore plugin.
+  find_package(JavaHome REQUIRED)
+  find_package(Java 1.7 REQUIRED)
+  # Defines the add_jar() CMake command.
+  include(UseJava)
+endif()
 
 ## Snappy
 find_package(Snappy REQUIRED)
@@ -1195,6 +1215,7 @@ add_subdirectory(src/kudu/experiments)
 add_subdirectory(src/kudu/fs)
 # Google util libraries borrowed from supersonic, tcmalloc, Chromium, etc.
 add_subdirectory(src/kudu/gutil)
+add_subdirectory(src/kudu/hms)
 add_subdirectory(src/kudu/integration-tests)
 add_subdirectory(src/kudu/kserver)
 add_subdirectory(src/kudu/master)

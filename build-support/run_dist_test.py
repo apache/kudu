@@ -27,6 +27,7 @@
 # We also 'cat' the test log upon completion so that the test logs are
 # uploaded by the test slave back.
 
+import glob
 import optparse
 import os
 import re
@@ -121,6 +122,12 @@ def main():
   # binaries (like 'foo_test' or 'kudu-tserver') _DO_ pick them up.
   fixup_rpaths(os.path.join(ROOT, "build"))
   fixup_rpaths(os.path.join(ROOT, "thirdparty"))
+
+  # Add environment variables for Java dependencies. These environment variables
+  # are used in mini_hms.cc.
+  env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/apache-hive-*-bin"))[0]
+  env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
+  env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
   env['LD_LIBRARY_PATH'] = ":".join(
     [os.path.join(ROOT, "build/dist-test-system-libs/"),

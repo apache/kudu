@@ -199,3 +199,27 @@ SPARSEHASH_SOURCE=$TP_SOURCE_DIR/$SPARSEHASH_NAME
 SPARSEPP_VERSION=824860bb76893d163efbcff330734b9f62eecb17
 SPARSEPP_NAME=sparsepp-$SPARSEPP_VERSION
 SPARSEPP_SOURCE=$TP_SOURCE_DIR/$SPARSEPP_NAME
+
+# TODO(dan): bump to 0.11 when it's released. We chose to use a bleeding edge
+# version instead of 0.10 in order to get the API and header inclusion
+# simplifications introduced in THRIFT-2221 (Thrift's previous use of tr1
+# conflicted with gtest's use of tuples).
+THRIFT_VERSION=8b8a8efea13d1c97f856053af0a5c0e6a8a76354
+THRIFT_NAME=thrift-$THRIFT_VERSION
+THRIFT_SOURCE=$TP_SOURCE_DIR/$THRIFT_NAME
+
+BISON_VERSION=3.0.4
+BISON_NAME=bison-$BISON_VERSION
+BISON_SOURCE=$TP_SOURCE_DIR/$BISON_NAME
+
+# TODO(dan): bump to a release version once HIVE-17747 is published.
+HIVE_VERSION=3fb4649fa847cfec33f701f6c884f12087680cf0
+HIVE_NAME=apache-hive-$HIVE_VERSION-bin
+HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
+
+# The Hadoop tarball is the binary release tarball from hadoop.apache.org, with
+# the share/doc folder removed. The share/doc folder is about 2GiB of HTML
+# Javadoc files.
+HADOOP_VERSION=2.8.1
+HADOOP_NAME=hadoop-$HADOOP_VERSION
+HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
