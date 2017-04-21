@@ -230,6 +230,13 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
+  /**
+   * Returns the last timestamp received from a server. Used for CLIENT_PROPAGATED
+   * external consistency. Note that the returned timestamp is encoded and cannot be
+   * interpreted as a raw timestamp.
+   *
+   * @return a long indicating the specially-encoded last timestamp received from a server
+   */
   public synchronized long getLastPropagatedTimestamp() {
     return lastPropagatedTimestamp;
   }

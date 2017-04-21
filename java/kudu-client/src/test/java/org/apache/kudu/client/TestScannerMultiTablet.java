@@ -226,28 +226,37 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testScanPropagatesLatestTimestamp() throws Exception {
     AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+
     // Initially, the client does not have the timestamp set.
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(KuduClient.NO_TIMESTAMP, syncClient.getLastPropagatedTimestamp());
     KuduScanner syncScanner = new KuduScanner(scanner);
 
+    // Check that both clients return the same propagated timestamp.
     assertTrue(syncScanner.hasMoreRows());
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(KuduClient.NO_TIMESTAMP, syncClient.getLastPropagatedTimestamp());
 
     int rowCount = syncScanner.nextRows().getNumRows();
     // At this point, the call to the first tablet server should have been
     // done already, so the client should have received the propagated timestamp
     // in the scanner response.
-    long tsRef = client.getLastPropagatedTimestamp();
-    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, tsRef);
+    long asyncTsRef = client.getLastPropagatedTimestamp();
+    long syncTsRef = syncClient.getLastPropagatedTimestamp();
+    assertEquals(asyncTsRef, syncTsRef);
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, asyncTsRef);
+    assertNotEquals(KuduClient.NO_TIMESTAMP, syncTsRef);
 
     assertTrue(syncScanner.hasMoreRows());
     while (syncScanner.hasMoreRows()) {
       rowCount += syncScanner.nextRows().getNumRows();
-      final long ts = client.getLastPropagatedTimestamp();
+      final long asyncTs = client.getLastPropagatedTimestamp();
+      final long syncTs = syncClient.getLastPropagatedTimestamp();
       // Next scan responses from tablet servers should move the propagated
       // timestamp further.
-      assertTrue(ts > tsRef);
-      tsRef = ts;
+      assertEquals(syncTs, asyncTs);
+      assertTrue(asyncTs > asyncTsRef);
+      asyncTsRef = asyncTs;
     }
     assertNotEquals(0, rowCount);
   }

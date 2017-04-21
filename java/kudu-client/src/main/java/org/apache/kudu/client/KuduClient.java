@@ -41,12 +41,34 @@ import org.apache.kudu.annotations.InterfaceStability;
 public class KuduClient implements AutoCloseable {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
+  public static final long NO_TIMESTAMP = -1;
 
   @VisibleForTesting
   final AsyncKuduClient asyncClient;
 
   KuduClient(AsyncKuduClient asyncClient) {
     this.asyncClient = asyncClient;
+  }
+
+  /**
+   * Updates the last timestamp received from a server. Used for CLIENT_PROPAGATED
+   * external consistency.
+   *
+   * @param lastPropagatedTimestamp the last timestamp received from a server.
+   */
+  public void updateLastPropagatedTimestamp(long lastPropagatedTimestamp) {
+    asyncClient.updateLastPropagatedTimestamp(lastPropagatedTimestamp);
+  }
+
+  /**
+   * Returns the last timestamp received from a server. Used for CLIENT_PROPAGATED
+   * external consistency. Note that the returned timestamp is encoded and cannot be
+   * interpreted as a raw timestamp.
+   *
+   * @return a long indicating the specially-encoded last timestamp received from a server
+   */
+  public long getLastPropagatedTimestamp() {
+    return asyncClient.getLastPropagatedTimestamp();
   }
 
   /**

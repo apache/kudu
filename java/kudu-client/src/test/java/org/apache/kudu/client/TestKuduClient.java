@@ -85,6 +85,30 @@ public class TestKuduClient extends BaseKuduTest {
   }
 
   /**
+   * Test setting and reading the most recent propagated timestamp.
+   */
+  @Test(timeout = 100000)
+  public void testLastPropagatedTimestamps() throws Exception {
+    long initial_ts = syncClient.getLastPropagatedTimestamp();
+
+    // Check that the initial timestamp is consistent with the asynchronous client.
+    assertEquals(initial_ts, client.getLastPropagatedTimestamp());
+    assertEquals(initial_ts, syncClient.getLastPropagatedTimestamp());
+
+    // Attempt to change the timestamp to a lower value. This should not change
+    // the internal timestamp, as it must be monotonically increasing.
+    syncClient.updateLastPropagatedTimestamp(initial_ts - 1);
+    assertEquals(initial_ts, client.getLastPropagatedTimestamp());
+    assertEquals(initial_ts, syncClient.getLastPropagatedTimestamp());
+
+    // Use the synchronous client to update the last propagated timestamp and
+    // check with both clients that the timestamp was updated.
+    syncClient.updateLastPropagatedTimestamp(initial_ts + 1);
+    assertEquals(initial_ts + 1, client.getLastPropagatedTimestamp());
+    assertEquals(initial_ts + 1, syncClient.getLastPropagatedTimestamp());
+  }
+
+  /**
    * Test creating and deleting a table through a KuduClient.
    */
   @Test(timeout = 100000)
