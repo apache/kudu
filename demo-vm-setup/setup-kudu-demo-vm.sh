@@ -19,7 +19,7 @@ if ! which VBoxManage >/dev/null ; then
   exit 1
 fi
 
-OVF=cloudera-quickstart-vm-5.10.0-kudu-virtualbox.ova
+OVF=cloudera-quickstart-vm-5.11.0-kudu-virtualbox.ova
 if [ $# -gt 2 ]; then
     echo "$0 [--image|-i VM image file]"
   exit 1
