@@ -264,15 +264,15 @@ class LogBlockContainer {
   // file was changed.
   Status ReopenMetadataWriter();
 
-  // Truncates this container's data file to 'total_bytes_written_' if it is
+  // Truncates this container's data file to 'next_block_offset_' if it is
   // full. This effectively removes any preallocated but unused space.
   //
-  // Should be called only when 'total_bytes_written_' is up-to-date with
+  // Should be called only when 'next_block_offset_' is up-to-date with
   // respect to the data on disk (i.e. after the container's records have
   // been loaded), otherwise data may be lost!
   //
   // This function is thread unsafe.
-  Status TruncateDataToTotalBytesWritten();
+  Status TruncateDataToNextBlockOffset();
 
   // Reads the container's metadata from disk, sanity checking and
   // returning the records in 'records'. Any on-disk inconsistencies are
@@ -280,15 +280,20 @@ class LogBlockContainer {
   Status ReadContainerRecords(FsReport* report,
                               deque<BlockRecordPB>* records) const;
 
-  // Updates 'total_bytes_written_' and 'total_blocks_written_', marking this
-  // container as full if needed. Should only be called when a block is fully
-  // written, as it will round up the container data file's position.
-  //
-  // Returns the number of bytes used by the block after realignment.
+  // Updates internal bookkeeping state to reflect the creation of a block,
+  // marking this container as full if needed. Should only be called when a
+  // block is fully written, as it will round up the container data file's position.
   //
   // This function is thread unsafe.
-  size_t UpdateBytesWrittenAndTotalBlocks(int64_t block_offset,
-                                          size_t block_length);
+  void BlockCreated(int64_t block_offset, int64_t block_length);
+
+  // Updates internal bookkeeping state to reflect the deletion of a block.
+  //
+  // Unlike BlockCreated(), this function is thread safe because block
+  // deletions can happen concurrently with creations.
+  //
+  // Note: the container is not made "unfull"; containers remain sparse until deleted.
+  void BlockDeleted(int64_t block_offset, int64_t block_length);
 
   // Run a task on this container's data directory thread pool.
   //
@@ -304,13 +309,18 @@ class LogBlockContainer {
 
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
-  int64_t total_bytes_written() const { return total_bytes_written_; }
+  int64_t next_block_offset() const { return next_block_offset_; }
+  int64_t total_bytes() const { return total_bytes_; }
+  int64_t total_blocks() const { return total_blocks_; }
+  int64_t live_bytes() const { return live_bytes_.Load(); }
+  int64_t live_bytes_aligned() const { return live_bytes_aligned_.Load(); }
+  int64_t live_blocks() const { return live_blocks_.Load(); }
   int64_t preallocated_window() const {
-    return std::max<int64_t>(0, preallocated_offset_ - total_bytes_written_);
+    return std::max<int64_t>(0, preallocated_offset_ - next_block_offset_);
   }
   bool full() const {
-    return total_bytes_written_ >= FLAGS_log_container_max_size ||
-        (max_num_blocks_ && (total_blocks_written_ >= max_num_blocks_));
+    return next_block_offset_ >= FLAGS_log_container_max_size ||
+        (max_num_blocks_ && (total_blocks_ >= max_num_blocks_));
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const DataDir* data_dir() const { return data_dir_; }
@@ -351,11 +361,30 @@ class LogBlockContainer {
   unique_ptr<WritablePBContainerFile> metadata_file_;
   shared_ptr<RWFile> data_file_;
 
-  // The amount of data written thus far in the container.
-  int64_t total_bytes_written_ = 0;
+  // The offset of the next block to be written to the container.
+  int64_t next_block_offset_ = 0;
+
+  // The amount of data (post block alignment) written thus far to the container.
+  int64_t total_bytes_ = 0;
 
   // The number of blocks written thus far in the container.
-  int64_t total_blocks_written_ = 0;
+  int64_t total_blocks_ = 0;
+
+  // The amount of data present in not-yet-deleted blocks of the container.
+  //
+  // Declared atomic because it is mutated from BlockDeleted().
+  AtomicInt<int64_t> live_bytes_;
+
+  // The amount of data (post block alignment) present in not-yet-deleted
+  // blocks of the container.
+  //
+  // Declared atomic because it is mutated from BlockDeleted().
+  AtomicInt<int64_t> live_bytes_aligned_;
+
+  // The number of not-yet-deleted blocks in the container.
+  //
+  // Declared atomic because it is mutated from BlockDeleted().
+  AtomicInt<int64_t> live_blocks_;
 
   // The metrics. Not owned by the log container; it has the same lifespan
   // as the block manager.
@@ -375,6 +404,9 @@ LogBlockContainer::LogBlockContainer(
                                 data_dir)),
       metadata_file_(std::move(metadata_file)),
       data_file_(std::move(data_file)),
+      live_bytes_(0),
+      live_bytes_aligned_(0),
+      live_blocks_(0),
       metrics_(block_manager->metrics()) {
 }
 
@@ -528,11 +560,11 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   return Status::OK();
 }
 
-Status LogBlockContainer::TruncateDataToTotalBytesWritten() {
+Status LogBlockContainer::TruncateDataToNextBlockOffset() {
   if (full()) {
     VLOG(2) << Substitute("Truncating container $0 to offset $1",
-                          ToString(), total_bytes_written_);
-    RETURN_NOT_OK(data_file_->Truncate(total_bytes_written_));
+                          ToString(), next_block_offset_);
+    RETURN_NOT_OK(data_file_->Truncate(next_block_offset_));
   }
   return Status::OK();
 }
@@ -640,10 +672,9 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   RETURN_NOT_OK(block_manager()->SyncContainer(*this));
 
   CHECK(block_manager()->AddLogBlock(this, block->id(),
-                                     total_bytes_written_,
+                                     next_block_offset_,
                                      block->BytesAppended()));
-  UpdateBytesWrittenAndTotalBlocks(total_bytes_written_,
-                                   block->BytesAppended());
+  BlockCreated(next_block_offset_, block->BytesAppended());
 
   // Truncate the container if it's now full; any left over preallocated space
   // is no longer needed.
@@ -651,7 +682,7 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   // Note that this take places _after_ the container has been synced to disk.
   // That's OK; truncation isn't needed for correctness, and in the event of a
   // crash, it will be retried at startup.
-  RETURN_NOT_OK(TruncateDataToTotalBytesWritten());
+  RETURN_NOT_OK(TruncateDataToNextBlockOffset());
 
   if (full() && block_manager()->metrics()) {
     block_manager()->metrics()->full_containers->Increment();
@@ -673,7 +704,7 @@ Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
 }
 
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
-  DCHECK_GE(offset, total_bytes_written_);
+  DCHECK_GE(offset, next_block_offset_);
 
   RETURN_NOT_OK(data_file_->Write(offset, data));
 
@@ -752,38 +783,49 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
   return Status::OK();
 }
 
-size_t LogBlockContainer::UpdateBytesWrittenAndTotalBlocks(int64_t block_offset,
-                                                           size_t block_length) {
+void LogBlockContainer::BlockCreated(int64_t block_offset, int64_t block_length) {
   DCHECK_GE(block_offset, 0);
 
   // The log block manager maintains block contiguity as an invariant, which
   // means accounting for the new block should be as simple as adding its
-  // length to 'total_bytes_written_'. However, due to KUDU-1793, some
-  // containers may have developed extra "holes" between blocks. We'll account
-  // for that by considering both the block's offset and its length.
+  // aligned length to 'next_block_offset_'. However, due to KUDU-1793, some
+  // containers may have developed gaps between blocks. We'll account for them
+  // by considering both the block's offset and its length.
   //
   // The number of bytes is rounded up to the nearest filesystem block so
   // that each Kudu block is guaranteed to be on a filesystem block
   // boundary. This guarantees that the disk space can be reclaimed when
   // the block is deleted.
-  int64_t new_total_bytes = KUDU_ALIGN_UP(
+  int64_t new_next_block_offset = KUDU_ALIGN_UP(
       block_offset + block_length, instance()->filesystem_block_size_bytes());
-  if (PREDICT_FALSE(new_total_bytes < total_bytes_written_)) {
+  if (PREDICT_FALSE(new_next_block_offset < next_block_offset_)) {
     LOG(WARNING) << Substitute(
-        "Container $0 unexpectedly tried to lower its size (from $1 to $2 "
-        "bytes), ignoring", ToString(), total_bytes_written_, new_total_bytes);
+        "Container $0 unexpectedly tried to lower its next block offset "
+        "(from $1 to $2), ignoring",
+        ToString(), next_block_offset_, new_next_block_offset);
   } else {
-    total_bytes_written_ = new_total_bytes;
+    int64_t aligned_block_length = new_next_block_offset - next_block_offset_;
+    total_bytes_+= aligned_block_length;
+    live_bytes_.IncrementBy(block_length);
+    live_bytes_aligned_.IncrementBy(aligned_block_length);
+    next_block_offset_ = new_next_block_offset;
   }
-
-  total_blocks_written_++;
+  total_blocks_++;
+  live_blocks_.Increment();
 
   if (full()) {
     VLOG(1) << Substitute(
         "Container $0 with size $1 is now full, max size is $2",
-        ToString(), total_bytes_written_, FLAGS_log_container_max_size);
+        ToString(), next_block_offset_, FLAGS_log_container_max_size);
   }
-  return new_total_bytes - block_offset;
+}
+
+void LogBlockContainer::BlockDeleted(int64_t block_offset, int64_t block_length) {
+  DCHECK_GE(block_offset, 0);
+
+  live_bytes_.IncrementBy(-block_length);
+  live_bytes_aligned_.IncrementBy(-GetAlignedBlockLength(block_offset, block_length));
+  live_blocks_.IncrementBy(-1);
 }
 
 void LogBlockContainer::ExecClosure(const Closure& task) {
@@ -1436,7 +1478,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
   block->reset(new internal::LogWritableBlock(container,
                                               new_block_id,
-                                              container->total_bytes_written()));
+                                              container->next_block_offset()));
   VLOG(3) << "Created block " << (*block)->id() << " in container "
           << container->ToString();
   return Status::OK();
@@ -1473,6 +1515,7 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   }
   VLOG(3) << "Deleting block " << block_id;
   lb->Delete();
+  lb->container()->BlockDeleted(lb->offset(), lb->length());
 
   // Record the on-disk deletion.
   //
@@ -1761,7 +1804,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       // XFS's speculative preallocation feature may artificially enlarge the
       // container's data file without updating its file size. As such, we
       // cannot simply compare the container's logical file size (available by
-      // proxy via preallocated_offset_) to total_bytes_written_ to decide
+      // proxy via preallocated_offset_) to next_block_offset_ to decide
       // whether to truncate the container.
       //
       // See KUDU-1856 for more details.
@@ -1772,6 +1815,9 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
 
       local_report.stats.lbm_full_container_count++;
     }
+    local_report.stats.live_block_bytes += container->live_bytes();
+    local_report.stats.live_block_bytes_aligned += container->live_bytes_aligned();
+    local_report.stats.live_block_count += container->live_blocks();
     local_report.stats.lbm_container_count++;
 
     next_block_id_.StoreMax(max_block_id + 1);
@@ -1820,7 +1866,6 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
                                          UntrackedBlockMap* block_map) {
   BlockId block_id(BlockId::FromPB(record.block_id()));
   scoped_refptr<LogBlock> lb;
-  size_t aligned_bytes;
   switch (record.op_type()) {
     case CREATE: {
       lb = new LogBlock(container, block_id, record.offset(), record.length());
@@ -1842,12 +1887,7 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       //
       // If we ignored deleted blocks, we would end up reusing the space
       // belonging to the last deleted block in the container.
-      aligned_bytes = container->UpdateBytesWrittenAndTotalBlocks(
-          record.offset(), record.length());
-
-      report->stats.live_block_count++;
-      report->stats.live_block_bytes += lb->length();
-      report->stats.live_block_bytes_aligned += aligned_bytes;
+      container->BlockCreated(record.offset(), record.length());
       break;
     }
     case DELETE:
@@ -1859,10 +1899,7 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
         return;
       }
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
-      report->stats.live_block_count--;
-      report->stats.live_block_bytes -= lb->length();
-      report->stats.live_block_bytes_aligned -=
-          container->GetAlignedBlockLength(lb->offset(), lb->length());
+      container->BlockDeleted(lb->offset(), lb->length());
       break;
     default:
       // TODO(adar): treat as a different kind of inconsistency?
@@ -1963,7 +2000,7 @@ Status LogBlockManager::Repair(FsReport* report) {
     for (auto& fcp : report->full_container_space_check->entries) {
       internal::LogBlockContainer* container = FindOrDie(containers_by_name,
                                                          fcp.container);
-      Status s = container->TruncateDataToTotalBytesWritten();
+      Status s = container->TruncateDataToNextBlockOffset();
       if (s.ok()) {
         fcp.repaired = true;
       }
