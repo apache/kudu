@@ -73,6 +73,17 @@ DEFINE_int64(rpc_negotiation_timeout_ms, 15000,
 TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
 TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
 
+DEFINE_bool(rpc_reopen_outbound_connections, false,
+            "Open a new connection to the server for every RPC call, "
+            "if possible. If not enabled, an already existing connection to a "
+            "server is reused upon making another call to the same server. "
+            "When this flag is enabled, an already existing _idle_ connection "
+            "to the server is closed upon making another RPC call which would "
+            "reuse the connection otherwise. "
+            "Used by tests only.");
+TAG_FLAG(rpc_reopen_outbound_connections, unsafe);
+TAG_FLAG(rpc_reopen_outbound_connections, runtime);
+
 namespace kudu {
 namespace rpc {
 
@@ -91,7 +102,9 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
     last_unused_tcp_scan_(cur_time_),
     reactor_(reactor),
     connection_keepalive_time_(bld.connection_keepalive_time_),
-    coarse_timer_granularity_(bld.coarse_timer_granularity_) {
+    coarse_timer_granularity_(bld.coarse_timer_granularity_),
+    total_client_conns_cnt_(0),
+    total_server_conns_cnt_(0) {
 }
 
 Status ReactorThread::Init() {
@@ -127,17 +140,16 @@ void ReactorThread::ShutdownInternal() {
   // Tear down any outbound TCP connections.
   Status service_unavailable = ShutdownError(false);
   VLOG(1) << name() << ": tearing down outbound TCP connections...";
-  for (auto c = client_conns_.begin(); c != client_conns_.end();
-       c = client_conns_.begin()) {
-    const scoped_refptr<Connection>& conn = (*c).second;
+  for (const auto& elem : client_conns_) {
+    const auto& conn = elem.second;
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(service_unavailable);
-    client_conns_.erase(c);
   }
+  client_conns_.clear();
 
   // Tear down any inbound TCP connections.
   VLOG(1) << name() << ": tearing down inbound TCP connections...";
-  for (const scoped_refptr<Connection>& conn : server_conns_) {
+  for (const auto& conn : server_conns_) {
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(service_unavailable);
   }
@@ -162,10 +174,12 @@ ReactorTask::ReactorTask() {
 ReactorTask::~ReactorTask() {
 }
 
-Status ReactorThread::GetMetrics(ReactorMetrics *metrics) {
+Status ReactorThread::GetMetrics(ReactorMetrics* metrics) {
   DCHECK(IsCurrentThread());
   metrics->num_client_connections_ = client_conns_.size();
   metrics->num_server_connections_ = server_conns_.size();
+  metrics->total_client_connections_ = total_client_conns_cnt_;
+  metrics->total_server_connections_ = total_server_conns_cnt_;
   return Status::OK();
 }
 
@@ -222,6 +236,7 @@ void ReactorThread::RegisterConnection(scoped_refptr<Connection> conn) {
     DestroyConnection(conn.get(), s);
     return;
   }
+  ++total_server_conns_cnt_;
   server_conns_.emplace_back(std::move(conn));
 }
 
@@ -252,8 +267,7 @@ void ReactorThread::TimerHandler(ev::timer& /*watcher*/, int revents) {
       "the timer handler.";
     return;
   }
-  MonoTime now(MonoTime::Now());
-  cur_time_ = now;
+  cur_time_ = MonoTime::Now();
 
   ScanIdleConnections();
 }
@@ -327,10 +341,23 @@ void ReactorThread::RunThread() {
 Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
                                             scoped_refptr<Connection>* conn) {
   DCHECK(IsCurrentThread());
-  conn_map_t::const_iterator c = client_conns_.find(conn_id);
-  if (c != client_conns_.end()) {
-    *conn = (*c).second;
-    return Status::OK();
+  conn_map_t::const_iterator it = client_conns_.find(conn_id);
+  if (it != client_conns_.end()) {
+    const auto& c = it->second;
+    // Regular mode: reuse the connection to the same server.
+    if (PREDICT_TRUE(!FLAGS_rpc_reopen_outbound_connections)) {
+      *conn = c;
+      return Status::OK();
+    }
+
+    // Kind of 'one-connection-per-RPC' mode: reopen the idle connection.
+    if (!c->Idle()) {
+      *conn = c;
+      return Status::OK();
+    }
+    DCHECK_EQ(Connection::CLIENT, c->direction());
+    c->Shutdown(Status::NetworkError("connection is closed due to non-reuse policy"));
+    client_conns_.erase(it);
   }
 
   // No connection to this remote. Need to create one.
@@ -340,8 +367,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   // Create a new socket and start connecting to the remote.
   Socket sock;
   RETURN_NOT_OK(CreateClientSocket(&sock));
-  bool connect_in_progress;
-  RETURN_NOT_OK(StartConnect(&sock, conn_id.remote(), &connect_in_progress));
+  RETURN_NOT_OK(StartConnect(&sock, conn_id.remote()));
 
   std::unique_ptr<Socket> new_socket(new Socket(sock.Release()));
 
@@ -361,6 +387,8 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
 
   // Insert into the client connection map to avoid duplicate connection requests.
   client_conns_.insert(conn_map_t::value_type(conn_id, *conn));
+  ++total_client_conns_cnt_;
+
   return Status::OK();
 }
 
@@ -412,18 +440,16 @@ Status ReactorThread::CreateClientSocket(Socket *sock) {
   return ret;
 }
 
-Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote, bool *in_progress) {
-  Status ret = sock->Connect(remote);
+Status ReactorThread::StartConnect(Socket *sock, const Sockaddr& remote) {
+  const Status ret = sock->Connect(remote);
   if (ret.ok()) {
     VLOG(3) << "StartConnect: connect finished immediately for " << remote.ToString();
-    *in_progress = false; // connect() finished immediately.
     return Status::OK();
   }
 
   int posix_code = ret.posix_code();
   if (Socket::IsTemporarySocketError(posix_code) || posix_code == EINPROGRESS) {
     VLOG(3) << "StartConnect: connect in progress for " << remote.ToString();
-    *in_progress = true; // The connect operation is in progress.
     return Status::OK();
   }
 

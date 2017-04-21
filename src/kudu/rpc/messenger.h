@@ -248,6 +248,7 @@ class Messenger {
 
  private:
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);
+  FRIEND_TEST(TestRpc, TestReopenOutboundConnections);
 
   explicit Messenger(const MessengerBuilder &bld);
 

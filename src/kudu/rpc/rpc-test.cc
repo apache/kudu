@@ -38,6 +38,7 @@
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
+DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
 
 using std::shared_ptr;
@@ -246,6 +247,48 @@ TEST_P(TestRpc, TestConnectionKeepalive) {
   ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
   ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
   ASSERT_EQ(0, metrics.num_client_connections_) << "Client should have 0 client connections";
+}
+
+// Test that outbound connections to the same server are reopen upon every RPC
+// call when the 'rpc_reopen_outbound_connections' flag is set.
+TEST_P(TestRpc, TestReopenOutboundConnections) {
+  // Set the flag to enable special mode: close and reopen already established
+  // outbound connections.
+  FLAGS_rpc_reopen_outbound_connections = true;
+
+  // Only run one reactor per messenger, so we can grab the metrics from that
+  // one without having to check all.
+  n_server_reactor_threads_ = 1;
+
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  // Verify the initial counters.
+  ReactorMetrics metrics;
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+
+  // Run several iterations, just in case.
+  for (int i = 0; i < 32; ++i) {
+    ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+    ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+    ASSERT_EQ(0, metrics.total_client_connections_);
+    ASSERT_EQ(i + 1, metrics.total_server_connections_);
+    ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+    ASSERT_EQ(i + 1, metrics.total_client_connections_);
+    ASSERT_EQ(0, metrics.total_server_connections_);
+  }
 }
 
 // Test that a call which takes longer than the keepalive time

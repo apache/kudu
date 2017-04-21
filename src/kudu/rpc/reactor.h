@@ -58,6 +58,11 @@ struct ReactorMetrics {
   int32_t num_client_connections_;
   // Number of server RPC connections currently connected.
   int32_t num_server_connections_;
+
+  // Total number of client RPC connections opened during Reactor's lifetime.
+  uint64_t total_client_connections_;
+  // Total number of server RPC connections opened during Reactor's lifetime.
+  uint64_t total_server_connections_;
 };
 
 // A task which can be enqueued to run on the reactor thread.
@@ -136,7 +141,6 @@ class ReactorThread {
   Status Init();
 
   // Add any connections on this reactor thread into the given status dump.
-  // May be called from another thread.
   Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                          DumpRunningRpcsResponsePB* resp);
 
@@ -213,9 +217,8 @@ class ReactorThread {
   // Create a new client socket (non-blocking, NODELAY)
   static Status CreateClientSocket(Socket *sock);
 
-  // Initiate a new connection on the given socket, setting *in_progress
-  // to true if the connection is still pending upon return.
-  static Status StartConnect(Socket *sock, const Sockaddr &remote, bool *in_progress);
+  // Initiate a new connection on the given socket.
+  static Status StartConnect(Socket *sock, const Sockaddr &remote);
 
   // Assign a new outbound call to the appropriate connection object.
   // If this fails, the call is marked failed and completed.
@@ -264,6 +267,12 @@ class ReactorThread {
 
   // Scan for idle connections on this granularity.
   const MonoDelta coarse_timer_granularity_;
+
+  // Total number of client connections opened during Reactor's lifetime.
+  uint64_t total_client_conns_cnt_;
+
+  // Total number of server connections opened during Reactor's lifetime.
+  uint64_t total_server_conns_cnt_;
 };
 
 // A Reactor manages a ReactorThread

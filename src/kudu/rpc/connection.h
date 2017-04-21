@@ -111,7 +111,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Queue a new call to be made. If the queueing fails, the call will be
   // marked failed.
   // Takes ownership of the 'call' object regardless of whether it succeeds or fails.
-  // This may be called from a non-reactor thread.
   void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // Queue a call response back to the client on the server side.
