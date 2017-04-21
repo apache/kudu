@@ -210,7 +210,7 @@ class LogBlockContainer {
   // is required to record the deletion in container metadata.
   //
   // The on-disk effects of this call are made durable only after SyncData().
-  Status DeleteBlock(int64_t offset, int64_t length);
+  Status PunchHole(int64_t offset, int64_t length);
 
   // Preallocate enough space to ensure that an append of 'next_append_length'
   // can be satisfied by this container. The offset of the beginning of this
@@ -298,6 +298,9 @@ class LogBlockContainer {
 
   // Produces a debug-friendly string representation of this container.
   string ToString() const;
+
+  // Returns a block's length aligned to the nearest filesystem block size;
+  int64_t GetAlignedBlockLength(int64_t block_offset, int64_t block_length) const;
 
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
@@ -656,22 +659,15 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   return Status::OK();
 }
 
-Status LogBlockContainer::DeleteBlock(int64_t offset, int64_t length) {
+Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
-  // Guaranteed by UpdateBytesWritten().
-  DCHECK_EQ(0, offset % instance()->filesystem_block_size_bytes());
-
   // It is invalid to punch a zero-size hole.
   if (length) {
-    // Round up to the nearest filesystem block so that the kernel will
-    // actually reclaim disk space.
-    //
     // It's OK if we exceed the file's total size; the kernel will truncate
     // our request.
-    return data_file_->PunchHole(offset, KUDU_ALIGN_UP(
-        length, instance()->filesystem_block_size_bytes()));
+    return data_file_->PunchHole(offset, length);
   }
   return Status::OK();
 }
@@ -801,6 +797,27 @@ string LogBlockContainer::ToString() const {
   return s;
 }
 
+
+int64_t LogBlockContainer::GetAlignedBlockLength(int64_t block_offset,
+                                                 int64_t block_length) const {
+  uint64_t fs_block_size =
+      data_dir_->instance()->metadata()->filesystem_block_size_bytes();
+
+  // Nearly all blocks are placed on a filesystem block boundary, which means
+  // their length post-alignment is simply their length aligned up to the
+  // nearest fs block size.
+  //
+  // However, due to KUDU-1793, some blocks may start or end at misaligned
+  // offsets. We don't maintain enough state to precisely pinpoint such a
+  // block's (aligned) end offset in this case, so we'll just undercount it.
+  // This should be safe, although it may mean unreclaimed disk space (i.e.
+  // when GetAlignedBlockLength() is used in hole punching).
+  if (PREDICT_TRUE(block_offset % fs_block_size == 0)) {
+    return KUDU_ALIGN_UP(block_length, fs_block_size);
+  }
+  return block_length;
+}
+
 ////////////////////////////////////////////////////////////
 // LogBlock
 ////////////////////////////////////////////////////////////
@@ -866,11 +883,15 @@ static void DeleteBlockAsync(LogBlockContainer* container,
                              BlockId block_id,
                              int64_t offset,
                              int64_t length) {
+  // Use the block's aligned length so that the filesystem can reclaim maximal
+  // disk space.
+  //
   // We don't call SyncData() to synchronize the deletion because it's
   // expensive, and in the worst case, we'll just leave orphaned data
   // behind to be cleaned up in the next GC.
   VLOG(3) << "Freeing space belonging to block " << block_id;
-  WARN_NOT_OK(container->DeleteBlock(offset, length),
+  WARN_NOT_OK(container->PunchHole(
+      offset, container->GetAlignedBlockLength(offset, length)),
               Substitute("Could not delete block $0", block_id.ToString()));
 }
 
@@ -1840,8 +1861,8 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
       report->stats.live_block_count--;
       report->stats.live_block_bytes -= lb->length();
-      report->stats.live_block_bytes_aligned -= KUDU_ALIGN_UP(
-          lb->length(), container->instance()->filesystem_block_size_bytes());
+      report->stats.live_block_bytes_aligned -=
+          container->GetAlignedBlockLength(lb->offset(), lb->length());
       break;
     default:
       // TODO(adar): treat as a different kind of inconsistency?

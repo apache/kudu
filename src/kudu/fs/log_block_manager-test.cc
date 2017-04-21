@@ -760,6 +760,103 @@ TEST_F(LogBlockManagerTest, TestContainerBlockLimiting) {
   NO_FATALS(AssertNumContainers(4));
 }
 
+TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
+  FLAGS_log_container_preallocate_bytes = 0;
+  const int kNumBlocks = 100;
+
+  // Create one container.
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(bm_->CreateBlock(&block));
+  ASSERT_OK(block->Close());
+  string container_name;
+  NO_FATALS(GetOnlyContainer(&container_name));
+
+  // Add a mixture of regular and misaligned blocks to it.
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  int num_misaligned_blocks = 0;
+  for (int i = 0; i < kNumBlocks; i++) {
+    if (rand() % 2) {
+      ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
+
+      // Need to reopen the block manager after each corruption because the
+      // container metadata writers do not expect the metadata files to have
+      // been changed underneath them.
+      FsReport report;
+      ASSERT_OK(ReopenBlockManager(&report));
+      ASSERT_FALSE(report.HasFatalErrors());
+      num_misaligned_blocks++;
+    } else {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(&block));
+
+      // Append at least once to ensure that the data file grows.
+      //
+      // The LBM considers the last record of a container to be malformed if
+      // it's zero-length and if the file hasn't grown enough to catch up it.
+      // This combination (zero-length block at the end of a full container
+      // without any remaining preallocated space) is nearly impossible in real
+      // life, so we avoid it in testing too.
+      int num_appends = (rand() % 8) + 1;
+      uint64_t raw_block_id = block->id().id();
+      Slice s(reinterpret_cast<const uint8_t*>(&raw_block_id),
+              sizeof(raw_block_id));
+      for (int j = 0; j < num_appends; j++) {
+        // The corruptor writes the block ID repeatedly into each misaligned
+        // block, so we'll make our regular blocks do the same thing.
+        ASSERT_OK(block->Append(s));
+      }
+      ASSERT_OK(block->Close());
+    }
+  }
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors()) << report.ToString();
+  ASSERT_EQ(num_misaligned_blocks, report.misaligned_block_check->entries.size());
+  for (const auto& mb : report.misaligned_block_check->entries) {
+    ASSERT_EQ(container_name, mb.container);
+  }
+
+  // Delete about half of them, chosen randomly.
+  vector<BlockId> block_ids;
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  for (const auto& id : block_ids) {
+    if (rand() % 2) {
+      ASSERT_OK(bm_->DeleteBlock(id));
+    }
+  }
+
+  // Wait for the block manager to punch out all of the holes. It's easiest to
+  // do this by reopening it; shutdown will wait for outstanding hole punches.
+  //
+  // On reopen, some misaligned blocks should be gone from the report.
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  ASSERT_GT(report.misaligned_block_check->entries.size(), 0);
+  ASSERT_LT(report.misaligned_block_check->entries.size(), num_misaligned_blocks);
+  for (const auto& mb : report.misaligned_block_check->entries) {
+    ASSERT_EQ(container_name, mb.container);
+  }
+
+  // Read and verify the contents of each remaining block.
+  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+  for (const auto& id : block_ids) {
+    uint64_t raw_block_id = id.id();
+    unique_ptr<ReadableBlock> b;
+    ASSERT_OK(bm_->OpenBlock(id, &b));
+    uint64_t size;
+    ASSERT_OK(b->Size(&size));
+    ASSERT_EQ(0, size % sizeof(raw_block_id));
+    uint8_t buf[size];
+    Slice s;
+    ASSERT_OK(b->Read(0, size, &s, buf));
+    for (int i = 0; i < size; i += sizeof(raw_block_id)) {
+      ASSERT_EQ(raw_block_id, *reinterpret_cast<uint64_t*>(buf + i));
+    }
+    ASSERT_OK(b->Close());
+  }
+}
+
 TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   FLAGS_log_container_preallocate_bytes = 0;
   FLAGS_log_container_max_size = 1;

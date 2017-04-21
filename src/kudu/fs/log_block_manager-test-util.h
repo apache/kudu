@@ -62,8 +62,9 @@ class LBMCorruptor {
   // Returns an error if a container could not be found.
   Status AddMalformedRecordToContainer();
 
-  // Adds a misaligned block to a container (chosen at random). This
-  // inconsistency is non-fatal and irreparable.
+  // Adds a misaligned block to a container (chosen at random). The block
+  // contains repeated 8-byte sequences of its block id. This inconsistency is
+  // non-fatal and irreparable.
   //
   // Returns an error if a container could not be found.
   Status AddMisalignedBlockToContainer();

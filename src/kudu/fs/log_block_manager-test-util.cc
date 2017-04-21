@@ -249,46 +249,65 @@ Status LBMCorruptor::AddMalformedRecordToContainer() {
 }
 
 Status LBMCorruptor::AddMisalignedBlockToContainer() {
-  const int kBlockSize = 16 * 1024;
   const Container* c;
   RETURN_NOT_OK(GetRandomContainer(ANY, &c));
 
-  // Ensure the container's data file has enough space for the new block. We're
-  // not going to fill that space, but this ensures that the block's record
-  // isn't considered malformed.
-  uint64_t block_offset;
-  {
-    unique_ptr<RWFile> data_file;
-    RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
-    RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
-    uint64_t fs_block_size;
-    RETURN_NOT_OK(env_->GetBlockSize(c->data_filename, &fs_block_size));
-    uint64_t initial_data_size;
-    RETURN_NOT_OK(data_file->Size(&initial_data_size));
+  uint64_t fs_block_size;
+  RETURN_NOT_OK(env_->GetBlockSize(c->data_filename, &fs_block_size));
 
-    // Ensure the offset of the new block isn't aligned with the filesystem
-    // block size.
-    block_offset = initial_data_size;
-    if (block_offset % fs_block_size == 0) {
-      block_offset += 1;
-    }
+  unique_ptr<RWFile> data_file;
+  RWFileOptions opts;
+  opts.mode = Env::OPEN_EXISTING;
+  RETURN_NOT_OK(env_->NewRWFile(opts, c->data_filename, &data_file));
+  uint64_t initial_data_size;
+  RETURN_NOT_OK(data_file->Size(&initial_data_size));
 
-    RETURN_NOT_OK(data_file->PreAllocate(
-        initial_data_size, (block_offset - initial_data_size) + kBlockSize,
-        RWFile::CHANGE_FILE_SIZE));
-    RETURN_NOT_OK(data_file->Close());
+  // Pick a random offset beyond the end of the file to place the new block,
+  // ensuring that the offset isn't aligned with the filesystem block size.
+  //
+  // In accordance with KUDU-1793 (which sparked the entire concept of
+  // misaligned blocks in the first place), misaligned blocks may not intrude
+  // on the aligned space of the blocks that came before them. To avoid having
+  // to read the container's records just to corrupt it, we'll arbitrarily add
+  // a fs_block_size gap before this misaligned block, to ensure that it
+  // doesn't violate the previous block's alignment.
+  uint64_t block_offset =
+      initial_data_size + fs_block_size + rand_.Uniform(fs_block_size);
+  if (block_offset % fs_block_size == 0) {
+    block_offset++;
   }
 
+  // Ensure the file is preallocated at least up to the offset, in case we
+  // decide to write a zero-length block to the end of it.
+  uint64_t length_beyond_eof = block_offset - initial_data_size;
+  if (length_beyond_eof > 0) {
+    RETURN_NOT_OK(data_file->PreAllocate(initial_data_size, length_beyond_eof,
+                                         RWFile::CHANGE_FILE_SIZE));
+  }
+
+  // Populate the block with repeated sequences of its id so that readers who
+  // wish to verify its contents can do so easily. To avoid a truncated
+  // sequence at the end of the block, we also ensure that the block's length
+  // is a multiple of the id's type.
+  BlockId block_id(rand_.Next64());
+  uint64_t raw_block_id = block_id.id();
+  uint64_t block_length = rand_.Uniform(fs_block_size * 4);
+  block_length -= block_length % sizeof(raw_block_id);
+  uint8_t data[block_length];
+  for (int i = 0; i < ARRAYSIZE(data); i += sizeof(raw_block_id)) {
+    memcpy(&data[i], &raw_block_id, sizeof(raw_block_id));
+  }
+  RETURN_NOT_OK(data_file->Write(block_offset, Slice(data, ARRAYSIZE(data))));
+  RETURN_NOT_OK(data_file->Close());
+
+  // Having written out the block, write a corresponding metadata record.
   unique_ptr<WritablePBContainerFile> metadata_writer;
   RETURN_NOT_OK(OpenMetadataWriter(*c, &metadata_writer));
-
-  BlockId block_id(rand_.Next64());
   BlockRecordPB record;
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(CREATE);
   record.set_offset(block_offset);
-  record.set_length(kBlockSize);
+  record.set_length(block_length);
   record.set_timestamp_us(0);
 
   RETURN_NOT_OK(metadata_writer->Append(record));
