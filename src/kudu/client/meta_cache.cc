@@ -941,6 +941,25 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
   return false;
 }
 
+void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
+  VLOG(3) << "Clearing non-covered range entries of table " << table_id;
+  std::lock_guard<rw_spinlock> l(lock_);
+
+  TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table_id);
+  if (PREDICT_FALSE(!tablets)) {
+    // No cache available for this table.
+    return;
+  }
+
+  for (auto it = tablets->begin(); it != tablets->end();) {
+    if (it->second.is_non_covered_range()) {
+      it = tablets->erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
 void MetaCache::ClearCache() {
   VLOG(3) << "Clearing cache";
   std::lock_guard<rw_spinlock> l(lock_);

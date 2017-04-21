@@ -380,6 +380,9 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                                scoped_refptr<RemoteTablet>* remote_tablet,
                                const StatusCallback& callback);
 
+  // Clears the non-covered range entries from a table's meta cache.
+  void ClearNonCoveredRangeEntries(const std::string& table_id);
+
   // Clears the meta cache.
   void ClearCache();
 

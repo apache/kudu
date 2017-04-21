@@ -373,6 +373,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// This method does an RPC to ensure that the table exists and
   /// looks up its schema.
   ///
+  /// @note New range partitions created by other clients will immediately be
+  ///   available after opening the table.
+  ///
   /// @param [in] table_name
   ///   Name of the table.
   /// @param [out] table

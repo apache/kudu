@@ -1421,6 +1421,71 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   }
 }
 
+// Test that OpenTable calls clear cached non-covered range partitions.
+TEST_F(ClientTest, TestOpenTableClearsNonCoveringRangePartitions) {
+  // Create a table with a non-covered range.
+  const string kTableName = "TestNonCoveringRangePartitions";
+  shared_ptr<KuduTable> table;
+
+  vector<pair<unique_ptr<KuduPartialRow>, unique_ptr<KuduPartialRow>>> bounds;
+  unique_ptr<KuduPartialRow> lower_bound(schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper_bound(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 0));
+  ASSERT_OK(upper_bound->SetInt32("key", 1));
+  bounds.emplace_back(std::move(lower_bound), std::move(upper_bound));
+
+  CreateTable(kTableName, 1, {}, std::move(bounds), &table);
+
+  // Attempt to insert into the non-covered range, priming the meta cache.
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+  ASSERT_TRUE(session->Apply(BuildTestRow(table.get(), 1).release()).IsIOError());
+  {
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    bool overflowed;
+    session->GetPendingErrors(&errors, &overflowed);
+    EXPECT_FALSE(overflowed);
+    ASSERT_EQ(1, errors.size());
+    EXPECT_TRUE(errors[0]->status().IsNotFound());
+  }
+
+  // Using a separate client, fill in the non-covered range. A separate client
+  // is necessary because altering the range partitioning will automatically
+  // clear the meta cache, and we want to avoid that.
+
+  lower_bound.reset(schema_.NewRow());
+  upper_bound.reset(schema_.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 1));
+
+  shared_ptr<KuduClient> alter_client;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+      .Build(&alter_client));
+
+  unique_ptr<KuduTableAlterer> alterer(alter_client->NewTableAlterer(kTableName));
+  ASSERT_OK(alterer->AddRangePartition(lower_bound.release(), upper_bound.release())
+                   ->Alter());
+
+  // Attempt to insert again into the non-covered range. It should still fail,
+  // because the meta cache still contains the non-covered entry.
+  ASSERT_TRUE(session->Apply(BuildTestRow(table.get(), 1).release()).IsIOError());
+  {
+    vector<KuduError*> errors;
+    ElementDeleter drop(&errors);
+    bool overflowed;
+    session->GetPendingErrors(&errors, &overflowed);
+    EXPECT_FALSE(overflowed);
+    ASSERT_EQ(1, errors.size());
+    EXPECT_TRUE(errors[0]->status().IsNotFound());
+  }
+
+  // Re-open the table, and attempt to insert again.  This time the meta cache
+  // should clear non-covered entries, and the insert should succeed.
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_OK(session->Apply(BuildTestRow(table.get(), 1).release()));
+}
+
 TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
   // Create test table and insert test rows.
   const string table_name = "TestExclusiveInclusiveRangeBounds";

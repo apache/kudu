@@ -443,6 +443,12 @@ Status KuduClient::OpenTable(const string& table_name,
   table->reset(new KuduTable(shared_from_this(),
                              table_name, table_id, num_replicas,
                              schema, partition_schema));
+
+  // When opening a table, clear the existing cached non-covered range entries.
+  // This avoids surprises where a new table instance won't be able to see the
+  // current range partitions of a table for up to the ttl.
+  data_->meta_cache_->ClearNonCoveredRangeEntries(table_id);
+
   return Status::OK();
 }
 
