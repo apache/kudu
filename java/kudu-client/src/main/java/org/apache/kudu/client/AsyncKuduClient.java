@@ -419,8 +419,13 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Open the table with the given name. If the table was just created, the Deferred will only get
-   * called back when all the tablets have been successfully created.
+   * Open the table with the given name. If the table was just created, the
+   * Deferred will only get called back when all the tablets have been
+   * successfully created.
+   *
+   * New range partitions created by other clients will immediately be available
+   * after opening the table.
+   *
    * @param name table to open
    * @return a KuduTable if the table exists, else a MasterErrorException
    */
@@ -466,6 +471,14 @@ public class AsyncKuduClient implements AutoCloseable {
         // return a different, non-triggered Deferred.
         Deferred<KuduTable> d = fakeRpc.getDeferred();
         if (response.isCreateTableDone()) {
+          // When opening a table, clear the existing cached non-covered range entries.
+          // This avoids surprises where a new table instance won't be able to see the
+          // current range partitions of a table for up to the ttl.
+          TableLocationsCache cache = tableLocations.get(response.getTableId());
+          if (cache != null) {
+            cache.clearNonCoveredRangeEntries();
+          }
+
           LOG.debug("Opened table {}", name);
           fakeRpc.callback(table);
         } else {

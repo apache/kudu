@@ -853,5 +853,47 @@ public class TestKuduClient extends BaseKuduTest {
     syncClient.createTable(tableName, basicSchema, new CreateTableOptions());
   }
 
+  @Test(timeout = 100000)
+  public void testOpenTableClearsNonCoveringRangePartitions() throws KuduException {
+    CreateTableOptions options = createTableOptions();
+    PartialRow lower = basicSchema.newPartialRow();
+    PartialRow upper = basicSchema.newPartialRow();
+    lower.addInt("key", 0);
+    upper.addInt("key", 1);
+    options.addRangePartition(lower, upper);
 
+    syncClient.createTable(tableName, basicSchema, options);
+    KuduTable table = syncClient.openTable(tableName);
+
+    // Count the number of tablets.
+    KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
+    List<KuduScanToken> tokens = tokenBuilder.build();
+    assertEquals(1, tokens.size());
+
+    // Add a range partition with a separate client. The new client is necessary
+    // in order to avoid clearing the meta cache as part of the alter operation.
+    try (KuduClient alterClient = new KuduClient.KuduClientBuilder(masterAddresses)
+                                                .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+                                                .build()) {
+      AlterTableOptions alter = new AlterTableOptions();
+      lower = basicSchema.newPartialRow();
+      upper = basicSchema.newPartialRow();
+      lower.addInt("key", 1);
+      alter.addRangePartition(lower, upper);
+      alterClient.alterTable(tableName, alter);
+      assertTrue(syncClient.isAlterTableDone(tableName));
+    }
+
+    // Count the number of tablets.  The result should still be the same, since
+    // the new tablet is still cached as a non-covered range.
+    tokenBuilder = syncClient.newScanTokenBuilder(table);
+    tokens = tokenBuilder.build();
+    assertEquals(1, tokens.size());
+
+    // Reopen the table and count the tablets again. The new tablet should now show up.
+    table = syncClient.openTable(tableName);
+    tokenBuilder = syncClient.newScanTokenBuilder(table);
+    tokens = tokenBuilder.build();
+    assertEquals(2, tokens.size());
+  }
 }

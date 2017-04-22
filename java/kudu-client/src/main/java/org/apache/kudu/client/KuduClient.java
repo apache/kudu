@@ -175,8 +175,12 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Open the table with the given name. If the table was just created, this method will block until
-   * all its tablets have also been created.
+   * Open the table with the given name. If the table was just created, this
+   * method will block until all its tablets have also been created.
+   *
+   * New range partitions created by other clients will immediately be available
+   * after opening the table.
+   *
    * @param name table to open
    * @return a KuduTable if the table exists
    * @throws KuduException if anything went wrong

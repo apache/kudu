@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -205,6 +206,21 @@ class TableLocationsCache {
 
       for (Entry entry : newEntries) {
         entries.put(entry.getLowerBoundPartitionKey(), entry);
+      }
+    } finally {
+      rwl.writeLock().unlock();
+    }
+  }
+
+  /**
+   * Clears all non-covered range entries from the cache.
+   */
+  public void clearNonCoveredRangeEntries() {
+    rwl.writeLock().lock();
+    try {
+      Iterator<Map.Entry<byte[], Entry>> it = entries.entrySet().iterator();
+      while (it.hasNext()) {
+        if (it.next().getValue().isNonCoveredRange()) it.remove();
       }
     } finally {
       rwl.writeLock().unlock();
