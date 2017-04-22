@@ -256,18 +256,22 @@ class LogBlockManager : public BlockManager {
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
   // Parses a block record, adding or removing it in 'block_map', and
-  // accounting for it in the metadata for 'container'.
+  // accounting for it in the metadata for 'container'. Deleted blocks are
+  // written to 'deleted'.
   //
   // If any record is malformed, it is written to 'report'.
   void ProcessBlockRecord(const BlockRecordPB& record,
                           FsReport* report,
                           internal::LogBlockContainer* container,
-                          UntrackedBlockMap* block_map);
+                          UntrackedBlockMap* block_map,
+                          std::vector<scoped_refptr<internal::LogBlock>>* deleted);
 
-  // Repairs any inconsistencies described in 'report'.
+  // Repairs any inconsistencies described in 'report'. Any blocks in
+  // 'need_repunching' will be punched out again.
   //
   // Returns an error if repairing a fatal inconsistency failed.
-  Status Repair(FsReport* report);
+  Status Repair(FsReport* report,
+                std::vector<scoped_refptr<internal::LogBlock>> need_repunching);
 
   // Opens a particular data directory belonging to the block manager. The
   // results of consistency checking (and repair, if applicable) are written to

@@ -76,6 +76,13 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "creating new blocks. Set to 0 to disable preallocation");
 TAG_FLAG(log_container_preallocate_bytes, advanced);
 
+DEFINE_double(log_container_excess_space_before_cleanup_fraction, 0.10,
+              "Additional fraction of a log container's calculated size that "
+              "must be consumed on disk before the container is considered to "
+              "be inconsistent and subject to excess space cleanup at block "
+              "manager startup.");
+TAG_FLAG(log_container_excess_space_before_cleanup_fraction, advanced);
+
 DEFINE_bool(log_block_manager_test_hole_punching, true,
             "Ensure hole punching is supported by the underlying filesystem");
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
@@ -1719,6 +1726,9 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   local_report.misaligned_block_check.emplace();
   local_report.partial_record_check.emplace();
 
+  // Keep track of deleted blocks that we may need to repunch.
+  vector<scoped_refptr<internal::LogBlock>> need_repunching;
+
   // Find all containers and open them.
   unordered_set<string> containers_seen;
   vector<string> children;
@@ -1776,9 +1786,11 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
     // exceedingly unlikely. However, we might have old data which still exhibits
     // the above issue.
     UntrackedBlockMap blocks_in_container;
+    vector<scoped_refptr<internal::LogBlock>> deleted;
     uint64_t max_block_id = 0;
     for (const BlockRecordPB& r : records) {
-      ProcessBlockRecord(r, &local_report, container.get(), &blocks_in_container);
+      ProcessBlockRecord(r, &local_report, container.get(),
+                         &blocks_in_container, &deleted);
       max_block_id = std::max(max_block_id, r.block_id().id());
     }
 
@@ -1798,20 +1810,47 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
     }
 
     // Having processed the block records, let's check whether any full
-    // containers have any extra preallocated space (left behind after a crash
-    // or from an older version of Kudu).
+    // containers have any extra space (left behind after a crash or from an
+    // older version of Kudu).
     if (container->full()) {
-      // XFS's speculative preallocation feature may artificially enlarge the
-      // container's data file without updating its file size. As such, we
-      // cannot simply compare the container's logical file size (available by
-      // proxy via preallocated_offset_) to next_block_offset_ to decide
-      // whether to truncate the container.
+      // Filesystems are unpredictable beasts and may misreport the amount of
+      // space allocated to a file in various interesting ways. Some examples:
+      // - XFS's speculative preallocation feature may artificially enlarge the
+      //   container's data file without updating its file size. This makes the
+      //   file size untrustworthy for the purposes of measuring allocated space.
+      //   See KUDU-1856 for more details.
+      // - On el6.6/ext4 a container data file that consumed ~32K according to
+      //   its extent tree was actually reported as consuming an additional fs
+      //   block (2k) of disk space. A similar container data file (generated
+      //   via the same workload) on Ubuntu 16.04/ext4 did not exhibit this.
+      //   The suspicion is that older versions of ext4 include interior nodes
+      //   of the extent tree when reporting file block usage.
       //
-      // See KUDU-1856 for more details.
+      // To deal with these issues, our extra space cleanup code (deleted block
+      // repunching and container truncation) is gated on an "actual disk space
+      // consumed" heuristic. To prevent unnecessary triggering of the
+      // heuristic, we allow for some slop in our size measurements. The exact
+      // amount of slop is configurable via
+      // log_container_excess_space_before_cleanup_fraction.
       //
-      // TODO(adar): figure out whether to truncate using container's extent map.
-      local_report.full_container_space_check->entries.emplace_back(
-          container->ToString(), container->preallocated_window());
+      // Too little slop and we'll do unnecessary work at startup. Too much and
+      // more unused space may go unreclaimed.
+      string data_filename = StrCat(container->ToString(), kContainerDataFileSuffix);
+      uint64_t reported_size;
+      s = env_->GetFileSizeOnDisk(data_filename, &reported_size);
+      if (!s.ok()) {
+        *result_status = s.CloneAndPrepend(Substitute(
+            "Could not get on-disk file size of container $0", container->ToString()));
+        return;
+      }
+      int64_t cleanup_threshold_size = container->live_bytes_aligned() *
+          (1 + FLAGS_log_container_excess_space_before_cleanup_fraction);
+      if (reported_size > cleanup_threshold_size) {
+        local_report.full_container_space_check->entries.emplace_back(
+            container->ToString(), reported_size - container->live_bytes_aligned());
+        need_repunching.insert(need_repunching.end(),
+                               deleted.begin(), deleted.end());
+      }
 
       local_report.stats.lbm_full_container_count++;
     }
@@ -1848,7 +1887,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
 
   // Like the rest of Open(), repairs are performed per data directory to take
   // advantage of parallelism.
-  s = Repair(&local_report);
+  s = Repair(&local_report, std::move(need_repunching));
   if (!s.ok()) {
     *result_status = s.CloneAndPrepend(Substitute(
         "fatal error while repairing inconsistencies in data directory $0",
@@ -1860,10 +1899,12 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   *result_status = Status::OK();
 }
 
-void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
-                                         FsReport* report,
-                                         LogBlockContainer* container,
-                                         UntrackedBlockMap* block_map) {
+void LogBlockManager::ProcessBlockRecord(
+    const BlockRecordPB& record,
+    FsReport* report,
+    LogBlockContainer* container,
+    UntrackedBlockMap* block_map,
+    vector<scoped_refptr<internal::LogBlock>>* deleted) {
   BlockId block_id(BlockId::FromPB(record.block_id()));
   scoped_refptr<LogBlock> lb;
   switch (record.op_type()) {
@@ -1900,6 +1941,7 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
       }
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
       container->BlockDeleted(lb->offset(), lb->length());
+      deleted->emplace_back(std::move(lb));
       break;
     default:
       // TODO(adar): treat as a different kind of inconsistency?
@@ -1909,7 +1951,9 @@ void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
   }
 }
 
-Status LogBlockManager::Repair(FsReport* report) {
+Status LogBlockManager::Repair(
+    FsReport* report,
+    vector<scoped_refptr<internal::LogBlock>> need_repunching) {
   if (read_only_) {
     LOG(INFO) << "Read-only block manager, skipping repair";
     return Status::OK();
@@ -1918,6 +1962,8 @@ Status LogBlockManager::Repair(FsReport* report) {
     LOG(WARNING) << "Found fatal and irreparable errors, skipping repair";
     return Status::OK();
   }
+
+  // From here on out we're committed to repairing.
 
   // Fetch all the containers we're going to need.
   unordered_map<std::string, internal::LogBlockContainer*> containers_by_name;
@@ -2007,6 +2053,19 @@ Status LogBlockManager::Repair(FsReport* report) {
       WARN_NOT_OK(s, "could not truncate excess preallocated space");
     }
   }
+
+  // Repunch all requested holes. Any excess space reclaimed was already
+  // tracked by LBMFullContainerSpaceCheck.
+  //
+  // TODO(adar): can be more efficient (less fs work and more space reclamation
+  // in case of misaligned blocks) via hole coalescing first, but this is easy.
+  for (const auto& b : need_repunching) {
+    b->Delete();
+  }
+
+  // Clearing this vector drops the last references to the LogBlocks within,
+  // triggering the repunching operations.
+  need_repunching.clear();
 
   return Status::OK();
 }

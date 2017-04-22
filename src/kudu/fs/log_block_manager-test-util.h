@@ -20,14 +20,14 @@
 #include <string>
 #include <vector>
 
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/env.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class Env;
 
 namespace pb_util {
 class WritablePBContainerFile;
@@ -51,6 +51,13 @@ class LBMCorruptor {
   //
   // Returns an error if a full container could not be found.
   Status PreallocateFullContainer();
+
+  // Adds an "unpunched block" to a full container (chosen at random). An
+  // unpunched block is one that has been deleted but whose space was not
+  // reclaimed.
+  //
+  // Returns an error if a container could not be found.
+  Status AddUnpunchedBlockToFullContainer();
 
   // Creates a new incomplete container. This inconsistency is non-fatal and
   // repairable.
@@ -93,6 +100,24 @@ class LBMCorruptor {
   Status OpenMetadataWriter(
       const Container& container,
       std::unique_ptr<pb_util::WritablePBContainerFile>* writer);
+
+  // Appends a CREATE record to 'writer'.
+  static Status AppendCreateRecord(pb_util::WritablePBContainerFile* writer,
+                                   BlockId block_id,
+                                   int64_t block_offset,
+                                   int64_t block_length);
+
+  // Appends a DELETE record to 'writer'.
+  static Status AppendDeleteRecord(pb_util::WritablePBContainerFile* writer,
+                                   BlockId block_id);
+
+  // Preallocates space at the end of a container's data file for a new block.
+  //
+  // On success, writes the initial data file's size to 'old_data_file_size'.
+  static Status PreallocateForBlock(RWFile* data_file,
+                                    RWFile::PreAllocateMode mode,
+                                    int64_t block_length,
+                                    int64_t* old_data_file_size);
 
   // Gets a random container subject to the restriction in 'mode'.
   //

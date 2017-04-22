@@ -44,10 +44,10 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_double(log_container_excess_space_before_cleanup_fraction);
+DECLARE_int64(log_container_max_blocks);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
-
-DECLARE_int64(log_container_max_blocks);
 
 // Log block manager metrics.
 METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
@@ -856,7 +856,14 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
 }
 
 TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
+  // Enforce that the container's actual size is strictly upper-bounded by the
+  // calculated size so we can more easily trigger repairs.
+  FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
+
+  // Disable preallocation so we can more easily control it.
   FLAGS_log_container_preallocate_bytes = 0;
+
+  // Make it easy to create a full container.
   FLAGS_log_container_max_size = 1;
 
   const int kNumContainers = 10;
@@ -883,19 +890,76 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   FsReport report;
   ASSERT_OK(ReopenBlockManager(&report));
   ASSERT_FALSE(report.HasFatalErrors());
-  // XXX: the LBM currently declares all full containers as having excess
-  // preallocated space. Using extent maps will clear that up.
-  ASSERT_EQ(kNumContainers, report.full_container_space_check->entries.size());
+  ASSERT_EQ(1, report.full_container_space_check->entries.size());
   const LBMFullContainerSpaceCheck::Entry& fcs =
       report.full_container_space_check->entries[0];
   unordered_set<string> container_name_set(container_names.begin(),
                                            container_names.end());
   ASSERT_TRUE(ContainsKey(container_name_set, fcs.container));
-  // XXX: See above, excess can be zero.
-  ASSERT_GE(fcs.excess_bytes, 0);
+  ASSERT_GT(fcs.excess_bytes, 0);
   ASSERT_TRUE(fcs.repaired);
   report.full_container_space_check->entries.clear();
   NO_FATALS(AssertEmptyReport(report));
+}
+
+TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
+  const int kNumBlocks = 100;
+
+  // Enforce that the container's actual size is strictly upper-bounded by the
+  // calculated size so we can more easily trigger repairs.
+  FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
+
+  // Force our single container to become full once created.
+  FLAGS_log_container_max_size = 0;
+
+  // Force the test to measure extra space in unpunched holes, not in the
+  // preallocation buffer.
+  FLAGS_log_container_preallocate_bytes = 0;
+
+  // Create one container.
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(bm_->CreateBlock(&block));
+  ASSERT_OK(block->Close());
+  string data_file;
+  NO_FATALS(GetOnlyContainerDataFile(&data_file));
+  uint64_t file_size_on_disk;
+  ASSERT_OK(env_->GetFileSizeOnDisk(data_file, &file_size_on_disk));
+  ASSERT_EQ(0, file_size_on_disk);
+
+  // Add some "unpunched blocks" to the container.
+  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  ASSERT_OK(corruptor.Init());
+  for (int i = 0; i < kNumBlocks; i++) {
+    ASSERT_OK(corruptor.AddUnpunchedBlockToFullContainer());
+  }
+
+  ASSERT_OK(env_->GetFileSizeOnDisk(data_file, &file_size_on_disk));
+  ASSERT_GT(file_size_on_disk, 0);
+
+  // Check the report.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_FALSE(report.HasFatalErrors());
+  ASSERT_EQ(1, report.full_container_space_check->entries.size());
+  const LBMFullContainerSpaceCheck::Entry& fcs =
+      report.full_container_space_check->entries[0];
+  string container;
+  NO_FATALS(GetOnlyContainer(&container));
+  ASSERT_EQ(container, fcs.container);
+  ASSERT_EQ(file_size_on_disk, fcs.excess_bytes);
+  ASSERT_TRUE(fcs.repaired);
+  report.full_container_space_check->entries.clear();
+  NO_FATALS(AssertEmptyReport(report));
+
+  // Wait for the block manager to punch out all of the holes (done as part of
+  // repair at startup). It's easiest to do this by reopening it; shutdown will
+  // wait for outstanding hole punches.
+  ASSERT_OK(ReopenBlockManager(&report));
+  NO_FATALS(AssertEmptyReport(report));
+
+  // File size should be 0 post-repair.
+  ASSERT_OK(env_->GetFileSizeOnDisk(data_file, &file_size_on_disk));
+  ASSERT_EQ(0, file_size_on_disk);
 }
 
 TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {

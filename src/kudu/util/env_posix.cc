@@ -115,9 +115,9 @@ DEFINE_bool(never_fsync, false,
 TAG_FLAG(never_fsync, advanced);
 TAG_FLAG(never_fsync, unsafe);
 
-DEFINE_double(env_inject_io_error_on_write_or_preallocate, 0.0,
-              "Fraction of the time that write or preallocate operations will fail");
-TAG_FLAG(env_inject_io_error_on_write_or_preallocate, hidden);
+DEFINE_double(env_inject_io_error, 0.0,
+              "Fraction of the time that certain I/O operations will fail");
+TAG_FLAG(env_inject_io_error, hidden);
 
 DEFINE_int32(env_inject_short_read_bytes, 0,
              "The number of bytes less than the requested bytes to read");
@@ -403,7 +403,7 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error_on_write_or_preallocate,
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
 
     TRACE_EVENT1("io", "PosixWritableFile::PreAllocate", "path", filename_);
@@ -500,7 +500,7 @@ class PosixWritableFile : public WritableFile {
 
   Status DoWritev(const vector<Slice>& data_vector,
                   size_t offset, size_t n) {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error_on_write_or_preallocate,
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
 
     ThreadRestrictions::AssertIOAllowed();
@@ -587,7 +587,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error_on_write_or_preallocate,
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
 
     ThreadRestrictions::AssertIOAllowed();
@@ -613,7 +613,7 @@ class PosixRWFile : public RWFile {
   virtual Status PreAllocate(uint64_t offset,
                              size_t length,
                              PreAllocateMode mode) OVERRIDE {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error_on_write_or_preallocate,
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
 
     TRACE_EVENT1("io", "PosixRWFile::PreAllocate", "path", filename_);
@@ -650,6 +650,8 @@ class PosixRWFile : public RWFile {
 
   virtual Status PunchHole(uint64_t offset, size_t length) OVERRIDE {
 #if defined(__linux__)
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT1("io", "PosixRWFile::PunchHole", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {

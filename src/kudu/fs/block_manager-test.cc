@@ -46,15 +46,11 @@ using strings::Substitute;
 
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
-
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
-
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
-
 DECLARE_string(block_manager);
-
-DECLARE_double(env_inject_io_error_on_write_or_preallocate);
+DECLARE_double(env_inject_io_error);
 
 // Generic block manager metrics.
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
@@ -659,7 +655,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   FLAGS_log_container_preallocate_bytes = 8 * 1024;
 
   // Force some file operations to fail.
-  FLAGS_env_inject_io_error_on_write_or_preallocate = 0.2;
+  FLAGS_env_inject_io_error = 0.2;
 
   // Creates a block, writing the result to 'out' on success.
   auto create_a_block = [&](BlockId* out) -> Status {
