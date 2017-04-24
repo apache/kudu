@@ -50,7 +50,7 @@ cd $TP_DIR
 NEEDS_BUILD=
 NEEDS_REHASH=
 
-IS_IN_GIT=$(test -d ../.git && echo true || :)
+IS_IN_GIT=$(test -e ../.git && echo true || :)
 
 if [ -n "$IS_IN_GIT" ]; then
   # Determine whether this subtree in the git repo has changed since thirdparty
