@@ -74,8 +74,12 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   virtual void Shutdown() OVERRIDE;
 
  private:
-  typedef std::unordered_map<std::string, scoped_refptr<TabletCopySourceSession> > SessionMap;
-  typedef std::unordered_map<std::string, MonoTime> MonoTimeMap;
+  struct SessionEntry {
+    scoped_refptr<TabletCopySourceSession> session;
+    MonoTime expires;
+  };
+
+  typedef std::unordered_map<std::string, SessionEntry> SessionMap;
 
   // Look up session in session map.
   Status FindSessionUnlocked(const std::string& session_id,
@@ -109,13 +113,12 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   FsManager* fs_manager_;
   TabletPeerLookupIf* tablet_peer_lookup_;
 
-  // Protects sessions_ and session_expirations_ maps.
+  // Protects sessions_ map.
   mutable Mutex sessions_lock_;
   SessionMap sessions_;
-  MonoTimeMap session_expirations_;
 
   // Session expiration thread.
-  // TODO: this is a hack, replace with some kind of timer impl. See KUDU-286.
+  // TODO(mpercy): This is a hack, replace some kind of timer. See KUDU-286.
   CountDownLatch shutdown_latch_;
   scoped_refptr<Thread> session_expiration_thread_;
 };
