@@ -27,6 +27,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -116,6 +117,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   // Protects sessions_ map.
   mutable Mutex sessions_lock_;
   SessionMap sessions_;
+  ThreadSafeRandom rand_;
 
   // Session expiration thread.
   // TODO(mpercy): This is a hack, replace some kind of timer. See KUDU-286.

@@ -36,6 +36,7 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random_util.h"
 
 #define RPC_RETURN_NOT_OK(expr, app_err, message, context) \
   do { \
@@ -62,6 +63,11 @@ DEFINE_double(fault_crash_on_handle_tc_fetch_data, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_on_handle_tc_fetch_data, unsafe);
 
+DEFINE_double(tablet_copy_early_session_timeout_prob, 0,
+              "The probability that a tablet copy session will time out early, "
+              "resulting in tablet copy failure. (For testing only!)");
+TAG_FLAG(tablet_copy_early_session_timeout_prob, unsafe);
+
 using strings::Substitute;
 
 namespace kudu {
@@ -83,6 +89,7 @@ TabletCopyServiceImpl::TabletCopyServiceImpl(
       server_(server),
       fs_manager_(CHECK_NOTNULL(server->fs_manager())),
       tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
+      rand_(GetRandomSeed32()),
       shutdown_latch_(1) {
   CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
                           &TabletCopyServiceImpl::EndExpiredSessions, this,
@@ -150,6 +157,19 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
 
   for (const scoped_refptr<log::ReadableLogSegment>& segment : session->log_segments()) {
     resp->add_wal_segment_seqnos(segment->header().sequence_number());
+  }
+
+  // For testing: Close the session prematurely if unsafe gflag is set but
+  // still respond as if it was opened.
+  if (PREDICT_FALSE(FLAGS_tablet_copy_early_session_timeout_prob > 0 &&
+      rand_.NextDoubleFraction() <= FLAGS_tablet_copy_early_session_timeout_prob)) {
+    LOG_WITH_PREFIX(WARNING) << "Timing out tablet copy session due to flag "
+                             << "--tablet_copy_early_session_timeout_prob "
+                             << "being set to " << FLAGS_tablet_copy_early_session_timeout_prob;
+    MutexLock l(sessions_lock_);
+    TabletCopyErrorPB::Code app_error;
+    WARN_NOT_OK(TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(session_id, &app_error),
+                Substitute("Unable to forcibly end tablet copy session $0", session_id));
   }
 
   context->RespondSuccess();
@@ -266,7 +286,8 @@ void TabletCopyServiceImpl::Shutdown() {
     LOG_WITH_PREFIX(INFO) << "Destroying tablet copy session " << session_id
                           << " due to service shutdown";
     TabletCopyErrorPB::Code app_error;
-    CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
+    WARN_NOT_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error),
+                "Unable to end tablet copy session during service shutdown");
   }
 }
 

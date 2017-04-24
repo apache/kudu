@@ -98,7 +98,7 @@ client::KuduSchema SimpleIntKeyKuduSchema();
 // Create a populated TabletServerMap by interrogating the master.
 // Note: The bare-pointer TServerDetails values must be deleted by the caller!
 // Consider using ValueDeleter (in gutil/stl_util.h) for that.
-Status CreateTabletServerMap(master::MasterServiceProxy* master_proxy,
+Status CreateTabletServerMap(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                              const std::shared_ptr<rpc::Messenger>& messenger,
                              std::unordered_map<std::string, TServerDetails*>* ts_map);
 
@@ -155,6 +155,18 @@ Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
+
+// List the tablet servers registered with the specified master.
+Status ListTabletServers(
+    const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+    const MonoDelta& timeout,
+    std::vector<master::ListTabletServersResponsePB_Entry>* tservers);
+
+// Wait for *at least* the specified number of tablet servers to be registered
+// with the master.
+Status WaitForNumTabletServers(
+    const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
+    int num_servers, const MonoDelta& timeout);
 
 enum WaitForLeader {
   DONT_WAIT_FOR_LEADER = 0,

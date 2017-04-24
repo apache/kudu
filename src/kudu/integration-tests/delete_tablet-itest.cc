@@ -47,7 +47,7 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
 
   std::unordered_map<std::string, itest::TServerDetails*> ts_map;
   ValueDeleter del(&ts_map);
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
                                          cluster_->messenger(),
                                          &ts_map));
   auto* mts = cluster_->mini_tablet_server(0);

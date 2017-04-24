@@ -48,7 +48,7 @@ void ExternalMiniClusterITestBase::StartCluster(
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
                                          cluster_->messenger(),
                                          &ts_map_));
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));

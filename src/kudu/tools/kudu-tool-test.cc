@@ -277,7 +277,7 @@ void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags
   cluster_.reset(new ExternalMiniCluster(cluster_opts_));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new ExternalMiniClusterFsInspector(cluster_.get()));
-  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy().get(),
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(),
                                   cluster_->messenger(), &ts_map_));
 }
 

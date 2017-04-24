@@ -55,19 +55,23 @@ using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
+using kudu::itest::WaitForNumTabletServers;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
 using kudu::tserver::TabletCopyClient;
 using std::string;
 using std::unordered_map;
 using std::vector;
+using strings::Substitute;
 
 METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateConsensus);
 METRIC_DECLARE_counter(glog_info_messages);
 METRIC_DECLARE_counter(glog_warning_messages);
 METRIC_DECLARE_counter(glog_error_messages);
+METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 
 namespace kudu {
 
@@ -623,7 +627,17 @@ TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
 }
 
 namespace {
-int64_t CountUpdateConsensusCalls(ExternalTabletServer* ets, const string& tablet_id) {
+int64_t CountBlocksUnderManagement(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+               &METRIC_ENTITY_server,
+               "kudu.tabletserver",
+               &METRIC_log_block_manager_blocks_under_management,
+               "value",
+               &ret));
+  return ret;
+}
+int64_t CountUpdateConsensusCalls(ExternalTabletServer* ets) {
   int64_t ret;
   CHECK_OK(ets->GetInt64Metric(
                &METRIC_ENTITY_server,
@@ -712,11 +726,11 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   // a) we don't spew logs on the leader side
   // b) we don't get hit with a lot of UpdateConsensus calls on the replica.
   MonoTime start = MonoTime::Now();
-  int64_t num_update_rpcs_initial = CountUpdateConsensusCalls(replica_ets, tablet_id);
+  int64_t num_update_rpcs_initial = CountUpdateConsensusCalls(replica_ets);
   int64_t num_logs_initial = CountLogMessages(leader_ts);
 
   SleepFor(MonoDelta::FromSeconds(1));
-  int64_t num_update_rpcs_after_sleep = CountUpdateConsensusCalls(replica_ets, tablet_id);
+  int64_t num_update_rpcs_after_sleep = CountUpdateConsensusCalls(replica_ets);
   int64_t num_logs_after_sleep = CountLogMessages(leader_ts);
   MonoTime end = MonoTime::Now();
   MonoDelta elapsed = end - start;
@@ -914,5 +928,192 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   ASSERT_GT(num_service_unavailable, 0);
   LOG(INFO) << "Number of Service unavailable responses: " << num_service_unavailable;
 }
+
+// This test uses CountBlocksUnderManagement() which only works with the
+// LogBlockManager.
+#ifndef __APPLE__
+
+class BadTabletCopyITest : public TabletCopyITest,
+                           public ::testing::WithParamInterface<const char*> {
+ protected:
+  // Helper function to load a table with the specified amount of data and
+  // ensure the specified number of blocks are persisted on one of the replicas.
+  void LoadTable(TestWorkload* workload, int min_rows, int min_blocks);
+};
+
+// Tablet copy should either trigger a crash or a session timeout on the source
+// server.
+const char* kFlagFaultOnFetch = "fault_crash_on_handle_tc_fetch_data";
+const char* kFlagEarlyTimeout = "tablet_copy_early_session_timeout_prob";
+const char* tablet_copy_failure_flags[] = { kFlagFaultOnFetch, kFlagEarlyTimeout };
+INSTANTIATE_TEST_CASE_P(FaultFlags, BadTabletCopyITest,
+                        ::testing::ValuesIn(tablet_copy_failure_flags));
+
+void BadTabletCopyITest::LoadTable(TestWorkload* workload, int min_rows, int min_blocks) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  // Always include TS 1 and check its blocks. This is always included.
+  const int kReplicaIdx = 1;
+
+  // Find the replicas for the table.
+  string tablet_id;
+  itest::TabletServerMap replicas;
+  for (const auto& entry : ts_map_) {
+    TServerDetails* ts = entry.second;
+    vector<ListTabletsResponsePB_StatusAndSchemaPB> tablets;
+    Status s = ListTablets(ts, kTimeout, &tablets);
+    if (!s.ok()) {
+      continue;
+    }
+    for (const auto& tablet : tablets) {
+      if (tablet.tablet_status().table_name() == workload->table_name()) {
+        replicas.insert(entry);
+        tablet_id = tablet.tablet_status().tablet_id();
+      }
+    }
+  }
+  ASSERT_EQ(3, replicas.size());
+  ASSERT_TRUE(ContainsKey(replicas, cluster_->tablet_server(kReplicaIdx)->uuid()));
+
+  int64_t before_blocks = CountBlocksUnderManagement(cluster_->tablet_server(kReplicaIdx));
+  int64_t after_blocks;
+  int64_t blocks_diff;
+  workload->Start();
+  do {
+    after_blocks = CountBlocksUnderManagement(cluster_->tablet_server(kReplicaIdx));
+    blocks_diff = after_blocks - before_blocks;
+    KLOG_EVERY_N_SECS(INFO, 1) << "Blocks diff: " << blocks_diff;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  } while (workload->rows_inserted() < min_rows || blocks_diff < min_blocks);
+  workload->StopAndJoin();
+
+  // Ensure all 3 replicas have replicated the same data.
+  ASSERT_OK(WaitForServersToAgree(kTimeout, replicas, tablet_id, 0));
+}
+
+// Ensure that a tablet copy failure results in no orphaned blocks and no data loss.
+TEST_P(BadTabletCopyITest, TestBadCopy) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "Not running " << CURRENT_TEST_NAME() << " because it is a slow test.";
+    return;
+  }
+
+  // Load 2 tablets with 3 replicas each across 3 tablet servers s.t. we end up
+  // with a replication distribution like: ([A], [A,B], [A,B], [B]).
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumTabletServers = 4;
+  const int kMinRows = 10000;
+  const int kMinBlocks = 10;
+  const string& failure_flag = GetParam();
+  StartCluster(
+      {
+        // Flush aggressively to create many blocks.
+        "--flush_threshold_mb=0",
+        "--maintenance_manager_polling_interval_ms=10",
+        // Wait only 10 seconds before evicting a failed replica.
+        "--follower_unavailable_considered_failed_sec=10",
+        Substitute("--$0=1.0", failure_flag),
+      }, {
+        // Wait only 5 seconds before master decides TS not eligible for a replica.
+        "--tserver_unresponsive_timeout_ms=5000",
+      }, kNumTabletServers);
+
+  // Don't allow TS 3 to get a copy of Table A.
+  cluster_->tablet_server(3)->Shutdown();
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(WaitForNumTabletServers(cluster_->master_proxy(), 3, kTimeout));
+
+  // Create Table A.
+  TestWorkload workload1(cluster_.get());
+  const char* kTableA = "table_a";
+  workload1.set_table_name(kTableA);
+  workload1.Setup();
+  ASSERT_OK(cluster_->tablet_server(3)->Restart());
+
+  // Load Table A.
+  LoadTable(&workload1, kMinRows, kMinBlocks);
+
+  // Don't allow TS 0 to get a copy of Table B.
+  cluster_->tablet_server(0)->Shutdown();
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(WaitForNumTabletServers(cluster_->master_proxy(), 3, kTimeout));
+
+  // Create Table B.
+  TestWorkload workload2(cluster_.get());
+  const char* kTableB = "table_b";
+  workload2.set_table_name(kTableB);
+  workload2.Setup();
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
+  // Load Table B.
+  LoadTable(&workload2, kMinRows, kMinBlocks);
+
+  // Shut down replica with only [A].
+  cluster_->tablet_server(0)->Shutdown();
+
+  // The leader of A will evict TS 0 and the master will trigger re-replication to TS 3.
+
+  if (failure_flag == kFlagFaultOnFetch) {
+    // Tablet copy will cause the leader tablet server for A (either TS 1 or TS 2)
+    // to crash because of --fault_crash_on_handle_tc_fetch_data=1.0
+    // This will also cause the tablet copy session to fail and the new replica
+    // on TS 3 to be tombstoned.
+    bool crashed = false;
+    while (!crashed) {
+      for (int i : {1, 2}) {
+        Status s = cluster_->tablet_server(i)
+            ->WaitForInjectedCrash(MonoDelta::FromMilliseconds(10));
+        if (s.ok()) {
+          crashed = true;
+          break;
+        }
+      }
+    }
+  } else {
+    // The early timeout flag will also cause the tablet copy to fail, but
+    // without crashing the source TS.
+    ASSERT_EQ(kFlagEarlyTimeout, failure_flag);
+  }
+
+  // Wait for TS 3 to tombstone the replica that failed to copy.
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(3)->uuid()];
+  AssertEventually([&] {
+    vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB> tablets;
+    ASSERT_OK(ListTablets(ts, MonoDelta::FromSeconds(10), &tablets));
+    ASSERT_EQ(2, tablets.size());
+    int num_tombstoned = 0;
+    for (const auto& t : tablets) {
+      if (t.tablet_status().tablet_data_state() == TABLET_DATA_TOMBSTONED) {
+        num_tombstoned++;
+      }
+    }
+    ASSERT_EQ(1, num_tombstoned);
+  });
+  NO_FATALS();
+
+  // Restart the whole cluster without failure injection so that it can finish
+  // re-replicating.
+  cluster_->Shutdown();
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->mutable_flags()
+        ->push_back(Substitute("--$0=0.0", failure_flag));
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  // Run ksck, ensure no data loss.
+  LOG(INFO) << "Running ksck...";
+  ClusterVerifier v(cluster_.get());
+  v.SetVerificationTimeout(kTimeout);
+  NO_FATALS(v.CheckCluster());
+
+  LOG(INFO) << "Checking row count...";
+  for (TestWorkload* workload : {&workload1, &workload2}) {
+    NO_FATALS(v.CheckRowCount(workload->table_name(), ClusterVerifier::AT_LEAST,
+                              workload->rows_inserted()));
+  }
+}
+
+#endif // __APPLE__
 
 } // namespace kudu

@@ -205,6 +205,11 @@ class ThreadSafeRandom {
     return random_.Normal(mean, std_dev);
   }
 
+  double NextDoubleFraction() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return random_.NextDoubleFraction();
+  }
+
   template<class Collection, class Set, class T>
   void ReservoirSample(const Collection& c, int k, const Set& avoid,
                        std::vector<T>* result) {

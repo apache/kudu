@@ -54,6 +54,7 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);
 DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
 
+using std::shared_ptr;
 using std::thread;
 using std::unique_ptr;
 using strings::Substitute;
@@ -100,7 +101,7 @@ class CreateTableStressTest : public KuduTest {
               .Build(&messenger_));
     master_proxy_.reset(new MasterServiceProxy(messenger_,
                                                cluster_->mini_master()->bound_rpc_addr()));
-    ASSERT_OK(CreateTabletServerMap(master_proxy_.get(), messenger_, &ts_map_));
+    ASSERT_OK(CreateTabletServerMap(master_proxy_, messenger_, &ts_map_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -115,7 +116,7 @@ class CreateTableStressTest : public KuduTest {
   unique_ptr<MiniCluster> cluster_;
   KuduSchema schema_;
   std::shared_ptr<Messenger> messenger_;
-  unique_ptr<MasterServiceProxy> master_proxy_;
+  shared_ptr<MasterServiceProxy> master_proxy_;
   TabletServerMap ts_map_;
 };
 
