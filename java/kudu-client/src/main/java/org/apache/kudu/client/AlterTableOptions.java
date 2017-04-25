@@ -17,11 +17,15 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.ColumnSchema.CompressionAlgorithm;
+import static org.apache.kudu.ColumnSchema.Encoding;
 import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
 import com.google.common.base.Preconditions;
+import com.google.protobuf.ByteString;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
 import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
@@ -120,10 +124,106 @@ public class AlterTableOptions {
    * @return this instance
    */
   public AlterTableOptions renameColumn(String oldName, String newName) {
+    // For backwards compatibility, this uses the RENAME_COLUMN step type.
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.RENAME_COLUMN);
     step.setRenameColumn(AlterTableRequestPB.RenameColumn.newBuilder().setOldName(oldName)
         .setNewName(newName));
+    return this;
+  }
+
+  /**
+   * Remove the default value for a column.
+   * @param name name of the column
+   * @return this instance
+   */
+  public AlterTableOptions removeDefault(String name) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name).setRemoveDefault(true));
+    step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
+   * Change the default value for a column. `newDefault` must not be null or
+   * else throws {@link IllegalArgumentException}.
+   * @param name name of the column
+   * @param newDefault the new default value
+   * @return this instance
+   */
+  public AlterTableOptions changeDefault(String name, Object newDefault) {
+    if (newDefault == null) {
+      throw new IllegalArgumentException("newDefault cannot be null: " +
+          "use removeDefault to clear a default value");
+    }
+
+    ByteString defaultByteString = ProtobufHelper.objectToByteStringNoType(name, newDefault);
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name)
+            .setDefaultValue(defaultByteString));
+    step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
+   * Change the block size of a column's storage. A nonpositive value indicates
+   * a server-side default.
+   * @param name name of the column
+   * @param blockSize the new block size
+   * @return this instance
+   */
+  public AlterTableOptions changeDesiredBlockSize(String name, int blockSize) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name).setBlockSize(blockSize));
+    step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
+   * Change the encoding used for a column.
+   * @param name name of the column
+   * @param encoding the new encoding
+   * @return this instance
+   */
+  public AlterTableOptions changeEncoding(String name, Encoding encoding) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name)
+            .setEncoding(encoding.getInternalPbType()));
+    step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
+   * Change the compression used for a column.
+   * @param name the name of the column
+   * @param ca the new compression algorithm
+   * @return this instance
+   */
+  public AlterTableOptions changeCompressionAlgorithm(String name, CompressionAlgorithm ca) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name)
+            .setCompression(ca.getInternalPbType()));
+    step.setAlterColumn(alterBuilder);
     return this;
   }
 

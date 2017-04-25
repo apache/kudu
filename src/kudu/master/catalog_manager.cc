@@ -1580,13 +1580,14 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
         }
 
         if (cur_schema.is_key_column(step.drop_column().name())) {
-          return Status::InvalidArgument("cannot remove a key column");
+          return Status::InvalidArgument("cannot remove a key column",
+                                         step.drop_column().name());
         }
 
         RETURN_NOT_OK(builder.RemoveColumn(step.drop_column().name()));
         break;
       }
-
+      // Remains for backwards compatibility.
       case AlterTableRequestPB::RENAME_COLUMN: {
         if (!step.has_rename_column()) {
           return Status::InvalidArgument("RENAME_COLUMN missing column info");
@@ -1597,9 +1598,14 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
                         step.rename_column().new_name()));
         break;
       }
-
-      // TODO: EDIT_COLUMN
-
+      case AlterTableRequestPB::ALTER_COLUMN: {
+        if (!step.has_alter_column()) {
+          return Status::InvalidArgument("ALTER_COLUMN missing column info");
+        }
+        const ColumnSchemaDelta col_delta = ColumnSchemaDeltaFromPB(step.alter_column().delta());
+        RETURN_NOT_OK(builder.ApplyColumnSchemaDelta(col_delta));
+        break;
+      }
       default: {
         return Status::InvalidArgument("Invalid alter schema step type",
                                        SecureShortDebugString(step));
@@ -1793,7 +1799,8 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     switch (step.type()) {
       case AlterTableRequestPB::ADD_COLUMN:
       case AlterTableRequestPB::DROP_COLUMN:
-      case AlterTableRequestPB::RENAME_COLUMN: {
+      case AlterTableRequestPB::RENAME_COLUMN:
+      case AlterTableRequestPB::ALTER_COLUMN: {
         alter_schema_steps.emplace_back(step);
         break;
       }
@@ -1802,7 +1809,6 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
         alter_partitioning_steps.emplace_back(step);
         break;
       }
-      case AlterTableRequestPB::ALTER_COLUMN:
       case AlterTableRequestPB::UNKNOWN: {
         return Status::InvalidArgument("Invalid alter step type", SecureShortDebugString(step));
       }

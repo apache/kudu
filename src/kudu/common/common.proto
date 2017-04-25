@@ -95,6 +95,18 @@ message ColumnSchemaPB {
   optional int32 cfile_block_size = 10 [default=0];
 }
 
+message ColumnSchemaDeltaPB {
+  optional string name = 1;
+  optional string new_name = 2;
+
+  optional bytes default_value = 4;
+  optional bool remove_default = 5;
+
+  optional EncodingType encoding = 6;
+  optional CompressionType compression = 7;
+  optional int32 block_size = 8;
+}
+
 message SchemaPB {
   repeated ColumnSchemaPB columns = 1;
 }

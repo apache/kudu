@@ -17,9 +17,10 @@
 
 #include "kudu/common/schema.h"
 
-#include <set>
 #include <algorithm>
+#include <set>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -29,8 +30,6 @@
 
 namespace kudu {
 
-using std::set;
-using std::unordered_map;
 using std::unordered_set;
 
 // In a new schema, we typically would start assigning column IDs at 0. However, this
@@ -52,7 +51,44 @@ string ColumnStorageAttributes::ToString() const {
                              cfile_block_size);
 }
 
-// TODO: include attributes_.ToString() -- need to fix unit tests
+Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
+  // This method does all validation up-front before making any changes to
+  // the schema, so that if we return an error then we are guaranteed to
+  // have had no effect
+  if (type_info()->physical_type() != BINARY) {
+    if (col_delta.default_value && col_delta.default_value->size() < type_info()->size()) {
+      return Status::InvalidArgument("wrong size for default value");
+    }
+  }
+
+  if (col_delta.new_name) {
+    name_ = *col_delta.new_name;
+  }
+
+  if (col_delta.default_value) {
+    const void* value = type_info()->physical_type() == BINARY ?
+                        reinterpret_cast<const void *>(&col_delta.default_value.get()) :
+                        reinterpret_cast<const void *>(col_delta.default_value->data());
+    write_default_ = std::make_shared<Variant>(type_info()->type(), value);
+  }
+
+  if (col_delta.remove_default) {
+    write_default_ = nullptr;
+  }
+
+  if (col_delta.encoding) {
+    attributes_.encoding = *col_delta.encoding;
+  }
+  if (col_delta.compression) {
+    attributes_.compression = *col_delta.compression;
+  }
+  if (col_delta.cfile_block_size) {
+    attributes_.cfile_block_size = *col_delta.cfile_block_size;
+  }
+  return Status::OK();
+}
+
+// TODO(wdb): include attributes_.ToString() -- need to fix unit tests
 // first
 string ColumnSchema::ToString() const {
   return strings::Substitute("$0[$1]",
@@ -417,8 +453,8 @@ Status SchemaBuilder::AddColumn(const string& name,
 }
 
 Status SchemaBuilder::RemoveColumn(const string& name) {
-  unordered_set<string>::const_iterator it_names;
-  if ((it_names = col_names_.find(name)) == col_names_.end()) {
+  unordered_set<string>::const_iterator it_names = col_names_.find(name);
+  if (it_names == col_names_.end()) {
     return Status::NotFound("The specified column does not exist", name);
   }
 
@@ -439,19 +475,18 @@ Status SchemaBuilder::RemoveColumn(const string& name) {
 }
 
 Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_name) {
-  unordered_set<string>::const_iterator it_names;
-
   // check if 'new_name' is already in use
-  if ((it_names = col_names_.find(new_name)) != col_names_.end()) {
+  if (col_names_.find(new_name) != col_names_.end()) {
     return Status::AlreadyPresent("The column already exists", new_name);
   }
 
   // check if the 'old_name' column exists
-  if ((it_names = col_names_.find(old_name)) == col_names_.end()) {
+  unordered_set<string>::const_iterator it_names = col_names_.find(old_name);
+  if (it_names == col_names_.end()) {
     return Status::NotFound("The specified column does not exist", old_name);
   }
 
-  col_names_.erase(it_names);   // TODO: Should this one stay and marked as alias?
+  col_names_.erase(it_names);   // TODO(wdb): Should this one stay and marked as alias?
   col_names_.insert(new_name);
 
   for (ColumnSchema& col_schema : cols_) {
@@ -482,6 +517,33 @@ Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
 
   next_id_ = ColumnId(next_id_ + 1);
   return Status::OK();
+}
+
+Status SchemaBuilder::ApplyColumnSchemaDelta(const ColumnSchemaDelta& col_delta) {
+  // if the column will be renamed, check if 'new_name' is already in use
+  if (col_delta.new_name && ContainsKey(col_names_, *col_delta.new_name)) {
+    return Status::AlreadyPresent("The column already exists", *col_delta.new_name);
+  }
+
+  // check if the column exists
+  unordered_set<string>::const_iterator it_names = col_names_.find(col_delta.name);
+  if (it_names == col_names_.end()) {
+    return Status::NotFound("The specified column does not exist", col_delta.name);
+  }
+
+  for (ColumnSchema& col_schema : cols_) {
+    if (col_delta.name == col_schema.name()) {
+      RETURN_NOT_OK(col_schema.ApplyDelta(col_delta));
+      if (col_delta.new_name) {
+        // TODO(wdb): Should the old one stay, marked as an alias?
+        col_names_.erase(it_names);
+        col_names_.insert(*col_delta.new_name);
+      }
+      return Status::OK();
+    }
+  }
+
+  LOG(FATAL) << "Should not reach here";
 }
 
 } // namespace kudu

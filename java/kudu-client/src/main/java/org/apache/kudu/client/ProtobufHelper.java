@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -233,6 +234,45 @@ public class ProtobufHelper {
       default:
         throw new IllegalArgumentException("This type is unknown: " + type);
     }
+  }
+
+  /**
+   * Serializes an object based on its Java type. Used for Alter Column
+   * operations where the column's type is not available. `value` must be
+   * a Kudu-compatible type or else throws {@link IllegalArgumentException}.
+   *
+   * @param colName the name of the column (for the error message)
+   * @param value the value to serialize
+   * @return the serialized object
+   */
+  protected static ByteString objectToByteStringNoType(String colName, Object value) {
+    byte[] bytes;
+    if (value instanceof Boolean) {
+      bytes = Bytes.fromBoolean((Boolean) value);
+    } else if (value instanceof Byte) {
+      bytes = new byte[] {(Byte) value};
+    } else if (value instanceof Short) {
+      bytes = Bytes.fromShort((Short) value);
+    } else if (value instanceof Integer) {
+      bytes = Bytes.fromInt((Integer) value);
+    } else if (value instanceof Long) {
+      bytes = Bytes.fromLong((Long) value);
+    } else if (value instanceof String) {
+      bytes = ((String) value).getBytes(Charsets.UTF_8);
+    } else if (value instanceof byte[]) {
+      bytes = (byte[]) value;
+    } else if (value instanceof ByteBuffer) {
+      bytes = ((ByteBuffer) value).array();
+    } else if (value instanceof Float) {
+      bytes = Bytes.fromFloat((Float) value);
+    } else if (value instanceof Double) {
+      bytes = Bytes.fromDouble((Double) value);
+    } else {
+      throw new IllegalArgumentException("The default value provided for " +
+          "column " + colName + " is of class " + value.getClass().getName() +
+          " which does not map to a supported Kudu type");
+    }
+    return ZeroCopyLiteralByteString.wrap(bytes);
   }
 
   /**

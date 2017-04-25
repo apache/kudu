@@ -17,6 +17,7 @@
 
 #include "kudu/common/wire_protocol.h"
 
+#include <boost/optional.hpp>
 #include <string>
 #include <vector>
 
@@ -254,6 +255,53 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
                       attributes);
+}
+
+void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {
+  pb->Clear();
+  pb->set_name(col_delta.name);
+  if (col_delta.new_name) {
+    pb->set_new_name(*col_delta.new_name);
+  }
+  if (col_delta.default_value) {
+    pb->set_default_value(col_delta.default_value->data(),
+                          col_delta.default_value->size());
+  }
+  if (col_delta.remove_default) {
+    pb->set_remove_default(true);
+  }
+  if (col_delta.encoding) {
+    pb->set_encoding(*col_delta.encoding);
+  }
+  if (col_delta.compression) {
+    pb->set_compression(*col_delta.compression);
+  }
+  if (col_delta.cfile_block_size) {
+    pb->set_block_size(*col_delta.cfile_block_size);
+  }
+}
+
+ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
+  ColumnSchemaDelta col_delta(pb.name());
+  if (pb.has_new_name()) {
+    col_delta.new_name = boost::optional<string>(pb.new_name());
+  }
+  if (pb.has_default_value()) {
+    col_delta.default_value = boost::optional<Slice>(Slice(pb.default_value()));
+  }
+  if (pb.has_remove_default()) {
+    col_delta.remove_default = true;
+  }
+  if (pb.has_encoding()) {
+    col_delta.encoding = boost::optional<EncodingType>(pb.encoding());
+  }
+  if (pb.has_compression()) {
+    col_delta.compression = boost::optional<CompressionType>(pb.compression());
+  }
+  if (pb.has_block_size()) {
+    col_delta.cfile_block_size = boost::optional<int32_t>(pb.block_size());
+  }
+  return col_delta;
 }
 
 Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,

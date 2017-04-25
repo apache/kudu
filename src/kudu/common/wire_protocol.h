@@ -32,6 +32,7 @@ namespace kudu {
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
+struct ColumnSchemaDelta;
 class ConstContiguousRow;
 class faststring;
 class HostPort;
@@ -54,7 +55,14 @@ Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
 // Returns the HostPort created from the specified protobuf.
 Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 
-// Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
+// Convert the column schema delta `col_delta` to protobuf.
+void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);
+
+// Return the ColumnSchemaDelta created from the protobuf `pb`.
+// The protobuf must outlive the returned ColumnSchemaDelta.
+ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb);
+
+  // Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
 // (e.g., "0.0.0.0"), then the local machine's hostname is used in
 // its place.
 Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
