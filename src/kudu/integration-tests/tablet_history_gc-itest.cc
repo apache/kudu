@@ -174,7 +174,7 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
   // no more undo deltas.
   HybridClock* c = down_cast<HybridClock*>(tablet->clock().get());
   AddTimeToHybridClock(c, MonoDelta::FromSeconds(FLAGS_tablet_history_max_age_sec));
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(0, tablet->CountUndoDeltasForTests());
   });
 
@@ -199,7 +199,7 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
   ASSERT_EQ(kNumRows, num_rows_scanned);
 
   // Check that the tablet metrics have reasonable values.
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     ASSERT_GT(tablet->metrics()->undo_delta_block_gc_init_duration->TotalCount(), 0);
     ASSERT_GT(tablet->metrics()->undo_delta_block_gc_delete_duration->TotalCount(), 0);
     ASSERT_GT(tablet->metrics()->undo_delta_block_gc_perform_duration->TotalCount(), 0);

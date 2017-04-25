@@ -217,16 +217,16 @@ TEST_F(RegistrationTest, TestTabletReports) {
 // from the master.
 TEST_F(RegistrationTest, TestTSGetsSignedX509Certificate) {
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
-  AssertEventually([&](){
+  ASSERT_EVENTUALLY([&](){
       ASSERT_TRUE(ts->server()->tls_context().has_signed_cert());
-    }, MonoDelta::FromSeconds(10));
+    });
 }
 
 // Check that after the tablet server registers, it gets the list of valid
 // public token signing keys.
 TEST_F(RegistrationTest, TestTSGetsTskList) {
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
-  AssertEventually([&](){
+  ASSERT_EVENTUALLY([&](){
       ASSERT_FALSE(ts->server()->token_verifier().ExportKeys().empty());
     });
 }
@@ -253,7 +253,7 @@ TEST_F(RegistrationTest, TestExposeHttpsURLs) {
 
   // Need "eventually" here because the tserver may take a few seconds
   // to re-register while starting up.
-  AssertEventually([&](){
+  ASSERT_EVENTUALLY([&](){
       string contents;
       NO_FATALS(CheckTabletServersPage(&contents));
       ASSERT_STR_MATCHES(contents, expected_url_regex);

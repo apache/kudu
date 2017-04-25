@@ -543,7 +543,7 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
         new RunDuringDuplicatingRowSetPhase<decltype(RunScans)>(RunScans));
     this->tablet()->SetFlushCompactCommonHooksForTests(hooks_shared);
     ASSERT_OK(this->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
-    NO_FATALS();
+    NO_PENDING_FATALS();
   }
 
   {

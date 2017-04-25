@@ -581,6 +581,7 @@ TEST_F(ExactlyOnceRpcTest, TestExactlyOnceSemanticsGarbageCollectionStressTest) 
   AssertEventually([&]() {
       ASSERT_EQ(0, mem_tracker_->consumption());
     }, MonoDelta::FromSeconds(5));
+  NO_PENDING_FATALS();
 }
 
 

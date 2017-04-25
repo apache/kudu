@@ -1013,7 +1013,7 @@ TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
 
   // Tombstone the tablet.
   ExternalTabletServer* ets = cluster_->tablet_server(0);
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
     ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
                                   tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
   });
@@ -1069,7 +1069,7 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   ASSERT_OK(cluster_->master()->WaitForCatalogManager());
 
   int64_t num_delete_attempts;
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
     int64_t num_heartbeats;
     ASSERT_OK(cluster_->master()->GetInt64Metric(
         &METRIC_ENTITY_server, "kudu.master",
@@ -1096,7 +1096,7 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   cluster_->master()->mutable_flags()->push_back(
       "--catalog_manager_delete_orphaned_tablets");
   ASSERT_OK(cluster_->Restart());
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
     ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
         &METRIC_ENTITY_server, "kudu.tabletserver",
         &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,

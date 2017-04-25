@@ -680,6 +680,7 @@ TEST_F(TestEnv, TestGetFileModifiedTime) {
     ASSERT_OK(env_->GetFileModifiedTime(writer->filename(), &after_time));
     ASSERT_LT(initial_time, after_time);
   }, MonoDelta::FromSeconds(5));
+  NO_PENDING_FATALS();
 }
 
 TEST_F(TestEnv, TestRWFile) {
@@ -786,7 +787,7 @@ TEST_F(TestEnv, TestGetSpaceInfoFreeBytes) {
 
   // Loop in case there are concurrent tests running that are modifying the
   // filesystem.
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     if (env_->FileExists(kTestFilePath)) {
       ASSERT_OK(env_->DeleteFile(kTestFilePath)); // Clean up the previous iteration.
     }

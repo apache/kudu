@@ -251,6 +251,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
             VerifyTokenSignature(stoken, &token);
         ASSERT_EQ(VerificationResult::VALID, res);
     }, MonoDelta::FromMilliseconds(5L * FLAGS_heartbeat_interval_ms));
+    NO_PENDING_FATALS();
   }
 
   // Get closer to the very end of the TSK's activity interval and generate

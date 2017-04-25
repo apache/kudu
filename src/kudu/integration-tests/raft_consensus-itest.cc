@@ -676,7 +676,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
 
   // Once the follower has caught up, all replicas should eventually GC the earlier
   // log segments that they were retaining.
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
         SCOPED_TRACE(Substitute("TS $0", i));
         int num_wals = inspect_->CountFilesInWALDirForTS(i, tablet_id_, "wal-*");
@@ -1304,7 +1304,7 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
 
   // The COMMIT messages end up in the WAL asynchronously, so loop reading the
   // tablet server's WAL until it shows up.
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       LogVerifier lv(cluster_.get());
       OpId commit;
       ASSERT_OK(lv.ScanForHighestCommittedOpIdInLog(replica_ets, tablet_id_, &commit));
@@ -1317,13 +1317,13 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
 
   // Send an operation 3.4 with preceding OpId 3.3.
   // We expect an LMP mismatch, since the replica has operation 2.3.
-  // We use 'AssertEventually' here because the replica
+  // We use 'ASSERT_EVENTUALLY' here because the replica
   // may need a few retries while it's in BOOTSTRAPPING state.
   req.set_caller_term(3);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(3, 3));
   req.clear_ops();
   AddOp(MakeOpId(3, 4), &req);
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       rpc.Reset();
       ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
       ASSERT_EQ(resp.status().error().code(),
@@ -1390,9 +1390,9 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
   // Ensure we can read the data.
-  // We need to AssertEventually here because otherwise it's possible to read the old value
+  // We need to ASSERT_EVENTUALLY here because otherwise it's possible to read the old value
   // of row '1', if the operation is still in flight.
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       vector<string> results;
       NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results));
       ASSERT_EQ("(int32 key=1, int32 int_val=3, string string_val=\"term: 3 index: 4\")",

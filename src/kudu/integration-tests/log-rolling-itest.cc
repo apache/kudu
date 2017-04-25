@@ -61,7 +61,7 @@ TEST(LogRollingITest, TestLogCleanupOnStartup) {
   ASSERT_OK(cluster.master()->WaitForCatalogManager());
 
   for (int i = 1; i <= 10; i++) {
-    AssertEventually([&] () {
+    ASSERT_EVENTUALLY([&] () {
         ASSERT_EQ(std::min(3, i), CountInfoLogs(cluster.master()->log_dir()));
     });
     cluster.master()->Shutdown();

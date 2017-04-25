@@ -118,7 +118,7 @@ class ConsensusPeersTest : public KuduTest {
   // is committed in the test consensus impl.
   // This must be called _before_ the operation is committed.
   void WaitForCommitIndex(int index) {
-    AssertEventually([&]() {
+    ASSERT_EVENTUALLY([&]() {
         ASSERT_GE(message_queue_->GetCommittedIndex(), index);
       });
   }

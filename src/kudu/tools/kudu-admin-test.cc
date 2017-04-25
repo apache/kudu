@@ -1005,7 +1005,7 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
   ASSERT_TRUE(s.ok() || not_currently_leader);
   if (s.ok()) {
     int64 new_term;
-    AssertEventually([&]() {
+    ASSERT_EVENTUALLY([&]() {
         ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
                                        &new_term));
         ASSERT_GT(new_term, current_term);

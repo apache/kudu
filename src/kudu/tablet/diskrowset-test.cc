@@ -172,31 +172,26 @@ TEST_F(TestRowSet, TestRandomRead) {
   ASSERT_OK(OpenTestRowSet(&rs));
 
   // Read un-updated row.
-  VerifyRandomRead(*rs, "hello 000000000000050",
-                   R"((string key="hello 000000000000050", uint32 val=50))");
-  NO_FATALS();
+  NO_FATALS(VerifyRandomRead(*rs, "hello 000000000000050",
+                             R"((string key="hello 000000000000050", uint32 val=50))"));
 
   // Update the row.
   OperationResultPB result;
   ASSERT_OK(UpdateRow(rs.get(), 50, 12345, &result));
 
   // Read it again -- should see the updated value.
-  VerifyRandomRead(*rs, "hello 000000000000050",
-                   R"((string key="hello 000000000000050", uint32 val=12345))");
-  NO_FATALS();
+  NO_FATALS(VerifyRandomRead(*rs, "hello 000000000000050",
+                             R"((string key="hello 000000000000050", uint32 val=12345))"));
 
   // Try to read a row which comes before the first key.
   // This should return no rows.
-  VerifyRandomRead(*rs, "aaaaa", "");
-  NO_FATALS();
+  NO_FATALS(VerifyRandomRead(*rs, "aaaaa", ""));
 
   // Same with a row which falls between keys.
-  VerifyRandomRead(*rs, "hello 000000000000050_between_keys", "");
-  NO_FATALS();
+  NO_FATALS(VerifyRandomRead(*rs, "hello 000000000000050_between_keys", ""));
 
   // And a row which falls after the last key.
-  VerifyRandomRead(*rs, "hello 000000000000101", "");
-  NO_FATALS();
+  NO_FATALS(VerifyRandomRead(*rs, "hello 000000000000101", ""));
 }
 
 // Test Delete() support within a DiskRowSet.

@@ -28,6 +28,11 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 
+#define ASSERT_EVENTUALLY(expr) do { \
+  AssertEventually(expr); \
+  NO_PENDING_FATALS(); \
+} while (0)
+
 namespace kudu {
 
 extern const char* kInvalidPath;
@@ -94,6 +99,10 @@ std::string GetTestDataDirectory();
 //
 // The function is run in a loop with exponential backoff, capped at once
 // a second.
+//
+// To check whether AssertEventually() eventually succeeded, call
+// NO_PENDING_FATALS() afterward, or use ASSERT_EVENTUALLY() which performs
+// this check automatically.
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 

@@ -45,7 +45,7 @@ class MinidumpDeathTest : public KuduTest {
 };
 
 void MinidumpDeathTest::WaitForMinidumps(int expected, const string& dir) {
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     vector<string> matches;
     ASSERT_OK(env_->Glob(JoinPathSegments(dir, "*.dmp"), &matches));
     ASSERT_EQ(expected, matches.size());

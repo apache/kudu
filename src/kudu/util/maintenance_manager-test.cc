@@ -199,7 +199,7 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
   CHECK_OK(Thread::Create(
       "TestThread", "TestRegisterUnregister",
       boost::bind(&TestMaintenanceOp::set_remaining_runs, &op1, 1), &thread));
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(op1.DurationHistogram()->TotalCount(), 1);
     });
   manager_->UnregisterOp(&op1);
@@ -218,7 +218,7 @@ TEST_F(MaintenanceManagerTest, TestNewOpsDontGetScheduledDuringUnregister) {
   manager_->RegisterOp(&op1);
 
   // Wait until two instances of the ops start running, since we have two MM threads.
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(op1.RunningGauge()->value(), 2);
     });
 
@@ -244,7 +244,7 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
   // Fake that the server is under memory pressure.
   indicate_memory_pressure_ = true;
 
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
     });
   manager_->UnregisterOp(&op);
@@ -303,7 +303,7 @@ TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
     op.set_ram_anchored(100);
     manager_->RegisterOp(&op);
 
-    AssertEventually([&]() {
+    ASSERT_EVENTUALLY([&]() {
         ASSERT_EQ(op.DurationHistogram()->TotalCount(), 1);
       });
     manager_->UnregisterOp(&op);

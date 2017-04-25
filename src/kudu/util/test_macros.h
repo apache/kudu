@@ -21,7 +21,13 @@
 #include <string>
 
 // ASSERT_NO_FATAL_FAILURE is just too long to type.
-#define NO_FATALS ASSERT_NO_FATAL_FAILURE
+#define NO_FATALS(expr) \
+  ASSERT_NO_FATAL_FAILURE(expr)
+
+// Detect fatals in the surrounding scope. NO_FATALS() only checks for fatals
+// in the expression passed to it.
+#define NO_PENDING_FATALS() \
+  if (testing::Test::HasFatalFailure()) { return; }
 
 #define ASSERT_OK(status) do { \
   const Status& _s = status;        \

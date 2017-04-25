@@ -54,13 +54,12 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
   auto* ts = ts_map[mts->uuid()];
 
   scoped_refptr<TabletPeer> tablet_peer;
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     vector<scoped_refptr<TabletPeer>> tablet_peers;
     mts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
     ASSERT_EQ(1, tablet_peers.size());
     tablet_peer = tablet_peers[0];
   });
-  NO_FATALS();
 
   workload.Start();
   while (workload.rows_inserted() < 100) {
@@ -96,7 +95,7 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
   // We should still be able to delete the failed tablet.
   ASSERT_OK(itest::DeleteTablet(ts, tablet_peer->tablet_id(), tablet::TABLET_DATA_DELETED,
                                 boost::none, MonoDelta::FromSeconds(30)));
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     vector<scoped_refptr<TabletPeer>> tablet_peers;
     mts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
     ASSERT_EQ(0, tablet_peers.size());

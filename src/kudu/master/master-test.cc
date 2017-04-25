@@ -1339,7 +1339,7 @@ TEST_F(MasterTest, TestConnectToMaster) {
 // Test that the master signs its on server certificate when it becomes the leader,
 // and also that it loads TSKs into the messenger's verifier.
 TEST_F(MasterTest, TestSignOwnCertAndLoadTSKs) {
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       ASSERT_TRUE(master_->tls_context().has_signed_cert());
       ASSERT_GT(master_->messenger()->token_verifier().GetMaxKnownKeySequenceNumber(), -1);
     });

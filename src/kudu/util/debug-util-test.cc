@@ -92,7 +92,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 
   // We have to loop a little bit because it takes a little while for the thread
   // to start up and actually call our function.
-  AssertEventually([&]() {
+  ASSERT_EVENTUALLY([&]() {
       ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread")
     });
 

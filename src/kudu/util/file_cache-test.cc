@@ -83,7 +83,7 @@ class FileCacheTest : public KuduTest {
     ASSERT_EQ(initial_open_fds_ + num_expected_fds, CountOpenFds(env_));
 
     // The expiry thread may take some time to run.
-    AssertEventually([&]() {
+    ASSERT_EVENTUALLY([&]() {
       ASSERT_EQ(num_expected_descriptors, cache_->NumDescriptorsForTests());
     });
   }

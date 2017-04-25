@@ -63,7 +63,7 @@ TEST_F(EnvUtilTest, TestDiskSpaceCheck) {
 
   // Check 1% reservation logic. We loop this in case there are other FS
   // operations happening concurrent with this test.
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     SpaceInfo space_info;
     ASSERT_OK(env_->GetSpaceInfo(test_dir_, &space_info));
     // Try for 1 less byte than 1% free. This request should be rejected.
