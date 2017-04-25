@@ -47,7 +47,7 @@ namespace kudu {
 // will be forcibly SIGKILLed to avoid orphaning processes.
 class Subprocess {
  public:
-  Subprocess(std::string program, std::vector<std::string> argv);
+  explicit Subprocess(std::vector<std::string> argv);
   ~Subprocess();
 
   // Disable subprocess stream output.  Must be called before subprocess starts.

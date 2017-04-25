@@ -342,8 +342,7 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     argv.push_back(executable_path);
     argv.push_back("--is_panic_test_child");
     argv.push_back("--gtest_filter=RpcStubTest.TestRpcPanic");
-
-    Subprocess subp(argv[0], argv);
+    Subprocess subp(argv);
     subp.ShareParentStderr(false);
     CHECK_OK(subp.Start());
     FILE* in = fdopen(subp.from_child_stderr_fd(), "r");

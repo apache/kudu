@@ -76,7 +76,7 @@ class PstackWatcher {
   static Status RunPstack(const std::string& progname, pid_t pid);
 
   // Invoke and wait for the stack dump program.
-  static Status RunStackDump(const std::string& prog, const std::vector<std::string>& argv);
+  static Status RunStackDump(const std::vector<std::string>& argv);
 
   // Run the thread that waits for the specified duration before logging a
   // pstack.

@@ -83,11 +83,7 @@ void PstackWatcher::Run() {
 }
 
 Status PstackWatcher::HasProgram(const char* progname) {
-  string which("which");
-  vector<string> argv;
-  argv.push_back(which);
-  argv.push_back(progname);
-  Subprocess proc(which, argv);
+  Subprocess proc({ "which", progname } );
   proc.DisableStderr();
   proc.DisableStdout();
   RETURN_NOT_OK_PREPEND(proc.Start(),
@@ -129,9 +125,8 @@ Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
 
 Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
   // Command: gdb -quiet -batch -nx -ex cmd1 -ex cmd2 /proc/$PID/exe $PID
-  string prog("gdb");
   vector<string> argv;
-  argv.push_back(prog);
+  argv.push_back("gdb");
   // Don't print introductory version/copyright messages.
   argv.push_back("-quiet");
   // Exit after processing all of the commands below.
@@ -160,24 +155,23 @@ Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
   RETURN_NOT_OK(env->GetExecutablePath(&executable));
   argv.push_back(executable);
   argv.push_back(Substitute("$0", pid));
-  return RunStackDump(prog, argv);
+  return RunStackDump(argv);
 }
 
 Status PstackWatcher::RunPstack(const std::string& progname, pid_t pid) {
-  string prog(progname);
   string pid_string(Substitute("$0", pid));
   vector<string> argv;
-  argv.push_back(prog);
+  argv.push_back(progname);
   argv.push_back(pid_string);
-  return RunStackDump(prog, argv);
+  return RunStackDump(argv);
 }
 
-Status PstackWatcher::RunStackDump(const string& prog, const vector<string>& argv) {
+Status PstackWatcher::RunStackDump(const vector<string>& argv) {
   printf("************************ BEGIN STACKS **************************\n");
   if (fflush(stdout) == EOF) {
     return Status::IOError("Unable to flush stdout", ErrnoToString(errno), errno);
   }
-  Subprocess pstack_proc(prog, argv);
+  Subprocess pstack_proc(argv);
   RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "RunStackDump proc.Start() failed");
   if (::close(pstack_proc.ReleaseChildStdinFd()) == -1) {
     return Status::IOError("Unable to close child stdin", ErrnoToString(errno), errno);

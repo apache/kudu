@@ -621,8 +621,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   CHECK(!process_);
 
   vector<string> argv;
-  // First the exe for argv[0]
-  argv.push_back(BaseName(exe_));
+
+  // First the exe for argv[0].
+  argv.push_back(exe_);
 
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
@@ -685,7 +686,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // the previous info file if it's there.
   ignore_result(Env::Default()->DeleteFile(info_path));
 
-  gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
+  gscoped_ptr<Subprocess> p(new Subprocess(argv));
   p->ShareParentStdout(false);
   p->SetEnvVars(extra_env_);
   string env_str;

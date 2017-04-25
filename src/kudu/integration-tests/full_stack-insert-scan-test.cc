@@ -220,7 +220,7 @@ gscoped_ptr<Subprocess> MakePerfStat() {
   // No output flag for perf-stat 2.x, just print to output
   string cmd = Substitute("perf stat --pid=$0", getpid());
   LOG(INFO) << "Calling: \"" << cmd << "\"";
-  return gscoped_ptr<Subprocess>(new Subprocess("perf", Split(cmd, " ")));
+  return gscoped_ptr<Subprocess>(new Subprocess(Split(cmd, " ")));
 }
 
 gscoped_ptr<Subprocess> MakePerfRecord() {
@@ -228,7 +228,7 @@ gscoped_ptr<Subprocess> MakePerfRecord() {
   string cmd = Substitute("perf record --pid=$0 --call-graph", getpid());
   if (FLAGS_perf_fp_flag) cmd += " fp";
   LOG(INFO) << "Calling: \"" << cmd << "\"";
-  return gscoped_ptr<Subprocess>(new Subprocess("perf", Split(cmd, " ")));
+  return gscoped_ptr<Subprocess>(new Subprocess(Split(cmd, " ")));
 }
 
 void InterruptNotNull(gscoped_ptr<Subprocess> sub) {

@@ -46,6 +46,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
 
@@ -234,13 +235,16 @@ Status ReadFdsFully(const string& progname,
 
 } // anonymous namespace
 
-Subprocess::Subprocess(string program, vector<string> argv)
-    : program_(std::move(program)),
+Subprocess::Subprocess(vector<string> argv)
+    : program_(argv[0]),
       argv_(std::move(argv)),
       state_(kNotStarted),
       child_pid_(-1),
       fd_state_(),
       child_fds_() {
+  // By convention, the first argument in argv is the base name of the program.
+  argv_[0] = BaseName(argv_[0]);
+
   fd_state_[STDIN_FILENO]   = PIPED;
   fd_state_[STDOUT_FILENO]  = SHARED;
   fd_state_[STDERR_FILENO]  = SHARED;
@@ -543,7 +547,7 @@ Status Subprocess::Call(const vector<string>& argv,
                         const string& stdin_in,
                         string* stdout_out,
                         string* stderr_out) {
-  Subprocess p(argv[0], argv);
+  Subprocess p(argv);
 
   if (stdout_out) {
     p.ShareParentStdout(false);

@@ -168,7 +168,7 @@ Status MiniKdc::Start() {
   RETURN_NOT_OK(GetBinaryPath("krb5kdc", &krb5kdc_bin));
 
   kdc_process_.reset(new Subprocess(
-      "env", MakeArgv({
+      MakeArgv({
       krb5kdc_bin,
       "-n", // Do not daemonize.
   })));

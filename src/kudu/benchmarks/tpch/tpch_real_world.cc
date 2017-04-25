@@ -222,9 +222,8 @@ Status TpchRealWorld::StartDbgens() {
   for (int i = 1; i <= FLAGS_tpch_num_inserters; i++) {
     // This environment variable is necessary if dbgen isn't in the current dir.
     setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1);
-    string path_to_dbgen = Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir);
     vector<string> argv;
-    argv.push_back(path_to_dbgen);
+    argv.push_back(Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir));
     argv.push_back("-q");
     argv.push_back("-T");
     argv.push_back("L");
@@ -236,7 +235,7 @@ Status TpchRealWorld::StartDbgens() {
       argv.push_back("-S");
       argv.push_back(Substitute("$0", i));
     }
-    gscoped_ptr<Subprocess> dbgen_proc(new Subprocess(path_to_dbgen, argv));
+    gscoped_ptr<Subprocess> dbgen_proc(new Subprocess(argv));
     LOG(INFO) << "Running " << JoinStrings(argv, " ");
     RETURN_NOT_OK(dbgen_proc->Start());
     dbgen_processes_.push_back(dbgen_proc.release());

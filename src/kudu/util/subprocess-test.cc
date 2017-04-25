@@ -36,11 +36,7 @@ namespace kudu {
 class SubprocessTest : public KuduTest {};
 
 TEST_F(SubprocessTest, TestSimplePipe) {
-  vector<string> argv;
-  argv.push_back("tr");
-  argv.push_back("a-z");
-  argv.push_back("A-Z");
-  Subprocess p("/usr/bin/tr", argv);
+  Subprocess p({ "/usr/bin/tr", "a-z", "A-Z" });
   p.ShareParentStdout(false);
   ASSERT_OK(p.Start());
 
@@ -65,10 +61,7 @@ TEST_F(SubprocessTest, TestSimplePipe) {
 }
 
 TEST_F(SubprocessTest, TestErrPipe) {
-  vector<string> argv;
-  argv.push_back("tee");
-  argv.push_back("/dev/stderr");
-  Subprocess p("/usr/bin/tee", argv);
+  Subprocess p({ "/usr/bin/tee", "/dev/stderr" });
   p.ShareParentStderr(false);
   ASSERT_OK(p.Start());
 
@@ -92,9 +85,7 @@ TEST_F(SubprocessTest, TestErrPipe) {
 }
 
 TEST_F(SubprocessTest, TestKill) {
-  vector<string> argv;
-  argv.push_back("cat");
-  Subprocess p("/bin/cat", argv);
+  Subprocess p({ "/bin/cat" });
   ASSERT_OK(p.Start());
 
   ASSERT_OK(p.Kill(SIGKILL));
@@ -133,7 +124,7 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
 
 // Test that environment variables can be passed to the subprocess.
 TEST_F(SubprocessTest, TestEnvVars) {
-  Subprocess p("bash", {"/bin/bash", "-c", "echo $FOO"});
+  Subprocess p({ "/bin/bash", "-c", "echo $FOO" });
   p.SetEnvVars({{"FOO", "bar"}});
   p.ShareParentStdout(false);
   ASSERT_OK(p.Start());
@@ -174,7 +165,7 @@ TEST_F(SubprocessTest, TestReadSingleFD) {
 }
 
 TEST_F(SubprocessTest, TestGetExitStatusExitSuccess) {
-  Subprocess p("/bin/sh", { "/bin/sh", "-c", "exit 0" });
+  Subprocess p({ "/bin/sh", "-c", "exit 0" });
   ASSERT_OK(p.Start());
   ASSERT_OK(p.Wait());
   int exit_status;
@@ -187,8 +178,7 @@ TEST_F(SubprocessTest, TestGetExitStatusExitSuccess) {
 TEST_F(SubprocessTest, TestGetExitStatusExitFailure) {
   static const vector<int> kStatusCodes = { 1, 255 };
   for (auto code : kStatusCodes) {
-    vector<string> argv = { "/bin/sh", "-c", Substitute("exit $0", code)};
-    Subprocess p("/bin/sh", argv);
+    Subprocess p({ "/bin/sh", "-c", Substitute("exit $0", code) });
     ASSERT_OK(p.Start());
     ASSERT_OK(p.Wait());
     int exit_status;
@@ -210,7 +200,7 @@ TEST_F(SubprocessTest, TestGetExitStatusSignaled) {
     SIGUSR2,
   };
   for (auto signum : kSignals) {
-    Subprocess p("/bin/cat", { "cat" });
+    Subprocess p({ "/bin/cat" });
     ASSERT_OK(p.Start());
     ASSERT_OK(p.Kill(signum));
     ASSERT_OK(p.Wait());
