@@ -241,7 +241,7 @@ TEST_F(MasterCertAuthorityTest, RefuseToSignInvalidCSR) {
   string csr_str;
   {
     CertRequestGenerator::Config gen_config;
-    gen_config.cn = "ts.foo.com";
+    gen_config.hostname = "ts.foo.com";
     gen_config.user_id = "joe-impostor";
     NO_FATALS(GenerateCSR(gen_config, &csr_str));
   }
@@ -265,7 +265,18 @@ TEST_F(MasterCertAuthorityTest, MasterLeaderSignsCSR) {
   string csr_str;
   {
     CertRequestGenerator::Config gen_config;
-    gen_config.cn = "ts.foo.com";
+    // The hostname is longer than permitted 255 characters and breaks other
+    // restrictions on valid DNS hostnames, but it should not be an issue for
+    // both the requestor and the signer.
+    gen_config.hostname =
+        "toooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo."
+        "looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+        "ng.hostname.io";
     string test_user;
     ASSERT_OK(GetLoggedInUser(&test_user));
     gen_config.user_id = test_user;

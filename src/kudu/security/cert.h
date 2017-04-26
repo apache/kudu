@@ -18,6 +18,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <boost/optional/optional_fwd.hpp>
 
@@ -47,6 +48,9 @@ class Cert : public RawDataWrapper<X509> {
 
   std::string SubjectName() const;
   std::string IssuerName() const;
+
+  // Return DNS names from the SAN extension field.
+  std::vector<std::string> Hostnames() const;
 
   // Return the 'userId' extension of this cert, if set.
   boost::optional<std::string> UserId() const;

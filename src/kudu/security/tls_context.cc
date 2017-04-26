@@ -291,7 +291,7 @@ Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
 namespace {
 Status SetCertAttributes(CertRequestGenerator::Config* config) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  RETURN_NOT_OK_PREPEND(GetFQDN(&config->cn), "could not determine FQDN for CSR");
+  RETURN_NOT_OK_PREPEND(GetFQDN(&config->hostname), "could not determine FQDN for CSR");
 
   // If the server has logged in from a keytab, then we have a 'real' identity,
   // and our desired CN should match the local username mapped from the Kerberos
@@ -315,8 +315,6 @@ Status SetCertAttributes(CertRequestGenerator::Config* config) {
 
 Status TlsContext::GenerateSelfSignedCertAndKey() {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  CertRequestGenerator::Config config;
-  RETURN_NOT_OK(SetCertAttributes(&config));
   // Step 1: generate the private key to be self signed.
   PrivateKey key;
   RETURN_NOT_OK_PREPEND(GeneratePrivateKey(FLAGS_ipki_server_key_size,
@@ -325,9 +323,11 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
 
   // Step 2: generate a CSR so that the self-signed cert can eventually be
   // replaced with a CA-signed cert.
+  CertRequestGenerator::Config config;
+  RETURN_NOT_OK(SetCertAttributes(&config));
   CertRequestGenerator gen(config);
-  CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(gen.Init(), "could not initialize CSR generator");
+  CertSignRequest csr;
   RETURN_NOT_OK_PREPEND(gen.GenerateRequest(key, &csr), "could not generate CSR");
 
   // Step 3: generate a self-signed cert that we can use for terminating TLS

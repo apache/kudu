@@ -110,5 +110,29 @@ TEST_F(CertTest, TestGetKuduSpecificFieldsWhenMissing) {
   EXPECT_EQ(boost::none, ca_cert_.KuduKerberosPrincipal());
 }
 
+TEST_F(CertTest, DnsHostnameInSanField) {
+  const string hostname_foo_bar = "foo.bar.com";
+  const string hostname_mega_giga = "mega.giga.io";
+  const string hostname_too_long =
+      "toooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo."
+      "looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+      "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+      "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+      "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+      "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo"
+      "ng.hostname.io";
+
+  Cert cert;
+  ASSERT_OK(cert.FromString(kCertDnsHostnamesInSan, DataFormat::PEM));
+
+  EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
+            cert.IssuerName());
+  vector<string> hostnames = cert.Hostnames();
+  ASSERT_EQ(3, hostnames.size());
+  EXPECT_EQ(hostname_mega_giga, hostnames[0]);
+  EXPECT_EQ(hostname_foo_bar, hostnames[1]);
+  EXPECT_EQ(hostname_too_long, hostnames[2]);
+}
+
 } // namespace security
 } // namespace kudu
