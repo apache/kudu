@@ -43,6 +43,8 @@ extern const char kCaExpiredCert[];
 extern const char kCaExpiredPrivateKey[];
 // The public part of the abovementioned private key.
 extern const char kCaExpiredPublicKey[];
+// Certificate with multiple DNS hostnames in the SAN field.
+extern const char kCertDnsHostnamesInSan[];
 
 extern const char kDataTiny[];
 extern const char kSignatureTinySHA512[];

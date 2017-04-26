@@ -60,9 +60,21 @@ template<> struct SslTypeTraits<BIGNUM> {
 
 namespace ca {
 
-CertRequestGeneratorBase::CertRequestGeneratorBase(Config config)
-    : config_(move(config)) {
+namespace {
+
+Status SetSubjectNameField(X509_NAME* name,
+                           const char* field_code,
+                           const string& field_value) {
+  CHECK(name);
+  CHECK(field_code);
+  OPENSSL_RET_NOT_OK(X509_NAME_add_entry_by_txt(
+      name, field_code, MBSTRING_ASC,
+      reinterpret_cast<const unsigned char*>(field_value.c_str()), -1, -1, 0),
+      Substitute("error setting subject field $0", field_code));
+  return Status::OK();
 }
+
+} // anonymous namespace
 
 CertRequestGenerator::~CertRequestGenerator() {
   sk_X509_EXTENSION_pop_free(extensions_, X509_EXTENSION_free);
@@ -76,25 +88,9 @@ Status CertRequestGeneratorBase::GenerateRequest(const PrivateKey& key,
   auto req = ssl_make_unique(X509_REQ_new());
   OPENSSL_RET_NOT_OK(X509_REQ_set_pubkey(req.get(), key.GetRawData()),
       "error setting X509 public key");
-  X509_NAME* name = X509_REQ_get_subject_name(req.get());
-  CHECK(name);
 
-#define CERT_SET_SUBJ_FIELD(field, code, err_msg) \
-  do { \
-    const string& f = (field); \
-    if (!f.empty()) { \
-      OPENSSL_RET_NOT_OK(X509_NAME_add_entry_by_txt(\
-          name, (code), MBSTRING_ASC, \
-          reinterpret_cast<const unsigned char*>(f.c_str()), -1, -1, 0), \
-          ("error setting subject " # err_msg)); \
-    } \
-  } while (false)
-
-  CERT_SET_SUBJ_FIELD(config_.cn, "CN", "common name");
-  if (config_.user_id) {
-    CERT_SET_SUBJ_FIELD(*config_.user_id, "UID", "userId");
-  }
-#undef CERT_SET_SUBJ_FIELD
+  // Populate the subject field of the request.
+  RETURN_NOT_OK(SetSubject(req.get()));
 
   // Set necessary extensions into the request.
   RETURN_NOT_OK(SetExtensions(req.get()));
@@ -119,7 +115,8 @@ Status CertRequestGeneratorBase::PushExtension(stack_st_X509_EXTENSION* st,
 }
 
 CertRequestGenerator::CertRequestGenerator(Config config)
-    : CertRequestGeneratorBase(config) {
+    : CertRequestGeneratorBase(),
+      config_(std::move(config)) {
 }
 
 Status CertRequestGenerator::Init() {
@@ -127,9 +124,13 @@ Status CertRequestGenerator::Init() {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   CHECK(!is_initialized_);
-  if (config_.cn.empty()) {
-    return Status::InvalidArgument("missing end-entity CN");
+
+  // Build the SAN field using the specified hostname. In general, it might be
+  // multiple DNS hostnames in the field, but in our use-cases it's always one.
+  if (config_.hostname.empty()) {
+    return Status::InvalidArgument("hostname must not be empty");
   }
+  const string san_hosts = Substitute("DNS.0:$0", config_.hostname);
 
   extensions_ = sk_X509_EXTENSION_new_null();
 
@@ -165,6 +166,7 @@ Status CertRequestGenerator::Init() {
     RETURN_NOT_OK(PushExtension(extensions_, nid,
                                 Substitute("ASN1:UTF8:$0", *config_.kerberos_principal)));
   }
+  RETURN_NOT_OK(PushExtension(extensions_, NID_subject_alt_name, san_hosts));
 
   is_initialized_ = true;
 
@@ -175,6 +177,14 @@ bool CertRequestGenerator::Initialized() const {
   return is_initialized_;
 }
 
+Status CertRequestGenerator::SetSubject(X509_REQ* req) const {
+  if (config_.user_id) {
+    RETURN_NOT_OK(SetSubjectNameField(X509_REQ_get_subject_name(req),
+                                      "UID", *config_.user_id));
+  }
+  return Status::OK();
+}
+
 Status CertRequestGenerator::SetExtensions(X509_REQ* req) const {
   OPENSSL_RET_NOT_OK(X509_REQ_add_extensions(req, extensions_),
       "error setting X509 request extensions");
@@ -182,7 +192,7 @@ Status CertRequestGenerator::SetExtensions(X509_REQ* req) const {
 }
 
 CaCertRequestGenerator::CaCertRequestGenerator(Config config)
-    : CertRequestGeneratorBase(config),
+    : config_(std::move(config)),
       extensions_(nullptr),
       is_initialized_(false) {
 }
@@ -226,6 +236,10 @@ bool CaCertRequestGenerator::Initialized() const {
   return is_initialized_;
 }
 
+Status CaCertRequestGenerator::SetSubject(X509_REQ* req) const {
+  return SetSubjectNameField(X509_REQ_get_subject_name(req), "CN", config_.cn);
+}
+
 Status CaCertRequestGenerator::SetExtensions(X509_REQ* req) const {
   OPENSSL_RET_NOT_OK(X509_REQ_add_extensions(req, extensions_),
       "error setting X509 request extensions");
@@ -245,11 +259,9 @@ Status CertSigner::SelfSignCA(const PrivateKey& key,
   }
 
   // Self-sign the CA's CSR.
-  RETURN_NOT_OK(CertSigner(nullptr, &key)
-                .set_expiration_interval(
-                    MonoDelta::FromSeconds(cert_expiration_seconds))
-                .Sign(ca_csr, cert));
-  return Status::OK();
+  return CertSigner(nullptr, &key)
+      .set_expiration_interval(MonoDelta::FromSeconds(cert_expiration_seconds))
+      .Sign(ca_csr, cert);
 }
 
 Status CertSigner::SelfSignCert(const PrivateKey& key,
@@ -265,8 +277,7 @@ Status CertSigner::SelfSignCert(const PrivateKey& key,
   }
 
   // Self-sign the CSR with the key.
-  RETURN_NOT_OK(CertSigner(nullptr, &key).Sign(csr, cert));
-  return Status::OK();
+  return CertSigner(nullptr, &key).Sign(csr, cert);
 }
 
 

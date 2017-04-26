@@ -37,6 +37,10 @@ using std::string;
 namespace kudu {
 namespace security {
 
+template<> struct SslTypeTraits<GENERAL_NAMES> {
+  static constexpr auto free = &GENERAL_NAMES_free;
+};
+
 // This OID is generated via the UUID method.
 static const char* kKuduKerberosPrincipalOidStr = "2.25.243346677289068076843480765133256509912";
 
@@ -86,6 +90,27 @@ boost::optional<string> Cert::UserId() const {
   int len = X509_NAME_get_text_by_NID(name, NID_userId, buf, arraysize(buf));
   if (len < 0) return boost::none;
   return string(buf, len);
+}
+
+vector<string> Cert::Hostnames() const {
+  vector<string> result;
+  auto gens = ssl_make_unique(reinterpret_cast<GENERAL_NAMES*>(X509_get_ext_d2i(
+      data_.get(), NID_subject_alt_name, nullptr, nullptr)));
+  if (gens) {
+    for (int i = 0; i < sk_GENERAL_NAME_num(gens.get()); ++i) {
+      GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens.get(), i);
+      if (gen->type != GEN_DNS) {
+        continue;
+      }
+      const ASN1_STRING* cstr = gen->d.dNSName;
+      if (cstr->type != V_ASN1_IA5STRING || cstr->data == nullptr) {
+        LOG(DFATAL) << "invalid DNS name in the SAN field";
+        return {};
+      }
+      result.emplace_back(reinterpret_cast<char*>(cstr->data), cstr->length);
+    }
+  }
+  return result;
 }
 
 boost::optional<string> Cert::KuduKerberosPrincipal() const {

@@ -54,14 +54,18 @@ class CertManagementTest : public KuduTest {
 
  protected:
   CertRequestGenerator::Config PrepareConfig(
-      const string& common_name) {
-    return { common_name };
+      const string& hostname = "localhost.localdomain") {
+    return { hostname };
+  }
+
+  CaCertRequestGenerator::Config PrepareCaConfig(const string& cn) {
+    return { cn };
   }
 
   // Create a new private key in 'key' and return a CSR associated with that
   // key.
   template<class CSRGen = CertRequestGenerator>
-  CertSignRequest PrepareTestCSR(CertRequestGenerator::Config config,
+  CertSignRequest PrepareTestCSR(typename CSRGen::Config config,
                                  PrivateKey* key) {
     CHECK_OK(GeneratePrivateKey(512, key));
     CSRGen gen(std::move(config));
@@ -79,25 +83,21 @@ class CertManagementTest : public KuduTest {
   PrivateKey ca_exp_private_key_;
 };
 
-// Check for basic constraints while initializing
-// CertRequestGenerator objects.
+// Check for basic constraints while initializing CertRequestGenerator objects.
 TEST_F(CertManagementTest, RequestGeneratorConstraints) {
-  // Missing CN
-  {
-    const CertRequestGenerator::Config gen_config = PrepareConfig("");
-    CertRequestGenerator gen(gen_config);
-    const Status s = gen.Init();
-    const string err_msg = s.ToString();
-    ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "missing end-entity CN");
-  }
+  const CertRequestGenerator::Config gen_config = PrepareConfig("");
+  CertRequestGenerator gen(gen_config);
+  const Status s = gen.Init();
+  const string err_msg = s.ToString();
+  ASSERT_TRUE(s.IsInvalidArgument()) << err_msg;
+  ASSERT_STR_CONTAINS(err_msg, "hostname must not be empty");
 }
 
 // Check for the basic functionality of the CertRequestGenerator class:
 // check it's able to generate keys of expected number of bits and that it
 // reports an error if trying to generate a key of unsupported number of bits.
 TEST_F(CertManagementTest, RequestGeneratorBasics) {
-  const CertRequestGenerator::Config gen_config = PrepareConfig("my-cn");
+  const CertRequestGenerator::Config gen_config = PrepareConfig();
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
@@ -114,7 +114,7 @@ TEST_F(CertManagementTest, RequestGeneratorBasics) {
 // CA private key and certificate.
 TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
   PrivateKey key;
-  const auto& csr = PrepareTestCSR(PrepareConfig("test-cn"), &key);
+  const auto& csr = PrepareTestCSR(PrepareConfig(), &key);
   {
     Cert cert;
     Status s = CertSigner(&ca_cert_, &ca_exp_private_key_)
@@ -137,7 +137,7 @@ TEST_F(CertManagementTest, SignerInitWithMismatchedCertAndKey) {
 // Check how CertSigner behaves if given expired CA certificate
 // and corresponding private key.
 TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
-  const CertRequestGenerator::Config gen_config = PrepareConfig("test-cn");
+  const CertRequestGenerator::Config gen_config = PrepareConfig();
   PrivateKey key;
   CertSignRequest req = PrepareTestCSR(gen_config, &key);
 
@@ -147,10 +147,44 @@ TEST_F(CertManagementTest, SignerInitWithExpiredCert) {
   ASSERT_OK(cert.CheckKeyMatch(key));
 }
 
+// Generate X509 CSR and issue corresponding certificate putting the specified
+// hostname into the SAN X509v3 extension field. The fix for KUDU-1981 addresses
+// the issue of enabling Kudu server components on systems with FQDN longer than
+// 64 characters. This test is a regression for KUDU-1981, so let's verify that
+// CSRs and the result X509 cerificates with long hostnames in SAN are handled
+// properly.
+TEST_F(CertManagementTest, SignCertLongHostnameInSan) {
+  for (auto const& hostname :
+      {
+        "foo.bar.com",
+
+        "222222222222222222222222222222222222222222222222222222222222222."
+        "555555555555555555555555555555555555555555555555555555555555555."
+        "555555555555555555555555555555555555555555555555555555555555555."
+        "chaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaars",
+      }) {
+    CertRequestGenerator::Config gen_config;
+    gen_config.hostname = hostname;
+    gen_config.user_id = "test-uid";
+    PrivateKey key;
+    const auto& csr = PrepareTestCSR(gen_config, &key);
+    Cert cert;
+    ASSERT_OK(CertSigner(&ca_cert_, &ca_private_key_).Sign(csr, &cert));
+    ASSERT_OK(cert.CheckKeyMatch(key));
+
+    EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
+              cert.IssuerName());
+    EXPECT_EQ("UID = test-uid", cert.SubjectName());
+    vector<string> hostnames = cert.Hostnames();
+    ASSERT_EQ(1, hostnames.size());
+    EXPECT_EQ(hostname, hostnames[0]);
+  }
+}
+
 // Generate X509 CSR and issues corresponding certificate.
 TEST_F(CertManagementTest, SignCert) {
   CertRequestGenerator::Config gen_config;
-  gen_config.cn = "test-cn";
+  gen_config.hostname = "foo.bar.com";
   gen_config.user_id = "test-uid";
   gen_config.kerberos_principal = "kudu/foo.bar.com@bar.com";
   PrivateKey key;
@@ -161,15 +195,17 @@ TEST_F(CertManagementTest, SignCert) {
 
   EXPECT_EQ("C = US, ST = CA, O = MyCompany, CN = MyName, emailAddress = my@email.com",
             cert.IssuerName());
-  EXPECT_EQ("CN = test-cn, UID = test-uid", cert.SubjectName());
+  EXPECT_EQ("UID = test-uid", cert.SubjectName());
   EXPECT_EQ(gen_config.user_id, *cert.UserId());
   EXPECT_EQ(gen_config.kerberos_principal, *cert.KuduKerberosPrincipal());
+  vector<string> hostnames = cert.Hostnames();
+  ASSERT_EQ(1, hostnames.size());
+  EXPECT_EQ("foo.bar.com", hostnames[0]);
 }
 
 // Generate X509 CA CSR and sign the result certificate.
 TEST_F(CertManagementTest, SignCaCert) {
-  const CertRequestGenerator::Config gen_config(
-      PrepareConfig("8C084CF6-A30B-4F5B-9673-A73E62E29A9D"));
+  const CaCertRequestGenerator::Config gen_config(PrepareCaConfig("self-ca"));
   PrivateKey key;
   const auto& csr = PrepareTestCSR<CaCertRequestGenerator>(gen_config, &key);
   Cert cert;
@@ -185,7 +221,7 @@ TEST_F(CertManagementTest, TestSelfSignedCA) {
   ASSERT_OK(GenerateSelfSignedCAForTests(&ca_key, &ca_cert));
 
   // Create a key and CSR for the tablet server.
-  const auto& config = PrepareConfig("some-tablet-server");
+  const auto& config = PrepareConfig();
   PrivateKey ts_key;
   CertSignRequest ts_csr = PrepareTestCSR(config, &ts_key);
 
@@ -203,7 +239,7 @@ TEST_F(CertManagementTest, X509CsrFromAndToString) {
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
-  CertRequestGenerator gen(PrepareConfig("test-cn"));
+  CertRequestGenerator gen(PrepareConfig());
   ASSERT_OK(gen.Init());
   CertSignRequest req_ref;
   ASSERT_OK(gen.GenerateRequest(key, &req_ref));
@@ -228,7 +264,7 @@ TEST_F(CertManagementTest, X509FromAndToString) {
 
   PrivateKey key;
   ASSERT_OK(GeneratePrivateKey(1024, &key));
-  CertRequestGenerator gen(PrepareConfig("test-cn"));
+  CertRequestGenerator gen(PrepareConfig());
   ASSERT_OK(gen.Init());
   CertSignRequest req;
   ASSERT_OK(gen.GenerateRequest(key, &req));

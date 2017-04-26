@@ -54,17 +54,7 @@ namespace ca {
 // Base utility class for issuing X509 CSRs.
 class CertRequestGeneratorBase {
  public:
-  // Properties for the generated X509 CSR.
-  struct Config {
-    // Common Name (CN)
-    std::string cn;
-    // userId (UID)
-    boost::optional<std::string> user_id;
-    // Our custom extension which stores the full Kerberos principal for IPKI certs.
-    boost::optional<std::string> kerberos_principal;
-  };
-
-  explicit CertRequestGeneratorBase(Config config);
+  CertRequestGeneratorBase() = default;
   virtual ~CertRequestGeneratorBase() = default;
 
   virtual Status Init() = 0;
@@ -79,10 +69,12 @@ class CertRequestGeneratorBase {
   static Status PushExtension(stack_st_X509_EXTENSION* st,
                               int32_t nid,
                               StringPiece value) WARN_UNUSED_RESULT;
+
+  // Set the certificate-specific subject fields into the specified request.
+  virtual Status SetSubject(X509_REQ* req) const = 0;
+
   // Set the certificate-specific extensions into the specified request.
   virtual Status SetExtensions(X509_REQ* req) const = 0;
-
-  const Config config_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CertRequestGeneratorBase);
@@ -92,6 +84,18 @@ class CertRequestGeneratorBase {
 // (a.k.a. X509 CSRs).
 class CertRequestGenerator : public CertRequestGeneratorBase {
  public:
+  // Properties for the generated X509 CSR. The 'hostname' is for the name of
+  // the machine the requestor is to use the certificate at. Valid configuration
+  // should contain non-empty 'hostname' field.
+  struct Config {
+    // FQDN name to put into the 'DNS' fields of the subjectAltName extension.
+    std::string hostname;
+    // userId (UID)
+    boost::optional<std::string> user_id;
+    // Our custom extension which stores the full Kerberos principal for IPKI certs.
+    boost::optional<std::string> kerberos_principal;
+  };
+
   // 'config' contains the properties to fill into the X509 attributes of the
   // CSR.
   explicit CertRequestGenerator(Config config);
@@ -107,9 +111,11 @@ class CertRequestGenerator : public CertRequestGeneratorBase {
   }
 
  protected:
+  Status SetSubject(X509_REQ* req) const override WARN_UNUSED_RESULT;
   Status SetExtensions(X509_REQ* req) const override WARN_UNUSED_RESULT;
 
  private:
+  const Config config_;
   stack_st_X509_EXTENSION* extensions_ = nullptr;
   bool is_initialized_ = false;
   bool for_self_signing_ = false;
@@ -119,6 +125,15 @@ class CertRequestGenerator : public CertRequestGeneratorBase {
 // signing requests.
 class CaCertRequestGenerator : public CertRequestGeneratorBase {
  public:
+  // Properties for the generated X509 CA CSR.
+  struct Config {
+    // Common name (CN); e.g. 'master 239D6D2F-BDD2-4463-8933-78D9559C2124'.
+    // Don't put hostname/FQDN in here: for CA cert it does not make sense and
+    // it might be longer than 64 characters which is the limit specified
+    // by RFC5280. The limit is enforced by the OpenSSL library.
+    std::string cn;
+  };
+
   explicit CaCertRequestGenerator(Config config);
   ~CaCertRequestGenerator();
 
@@ -126,9 +141,11 @@ class CaCertRequestGenerator : public CertRequestGeneratorBase {
   bool Initialized() const override;
 
  protected:
+  Status SetSubject(X509_REQ* req) const override WARN_UNUSED_RESULT;
   Status SetExtensions(X509_REQ* req) const override WARN_UNUSED_RESULT;
 
  private:
+  const Config config_;
   stack_st_X509_EXTENSION* extensions_;
   mutable simple_spinlock lock_;
   bool is_initialized_; // protected by lock_
