@@ -17,6 +17,8 @@
 #ifndef KUDU_UTIL_SUBPROCESS_H
 #define KUDU_UTIL_SUBPROCESS_H
 
+#include <signal.h>
+
 #include <map>
 #include <string>
 #include <vector>
@@ -47,7 +49,11 @@ namespace kudu {
 // will be forcibly SIGKILLed to avoid orphaning processes.
 class Subprocess {
  public:
-  explicit Subprocess(std::vector<std::string> argv);
+  // Constructs a new Subprocess that will execute 'argv' on Start().
+  //
+  // If the process isn't explicitly killed, 'sig_on_destroy' will be delivered
+  // to it when the Subprocess goes out of scope.
+  explicit Subprocess(std::vector<std::string> argv, int sig_on_destruct = SIGKILL);
   ~Subprocess();
 
   // Disable subprocess stream output.  Must be called before subprocess starts.
@@ -100,6 +106,12 @@ class Subprocess {
   // in order to reap it. Only call after starting.
   Status Kill(int signal) WARN_UNUSED_RESULT;
 
+  // Sends a signal to the subprocess and waits for it to exit.
+  //
+  // If the signal is not SIGKILL and the process doesn't appear to be exiting,
+  // retries with SIGKILL.
+  Status KillAndWait(int signal);
+
   // Retrieve exit status of the process awaited by Wait() and/or WaitNoBlock()
   // methods. Must be called only after calling Wait()/WaitNoBlock().
   Status GetExitStatus(int* exit_status, std::string* info_str = nullptr) const
@@ -140,6 +152,7 @@ class Subprocess {
   int ReleaseChildStderrFd() { return ReleaseChildFd(STDERR_FILENO); }
 
   pid_t pid() const;
+  const std::string& argv0() const { return argv_[0]; }
 
  private:
   enum State {
@@ -166,6 +179,10 @@ class Subprocess {
   // The cached wait status if Wait()/WaitNoBlock() has been called.
   // Only valid if state_ == kExited.
   int wait_status_;
+
+  // Custom signal to deliver when the subprocess goes out of scope, provided
+  // the process hasn't already been killed.
+  int sig_on_destruct_;
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };

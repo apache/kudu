@@ -213,4 +213,52 @@ TEST_F(SubprocessTest, TestGetExitStatusSignaled) {
   }
 }
 
+TEST_F(SubprocessTest, TestSubprocessDestroyWithCustomSignal) {
+  string kTestFile = GetTestPath("foo");
+
+  // Start a subprocess that creates kTestFile immediately and deletes it on exit.
+  //
+  // Note: it's important that the shell not invoke a command while waiting
+  // to be killed (i.e. "sleep 60"); if it did, the signal could be delivered
+  // just after the command starts but just before the shell decides to forward
+  // signals to it, and we wind up with a deadlock.
+  vector<string> argv = {
+      "/bin/bash",
+      "-c",
+      Substitute(
+          // Delete kTestFile on exit.
+          "trap \"rm $0\" EXIT;"
+          // Create kTestFile on start.
+          "touch $0;"
+          // Spin in a tight loop waiting to be killed.
+          "while true;"
+          "  do FOO=$$((FOO + 1));"
+          "done", kTestFile)
+  };
+
+  {
+    Subprocess s(argv);
+    ASSERT_OK(s.Start());
+    AssertEventually([&]{
+        ASSERT_TRUE(env_->FileExists(kTestFile));
+    });
+  }
+
+  // The subprocess went out of scope and was killed with SIGKILL, so it left
+  // kTestFile behind.
+  ASSERT_TRUE(env_->FileExists(kTestFile));
+
+  ASSERT_OK(env_->DeleteFile(kTestFile));
+  {
+    Subprocess s(argv, SIGTERM);
+    ASSERT_OK(s.Start());
+    AssertEventually([&]{
+        ASSERT_TRUE(env_->FileExists(kTestFile));
+    });
+  }
+
+  // The subprocess was killed with SIGTERM, giving it a chance to delete kTestFile.
+  ASSERT_FALSE(env_->FileExists(kTestFile));
+}
+
 } // namespace kudu

@@ -46,8 +46,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/status.h"
 
 using std::string;
@@ -63,6 +65,8 @@ namespace kudu {
 using ::operator<<;
 
 namespace {
+
+static double kProcessWaitTimeoutSeconds = 5.0;
 
 static const char* kProcSelfFd =
 #if defined(__APPLE__)
@@ -235,13 +239,14 @@ Status ReadFdsFully(const string& progname,
 
 } // anonymous namespace
 
-Subprocess::Subprocess(vector<string> argv)
+Subprocess::Subprocess(vector<string> argv, int sig_on_destruct)
     : program_(argv[0]),
       argv_(std::move(argv)),
       state_(kNotStarted),
       child_pid_(-1),
       fd_state_(),
-      child_fds_() {
+      child_fds_(),
+      sig_on_destruct_(sig_on_destruct) {
   // By convention, the first argument in argv is the base name of the program.
   argv_[0] = BaseName(argv_[0]);
 
@@ -255,11 +260,12 @@ Subprocess::Subprocess(vector<string> argv)
 
 Subprocess::~Subprocess() {
   if (state_ == kRunning) {
-    LOG(WARNING) << "Child process " << child_pid_
-                 << "(" << JoinStrings(argv_, " ") << ") "
-                 << " was orphaned. Sending SIGKILL...";
-    WARN_NOT_OK(Kill(SIGKILL), "Failed to send SIGKILL");
-    WARN_NOT_OK(Wait(), "Failed to Wait()");
+    LOG(WARNING) << Substitute(
+        "Child process $0 ($1) was orphaned. Sending signal $2...",
+        child_pid_, JoinStrings(argv_, " "), sig_on_destruct_);
+    WARN_NOT_OK(KillAndWait(sig_on_destruct_),
+                Substitute("Failed to KillAndWait() with signal $0",
+                           sig_on_destruct_));
   }
 
   for (int i = 0; i < 3; ++i) {
@@ -494,6 +500,40 @@ Status Subprocess::Kill(int signal) {
     return Status::RuntimeError("Unable to kill",
                                 ErrnoToString(errno),
                                 errno);
+  }
+  return Status::OK();
+}
+
+Status Subprocess::KillAndWait(int signal) {
+  string procname = Substitute("$0 (pid $1)", argv0(), pid());
+
+  // This is a fatal error because all errors in Kill() are signal-independent,
+  // so Kill(SIGKILL) is just as likely to fail if this did.
+  RETURN_NOT_OK_PREPEND(
+      Kill(signal), Substitute("Failed to send signal $0 to $1",
+                               signal, procname));
+  if (signal == SIGKILL) {
+    RETURN_NOT_OK_PREPEND(
+        Wait(), Substitute("Failed to wait on $0", procname));
+  } else {
+    Status s;
+    Stopwatch sw;
+    sw.start();
+    do {
+      s = WaitNoBlock();
+      if (s.ok()) {
+        break;
+      } else if (!s.IsTimedOut()) {
+        // An unexpected error in WaitNoBlock() is likely to manifest repeatedly,
+        // so there's no point in retrying this.
+        RETURN_NOT_OK_PREPEND(
+            s, Substitute("Unexpected failure while waiting on $0", procname));
+      }
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    } while (sw.elapsed().wall_seconds() < kProcessWaitTimeoutSeconds);
+    if (s.IsTimedOut()) {
+      return KillAndWait(SIGKILL);
+    }
   }
   return Status::OK();
 }
