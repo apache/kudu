@@ -30,14 +30,12 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
-using kudu::env_util::ReadFully;
 using kudu::pb_util::ReadablePBContainerFile;
 using std::string;
 using std::unique_ptr;
@@ -512,7 +510,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   ASSERT_OK(env_->NewRandomAccessFile(metadata_path, &meta_file));
   Slice result;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[latest_meta_size]);
-  ASSERT_OK(ReadFully(meta_file.get(), 0, latest_meta_size, &result, scratch.get()));
+  ASSERT_OK(meta_file->Read(0, latest_meta_size, &result, scratch.get()));
   string data = result.ToString();
   // Flip the high bit of the length field, which is a 4-byte little endian
   // unsigned integer. This will cause the length field to represent a large

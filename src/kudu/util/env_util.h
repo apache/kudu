@@ -47,21 +47,6 @@ Status OpenFileForSequential(Env *env, const std::string &path,
 Status VerifySufficientDiskSpace(Env *env, const std::string& path,
                                  int64_t requested_bytes, int64_t reserved_bytes);
 
-// Read exactly 'n' bytes from the given file. If fewer than 'n' bytes
-// are read, returns an IOError. This differs from the underlying
-// RandomAccessFile::Read(), which may return a "short read".
-//
-// Similar to RandomAccessFile::Read(), '*result' is modified to point
-// to the bytes which were read. These bytes may be a copy placed in
-// the 'scratch' buffer, or result may point into the underlying file
-// (e.g. via mmap or other zero-copy mechanism).
-//
-// NOTE: even if this returns an error, some data _may_ be read into
-// the provided scratch buffer, but no guarantee that that will be the
-// case.
-Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
-                 Slice* result, uint8_t* scratch);
-
 // Creates the directory given by 'path', unless it already exists.
 //
 // If 'created' is not NULL, sets it to true if the directory was

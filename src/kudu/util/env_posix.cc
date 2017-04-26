@@ -119,6 +119,10 @@ DEFINE_double(env_inject_io_error_on_write_or_preallocate, 0.0,
               "Fraction of the time that write or preallocate operations will fail");
 TAG_FLAG(env_inject_io_error_on_write_or_preallocate, hidden);
 
+DEFINE_int32(env_inject_short_read_bytes, 0,
+             "The number of bytes less than the requested bytes to read");
+TAG_FLAG(env_inject_short_read_bytes, hidden);
+
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using std::string;
@@ -191,7 +195,7 @@ class ScopedFdCloser {
   int fd_;
 };
 
-static Status IOError(const std::string& context, int err_number) {
+Status IOError(const std::string& context, int err_number) {
   switch (err_number) {
     case ENOENT:
       return Status::NotFound(context, ErrnoToString(err_number), err_number);
@@ -209,7 +213,7 @@ static Status IOError(const std::string& context, int err_number) {
   return Status::IOError(context, ErrnoToString(err_number), err_number);
 }
 
-static Status DoSync(int fd, const string& filename) {
+Status DoSync(int fd, const string& filename) {
   ThreadRestrictions::AssertIOAllowed();
   if (FLAGS_never_fsync) return Status::OK();
   if (FLAGS_env_use_fsync) {
@@ -228,7 +232,7 @@ static Status DoSync(int fd, const string& filename) {
   return Status::OK();
 }
 
-static Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
+Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
   ThreadRestrictions::AssertIOAllowed();
   int flags = O_RDWR;
   switch (mode) {
@@ -248,6 +252,39 @@ static Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
     return IOError(filename, errno);
   }
   *fd = f;
+  return Status::OK();
+}
+
+Status DoRead(int fd, const string& filename, uint64_t offset, size_t length,
+                     Slice* result, uint8_t *scratch) {
+  ThreadRestrictions::AssertIOAllowed();
+  size_t rem = length;
+  uint8_t* dst = scratch;
+  while (rem > 0) {
+    size_t req = rem;
+    // Inject a short read for testing
+    if (PREDICT_FALSE(FLAGS_env_inject_short_read_bytes > 0 && req == length)) {
+      DCHECK_LT(FLAGS_env_inject_short_read_bytes, req);
+      req -= FLAGS_env_inject_short_read_bytes;
+    }
+    ssize_t r;
+    RETRY_ON_EINTR(r, pread(fd, dst, req, offset));
+    if (r < 0) {
+      // An error: return a non-ok status.
+      return IOError(filename, errno);
+    }
+    if (r == 0) {
+      // EOF
+      return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
+                                        length, offset));
+    }
+    DCHECK_LE(r, rem);
+    dst += r;
+    rem -= r;
+    offset += r;
+  }
+  DCHECK_EQ(0, rem);
+  *result = Slice(scratch, length);
   return Status::OK();
 }
 
@@ -303,16 +340,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       uint8_t *scratch) const OVERRIDE {
-    ThreadRestrictions::AssertIOAllowed();
-    Status s;
-    ssize_t r;
-    RETRY_ON_EINTR(r, pread(fd_, scratch, n, offset));
-    if (r < 0) {
-      // An error: return a non-ok status.
-      s = IOError(filename_, errno);
-    }
-    *result = Slice(scratch, r);
-    return s;
+    return DoRead(fd_, filename_, offset, n, result, scratch);
   }
 
   virtual Status Size(uint64_t *size) const OVERRIDE {
@@ -555,30 +583,7 @@ class PosixRWFile : public RWFile {
 
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE {
-    ThreadRestrictions::AssertIOAllowed();
-    int rem = length;
-    uint8_t* dst = scratch;
-    while (rem > 0) {
-      ssize_t r;
-      RETRY_ON_EINTR(r, pread(fd_, dst, rem, offset));
-      if (r < 0) {
-        // An error: return a non-ok status.
-        return IOError(filename_, errno);
-      }
-      Slice this_result(dst, r);
-      DCHECK_LE(this_result.size(), rem);
-      if (this_result.size() == 0) {
-        // EOF
-        return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
-                                          length, offset));
-      }
-      dst += this_result.size();
-      rem -= this_result.size();
-      offset += this_result.size();
-    }
-    DCHECK_EQ(0, rem);
-    *result = Slice(scratch, length);
-    return Status::OK();
+    return DoRead(fd_, filename_, offset, length, result, scratch);
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {

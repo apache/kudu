@@ -32,7 +32,6 @@
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/crc.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
@@ -50,7 +49,6 @@ namespace tserver {
 using consensus::MaximumOpId;
 using consensus::MinimumOpId;
 using consensus::OpIdEquals;
-using env_util::ReadFully;
 using log::ReadableLogSegment;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
@@ -458,7 +456,7 @@ TEST_F(TabletCopyServiceTest, TestFetchLog) {
   int64_t size = segment->file_size();
   scratch.resize(size);
   Slice slice;
-  ASSERT_OK(ReadFully(segment->readable_file().get(), 0, size, &slice, scratch.data()));
+  ASSERT_OK(segment->readable_file()->Read(0, size, &slice, scratch.data()));
 
   AssertDataEqual(slice.data(), slice.size(), resp.chunk());
 }

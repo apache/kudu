@@ -69,7 +69,6 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
-using env_util::ReadFully;
 using std::vector;
 using std::shared_ptr;
 using std::unique_ptr;
@@ -416,8 +415,8 @@ Status ReadableLogSegment::ReadHeader() {
   LogSegmentHeaderPB header;
 
   // Read and parse the log segment header.
-  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), kLogSegmentHeaderMagicAndHeaderLength,
-                                  header_size, &header_slice, header_space),
+  RETURN_NOT_OK_PREPEND(readable_file_->Read(kLogSegmentHeaderMagicAndHeaderLength,
+                                             header_size, &header_slice, header_space),
                         "Unable to read fully");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&header,
@@ -440,8 +439,7 @@ Status ReadableLogSegment::ReadHeader() {
 Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
   uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
   Slice slice;
-  RETURN_NOT_OK(ReadFully(readable_file_.get(), 0, kLogSegmentHeaderMagicAndHeaderLength,
-                          &slice, scratch));
+  RETURN_NOT_OK(readable_file_->Read(0, kLogSegmentHeaderMagicAndHeaderLength, &slice, scratch));
   RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
   return Status::OK();
 }
@@ -526,8 +524,8 @@ Status ReadableLogSegment::ReadFooter() {
   LogSegmentFooterPB footer;
 
   // Read and parse the log segment footer.
-  RETURN_NOT_OK_PREPEND(ReadFully(readable_file_.get(), footer_offset,
-                                  footer_size, &footer_slice, footer_space),
+  RETURN_NOT_OK_PREPEND(readable_file_->Read(footer_offset, footer_size,
+                                             &footer_slice, footer_space),
                         "Footer not found. Could not read fully.");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&footer,
@@ -544,11 +542,8 @@ Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) {
   Slice slice;
 
   CHECK_GT(file_size(), kLogSegmentFooterMagicAndFooterLength);
-  RETURN_NOT_OK(ReadFully(readable_file_.get(),
-                          file_size() - kLogSegmentFooterMagicAndFooterLength,
-                          kLogSegmentFooterMagicAndFooterLength,
-                          &slice,
-                          scratch));
+  RETURN_NOT_OK(readable_file_->Read(file_size() - kLogSegmentFooterMagicAndFooterLength,
+                                     kLogSegmentFooterMagicAndFooterLength, &slice, scratch));
 
   RETURN_NOT_OK(ParseFooterMagicAndFooterLength(slice, len));
   return Status::OK();
@@ -606,7 +601,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_va
        offset += kChunkSize - entry_header_size()) {
     int rem = std::min<int64_t>(file_size() - offset, kChunkSize);
     Slice chunk;
-    RETURN_NOT_OK(ReadFully(readable_file().get(), offset, rem, &chunk, &buf[0]));
+    RETURN_NOT_OK(readable_file()->Read(offset, rem, &chunk, &buf[0]));
 
     // Optimization for the case where a chunk is all zeros -- this is common in the
     // case of pre-allocated files. This avoids a lot of redundant CRC calculation.
@@ -647,8 +642,7 @@ Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header)
   const size_t header_size = entry_header_size();
   uint8_t scratch[header_size];
   Slice slice;
-  RETURN_NOT_OK_PREPEND(ReadFully(readable_file().get(), *offset, header_size,
-                                  &slice, scratch),
+  RETURN_NOT_OK_PREPEND(readable_file()->Read(*offset, header_size, &slice, scratch),
                         "Could not read log entry header");
 
   if (PREDICT_FALSE(!DecodeEntryHeader(slice, header))) {

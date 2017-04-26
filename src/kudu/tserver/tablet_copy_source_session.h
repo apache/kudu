@@ -58,8 +58,8 @@ struct ImmutableRandomAccessFileInfo {
                                 int64_t size)
       : readable(std::move(readable)), size(size) {}
 
-  Status ReadFully(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
-    return env_util::ReadFully(readable.get(), offset, size, data, scratch);
+  Status Read(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
+    return readable->Read(offset, size, data, scratch);
   }
 };
 
@@ -75,7 +75,7 @@ struct ImmutableReadableBlockInfo {
     size(size) {
   }
 
-  Status ReadFully(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
+  Status Read(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
     return readable->Read(offset, size, data, scratch);
   }
 };

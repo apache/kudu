@@ -447,7 +447,7 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
                                Slice* result, uint8_t* scratch) const {
   DCHECK(!closed_.Load());
 
-  RETURN_NOT_OK(env_util::ReadFully(reader_.get(), offset, length, result, scratch));
+  RETURN_NOT_OK(reader_->Read(offset, length, result, scratch));
   if (block_manager_->metrics_) {
     block_manager_->metrics_->total_bytes_read->IncrementBy(length);
   }

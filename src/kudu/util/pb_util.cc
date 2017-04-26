@@ -185,7 +185,7 @@ Status NonShortRead(T* file, uint64_t offset, uint64_t length, Slice* result, ui
 template<>
 Status NonShortRead<RandomAccessFile>(RandomAccessFile* file, uint64_t offset, uint64_t length,
                                       Slice* result, uint8_t* scratch) {
-  return env_util::ReadFully(file, offset, length, result, scratch);
+  return file->Read(offset, length, result, scratch);
 }
 
 template<>

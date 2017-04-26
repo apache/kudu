@@ -81,8 +81,8 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   faststring scratch1, scratch2;
   scratch1.resize(size1);
   scratch2.resize(size2);
-  RETURN_NOT_OK(env_util::ReadFully(file1.get(), 0, size1, &slice1, scratch1.data()));
-  RETURN_NOT_OK(env_util::ReadFully(file2.get(), 0, size2, &slice2, scratch2.data()));
+  RETURN_NOT_OK(file1->Read(0, size1, &slice1, scratch1.data()));
+  RETURN_NOT_OK(file2->Read(0, size2, &slice2, scratch2.data()));
   int result = strings::fastmemcmp_inlined(slice1.data(), slice2.data(), size1);
   if (result != 0) {
     return Status::Corruption("Files do not match");

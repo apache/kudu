@@ -50,6 +50,7 @@
 #endif
 
 DECLARE_bool(never_fsync);
+DECLARE_int32(env_inject_short_read_bytes);
 
 namespace kudu {
 
@@ -136,8 +137,7 @@ class TestEnv : public KuduTest {
   void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
     unique_ptr<uint8_t[]> scratch(new uint8_t[n]);
     Slice s;
-    ASSERT_OK(env_util::ReadFully(raf, offset, n, &s,
-                                         scratch.get()));
+    ASSERT_OK(raf->Read(offset, n, &s, scratch.get()));
     ASSERT_EQ(n, s.size());
     ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
   }
@@ -180,7 +180,7 @@ class TestEnv : public KuduTest {
         }
         if (!fast) {
           // Verify as write. Note: this requires that file is pre-allocated, otherwise
-          // the ReadFully() fails with EINVAL.
+          // the Read() fails with EINVAL.
           ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
                                                         num_slices * slice_size));
         }
@@ -369,46 +369,12 @@ TEST_F(TestEnv, TestTruncate) {
   ASSERT_OK(env_->NewRandomAccessFile(test_path, &raf));
   Slice s;
   unique_ptr<uint8_t[]> scratch(new uint8_t[size]);
-  ASSERT_OK(env_util::ReadFully(raf.get(), 0, size, &s, scratch.get()));
+  ASSERT_OK(raf->Read(0, size, &s, scratch.get()));
   const uint8_t* data = s.data();
   for (int i = 0; i < size; i++) {
     ASSERT_EQ(0, data[i]) << "Not null at position " << i;
   }
 }
-
-class ShortReadRandomAccessFile : public RandomAccessFile {
- public:
-  explicit ShortReadRandomAccessFile(shared_ptr<RandomAccessFile> wrapped)
-      : wrapped_(std::move(wrapped)) {}
-
-  virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      uint8_t *scratch) const OVERRIDE {
-    CHECK_GT(n, 0);
-    // Divide the requested amount of data by a small integer,
-    // and issue the shorter read to the underlying file.
-    int short_n = n / ((rand() % 3) + 1);
-    if (short_n == 0) {
-      short_n = 1;
-    }
-
-    VLOG(1) << "Reading " << short_n << " instead of " << n;
-
-    return wrapped_->Read(offset, short_n, result, scratch);
-  }
-
-  virtual Status Size(uint64_t *size) const OVERRIDE {
-    return wrapped_->Size(size);
-  }
-
-  virtual const string& filename() const OVERRIDE { return wrapped_->filename(); }
-
-  virtual size_t memory_footprint() const OVERRIDE {
-    return wrapped_->memory_footprint();
-  }
-
- private:
-  const shared_ptr<RandomAccessFile> wrapped_;
-};
 
 // Write 'size' bytes of data to a file, with a simple pattern stored in it.
 static void WriteTestFile(Env* env, const string& path, size_t size) {
@@ -436,22 +402,26 @@ TEST_F(TestEnv, TestReadFully) {
   shared_ptr<RandomAccessFile> raf;
   ASSERT_OK(env_util::OpenFileForRandom(env, kTestPath, &raf));
 
-  ShortReadRandomAccessFile sr_raf(raf);
-
   const int kReadLength = 10000;
   Slice s;
   unique_ptr<uint8_t[]> scratch(new uint8_t[kReadLength]);
 
-  // Verify that ReadFully reads the whole requested data.
-  ASSERT_OK(env_util::ReadFully(&sr_raf, 0, kReadLength, &s, scratch.get()));
+  // Force a short read to half the data length
+  FLAGS_env_inject_short_read_bytes = kReadLength / 2;
+
+  // Verify that Read fully reads the whole requested data.
+  ASSERT_OK(raf->Read(0, kReadLength, &s, scratch.get()));
   ASSERT_EQ(s.data(), scratch.get()) << "Should have returned a contiguous copy";
   ASSERT_EQ(kReadLength, s.size());
 
   // Verify that the data read was correct.
   VerifyTestData(s, 0);
 
-  // Verify that ReadFully fails with an IOError at EOF.
-  Status status = env_util::ReadFully(&sr_raf, kFileSize - 100, 200, &s, scratch.get());
+  // Turn short reads off again
+  FLAGS_env_inject_short_read_bytes = 0;
+
+  // Verify that Read fails with an IOError at EOF.
+  Status status = raf->Read(kFileSize - 100, 200, &s, scratch.get());
   ASSERT_FALSE(status.ok());
   ASSERT_TRUE(status.IsIOError());
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
@@ -539,7 +509,7 @@ TEST_F(TestEnv, TestReopen) {
   ASSERT_EQ(first.length() + second.length(), size);
   Slice s;
   uint8_t scratch[size];
-  ASSERT_OK(env_util::ReadFully(reader.get(), 0, size, &s, scratch));
+  ASSERT_OK(reader->Read(0, size, &s, scratch));
   ASSERT_EQ(first + second, s.ToString());
 }
 
@@ -669,7 +639,7 @@ TEST_F(TestEnv, TestGlob) {
 
   for (const auto& matcher : matchers) {
     SCOPED_TRACE(Substitute("pattern: $0, expected matches: $1",
-                            matcher.first, matcher.second));
+                                     matcher.first, matcher.second));
     vector<string> matches;
     ASSERT_OK(env_->Glob(JoinPathSegments(dir, matcher.first), &matches));
     ASSERT_EQ(matcher.second, matches.size());
