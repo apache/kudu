@@ -256,6 +256,10 @@ Status RetryFunc(const MonoTime& deadline,
                  const std::string& timeout_msg,
                  const boost::function<Status(const MonoTime&, bool*)>& func);
 
+// Set logging verbose level through environment variable.
+void SetVerboseLevelFromEnvVar();
+extern const char* kVerboseEnvVar;
+
 } // namespace client
 } // namespace kudu
 

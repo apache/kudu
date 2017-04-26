@@ -5231,5 +5231,26 @@ TEST_F(ClientTest, TestInvalidPartitionerBuilder) {
   ASSERT_EQ("Invalid argument: null table", s.ToString());
 }
 
+// Test that, log verbose level can be set through environment varialble
+// and it reflects to the FLAGS_v.
+TEST_F(ClientTest, TestVerboseLevelByEnvVar) {
+  FLAGS_v = 0;
+  setenv(kVerboseEnvVar, "5", 1); // 1 = overwrite if variable already exists.
+  SetVerboseLevelFromEnvVar();
+  ASSERT_EQ(5, FLAGS_v);
+
+  // negative values are to be ignored.
+  FLAGS_v = 0;
+  setenv(kVerboseEnvVar, "-1", 1);
+  SetVerboseLevelFromEnvVar();
+  ASSERT_EQ(0, FLAGS_v);
+
+  // non-parsable values are to be ignored.
+  FLAGS_v = 0;
+  setenv(kVerboseEnvVar, "abc", 1);
+  SetVerboseLevelFromEnvVar();
+  ASSERT_EQ(0, FLAGS_v);
+}
+
 } // namespace client
 } // namespace kudu

@@ -18,6 +18,7 @@
 #include "kudu/client/client.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <set>
 #include <string>
@@ -55,6 +56,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -126,6 +128,7 @@ using internal::MetaCache;
 using sp::shared_ptr;
 
 static const char* kProgName = "kudu_client";
+const char* kVerboseEnvVar = "KUDU_CLIENT_VERBOSE";
 
 // We need to reroute all logging to stderr when the client library is
 // loaded. GoogleOnceInit() can do that, but there are multiple entry
@@ -138,6 +141,21 @@ static const char* kProgName = "kudu_client";
 __attribute__((constructor))
 static void InitializeBasicLogging() {
   InitGoogleLoggingSafeBasic(kProgName);
+
+  SetVerboseLevelFromEnvVar();
+}
+
+// Set Client logging verbose level from environment variable.
+void SetVerboseLevelFromEnvVar() {
+  int32_t level = 0; // this is the default logging level;
+  const char* env_verbose_level = std::getenv(kVerboseEnvVar);
+  if (env_verbose_level != nullptr) {
+     if (safe_strto32(env_verbose_level, &level) && (level >= 0)) {
+       SetVerboseLogLevel(level);
+     } else {
+       LOG(WARNING) << "Invalid verbose level from environment variable " << kVerboseEnvVar;
+     }
+  }
 }
 
 // Adapts between the internal LogSeverity and the client's KuduLogSeverity.
