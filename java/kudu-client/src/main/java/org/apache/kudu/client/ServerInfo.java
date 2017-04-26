@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.net.InetAddress;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.net.HostAndPort;
 
@@ -33,6 +34,8 @@ public class ServerInfo {
   private final HostAndPort hostPort;
   private final InetAddress resolvedAddr;
   private final boolean local;
+  private static final ConcurrentHashMap<InetAddress, Boolean> isLocalAddressCache =
+          new ConcurrentHashMap<>();
 
   /**
    * Constructor for all the fields. The intent is that there should only be one ServerInfo
@@ -45,7 +48,12 @@ public class ServerInfo {
     this.uuid = uuid;
     this.hostPort = hostPort;
     this.resolvedAddr = resolvedAddr;
-    this.local = NetUtil.isLocalAddress(resolvedAddr);
+    Boolean isLocal = isLocalAddressCache.get(resolvedAddr);
+    if (isLocal == null) {
+      isLocal = NetUtil.isLocalAddress(resolvedAddr);
+      isLocalAddressCache.put(resolvedAddr, isLocal);
+    }
+    this.local = isLocal;
   }
 
   /**
