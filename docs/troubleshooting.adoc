@@ -236,3 +236,13 @@ User stack:
 
 These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
 below Kudu, such as disk controllers or file systems.
+
+== Issues using Kudu
+
+[[hive_handler]]
+=== ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler
+
+Users will encounter this exception when trying to use a Kudu table via Hive. This
+is not a case of a missing jar, but simply that Impala stores Kudu metadata in
+Hive in a format that's unreadable to other tools, including Hive itself and Spark.
+There is no workaround for Hive users. Spark users need to create temporary tables.
