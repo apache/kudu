@@ -103,7 +103,8 @@ public class ITInputFormatJob extends BaseKuduTest {
             getMasterAddresses())
             .operationTimeoutMs(DEFAULT_SLEEP)
             .addDependencies(false)
-            .cacheBlocks(false);
+            .cacheBlocks(false)
+            .isFaultTolerant(false);
     for (KuduPredicate predicate : predicates) {
       configurator.addPredicate(predicate);
     }

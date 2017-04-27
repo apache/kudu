@@ -88,6 +88,12 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   /** Job parameter that specifies if the scanner should cache blocks or not (default: false). */
   static final String SCAN_CACHE_BLOCKS = "kudu.mapreduce.input.scan.cache.blocks";
 
+  /**
+   * Job parameter that specifies if the scanner should be fault tolerant
+   * or not (default: false).
+   */
+  static final String FAULT_TOLERANT_SCAN = "kudu.mapreduce.input.fault.tolerant.scan";
+
   /** Job parameter that specifies where the masters are. */
   static final String MASTER_ADDRESSES_KEY = "kudu.mapreduce.master.address";
 
@@ -123,6 +129,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private long operationTimeoutMs;
   private String nameServer;
   private boolean cacheBlocks;
+  private boolean isFaultTolerant;
   private List<String> projectedCols;
   private List<KuduPredicate> predicates;
 
@@ -137,7 +144,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table)
                                                       .setProjectedColumnNames(projectedCols)
                                                       .cacheBlocks(cacheBlocks)
-                                                      .setTimeout(operationTimeoutMs);
+                                                      .setTimeout(operationTimeoutMs)
+                                                      .setFaultTolerant(isFaultTolerant);
       for (KuduPredicate predicate : predicates) {
         tokenBuilder.addPredicate(predicate);
       }
@@ -214,6 +222,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     KuduTableMapReduceUtil.importCredentialsFromCurrentSubject(client);
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
+    this.isFaultTolerant = conf.getBoolean(FAULT_TOLERANT_SCAN, false);
 
     try {
       this.table = client.openTable(tableName);

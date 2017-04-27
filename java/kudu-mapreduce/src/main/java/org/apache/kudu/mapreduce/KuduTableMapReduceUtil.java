@@ -186,6 +186,7 @@ public class KuduTableMapReduceUtil {
     protected long operationTimeoutMs = AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
     protected final String columnProjection;
     protected boolean cacheBlocks;
+    protected boolean isFaultTolerant;
     protected List<KuduPredicate> predicates = new ArrayList<>();
 
     /**
@@ -202,11 +203,21 @@ public class KuduTableMapReduceUtil {
 
     /**
      * Sets the block caching configuration for the scanners. Turned off by default.
-     * @param cacheBlocks whether the job should use scanners that cache blocks.
+     * @param cacheBlocks whether the job should use scanners that cache blocks
      * @return this instance
      */
     public S cacheBlocks(boolean cacheBlocks) {
       this.cacheBlocks = cacheBlocks;
+      return (S) this;
+    }
+
+    /**
+     * Sets the fault tolerance configuration for the scanners. Turned off by default.
+     * @param isFaultTolerant whether the job should use fault tolerant scanners
+     * @return this instance
+     */
+    public S isFaultTolerant(boolean isFaultTolerant) {
+      this.isFaultTolerant = isFaultTolerant;
       return (S) this;
     }
 
@@ -224,6 +235,7 @@ public class KuduTableMapReduceUtil {
       conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
       conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
       conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
+      conf.setBoolean(KuduTableInputFormat.FAULT_TOLERANT_SCAN, isFaultTolerant);
 
       if (columnProjection != null) {
         conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
