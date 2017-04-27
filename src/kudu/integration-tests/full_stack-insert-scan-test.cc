@@ -15,14 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <signal.h>
+
 #include <cmath>
 #include <cstdlib>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <memory>
-#include <signal.h>
 #include <string>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
@@ -67,13 +69,15 @@ DEFINE_int32(rows_per_batch, -1, "Number of rows per client batch");
 // Perf-related FLAGS_perf_stat
 DEFINE_bool(perf_record_scan, false, "Call \"perf record --call-graph\" "
             "for the duration of the scan, disabled by default");
-DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during"
+DEFINE_bool(perf_record_scan_callgraph, false,
+            "Only applicable with --perf_record_scan, provides argument "
+            "\"--call-graph fp\"");
+DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during "
             "scan to stdout, disabled by default");
-DEFINE_bool(perf_fp_flag, false, "Only applicable with --perf_record_scan,"
-            " provides argument \"fp\" to the --call-graph flag");
 DECLARE_bool(enable_maintenance_manager);
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -215,33 +219,20 @@ class FullStackInsertScanTest : public KuduTest {
 
 namespace {
 
-gscoped_ptr<Subprocess> MakePerfStat() {
-  if (!FLAGS_perf_stat_scan) return gscoped_ptr<Subprocess>();
+unique_ptr<Subprocess> MakePerfStat() {
+  if (!FLAGS_perf_stat_scan) return unique_ptr<Subprocess>(nullptr);
   // No output flag for perf-stat 2.x, just print to output
   string cmd = Substitute("perf stat --pid=$0", getpid());
   LOG(INFO) << "Calling: \"" << cmd << "\"";
-  return gscoped_ptr<Subprocess>(new Subprocess(Split(cmd, " ")));
+  return unique_ptr<Subprocess>(new Subprocess(Split(cmd, " "), SIGINT));
 }
 
-gscoped_ptr<Subprocess> MakePerfRecord() {
-  if (!FLAGS_perf_record_scan) return gscoped_ptr<Subprocess>();
-  string cmd = Substitute("perf record --pid=$0 --call-graph", getpid());
-  if (FLAGS_perf_fp_flag) cmd += " fp";
+unique_ptr<Subprocess> MakePerfRecord() {
+  if (!FLAGS_perf_record_scan) return unique_ptr<Subprocess>(nullptr);
+  string cmd = Substitute("perf record --pid=$0", getpid());
+  if (FLAGS_perf_record_scan_callgraph) cmd += " --call-graph fp";
   LOG(INFO) << "Calling: \"" << cmd << "\"";
-  return gscoped_ptr<Subprocess>(new Subprocess(Split(cmd, " ")));
-}
-
-void InterruptNotNull(gscoped_ptr<Subprocess> sub) {
-  if (!sub) return;
-
-  ASSERT_OK(sub->Kill(SIGINT));
-  ASSERT_OK(sub->Wait());
-  int exit_status;
-  string exit_info_str;
-  ASSERT_OK(sub->GetExitStatus(&exit_status, &exit_info_str));
-  if (exit_status != 0) {
-    LOG(WARNING) << exit_info_str;
-  }
+  return unique_ptr<Subprocess>(new Subprocess(Split(cmd, " "), SIGINT));
 }
 
 // If key is approximately at an even multiple of 1/10 of the way between
@@ -312,11 +303,11 @@ void FullStackInsertScanTest::DoTestScans() {
   }
   LOG(INFO) << "Doing test scans on table of " << kNumRows << " rows.";
 
-  gscoped_ptr<Subprocess> stat = MakePerfStat();
+  unique_ptr<Subprocess> stat = MakePerfRecord();
   if (stat) {
     ASSERT_OK(stat->Start());
   }
-  gscoped_ptr<Subprocess> record = MakePerfRecord();
+  unique_ptr<Subprocess> record = MakePerfStat();
   if (record) {
     ASSERT_OK(record->Start());
   }
@@ -327,9 +318,6 @@ void FullStackInsertScanTest::DoTestScans() {
   NO_FATALS(ScanProjection(StringColumnNames(), "String projection, 1 col"));
   NO_FATALS(ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col"));
   NO_FATALS(ScanProjection(Int64ColumnNames(), "Int64 projection, 4 col"));
-
-  NO_FATALS(InterruptNotNull(std::move(record)));
-  NO_FATALS(InterruptNotNull(std::move(stat)));
 }
 
 void FullStackInsertScanTest::FlushToDisk() {

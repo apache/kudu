@@ -43,6 +43,7 @@ class HostPort;
 class MetricPrototype;
 class MetricEntityPrototype;
 class NodeInstancePB;
+class ScopedSubprocess;
 class Sockaddr;
 class Subprocess;
 
@@ -326,6 +327,7 @@ struct ExternalDaemonOptions {
   std::string exe;
   std::string data_dir;
   std::string log_dir;
+  std::string perf_record_filename;
   std::vector<std::string> extra_flags;
 };
 
@@ -456,6 +458,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   const std::shared_ptr<rpc::Messenger> messenger_;
   const std::string data_dir_;
   const std::string log_dir_;
+  const std::string perf_record_filename_;
   const bool logtostderr_;
   std::string exe_;
   std::vector<std::string> extra_flags_;
@@ -463,6 +466,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   gscoped_ptr<Subprocess> process_;
   bool paused_ = false;
+
+  std::unique_ptr<Subprocess> perf_record_process_;
 
   gscoped_ptr<server::ServerStatusPB> status_;
   std::string rpc_bind_address_;

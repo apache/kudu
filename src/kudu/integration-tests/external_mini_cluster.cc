@@ -68,6 +68,9 @@ using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
+DEFINE_bool(perf_record, false,
+            "Whether to run \"perf record --call-graph fp\" on each daemon in the cluster");
+
 namespace kudu {
 
 static const char* const kMasterBinaryName = "kudu-master";
@@ -268,6 +271,10 @@ Status ExternalMiniCluster::StartSingleMaster() {
   opts.exe = GetBinaryPath(kMasterBinaryName);
   opts.data_dir = GetDataPath(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
+  if (FLAGS_perf_record) {
+    opts.perf_record_filename =
+        Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
+  }
   opts.extra_flags = SubstituteInFlags(opts_.extra_master_flags, 0);
   scoped_refptr<ExternalMaster> master = new ExternalMaster(opts);
   if (opts_.enable_kerberos) {
@@ -306,6 +313,10 @@ Status ExternalMiniCluster::StartDistributedMasters() {
     opts.exe = exe;
     opts.data_dir = GetDataPath(daemon_id);
     opts.log_dir = GetLogPath(daemon_id);
+    if (FLAGS_perf_record) {
+      opts.perf_record_filename =
+          Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
+    }
     opts.extra_flags = SubstituteInFlags(flags, i);
 
     scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts, peer_addrs[i]);
@@ -353,6 +364,10 @@ Status ExternalMiniCluster::AddTabletServer() {
   opts.exe = GetBinaryPath(kTabletServerBinaryName);
   opts.data_dir = GetDataPath(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
+  if (FLAGS_perf_record) {
+    opts.perf_record_filename =
+        Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
+  }
   opts.extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
 
   scoped_refptr<ExternalTabletServer> ts =
@@ -600,6 +615,7 @@ ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
     : messenger_(std::move(opts.messenger)),
       data_dir_(std::move(opts.data_dir)),
       log_dir_(std::move(opts.log_dir)),
+      perf_record_filename_(std::move(opts.perf_record_filename)),
       logtostderr_(opts.logtostderr),
       exe_(std::move(opts.exe)),
       extra_flags_(std::move(opts.extra_flags)) {}
@@ -690,6 +706,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // the previous info file if it's there.
   ignore_result(Env::Default()->DeleteFile(info_path));
 
+  // Start the daemon.
   gscoped_ptr<Subprocess> p(new Subprocess(argv));
   p->ShareParentStdout(false);
   p->SetEnvVars(extra_env_);
@@ -699,6 +716,22 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
             << " with env {" << env_str << "}";
   RETURN_NOT_OK_PREPEND(p->Start(),
                         Substitute("Failed to start subprocess $0", exe_));
+
+  // If requested, start a monitoring subprocess.
+  unique_ptr<Subprocess> perf_record;
+  if (!perf_record_filename_.empty()) {
+    perf_record.reset(new Subprocess({
+      "perf",
+      "record",
+      "--call-graph",
+      "fp",
+      "-o",
+      perf_record_filename_,
+      Substitute("--pid=$0", p->pid())
+    }, SIGINT));
+    RETURN_NOT_OK_PREPEND(perf_record->Start(),
+                          "Could not start perf record subprocess");
+  }
 
   // The process is now starting -- wait for the bound port info to show up.
   Stopwatch sw;
@@ -721,6 +754,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     // and exit as if it had succeeded.
     if (WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == fault_injection::kExitStatus) {
       process_.swap(p);
+      perf_record_process_.swap(perf_record);
       return Status::OK();
     }
 
@@ -744,6 +778,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   VLOG(1) << exe_ << " instance information:\n" << SecureDebugString(*status_);
 
   process_.swap(p);
+  perf_record_process_.swap(perf_record);
   return Status::OK();
 }
 
@@ -866,6 +901,7 @@ void ExternalDaemon::Shutdown() {
   WARN_NOT_OK(process_->Wait(), "Waiting on " + exe_);
   paused_ = false;
   process_.reset();
+  perf_record_process_.reset();
 }
 
 void ExternalDaemon::FlushCoverage() {
