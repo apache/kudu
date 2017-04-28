@@ -146,7 +146,13 @@ struct ExternalMiniClusterOptions {
 // of the daemons.
 class ExternalMiniCluster : public MiniClusterBase {
  public:
-  explicit ExternalMiniCluster(const ExternalMiniClusterOptions& opts);
+  // Constructs a cluster with the default options.
+  ExternalMiniCluster();
+
+  // Constructs a cluster with options specified in 'opts'.
+  explicit ExternalMiniCluster(ExternalMiniClusterOptions opts);
+
+  // Destroys a cluster.
   virtual ~ExternalMiniCluster();
 
   // Start the cluster.

@@ -82,7 +82,7 @@ void VersionMigrationTest::StartCluster(const vector<string>& extra_ts_flags,
   opts.extra_master_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
   opts.extra_tserver_flags = extra_ts_flags;
   opts.extra_tserver_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
-  cluster_.reset(new ExternalMiniCluster(opts));
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   verifier_.reset(new LogVerifier(cluster_.get()));
   ASSERT_OK(cluster_->Start());
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));

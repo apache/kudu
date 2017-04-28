@@ -114,7 +114,7 @@ class MasterStressTest : public KuduTest {
     // again (down from 1 second).
     opts.extra_tserver_flags.push_back("--heartbeat_interval_ms=500");
 
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder builder;
 

@@ -68,7 +68,7 @@ class MasterMigrationTest : public KuduTest {
     if (cluster_) {
       cluster_->Shutdown();
     }
-    cluster_.reset(new ExternalMiniCluster(ExternalMiniClusterOptions()));
+    cluster_.reset(new ExternalMiniCluster());
     ASSERT_OK(cluster_->Start());
   }
 
@@ -185,7 +185,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   ExternalMiniClusterOptions opts;
   opts.master_rpc_ports = kMasterRpcPorts;
   opts.num_masters = kMasterRpcPorts.size();
-  ExternalMiniCluster migrated_cluster(opts);
+  ExternalMiniCluster migrated_cluster(std::move(opts));
   ASSERT_OK(migrated_cluster.Start());
 
 

@@ -51,10 +51,11 @@ INSTANTIATE_TEST_CASE_P(KerberosOnAndOff,
                         ExternalMiniClusterTest,
                         ::testing::Values(WITHOUT_KERBEROS, WITH_KERBEROS));
 
-void SmokeTestKerberizedCluster(const ExternalMiniClusterOptions& opts) {
+void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   ASSERT_TRUE(opts.enable_kerberos);
+  int num_tservers = opts.num_tablet_servers;
 
-  ExternalMiniCluster cluster(opts);
+  ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
 
   // Sleep long enough to ensure that the tserver's ticket would have expired
@@ -70,7 +71,7 @@ void SmokeTestKerberizedCluster(const ExternalMiniClusterOptions& opts) {
   cluster.master(0)->Shutdown();
   ASSERT_OK(cluster.master(0)->Restart());
   // Ensure that all of the tablet servers can register with the masters.
-  ASSERT_OK(cluster.WaitForTabletServerCount(opts.num_tablet_servers, MonoDelta::FromSeconds(30)));
+  ASSERT_OK(cluster.WaitForTabletServerCount(num_tservers, MonoDelta::FromSeconds(30)));
   cluster.Shutdown();
 }
 
@@ -83,7 +84,7 @@ TEST_F(ExternalMiniClusterTest, TestKerberosRenewal) {
   opts.mini_kdc_options.ticket_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
-  SmokeTestKerberizedCluster(opts);
+  SmokeTestKerberizedCluster(std::move(opts));
 }
 
 TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
@@ -97,7 +98,7 @@ TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
   opts.mini_kdc_options.renew_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
-  SmokeTestKerberizedCluster(opts);
+  SmokeTestKerberizedCluster(std::move(opts));
 }
 
 TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
@@ -111,7 +112,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   opts.num_masters = opts.master_rpc_ports.size();
   opts.num_tablet_servers = 3;
 
-  ExternalMiniCluster cluster(opts);
+  ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
 
   // Verify each of the masters.

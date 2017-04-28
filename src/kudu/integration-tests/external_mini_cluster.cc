@@ -97,8 +97,12 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
 }
 
-ExternalMiniCluster::ExternalMiniCluster(const ExternalMiniClusterOptions& opts)
-  : opts_(opts) {
+ExternalMiniCluster::ExternalMiniCluster()
+  : opts_(ExternalMiniClusterOptions()) {
+}
+
+ExternalMiniCluster::ExternalMiniCluster(ExternalMiniClusterOptions opts)
+  : opts_(std::move(opts)) {
 }
 
 ExternalMiniCluster::~ExternalMiniCluster() {

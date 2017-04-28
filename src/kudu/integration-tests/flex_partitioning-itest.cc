@@ -160,7 +160,7 @@ class FlexPartitioningITest : public KuduTest,
     // we end up using quite a bit of disk space. So, we disable them.
     opts.extra_tserver_flags.push_back("--log_container_preallocate_bytes=0");
     opts.extra_tserver_flags.push_back("--log_preallocate_segments=false");
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));

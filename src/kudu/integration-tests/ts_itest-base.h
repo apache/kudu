@@ -118,7 +118,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     AddExtraFlags(FLAGS_ts_flags, &opts.extra_tserver_flags);
     AddExtraFlags(FLAGS_master_flags, &opts.extra_master_flags);
 
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
     inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
     CreateTSProxies();

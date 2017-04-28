@@ -72,7 +72,7 @@ class AlterTableRandomized : public KuduTest {
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.push_back("--log_container_preallocate_bytes=0");
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));

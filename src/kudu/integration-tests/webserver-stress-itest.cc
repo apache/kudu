@@ -44,8 +44,7 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
 #endif
   const int kNumTablets = 50;
 
-  ExternalMiniClusterOptions opts;
-  ExternalMiniCluster cluster(opts);
+  ExternalMiniCluster cluster;
   ASSERT_OK(cluster.Start());
 
   // Start pounding the master and tserver's web UIs.

@@ -84,7 +84,7 @@ void TsRecoveryITest::StartCluster(const vector<string>& extra_tserver_flags,
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
-  cluster_.reset(new ExternalMiniCluster(opts));
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
 }
 
@@ -525,7 +525,7 @@ TEST_P(Kudu969Test, Test) {
   // concurrency bugs where a compaction and a flush might be happening
   // at the same time during the crash.
   opts.extra_tserver_flags.push_back("--maintenance_manager_num_threads=3");
-  cluster_.reset(new ExternalMiniCluster(opts));
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
 
   // Set a small flush threshold so that we flush a lot (causing more compactions

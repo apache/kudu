@@ -174,7 +174,7 @@ Status TpchRealWorld::Init() {
       opts.extra_tserver_flags.push_back("--flagfile=" + FLAGS_tpch_path_to_ts_flags_file);
     }
 
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     RETURN_NOT_OK(cluster_->Start());
     master_addresses_ = cluster_->leader_master()->bound_rpc_hostport().ToString();
   } else {

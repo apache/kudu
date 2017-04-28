@@ -56,7 +56,7 @@ class ClientStressTest : public KuduTest {
       opts.master_rpc_ports = { 11010, 11011, 11012 };
     }
     opts.num_tablet_servers = 3;
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
   }
 

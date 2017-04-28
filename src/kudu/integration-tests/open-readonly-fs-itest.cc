@@ -63,7 +63,7 @@ class OpenReadonlyFsITest : public KuduTest {
     opts.extra_tserver_flags.push_back("--maintenance_manager_num_threads=16");
     opts.extra_tserver_flags.push_back("--flush_threshold_mb=1");
 
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));

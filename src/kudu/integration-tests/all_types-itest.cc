@@ -236,7 +236,7 @@ class AllTypesItest : public KuduTest {
       opts.extra_tserver_flags.push_back(flag);
     }
 
-    cluster_.reset(new ExternalMiniCluster(opts));
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     RETURN_NOT_OK(cluster_->Start());
     return cluster_->CreateClient(nullptr, &client_);
   }

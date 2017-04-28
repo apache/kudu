@@ -49,7 +49,7 @@ TEST(LogRollingITest, TestLogCleanupOnStartup) {
   opts.num_tablet_servers = 0;
   opts.extra_master_flags = { "--max_log_files=3", };
   opts.logtostderr = false;
-  ExternalMiniCluster cluster(opts);
+  ExternalMiniCluster cluster(std::move(opts));
   ASSERT_OK(cluster.Start());
 
   // Explicitly wait for the catalog manager because we've got no tservers in
