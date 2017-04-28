@@ -46,6 +46,7 @@ add_library(kudu_fs_test_util
 
 target_link_libraries(kudu_fs_test_util
   fs_proto
+  kudu_fs
   kudu_util
   gutil)
 
