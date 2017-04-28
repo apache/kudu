@@ -489,7 +489,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 }
 
 Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
-                                                          StartTabletCopyRequestPB* req) {
+                                                     StartTabletCopyRequestPB* req) {
   TrackedPeer* peer = nullptr;
   int64_t current_term;
   {
@@ -645,7 +645,8 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
 
       peer->needs_tablet_copy = true;
       VLOG_WITH_PREFIX_UNLOCKED(1) << "Marked peer as needing tablet copy: "
-                                     << peer->ToString();
+                                   << peer->ToString();
+
       *more_pending = true;
       return;
     }

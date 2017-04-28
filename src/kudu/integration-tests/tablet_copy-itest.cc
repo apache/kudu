@@ -725,9 +725,9 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   int64_t update_rpcs_per_second =
       (num_update_rpcs_after_sleep - num_update_rpcs_initial) / elapsed.ToSeconds();
   EXPECT_LT(update_rpcs_per_second, 20);
-  int64_t num_logs_per_second =
+  double num_logs_per_second =
       (num_logs_after_sleep - num_logs_initial) / elapsed.ToSeconds();
-  EXPECT_LT(num_logs_per_second, 30); // We might occasionally get unrelated log messages.
+  EXPECT_LT(num_logs_per_second, 60); // We might occasionally get unrelated log messages.
 }
 
 // Test that if a Tablet Copy is taking a long time but the client peer is still responsive,

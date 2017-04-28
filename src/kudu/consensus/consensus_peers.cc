@@ -189,20 +189,20 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   if (PREDICT_FALSE(needs_tablet_copy)) {
     Status s = PrepareTabletCopyRequest();
-    if (!s.ok()) {
+    if (s.ok()) {
+      controller_.Reset();
+      request_pending_ = true;
+      l.unlock();
+      // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
+      // that this object outlives the RPC.
+      proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
+                              [s_this = shared_from_this()]() {
+                                s_this->ProcessTabletCopyResponse();
+                              });
+    } else {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate Tablet Copy request for peer: "
                                         << s.ToString();
     }
-
-    controller_.Reset();
-    request_pending_ = true;
-    l.unlock();
-    // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
-    // that this object outlives the RPC.
-    proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
-                            [s_this = shared_from_this()]() {
-                              s_this->ProcessTabletCopyResponse();
-                            });
     return;
   }
 
