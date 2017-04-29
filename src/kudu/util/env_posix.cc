@@ -726,9 +726,9 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status GetExtentMap(ExtentMap* out) const OVERRIDE {
-#ifdef __APPLE__
+#if !defined(__linux__)
     return Status::NotSupported("GetExtentMap not supported on this platform");
-#endif
+#else
     TRACE_EVENT1("io", "PosixRWFile::GetExtentMap", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
 
@@ -779,6 +779,7 @@ class PosixRWFile : public RWFile {
 
     out->swap(extents);
     return Status::OK();
+#endif
   }
 
   virtual const string& filename() const OVERRIDE {
