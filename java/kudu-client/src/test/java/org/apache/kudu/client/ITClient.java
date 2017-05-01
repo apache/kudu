@@ -413,7 +413,8 @@ public class ITClient extends BaseKuduTest {
     private KuduScanner.KuduScannerBuilder getScannerBuilder() {
       return localClient.newScannerBuilder(table)
           .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
-          .snapshotTimestampRaw(sharedWriteTimestamp);
+          .snapshotTimestampRaw(sharedWriteTimestamp)
+          .setFaultTolerant(true);
     }
 
     /**

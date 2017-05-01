@@ -726,11 +726,26 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param replicaSelection replica selection mechanism to use
    */
   @VisibleForTesting
-  void closeCurrentConnection(RemoteTablet tablet,
-        ReplicaSelection replicaSelection) {
+  void shutdownConnection(RemoteTablet tablet,
+                          ReplicaSelection replicaSelection) {
     TabletClient client = connectionCache.getClient(
         tablet.getReplicaSelectedUUID(replicaSelection));
     client.shutdown();
+  }
+
+  /**
+   * Forcefully disconnects the RemoteTablet connection and
+   * fails all outstanding RPCs.
+   *
+   * @param tablet the given tablet
+   * @param replicaSelection replica selection mechanism to use
+   */
+  @VisibleForTesting
+  void disconnect(RemoteTablet tablet,
+                  ReplicaSelection replicaSelection) {
+    TabletClient client = connectionCache.getClient(
+        tablet.getReplicaSelectedUUID(replicaSelection));
+    client.disconnect();
   }
 
   /**

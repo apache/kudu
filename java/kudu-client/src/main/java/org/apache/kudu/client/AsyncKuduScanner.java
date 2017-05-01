@@ -639,21 +639,21 @@ public final class AsyncKuduScanner {
    */
   KuduRpc<Response> getOpenRequest() {
     checkScanningNotStarted();
-    return new ScanRequest(table, State.OPENING);
+    return new ScanRequest(table, State.OPENING, tablet);
   }
 
   /**
    * Returns an RPC to fetch the next rows.
    */
   KuduRpc<Response> getNextRowsRequest() {
-    return new ScanRequest(table, State.NEXT);
+    return new ScanRequest(table, State.NEXT, tablet);
   }
 
   /**
    * Returns an RPC to close this scanner.
    */
   KuduRpc<Response> getCloseRequest() {
-    return new ScanRequest(table, State.CLOSING);
+    return new ScanRequest(table, State.CLOSING, tablet);
   }
 
   /**
@@ -740,8 +740,9 @@ public final class AsyncKuduScanner {
 
     State state;
 
-    ScanRequest(KuduTable table, State state) {
+    ScanRequest(KuduTable table, State state, RemoteTablet tablet) {
       super(table);
+      setTablet(tablet);
       this.state = state;
       this.setTimeoutMillis(scanRequestTimeout);
     }

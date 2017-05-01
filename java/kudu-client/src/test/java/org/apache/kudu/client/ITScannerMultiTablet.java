@@ -17,10 +17,12 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Random;
 
 import com.google.common.collect.Lists;
+import org.junit.After;
 import org.junit.BeforeClass;
 
 import org.apache.kudu.Schema;
@@ -72,6 +74,11 @@ public class ITScannerMultiTablet extends BaseKuduTest {
     assertEquals(0, session.countPendingErrors());
   }
 
+  @After
+  public void tearDown() throws Exception {
+    restartTabletServers();
+  }
+
   /**
    * Injecting failures (kill or restart TabletServer) while scanning, to verify:
    * fault tolerant scanner will continue scan and non-fault tolerant scanner will throw
@@ -81,65 +88,116 @@ public class ITScannerMultiTablet extends BaseKuduTest {
    * we get rows in order from 3 tablets. We detect those tablet boundaries when keys suddenly
    * become smaller than what was previously seen.
    *
-   * @param shouldRestart if true restarts TabletServer, otherwise kills TabletServer
+   * @param restart if true restarts TabletServer, otherwise kills TabletServer
    * @param isFaultTolerant if true uses fault tolerant scanner, otherwise
    *                        uses non fault-tolerant one
    * @param finishFirstScan if true injects failure before finishing first tablet scan,
    *                        otherwise in the middle of tablet scanning
    * @throws Exception
    */
-  void faultInjectionScanner(boolean shouldRestart, boolean isFaultTolerant,
+  void serverFaultInjection(boolean restart, boolean isFaultTolerant,
       boolean finishFirstScan) throws Exception {
     KuduScanner scanner = syncClient.newScannerBuilder(table)
         .setFaultTolerant(isFaultTolerant)
         .batchSizeBytes(1)
         .setProjectedColumnIndexes(Lists.newArrayList(0)).build();
 
-    int rowCount = 0;
-    int previousRow = -1;
-    int tableBoundariesCount = 0;
-    if (scanner.hasMoreRows()) {
-      RowResultIterator rri = scanner.nextRows();
-      while (rri.hasNext()) {
-        int key = rri.next().getInt(0);
-        if (key < previousRow) {
-          tableBoundariesCount++;
-        }
-        previousRow = key;
-        rowCount++;
-      }
-    }
-
-    if (!finishFirstScan) {
-      if (shouldRestart) {
-        restartTabletServer(scanner.currentTablet());
-      } else {
-        killTabletLeader(scanner.currentTablet());
-      }
-    }
-
-    boolean failureInjected = false;
-    while (scanner.hasMoreRows()) {
-      RowResultIterator rri = scanner.nextRows();
-      while (rri.hasNext()) {
-        int key = rri.next().getInt(0);
-        if (key < previousRow) {
-          tableBoundariesCount++;
-          if (finishFirstScan && !failureInjected) {
-            if (shouldRestart) {
-              restartTabletServer(scanner.currentTablet());
-            } else {
-              killTabletLeader(scanner.currentTablet());
-            }
-            failureInjected = true;
+    try {
+      int rowCount = 0;
+      int previousRow = -1;
+      int tableBoundariesCount = 0;
+      if (scanner.hasMoreRows()) {
+        RowResultIterator rri = scanner.nextRows();
+        while (rri.hasNext()) {
+          int key = rri.next().getInt(0);
+          if (key < previousRow) {
+            tableBoundariesCount++;
           }
+          previousRow = key;
+          rowCount++;
         }
-        previousRow = key;
-        rowCount++;
       }
-    }
 
-    assertEquals(ROW_COUNT, rowCount);
-    assertEquals(TABLET_COUNT, tableBoundariesCount);
+      if (!finishFirstScan) {
+        if (restart) {
+          restartTabletServer(scanner.currentTablet());
+        } else {
+          killTabletLeader(scanner.currentTablet());
+        }
+      }
+
+      boolean failureInjected = false;
+      while (scanner.hasMoreRows()) {
+        RowResultIterator rri = scanner.nextRows();
+        while (rri.hasNext()) {
+          int key = rri.next().getInt(0);
+          if (key < previousRow) {
+            tableBoundariesCount++;
+            if (finishFirstScan && !failureInjected) {
+              if (restart) {
+                restartTabletServer(scanner.currentTablet());
+              } else {
+                killTabletLeader(scanner.currentTablet());
+              }
+              failureInjected = true;
+            }
+          }
+          previousRow = key;
+          rowCount++;
+        }
+      }
+
+      assertEquals(ROW_COUNT, rowCount);
+      assertEquals(TABLET_COUNT, tableBoundariesCount);
+    } finally {
+      scanner.close();
+    }
+  }
+
+  /**
+   * Injecting failures (disconnect or shutdown client connection) while scanning, to verify:
+   * both non-fault tolerant scanner and fault tolerant scanner will continue scan as expected.
+   *
+   * @param shutDown if true shutdown client connection, otherwise disconnect
+   * @param isFaultTolerant if true uses fault tolerant scanner, otherwise
+   *                        uses non fault-tolerant one
+   * @throws Exception
+   */
+  void clientFaultInjection(boolean shutDown, boolean isFaultTolerant) throws KuduException {
+    KuduScanner scanner = syncClient.newScannerBuilder(table)
+        .setFaultTolerant(isFaultTolerant)
+        .batchSizeBytes(1)
+        .build();
+
+    try {
+      int rowCount = 0;
+      int loopCount = 0;
+      if (scanner.hasMoreRows()) {
+        loopCount++;
+        RowResultIterator rri = scanner.nextRows();
+        rowCount += rri.getNumRows();
+      }
+
+      // Forcefully shutdowns/disconnects the current connection and
+      // fails all outstanding RPCs in the middle of scanning.
+      if (shutDown) {
+        client.shutdownConnection(scanner.currentTablet(),
+                scanner.getReplicaSelection());
+      } else {
+        client.disconnect(scanner.currentTablet(),
+                scanner.getReplicaSelection());
+      }
+
+      while (scanner.hasMoreRows()) {
+        loopCount++;
+        RowResultIterator rri = scanner.nextRows();
+        rowCount += rri.getNumRows();
+      }
+
+      assertTrue(loopCount > TABLET_COUNT);
+      assertEquals(ROW_COUNT, rowCount);
+    } finally {
+      scanner.close();
+    }
   }
 }

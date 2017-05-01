@@ -25,12 +25,30 @@ import org.junit.Test;
  */
 public class ITFaultTolerantScanner extends ITScannerMultiTablet {
   /**
+   * Verifies for fault tolerant scanner, it can proceed
+   * properly even if shuts down client connection.
+   */
+  @Test(timeout = 100000)
+  public void testFaultTolerantShutDown() throws KuduException {
+    clientFaultInjection(true, true);
+  }
+
+  /**
+   * Verifies for fault tolerant scanner, it can proceed
+   * properly even if disconnects client connection.
+   */
+  @Test(timeout = 100000)
+  public void testFaultTolerantDisconnect() throws KuduException {
+    clientFaultInjection(false, true);
+  }
+
+  /**
    * Tests fault tolerant scanner by restarting the tablet server in the middle
    * of tablet scanning and verifies the scan results are as expected.
    */
   @Test(timeout = 100000)
   public void testFaultTolerantScannerRestart() throws Exception {
-    faultInjectionScanner(true, true, false);
+    serverFaultInjection(true, true, false);
   }
 
   /**
@@ -39,7 +57,7 @@ public class ITFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000)
   public void testFaultTolerantScannerKill() throws Exception {
-    faultInjectionScanner(false, true, false);
+    serverFaultInjection(false, true, false);
   }
 
   /**
@@ -48,7 +66,7 @@ public class ITFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000)
   public void testFaultTolerantScannerKillFinishFirstTablet() throws Exception {
-    faultInjectionScanner(false, true, true);
+    serverFaultInjection(false, true, true);
   }
 
   /**
@@ -57,6 +75,6 @@ public class ITFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000)
   public void testFaultTolerantScannerRestartFinishFirstTablet() throws Exception {
-    faultInjectionScanner(true, true, true);
+    serverFaultInjection(true, true, true);
   }
 }

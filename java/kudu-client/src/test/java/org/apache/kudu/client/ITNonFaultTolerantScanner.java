@@ -34,8 +34,8 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
   @Test(timeout = 100000)
   public void testKudu1343() throws Exception {
     KuduScanner scanner = syncClient.newScannerBuilder(table)
-    .batchSizeBytes(1) // Just a hint, won't actually be that small
-    .build();
+        .batchSizeBytes(1) // Just a hint, won't actually be that small
+        .build();
 
     int rowCount = 0;
     int loopCount = 0;
@@ -51,36 +51,11 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
 
   /**
    * Verifies for non fault tolerant scanner, it can proceed
-   * properly even if there is a disconnection.
+   * properly even if shuts down client connection.
    */
   @Test(timeout = 100000)
-  public void testNonFaultTolerantDisconnect() throws KuduException {
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
-    .batchSizeBytes(1)
-    .build();
-
-    int rowCount = 0;
-    int loopCount = 0;
-    if (scanner.hasMoreRows()) {
-      loopCount++;
-      RowResultIterator rri = scanner.nextRows();
-      rowCount += rri.getNumRows();
-    }
-
-    // Forcefully shuts down the current connection and
-    // fails all outstanding RPCs in the middle of
-    // scanning.
-    client.closeCurrentConnection(scanner.currentTablet(),
-    scanner.getReplicaSelection());
-
-    while (scanner.hasMoreRows()) {
-      loopCount++;
-      RowResultIterator rri = scanner.nextRows();
-      rowCount += rri.getNumRows();
-    }
-
-    assertTrue(loopCount > TABLET_COUNT);
-    assertEquals(ROW_COUNT, rowCount);
+  public void testNonFaultTolerantShutDown() throws KuduException {
+    clientFaultInjection(true, false);
   }
 
   /**
@@ -89,7 +64,7 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000, expected=NonRecoverableException.class)
   public void testNonFaultTolerantScannerKill() throws Exception {
-    faultInjectionScanner(false, false, false);
+    serverFaultInjection(false, false, false);
   }
 
   /**
@@ -98,6 +73,6 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000, expected=NonRecoverableException.class)
   public void testNonFaultTolerantScannerRestart() throws Exception {
-    faultInjectionScanner(true, false, false);
+    serverFaultInjection(true, false, false);
   }
 }
