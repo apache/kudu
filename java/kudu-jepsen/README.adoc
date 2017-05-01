@@ -21,7 +21,7 @@
 
 A link:http://clojure.org[Clojure] library designed to run
 link:http://kudu.apache.org[Apache Kudu] consistency tests using
-the link:https://aphyr.com/tags/Jepsen[Jepsen] framework. Curently, a simple
+the link:https://aphyr.com/tags/Jepsen[Jepsen] framework. Currently, a simple
 linearizability test for read/write register is implemented and run
 for several fault injection scenarios.
 
@@ -102,16 +102,30 @@ In the Jepsen terminology, Kudu master and tserver nodes are playing
 is run plays *Jepsen control node* role.
 
 === Troubleshooting
+When Jepsen's analysis doesn't find inconsistencies in the history of operations
+it outputs the following in the end of a test:
+[listing]
+----
+Everything looks good! ヽ(‘ー`)ノ
+----
+
+However, it might not be the case. If so, it's crucial to understand why the
+test failed.
+
 The majority of the kudu-jepsen test failures can be put into two classification
 buckets:
 
 * An error happened while setting up the testing environment, contacting
-  machines at the Kudu cluster, starting up Kudu server-side components, etc.
+  machines at the Kudu cluster, starting up Kudu server-side components, or in
+  any of the other third-party components the Jepsen uses (like clj-ssh), etc.
 * The Jepsen's analysis detected inconsistent history of operations.
 
 The former class of failures might be a manifestation of wrong configuration,
-a problem with the test environment or a bug in the test code itself.
-Those issues manifest themselves in messages like the following:
+a problem with the test environment, a bug in the test code itself or some
+other intermittent failure. Usually, encountering issues like that means the
+consistency analysis (which is the last step of a test scenario) cannot run.
+Such issues are reported as _errors_ in the summary message. E.g., the example
+summary message below reports on 10 errors in 10 tests ran:
 [listing]
 ----
 21:41:42 Ran 10  tests containing 10 assertions.
@@ -121,9 +135,18 @@ To get more details, take a closer look at the output of `mvn clojure:run`
 or at particular `jepsen.log` files under
 $KUDU_HOME/java/kudu-jepsen/store/rw-register/<test_timestamp> directories.
 
-The latter class of failures represents more serious issues: manifestations
-of non-linearizable history of operations. If Jepsen finds a such an
-inconsistency, it outputs something like the the following into the log:
+The latter class represents more serious issue: a manifestation of
+non-linearizable history of operations. This is reported as _failure_ in the
+summary message. E.g., the summary message below reports finding 2 instances
+of non-linearizable history among 10 tests ran:
+[listing]
+----
+22:21:52 Ran 10  tests containing 10 assertions.
+22:21:52 2 failures, 0 errors.
+----
+
+If Jepsen's analysis finds non-linearizable history of operations, it outputs
+the following in the end of a test:
 [listing]
 ----
 Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
