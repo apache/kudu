@@ -238,15 +238,18 @@ class LogBlockManager : public BlockManager {
 
   // Adds a LogBlock to in-memory data structures.
   //
-  // Returns success if the LogBlock was successfully added, failure if it
-  // was already present.
-  bool AddLogBlock(internal::LogBlockContainer* container,
-                   const BlockId& block_id,
-                   int64_t offset,
-                   int64_t length);
+  // Returns the created LogBlock if it was successfully added or nullptr if a
+  // block with that ID was already present.
+  scoped_refptr<internal::LogBlock> AddLogBlock(
+      internal::LogBlockContainer* container,
+      const BlockId& block_id,
+      int64_t offset,
+      int64_t length);
 
   // Unlocked variant of AddLogBlock() for an already-constructed LogBlock object.
   // Must hold 'lock_'.
+  //
+  // Returns true if the LogBlock was successfully added, false if it was already present.
   bool AddLogBlockUnlocked(const scoped_refptr<internal::LogBlock>& lb);
 
   // Removes a LogBlock from in-memory data structures.
@@ -254,17 +257,6 @@ class LogBlockManager : public BlockManager {
   // Returns the LogBlock if it was successfully removed, NULL if it was
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
-
-  // Parses a block record, adding or removing it in 'block_map', and
-  // accounting for it in the metadata for 'container'. Deleted blocks are
-  // written to 'deleted'.
-  //
-  // If any record is malformed, it is written to 'report'.
-  void ProcessBlockRecord(const BlockRecordPB& record,
-                          FsReport* report,
-                          internal::LogBlockContainer* container,
-                          UntrackedBlockMap* block_map,
-                          std::vector<scoped_refptr<internal::LogBlock>>* deleted);
 
   // Repairs any inconsistencies described in 'report'. Any blocks in
   // 'need_repunching' will be punched out again.
