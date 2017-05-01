@@ -187,7 +187,7 @@ class SecurityUnknownTskTest : public KuduTest {
 // and failure scenarios for the selected subset of RPCs.
 TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
   const string table_name = "security-unknown-tsk-itest";
-  const int64_t timeout_seconds = 1;
+  const int64_t timeout_seconds = 3;
 
   shared_ptr<KuduClient> client;
   ASSERT_OK(cluster_->CreateClient(
