@@ -206,11 +206,10 @@ class Descriptor<RWFile> : public RWFile {
 
   ~Descriptor() = default;
 
-  Status Read(uint64_t offset, size_t length,
-              Slice* result, uint8_t* scratch) const override {
+  Status Read(uint64_t offset, Slice* result) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
-    return opened.file()->Read(offset, length, result, scratch);
+    return opened.file()->Read(offset, result);
   }
 
   Status Write(uint64_t offset, const Slice& data) override {
@@ -325,11 +324,10 @@ class Descriptor<RandomAccessFile> : public RandomAccessFile {
 
   ~Descriptor() = default;
 
-  Status Read(uint64_t offset, size_t n,
-              Slice* result, uint8_t *scratch) const override {
+  Status Read(uint64_t offset, Slice* result) const override {
     ScopedOpenedDescriptor<RandomAccessFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
-    return opened.file()->Read(offset, n, result, scratch);
+    return opened.file()->Read(offset, result);
   }
 
   Status Size(uint64_t *size) const override {

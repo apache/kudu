@@ -287,8 +287,7 @@ class LogBlockContainer {
   Status WriteData(int64_t offset, const Slice& data);
 
   // See RWFile::Read().
-  Status ReadData(int64_t offset, size_t length,
-                  Slice* result, uint8_t* scratch) const;
+  Status ReadData(int64_t offset, Slice* result) const;
 
   // Appends 'pb' to this container's metadata file.
   //
@@ -831,11 +830,10 @@ Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
   return Status::OK();
 }
 
-Status LogBlockContainer::ReadData(int64_t offset, size_t length,
-                                   Slice* result, uint8_t* scratch) const {
+Status LogBlockContainer::ReadData(int64_t offset, Slice* result) const {
   DCHECK_GE(offset, 0);
 
-  return data_file_->Read(offset, length, result, scratch);
+  return data_file_->Read(offset, result);
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
@@ -1249,8 +1247,7 @@ class LogReadableBlock : public ReadableBlock {
 
   virtual Status Size(uint64_t* sz) const OVERRIDE;
 
-  virtual Status Read(uint64_t offset, size_t length,
-                      Slice* result, uint8_t* scratch) const OVERRIDE;
+  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
 
   virtual size_t memory_footprint() const OVERRIDE;
 
@@ -1306,22 +1303,21 @@ Status LogReadableBlock::Size(uint64_t* sz) const {
   return Status::OK();
 }
 
-Status LogReadableBlock::Read(uint64_t offset, size_t length,
-                              Slice* result, uint8_t* scratch) const {
+Status LogReadableBlock::Read(uint64_t offset, Slice* result) const {
   DCHECK(!closed_.Load());
 
   uint64_t read_offset = log_block_->offset() + offset;
-  if (log_block_->length() < offset + length) {
+  if (log_block_->length() < offset + result->size()) {
     return Status::IOError("Out-of-bounds read",
                            Substitute("read of [$0-$1) in block [$2-$3)",
                                       read_offset,
-                                      read_offset + length,
+                                      read_offset + result->size(),
                                       log_block_->offset(),
                                       log_block_->offset() + log_block_->length()));
   }
 
   MicrosecondsInt64 start_time = GetMonoTimeMicros();
-  RETURN_NOT_OK(container_->ReadData(read_offset, length, result, scratch));
+  RETURN_NOT_OK(container_->ReadData(read_offset, result));
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t dur = end_time - start_time;
@@ -1331,7 +1327,7 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
   TRACE_COUNTER_INCREMENT(counter, 1);
 
   if (container_->metrics()) {
-    container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(length);
+    container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(result->size());
   }
   return Status::OK();
 }

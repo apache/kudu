@@ -455,8 +455,8 @@ TEST_F(TabletCopyServiceTest, TestFetchLog) {
   faststring scratch;
   int64_t size = segment->file_size();
   scratch.resize(size);
-  Slice slice;
-  ASSERT_OK(segment->readable_file()->Read(0, size, &slice, scratch.data()));
+  Slice slice(scratch.data(), size);
+  ASSERT_OK(segment->readable_file()->Read(0, &slice));
 
   AssertDataEqual(slice.data(), slice.size(), resp.chunk());
 }

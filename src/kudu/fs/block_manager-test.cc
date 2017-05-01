@@ -255,9 +255,9 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
-  Slice data;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
-  ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
+  Slice data(scratch.get(), test_data.length());
+  ASSERT_OK(read_block->Read(0, &data));
   ASSERT_EQ(test_data, data);
 
   // We don't actually do anything with the result of this call; we just want
@@ -288,9 +288,9 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
               .IsNotFound());
 
   // But we should still be able to read from the opened block.
-  Slice data;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
-  ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
+  Slice data(scratch.get(), test_data.length());
+  ASSERT_OK(read_block->Read(0, &data));
   ASSERT_EQ(test_data, data);
 }
 
@@ -479,9 +479,9 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(new_bm->OpenBlock(written_block2->id(), &read_block));
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
-  Slice data;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
-  ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
+  Slice data(scratch.get(), test_data.length());
+  ASSERT_OK(read_block->Read(0, &data));
   ASSERT_EQ(test_data, data);
   ASSERT_OK(read_block->Close());
   ASSERT_TRUE(new_bm->OpenBlock(written_block3->id(), nullptr)
@@ -562,9 +562,9 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
         i * kTestData.length(), (i + 1) * kTestData.length()));
 
     // The read is reflected in total_bytes_read.
-    Slice data;
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
-    ASSERT_OK(reader->Read(0, kTestData.length(), &data, scratch.get()));
+    Slice data(scratch.get(), kTestData.length());
+    ASSERT_OK(reader->Read(0, &data));
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
         entity, 1, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
@@ -679,8 +679,8 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
 
     for (int i = 0; i < kNumAppends; i++) {
       uint8_t buf[kTestData.size()];
-      Slice s;
-      RETURN_NOT_OK(block->Read(i * kNumAppends, sizeof(buf), &s, buf));
+      Slice s(buf, kTestData.size());
+      RETURN_NOT_OK(block->Read(i * kNumAppends, &s));
       CHECK_EQ(kTestData, s);
     }
     return Status::OK();

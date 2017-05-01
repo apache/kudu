@@ -133,10 +133,9 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   TRACE_EVENT1("io", "CFileReader::ReadMagicAndLength",
                "cfile", ToString());
   uint8_t scratch[kMagicAndLengthSize];
-  Slice slice;
+  Slice slice(scratch, kMagicAndLengthSize);
 
-  RETURN_NOT_OK(block_->Read(offset, kMagicAndLengthSize,
-                             &slice, scratch));
+  RETURN_NOT_OK(block_->Read(offset, &slice));
 
   return ParseMagicAndLength(slice, &cfile_version_, len);
 }
@@ -190,10 +189,9 @@ Status CFileReader::ReadAndParseHeader() {
 
   // Now read the protobuf header.
   uint8_t header_space[header_size];
-  Slice header_slice;
+  Slice header_slice(header_space, header_size);
   header_.reset(new CFileHeaderPB());
-  RETURN_NOT_OK(block_->Read(kMagicAndLengthSize, header_size,
-                             &header_slice, header_space));
+  RETURN_NOT_OK(block_->Read(kMagicAndLengthSize, &header_slice));
   if (!header_->ParseFromArray(header_slice.data(), header_size)) {
     return Status::Corruption("Invalid cfile pb header");
   }
@@ -220,10 +218,9 @@ Status CFileReader::ReadAndParseFooter() {
   // Now read the protobuf footer.
   footer_.reset(new CFileFooterPB());
   uint8_t footer_space[footer_size];
-  Slice footer_slice;
+  Slice footer_slice(footer_space, footer_size);
   uint64_t off = file_size_ - kMagicAndLengthSize - footer_size;
-  RETURN_NOT_OK(block_->Read(off, footer_size,
-                             &footer_slice, footer_space));
+  RETURN_NOT_OK(block_->Read(off, &footer_slice));
   if (!footer_->ParseFromArray(footer_slice.data(), footer_size)) {
     return Status::Corruption("Invalid cfile pb footer");
   }
@@ -365,8 +362,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   }
   uint8_t* buf = scratch.get();
 
-  Slice block;
-  RETURN_NOT_OK(block_->Read(ptr.offset(), ptr.size(), &block, buf));
+  Slice block(buf, ptr.size());
+  RETURN_NOT_OK(block_->Read(ptr.offset(), &block));
   if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }

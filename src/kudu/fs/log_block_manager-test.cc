@@ -508,9 +508,9 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   uint64_t latest_meta_size;
   ASSERT_OK(env_->GetFileSize(metadata_path, &latest_meta_size));
   ASSERT_OK(env_->NewRandomAccessFile(metadata_path, &meta_file));
-  Slice result;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[latest_meta_size]);
-  ASSERT_OK(meta_file->Read(0, latest_meta_size, &result, scratch.get()));
+  Slice result(scratch.get(), latest_meta_size);
+  ASSERT_OK(meta_file->Read(0, &result));
   string data = result.ToString();
   // Flip the high bit of the length field, which is a 4-byte little endian
   // unsigned integer. This will cause the length field to represent a large
@@ -846,8 +846,8 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
     ASSERT_OK(b->Size(&size));
     ASSERT_EQ(0, size % sizeof(raw_block_id));
     uint8_t buf[size];
-    Slice s;
-    ASSERT_OK(b->Read(0, size, &s, buf));
+    Slice s(buf, size);
+    ASSERT_OK(b->Read(0, &s));
     for (int i = 0; i < size; i += sizeof(raw_block_id)) {
       ASSERT_EQ(raw_block_id, *reinterpret_cast<uint64_t*>(buf + i));
     }

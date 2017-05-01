@@ -74,8 +74,8 @@ Status ReadFileToString(Env* env, const std::string& fname, faststring* data) {
   static const int kBufferSize = 8192;
   unique_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
   while (true) {
-    Slice fragment;
-    s = file->Read(kBufferSize, &fragment, scratch.get());
+    Slice fragment(scratch.get(), kBufferSize);
+    s = file->Read(&fragment);
     if (!s.ok()) {
       break;
     }

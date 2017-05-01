@@ -233,8 +233,8 @@ Status RollingLog::CompressFile(const std::string& path) const {
   // Loop reading data from the input file and writing to the gzip stream.
   uint8_t buf[32 * 1024];
   while (true) {
-    Slice result;
-    RETURN_NOT_OK_PREPEND(in_file->Read(arraysize(buf), &result, buf),
+    Slice result(buf, arraysize(buf));
+    RETURN_NOT_OK_PREPEND(in_file->Read(&result),
                           "Unable to read from gzip input");
     if (result.size() == 0) {
       break;

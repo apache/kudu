@@ -382,8 +382,7 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual Status Size(uint64_t* sz) const OVERRIDE;
 
-  virtual Status Read(uint64_t offset, size_t length,
-                      Slice* result, uint8_t* scratch) const OVERRIDE;
+  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
 
   virtual size_t memory_footprint() const OVERRIDE;
 
@@ -443,13 +442,12 @@ Status FileReadableBlock::Size(uint64_t* sz) const {
   return reader_->Size(sz);
 }
 
-Status FileReadableBlock::Read(uint64_t offset, size_t length,
-                               Slice* result, uint8_t* scratch) const {
+Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
   DCHECK(!closed_.Load());
 
-  RETURN_NOT_OK(reader_->Read(offset, length, result, scratch));
+  RETURN_NOT_OK(reader_->Read(offset, result));
   if (block_manager_->metrics_) {
-    block_manager_->metrics_->total_bytes_read->IncrementBy(length);
+    block_manager_->metrics_->total_bytes_read->IncrementBy(result->size());
   }
 
   return Status::OK();

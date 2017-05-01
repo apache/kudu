@@ -107,13 +107,8 @@ class TabletCopyTest : public TabletServerTestBase {
     uint64_t size = 0;
     RETURN_NOT_OK(block->Size(&size));
     scratch->resize(size);
-    RETURN_NOT_OK(block->Read(0, size, slice, scratch->data()));
-
-    // Since the mmap will go away on return, copy the data into scratch.
-    if (slice->data() != scratch->data()) {
-      memcpy(scratch->data(), slice->data(), slice->size());
-      *slice = Slice(scratch->data(), slice->size());
-    }
+    *slice = Slice(scratch->data(), size);
+    RETURN_NOT_OK(block->Read(0, slice));
     return Status::OK();
   }
 

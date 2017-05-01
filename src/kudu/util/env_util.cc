@@ -199,8 +199,8 @@ Status CopyFile(Env* env, const string& source_path, const string& dest_path,
   uint64_t bytes_read = 0;
   while (bytes_read < size) {
     uint64_t max_bytes_to_read = std::min<uint64_t>(size - bytes_read, kBufferSize);
-    Slice data;
-    RETURN_NOT_OK(source->Read(max_bytes_to_read, &data, scratch.get()));
+    Slice data(scratch.get(), max_bytes_to_read);
+    RETURN_NOT_OK(source->Read(&data));
     RETURN_NOT_OK(dest->Append(data));
     bytes_read += data.size();
   }

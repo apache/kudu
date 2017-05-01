@@ -81,10 +81,10 @@ class FsManagerTestBase : public KuduTest {
     ASSERT_OK(writer->Close());
 
     // Test Read
-    Slice result;
+    Slice result(buffer, data.size());
     unique_ptr<fs::ReadableBlock> reader;
     ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader));
-    ASSERT_OK(reader->Read(0, data.size(), &result, buffer));
+    ASSERT_OK(reader->Read(0, &result));
     ASSERT_EQ(data.size(), result.size());
     ASSERT_EQ(0, result.compare(data));
   }

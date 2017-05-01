@@ -346,15 +346,13 @@ class SequentialFile {
   SequentialFile() { }
   virtual ~SequentialFile();
 
-  // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
-  // written by this routine.  Sets "*result" to the data that was
-  // read (including if fewer than "n" bytes were successfully read).
-  // May set "*result" to point at data in "scratch[0..n-1]", so
-  // "scratch[0..n-1]" must be live when "*result" is used.
-  // If an error was encountered, returns a non-OK status.
+  // Read up to "result.size" bytes from the file.
+  // Sets "result.data" to the data that was read.
+  // If an error was encountered, returns a non-OK status
+  // and the contents of "result" are invalid.
   //
   // REQUIRES: External synchronization
-  virtual Status Read(size_t n, Slice* result, uint8_t *scratch) = 0;
+  virtual Status Read(Slice* result) = 0;
 
   // Skip "n" bytes from the file. This is guaranteed to be no
   // slower that reading the same data, but may be faster.
@@ -375,17 +373,16 @@ class RandomAccessFile {
   RandomAccessFile() { }
   virtual ~RandomAccessFile();
 
-  // Read up to "n" bytes from the file starting at "offset".
-  // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
-  // to the data that was read (including if fewer than "n" bytes were
-  // successfully read).  May set "*result" to point at data in
-  // "scratch[0..n-1]", so "scratch[0..n-1]" must be live when
-  // "*result" is used.  If an error was encountered, returns a non-OK
-  // status.
+  // Read up to "result.size" from the file starting at "offset".
+  // Sets "result.data" to the data that was read.
+  // If an error was encountered, returns a non-OK status.
+  //
+  // This method will internally retry on EINTR and "short reads" in order to
+  // fully read the requested number of bytes. In the event that it is not
+  // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      uint8_t *scratch) const = 0;
+  virtual Status Read(uint64_t offset, Slice* result) const = 0;
 
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
@@ -504,10 +501,8 @@ class RWFile {
 
   virtual ~RWFile();
 
-  // Read exactly 'length' bytes from the file starting at 'offset'.
-  // 'scratch[0..length-1]' may be written by this routine. Sets '*result'
-  // to the data that was read. May set '*result' to point at data in
-  // 'scratch[0..length-1]', which must be live when '*result' is used.
+  // Read up to "result.size" from the file starting at "offset".
+  // Sets "result.data" to the data that was read.
   // If an error was encountered, returns a non-OK status.
   //
   // This method will internally retry on EINTR and "short reads" in order to
@@ -515,8 +510,7 @@ class RWFile {
   // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status Read(uint64_t offset, size_t length,
-                      Slice* result, uint8_t* scratch) const = 0;
+  virtual Status Read(uint64_t offset, Slice* result) const = 0;
 
   // Writes 'data' to the file position given by 'offset'.
   virtual Status Write(uint64_t offset, const Slice& data) = 0;

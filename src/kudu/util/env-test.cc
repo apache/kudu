@@ -136,8 +136,8 @@ class TestEnv : public KuduTest {
 
   void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
     unique_ptr<uint8_t[]> scratch(new uint8_t[n]);
-    Slice s;
-    ASSERT_OK(raf->Read(offset, n, &s, scratch.get()));
+    Slice s(scratch.get(), n);
+    ASSERT_OK(raf->Read(offset, &s));
     ASSERT_EQ(n, s.size());
     ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
   }
@@ -367,9 +367,9 @@ TEST_F(TestEnv, TestTruncate) {
   // Read the whole file. Ensure it is all zeroes.
   unique_ptr<RandomAccessFile> raf;
   ASSERT_OK(env_->NewRandomAccessFile(test_path, &raf));
-  Slice s;
   unique_ptr<uint8_t[]> scratch(new uint8_t[size]);
-  ASSERT_OK(raf->Read(0, size, &s, scratch.get()));
+  Slice s(scratch.get(), size);
+  ASSERT_OK(raf->Read(0, &s));
   const uint8_t* data = s.data();
   for (int i = 0; i < size; i++) {
     ASSERT_EQ(0, data[i]) << "Not null at position " << i;
@@ -403,14 +403,14 @@ TEST_F(TestEnv, TestReadFully) {
   ASSERT_OK(env_util::OpenFileForRandom(env, kTestPath, &raf));
 
   const int kReadLength = 10000;
-  Slice s;
   unique_ptr<uint8_t[]> scratch(new uint8_t[kReadLength]);
+  Slice s(scratch.get(), kReadLength);
 
   // Force a short read to half the data length
   FLAGS_env_inject_short_read_bytes = kReadLength / 2;
 
   // Verify that Read fully reads the whole requested data.
-  ASSERT_OK(raf->Read(0, kReadLength, &s, scratch.get()));
+  ASSERT_OK(raf->Read(0, &s));
   ASSERT_EQ(s.data(), scratch.get()) << "Should have returned a contiguous copy";
   ASSERT_EQ(kReadLength, s.size());
 
@@ -421,7 +421,8 @@ TEST_F(TestEnv, TestReadFully) {
   FLAGS_env_inject_short_read_bytes = 0;
 
   // Verify that Read fails with an IOError at EOF.
-  Status status = raf->Read(kFileSize - 100, 200, &s, scratch.get());
+  Slice s2(scratch.get(), 200);
+  Status status = raf->Read(kFileSize - 100, &s2);
   ASSERT_FALSE(status.ok());
   ASSERT_TRUE(status.IsIOError());
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
@@ -507,9 +508,9 @@ TEST_F(TestEnv, TestReopen) {
   uint64_t size;
   ASSERT_OK(reader->Size(&size));
   ASSERT_EQ(first.length() + second.length(), size);
-  Slice s;
   uint8_t scratch[size];
-  ASSERT_OK(reader->Read(0, size, &s, scratch));
+  Slice s(scratch, size);
+  ASSERT_OK(reader->Read(0, &s));
   ASSERT_EQ(first + second, s.ToString());
 }
 
@@ -693,9 +694,9 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(file->Write(0, kTestData));
 
   // Read from it.
-  Slice result;
   unique_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
-  ASSERT_OK(file->Read(0, kTestData.length(), &result, scratch.get()));
+  Slice result(scratch.get(), kTestData.length());
+  ASSERT_OK(file->Read(0, &result));
   ASSERT_EQ(result, kTestData);
   uint64_t sz;
   ASSERT_OK(file->Size(&sz));
@@ -707,10 +708,11 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(file->Write(1, kTestData));
   string kNewTestData = "aabcdebcdeabcde";
   unique_ptr<uint8_t[]> scratch2(new uint8_t[kNewTestData.length()]);
-  ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
+  Slice result2(scratch2.get(), kNewTestData.length());
+  ASSERT_OK(file->Read(0, &result2));
 
   // Retest.
-  ASSERT_EQ(result, kNewTestData);
+  ASSERT_EQ(result2, kNewTestData);
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kNewTestData.length(), sz);
 
@@ -722,8 +724,10 @@ TEST_F(TestEnv, TestRWFile) {
   // Reopen it without truncating the existing data.
   opts.mode = Env::OPEN_EXISTING;
   ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
-  ASSERT_OK(file->Read(0, kNewTestData.length(), &result, scratch2.get()));
-  ASSERT_EQ(result, kNewTestData);
+  unique_ptr<uint8_t[]> scratch3(new uint8_t[kNewTestData.length()]);
+  Slice result3(scratch3.get(), kNewTestData.length());
+  ASSERT_OK(file->Read(0, &result3));
+  ASSERT_EQ(result3, kNewTestData);
 }
 
 TEST_F(TestEnv, TestCanonicalize) {

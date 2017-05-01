@@ -176,24 +176,6 @@ bool IsSupportedContainerVersion(uint32_t version) {
   return false;
 }
 
-// Perform a non-short read. The contract is that we may go to great lengths to
-// retry reads, but if we are ultimately unable to read 'length' bytes from the
-// file then a non-OK Status is returned.
-template<typename T>
-Status NonShortRead(T* file, uint64_t offset, uint64_t length, Slice* result, uint8_t* scratch);
-
-template<>
-Status NonShortRead<RandomAccessFile>(RandomAccessFile* file, uint64_t offset, uint64_t length,
-                                      Slice* result, uint8_t* scratch) {
-  return file->Read(offset, length, result, scratch);
-}
-
-template<>
-Status NonShortRead<RWFile>(RWFile* file, uint64_t offset, uint64_t length,
-                            Slice* result, uint8_t* scratch) {
-  return file->Read(offset, length, result, scratch);
-}
-
 // Reads exactly 'length' bytes from the container file into 'scratch',
 // validating that there is sufficient data in the file to read this length
 // before attempting to do so, and validating that it has read that length
@@ -219,9 +201,9 @@ Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
   }
 
   // Perform the read.
-  Slice s;
   unique_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
-  RETURN_NOT_OK(NonShortRead(reader, *offset, length, &s, local_scratch.get()));
+  Slice s(local_scratch.get(), length);
+  RETURN_NOT_OK(reader->Read(*offset, &s));
   CHECK_EQ(length, s.size()) // Should never trigger due to contract with reader APIs.
       << Substitute("Unexpected short read: Proto container file $0: Tried to read $1 bytes "
                     "but only read $2 bytes",

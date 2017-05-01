@@ -255,20 +255,20 @@ Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
   return Status::OK();
 }
 
-Status DoRead(int fd, const string& filename, uint64_t offset, size_t length,
-                     Slice* result, uint8_t *scratch) {
+Status DoRead(int fd, const string& filename, uint64_t offset, Slice* result) {
   ThreadRestrictions::AssertIOAllowed();
-  size_t rem = length;
-  uint8_t* dst = scratch;
+  uint64_t cur_offset = offset;
+  uint8_t* dst = result->mutable_data();
+  size_t rem = result->size();
   while (rem > 0) {
     size_t req = rem;
     // Inject a short read for testing
-    if (PREDICT_FALSE(FLAGS_env_inject_short_read_bytes > 0 && req == length)) {
+    if (PREDICT_FALSE(FLAGS_env_inject_short_read_bytes > 0 && req == result->size())) {
       DCHECK_LT(FLAGS_env_inject_short_read_bytes, req);
       req -= FLAGS_env_inject_short_read_bytes;
     }
     ssize_t r;
-    RETRY_ON_EINTR(r, pread(fd, dst, req, offset));
+    RETRY_ON_EINTR(r, pread(fd, dst, req, cur_offset));
     if (r < 0) {
       // An error: return a non-ok status.
       return IOError(filename, errno);
@@ -276,15 +276,14 @@ Status DoRead(int fd, const string& filename, uint64_t offset, size_t length,
     if (r == 0) {
       // EOF
       return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
-                                        length, offset));
+                                        result->size(), offset));
     }
     DCHECK_LE(r, rem);
     dst += r;
     rem -= r;
-    offset += r;
+    cur_offset += r;
   }
   DCHECK_EQ(0, rem);
-  *result = Slice(scratch, length);
   return Status::OK();
 }
 
@@ -298,21 +297,22 @@ class PosixSequentialFile: public SequentialFile {
       : filename_(std::move(fname)), file_(f) {}
   virtual ~PosixSequentialFile() { fclose(file_); }
 
-  virtual Status Read(size_t n, Slice* result, uint8_t* scratch) OVERRIDE {
+  virtual Status Read(Slice* result) OVERRIDE {
     ThreadRestrictions::AssertIOAllowed();
-    Status s;
     size_t r;
-    STREAM_RETRY_ON_EINTR(r, file_, fread_unlocked(scratch, 1, n, file_));
-    *result = Slice(scratch, r);
-    if (r < n) {
+    STREAM_RETRY_ON_EINTR(r, file_, fread_unlocked(result->mutable_data(), 1,
+                                                   result->size(), file_));
+    if (r < result->size()) {
       if (feof(file_)) {
-        // We leave status as ok if we hit the end of the file
+        // We leave status as ok if we hit the end of the file.
+        // We need to adjust the slice size.
+        result->truncate(r);
       } else {
         // A partial read with an error: return a non-ok status.
-        s = IOError(filename_, errno);
+        return IOError(filename_, errno);
       }
     }
-    return s;
+    return Status::OK();
   }
 
   virtual Status Skip(uint64_t n) OVERRIDE {
@@ -338,9 +338,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
       : filename_(std::move(fname)), fd_(fd) {}
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
-  virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      uint8_t *scratch) const OVERRIDE {
-    return DoRead(fd_, filename_, offset, n, result, scratch);
+  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
+    return DoRead(fd_, filename_, offset, result);
   }
 
   virtual Status Size(uint64_t *size) const OVERRIDE {
@@ -581,9 +580,8 @@ class PosixRWFile : public RWFile {
     WARN_NOT_OK(Close(), "Failed to close " + filename_);
   }
 
-  virtual Status Read(uint64_t offset, size_t length,
-                      Slice* result, uint8_t* scratch) const OVERRIDE {
-    return DoRead(fd_, filename_, offset, length, result, scratch);
+  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
+    return DoRead(fd_, filename_, offset, result);
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {

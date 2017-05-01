@@ -266,8 +266,8 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
       ASSERT_OK(Env::Default()->GetFileSize(path, &session_block_size));
       faststring buf;
       buf.resize(session_block_size);
-      Slice data;
-      ASSERT_OK(file->Read(session_block_size, &data, buf.data()));
+      Slice data(buf.data(), session_block_size);
+      ASSERT_OK(file->Read(&data));
       uint32_t session_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "session block file has size of " << session_block_size
                 << " and CRC32C of " << session_crc << ": " << path;
@@ -277,7 +277,8 @@ TEST_F(TabletCopyTest, TestBlocksEqual) {
       uint64_t tablet_block_size = 0;
       ASSERT_OK(tablet_block->Size(&tablet_block_size));
       buf.resize(tablet_block_size);
-      ASSERT_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
+      Slice data2(buf.data(), tablet_block_size);
+      ASSERT_OK(tablet_block->Read(0, &data2));
       uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "tablet block file has size of " << tablet_block_size
                 << " and CRC32C of " << tablet_crc
