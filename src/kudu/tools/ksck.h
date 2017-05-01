@@ -20,14 +20,18 @@
 #ifndef KUDU_TOOLS_KSCK_H
 #define KUDU_TOOLS_KSCK_H
 
+#include <boost/optional.hpp>
 #include <gtest/gtest_prod.h>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "kudu/common/schema.h"
+#include "kudu/consensus/consensus.service.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
@@ -62,7 +66,7 @@ struct ChecksumOptions {
   // The snapshot timestamp to use for snapshot checksum scans.
   uint64_t snapshot_timestamp;
 
-  // A timestamp indicicating that the current time should be used for a checksum snapshot.
+  // A timestamp indicating that the current time should be used for a checksum snapshot.
   static const uint64_t kCurrentTimestamp;
 };
 
@@ -86,6 +90,49 @@ class KsckTabletReplica {
   const bool is_leader_;
   const std::string ts_uuid_;
   DISALLOW_COPY_AND_ASSIGN(KsckTabletReplica);
+};
+
+// Possible types of consensus configs.
+enum class KsckConsensusConfigType {
+  // A config reported by the master.
+  MASTER,
+  // A config that has been committed.
+  COMMITTED,
+  // A config that has not yet been committed.
+  PENDING,
+};
+
+// Representation of a consensus state.
+struct KsckConsensusState {
+  KsckConsensusState(KsckConsensusConfigType type,
+                     boost::optional<int64_t> term,
+                     boost::optional<int64_t> opid_index,
+                     boost::optional<std::string> leader_uuid,
+                     std::vector<std::string> peers)
+    : type(type),
+      term(std::move(term)),
+      opid_index(std::move(opid_index)),
+      leader_uuid(std::move(leader_uuid)),
+      peer_uuids(peers.cbegin(), peers.cend()) {
+  }
+
+  // Two KsckConsensusState structs match if they have the same
+  // leader_uuid, the same set of peers, and one of the following holds:
+  // - at least one of them is of type MASTER
+  // - they are configs of the same type and they have the same term
+  bool Matches(const KsckConsensusState &other) const {
+    bool same_leader_and_peers = leader_uuid == other.leader_uuid && peer_uuids == other.peer_uuids;
+    if (type == KsckConsensusConfigType::MASTER || other.type == KsckConsensusConfigType::MASTER) {
+      return same_leader_and_peers;
+    }
+    return type == other.type && term == other.term && same_leader_and_peers;
+  }
+
+  KsckConsensusConfigType type;
+  boost::optional<int64_t> term;
+  boost::optional<int64_t> opid_index;
+  boost::optional<std::string> leader_uuid;
+  std::set<std::string> peer_uuids;
 };
 
 // Representation of a tablet belonging to a table. The tablet is composed of replicas.
@@ -180,11 +227,18 @@ class KsckTabletServer {
   // Map from tablet id to tablet replicas.
   typedef std::unordered_map<std::string, tablet::TabletStatusPB > TabletStatusMap;
 
+  // Map from (tserver id, tablet id) to tablet consensus information.
+  typedef std::map
+      <std::pair<std::string, std::string>, consensus::ConsensusStatePB> TabletConsensusStateMap;
+
   explicit KsckTabletServer(std::string uuid) : uuid_(std::move(uuid)) {}
   virtual ~KsckTabletServer() { }
 
   // Connects to the configured tablet server and populates the fields of this class.
   virtual Status FetchInfo() = 0;
+
+  // Connects to the configured tablet server and populates the consensus map.
+  virtual Status FetchConsensusState() = 0;
 
   // Executes a checksum scan on the associated tablet, and runs the callback
   // with the result. The callback must be threadsafe and non-blocking.
@@ -215,6 +269,12 @@ class KsckTabletServer {
     return tablet_status_map_;
   }
 
+  // Gets the mapping of tablet id to tablet consensus info for this tablet server.
+  const TabletConsensusStateMap& tablet_consensus_state_map() const {
+    CHECK_EQ(state_, kFetched);
+    return tablet_consensus_state_map_;
+  }
+
   tablet::TabletStatePB ReplicaState(const std::string& tablet_id) const;
 
   uint64_t current_timestamp() const {
@@ -225,6 +285,9 @@ class KsckTabletServer {
  protected:
   friend class KsckTest;
   FRIEND_TEST(KsckTest, TestMismatchedAssignments);
+  FRIEND_TEST(KsckTest, TestConsensusConflictExtraPeer);
+  FRIEND_TEST(KsckTest, TestConsensusConflictMissingPeer);
+  FRIEND_TEST(KsckTest, TestConsensusConflictDifferentLeader);
 
   enum State {
     kUninitialized,
@@ -233,11 +296,11 @@ class KsckTabletServer {
   };
   State state_ = kUninitialized;
   TabletStatusMap tablet_status_map_;
+  TabletConsensusStateMap tablet_consensus_state_map_;
   uint64_t timestamp_;
-
- private:
   const std::string uuid_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(KsckTabletServer);
 };
 
@@ -260,8 +323,7 @@ class KsckMaster {
 
   // Gets the list of tables from the Master and stores it in the passed vector.
   // tables is only modified if this method returns OK.
-  virtual Status RetrieveTablesList(
-      std::vector<std::shared_ptr<KsckTable> >* tables) = 0;
+  virtual Status RetrieveTablesList(std::vector<std::shared_ptr<KsckTable> >* tables) = 0;
 
   // Gets the list of tablets for the specified table and stores the list in it.
   // The table's tablet list is only modified if this method returns OK.
@@ -295,6 +357,8 @@ class KsckCluster {
   }
 
  private:
+  friend class KsckTest;
+
   // Gets the list of tablet servers from the Master.
   Status RetrieveTabletServers();
 
@@ -370,7 +434,9 @@ class Ksck {
   enum class CheckResult {
     OK,
     UNDER_REPLICATED,
-    UNAVAILABLE
+    UNAVAILABLE,
+    // There was a discrepancy among the tablets' consensus configs and the master's.
+    CONSENSUS_MISMATCH,
   };
 
   bool VerifyTable(const std::shared_ptr<KsckTable>& table);

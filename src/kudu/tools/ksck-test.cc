@@ -29,6 +29,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_string(color);
+DECLARE_bool(consensus);
 
 namespace kudu {
 namespace tools {
@@ -61,10 +62,14 @@ class MockKsckTabletServer : public KsckTabletServer {
     return fetch_info_status_;
   }
 
+  Status FetchConsensusState() override {
+    return Status::OK();
+  }
+
   virtual void RunTabletChecksumScanAsync(
-      const std::string& tablet_id,
-      const Schema& schema,
-      const ChecksumOptions& options,
+      const std::string& /*tablet_id*/,
+      const Schema& /*schema*/,
+      const ChecksumOptions& /*options*/,
       ChecksumProgressCallbacks* callbacks) OVERRIDE {
     callbacks->Progress(10, 20);
     callbacks->Finished(Status::OK(), 0);
@@ -206,17 +211,36 @@ class KsckTest : public KuduTest {
                            bool has_leader, bool is_running) {
     vector<shared_ptr<KsckTabletReplica>> replicas;
     if (has_leader) {
-      CreateReplicaAndAdd(replicas, tablet->id(), true, is_running);
+      CreateReplicaAndAdd(&replicas, tablet->id(), true, is_running);
       num_replicas--;
     }
     for (int i = 0; i < num_replicas; i++) {
-      CreateReplicaAndAdd(replicas, tablet->id(), false, is_running);
+      CreateReplicaAndAdd(&replicas, tablet->id(), false, is_running);
     }
     tablet->set_replicas(replicas);
+
+    // Set up the consensus state on each tablet server.
+    consensus::ConsensusStatePB cstate;
+    cstate.set_current_term(0);
+    for (const auto& replica : tablet->replicas()) {
+      if (replica->is_leader()) {
+        cstate.set_leader_uuid(replica->ts_uuid());
+      }
+      auto* peer = cstate.mutable_committed_config()->add_peers();
+      peer->set_member_type(consensus::RaftPeerPB::VOTER);
+      peer->set_permanent_uuid(replica->ts_uuid());
+    }
+    for (const auto& replica : tablet->replicas()) {
+      shared_ptr<MockKsckTabletServer> ts =
+        static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_.at(replica->ts_uuid()));
+      InsertOrDieNoPrint(&ts->tablet_consensus_state_map_,
+                         std::make_pair(replica->ts_uuid(), tablet->id()),
+                         cstate);
+    }
   }
 
-  void CreateReplicaAndAdd(vector<shared_ptr<KsckTabletReplica>>& replicas,
-                           string tablet_id,
+  void CreateReplicaAndAdd(vector<shared_ptr<KsckTabletReplica>>* replicas,
+                           const string& tablet_id,
                            bool is_leader,
                            bool is_running) {
     shared_ptr<KsckTabletReplica> replica(new KsckTabletReplica(assignment_plan_.back(),
@@ -225,7 +249,7 @@ class KsckTest : public KuduTest {
             master_->tablet_servers_.at(assignment_plan_.back()));
 
     assignment_plan_.pop_back();
-    replicas.push_back(replica);
+    replicas->push_back(replica);
 
     // Add the equivalent replica on the tablet server.
     tablet::TabletStatusPB pb;
@@ -361,6 +385,75 @@ TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/3 replicas remaining (60B from disk, 30 rows summed)");
+}
+
+TEST_F(KsckTest, TestOneSmallReplicatedTableWithConsensusState) {
+  FLAGS_consensus = true;
+  CreateOneSmallReplicatedTable();
+  ASSERT_OK(RunKsck());
+}
+
+TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
+  FLAGS_consensus = true;
+  CreateOneSmallReplicatedTable();
+
+  shared_ptr<KsckTabletServer> ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
+                                  std::make_pair("ts-id-0", "tablet-id-0"));
+  cstate.mutable_committed_config()->add_peers()->set_permanent_uuid("ts-id-fake");
+
+  Status s = RunKsck();
+  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "The consensus matrix is:\n"
+      "  Host                 Voters            Current term  Config index  Committed?\n"
+      "  -------------------  ----------------  ------------  ------------  ----------\n"
+      "  config from master:  A*  B   C                                     Yes       \n"
+      "                   A:  A*  B   C   D     0                           Yes       \n"
+      "                   B:  A*  B   C         0                           Yes       \n"
+      "                   C:  A*  B   C         0                           Yes");
+}
+
+TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
+  FLAGS_consensus = true;
+  CreateOneSmallReplicatedTable();
+
+  shared_ptr<KsckTabletServer> ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
+                                  std::make_pair("ts-id-0", "tablet-id-0"));
+  cstate.mutable_committed_config()->mutable_peers()->RemoveLast();
+
+  Status s = RunKsck();
+  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "The consensus matrix is:\n"
+      "  Host                 Voters        Current term  Config index  Committed?\n"
+      "  -------------------  ------------  ------------  ------------  ----------\n"
+      "  config from master:  A*  B   C                                 Yes       \n"
+      "                   A:  A*  B         0                           Yes       \n"
+      "                   B:  A*  B   C     0                           Yes       \n"
+      "                   C:  A*  B   C     0                           Yes");
+}
+
+TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
+  FLAGS_consensus = true;
+  CreateOneSmallReplicatedTable();
+
+  const shared_ptr<KsckTabletServer>& ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
+                                  std::make_pair("ts-id-0", "tablet-id-0"));
+  cstate.set_leader_uuid("ts-id-1");
+
+  Status s = RunKsck();
+  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "The consensus matrix is:\n"
+      "  Host                 Voters        Current term  Config index  Committed?\n"
+      "  -------------------  ------------  ------------  ------------  ----------\n"
+      "  config from master:  A*  B   C                                 Yes       \n"
+      "                   A:  A   B*  C     0                           Yes       \n"
+      "                   B:  A*  B   C     0                           Yes       \n"
+      "                   C:  A*  B   C     0                           Yes");
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {

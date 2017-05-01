@@ -452,15 +452,20 @@ message GetLastOpIdResponsePB {
 
 message GetConsensusStateRequestPB {
   // UUID of server this request is addressed to.
-  optional bytes dest_uuid = 2;
+  optional bytes dest_uuid = 1;
 
-  // The id of the tablet.
-  required bytes tablet_id = 1;
+  // The ids of the tablets.
+  // An empty list means return info for all tablets known to the tablet server.
+  repeated bytes tablet_ids = 2;
 }
 
 message GetConsensusStateResponsePB {
-  optional ConsensusStatePB cstate = 1;
-    // A generic error message (such as tablet not found).
+  message TabletConsensusInfoPB {
+    required bytes tablet_id = 1;
+    optional ConsensusStatePB cstate = 2;
+  }
+  repeated TabletConsensusInfoPB tablets = 1;
+
   optional tserver.TabletServerErrorPB error = 2;
 }
 
@@ -536,8 +541,10 @@ service ConsensusService {
 
   rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
 
-  // Returns the consensus state.
-  rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
+  // Returns the consensus state for a set of tablets.
+  // Does not return information for tombstoned tablets.
+  rpc GetConsensusState(GetConsensusStateRequestPB)
+      returns (GetConsensusStateResponsePB);
 
   // Instruct this server to copy a tablet from another host.
   rpc StartTabletCopy(StartTabletCopyRequestPB) returns (StartTabletCopyResponsePB);

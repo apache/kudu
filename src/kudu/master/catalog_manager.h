@@ -518,6 +518,9 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   virtual Status GetTabletReplica(const std::string& tablet_id,
                                   scoped_refptr<tablet::TabletReplica>* replica) const override;
 
+  virtual void GetTabletReplicas(
+      std::vector<scoped_refptr<tablet::TabletReplica>>* replicas) const override;
+
   virtual const NodeInstancePB& NodeInstance() const override;
 
   bool IsInitialized() const;

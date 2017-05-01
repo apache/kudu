@@ -147,17 +147,17 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                             google::protobuf::Message* resp,
                             rpc::RpcContext* rpc) override;
 
-  virtual void UpdateConsensus(const consensus::ConsensusRequestPB *req,
-                               consensus::ConsensusResponsePB *resp,
-                               rpc::RpcContext *context) OVERRIDE;
+  virtual void UpdateConsensus(const consensus::ConsensusRequestPB* req,
+                               consensus::ConsensusResponsePB* resp,
+                               rpc::RpcContext* context) OVERRIDE;
 
   virtual void RequestConsensusVote(const consensus::VoteRequestPB* req,
                                     consensus::VoteResponsePB* resp,
                                     rpc::RpcContext* context) OVERRIDE;
 
   virtual void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
-                         consensus::ChangeConfigResponsePB* resp,
-                         rpc::RpcContext* context) OVERRIDE;
+                            consensus::ChangeConfigResponsePB* resp,
+                            rpc::RpcContext* context) OVERRIDE;
 
   virtual void UnsafeChangeConfig(const consensus::UnsafeChangeConfigRequestPB* req,
                                   consensus::UnsafeChangeConfigResponsePB* resp,
@@ -172,20 +172,20 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                  rpc::RpcContext* context) OVERRIDE;
 
   virtual void LeaderStepDown(const consensus::LeaderStepDownRequestPB* req,
-                                 consensus::LeaderStepDownResponsePB* resp,
+                              consensus::LeaderStepDownResponsePB* resp,
+                              rpc::RpcContext* context) OVERRIDE;
+
+  virtual void GetLastOpId(const consensus::GetLastOpIdRequestPB* req,
+                           consensus::GetLastOpIdResponsePB* resp,
+                           rpc::RpcContext* context) OVERRIDE;
+
+  virtual void GetConsensusState(const consensus::GetConsensusStateRequestPB* req,
+                                 consensus::GetConsensusStateResponsePB* resp,
                                  rpc::RpcContext* context) OVERRIDE;
 
-  virtual void GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
-                           consensus::GetLastOpIdResponsePB *resp,
-                           rpc::RpcContext *context) OVERRIDE;
-
-  virtual void GetConsensusState(const consensus::GetConsensusStateRequestPB *req,
-                                 consensus::GetConsensusStateResponsePB *resp,
-                                 rpc::RpcContext *context) OVERRIDE;
-
   virtual void StartTabletCopy(const consensus::StartTabletCopyRequestPB* req,
-                                    consensus::StartTabletCopyResponsePB* resp,
-                                    rpc::RpcContext* context) OVERRIDE;
+                               consensus::StartTabletCopyResponsePB* resp,
+                               rpc::RpcContext* context) OVERRIDE;
 
  private:
   server::ServerBase* server_;

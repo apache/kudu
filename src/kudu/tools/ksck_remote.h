@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.h"
 #include "kudu/server/server_base.proxy.h"
@@ -54,6 +55,8 @@ class RemoteKsckTabletServer : public KsckTabletServer {
 
   Status FetchInfo() override;
 
+  Status FetchConsensusState() override;
+
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
@@ -69,6 +72,7 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   const std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
   std::shared_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 };
 
 // This implementation connects to a Master via RPC.

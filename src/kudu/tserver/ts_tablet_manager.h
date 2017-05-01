@@ -165,7 +165,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                                        const std::vector<std::string>& tablet_ids) const;
 
   // Get all of the tablets currently hosted on this server.
-  void GetTabletReplicas(std::vector<scoped_refptr<tablet::TabletReplica> >* replicas) const;
+  virtual void GetTabletReplicas(
+      std::vector<scoped_refptr<tablet::TabletReplica> >* replicas) const override;
 
   // Marks tablet with 'tablet_id' as dirty so that it'll be included in the
   // next round of master heartbeats.

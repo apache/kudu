@@ -18,8 +18,8 @@
 #include "kudu/tools/ksck.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
 #include <glog/logging.h>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -52,12 +52,18 @@ DEFINE_uint64(checksum_snapshot_timestamp,
 DEFINE_int32(fetch_replica_info_concurrency, 20,
              "Number of concurrent tablet servers to fetch replica info from.");
 
+DEFINE_bool(consensus, true,
+            "Whether to check the consensus state from each tablet against the master.");
+
 namespace kudu {
 namespace tools {
 
 using std::cout;
 using std::endl;
+using std::left;
 using std::ostream;
+using std::right;
+using std::setw;
 using std::shared_ptr;
 using std::string;
 using std::unordered_map;
@@ -169,7 +175,6 @@ Status Ksck::FetchInfoFromTabletServers() {
     return Status::NotFound("No tablet servers found");
   }
 
-
   gscoped_ptr<ThreadPool> pool;
   RETURN_NOT_OK(ThreadPoolBuilder("ksck-fetch")
                 .set_max_threads(FLAGS_fetch_replica_info_concurrency)
@@ -202,6 +207,13 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   Status s = ts->FetchInfo();
   if (s.ok()) {
     VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
+    if (FLAGS_consensus) {
+      Status t = ts->FetchConsensusState();
+      if (!t.ok()) {
+        Warn() << Substitute("Errors gathering consensus info for Tablet Server $0: $1",
+                             ts->ToString(), t.ToString()) << endl;
+      }
+    }
   } else {
     Warn() << Substitute("Unable to connect to Tablet Server $0: $1",
                          ts->ToString(), s.ToString()) << endl;
@@ -586,35 +598,186 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   }
 }
 
+namespace {
+
+// A struct in which to consolidate the state of each replica for easier analysis.
+struct ReplicaInfo {
+  KsckTabletReplica* replica;
+  KsckTabletServer* ts = nullptr;
+  tablet::TabletStatePB state = tablet::UNKNOWN;
+  boost::optional<tablet::TabletStatusPB> status_pb;
+  boost::optional<KsckConsensusState> consensus_state;
+};
+
+// Formatting constants.
+const char col_pad[] = "  ";
+const int peer_width = 4;
+
+// Print a cell of the consensus matrix.
+void PrintCell(const string& val, size_t width) {
+  Out() << setw(width) << left << val;
+}
+
+// Print a row (one config) of the consensus matrix.
+void PrintConfig(const map<string, char>& peer_uuid_mapping,
+                 const string& name,
+                 const boost::optional<KsckConsensusState>& config,
+                 const vector<size_t>& column_widths) {
+  Out() << col_pad << setw(column_widths[0]) << right << Substitute("$0:", name);
+  Out() << col_pad;
+  if (!config) {
+    Out() << "[no config retrieved]" << endl;
+    return;
+  }
+  for (const auto& entry : peer_uuid_mapping) {
+    if (!ContainsKey(config->peer_uuids, entry.first)) {
+      PrintCell("", peer_width);
+      continue;
+    }
+    if (config->leader_uuid && config->leader_uuid == entry.first) {
+      PrintCell(Substitute("$0*", entry.second), peer_width);
+    } else {
+      PrintCell(Substitute("$0", entry.second), peer_width);
+    }
+  }
+
+  string term_str = "";
+  if (config->term) {
+    term_str = Substitute("$0", config->term.get());
+  }
+  Out() << col_pad << setw(column_widths[2]) << left << term_str;
+
+  string opid_str = "";
+  if (config->opid_index) {
+    opid_str = Substitute("$0", config->opid_index.get());
+  }
+  Out() << col_pad << setw(column_widths[3]) << left << opid_str;
+
+  string committed_str = "";
+  switch (config->type) {
+    case KsckConsensusConfigType::PENDING:
+      committed_str = "No"; break;
+    default:
+      committed_str = "Yes"; break;
+  }
+  Out() << col_pad << setw(column_widths[4]) << left << committed_str;
+  Out() << endl;
+}
+
+void PrintConsensusMatrix(const map<string, char>& peer_uuid_mapping,
+                          const KsckConsensusState& master_config,
+                          const vector<ReplicaInfo>& replica_infos) {
+  const vector<string> columns{"Host", "Voters", "Current term", "Config index", "Committed?"};
+  const string master_label = "config from master";
+
+  // Compute the column widths.
+  vector<size_t> column_widths{master_label.size() + 1, // + 1 for the :
+                               peer_width * peer_uuid_mapping.size(),
+                               columns[2].size(),
+                               columns[3].size(),
+                               columns[4].size(),
+  };
+
+  // Print the header rows.
+  const string col_pad = "  ";
+  Out() << col_pad;
+  for (int i = 0; i < columns.size(); i++) {
+    Out() << left << setw(column_widths[i]) << columns[i];
+    if (i < columns.size() - 1) {
+      Out() << col_pad;
+    }
+  }
+  Out() << endl;
+  Out() << col_pad;
+  for (int i = 0; i < column_widths.size(); i++) {
+    Out() << string(column_widths[i], '-');
+    if (i < column_widths.size() - 1) {
+      Out() << col_pad;
+    }
+  }
+  Out() << endl;
+
+  // Print the master row, then the tserver rows.
+  PrintConfig(peer_uuid_mapping, master_label, master_config, column_widths);
+  for (const auto& replica : replica_infos) {
+    char label = FindOrDie(peer_uuid_mapping, replica.ts->uuid());
+    PrintConfig(peer_uuid_mapping,
+                string(1, label),
+                replica.consensus_state,
+                column_widths);
+  }
+}
+
+} // anonymous namespace
+
 Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_replicas) {
   const string tablet_str = Substitute("Tablet $0 of table '$1'",
                                  tablet->id(), tablet->table()->name());
 
-  // Consolidate the state of each replica into a simple struct for easier analysis.
-  struct ReplicaState {
-    KsckTabletReplica* replica;
-    KsckTabletServer* ts = nullptr;
-    tablet::TabletStatePB state = tablet::UNKNOWN;
-    boost::optional<tablet::TabletStatusPB> status_pb;
-  };
+  // Organize consensus info for the master.
+  auto leader_it = std::find_if(tablet->replicas().cbegin(), tablet->replicas().cend(),
+      [](const shared_ptr<KsckTabletReplica>& r) -> bool { return r->is_leader(); });
+  boost::optional<string> leader_uuid;
+  if (leader_it != tablet->replicas().cend()) {
+    leader_uuid = (*leader_it)->ts_uuid();
+  }
+  vector<string> peer_uuids_from_master;
+  for (const auto& replica : tablet->replicas()) {
+    peer_uuids_from_master.push_back(replica->ts_uuid());
+  }
+  KsckConsensusState master_config(KsckConsensusConfigType::MASTER,
+                                   boost::none, boost::none,
+                                   leader_uuid, peer_uuids_from_master);
 
-  vector<ReplicaState> replica_states;
-  for (const shared_ptr<KsckTabletReplica> replica : tablet->replicas()) {
-    replica_states.emplace_back();
-    auto* repl_state = &replica_states.back();
-    repl_state->replica = replica.get();
-
+  vector<ReplicaInfo> replica_infos;
+  for (const shared_ptr<KsckTabletReplica>& replica : tablet->replicas()) {
+    replica_infos.emplace_back();
+    auto* repl_info = &replica_infos.back();
+    repl_info->replica = replica.get();
     VLOG(1) << Substitute("A replica of tablet $0 is on live tablet server $1",
                           tablet->id(), replica->ts_uuid());
+
     // Check for agreement on tablet assignment and state between the master
     // and the tablet server.
     auto ts = FindPtrOrNull(cluster_->tablet_servers(), replica->ts_uuid());
-    repl_state->ts = ts.get();
-
+    repl_info->ts = ts.get();
     if (ts && ts->is_healthy()) {
-      repl_state->state = ts->ReplicaState(tablet->id());
+      repl_info->state = ts->ReplicaState(tablet->id());
       if (ContainsKey(ts->tablet_status_map(), tablet->id())) {
-        repl_state->status_pb = ts->tablet_status_map().at(tablet->id());
+        repl_info->status_pb = ts->tablet_status_map().at(tablet->id());
+      }
+
+      // Organize consensus info for each replica.
+      if (FLAGS_consensus) {
+        std::pair<string, string> tablet_key = std::make_pair(ts->uuid(), tablet->id());
+        if (!ContainsKey(ts->tablet_consensus_state_map(), tablet_key)) {
+          continue;
+        }
+        const auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map(), tablet_key);
+        const auto& config = cstate.has_pending_config() ?
+                             cstate.pending_config() :
+                             cstate.committed_config();
+        const auto& peers = config.peers();
+        vector<string> peer_uuids_from_replica;
+        for (const auto& pb : peers) {
+          peer_uuids_from_replica.push_back(pb.permanent_uuid());
+        }
+        boost::optional<int64_t> opid_index;
+        if (config.has_opid_index()) {
+          opid_index = config.opid_index();
+        }
+        boost::optional<string> repl_leader_uuid;
+        if (cstate.has_leader_uuid()) {
+          repl_leader_uuid = cstate.leader_uuid();
+        }
+        KsckConsensusConfigType config_type = cstate.has_pending_config() ?
+                                              KsckConsensusConfigType::PENDING :
+                                              KsckConsensusConfigType::COMMITTED;
+        repl_info->consensus_state = KsckConsensusState(config_type,
+                                                         cstate.current_term(),
+                                                         opid_index,
+                                                         repl_leader_uuid,
+                                                         peer_uuids_from_replica);
       }
     }
   }
@@ -622,7 +785,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
   // Summarize the states.
   int leaders_count = 0;
   int running_count = 0;
-  for (const auto& r : replica_states) {
+  for (const auto& r : replica_infos) {
     if (r.replica->is_leader()) {
       leaders_count++;
     }
@@ -631,9 +794,23 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     }
   }
 
+  // Reconcile the master's and peers' consensus configs.
+  int conflicting_states = 0;
+  if (FLAGS_consensus) {
+    for (const auto& r : replica_infos) {
+      if (r.consensus_state && !r.consensus_state->Matches(master_config)) {
+        conflicting_states++;
+      }
+    }
+  }
+  std::sort(replica_infos.begin(), replica_infos.end(),
+            [](const ReplicaInfo& left, const ReplicaInfo& right) -> bool {
+              return left.ts->uuid() < right.ts->uuid();
+            });
+
   // Determine the overall health state of the tablet.
   CheckResult result = CheckResult::OK;
-  int num_voters = replica_states.size();
+  int num_voters = replica_infos.size();
   int majority_size = consensus::MajoritySize(num_voters);
   if (running_count < majority_size) {
     Out() << Substitute("$0 is $1: $2 replica(s) not RUNNING",
@@ -658,12 +835,18 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     Out() << Substitute("$0 is $1: expected one LEADER replica",
                         tablet_str, Color(AnsiCode::RED, "unavailable")) << endl;
     result = CheckResult::UNAVAILABLE;
+  } else if (conflicting_states > 0) {
+    Out() << Substitute("$0 is $1: $0 replicas' active configs disagree with the master's",
+                        tablet_str,
+                        Color(AnsiCode::YELLOW, "conflicted"),
+                        conflicting_states) << endl;
+    result = CheckResult::CONSENSUS_MISMATCH;
   }
 
   // In the case that we found something wrong, dump info on all the replicas
   // to make it easy to debug.
   if (result != CheckResult::OK) {
-    for (const ReplicaState& r : replica_states) {
+    for (const ReplicaInfo& r : replica_infos) {
       string ts_str = r.ts ? r.ts->ToString() : r.replica->ts_uuid();
       const char* leader_str = r.replica->is_leader() ? " [LEADER]" : "";
 
@@ -692,6 +875,40 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     }
 
     Out() << endl;
+  }
+
+  // If there are consensus conflicts, dump the consensus info too.
+  if (conflicting_states > 0) {
+    if (result != CheckResult::CONSENSUS_MISMATCH) {
+      Out() << Substitute("$0 replicas' active configs differ from the master's.",
+                          conflicting_states)
+            << endl;
+    }
+    int i = 0;
+    map<string, char> peer_uuid_mapping;
+    // TODO(wdb): use a scheme that gives > 26 unique labels.
+    const string labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (const auto& peer : master_config.peer_uuids) {
+      if (InsertIfNotPresent(&peer_uuid_mapping, peer, labels[i])) {
+        i = (i + 1) % labels.size();
+      }
+    }
+    for (const ReplicaInfo& rs : replica_infos) {
+      if (!rs.consensus_state) continue;
+      for (const auto& peer : rs.consensus_state->peer_uuids) {
+        if (InsertIfNotPresent(&peer_uuid_mapping, peer, labels[i])) {
+          i = (i + 1) % labels.size();
+        }
+      }
+    }
+
+    Out() << "  All the peers reported by the master and tablet servers are:" << endl;
+    for (const auto& entry : peer_uuid_mapping) {
+      Out() << "  " << entry.second << " = " << entry.first << endl;
+    }
+    Out() << endl;
+    Out() << "  The consensus matrix is:" << endl;
+    PrintConsensusMatrix(peer_uuid_mapping, master_config, replica_infos);
   }
 
   return result;

@@ -2660,6 +2660,16 @@ Status CatalogManager::GetTabletReplica(const string& tablet_id,
   return Status::OK();
 }
 
+void CatalogManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica>>* replicas) const {
+  // Note: CatalogManager has only one table, 'sys_catalog', with only
+  // one tablet.
+  shared_lock<LockType> l(lock_);
+  if (!sys_catalog_) {
+    return;
+  }
+  replicas->push_back(sys_catalog_->tablet_replica());
+}
+
 const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }

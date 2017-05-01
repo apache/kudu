@@ -301,13 +301,17 @@ Status GetConsensusState(const TServerDetails* replica,
   RpcController controller;
   controller.set_timeout(timeout);
   req.set_dest_uuid(replica->uuid());
-  req.set_tablet_id(tablet_id);
+  req.add_tablet_ids(tablet_id);
 
   RETURN_NOT_OK(replica->consensus_proxy->GetConsensusState(req, &resp, &controller));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
-  *consensus_state = resp.cstate();
+  if (resp.tablets_size() == 0) {
+    return Status::NotFound("tablet not found:", tablet_id);
+  }
+  DCHECK_EQ(1, resp.tablets_size());
+  *consensus_state = resp.tablets(0).cstate();
   return Status::OK();
 }
 

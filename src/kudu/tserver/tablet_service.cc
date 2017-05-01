@@ -21,6 +21,7 @@
 #include <boost/optional.hpp>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -31,6 +32,7 @@
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
@@ -128,6 +130,7 @@ using kudu::tablet::TransactionCompletionCallback;
 using kudu::tablet::WriteTransactionState;
 using std::shared_ptr;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -1036,21 +1039,34 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
   context->RespondSuccess();
 }
 
-void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateRequestPB *req,
-                                             consensus::GetConsensusStateResponsePB *resp,
-                                             rpc::RpcContext *context) {
+void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateRequestPB* req,
+                                             consensus::GetConsensusStateResponsePB* resp,
+                                             rpc::RpcContext* context) {
   DVLOG(3) << "Received GetConsensusState RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "GetConsensusState", req, resp, context)) {
     return;
   }
-  scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
-    return;
+
+  unordered_set<string> requested_ids(req->tablet_ids().begin(), req->tablet_ids().end());
+  bool all_ids = requested_ids.empty();
+
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  tablet_manager_->GetTabletReplicas(&tablet_replicas);
+  for (const scoped_refptr<TabletReplica>& replica : tablet_replicas) {
+    if (!all_ids && !ContainsKey(requested_ids, replica->tablet_id())) {
+      continue;
+    }
+
+    scoped_refptr<Consensus> consensus(replica->shared_consensus());
+    if (!consensus) {
+      continue;
+    }
+
+    auto* tablet_info = resp->add_tablets();
+    tablet_info->set_tablet_id(replica->tablet_id());
+    *tablet_info->mutable_cstate() = consensus->ConsensusState();
   }
 
-  scoped_refptr<Consensus> consensus;
-  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  *resp->mutable_cstate() = consensus->ConsensusState();
   context->RespondSuccess();
 }
 

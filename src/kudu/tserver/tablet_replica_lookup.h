@@ -21,6 +21,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -49,6 +50,10 @@ class TabletReplicaLookupIf {
  public:
   virtual Status GetTabletReplica(const std::string& tablet_id,
                                   scoped_refptr<tablet::TabletReplica>* tablet_replica) const = 0;
+
+  // Appends all non-tombstoned tablet replicas to the 'replicas' vector.
+  virtual void GetTabletReplicas(
+      std::vector<scoped_refptr<tablet::TabletReplica>>* replicas) const = 0;
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 

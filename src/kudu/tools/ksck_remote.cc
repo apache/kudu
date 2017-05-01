@@ -61,6 +61,7 @@ Status RemoteKsckTabletServer::Init() {
       tserver::TabletServer::kDefaultPort, &addresses));
   generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addresses[0]));
   ts_proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addresses[0]));
+  consensus_proxy_.reset(new consensus::ConsensusServiceProxy(messenger_, addresses[0]));
   return Status::OK();
 }
 
@@ -102,6 +103,28 @@ Status RemoteKsckTabletServer::FetchInfo() {
   }
 
   state_ = kFetched;
+  return Status::OK();
+}
+
+Status RemoteKsckTabletServer::FetchConsensusState() {
+  tablet_consensus_state_map_.clear();
+  consensus::GetConsensusStateRequestPB req;
+  consensus::GetConsensusStateResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  req.set_dest_uuid(uuid_);
+  RETURN_NOT_OK_PREPEND(consensus_proxy_->GetConsensusState(req, &resp, &rpc),
+                        "could not fetch all consensus info");
+  for (auto& tablet_info : resp.tablets()) {
+    // Don't crash in rare and bad case where multiple remotes have the same UUID and tablet id.
+    if (!InsertOrUpdate(&tablet_consensus_state_map_,
+                        std::make_pair(uuid_, tablet_info.tablet_id()),
+                        tablet_info.cstate())) {
+      LOG(ERROR) << "Found duplicated tablet information: tablet " << tablet_info.tablet_id()
+                 << " is reported on ts " << uuid_ << " twice";
+    }
+  }
+
   return Status::OK();
 }
 

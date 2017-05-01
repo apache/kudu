@@ -135,6 +135,7 @@ unique_ptr<Mode> BuildClusterMode() {
       .AddOptionalParameter("checksum_scan_concurrency")
       .AddOptionalParameter("checksum_snapshot")
       .AddOptionalParameter("color")
+      .AddOptionalParameter("consensus")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("tablets")
       .Build();
