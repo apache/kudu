@@ -384,6 +384,18 @@ class RandomAccessFile {
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, Slice* result) const = 0;
 
+  // Reads up to the "results" aggregate size, based on each Slice's "size",
+  // from the file starting at 'offset'.
+  // Sets each "result.data" to the data that was read.
+  // If an error was encountered, returns a non-OK status.
+  //
+  // This method will internally retry on EINTR and "short reads" in order to
+  // fully read the requested number of bytes. In the event that it is not
+  // possible to read exactly 'length' bytes, an IOError is returned.
+  //
+  // Safe for concurrent use by multiple threads.
+  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const = 0;
+
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
 
@@ -511,6 +523,18 @@ class RWFile {
   //
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, Slice* result) const = 0;
+
+  // Reads up to the "results" aggregate size, based on each Slice's "size",
+  // from the file starting at 'offset'.
+  // Sets each "result.data" to the data that was read.
+  // If an error was encountered, returns a non-OK status.
+  //
+  // This method will internally retry on EINTR and "short reads" in order to
+  // fully read the requested number of bytes. In the event that it is not
+  // possible to read exactly 'length' bytes, an IOError is returned.
+  //
+  // Safe for concurrent use by multiple threads.
+  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const = 0;
 
   // Writes 'data' to the file position given by 'offset'.
   virtual Status Write(uint64_t offset, const Slice& data) = 0;

@@ -255,10 +255,22 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
-  gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
-  Slice data(scratch.get(), test_data.length());
+  uint8_t scratch[test_data.length()];
+  Slice data(scratch, test_data.length());
   ASSERT_OK(read_block->Read(0, &data));
   ASSERT_EQ(test_data, data);
+
+  // Read the data back into multiple slices
+  size_t size1 = 5;
+  uint8_t scratch1[size1];
+  Slice data1(scratch1, size1);
+  size_t size2 = 4;
+  uint8_t scratch2[size2];
+  Slice data2(scratch2, size2);
+  vector<Slice> results = { data1, data2 };
+  ASSERT_OK(read_block->ReadV(0, &results));
+  ASSERT_EQ(test_data.substr(0, size1), data1);
+  ASSERT_EQ(test_data.substr(size1, size2), data2);
 
   // We don't actually do anything with the result of this call; we just want
   // to make sure it doesn't trigger a crash (see KUDU-1931).

@@ -384,6 +384,8 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
 
+  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE;
+
   virtual size_t memory_footprint() const OVERRIDE;
 
  private:
@@ -448,6 +450,23 @@ Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
   RETURN_NOT_OK(reader_->Read(offset, result));
   if (block_manager_->metrics_) {
     block_manager_->metrics_->total_bytes_read->IncrementBy(result->size());
+  }
+
+  return Status::OK();
+}
+
+Status FileReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {
+  DCHECK(!closed_.Load());
+
+  RETURN_NOT_OK(reader_->ReadV(offset, results));
+
+  if (block_manager_->metrics_) {
+    // Calculate the read amount of data
+    size_t bytes_read = accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+                                   [&](int sum, const Slice& curr) {
+                                     return sum + curr.size();
+                                   });
+    block_manager_->metrics_->total_bytes_read->IncrementBy(bytes_read);
   }
 
   return Status::OK();

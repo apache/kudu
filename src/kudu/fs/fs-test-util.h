@@ -19,6 +19,8 @@
 #define KUDU_FS_FS_TEST_UTIL_H
 
 #include <memory>
+#include <numeric>
+#include <vector>
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/util/malloc.h"
@@ -64,6 +66,17 @@ class CountingReadableBlock : public ReadableBlock {
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
     RETURN_NOT_OK(block_->Read(offset, result));
     *bytes_read_ += result->size();
+    return Status::OK();
+  }
+
+  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const OVERRIDE {
+    RETURN_NOT_OK(block_->ReadV(offset, results));
+    // Calculate the read amount of data
+    size_t length = std::accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+                               [&](int sum, const Slice& curr) {
+                                 return sum + curr.size();
+                               });
+    *bytes_read_ += length;
     return Status::OK();
   }
 

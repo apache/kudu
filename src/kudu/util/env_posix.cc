@@ -176,6 +176,27 @@ int fallocate(int fd, int mode, off_t offset, off_t len) {
 }
 #endif
 
+#if defined(__APPLE__)
+// Simulates Linux's preadv API on OS X.
+ssize_t preadv(int fd, const struct iovec* iovec, int count, off_t offset) {
+  ssize_t total_read_bytes = 0;
+  for (int i = 0; i < count; i++) {
+    ssize_t r;
+    RETRY_ON_EINTR(r, pread(fd, iovec[i].iov_base, iovec[i].iov_len, offset));
+    if (r < 0) {
+      return r;
+    }
+    total_read_bytes += r;
+    if (static_cast<size_t>(r) < iovec[i].iov_len) {
+      break;
+    }
+    offset += iovec[i].iov_len;
+  }
+  return total_read_bytes;
+}
+#endif
+
+
 // Close file descriptor when object goes out of scope.
 class ScopedFdCloser {
  public:
@@ -269,19 +290,89 @@ Status DoRead(int fd, const string& filename, uint64_t offset, Slice* result) {
     }
     ssize_t r;
     RETRY_ON_EINTR(r, pread(fd, dst, req, cur_offset));
-    if (r < 0) {
+    if (PREDICT_FALSE(r < 0)) {
       // An error: return a non-ok status.
       return IOError(filename, errno);
     }
-    if (r == 0) {
+    if (PREDICT_FALSE(r == 0)) {
       // EOF
       return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
                                         result->size(), offset));
+    }
+    if (PREDICT_TRUE(r == rem)) {
+      // All requested bytes were read.
+      // This is almost always the case.
+      return Status::OK();
     }
     DCHECK_LE(r, rem);
     dst += r;
     rem -= r;
     cur_offset += r;
+  }
+  DCHECK_EQ(0, rem);
+  return Status::OK();
+}
+
+Status DoReadV(int fd, const string& filename, uint64_t offset, vector<Slice>* results) {
+  ThreadRestrictions::AssertIOAllowed();
+
+  // Convert the results into the iovec vector to request
+  // and calculate the total bytes requested
+  size_t bytes_req = 0;
+  size_t iov_size = results->size();
+  struct iovec iov[iov_size];
+  for (size_t i = 0; i < iov_size; i++) {
+    Slice& result = (*results)[i];
+    bytes_req += result.size();
+    iov[i] = { result.mutable_data(), result.size() };
+  }
+
+  uint64_t cur_offset = offset;
+  size_t completed_iov = 0;
+  size_t rem = bytes_req;
+  while (rem > 0) {
+    // Never request more than IOV_MAX in one request
+    size_t iov_count = std::min(iov_size - completed_iov, static_cast<size_t>(IOV_MAX));
+    ssize_t r;
+    RETRY_ON_EINTR(r, preadv(fd, iov + completed_iov, iov_count, cur_offset));
+
+    // Fake a short read for testing
+    if (PREDICT_FALSE(FLAGS_env_inject_short_read_bytes > 0 && rem == bytes_req)) {
+      DCHECK_LT(FLAGS_env_inject_short_read_bytes, r);
+      r -= FLAGS_env_inject_short_read_bytes;
+    }
+
+    if (PREDICT_FALSE(r < 0)) {
+      // An error: return a non-ok status.
+      return IOError(filename, errno);
+    }
+    if (PREDICT_FALSE(r == 0)) {
+      // EOF.
+      return Status::IOError(
+          Substitute("EOF trying to read $0 bytes at offset $1", bytes_req, offset));
+    }
+    if (PREDICT_TRUE(r == rem)) {
+      // All requested bytes were read. This is almost always the case.
+      return Status::OK();
+    }
+    DCHECK_LE(r, rem);
+    // Adjust iovec vector based on bytes read for the next request
+    ssize_t bytes_rem = r;
+    for (size_t i = completed_iov; i < iov_size; i++) {
+      if (bytes_rem >= iov[i].iov_len) {
+        // The full length of this iovec was read
+        completed_iov++;
+        bytes_rem -= iov[i].iov_len;
+      } else {
+        // Partially read this result.
+        // Adjust the iov_len and iov_base to request only the missing data.
+        iov[i].iov_base = static_cast<uint8_t *>(iov[i].iov_base) + bytes_rem;
+        iov[i].iov_len -= bytes_rem;
+        break; // Don't need to adjust remaining iovec's
+      }
+    }
+    cur_offset += r;
+    rem -= r;
   }
   DCHECK_EQ(0, rem);
   return Status::OK();
@@ -340,6 +431,10 @@ class PosixRandomAccessFile: public RandomAccessFile {
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
     return DoRead(fd_, filename_, offset, result);
+  }
+
+  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
+    return DoReadV(fd_, filename_, offset, results);
   }
 
   virtual Status Size(uint64_t *size) const OVERRIDE {
@@ -582,6 +677,10 @@ class PosixRWFile : public RWFile {
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
     return DoRead(fd_, filename_, offset, result);
+  }
+
+  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
+    return DoReadV(fd_, filename_, offset, results);
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {

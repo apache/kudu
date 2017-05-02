@@ -20,6 +20,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <gflags/gflags.h>
 
@@ -45,6 +46,7 @@ TAG_FLAG(file_cache_expiry_period_ms, advanced);
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -212,6 +214,12 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->Read(offset, result);
   }
 
+  Status ReadV(uint64_t offset, vector<Slice>* results) const override {
+    ScopedOpenedDescriptor<RWFile> opened(&base_);
+    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    return opened.file()->ReadV(offset, results);
+  }
+
   Status Write(uint64_t offset, const Slice& data) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
@@ -328,6 +336,12 @@ class Descriptor<RandomAccessFile> : public RandomAccessFile {
     ScopedOpenedDescriptor<RandomAccessFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->Read(offset, result);
+  }
+
+  Status ReadV(uint64_t offset, vector<Slice>* results) const override {
+    ScopedOpenedDescriptor<RandomAccessFile> opened(&base_);
+    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    return opened.file()->ReadV(offset, results);
   }
 
   Status Size(uint64_t *size) const override {

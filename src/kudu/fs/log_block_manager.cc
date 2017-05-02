@@ -23,6 +23,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
@@ -288,6 +289,9 @@ class LogBlockContainer {
 
   // See RWFile::Read().
   Status ReadData(int64_t offset, Slice* result) const;
+
+  // See RWFile::ReadV().
+  Status ReadVData(int64_t offset, vector<Slice>* results) const;
 
   // Appends 'pb' to this container's metadata file.
   //
@@ -836,6 +840,12 @@ Status LogBlockContainer::ReadData(int64_t offset, Slice* result) const {
   return data_file_->Read(offset, result);
 }
 
+Status LogBlockContainer::ReadVData(int64_t offset, vector<Slice>* results) const {
+  DCHECK_GE(offset, 0);
+
+  return data_file_->ReadV(offset, results);
+}
+
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
@@ -1249,6 +1259,8 @@ class LogReadableBlock : public ReadableBlock {
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
 
+  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE;
+
   virtual size_t memory_footprint() const OVERRIDE;
 
  private:
@@ -1328,6 +1340,40 @@ Status LogReadableBlock::Read(uint64_t offset, Slice* result) const {
 
   if (container_->metrics()) {
     container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(result->size());
+  }
+  return Status::OK();
+}
+
+Status LogReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {
+  DCHECK(!closed_.Load());
+
+  size_t read_length = accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+                                  [&](int sum, const Slice& curr) {
+                                    return sum + curr.size();
+                                  });
+
+  uint64_t read_offset = log_block_->offset() + offset;
+  if (log_block_->length() < offset + read_length) {
+    return Status::IOError("Out-of-bounds read",
+                           Substitute("read of [$0-$1) in block [$2-$3)",
+                                      read_offset,
+                                      read_offset + read_length,
+                                      log_block_->offset(),
+                                      log_block_->offset() + log_block_->length()));
+  }
+
+  MicrosecondsInt64 start_time = GetMonoTimeMicros();
+  RETURN_NOT_OK(container_->ReadVData(read_offset, results));
+  MicrosecondsInt64 end_time = GetMonoTimeMicros();
+
+  int64_t dur = end_time - start_time;
+  TRACE_COUNTER_INCREMENT("lbm_read_time_us", dur);
+
+  const char* counter = BUCKETED_COUNTER_NAME("lbm_reads", dur);
+  TRACE_COUNTER_INCREMENT(counter, 1);
+
+  if (container_->metrics()) {
+    container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(read_length);
   }
   return Status::OK();
 }

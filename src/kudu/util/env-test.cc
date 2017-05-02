@@ -428,6 +428,72 @@ TEST_F(TestEnv, TestReadFully) {
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
 }
 
+TEST_F(TestEnv, TestReadVFully) {
+  // Create the file.
+  unique_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile(GetTestPath("foo"), &file));
+
+  // Append to it.
+  string kTestData = "abcde12345";
+  ASSERT_OK(file->Write(0, kTestData));
+
+  // Setup read parameters
+  size_t size1 = 5;
+  uint8_t scratch1[size1];
+  Slice result1(scratch1, size1);
+  size_t size2 = 5;
+  uint8_t scratch2[size2];
+  Slice result2(scratch2, size2);
+  vector<Slice> results = { result1, result2 };
+
+  // Force a short read
+  FLAGS_env_inject_short_read_bytes = 3;
+
+  // Verify that Read fully reads the whole requested data.
+  ASSERT_OK(file->ReadV(0, &results));
+  ASSERT_EQ(result1, "abcde");
+  ASSERT_EQ(result2, "12345");
+
+  // Turn short reads off again
+  FLAGS_env_inject_short_read_bytes = 0;
+
+  // Verify that Read fails with an IOError at EOF.
+  Status status = file->ReadV(5, &results);
+  ASSERT_FALSE(status.ok());
+  ASSERT_TRUE(status.IsIOError());
+  ASSERT_STR_CONTAINS(status.ToString(), "EOF");
+}
+
+TEST_F(TestEnv, TestIOVMax) {
+  Env* env = Env::Default();
+  const string kTestPath = GetTestPath("test");
+
+  const size_t slice_count = IOV_MAX + 42;
+  const size_t slice_size = 5;
+  const size_t data_size = slice_count * slice_size;
+
+  NO_FATALS(WriteTestFile(env, kTestPath, data_size));
+
+  // Reopen for read
+  shared_ptr<RandomAccessFile> file;
+  ASSERT_OK(env_util::OpenFileForRandom(env, kTestPath, &file));
+
+  // Setup more results slices than IOV_MAX
+  uint8_t scratch[data_size];
+  vector<Slice> results;
+  for (size_t i = 0; i < slice_count; i++) {
+    size_t shift = slice_size * i;
+    results.emplace_back(scratch + shift, slice_size);
+  }
+
+  // Force a short read too
+  FLAGS_env_inject_short_read_bytes = 3;
+
+  // Verify all the data is read
+  ASSERT_OK(file->ReadV(0, &results));
+  VerifyTestData(Slice(scratch, data_size), 0);
+}
+
 TEST_F(TestEnv, TestAppendVector) {
   WritableFileOptions opts;
   LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
@@ -694,25 +760,37 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(file->Write(0, kTestData));
 
   // Read from it.
-  unique_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
-  Slice result(scratch.get(), kTestData.length());
+  uint8_t scratch[kTestData.length()];
+  Slice result(scratch, kTestData.length());
   ASSERT_OK(file->Read(0, &result));
   ASSERT_EQ(result, kTestData);
   uint64_t sz;
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kTestData.length(), sz);
 
+  // Read into multiple buffers
+  size_t size1 = 3;
+  uint8_t scratch1[size1];
+  Slice result1(scratch1, size1);
+  size_t size2 = 2;
+  uint8_t scratch2[size2];
+  Slice result2(scratch2, size2);
+  vector<Slice> results = { result1, result2 };
+  ASSERT_OK(file->ReadV(0, &results));
+  ASSERT_EQ(result1, "abc");
+  ASSERT_EQ(result2, "de");
+
   // Write past the end of the file and rewrite some of the interior.
   ASSERT_OK(file->Write(kTestData.length() * 2, kTestData));
   ASSERT_OK(file->Write(kTestData.length(), kTestData));
   ASSERT_OK(file->Write(1, kTestData));
   string kNewTestData = "aabcdebcdeabcde";
-  unique_ptr<uint8_t[]> scratch2(new uint8_t[kNewTestData.length()]);
-  Slice result2(scratch2.get(), kNewTestData.length());
-  ASSERT_OK(file->Read(0, &result2));
+  uint8_t scratch3[kNewTestData.length()];
+  Slice result3(scratch3, kNewTestData.length());
+  ASSERT_OK(file->Read(0, &result3));
 
   // Retest.
-  ASSERT_EQ(result2, kNewTestData);
+  ASSERT_EQ(result3, kNewTestData);
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kNewTestData.length(), sz);
 
@@ -724,9 +802,9 @@ TEST_F(TestEnv, TestRWFile) {
   // Reopen it without truncating the existing data.
   opts.mode = Env::OPEN_EXISTING;
   ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
-  unique_ptr<uint8_t[]> scratch3(new uint8_t[kNewTestData.length()]);
-  Slice result3(scratch3.get(), kNewTestData.length());
-  ASSERT_OK(file->Read(0, &result3));
+  uint8_t scratch4[kNewTestData.length()];
+  Slice result4(scratch4, kNewTestData.length());
+  ASSERT_OK(file->Read(0, &result4));
   ASSERT_EQ(result3, kNewTestData);
 }
 
