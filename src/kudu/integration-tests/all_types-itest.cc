@@ -81,19 +81,27 @@ struct SliceKeysTestSetup {
                                                                                   row_key_slice);
   }
 
-  Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
+  Status VerifyRowKeySlice(Slice row_key_slice, int split_idx, int row_idx) const {
     int expected_row_key_num = (split_idx * increment_) + row_idx;
     string expected_row_key = StringPrintf("%08x", expected_row_key_num);
     Slice expected_row_key_slice(expected_row_key);
-    Slice row_key;
-    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type> >(0, &row_key));
-    if (expected_row_key_slice.compare(row_key) != 0) {
+    if (expected_row_key_slice.compare(row_key_slice) != 0) {
       return Status::Corruption(strings::Substitute("Keys didn't match. Expected: $0 Got: $1",
                                                     expected_row_key_slice.ToDebugString(),
-                                                    row_key.ToDebugString()));
+                                                    row_key_slice.ToDebugString()));
     }
-
     return Status::OK();
+  }
+
+  Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
+    Slice row_key;
+    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type>>(0, &row_key));
+    return VerifyRowKeySlice(row_key, split_idx, row_idx);
+  }
+
+  Status VerifyRowKeyRaw(const uint8_t* raw_key, int split_idx, int row_idx) const {
+    Slice row_key = *reinterpret_cast<const Slice*>(raw_key);
+    return VerifyRowKeySlice(row_key, split_idx, row_idx);
   }
 
   int GetRowsPerTablet() const {
@@ -154,15 +162,24 @@ struct IntKeysTestSetup {
     return insert->mutable_row()->Set<TypeTraits<KeyTypeWrapper::type> >(0, val);
   }
 
-  Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
-    CppType val;
-    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type> >(0, &val));
+  Status VerifyIntRowKey(CppType val, int split_idx, int row_idx) const {
     int expected = (split_idx * increment_) + row_idx;
     if (val != expected) {
       return Status::Corruption(strings::Substitute("Keys didn't match. Expected: $0 Got: $1",
                                                     expected, val));
     }
     return Status::OK();
+  }
+
+  Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
+    CppType val;
+    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type>>(0, &val));
+    return VerifyIntRowKey(val, split_idx, row_idx);
+  }
+
+  Status VerifyRowKeyRaw(const uint8_t* raw_key, int split_idx, int row_idx) const {
+    CppType val = *reinterpret_cast<const CppType*>(raw_key);
+    return VerifyIntRowKey(val, split_idx, row_idx);
   }
 
   int GetRowsPerTablet() const {
@@ -184,6 +201,20 @@ struct IntKeysTestSetup {
   int rows_per_tablet_;
 };
 
+struct ExpectedVals {
+  int8_t expected_int8_val;
+  int16_t expected_int16_val;
+  int32_t expected_int32_val;
+  int64_t expected_int64_val;
+  int64_t expected_timestamp_val;
+  string slice_content;
+  Slice expected_slice_val;
+  Slice expected_binary_val;
+  bool expected_bool_val;
+  float expected_float_val;
+  double expected_double_val;
+};
+
 // Integration that writes, scans and verifies all types.
 template <class TestSetup>
 class AllTypesItest : public KuduTest {
@@ -192,6 +223,7 @@ class AllTypesItest : public KuduTest {
     if (AllowSlowTests()) {
       FLAGS_num_rows_per_tablet = 10000;
     }
+    SeedRandom();
     setup_ = TestSetup();
   }
 
@@ -315,53 +347,66 @@ class AllTypesItest : public KuduTest {
     projection->push_back("bool_val");
   }
 
+  ExpectedVals GetExpectedValsForRow(int split_idx, int row_idx) {
+    ExpectedVals vals;
+    int64_t expected_int_val = (split_idx * setup_.GetRowsPerTablet()) + row_idx;
+    vals.expected_int8_val = static_cast<int8_t>(expected_int_val);
+    vals.expected_int16_val = static_cast<int16_t>(expected_int_val);
+    vals.expected_int32_val = static_cast<int32_t>(expected_int_val);
+    vals.expected_int64_val = expected_int_val;
+    vals.expected_timestamp_val = expected_int_val;
+    vals.slice_content = strings::Substitute("hello $0", expected_int_val);
+    vals.expected_slice_val = Slice(vals.slice_content);
+    vals.expected_binary_val = Slice(vals.slice_content);
+    vals.expected_bool_val = expected_int_val % 2;
+    vals.expected_float_val = expected_int_val;
+    vals.expected_double_val = expected_int_val;
+    return vals;
+  }
+
   void VerifyRow(const KuduRowResult& row, int split_idx, int row_idx) {
     ASSERT_OK(setup_.VerifyRowKey(row, split_idx, row_idx));
 
-    int64_t expected_int_val = (split_idx * setup_.GetRowsPerTablet()) + row_idx;
+    ExpectedVals vals = GetExpectedValsForRow(split_idx, row_idx);
+
     int8_t int8_val;
     ASSERT_OK(row.GetInt8("int8_val", &int8_val));
-    ASSERT_EQ(int8_val, static_cast<int8_t>(expected_int_val));
+    ASSERT_EQ(int8_val, vals.expected_int8_val);
     int16_t int16_val;
     ASSERT_OK(row.GetInt16("int16_val", &int16_val));
-    ASSERT_EQ(int16_val, static_cast<int16_t>(expected_int_val));
+    ASSERT_EQ(int16_val, vals.expected_int16_val);
     int32_t int32_val;
     ASSERT_OK(row.GetInt32("int32_val", &int32_val));
-    ASSERT_EQ(int32_val, static_cast<int32_t>(expected_int_val));
+    ASSERT_EQ(int32_val, vals.expected_int32_val);
     int64_t int64_val;
     ASSERT_OK(row.GetInt64("int64_val", &int64_val));
-    ASSERT_EQ(int64_val, expected_int_val);
+    ASSERT_EQ(int64_val, vals.expected_int64_val);
     int64_t timestamp_val;
     ASSERT_OK(row.GetUnixTimeMicros("timestamp_val", &timestamp_val));
-    ASSERT_EQ(timestamp_val, expected_int_val);
-
-    string content = strings::Substitute("hello $0", expected_int_val);
-    Slice expected_slice_val(content);
+    ASSERT_EQ(timestamp_val, vals.expected_timestamp_val);
     Slice string_val;
     ASSERT_OK(row.GetString("string_val", &string_val));
-    ASSERT_EQ(string_val, expected_slice_val);
+    ASSERT_EQ(string_val, vals.expected_slice_val);
     Slice binary_val;
     ASSERT_OK(row.GetBinary("binary_val", &binary_val));
-    ASSERT_EQ(binary_val, expected_slice_val);
-
-    bool expected_bool_val = expected_int_val % 2;
+    ASSERT_EQ(binary_val, vals.expected_binary_val);
     bool bool_val;
     ASSERT_OK(row.GetBool("bool_val", &bool_val));
-    ASSERT_EQ(bool_val, expected_bool_val);
-
-    double expected_double_val = expected_int_val;
+    ASSERT_EQ(bool_val, vals.expected_bool_val);
     double double_val;
     ASSERT_OK(row.GetDouble("double_val", &double_val));
-    ASSERT_EQ(double_val, expected_double_val);
+    ASSERT_EQ(double_val, vals.expected_double_val);
     float float_val;
     ASSERT_OK(row.GetFloat("float_val", &float_val));
-    ASSERT_EQ(float_val, static_cast<float>(double_val));
+    ASSERT_EQ(float_val, vals.expected_float_val);
   }
 
-  Status VerifyRows() {
-    vector<string> projection;
-    SetupProjection(&projection);
+  typedef std::function<Status (KuduScanner* scanner)> ScannerSetup;
+  typedef std::function<void (const KuduScanBatch& batch,
+                              int num_tablet,
+                              int* total_rows_in_tablet)> RowVerifier;
 
+  Status VerifyRows(const ScannerSetup& scanner_setup, const RowVerifier& verifier) {
     int total_rows = 0;
     // Scan a single tablet and make sure it has the rows we expect in the amount we
     // expect.
@@ -380,23 +425,19 @@ class AllTypesItest : public KuduTest {
         high_split = split.ToString();
       }
 
-      RETURN_NOT_OK(scanner.SetProjectedColumns(projection));
+      RETURN_NOT_OK(scanner_setup(&scanner));
       RETURN_NOT_OK(scanner.SetBatchSizeBytes(KMaxBatchSize));
       RETURN_NOT_OK(scanner.SetFaultTolerant());
       RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+
       RETURN_NOT_OK(scanner.Open());
       LOG(INFO) << "Scanning tablet: [" << low_split << ", " << high_split << ")";
 
       int total_rows_in_tablet = 0;
       while (scanner.HasMoreRows()) {
-        vector<KuduRowResult> rows;
-        RETURN_NOT_OK(scanner.NextBatch(&rows));
-
-        for (int j = 0; j < rows.size(); ++j) {
-          VLOG(1) << "Scanned row: " << rows[j].ToString();
-          VerifyRow(rows[j], i, total_rows_in_tablet + j);
-        }
-        total_rows_in_tablet += rows.size();
+        KuduScanBatch batch;
+        scanner.NextBatch(&batch);
+        verifier(batch, i, &total_rows_in_tablet);
       }
       CHECK_EQ(total_rows_in_tablet, setup_.GetRowsPerTablet());
       total_rows += total_rows_in_tablet;
@@ -405,7 +446,7 @@ class AllTypesItest : public KuduTest {
     return Status::OK();
   }
 
-  void RunTest() {
+  void RunTest(const ScannerSetup& scanner_setup, const RowVerifier& verifier) {
     ASSERT_OK(CreateCluster());
     ASSERT_OK(CreateTable());
     ASSERT_OK(InsertRows());
@@ -414,7 +455,7 @@ class AllTypesItest : public KuduTest {
     // Verify always passes.
     NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
     // Check that the inserted data matches what we thought we inserted.
-    ASSERT_OK(VerifyRows());
+    ASSERT_OK(VerifyRows(scanner_setup, verifier));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -450,9 +491,121 @@ typedef ::testing::Types<IntKeysTestSetup<KeyTypeWrapper<INT8> >,
 TYPED_TEST_CASE(AllTypesItest, KeyTypes);
 
 TYPED_TEST(AllTypesItest, TestAllKeyTypes) {
-  this->RunTest();
+  vector<string> projection;
+  this->SetupProjection(&projection);
+  auto scanner_setup = [&](KuduScanner* scanner) {
+    return scanner->SetProjectedColumnNames(projection);
+  };
+  auto row_verifier = [&](const KuduScanBatch& batch, int num_tablet, int* total_rows_in_tablet) {
+    for (int i = 0; i < batch.NumRows(); i++) {
+      NO_FATALS(this->VerifyRow(batch.Row(i), num_tablet, *total_rows_in_tablet + i));
+    }
+    *total_rows_in_tablet += batch.NumRows();
+  };
+
+  this->RunTest(scanner_setup, row_verifier);
+}
+
+TYPED_TEST(AllTypesItest, TestTimestampPadding) {
+  vector<string> projection;
+  this->SetupProjection(&projection);
+  auto scanner_setup = [&](KuduScanner* scanner) -> Status {
+    // Each time this function is called we shuffle the projection to get the chance
+    // of having timestamps in different places of the projection and before/after
+    // different types.
+    std::random_shuffle(projection.begin(), projection.end());
+    RETURN_NOT_OK(scanner->SetProjectedColumnNames(projection));
+    int row_format_flags = KuduScanner::NO_FLAGS;
+    row_format_flags |= KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES;
+    return scanner->SetRowFormatFlags(row_format_flags);
+  };
+
+  auto row_verifier = [&](const KuduScanBatch& batch, int num_tablet, int* total_rows_in_tablet) {
+    // Timestamps are padded to 16 bytes.
+    int kPaddedTimestampSize = 16;
+
+    // Calculate the projection size, each of the column offsets and the size of the null bitmap.
+    const KuduSchema* schema = batch.projection_schema();
+    vector<int> projection_offsets;
+    int row_stride = 0;
+    int num_nullable_cols = 0;
+    for (int i = 0; i < schema->num_columns(); i++) {
+      KuduColumnSchema col_schema = schema->Column(i);
+      if (col_schema.is_nullable()) num_nullable_cols++;
+      switch (col_schema.type()) {
+        case KuduColumnSchema::UNIXTIME_MICROS:
+          projection_offsets.push_back(kPaddedTimestampSize);
+          row_stride += kPaddedTimestampSize;
+          break;
+        default:
+          int col_size = GetTypeInfo(ToInternalDataType(col_schema.type()))->size();
+          projection_offsets.push_back(col_size);
+          row_stride += col_size;
+      }
+    }
+
+    int null_bitmap_size = BitmapSize(num_nullable_cols);
+    row_stride += null_bitmap_size;
+
+    Slice direct_data = batch.direct_data();
+
+    ASSERT_EQ(direct_data.size(), row_stride * batch.NumRows());
+
+    const uint8_t* row_data = direct_data.data();
+
+    for (int i = 0; i < batch.NumRows(); i++) {
+      for (int j = 0; j < schema->num_columns(); j++) {
+        KuduColumnSchema col_schema = schema->Column(j);
+
+        if (schema->Column(j).name() == "key") {
+          ASSERT_OK(this->setup_.VerifyRowKeyRaw(row_data, num_tablet, *total_rows_in_tablet + i));
+        } else {
+          ExpectedVals vals = this->GetExpectedValsForRow(num_tablet, *total_rows_in_tablet + i);
+
+          switch (col_schema.type()) {
+            case KuduColumnSchema::INT8:
+              ASSERT_EQ(*reinterpret_cast<const int8_t*>(row_data), vals.expected_int8_val);
+              break;
+            case KuduColumnSchema::INT16:
+              ASSERT_EQ(*reinterpret_cast<const int16_t*>(row_data), vals.expected_int16_val);
+              break;
+            case KuduColumnSchema::INT32:
+              ASSERT_EQ(*reinterpret_cast<const int32_t*>(row_data), vals.expected_int32_val);
+              break;
+            case KuduColumnSchema::INT64:
+              ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data), vals.expected_int64_val);
+              break;
+            case KuduColumnSchema::UNIXTIME_MICROS:
+              ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data), vals.expected_timestamp_val);
+              break;
+            case KuduColumnSchema::STRING:
+              ASSERT_EQ(*reinterpret_cast<const Slice*>(row_data), vals.expected_slice_val);
+              break;
+            case KuduColumnSchema::BINARY:
+              ASSERT_EQ(*reinterpret_cast<const Slice*>(row_data), vals.expected_binary_val);
+              break;
+            case KuduColumnSchema::BOOL:
+              ASSERT_EQ(*reinterpret_cast<const bool*>(row_data), vals.expected_bool_val);
+              break;
+            case KuduColumnSchema::FLOAT:
+              ASSERT_EQ(*reinterpret_cast<const float*>(row_data), vals.expected_float_val);
+              break;
+            case KuduColumnSchema::DOUBLE:
+              ASSERT_EQ(*reinterpret_cast<const double*>(row_data), vals.expected_double_val);
+              break;
+            default:
+              LOG(FATAL) << "Unexpected type: " << col_schema.type();
+          }
+        }
+        row_data += projection_offsets[j];
+      }
+      row_data += null_bitmap_size;
+    }
+    *total_rows_in_tablet += batch.NumRows();
+  };
+
+  this->RunTest(scanner_setup, row_verifier);
 }
 
 } // namespace client
 } // namespace kudu
-

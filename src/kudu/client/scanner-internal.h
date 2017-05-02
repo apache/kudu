@@ -260,6 +260,7 @@ class KuduScanBatch::Data {
   Status Reset(rpc::RpcController* controller,
                const Schema* projection,
                const KuduSchema* client_projection,
+               uint64_t row_format_flags,
                gscoped_ptr<RowwiseRowBlockPB> resp_data);
 
   int num_rows() const {
@@ -267,6 +268,9 @@ class KuduScanBatch::Data {
   }
 
   KuduRowResult row(int idx) {
+    DCHECK_EQ(row_format_flags_, KuduScanner::NO_FLAGS)
+        << "Cannot decode individual rows. Row format flags were set: "
+        << row_format_flags_;
     DCHECK_GE(idx, 0);
     DCHECK_LT(idx, num_rows());
     int offset = idx * projected_row_size_;
@@ -296,6 +300,10 @@ class KuduScanBatch::Data {
   const Schema* projection_;
   // The KuduSchema version of 'projection_'
   const KuduSchema* client_projection_;
+
+  // The row format flags that were passed to the KuduScanner.
+  // See: KuduScanner::SetRowFormatFlags()
+  uint64_t row_format_flags_;
 
   // The number of bytes of direct data for each row.
   size_t projected_row_size_;

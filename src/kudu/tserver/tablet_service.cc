@@ -337,6 +337,15 @@ class ScanResultCollector {
 
   // Return the number of rows actually returned to the client.
   virtual int64_t NumRowsReturned() const = 0;
+
+  // Sets row format flags on the ScanResultCollector.
+  //
+  // This is a setter instead of a constructor argument passed to specific
+  // collector implementations because, currently, the collector is built
+  // before the request is decoded and checked for 'row_format_flags'.
+  //
+  // Does nothing by default.
+  virtual void set_row_format_flags(uint64_t /* row_format_flags */) {}
 };
 
 namespace {
@@ -370,36 +379,44 @@ void SetLastRow(const RowBlock& row_block, faststring* last_primary_key) {
 // server-side scan and thus never need to return the actual data.)
 class ScanResultCopier : public ScanResultCollector {
  public:
-  ScanResultCopier(RowwiseRowBlockPB* rowblock_pb, faststring* rows_data, faststring* indirect_data)
+  ScanResultCopier(RowwiseRowBlockPB* rowblock_pb,
+                   faststring* rows_data,
+                   faststring* indirect_data)
       : rowblock_pb_(DCHECK_NOTNULL(rowblock_pb)),
         rows_data_(DCHECK_NOTNULL(rows_data)),
         indirect_data_(DCHECK_NOTNULL(indirect_data)),
         blocks_processed_(0),
-        num_rows_returned_(0) {
-  }
+        num_rows_returned_(0),
+        pad_unixtime_micros_to_16_bytes_(false) {}
 
-  virtual void HandleRowBlock(const Schema* client_projection_schema,
-                              const RowBlock& row_block) OVERRIDE {
+  void HandleRowBlock(const Schema* client_projection_schema,
+                              const RowBlock& row_block) override {
     blocks_processed_++;
     num_rows_returned_ += row_block.selection_vector()->CountSelected();
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
-                      rows_data_, indirect_data_);
+                      rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
     SetLastRow(row_block, &last_primary_key_);
   }
 
-  virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
+  int BlocksProcessed() const override { return blocks_processed_; }
 
   // Returns number of bytes buffered to return.
-  virtual int64_t ResponseSize() const OVERRIDE {
+  int64_t ResponseSize() const override {
     return rows_data_->size() + indirect_data_->size();
   }
 
-  virtual const faststring& last_primary_key() const OVERRIDE {
+  const faststring& last_primary_key() const override {
     return last_primary_key_;
   }
 
-  virtual int64_t NumRowsReturned() const OVERRIDE {
+  int64_t NumRowsReturned() const override {
     return num_rows_returned_;
+  }
+
+  void set_row_format_flags(uint64_t row_format_flags) override {
+    if (row_format_flags & RowFormatFlags::PAD_UNIX_TIME_MICROS_TO_16_BYTES) {
+      pad_unixtime_micros_to_16_bytes_ = true;
+    }
   }
 
  private:
@@ -409,6 +426,7 @@ class ScanResultCopier : public ScanResultCollector {
   int blocks_processed_;
   int64_t num_rows_returned_;
   faststring last_primary_key_;
+  bool pad_unixtime_micros_to_16_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
 };
@@ -1264,7 +1282,13 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
 }
 
 bool TabletServiceImpl::SupportsFeature(uint32_t feature) const {
-  return feature == TabletServerFeatures::COLUMN_PREDICATES;
+  switch (feature) {
+    case TabletServerFeatures::COLUMN_PREDICATES:
+    case TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES:
+      return true;
+    default:
+      return false;
+  }
 }
 
 void TabletServiceImpl::Shutdown() {
@@ -1475,6 +1499,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(tablet_peer,
                                          rpc_context->requestor_string(),
+                                         scan_pb.row_format_flags(),
                                          &scanner);
 
   // If we early-exit out of this function, automatically unregister
@@ -1689,6 +1714,9 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       return Status::NotFound("Scanner not found");
     }
   }
+
+  // Set the row format flags on the ScanResultCollector.
+  result_collector->set_row_format_flags(scanner->row_format_flags());
 
   // If we early-exit out of this function, automatically unregister the scanner.
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());

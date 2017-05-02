@@ -138,6 +138,7 @@ class ReplicaDumper {
       RETURN_NOT_OK(results.Reset(&rpc,
                                   &schema,
                                   &client_schema,
+                                  client::KuduScanner::NO_FLAGS,
                                   make_gscoped_ptr(resp.release_data())));
       vector<KuduRowResult> rows;
       results.ExtractRows(&rows);

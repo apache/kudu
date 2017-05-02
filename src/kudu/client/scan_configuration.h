@@ -75,6 +75,8 @@ class ScanConfiguration {
 
   void SetTimeoutMillis(int millis);
 
+  Status SetRowFormatFlags(uint64_t flags);
+
   void OptimizeScanSpec();
 
   const KuduTable& table() {
@@ -133,6 +135,10 @@ class ScanConfiguration {
     return timeout_;
   }
 
+  uint64_t row_format_flags() const {
+    return row_format_flags_;
+  }
+
   Arena* arena() {
     return &arena_;
   }
@@ -173,6 +179,8 @@ class ScanConfiguration {
   // Manages objects which need to live for the lifetime of the configuration,
   // such as schemas, predicates, and keys.
   AutoReleasePool pool_;
+
+  uint64_t row_format_flags_;
 };
 
 } // namespace client

@@ -108,6 +108,7 @@ ScannerManager::ScannerMapStripe& ScannerManager::GetStripeByScannerId(const str
 
 void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
                                 const std::string& requestor_string,
+                                uint64 row_format_flags,
                                 SharedScanner* scanner) {
   // Keep trying to generate a unique ID until we get one.
   bool success = false;
@@ -117,7 +118,11 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
     // just retry until we avoid a collision. Alternatively we could
     // verify that the requestor userid does not change mid-scan.
     string id = oid_generator_.Next();
-    scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
+    scanner->reset(new Scanner(id,
+                               tablet_peer,
+                               requestor_string,
+                               metrics_.get(),
+                               row_format_flags));
 
     ScannerMapStripe& stripe = GetStripeByScannerId(id);
     std::lock_guard<RWMutex> l(stripe.lock_);
@@ -188,14 +193,16 @@ void ScannerManager::RemoveExpiredScanners() {
 const std::string Scanner::kNullTabletId = "null tablet";
 
 Scanner::Scanner(string id, const scoped_refptr<TabletPeer>& tablet_peer,
-                 string requestor_string, ScannerMetrics* metrics)
+                 string requestor_string, ScannerMetrics* metrics,
+                 uint64_t row_format_flags)
     : id_(std::move(id)),
       tablet_peer_(tablet_peer),
       requestor_string_(std::move(requestor_string)),
       call_seq_id_(0),
       start_time_(MonoTime::Now()),
       metrics_(metrics),
-      arena_(1024, 1024 * 1024) {
+      arena_(1024, 1024 * 1024),
+      row_format_flags_(row_format_flags) {
   UpdateAccessTime();
 }
 

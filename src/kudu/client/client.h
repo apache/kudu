@@ -2024,6 +2024,48 @@ class KUDU_EXPORT KuduScanner {
   /// @return Schema of the projection being scanned.
   KuduSchema GetProjectionSchema() const;
 
+  /// @name Advanced/Unstable API
+  //
+  ///@{
+  /// Modifier flags for the row format returned from the server.
+  ///
+  /// @note Each flag corresponds to a bit that gets set on a bitset that is sent
+  ///   to the server. See SetRowFormatFlags() for example usage.
+  static const uint64_t NO_FLAGS = 0;
+  /// Makes the server pad UNIXTIME_MICROS slots to 16 bytes.
+  /// @note This flag actually wastes throughput by making messages larger than they need to
+  ///   be. It exists merely for compatibility reasons and requires the user to know the row
+  ///   format in order to decode the data. That is, if this flag is enabled, the user _must_
+  ///   use KuduScanBatch::direct_data() and KuduScanBatch::indirect_data() to obtain the row
+  ///   data for further decoding. Using KuduScanBatch::Row() might yield incorrect/corrupt
+  ///   results and might even cause the client to crash.
+  static const uint64_t PAD_UNIXTIME_MICROS_TO_16_BYTES = 1 << 0;
+  /// Optionally set row format modifier flags.
+  ///
+  /// If flags is RowFormatFlags::NO_FLAGS, then no modifications will be made to the row
+  /// format and the default will be used.
+  ///
+  /// Some flags require server-side server-side support, thus the caller should be prepared to
+  /// handle a NotSupported status in Open() and NextBatch().
+  ///
+  /// Example usage (without error handling, for brevity):
+  /// @code
+  ///   KuduScanner scanner(...);
+  ///   uint64_t row_format_flags = KuduScanner::NO_FLAGS;
+  ///   row_format_flags |= KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES;
+  ///   scanner.SetRowFormatFlags(row_format_flags);
+  ///   scanner.Open();
+  ///   while (scanner.HasMoreRows()) {
+  ///     KuduScanBatch batch;
+  ///     scanner.NextBatch(&batch);
+  ///     Slice direct_data = batch.direct_data();
+  ///     Slice indirect_data = batch.indirect_data();
+  ///     ... // Row data decoding and handling.
+  ///   }
+  /// @endcode
+  Status SetRowFormatFlags(uint64_t flags);
+  ///@}
+
   /// @return String representation of this scan.
   ///
   /// @internal

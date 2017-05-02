@@ -243,6 +243,9 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   if (!configuration_.spec().predicates().empty()) {
     controller_.RequireServerFeature(TabletServerFeatures::COLUMN_PREDICATES);
   }
+  if (configuration().row_format_flags() & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
+    controller_.RequireServerFeature(TabletServerFeatures::PAD_UNIXTIME_MICROS_TO_16_BYTES);
+  }
   ScanRpcStatus scan_status = AnalyzeResponse(
       proxy_->Scan(next_req_,
                    &last_response_,
@@ -261,6 +264,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   PrepareRequest(KuduScanner::Data::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
+  scan->set_row_format_flags(configuration_.row_format_flags());
   const KuduScanner::ReadMode read_mode = configuration_.read_mode();
   switch (read_mode) {
     case KuduScanner::READ_LATEST:
@@ -485,7 +489,7 @@ void KuduScanner::Data::UpdateLastError(const Status& error) {
 // KuduScanBatch
 ////////////////////////////////////////////////////////////
 
-KuduScanBatch::Data::Data() : projection_(NULL) {}
+KuduScanBatch::Data::Data() : projection_(NULL), row_format_flags_(KuduScanner::NO_FLAGS) {}
 
 KuduScanBatch::Data::~Data() {}
 
@@ -497,12 +501,14 @@ size_t KuduScanBatch::Data::CalculateProjectedRowSize(const Schema& proj) {
 Status KuduScanBatch::Data::Reset(RpcController* controller,
                                   const Schema* projection,
                                   const KuduSchema* client_projection,
-                                  gscoped_ptr<RowwiseRowBlockPB> data) {
+                                  uint64_t row_format_flags,
+                                  gscoped_ptr<RowwiseRowBlockPB> resp_data) {
   CHECK(controller->finished());
   controller_.Swap(controller);
   projection_ = projection;
   client_projection_ = client_projection;
-  resp_data_.Swap(data.get());
+  row_format_flags_ = row_format_flags;
+  resp_data_.Swap(resp_data.get());
 
   // First, rewrite the relative addresses into absolute ones.
   if (PREDICT_FALSE(!resp_data_.has_rows_sidecar())) {
@@ -524,12 +530,20 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
     }
   }
 
-  RETURN_NOT_OK(RewriteRowBlockPointers(*projection_, resp_data_, indirect_data_, &direct_data_));
+  bool pad_unixtime_micros_to_16_bytes = false;
+  if (row_format_flags_ & KuduScanner::PAD_UNIXTIME_MICROS_TO_16_BYTES) {
+    pad_unixtime_micros_to_16_bytes = true;
+  }
+
+  RETURN_NOT_OK(RewriteRowBlockPointers(*projection_, resp_data_, indirect_data_, &direct_data_,
+                                        pad_unixtime_micros_to_16_bytes));
   projected_row_size_ = CalculateProjectedRowSize(*projection_);
   return Status::OK();
 }
 
 void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
+  DCHECK_EQ(row_format_flags_, KuduScanner::NO_FLAGS) << "Cannot extract rows. "
+      << "Row format modifier flags were selected: " << row_format_flags_;
   int n_rows = resp_data_.num_rows();
   rows->resize(n_rows);
 

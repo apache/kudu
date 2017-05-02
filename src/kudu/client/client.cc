@@ -1260,6 +1260,21 @@ KuduSchema KuduScanner::GetProjectionSchema() const {
   return KuduSchema(*data_->configuration().projection());
 }
 
+Status KuduScanner::SetRowFormatFlags(uint64_t flags) {
+  switch (flags) {
+    case NO_FLAGS:
+    case PAD_UNIXTIME_MICROS_TO_16_BYTES:
+      break;
+    default:
+      return Status::InvalidArgument(Substitute("Invalid row format flags: $0", flags));
+  }
+  if (data_->open_) {
+    return Status::IllegalState("Row format flags must be set before Open()");
+  }
+
+  return data_->mutable_configuration()->SetRowFormatFlags(flags);
+}
+
 const ResourceMetrics& KuduScanner::GetResourceMetrics() const {
   return data_->resource_metrics_;
 }
@@ -1356,6 +1371,11 @@ bool KuduScanner::HasMoreRows() const {
 }
 
 Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
+  if (PREDICT_FALSE(data_->configuration().row_format_flags() != KuduScanner::NO_FLAGS)) {
+    return Status::IllegalState(
+        Substitute("Cannot extract rows. Row format modifier flags were selected: $0",
+                   data_->configuration().row_format_flags()));
+  }
   RETURN_NOT_OK(NextBatch(&data_->batch_for_old_api_));
   data_->batch_for_old_api_.data_->ExtractRows(rows);
   return Status::OK();
@@ -1382,8 +1402,11 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
     return batch->data_->Reset(&data_->controller_,
                                data_->configuration().projection(),
                                data_->configuration().client_projection(),
-                                make_gscoped_ptr(data_->last_response_.release_data()));
-  } else if (data_->last_response_.has_more_results()) {
+                               data_->configuration().row_format_flags(),
+                               make_gscoped_ptr(data_->last_response_.release_data()));
+  }
+
+  if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
     VLOG(2) << "Continuing " << data_->DebugString();
 
@@ -1403,6 +1426,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
         return batch->data_->Reset(&data_->controller_,
                                    data_->configuration().projection(),
                                    data_->configuration().client_projection(),
+                                   data_->configuration().row_format_flags(),
                                    make_gscoped_ptr(data_->last_response_.release_data()));
       }
 

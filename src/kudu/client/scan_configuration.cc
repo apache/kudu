@@ -46,7 +46,8 @@ ScanConfiguration::ScanConfiguration(KuduTable* table)
       is_fault_tolerant_(false),
       snapshot_timestamp_(kNoTimestamp),
       timeout_(MonoDelta::FromMilliseconds(KuduScanner::kScanTimeoutMillis)),
-      arena_(1024, 1024 * 1024) {
+      arena_(1024, 1024 * 1024),
+      row_format_flags_(KuduScanner::NO_FLAGS) {
 }
 
 Status ScanConfiguration::SetProjectedColumnNames(const vector<string>& col_names) {
@@ -174,6 +175,11 @@ void ScanConfiguration::SetSnapshotRaw(uint64_t snapshot_timestamp) {
 
 void ScanConfiguration::SetTimeoutMillis(int millis) {
   timeout_ = MonoDelta::FromMilliseconds(millis);
+}
+
+Status ScanConfiguration::SetRowFormatFlags(uint64_t flags) {
+  row_format_flags_ = flags;
+  return Status::OK();
 }
 
 void ScanConfiguration::OptimizeScanSpec() {

@@ -207,6 +207,11 @@ message ColumnRangePredicateListPB {
   repeated ColumnRangePredicatePB range_predicates = 1;
 }
 
+enum RowFormatFlags {
+  NO_FLAGS = 0;
+  PAD_UNIX_TIME_MICROS_TO_16_BYTES = 1;
+}
+
 message NewScanRequestPB {
   // The tablet to scan.
   required bytes tablet_id = 1;
@@ -261,6 +266,16 @@ message NewScanRequestPB {
   // attempt. If set, this will take precedence over the `start_primary_key`
   // field, and functions as an exclusive start primary key.
   optional bytes last_primary_key = 12 [(kudu.REDACT) = true];
+
+  // Row format flags.
+  //
+  // The client may pass "row format modifier" flags that change the way the server encodes
+  // the returned row data in some way. Only on/off modifiers are supported, which are encoded
+  // as a bitset in this uint64.
+  //
+  // The default value corresponds to RowFormatFlags::NO_FLAGS, which can't be set
+  // as the actual default since the types differ.
+  optional uint64 row_format_flags = 14 [default = 0];
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -368,4 +383,6 @@ message ScannerKeepAliveResponsePB {
 enum TabletServerFeatures {
   UNKNOWN_FEATURE = 0;
   COLUMN_PREDICATES = 1;
+  // Whether the server supports padding UNIXTIME_MICROS slots to 16 bytes.
+  PAD_UNIXTIME_MICROS_TO_16_BYTES = 2;
 }

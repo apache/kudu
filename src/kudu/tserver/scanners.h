@@ -73,6 +73,7 @@ class ScannerManager {
   // Create a new scanner with a unique ID, inserting it into the map.
   void NewScanner(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                   const std::string& requestor_string,
+                  uint64_t row_format_flags,
                   SharedScanner* scanner);
 
   // Lookup the given scanner by its ID.
@@ -169,7 +170,8 @@ class Scanner {
  public:
   Scanner(std::string id,
           const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-          std::string requestor_string, ScannerMetrics* metrics);
+          std::string requestor_string, ScannerMetrics* metrics,
+          uint64_t row_format_flags);
   ~Scanner();
 
   // Attach an actual iterator and a ScanSpec to this Scanner.
@@ -272,6 +274,10 @@ class Scanner {
     already_reported_stats_ = stats;
   }
 
+  uint64_t row_format_flags() const {
+    return row_format_flags_;
+  }
+
  private:
   friend class ScannerManager;
 
@@ -322,6 +328,9 @@ class Scanner {
   // itself. This is _not_ used for row data, which is scoped to a single RPC
   // response.
   Arena arena_;
+
+  // The row format flags the client passed, if any.
+  const uint64_t row_format_flags_;
 
   DISALLOW_COPY_AND_ASSIGN(Scanner);
 };
