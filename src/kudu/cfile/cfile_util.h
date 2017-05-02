@@ -35,6 +35,16 @@ namespace cfile {
 class CFileReader;
 class CFileIterator;
 
+// Used to set the CFileFooterPB bitset tracking incompatible features
+enum IncompatibleFeatures {
+  NONE = 0,
+
+  // Write a crc32 checksum at the end of each cfile block
+  CHECKSUM = 1 << 0,
+
+  SUPPORTED = NONE | CHECKSUM
+};
+
 struct WriterOptions {
   // Approximate size of index blocks.
   //

@@ -28,16 +28,22 @@ Header
 ------
 
 <magic>: see below
-<header length>: 32-bit unsigned integer length delimiter
+<header length>: 32-bit unsigned integer length of the header protobuf
 <header>: CFileHeaderPB protobuf
+<checksum>: An optional Crc32 checksum of the magic, length, and protobuf
 
+Block
+-----
+<data>: see below
+<checksum>: An optional Crc32 checksum of the data
 
 Footer
 ------
 
+<checksum>: An optional Crc32 checksum of the protobuf, magic, and length
 <footer>: CFileFooterPB protobuf
 <magic>: see below
-<footer length> (length of protobuf)
+<footer length>: 32-bit unsigned integer length of the footer protobuf
 
 
 Magic strings
@@ -110,7 +116,7 @@ Each integer is relative to the min element in the header.
 
 ==============================
 
-Nullable Columns
+Nullable Columns:
 
 If a column is marked as nullable in the schema, a bitmap is used to keep track
 of the null and not null rows.
@@ -195,3 +201,18 @@ An index block is encoded similarly for both types of indexes:
 The trailer protobuf includes a field which designates whether the block
 is a leaf node or internal node of the B-Tree, allowing a reader to know
 whether the pointer is to another index block or to a data block.
+
+==============================
+
+Checksums:
+
+Checksums can be optionally written and verified.
+
+When checksums for the header, data, and footer are written in the CFile,
+the incompatible_features bitset in the CFile footer is used. A "checksum"
+bit is set to ensure the reader knows if checksums exist.
+
+When reading a CFile the footer should be read first to find if the
+file contains checksums. If the incompatible_features bitset indicates
+checksums exist, the reader can optionally validate them against the
+read data.

@@ -47,6 +47,8 @@ class CrcTest : public KuduTest {
 // Basic functionality test.
 TEST_F(CrcTest, TestCRC32C) {
   const string test_data("abcdefgh");
+  const uint64_t kExpectedCrc = 0xa9421b7; // Known value from crcutil usage test program.
+
   Crc* crc32c = GetCrc32cInstance();
   uint64_t data_crc = 0;
   crc32c->Compute(test_data.data(), test_data.length(), &data_crc);
@@ -55,7 +57,17 @@ TEST_F(CrcTest, TestCRC32C) {
   LOG(INFO) << "CRC32C of " << test_data << " is: 0x" << output << " (full 64 bits)";
   output = FastHex32ToBuffer(static_cast<uint32_t>(data_crc), buf);
   LOG(INFO) << "CRC32C of " << test_data << " is: 0x" << output << " (truncated 32 bits)";
-  ASSERT_EQ(0xa9421b7, data_crc); // Known value from crcutil usage test program.
+  ASSERT_EQ(kExpectedCrc, data_crc);
+
+  // Using helper
+  uint64_t data_crc2 = Crc32c(test_data.data(), test_data.length());
+  ASSERT_EQ(kExpectedCrc, data_crc2);
+
+  // Using multiple chunks
+  size_t half_length = test_data.length() / 2;
+  uint64_t data_crc3 = Crc32c(test_data.data(), half_length);
+  data_crc3 = Crc32c(test_data.data() + half_length, half_length, data_crc3);
+  ASSERT_EQ(kExpectedCrc, data_crc3);
 }
 
 // Simple benchmark of CRC32C throughput.

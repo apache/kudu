@@ -56,6 +56,7 @@ class IndexTreeBuilder;
 extern const char kMagicStringV1[];
 extern const char kMagicStringV2[];
 extern const int kMagicLength;
+extern const size_t kChecksumSize;
 
 class NullBitmapBuilder {
  public:

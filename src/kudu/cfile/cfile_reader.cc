@@ -35,6 +35,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/compression/compression_codec.h"
+#include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/malloc.h"
@@ -49,6 +50,10 @@
 DEFINE_bool(cfile_lazy_open, true,
             "Allow lazily opening of cfiles");
 TAG_FLAG(cfile_lazy_open, hidden);
+
+DEFINE_bool(cfile_verify_checksums, true,
+            "Verify the checksum for each block on read if one exists");
+TAG_FLAG(cfile_verify_checksums, evolving);
 
 using kudu::fs::ReadableBlock;
 using strings::Substitute;
@@ -129,30 +134,20 @@ Status CFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
-  TRACE_EVENT1("io", "CFileReader::ReadMagicAndLength",
-               "cfile", ToString());
-  uint8_t scratch[kMagicAndLengthSize];
-  Slice slice(scratch, kMagicAndLengthSize);
-
-  RETURN_NOT_OK(block_->Read(offset, &slice));
-
-  return ParseMagicAndLength(slice, &cfile_version_, len);
-}
-
 Status CFileReader::InitOnce() {
   VLOG(1) << "Initializing CFile with ID " << block_->id().ToString();
   TRACE_COUNTER_INCREMENT("cfile_init", 1);
 
-  RETURN_NOT_OK(ReadAndParseHeader());
-
+  // Parse Footer first to find unsupported features.
   RETURN_NOT_OK(ReadAndParseFooter());
 
-  if (PREDICT_FALSE(footer_->incompatible_features() != 0)) {
-    // Currently we do not support any incompatible features.
+  RETURN_NOT_OK(ReadAndParseHeader());
+
+  if (PREDICT_FALSE(footer_->incompatible_features() & ~IncompatibleFeatures::SUPPORTED)) {
     return Status::NotSupported(Substitute(
-        "cfile uses features from an incompatible version: $0",
-        footer_->incompatible_features()));
+        "cfile uses features from an incompatible bitset value $0 vs supported $1 ",
+        footer_->incompatible_features(),
+        IncompatibleFeatures::SUPPORTED));
   }
 
   type_info_ = GetTypeInfo(footer_->data_type());
@@ -184,15 +179,38 @@ Status CFileReader::ReadAndParseHeader() {
   // First read and parse the "pre-header", which lets us know
   // that it is indeed a CFile and tells us the length of the
   // proper protobuf header.
+  uint8_t mal_scratch[kMagicAndLengthSize];
+  Slice mal(mal_scratch, kMagicAndLengthSize);
+  RETURN_NOT_OK(block_->Read(0, &mal));
   uint32_t header_size;
-  RETURN_NOT_OK(ReadMagicAndLength(0, &header_size));
+  RETURN_NOT_OK(ParseMagicAndLength(mal, &cfile_version_, &header_size));
 
-  // Now read the protobuf header.
-  uint8_t header_space[header_size];
-  Slice header_slice(header_space, header_size);
+  // Quick check to ensure the header size is reasonable.
+  if (header_size >= file_size_ - kMagicAndLengthSize) {
+    return Status::Corruption("invalid header size");
+  }
+
+  // Setup the data slices.
+  uint64_t off = kMagicAndLengthSize;
+  uint8_t header_scratch[header_size];
+  Slice header(header_scratch, header_size);
+  uint8_t checksum_scratch[kChecksumSize];
+  Slice checksum(checksum_scratch, kChecksumSize);
+
+  // Read the header and checksum if needed.
+  vector<Slice> results = { header };
+  if (has_checksums() && FLAGS_cfile_verify_checksums) {
+    results.push_back(checksum);
+  }
+  RETURN_NOT_OK(block_->ReadV(off, &results));
+
+  if (has_checksums() && FLAGS_cfile_verify_checksums) {
+    RETURN_NOT_OK(VerifyChecksum({ mal, header }, checksum));
+  }
+
+  // Parse the protobuf header.
   header_.reset(new CFileHeaderPB());
-  RETURN_NOT_OK(block_->Read(kMagicAndLengthSize, &header_slice));
-  if (!header_->ParseFromArray(header_slice.data(), header_size)) {
+  if (!header_->ParseFromArray(header.data(), header.size())) {
     return Status::Corruption("Invalid cfile pb header");
   }
 
@@ -200,7 +218,6 @@ Status CFileReader::ReadAndParseHeader() {
 
   return Status::OK();
 }
-
 
 Status CFileReader::ReadAndParseFooter() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseFooter",
@@ -210,28 +227,70 @@ Status CFileReader::ReadAndParseFooter() {
     "file too short: " << file_size_;
 
   // First read and parse the "post-footer", which has magic
-  // and the length of the actual protobuf footer
+  // and the length of the actual protobuf footer.
+  uint8_t mal_scratch[kMagicAndLengthSize];
+  Slice mal(mal_scratch, kMagicAndLengthSize);
+  RETURN_NOT_OK(block_->Read(file_size_ - kMagicAndLengthSize, &mal));
   uint32_t footer_size;
-  RETURN_NOT_OK_PREPEND(ReadMagicAndLength(file_size_ - kMagicAndLengthSize, &footer_size),
-                        "Failed to read magic and length from end of file");
+  RETURN_NOT_OK(ParseMagicAndLength(mal, &cfile_version_, &footer_size));
 
-  // Now read the protobuf footer.
+  // Quick check to ensure the footer size is reasonable.
+  if (footer_size >= file_size_ - kMagicAndLengthSize) {
+    return Status::Corruption("invalid footer size");
+  }
+
+  uint8_t footer_scratch[footer_size];
+  Slice footer(footer_scratch, footer_size);
+
+  uint8_t checksum_scratch[kChecksumSize];
+  Slice checksum(checksum_scratch, kChecksumSize);
+
+  // Read both the header and checksum in one call.
+  // We read the checksum position in case one exists.
+  // This is done to avoid the need for a follow up read call.
+  vector<Slice> results = { checksum, footer };
+  uint64_t off = file_size_ - kMagicAndLengthSize - footer_size - kChecksumSize;
+  RETURN_NOT_OK(block_->ReadV(off, &results));
+
+  // Parse the protobuf footer.
+  // This needs to be done before validating the checksum since the
+  // incompatible_features flag tells us if a checksum exists at all.
   footer_.reset(new CFileFooterPB());
-  uint8_t footer_space[footer_size];
-  Slice footer_slice(footer_space, footer_size);
-  uint64_t off = file_size_ - kMagicAndLengthSize - footer_size;
-  RETURN_NOT_OK(block_->Read(off, &footer_slice));
-  if (!footer_->ParseFromArray(footer_slice.data(), footer_size)) {
+  if (!footer_->ParseFromArray(footer.data(), footer.size())) {
     return Status::Corruption("Invalid cfile pb footer");
   }
 
-  // Verify if the compression codec is available
+  // Verify the footer checksum if needed.
+  if (has_checksums() && FLAGS_cfile_verify_checksums) {
+    // If a checksum exists it was pre-read.
+    RETURN_NOT_OK(VerifyChecksum({ footer, mal }, checksum));
+  }
+
+  // Verify if the compression codec is available.
   if (footer_->compression() != NO_COMPRESSION) {
     RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec_));
   }
 
   VLOG(2) << "Read footer: " << SecureDebugString(*footer_);
 
+  return Status::OK();
+}
+
+bool CFileReader::has_checksums() const {
+  return footer_->incompatible_features() & IncompatibleFeatures::CHECKSUM;
+}
+
+Status CFileReader::VerifyChecksum(const std::vector<Slice>& data, const Slice& checksum) const {
+  uint32_t expected_checksum = DecodeFixed32(checksum.data());
+  uint32_t checksum_value = 0;
+  for (auto& d : data) {
+    checksum_value = crc::Crc32c(d.data(), d.size(), checksum_value);
+  }
+  if (PREDICT_FALSE(checksum_value != expected_checksum)) {
+    return Status::Corruption(
+        Substitute("Checksum does not match: $0 vs expected $1",
+                   checksum_value, expected_checksum));
+  }
   return Status::OK();
 }
 
@@ -351,21 +410,37 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   TRACE_COUNTER_INCREMENT("cfile_cache_miss", 1);
   TRACE_COUNTER_INCREMENT(CFILE_CACHE_MISS_BYTES_METRIC_NAME, ptr.size());
 
+  uint32_t data_size = ptr.size();
+  if (has_checksums()) {
+    if (kChecksumSize > data_size) {
+      return Status::Corruption("invalid data size");
+    }
+    data_size -= kChecksumSize;
+  }
+
   ScratchMemory scratch;
   // If we are reading uncompressed data and plan to cache the result,
   // then we should allocate our scratch memory directly from the cache.
   // This avoids an extra memory copy in the case of an NVM cache.
   if (codec_ == nullptr && cache_control == CACHE_BLOCK) {
-    scratch.TryAllocateFromCache(cache, key, ptr.size());
+    scratch.TryAllocateFromCache(cache, key, data_size);
   } else {
-    scratch.AllocateFromHeap(ptr.size());
+    scratch.AllocateFromHeap(data_size);
   }
   uint8_t* buf = scratch.get();
+  Slice block(buf, data_size);
+  uint8_t checksum_scratch[kChecksumSize];
+  Slice checksum(checksum_scratch, kChecksumSize);
 
-  Slice block(buf, ptr.size());
-  RETURN_NOT_OK(block_->Read(ptr.offset(), &block));
-  if (block.size() != ptr.size()) {
-    return Status::IOError("Could not read full block length");
+  // Read the data and checksum if needed.
+  vector<Slice> results = { block };
+  if (has_checksums() && FLAGS_cfile_verify_checksums) {
+    results.push_back(checksum);
+  }
+  RETURN_NOT_OK(block_->ReadV(ptr.offset(), &results));
+
+  if (has_checksums() && FLAGS_cfile_verify_checksums) {
+    RETURN_NOT_OK(VerifyChecksum({ block }, checksum));
   }
 
   // Decompress the block
@@ -375,7 +450,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     Status s = uncompressor.Init();
     if (!s.ok()) {
       LOG(WARNING) << "Unable to validate compressed block at "
-                   << ptr.offset() << " of size " << ptr.size() << ": "
+                   << ptr.offset() << " of size " << block.size() << ": "
                    << s.ToString();
       return s;
     }
@@ -392,7 +467,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     s = uncompressor.UncompressIntoBuffer(decompressed_scratch.get());
     if (!s.ok()) {
       LOG(WARNING) << "Unable to uncompress block at " << ptr.offset()
-                   << " of size " << ptr.size() << ": " << s.ToString();
+                   << " of size " <<  block.size() << ": " << s.ToString();
       return s;
     }
 

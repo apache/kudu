@@ -31,6 +31,7 @@
 #include "kudu/gutil/endian.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/compression/compression_codec.h"
+#include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/hexdump.h"
@@ -62,6 +63,10 @@ DEFINE_string(cfile_do_on_finish, "flush",
               "Possible values are 'close', 'flush', or 'nothing'.");
 TAG_FLAG(cfile_do_on_finish, experimental);
 
+DEFINE_bool(cfile_write_checksums, false,
+            "Write CRC32 checksums for each block");
+TAG_FLAG(cfile_write_checksums, evolving);
+
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::ScopedWritableBlockCloser;
 using kudu::fs::WritableBlock;
@@ -75,6 +80,7 @@ namespace cfile {
 const char kMagicStringV1[] = "kuducfil";
 const char kMagicStringV2[] = "kuducfl2";
 const int kMagicLength = 8;
+const size_t kChecksumSize = sizeof(uint32_t);
 
 static const size_t kMinBlockSize = 512;
 
@@ -167,14 +173,25 @@ Status CFileWriter::Start() {
 
   uint32_t pb_size = header.ByteSize();
 
-  faststring buf;
+  faststring header_str;
   // First the magic.
-  buf.append(kMagicStringV2);
+  header_str.append(kMagicStringV2);
   // Then Length-prefixed header.
-  PutFixed32(&buf, pb_size);
-  pb_util::AppendToString(header, &buf);
-  RETURN_NOT_OK_PREPEND(block_->Append(Slice(buf)), "Couldn't write header");
-  off_ += buf.size();
+  PutFixed32(&header_str, pb_size);
+  pb_util::AppendToString(header, &header_str);
+
+  vector<Slice> header_slices;
+  header_slices.push_back(Slice(header_str));
+
+  // Append header checksum.
+  uint8_t checksum_buf[kChecksumSize];
+  if (FLAGS_cfile_write_checksums) {
+    uint32_t header_checksum = crc::Crc32c(header_str.data(), header_str.size());
+    InlineEncodeFixed32(checksum_buf, header_checksum);
+    header_slices.push_back(Slice(checksum_buf, kChecksumSize));
+  }
+
+  RETURN_NOT_OK_PREPEND(WriteRawData(header_slices), "Couldn't write header");
 
   BlockBuilder *bb;
   RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&bb, &options_));
@@ -208,6 +225,11 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
 
   state_ = kWriterFinished;
 
+  uint32_t incompatible_features = 0;
+  if (FLAGS_cfile_write_checksums) {
+    incompatible_features |= IncompatibleFeatures::CHECKSUM;
+  }
+
   // Start preparing the footer.
   CFileFooterPB footer;
   footer.set_data_type(typeinfo_->type());
@@ -215,6 +237,7 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   footer.set_encoding(type_encoding_info_->encoding_type());
   footer.set_num_values(value_count_);
   footer.set_compression(compression_);
+  footer.set_incompatible_features(incompatible_features);
 
   // Write out any pending positional index blocks.
   if (options_.write_posidx) {
@@ -243,7 +266,17 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   footer_str.append(kMagicStringV2);
   PutFixed32(&footer_str, footer.GetCachedSize());
 
-  RETURN_NOT_OK(block_->Append(footer_str));
+  // Prepend the footer checksum.
+  vector<Slice> footer_slices;
+  uint8_t checksum_buf[kChecksumSize];
+  if (FLAGS_cfile_write_checksums) {
+    uint32_t footer_checksum = crc::Crc32c(footer_str.data(), footer_str.size());
+    InlineEncodeFixed32(checksum_buf, footer_checksum);
+    footer_slices.push_back(Slice(checksum_buf, kChecksumSize));
+  }
+
+  footer_slices.push_back(Slice(footer_str));
+  RETURN_NOT_OK_PREPEND(WriteRawData(footer_slices), "Couldn't write footer");
 
   // Done with this block.
   if (FLAGS_cfile_do_on_finish == "flush") {
@@ -463,6 +496,17 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
     out_slices = data_slices;
   }
 
+  // Calculate and append a data checksum.
+  uint8_t checksum_buf[kChecksumSize];
+  if (FLAGS_cfile_write_checksums) {
+    uint32_t checksum = 0;
+    for (const Slice &data : out_slices) {
+      checksum = crc::Crc32c(data.data(), data.size(), checksum);
+    }
+    InlineEncodeFixed32(checksum_buf, checksum);
+    out_slices.push_back(Slice(checksum_buf, kChecksumSize));
+  }
+
   RETURN_NOT_OK(WriteRawData(out_slices));
 
   uint64_t total_size = off_ - start_offset;
@@ -472,7 +516,6 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
           << " with " << total_size << " bytes at " << start_offset;
   return Status::OK();
 }
-
 
 Status CFileWriter::WriteRawData(const vector<Slice>& data) {
   size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),

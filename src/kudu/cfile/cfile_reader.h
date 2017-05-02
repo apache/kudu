@@ -168,6 +168,9 @@ class CFileReader {
     return BlockPointer(footer().validx_info().root_block());
   }
 
+  // Returns true if the file has checksums on the header, footer, and data blocks.
+  bool has_checksums() const;
+
   // Can be called before Init().
   std::string ToString() const { return block_->id().ToString(); }
 
@@ -181,9 +184,9 @@ class CFileReader {
   // Callback used in 'init_once_' to initialize this cfile.
   Status InitOnce();
 
-  Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
+  Status VerifyChecksum(const std::vector<Slice>& data, const Slice& checksum) const;
 
   // Returns the memory usage of the object including the object itself.
   size_t memory_footprint() const;

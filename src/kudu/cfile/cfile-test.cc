@@ -37,6 +37,8 @@
 
 DECLARE_string(block_cache_type);
 DECLARE_string(cfile_do_on_finish);
+DECLARE_bool(cfile_write_checksums);
+DECLARE_bool(cfile_verify_checksums);
 
 #if defined(__linux__)
 DECLARE_string(nvm_cache_path);
@@ -209,7 +211,6 @@ class TestCFile : public CFileTestBase {
     TimeSeekAndReadFileWithNulls(generator, block_id, n);
   }
 
-
   void TestReadWriteRawBlocks(CompressionType compression, int num_entries) {
     // Test Write
     unique_ptr<WritableBlock> sink;
@@ -219,6 +220,7 @@ class TestCFile : public CFileTestBase {
     opts.write_posidx = true;
     opts.write_validx = false;
     opts.storage_attributes.cfile_block_size = FLAGS_cfile_test_block_size;
+    opts.storage_attributes.compression = compression;
     opts.storage_attributes.encoding = PLAIN_ENCODING;
     CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
     ASSERT_OK(w.Start());
@@ -237,6 +239,13 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(fs_manager_->OpenBlock(id, &source));
     unique_ptr<CFileReader> reader;
     ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
+
+    ASSERT_EQ(reader->footer().compression(), compression);
+    if (FLAGS_cfile_write_checksums) {
+      ASSERT_TRUE(reader->footer().incompatible_features() & IncompatibleFeatures::CHECKSUM);
+    } else {
+      ASSERT_FALSE(reader->footer().incompatible_features() & IncompatibleFeatures::CHECKSUM);
+    }
 
     gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
@@ -310,6 +319,44 @@ class TestCFile : public CFileTestBase {
       ASSERT_EQ(num_rows, n);
       LOG(INFO) << "End readfile";
     }
+  }
+
+  Status CorruptAndReadBlock(const BlockId block_id, const uint64_t corrupt_offset,
+                             uint8_t flip_bit) {
+    // Read the input block
+    unique_ptr<ReadableBlock> source;
+    RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &source));
+    uint64_t file_size;
+    RETURN_NOT_OK(source->Size(&file_size));
+    uint8_t data_scratch[file_size];
+    Slice data(data_scratch, file_size);
+    RETURN_NOT_OK(source->Read(0, &data));
+
+    // Corrupt the data and write to a new block
+    uint8_t orig = data.data()[corrupt_offset];
+    uint8_t corrupt = orig ^ (static_cast<uint8_t>(1) << flip_bit);
+    data.mutable_data()[corrupt_offset] = corrupt;
+    unique_ptr<fs::WritableBlock> writer;
+    RETURN_NOT_OK(fs_manager_->CreateNewBlock(&writer));
+    RETURN_NOT_OK(writer->Append(data));
+    RETURN_NOT_OK(writer->Close());
+
+    // Open and read the corrupt block with the CFileReader
+    unique_ptr<ReadableBlock> corrupt_source;
+    RETURN_NOT_OK(fs_manager_->OpenBlock(writer->id(), &corrupt_source));
+    unique_ptr<CFileReader> reader;
+    RETURN_NOT_OK(CFileReader::Open(std::move(corrupt_source), ReaderOptions(), &reader));
+    gscoped_ptr<IndexTreeIterator> iter;
+    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
+    RETURN_NOT_OK(iter->SeekToFirst());
+
+    do {
+      BlockHandle dblk_data;
+      BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
+      RETURN_NOT_OK(reader->ReadBlock(blk_ptr, CFileReader::DONT_CACHE_BLOCK, &dblk_data));
+    } while (iter->Next().ok());
+
+    return Status::OK();
   }
 };
 
@@ -757,6 +804,53 @@ TEST_P(TestCFileBothCacheTypes, TestAppendRaw) {
   TestReadWriteRawBlocks(SNAPPY, 1000);
   TestReadWriteRawBlocks(LZ4, 1000);
   TestReadWriteRawBlocks(ZLIB, 1000);
+}
+
+TEST_P(TestCFileBothCacheTypes, TestChecksumFlags) {
+  for (bool write_checksums : {false, true}) {
+    for (bool verify_checksums : {false, true}) {
+      FLAGS_cfile_write_checksums = write_checksums;
+      FLAGS_cfile_verify_checksums = verify_checksums;
+      TestReadWriteRawBlocks(NO_COMPRESSION, 1000);
+      TestReadWriteRawBlocks(SNAPPY, 1000);
+    }
+  }
+}
+
+TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
+  FLAGS_cfile_write_checksums = true;
+  FLAGS_cfile_verify_checksums = true;
+
+  // Write some data
+  unique_ptr<WritableBlock> sink;
+  ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+  BlockId id = sink->id();
+  WriterOptions opts;
+  opts.write_posidx = true;
+  opts.write_validx = false;
+  opts.storage_attributes.cfile_block_size = FLAGS_cfile_test_block_size;
+  opts.storage_attributes.encoding = PLAIN_ENCODING;
+  CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
+  w.AddMetadataPair("header_key", "header_value");
+  ASSERT_OK(w.Start());
+  vector<Slice> slices;
+  slices.push_back(Slice("HelloWorld"));
+  ASSERT_OK(w.AppendRawBlock(slices, 1, nullptr, Slice(), "raw-data"));
+  ASSERT_OK(w.Finish());
+
+  // Get the final size of the data
+  unique_ptr<ReadableBlock> source;
+  ASSERT_OK(fs_manager_->OpenBlock(id, &source));
+  uint64_t file_size;
+  ASSERT_OK(source->Size(&file_size));
+
+  // Corrupt each bit and verify a corruption status is returned
+  for (size_t i = 0; i < file_size; i++) {
+    for (uint8_t flip = 0; flip < 8; flip++) {
+      Status s = CorruptAndReadBlock(id, i, flip);
+      ASSERT_TRUE(s.IsCorruption());
+    }
+  }
 }
 
 TEST_P(TestCFileBothCacheTypes, TestNullInts) {
