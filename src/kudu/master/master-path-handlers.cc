@@ -372,7 +372,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
     string reg_str = EscapeForHtmlToString(
         SecureShortDebugString(master.registration()));
     *output << Substitute(
-        "  <tr><td>$0</td><td>$1</td><td><code>$2</code></td></tr>\n",
+        "  <tr><td>$0</td><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
         uuid_text,
         master.has_role() ? RaftPeerPB_Role_Name(master.role()) : "N/A",
         reg_str);

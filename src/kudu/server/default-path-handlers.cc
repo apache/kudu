@@ -145,12 +145,19 @@ static void MemUsageHandler(const Webserver::WebRequest& req, std::ostringstream
 
 // Registered to handle "/mem-trackers", and prints out to handle memory tracker information.
 static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostringstream* output) {
+  int64_t current_consumption = process_memory::CurrentConsumption();
+  int64_t hard_limit = process_memory::HardLimit();
   *output << "<h1>Process memory usage</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << Substitute("  <tr><th>Total consumption</th><td>$0</td></tr>\n",
-                        HumanReadableNumBytes::ToString(process_memory::CurrentConsumption()));
+                        HumanReadableNumBytes::ToString(current_consumption));
   *output << Substitute("  <tr><th>Memory limit</th><td>$0</td></tr>\n",
-                        HumanReadableNumBytes::ToString(process_memory::HardLimit()));
+                        HumanReadableNumBytes::ToString(hard_limit));
+  if (hard_limit > 0) {
+    double percentage = 100 * static_cast<double>(current_consumption / hard_limit);
+    *output << Substitute("  <tr><th>Percentage consumed</th><td>$0%</td></tr>\n",
+                          StringPrintf("%.2f", percentage));
+  }
   *output << "</table>\n";
 #ifndef TCMALLOC_ENABLED
   *output << R"(
