@@ -327,11 +327,12 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   // handling split in the TS?
 
   RETURN_NOT_OK_PREPEND(tablet_replica_->Init(tablet,
-                                           scoped_refptr<server::Clock>(master_->clock()),
-                                           master_->messenger(),
-                                           scoped_refptr<rpc::ResultTracker>(),
-                                           log,
-                                           tablet->GetMetricEntity()),
+                                              scoped_refptr<server::Clock>(master_->clock()),
+                                              master_->messenger(),
+                                              scoped_refptr<rpc::ResultTracker>(),
+                                              log,
+                                              tablet->GetMetricEntity(),
+                                              master_->raft_pool()),
                         "Failed to Init() TabletReplica");
 
   RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info),

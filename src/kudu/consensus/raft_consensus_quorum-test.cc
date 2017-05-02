@@ -44,6 +44,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_bool(enable_leader_failure_detection);
@@ -97,6 +98,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;
     FLAGS_enable_leader_failure_detection = false;
+    CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
   }
 
 
@@ -153,22 +155,23 @@ class RaftConsensusQuorumTest : public KuduTest {
       CHECK_OK(GetRaftConfigMember(config_, peer_uuid, &local_peer_pb));
 
       scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
-      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
-                                                               logs_[i],
-                                                               time_manager,
-                                                               local_peer_pb,
-                                                               kTestTablet));
+      gscoped_ptr<PeerMessageQueue> queue(
+          new PeerMessageQueue(metric_entity_,
+                               logs_[i],
+                               time_manager,
+                               local_peer_pb,
+                               kTestTablet,
+                               raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
 
-      gscoped_ptr<ThreadPool> thread_pool;
-      CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options_.tablet_id.substr(0, 6)))
-               .Build(&thread_pool));
+      unique_ptr<ThreadPoolToken> pool_token(
+          raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT));
 
       gscoped_ptr<PeerManager> peer_manager(
           new PeerManager(options_.tablet_id,
                           config_.peers(i).permanent_uuid(),
                           proxy_factory,
                           queue.get(),
-                          thread_pool.get(),
+                          pool_token.get(),
                           logs_[i]));
 
       scoped_refptr<RaftConsensus> peer(
@@ -177,7 +180,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             gscoped_ptr<PeerProxyFactory>(proxy_factory),
                             std::move(queue),
                             std::move(peer_manager),
-                            std::move(thread_pool),
+                            std::move(pool_token),
                             metric_entity_,
                             config_.peers(i).permanent_uuid(),
                             time_manager,
@@ -557,6 +560,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   vector<shared_ptr<MemTracker> > parent_mem_trackers_;
   vector<FsManager*> fs_managers_;
   vector<scoped_refptr<Log> > logs_;
+  gscoped_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<TestPeerMapManager> peers_;
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;

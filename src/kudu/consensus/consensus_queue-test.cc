@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
+#include <memory>
+
 #include <gflags/gflags.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -34,6 +36,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 DECLARE_int32(consensus_max_batch_size_bytes);
 
@@ -69,6 +72,7 @@ class ConsensusQueueTest : public KuduTest {
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
 
+    ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
     CloseAndReopenQueue();
   }
 
@@ -80,7 +84,8 @@ class ConsensusQueueTest : public KuduTest {
                                       log_.get(),
                                       time_manager,
                                       FakeRaftPeerPB(kLeaderUuid),
-                                      kTestTablet));
+                                      kTestTablet,
+                                      raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -190,6 +195,7 @@ class ConsensusQueueTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<log::Log> log_;
+  gscoped_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
   scoped_refptr<server::Clock> clock_;

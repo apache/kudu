@@ -73,6 +73,7 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
+using std::unique_ptr;
 using strings::Substitute;
 
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
@@ -110,8 +111,10 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
                                    const scoped_refptr<log::Log>& log,
                                    scoped_refptr<TimeManager> time_manager,
                                    const RaftPeerPB& local_peer_pb,
-                                   const string& tablet_id)
-    : local_peer_pb_(local_peer_pb),
+                                   const string& tablet_id,
+                                   unique_ptr<ThreadPoolToken> raft_pool_observers_token)
+    : raft_pool_observers_token_(std::move(raft_pool_observers_token)),
+      local_peer_pb_(local_peer_pb),
       tablet_id_(tablet_id),
       log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id),
       metrics_(metric_entity),
@@ -127,7 +130,6 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   queue_state_.state = kQueueConstructed;
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = -1;
-  CHECK_OK(ThreadPoolBuilder("queue-observers-pool").set_max_threads(1).Build(&observers_pool_));
 }
 
 void PeerMessageQueue::Init(const OpId& last_locally_replicated,
@@ -920,7 +922,8 @@ void PeerMessageQueue::ClearUnlocked() {
 }
 
 void PeerMessageQueue::Close() {
-  observers_pool_->Shutdown();
+  raft_pool_observers_token_->Shutdown();
+
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   ClearUnlocked();
 }
@@ -976,7 +979,7 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
 }
 
 void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t new_commit_index) {
-  WARN_NOT_OK(observers_pool_->SubmitClosure(
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfCommitIndexChangeTask,
            Unretained(this), new_commit_index)),
               LogPrefixUnlocked() + "Unable to notify RaftConsensus of "
@@ -984,7 +987,7 @@ void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t new_commit_ind
 }
 
 void PeerMessageQueue::NotifyObserversOfTermChange(int64_t term) {
-  WARN_NOT_OK(observers_pool_->SubmitClosure(
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfTermChangeTask,
            Unretained(this), term)),
               LogPrefixUnlocked() + "Unable to notify RaftConsensus of term change.");
@@ -1016,7 +1019,7 @@ void PeerMessageQueue::NotifyObserversOfTermChangeTask(int64_t term) {
 void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
                                                        int64_t term,
                                                        const string& reason) {
-  WARN_NOT_OK(observers_pool_->SubmitClosure(
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfFailedFollowerTask,
            Unretained(this), uuid, term, reason)),
               LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");

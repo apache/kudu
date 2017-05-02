@@ -169,25 +169,36 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
     const shared_ptr<MemTracker>& parent_mem_tracker,
-    const Callback<void(const std::string& reason)>& mark_dirty_clbk) {
+    const Callback<void(const std::string& reason)>& mark_dirty_clbk,
+    ThreadPool* raft_pool) {
   gscoped_ptr<PeerProxyFactory> rpc_factory(new RpcPeerProxyFactory(messenger));
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
-  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
-                                                           log,
-                                                           time_manager,
-                                                           local_peer_pb,
-                                                           options.tablet_id));
-
-  gscoped_ptr<ThreadPool> thread_pool;
-  CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))
-           .set_trace_metric_prefix("raft")
-           .set_idle_timeout(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 2))
-           .Build(&thread_pool));
+  //
+  // Note: the message queue receives a dedicated Raft thread pool token so that
+  // its submissions don't block other submissions by RaftConsensus (such as
+  // heartbeat processing).
+  //
+  // TODO(adar): the token is SERIAL to match the previous single-thread
+  // observer pool behavior, but CONCURRENT may be safe here.
+  gscoped_ptr<PeerMessageQueue> queue(
+      new PeerMessageQueue(metric_entity,
+                           log,
+                           time_manager,
+                           local_peer_pb,
+                           options.tablet_id,
+                           raft_pool->NewToken(ThreadPool::ExecutionMode::SERIAL)));
 
   DCHECK(local_peer_pb.has_permanent_uuid());
   const string& peer_uuid = local_peer_pb.permanent_uuid();
+
+  // A single Raft thread pool token is shared between RaftConsensus and
+  // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
+  // raw pointer to the token, to emphasize that RaftConsensus is responsible
+  // for destroying the token.
+  unique_ptr<ThreadPoolToken> raft_pool_token(raft_pool->NewToken(
+      ThreadPool::ExecutionMode::CONCURRENT));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
@@ -196,7 +207,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                     peer_uuid,
                     rpc_factory.get(),
                     queue.get(),
-                    thread_pool.get(),
+                    raft_pool_token.get(),
                     log));
 
   return make_scoped_refptr(new RaftConsensus(
@@ -205,7 +216,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               std::move(rpc_factory),
                               std::move(queue),
                               std::move(peer_manager),
-                              std::move(thread_pool),
+                              std::move(raft_pool_token),
                               metric_entity,
                               peer_uuid,
                               std::move(time_manager),
@@ -221,7 +232,7 @@ RaftConsensus::RaftConsensus(
     gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
     gscoped_ptr<PeerMessageQueue> queue,
     gscoped_ptr<PeerManager> peer_manager,
-    gscoped_ptr<ThreadPool> thread_pool,
+    unique_ptr<ThreadPoolToken> raft_pool_token,
     const scoped_refptr<MetricEntity>& metric_entity,
     std::string peer_uuid,
     scoped_refptr<TimeManager> time_manager,
@@ -233,7 +244,7 @@ RaftConsensus::RaftConsensus(
       peer_uuid_(std::move(peer_uuid)),
       state_(kInitialized),
       cmeta_(DCHECK_NOTNULL(std::move(cmeta))),
-      thread_pool_(DCHECK_NOTNULL(std::move(thread_pool))),
+      raft_pool_token_(std::move(raft_pool_token)),
       log_(DCHECK_NOTNULL(log)),
       time_manager_(DCHECK_NOTNULL(std::move(time_manager))),
       peer_proxy_factory_(DCHECK_NOTNULL(std::move(peer_proxy_factory))),
@@ -756,8 +767,8 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
   }
 
   // Run config change on thread pool after dropping lock.
-  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::TryRemoveFollowerTask,
-                                               this, uuid, committed_config, reason)),
+  WARN_NOT_OK(raft_pool_token_->SubmitClosure(Bind(&RaftConsensus::TryRemoveFollowerTask,
+                                                   this, uuid, committed_config, reason)),
               LogPrefixThreadSafe() + "Unable to start RemoteFollowerTask");
 }
 
@@ -1806,7 +1817,7 @@ void RaftConsensus::Shutdown() {
   }
 
   // Shut down things that might acquire locks during destruction.
-  thread_pool_->Shutdown();
+  raft_pool_token_->Shutdown();
   failure_monitor_.Shutdown();
 
   shutdown_.Store(true, kMemOrderRelease);
@@ -2093,8 +2104,8 @@ void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult
   // The election callback runs on a reactor thread, so we need to defer to our
   // threadpool. If the threadpool is already shut down for some reason, it's OK --
   // we're OK with the callback never running.
-  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::DoElectionCallback,
-                                               this, reason, result)),
+  WARN_NOT_OK(raft_pool_token_->SubmitClosure(Bind(&RaftConsensus::DoElectionCallback,
+                                                   this, reason, result)),
               LogPrefixThreadSafe() + "Unable to run election callback");
 }
 
@@ -2240,7 +2251,7 @@ log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {
 }
 
 void RaftConsensus::MarkDirty(const std::string& reason) {
-  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(mark_dirty_clbk_, reason)),
+  WARN_NOT_OK(raft_pool_token_->SubmitClosure(Bind(mark_dirty_clbk_, reason)),
               LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
 }
 

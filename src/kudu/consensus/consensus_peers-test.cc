@@ -32,6 +32,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);
 
@@ -41,6 +42,7 @@ namespace consensus {
 using log::Log;
 using log::LogOptions;
 using std::shared_ptr;
+using std::unique_ptr;
 
 const char* kTabletId = "test-peers-tablet";
 const char* kLeaderUuid = "peer-0";
@@ -51,7 +53,8 @@ class ConsensusPeersTest : public KuduTest {
   ConsensusPeersTest()
     : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test")),
       schema_(GetSimpleTestSchema()) {
-    CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(1).Build(&pool_));
+    CHECK_OK(ThreadPoolBuilder("test-raft-pool").Build(&raft_pool_));
+    raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   }
 
   virtual void SetUp() OVERRIDE {
@@ -71,11 +74,13 @@ class ConsensusPeersTest : public KuduTest {
 
     scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
 
-    message_queue_.reset(new PeerMessageQueue(metric_entity_,
-                                              log_.get(),
-                                              time_manager,
-                                              FakeRaftPeerPB(kLeaderUuid),
-                                              kTabletId));
+    message_queue_.reset(new PeerMessageQueue(
+        metric_entity_,
+        log_.get(),
+        time_manager,
+        FakeRaftPeerPB(kLeaderUuid),
+        kTabletId,
+        raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -88,13 +93,13 @@ class ConsensusPeersTest : public KuduTest {
     RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
-        pool_.get(), new NoOpTestPeerProxy(pool_.get(), peer_pb));
+        raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb));
     gscoped_ptr<PeerProxy> proxy(proxy_ptr);
     CHECK_OK(Peer::NewRemotePeer(peer_pb,
                                  kTabletId,
                                  kLeaderUuid,
                                  message_queue_.get(),
-                                 pool_.get(),
+                                 raft_pool_token_.get(),
                                  std::move(proxy),
                                  peer));
     return proxy_ptr;
@@ -128,10 +133,11 @@ class ConsensusPeersTest : public KuduTest {
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
+  gscoped_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> message_queue_;
   const Schema schema_;
   LogOptions options_;
-  gscoped_ptr<ThreadPool> pool_;
+  unique_ptr<ThreadPoolToken> raft_pool_token_;
   scoped_refptr<server::Clock> clock_;
 };
 
@@ -232,13 +238,13 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
-  auto mock_proxy = new MockedPeerProxy(pool_.get());
+  auto mock_proxy = new MockedPeerProxy(raft_pool_.get());
   shared_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,
                                 kLeaderUuid,
                                 message_queue_.get(),
-                                pool_.get(),
+                                raft_pool_token_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
                                 &peer));
 
@@ -270,13 +276,13 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 kMinimumTerm,
                                 BuildRaftConfigPBForTests(3));
 
-  auto mock_proxy = new MockedPeerProxy(pool_.get());
+  auto mock_proxy = new MockedPeerProxy(raft_pool_.get());
   shared_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,
                                 kLeaderUuid,
                                 message_queue_.get(),
-                                pool_.get(),
+                                raft_pool_token_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
                                 &peer));
 

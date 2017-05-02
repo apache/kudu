@@ -36,22 +36,22 @@
 #include "kudu/util/semaphore.h"
 
 namespace kudu {
+class MaintenanceManager;
+class MaintenanceOp;
+class ThreadPool;
 
 namespace log {
 class LogAnchorRegistry;
-}
+} // namespace log
 
 namespace rpc {
 class Messenger;
 class ResultTracker;
-}
+} // namespace rpc
 
 namespace tserver {
 class CatchUpServiceTest;
-}
-
-class MaintenanceManager;
-class MaintenanceOp;
+} // namespace tserver
 
 namespace tablet {
 class LeaderTransactionDriver;
@@ -79,7 +79,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
               const std::shared_ptr<rpc::Messenger>& messenger,
               const scoped_refptr<rpc::ResultTracker>& result_tracker,
               const scoped_refptr<log::Log>& log,
-              const scoped_refptr<MetricEntity>& metric_entity);
+              const scoped_refptr<MetricEntity>& metric_entity,
+              ThreadPool* raft_pool);
 
   // Starts the TabletReplica, making it available for Write()s. If this
   // TabletReplica is part of a consensus configuration this will connect it to other replicas

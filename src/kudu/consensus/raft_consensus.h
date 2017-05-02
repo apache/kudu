@@ -41,8 +41,9 @@ class Counter;
 class FailureDetector;
 class HostPort;
 class MonoDelta;
-class Status;
 class ThreadPool;
+class ThreadPoolToken;
+class Status;
 
 namespace log {
 class Log;
@@ -127,14 +128,15 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
     const std::shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
     const std::shared_ptr<MemTracker>& parent_mem_tracker,
-    const Callback<void(const std::string& reason)>& mark_dirty_clbk);
+    const Callback<void(const std::string& reason)>& mark_dirty_clbk,
+    ThreadPool* raft_pool);
 
   RaftConsensus(ConsensusOptions options,
                 std::unique_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
                 gscoped_ptr<PeerManager> peer_manager,
-                gscoped_ptr<ThreadPool> thread_pool,
+                std::unique_ptr<ThreadPoolToken> raft_pool_token,
                 const scoped_refptr<MetricEntity>& metric_entity,
                 std::string peer_uuid,
                 scoped_refptr<TimeManager> time_manager,
@@ -731,9 +733,8 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Consensus metadata persistence object.
   std::unique_ptr<ConsensusMetadata> cmeta_;
 
-  // Threadpool for constructing requests to peers, handling RPC callbacks,
-  // etc.
-  gscoped_ptr<ThreadPool> thread_pool_;
+  // Threadpool token for constructing requests to peers, handling RPC callbacks, etc.
+  std::unique_ptr<ThreadPoolToken> raft_pool_token_;
 
   scoped_refptr<log::Log> log_;
   scoped_refptr<TimeManager> time_manager_;

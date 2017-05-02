@@ -128,7 +128,8 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
                            const shared_ptr<Messenger>& messenger,
                            const scoped_refptr<ResultTracker>& result_tracker,
                            const scoped_refptr<Log>& log,
-                           const scoped_refptr<MetricEntity>& metric_entity) {
+                           const scoped_refptr<MetricEntity>& metric_entity,
+                           ThreadPool* raft_pool) {
 
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
@@ -171,7 +172,8 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
                                        messenger_,
                                        log_.get(),
                                        tablet_->mem_tracker(),
-                                       mark_dirty_clbk_);
+                                       mark_dirty_clbk_,
+                                       raft_pool);
   }
 
   if (tablet_->metrics() != nullptr) {

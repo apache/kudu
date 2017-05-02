@@ -18,13 +18,15 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
-#include <boost/optional.hpp>
 #include <iosfwd>
 #include <map>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/optional.hpp>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_cache.h"
@@ -41,7 +43,7 @@ template<class T>
 class AtomicGauge;
 class MemTracker;
 class MetricEntity;
-class ThreadPool;
+class ThreadPoolToken;
 
 namespace log {
 class Log;
@@ -135,7 +137,8 @@ class PeerMessageQueue {
                    const scoped_refptr<log::Log>& log,
                    scoped_refptr<TimeManager> time_manager,
                    const RaftPeerPB& local_peer_pb,
-                   const std::string& tablet_id);
+                   const std::string& tablet_id,
+                   std::unique_ptr<ThreadPoolToken> raft_pool_observers_token);
 
   // Initialize the queue.
   void Init(const OpId& last_locally_replicated,
@@ -428,9 +431,8 @@ class PeerMessageQueue {
 
   std::vector<PeerMessageQueueObserver*> observers_;
 
-  // The pool which executes observer notifications.
-  // TODO consider reusing a another pool.
-  gscoped_ptr<ThreadPool> observers_pool_;
+  // The pool token which executes observer notifications.
+  std::unique_ptr<ThreadPoolToken> raft_pool_observers_token_;
 
   // PB containing identifying information about the local peer.
   const RaftPeerPB local_peer_pb_;

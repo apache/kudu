@@ -84,7 +84,7 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
                            const string& tablet_id,
                            const string& leader_uuid,
                            PeerMessageQueue* queue,
-                           ThreadPool* thread_pool,
+                           ThreadPoolToken* raft_pool_token,
                            gscoped_ptr<PeerProxy> proxy,
                            shared_ptr<Peer>* peer) {
 
@@ -93,7 +93,7 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
                                      leader_uuid,
                                      std::move(proxy),
                                      queue,
-                                     thread_pool));
+                                     raft_pool_token));
   RETURN_NOT_OK(new_peer->Init());
   *peer = std::move(new_peer);
   return Status::OK();
@@ -101,7 +101,7 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
 
 Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
            gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
-           ThreadPool* thread_pool)
+           ThreadPoolToken* raft_pool_token)
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
       peer_pb_(peer_pb),
@@ -112,7 +112,7 @@ Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
           peer_pb.permanent_uuid(),
           MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
           boost::bind(&Peer::SignalRequest, this, true)),
-      thread_pool_(thread_pool) {
+      raft_pool_token_(raft_pool_token) {
 }
 
 Status Peer::Init() {
@@ -128,10 +128,11 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   if (PREDICT_FALSE(closed_)) {
     return Status::IllegalState("Peer was closed.");
   }
+
   // Capture a shared_ptr reference into the submitted functor so that we're
   // guaranteed that this object outlives the functor.
   shared_ptr<Peer> s_this = shared_from_this();
-  RETURN_NOT_OK(thread_pool_->SubmitFunc([even_if_queue_empty, s_this]() {
+  RETURN_NOT_OK(raft_pool_token_->SubmitFunc([even_if_queue_empty, s_this]() {
         s_this->SendNextRequest(even_if_queue_empty);
       }));
   return Status::OK();
@@ -285,9 +286,9 @@ void Peer::ProcessResponse() {
   // Capture a shared_ptr reference into the submitted functor so that we're
   // guaranteed that this object outlives the functor.
   shared_ptr<Peer> s_this = shared_from_this();
-  Status s = thread_pool_->SubmitFunc([s_this]() {
-      s_this->DoProcessResponse();
-    });
+  Status s = raft_pool_token_->SubmitFunc([s_this]() {
+    s_this->DoProcessResponse();
+  });
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
         << ": " << SecureShortDebugString(response_);

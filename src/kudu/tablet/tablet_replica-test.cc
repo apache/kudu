@@ -92,6 +92,7 @@ class TabletReplicaTest : public KuduTabletTest {
     KuduTabletTest::SetUp();
 
     ASSERT_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
+    ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
 
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_OK(builder.Build(&messenger_));
@@ -136,11 +137,12 @@ class TabletReplicaTest : public KuduTabletTest {
 
     tablet_replica_->SetBootstrapping();
     ASSERT_OK(tablet_replica_->Init(tablet(),
-                                 clock(),
-                                 messenger_,
-                                 scoped_refptr<rpc::ResultTracker>(),
-                                 log,
-                                 metric_entity_));
+                                    clock(),
+                                    messenger_,
+                                    scoped_refptr<rpc::ResultTracker>(),
+                                    log,
+                                    metric_entity_,
+                                    raft_pool_.get()));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
@@ -265,6 +267,7 @@ class TabletReplicaTest : public KuduTabletTest {
   shared_ptr<Messenger> messenger_;
   scoped_refptr<TabletReplica> tablet_replica_;
   gscoped_ptr<ThreadPool> apply_pool_;
+  gscoped_ptr<ThreadPool> raft_pool_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().

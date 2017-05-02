@@ -35,7 +35,7 @@
 
 namespace kudu {
 class HostPort;
-class ThreadPool;
+class ThreadPoolToken;
 
 namespace log {
 class Log;
@@ -72,7 +72,7 @@ class VoteResponsePB;
 // The actual request construction is delegated to a PeerMessageQueue
 // object, and performed on a thread pool (since it may do IO). When a
 // response is received, the peer updates the PeerMessageQueue
-// using PeerMessageQueue::ResponseFromPeer(...) on the same threadpool.
+// using PeerMessageQueue::ResponseFromPeer(...) on the same thread pool.
 class Peer : public std::enable_shared_from_this<Peer> {
  public:
   // Initializes a peer and start sending periodic heartbeats.
@@ -92,9 +92,9 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // However, when they do finish, the results will be disregarded, so this
   // is safe to call at any point.
   //
-  // This method must be called before the Peer's associated ThreadPool
+  // This method must be called before the Peer's associated ThreadPoolToken
   // is destructed. Once this method returns, it is safe to destruct
-  // the ThreadPool.
+  // the ThreadPoolToken.
   void Close();
 
   ~Peer();
@@ -102,31 +102,32 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // Creates a new remote peer and makes the queue track it.'
   //
   // Requests to this peer (which may end up doing IO to read non-cached
-  // log entries) are assembled on 'thread_pool'.
+  // log entries) are assembled on 'raft_pool_token'.
   // Response handling may also involve IO related to log-entry lookups and is
-  // also done on 'thread_pool'.
+  // also done on 'raft_pool_token'.
   static Status NewRemotePeer(const RaftPeerPB& peer_pb,
                               const std::string& tablet_id,
                               const std::string& leader_uuid,
                               PeerMessageQueue* queue,
-                              ThreadPool* thread_pool,
+                              ThreadPoolToken* raft_pool_token,
                               gscoped_ptr<PeerProxy> proxy,
                               std::shared_ptr<Peer>* peer);
 
  private:
   Peer(const RaftPeerPB& peer_pb, std::string tablet_id, std::string leader_uuid,
        gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
-       ThreadPool* thread_pool);
+       ThreadPoolToken* raft_pool_token);
 
   void SendNextRequest(bool even_if_queue_empty);
 
   // Signals that a response was received from the peer.
+  //
   // This method is called from the reactor thread and calls
-  // DoProcessResponse() on thread_pool_ to do any work that requires IO or
+  // DoProcessResponse() on raft_pool_token_ to do any work that requires IO or
   // lock-taking.
   void ProcessResponse();
 
-  // Run on 'thread_pool'. Does response handling that requires IO or may block.
+  // Run on 'raft_pool_token'. Does response handling that requires IO or may block.
   void DoProcessResponse();
 
   // Fetch the desired tablet copy request from the queue and set up
@@ -178,8 +179,10 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // without sending actual data.
   ResettableHeartbeater heartbeater_;
 
-  // Thread pool used to construct requests to this peer.
-  ThreadPool* thread_pool_;
+  // Thread pool token used to construct requests to this peer.
+  //
+  // RaftConsensus owns this shared token and is responsible for destroying it.
+  ThreadPoolToken* raft_pool_token_;
 
   // lock that protects Peer state changes, initialization, etc.
   mutable simple_spinlock peer_lock_;

@@ -74,6 +74,7 @@ class TabletCopyTest : public KuduTabletTest {
     : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
                               ColumnSchema("val", INT32) }, 1)) {
     CHECK_OK(ThreadPoolBuilder("test-exec").Build(&apply_pool_));
+    CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
   }
 
   virtual void SetUp() OVERRIDE {
@@ -131,11 +132,12 @@ class TabletCopyTest : public KuduTabletTest {
     log_anchor_registry_.reset(new LogAnchorRegistry());
     tablet_replica_->SetBootstrapping();
     ASSERT_OK(tablet_replica_->Init(tablet(),
-                                 clock(),
-                                 messenger,
-                                 scoped_refptr<rpc::ResultTracker>(),
-                                 log,
-                                 metric_entity));
+                                    clock(),
+                                    messenger,
+                                    scoped_refptr<rpc::ResultTracker>(),
+                                    log,
+                                    metric_entity,
+                                    raft_pool_.get()));
     consensus::ConsensusBootstrapInfo boot_info;
     ASSERT_OK(tablet_replica_->Start(boot_info));
     ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
@@ -214,6 +216,7 @@ class TabletCopyTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<ThreadPool> apply_pool_;
+  gscoped_ptr<ThreadPool> raft_pool_;
   scoped_refptr<TabletReplica> tablet_replica_;
   scoped_refptr<TabletCopySourceSession> session_;
 };

@@ -17,18 +17,19 @@
 #ifndef KUDU_CONSENSUS_PEER_MANAGER_H
 #define KUDU_CONSENSUS_PEER_MANAGER_H
 
+#include <memory>
+#include <string>
+#include <unordered_map>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
-#include <string>
-#include <unordered_map>
-
 namespace kudu {
 
-class ThreadPool;
+class ThreadPoolToken;
 
 namespace log {
 class Log;
@@ -47,14 +48,11 @@ class PeerManager {
  public:
   // All of the raw pointer arguments are not owned by the PeerManager
   // and must live at least as long as the PeerManager.
-  //
-  // 'request_thread_pool' is the pool used to construct requests to send
-  // to the peers.
   PeerManager(std::string tablet_id,
               std::string local_uuid,
               PeerProxyFactory* peer_proxy_factory,
               PeerMessageQueue* queue,
-              ThreadPool* request_thread_pool,
+              ThreadPoolToken* raft_pool_token,
               const scoped_refptr<log::Log>& log);
 
   ~PeerManager();
@@ -76,7 +74,7 @@ class PeerManager {
   const std::string local_uuid_;
   PeerProxyFactory* peer_proxy_factory_;
   PeerMessageQueue* queue_;
-  ThreadPool* thread_pool_;
+  ThreadPoolToken* raft_pool_token_;
   scoped_refptr<log::Log> log_;
   PeersMap peers_;
   mutable simple_spinlock lock_;
