@@ -34,6 +34,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              @transient val projectedCols: Array[String],
                              @transient val predicates: Array[client.KuduPredicate],
                              @transient val table: KuduTable,
+                             @transient val isFaultTolerant: Boolean,
                              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
@@ -41,6 +42,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              .newScanTokenBuilder(table)
                              .batchSizeBytes(batchSize)
                              .setProjectedColumnNames(projectedCols.toSeq.asJava)
+                             .setFaultTolerant(isFaultTolerant)
                              .cacheBlocks(true)
 
     for (predicate <- predicates) {

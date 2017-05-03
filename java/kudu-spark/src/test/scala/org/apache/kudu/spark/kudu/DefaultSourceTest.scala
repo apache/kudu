@@ -66,7 +66,6 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
   var kuduOptions : Map[String, String] = _
 
   before {
-    val rowCount = 10
     rows = insertRows(rowCount)
 
     sqlContext = new SQLContext(sc)
@@ -200,8 +199,23 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
 
   }
 
-  test("table scan") {
+  test("table non fault tolerant scan") {
     val results = sqlContext.sql(s"SELECT * FROM $tableName").collectAsList()
+    assert(results.size() == rowCount)
+
+    assert(!results.get(0).isNullAt(2))
+    assert(results.get(1).isNullAt(2))
+  }
+
+  test("table fault tolerant scan") {
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.faultTolerantScan" -> "true")
+
+    val table = "faultTolerantScanTest"
+    sqlContext.read.options(kuduOptions).kudu.registerTempTable(table)
+    val results = sqlContext.sql(s"SELECT * FROM $table").collectAsList()
     assert(results.size() == rowCount)
 
     assert(!results.get(0).isNullAt(2))

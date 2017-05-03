@@ -20,6 +20,8 @@ package org.apache.kudu.spark.kudu
 import java.sql.Timestamp
 
 import scala.collection.JavaConverters._
+import scala.util.Try
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
@@ -45,6 +47,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   val TABLE_KEY = "kudu.table"
   val KUDU_MASTER = "kudu.master"
   val OPERATION = "kudu.operation"
+  val FAULT_TOLERANT_SCANNER = "kudu.faultTolerantScan"
 
   /**
     * Construct a BaseRelation using the provided context and parameters.
@@ -61,8 +64,11 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
         s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
+    val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
+      .getOrElse(false)
 
-    new KuduRelation(tableName, kuduMaster, operationType, None)(sqlContext)
+    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType,
+      None)(sqlContext)
   }
 
   /**
@@ -70,7 +76,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     *
     * @param sqlContext
     * @param mode Only Append mode is supported. It will upsert or insert data
-    *             to an existing table, depending on the upsert parameter.
+    *             to an existing table, depending on the upsert parameter
     * @param parameters Necessary parameters for kudu.table and kudu.master
     * @param data Dataframe to save into kudu
     * @return returns populated base relation
@@ -93,8 +99,11 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
         s"using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
+    val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
+      .getOrElse(false)
 
-    new KuduRelation(tableName, kuduMaster, operationType, Some(schema))(sqlContext)
+    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType,
+      Some(schema))(sqlContext)
   }
 
   private def getOperationType(opParam: String): OperationType = {
@@ -114,6 +123,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   *
   * @param tableName Kudu table that we plan to read from
   * @param masterAddrs Kudu master addresses
+  * @param faultTolerantScanner scanner type to be used. Fault tolerant if true,
+  *                             otherwise, use non fault tolerant one
   * @param operationType The default operation type to perform when writing to the relation
   * @param userSchema A schema used to select columns for the relation
   * @param sqlContext SparkSQL context
@@ -121,6 +132,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
 @InterfaceStability.Unstable
 class KuduRelation(private val tableName: String,
                    private val masterAddrs: String,
+                   private val faultTolerantScanner: Boolean,
                    private val operationType: OperationType,
                    private val userSchema: Option[StructType])(
                    val sqlContext: SQLContext)
@@ -168,7 +180,7 @@ class KuduRelation(private val tableName: String,
   override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val predicates = filters.flatMap(filterToPredicate)
     new KuduRDD(context, 1024 * 1024 * 20, requiredColumns, predicates,
-                table, sqlContext.sparkContext)
+                table, faultTolerantScanner, sqlContext.sparkContext)
   }
 
   /**

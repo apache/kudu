@@ -82,14 +82,15 @@ class KuduContext(val kuduMaster: String,
     * @param tableName          table to read from
     * @param columnProjection   list of columns to read. Not specifying this at all
     *                           (i.e. setting to null) or setting to the special
-    *                           string '*' means to project all columns.
+    *                           string '*' means to project all columns
     * @return a new RDD that maps over the given table for the selected columns
     */
   def kuduRDD(sc: SparkContext,
               tableName: String,
               columnProjection: Seq[String] = Nil): RDD[Row] = {
+    // TODO: provide an elegant way to pass various options (faultTolerantScan, etc) to KuduRDD
     new KuduRDD(this, 1024*1024*20, columnProjection.toArray, Array(),
-                syncClient.openTable(tableName), sc)
+                syncClient.openTable(tableName), false, sc)
   }
 
   /**
