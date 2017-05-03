@@ -387,7 +387,7 @@ class RaftConsensus : public Consensus,
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term,
                                    ReplicaState::FlushToDisk flush = ReplicaState::FLUSH_TO_DISK);
 
-  // Asynchronously (on thread_pool_) notify the tablet peer that the consensus configuration
+  // Asynchronously (on thread_pool_) notify the TabletReplica that the consensus configuration
   // has changed, thus reporting it back to the master.
   void MarkDirty(const std::string& reason);
 

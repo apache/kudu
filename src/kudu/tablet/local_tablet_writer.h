@@ -32,7 +32,7 @@ namespace kudu {
 namespace tablet {
 
 // Helper class to write directly into a local tablet, without going
-// through TabletPeer, consensus, etc.
+// through TabletReplica, consensus, etc.
 //
 // This is useful for unit-testing the Tablet code paths with no consensus
 // implementation or thread pools.

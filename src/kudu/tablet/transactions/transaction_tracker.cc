@@ -23,7 +23,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -97,12 +97,12 @@ Status TransactionTracker::Add(TransactionDriver* driver) {
     }
 
     // May be null in unit tests.
-    TabletPeer* peer = driver->state()->tablet_peer();
+    TabletReplica* replica = driver->state()->tablet_replica();
 
     string msg = Substitute(
         "Transaction failed, tablet $0 transaction memory consumption ($1) "
         "has exceeded its limit ($2) or the limit of an ancestral tracker",
-        peer ? peer->tablet()->tablet_id() : "(unknown)",
+        replica ? replica->tablet()->tablet_id() : "(unknown)",
         mem_tracker_->consumption(), mem_tracker_->limit());
 
     KLOG_EVERY_N_SECS(WARNING, 1) << msg << THROTTLE_MSG;

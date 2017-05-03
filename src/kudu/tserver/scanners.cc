@@ -49,7 +49,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 
 namespace tserver {
 
@@ -106,7 +106,7 @@ ScannerManager::ScannerMapStripe& ScannerManager::GetStripeByScannerId(const str
   return *scanner_maps_[slot];
 }
 
-void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
+void ScannerManager::NewScanner(const scoped_refptr<TabletReplica>& tablet_replica,
                                 const std::string& requestor_string,
                                 uint64 row_format_flags,
                                 SharedScanner* scanner) {
@@ -119,7 +119,7 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
     // verify that the requestor userid does not change mid-scan.
     string id = oid_generator_.Next();
     scanner->reset(new Scanner(id,
-                               tablet_peer,
+                               tablet_replica,
                                requestor_string,
                                metrics_.get(),
                                row_format_flags));
@@ -192,11 +192,11 @@ void ScannerManager::RemoveExpiredScanners() {
 
 const std::string Scanner::kNullTabletId = "null tablet";
 
-Scanner::Scanner(string id, const scoped_refptr<TabletPeer>& tablet_peer,
+Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
                  string requestor_string, ScannerMetrics* metrics,
                  uint64_t row_format_flags)
     : id_(std::move(id)),
-      tablet_peer_(tablet_peer),
+      tablet_replica_(tablet_replica),
       requestor_string_(std::move(requestor_string)),
       call_seq_id_(0),
       start_time_(MonoTime::Now()),

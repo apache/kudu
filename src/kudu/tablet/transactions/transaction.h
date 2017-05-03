@@ -37,7 +37,7 @@ class ResultTracker;
 } // namespace rpc
 
 namespace tablet {
-class TabletPeer;
+class TabletReplica;
 class TransactionCompletionCallback;
 class TransactionState;
 
@@ -169,8 +169,8 @@ class TransactionState {
     return consensus_round_.get();
   }
 
-  TabletPeer* tablet_peer() const {
-    return tablet_peer_;
+  TabletReplica* tablet_replica() const {
+    return tablet_replica_;
   }
 
   // Return metrics related to this transaction.
@@ -257,13 +257,13 @@ class TransactionState {
   }
 
  protected:
-  explicit TransactionState(TabletPeer* tablet_peer);
+  explicit TransactionState(TabletReplica* tablet_replica);
   virtual ~TransactionState();
 
   TransactionMetrics tx_metrics_;
 
-  // The tablet peer that is coordinating this transaction.
-  TabletPeer* const tablet_peer_;
+  // The TabletReplica that is coordinating this transaction.
+  TabletReplica* const tablet_replica_;
 
   // The result tracker that will cache the result of this transaction.
   scoped_refptr<rpc::ResultTracker> result_tracker_;

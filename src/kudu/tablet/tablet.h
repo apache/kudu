@@ -395,7 +395,7 @@ class Tablet {
 
  private:
   friend class Iterator;
-  friend class TabletPeerTest;
+  friend class TabletReplicaTest;
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
 
   Status FlushUnlocked();

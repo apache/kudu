@@ -41,7 +41,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -325,10 +325,10 @@ void FullStackInsertScanTest::FlushToDisk() {
     tserver::TabletServer* ts = cluster_->mini_tablet_server(i)->server();
     ts->maintenance_manager()->Shutdown();
     tserver::TSTabletManager* tm = ts->tablet_manager();
-    vector<scoped_refptr<TabletPeer> > peers;
-    tm->GetTabletPeers(&peers);
-    for (const scoped_refptr<TabletPeer>& peer : peers) {
-      Tablet* tablet = peer->tablet();
+    vector<scoped_refptr<TabletReplica> > replicas;
+    tm->GetTabletReplicas(&replicas);
+    for (const scoped_refptr<TabletReplica>& replica : replicas) {
+      Tablet* tablet = replica->tablet();
       if (!tablet->MemRowSetEmpty()) {
         ASSERT_OK(tablet->Flush());
       }

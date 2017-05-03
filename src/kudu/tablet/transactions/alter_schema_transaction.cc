@@ -23,7 +23,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
@@ -86,7 +86,7 @@ Status AlterSchemaTransaction::Prepare() {
     return s;
   }
 
-  Tablet* tablet = state_->tablet_peer()->tablet();
+  Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->CreatePreparedAlterSchema(state(), schema.get()));
 
   state_->AddToAutoReleasePool(schema.release());
@@ -106,15 +106,15 @@ Status AlterSchemaTransaction::Start() {
 Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE("APPLY ALTER-SCHEMA: Starting");
 
-  Tablet* tablet = state_->tablet_peer()->tablet();
+  Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
-  state_->tablet_peer()->log()
+  state_->tablet_replica()->log()
     ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
                                                  state_->schema_version());
 
   // Altered tablets should be included in the next tserver heartbeat so that
   // clients waiting on IsAlterTableDone() are unblocked promptly.
-  state_->tablet_peer()->MarkTabletDirty("Alter schema finished");
+  state_->tablet_replica()->MarkTabletDirty("Alter schema finished");
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);

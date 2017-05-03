@@ -27,7 +27,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/pb_util.h"
@@ -50,12 +50,12 @@ using std::shared_ptr;
 using std::unique_ptr;
 using strings::Substitute;
 using tablet::TabletMetadata;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 
 TabletCopySourceSession::TabletCopySourceSession(
-    const scoped_refptr<TabletPeer>& tablet_peer, std::string session_id,
+    const scoped_refptr<TabletReplica>& tablet_replica, std::string session_id,
     std::string requestor_uuid, FsManager* fs_manager)
-    : tablet_peer_(tablet_peer),
+    : tablet_replica_(tablet_replica),
       session_id_(std::move(session_id)),
       requestor_uuid_(std::move(requestor_uuid)),
       fs_manager_(fs_manager),
@@ -71,17 +71,17 @@ Status TabletCopySourceSession::Init() {
   MutexLock l(session_lock_);
   CHECK(!initted_);
 
-  RETURN_NOT_OK(tablet_peer_->CheckRunning());
+  RETURN_NOT_OK(tablet_replica_->CheckRunning());
 
-  const string& tablet_id = tablet_peer_->tablet_id();
+  const string& tablet_id = tablet_replica_->tablet_id();
 
   // Prevent log GC while we grab log segments and Tablet metadata.
   string anchor_owner_token = Substitute("TabletCopy-$0", session_id_);
-  tablet_peer_->log_anchor_registry()->Register(
+  tablet_replica_->log_anchor_registry()->Register(
       MinimumOpId().index(), anchor_owner_token, &log_anchor_);
 
   // Read the SuperBlock from disk.
-  const scoped_refptr<TabletMetadata>& metadata = tablet_peer_->tablet_metadata();
+  const scoped_refptr<TabletMetadata>& metadata = tablet_replica_->tablet_metadata();
   RETURN_NOT_OK_PREPEND(metadata->ReadSuperBlockFromDisk(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0",
                                    tablet_id));
@@ -98,14 +98,14 @@ Status TabletCopySourceSession::Init() {
 
   // Get the latest opid in the log at this point in time so we can re-anchor.
   OpId last_logged_opid;
-  CHECK_NOTNULL(tablet_peer_->log())->GetLatestEntryOpId(&last_logged_opid);
+  CHECK_NOTNULL(tablet_replica_->log())->GetLatestEntryOpId(&last_logged_opid);
 
   // Get the current segments from the log, including the active segment.
   // The Log doesn't add the active segment to the log reader's list until
   // a header has been written to it (but it will not have a footer).
-  shared_ptr<log::LogReader> reader = tablet_peer_->log()->reader();
+  shared_ptr<log::LogReader> reader = tablet_replica_->log()->reader();
   if (!reader) {
-    tablet::TabletStatePB tablet_state = tablet_peer_->state();
+    tablet::TabletStatePB tablet_state = tablet_replica_->state();
     return Status::IllegalState(Substitute(
         "Unable to initialize tablet copy session for tablet $0. "
         "Log reader is not available. Tablet state: $1 ($2)",
@@ -120,9 +120,9 @@ Status TabletCopySourceSession::Init() {
   // We do this after snapshotting the log to avoid a scenario where the latest
   // entry in the log has a term higher than the term stored in the consensus
   // metadata, which will results in a CHECK failure on RaftConsensus init.
-  scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
+  scoped_refptr<consensus::Consensus> consensus = tablet_replica_->shared_consensus();
   if (!consensus) {
-    tablet::TabletStatePB tablet_state = tablet_peer_->state();
+    tablet::TabletStatePB tablet_state = tablet_replica_->state();
     return Status::IllegalState(Substitute(
         "Unable to initialize tablet copy session for tablet $0. "
         "Consensus is not available. Tablet state: $1 ($2)",
@@ -135,7 +135,7 @@ Status TabletCopySourceSession::Init() {
   // tablet copy loop due to a follower falling too far behind the
   // leader's log when tablet copy is slow. The remote controls when
   // this anchor is released by ending the tablet copy session.
-  RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->UpdateRegistration(
+  RETURN_NOT_OK(tablet_replica_->log_anchor_registry()->UpdateRegistration(
       last_logged_opid.index(), anchor_owner_token, &log_anchor_));
 
   LOG(INFO) << Substitute(
@@ -147,7 +147,7 @@ Status TabletCopySourceSession::Init() {
 
 const std::string& TabletCopySourceSession::tablet_id() const {
   DCHECK(initted_);
-  return tablet_peer_->tablet_id();
+  return tablet_replica_->tablet_id();
 }
 
 const std::string& TabletCopySourceSession::requestor_uuid() const {
@@ -377,7 +377,7 @@ Status TabletCopySourceSession::FindLogSegment(uint64_t segment_seqno,
 }
 
 Status TabletCopySourceSession::UnregisterAnchorIfNeededUnlocked() {
-  return tablet_peer_->log_anchor_registry()->UnregisterIfAnchored(&log_anchor_);
+  return tablet_replica_->log_anchor_registry()->UnregisterIfAnchored(&log_anchor_);
 }
 
 } // namespace tserver

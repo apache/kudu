@@ -45,12 +45,12 @@ class ReadableLogSegment;
 namespace tserver {
 
 class TabletCopySourceSession;
-class TabletPeerLookupIf;
+class TabletReplicaLookupIf;
 
 class TabletCopyServiceImpl : public TabletCopyServiceIf {
  public:
   TabletCopyServiceImpl(server::ServerBase* server,
-                        TabletPeerLookupIf* tablet_peer_lookup);
+                        TabletReplicaLookupIf* tablet_replica_lookup);
 
   bool AuthorizeServiceUser(const google::protobuf::Message* req,
                             google::protobuf::Message* resp,
@@ -112,7 +112,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
 
   server::ServerBase* server_;
   FsManager* fs_manager_;
-  TabletPeerLookupIf* tablet_peer_lookup_;
+  TabletReplicaLookupIf* tablet_replica_lookup_;
 
   // Protects sessions_ map.
   mutable Mutex sessions_lock_;

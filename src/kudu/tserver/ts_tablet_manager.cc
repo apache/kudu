@@ -44,7 +44,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_server.h"
@@ -147,7 +147,7 @@ using tablet::TABLET_DATA_READY;
 using tablet::TABLET_DATA_TOMBSTONED;
 using tablet::TabletDataState;
 using tablet::TabletMetadata;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tablet::TabletStatusListener;
 using tablet::TabletStatusPB;
 using tserver::TabletCopyClient;
@@ -225,7 +225,7 @@ Status TSTabletManager::Init() {
       CHECK_OK(StartTabletStateTransitionUnlocked(meta->tablet_id(), "opening tablet", &deleter));
     }
 
-    scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
+    scoped_refptr<TabletReplica> replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                 this, meta, deleter)));
   }
@@ -260,7 +260,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const Schema& schema,
                                         const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
-                                        scoped_refptr<TabletPeer>* tablet_peer) {
+                                        scoped_refptr<TabletReplica>* replica) {
   CHECK_EQ(state(), MANAGER_RUNNING);
   CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
 
@@ -275,7 +275,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     TRACE("Acquired tablet manager lock");
 
     // Sanity check that the tablet isn't already registered.
-    scoped_refptr<TabletPeer> junk;
+    scoped_refptr<TabletReplica> junk;
     if (LookupTabletUnlocked(tablet_id, &junk)) {
       return Status::AlreadyPresent("Tablet already registered", tablet_id);
     }
@@ -300,19 +300,19 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     "Couldn't create tablet metadata");
 
   // We must persist the consensus metadata to disk before starting a new
-  // tablet's TabletPeer and Consensus implementation.
+  // tablet's TabletReplica and Consensus implementation.
   unique_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
-  scoped_refptr<TabletPeer> new_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
+  scoped_refptr<TabletReplica> new_replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                               this, meta, deleter)));
 
-  if (tablet_peer) {
-    *tablet_peer = new_peer;
+  if (replica) {
+    *replica = new_replica;
   }
   return Status::OK();
 }
@@ -421,14 +421,14 @@ void TSTabletManager::RunTabletCopy(
   CALLBACK_RETURN_NOT_OK(HostPortFromPB(req->copy_peer_addr(), &copy_source_addr));
   int64_t leader_term = req->caller_term();
 
-  scoped_refptr<TabletPeer> old_tablet_peer;
+  scoped_refptr<TabletReplica> old_replica;
   scoped_refptr<TabletMetadata> meta;
   bool replacing_tablet = false;
   scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     std::lock_guard<rw_spinlock> lock(lock_);
-    if (LookupTabletUnlocked(tablet_id, &old_tablet_peer)) {
-      meta = old_tablet_peer->tablet_metadata();
+    if (LookupTabletUnlocked(tablet_id, &old_replica)) {
+      meta = old_replica->tablet_metadata();
       replacing_tablet = true;
     }
     Status ret = StartTabletStateTransitionUnlocked(tablet_id, "copying tablet",
@@ -440,7 +440,7 @@ void TSTabletManager::RunTabletCopy(
   }
 
   if (replacing_tablet) {
-    // Make sure the existing tablet peer is shut down and tombstoned.
+    // Make sure the existing tablet replica is shut down and tombstoned.
     TabletDataState data_state = meta->tablet_data_state();
     switch (data_state) {
       case TABLET_DATA_COPYING:
@@ -453,7 +453,7 @@ void TSTabletManager::RunTabletCopy(
         break;
       }
       case TABLET_DATA_READY: {
-        Log* log = old_tablet_peer->log();
+        Log* log = old_replica->log();
         if (!log) {
           CALLBACK_AND_RETURN(
               Status::IllegalState("Log unavailable. Tablet is not running", tablet_id));
@@ -464,7 +464,7 @@ void TSTabletManager::RunTabletCopy(
         CALLBACK_RETURN_NOT_OK(CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term));
 
         // Tombstone the tablet and store the last-logged OpId.
-        old_tablet_peer->Shutdown();
+        old_replica->Shutdown();
         // TODO(mpercy): Because we begin shutdown of the tablet after we check our
         // last-logged term against the leader's term, there may be operations
         // in flight and it may be possible for the same check in the tablet
@@ -507,9 +507,9 @@ void TSTabletManager::RunTabletCopy(
   // state, and we need to tombtone the tablet if additional steps prior to
   // getting to a TABLET_DATA_READY state fail.
 
-  // Registering a non-initialized TabletPeer offers visibility through the Web UI.
-  RegisterTabletPeerMode mode = replacing_tablet ? REPLACEMENT_PEER : NEW_PEER;
-  scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, mode);
+  // Registering a non-initialized TabletReplica offers visibility through the Web UI.
+  RegisterTabletReplicaMode mode = replacing_tablet ? REPLACEMENT_REPLICA : NEW_REPLICA;
+  scoped_refptr<TabletReplica> replica = CreateAndRegisterTabletReplica(meta, mode);
 
   // Now we invoke the StartTabletCopy callback and respond success to the
   // remote caller. Then we proceed to do most of the actual tablet copying work.
@@ -521,7 +521,7 @@ void TSTabletManager::RunTabletCopy(
   // From this point onward, we do not notify the caller about progress or success.
 
   // Download all of the remote files.
-  Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(tablet_peer.get()));
+  Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(replica.get()));
   if (!s.ok()) {
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
                                          << kSrcPeerInfo << ": " << s.ToString();
@@ -539,21 +539,22 @@ void TSTabletManager::RunTabletCopy(
     return;
   }
 
-  // We don't tombstone the tablet if opening the tablet fails, because on next
   // startup it's still in a valid, fully-copied state.
   OpenTablet(meta, deleter);
 }
 
-// Create and register a new TabletPeer, given tablet metadata.
-scoped_refptr<TabletPeer> TSTabletManager::CreateAndRegisterTabletPeer(
-    const scoped_refptr<TabletMetadata>& meta, RegisterTabletPeerMode mode) {
-  scoped_refptr<TabletPeer> tablet_peer(
-      new TabletPeer(meta,
-                     local_peer_pb_,
-                     apply_pool_.get(),
-                     Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), meta->tablet_id())));
-  RegisterTablet(meta->tablet_id(), tablet_peer, mode);
-  return tablet_peer;
+// Create and register a new TabletReplica, given tablet metadata.
+scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
+    const scoped_refptr<TabletMetadata>& meta, RegisterTabletReplicaMode mode) {
+  scoped_refptr<TabletReplica> replica(
+      new TabletReplica(meta,
+                        local_peer_pb_,
+                        apply_pool_.get(),
+                        Bind(&TSTabletManager::MarkTabletDirty,
+                             Unretained(this),
+                             meta->tablet_id())));
+  RegisterTablet(meta->tablet_id(), replica, mode);
+  return replica;
 }
 
 Status TSTabletManager::DeleteTablet(
@@ -571,7 +572,7 @@ Status TSTabletManager::DeleteTablet(
 
   TRACE("Deleting tablet $0", tablet_id);
 
-  scoped_refptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletReplica> replica;
   scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     // Acquire the lock in exclusive mode as we'll add a entry to the
@@ -580,7 +581,7 @@ Status TSTabletManager::DeleteTablet(
     TRACE("Acquired tablet manager lock");
     RETURN_NOT_OK(CheckRunningUnlocked(error_code));
 
-    if (!LookupTabletUnlocked(tablet_id, &tablet_peer)) {
+    if (!LookupTabletUnlocked(tablet_id, &replica)) {
       *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
       return Status::NotFound("Tablet not found", tablet_id);
     }
@@ -594,7 +595,7 @@ Status TSTabletManager::DeleteTablet(
 
   // If the tablet is already deleted, the CAS check isn't possible because
   // consensus and therefore the log is not available.
-  TabletDataState data_state = tablet_peer->tablet_metadata()->tablet_data_state();
+  TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
   bool tablet_deleted = (data_state == TABLET_DATA_DELETED || data_state == TABLET_DATA_TOMBSTONED);
 
   // They specified an "atomic" delete. Check the committed config's opid_index.
@@ -603,7 +604,7 @@ Status TSTabletManager::DeleteTablet(
   // restarting the tablet if the local replica committed a higher config
   // change op during that time, or potentially something else more invasive.
   if (cas_config_opid_index_less_or_equal && !tablet_deleted) {
-    scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
+    scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
     if (!consensus) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
       return Status::IllegalState("Consensus not available. Tablet shutting down");
@@ -618,25 +619,25 @@ Status TSTabletManager::DeleteTablet(
     }
   }
 
-  tablet_peer->Shutdown();
+  replica->Shutdown();
 
   boost::optional<OpId> opt_last_logged_opid;
-  if (tablet_peer->log()) {
+  if (replica->log()) {
     OpId last_logged_opid;
-    tablet_peer->log()->GetLatestEntryOpId(&last_logged_opid);
+    replica->log()->GetLatestEntryOpId(&last_logged_opid);
     opt_last_logged_opid = last_logged_opid;
   }
 
-  Status s = DeleteTabletData(tablet_peer->tablet_metadata(), delete_type, opt_last_logged_opid);
+  Status s = DeleteTabletData(replica->tablet_metadata(), delete_type, opt_last_logged_opid);
   if (PREDICT_FALSE(!s.ok())) {
     s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                      tablet_id));
     LOG(WARNING) << s.ToString();
-    tablet_peer->SetFailed(s);
+    replica->SetFailed(s);
     return s;
   }
 
-  tablet_peer->StatusMessage("Deleted tablet blocks from disk");
+  replica->StatusMessage("Deleted tablet blocks from disk");
 
   // We only remove DELETED tablets from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
@@ -713,8 +714,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
 
-  scoped_refptr<TabletPeer> tablet_peer;
-  CHECK(LookupTablet(tablet_id, &tablet_peer))
+  scoped_refptr<TabletReplica> replica;
+  CHECK(LookupTablet(tablet_id, &replica))
       << "Tablet not registered prior to OpenTabletAsync call: " << tablet_id;
 
   shared_ptr<Tablet> tablet;
@@ -732,52 +733,52 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     ADOPT_TRACE(nullptr);
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
-    tablet_peer->SetBootstrapping();
+    replica->SetBootstrapping();
     s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
                         server_->mem_tracker(),
                         server_->result_tracker(),
                         metric_registry_,
-                        implicit_cast<TabletStatusListener*>(tablet_peer.get()),
+                        implicit_cast<TabletStatusListener*>(replica.get()),
                         &tablet,
                         &log,
-                        tablet_peer->log_anchor_registry(),
+                        replica->log_anchor_registry(),
                         &bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to bootstrap: "
                  << s.ToString();
-      tablet_peer->SetFailed(s);
+      replica->SetFailed(s);
       return;
     }
   }
 
   MonoTime start(MonoTime::Now());
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "starting tablet") {
-    TRACE("Initializing tablet peer");
-    s =  tablet_peer->Init(tablet,
-                           scoped_refptr<server::Clock>(server_->clock()),
-                           server_->messenger(),
-                           server_->result_tracker(),
-                           log,
-                           tablet->GetMetricEntity());
+    TRACE("Initializing tablet replica");
+    s =  replica->Init(tablet,
+                       scoped_refptr<server::Clock>(server_->clock()),
+                       server_->messenger(),
+                       server_->result_tracker(),
+                       log,
+                       tablet->GetMetricEntity());
 
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to init: "
                  << s.ToString();
-      tablet_peer->SetFailed(s);
+      replica->SetFailed(s);
       return;
     }
 
-    TRACE("Starting tablet peer");
-    s = tablet_peer->Start(bootstrap_info);
+    TRACE("Starting tablet replica");
+    s = replica->Start(bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
                  << s.ToString();
-      tablet_peer->SetFailed(s);
+      replica->SetFailed(s);
       return;
     }
 
-    tablet_peer->RegisterMaintenanceOps(server_->maintenance_manager());
+    replica->RegisterMaintenanceOps(server_->maintenance_manager());
   }
 
   int elapsed_ms = (MonoTime::Now() - start).ToMilliseconds();
@@ -821,14 +822,14 @@ void TSTabletManager::Shutdown() {
   // Shut down the bootstrap pool, so no new tablets are registered after this point.
   open_tablet_pool_->Shutdown();
 
-  // Take a snapshot of the peers list -- that way we don't have to hold
+  // Take a snapshot of the replicas list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
   // inversion. (see KUDU-308 for example).
-  vector<scoped_refptr<TabletPeer> > peers_to_shutdown;
-  GetTabletPeers(&peers_to_shutdown);
+  vector<scoped_refptr<TabletReplica> > replicas_to_shutdown;
+  GetTabletReplicas(&replicas_to_shutdown);
 
-  for (const scoped_refptr<TabletPeer>& peer : peers_to_shutdown) {
-    peer->Shutdown();
+  for (const scoped_refptr<TabletReplica>& replica : replicas_to_shutdown) {
+    replica->Shutdown();
   }
 
   // Shut down the apply pool.
@@ -838,7 +839,7 @@ void TSTabletManager::Shutdown() {
     std::lock_guard<rw_spinlock> l(lock_);
     // We don't expect anyone else to be modifying the map after we start the
     // shut down process.
-    CHECK_EQ(tablet_map_.size(), peers_to_shutdown.size())
+    CHECK_EQ(tablet_map_.size(), replicas_to_shutdown.size())
       << "Map contents changed during shutdown!";
     tablet_map_.clear();
 
@@ -847,44 +848,44 @@ void TSTabletManager::Shutdown() {
 }
 
 void TSTabletManager::RegisterTablet(const std::string& tablet_id,
-                                     const scoped_refptr<TabletPeer>& tablet_peer,
-                                     RegisterTabletPeerMode mode) {
+                                     const scoped_refptr<TabletReplica>& replica,
+                                     RegisterTabletReplicaMode mode) {
   std::lock_guard<rw_spinlock> lock(lock_);
-  // If we are replacing a tablet peer, we delete the existing one first.
-  if (mode == REPLACEMENT_PEER && tablet_map_.erase(tablet_id) != 1) {
-    LOG(FATAL) << "Unable to remove previous tablet peer " << tablet_id << ": not registered!";
+  // If we are replacing a tablet replica, we delete the existing one first.
+  if (mode == REPLACEMENT_REPLICA && tablet_map_.erase(tablet_id) != 1) {
+    LOG(FATAL) << "Unable to remove previous tablet replica " << tablet_id << ": not registered!";
   }
-  if (!InsertIfNotPresent(&tablet_map_, tablet_id, tablet_peer)) {
-    LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
+  if (!InsertIfNotPresent(&tablet_map_, tablet_id, replica)) {
+    LOG(FATAL) << "Unable to register tablet replica " << tablet_id << ": already registered!";
   }
 
-  TabletDataState data_state = tablet_peer->tablet_metadata()->tablet_data_state();
+  TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
   LOG(INFO) << LogPrefix(tablet_id) << Substitute("Registered tablet (data state: $0)",
                                                   TabletDataState_Name(data_state));
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,
-                                   scoped_refptr<TabletPeer>* tablet_peer) const {
+                                   scoped_refptr<TabletReplica>* replica) const {
   shared_lock<rw_spinlock> l(lock_);
-  return LookupTabletUnlocked(tablet_id, tablet_peer);
+  return LookupTabletUnlocked(tablet_id, replica);
 }
 
 bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
-                                           scoped_refptr<TabletPeer>* tablet_peer) const {
-  const scoped_refptr<TabletPeer>* found = FindOrNull(tablet_map_, tablet_id);
+                                           scoped_refptr<TabletReplica>* replica) const {
+  const scoped_refptr<TabletReplica>* found = FindOrNull(tablet_map_, tablet_id);
   if (!found) {
     return false;
   }
-  *tablet_peer = *found;
+  *replica = *found;
   return true;
 }
 
-Status TSTabletManager::GetTabletPeer(const string& tablet_id,
-                                      scoped_refptr<tablet::TabletPeer>* tablet_peer) const {
-  if (!LookupTablet(tablet_id, tablet_peer)) {
+Status TSTabletManager::GetTabletReplica(const string& tablet_id,
+                                         scoped_refptr<tablet::TabletReplica>* replica) const {
+  if (!LookupTablet(tablet_id, replica)) {
     return Status::NotFound("Tablet not found", tablet_id);
   }
-  TabletDataState data_state = (*tablet_peer)->tablet_metadata()->tablet_data_state();
+  TabletDataState data_state = (*replica)->tablet_metadata()->tablet_data_state();
   if (data_state != TABLET_DATA_READY) {
     return Status::IllegalState("Tablet data state not TABLET_DATA_READY: " +
                                 TabletDataState_Name(data_state),
@@ -897,9 +898,9 @@ const NodeInstancePB& TSTabletManager::NodeInstance() const {
   return server_->instance_pb();
 }
 
-void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {
+void TSTabletManager::GetTabletReplicas(vector<scoped_refptr<TabletReplica> >* replicas) const {
   shared_lock<rw_spinlock> l(lock_);
-  AppendValuesFromMap(tablet_map_, tablet_peers);
+  AppendValuesFromMap(tablet_map_, replicas);
 }
 
 void TSTabletManager::MarkTabletDirty(const std::string& tablet_id, const std::string& reason) {
@@ -933,19 +934,19 @@ void TSTabletManager::InitLocalRaftPeerPB() {
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
-                                             const scoped_refptr<TabletPeer>& tablet_peer,
+                                             const scoped_refptr<TabletReplica>& replica,
                                              ReportedTabletPB* reported_tablet) const {
   reported_tablet->set_tablet_id(tablet_id);
-  reported_tablet->set_state(tablet_peer->state());
-  reported_tablet->set_tablet_data_state(tablet_peer->tablet_metadata()->tablet_data_state());
-  if (tablet_peer->state() == tablet::FAILED) {
+  reported_tablet->set_state(replica->state());
+  reported_tablet->set_tablet_data_state(replica->tablet_metadata()->tablet_data_state());
+  if (replica->state() == tablet::FAILED) {
     AppStatusPB* error_status = reported_tablet->mutable_error();
-    StatusToPB(tablet_peer->error(), error_status);
+    StatusToPB(replica->error(), error_status);
   }
-  reported_tablet->set_schema_version(tablet_peer->tablet_metadata()->schema_version());
+  reported_tablet->set_schema_version(replica->tablet_metadata()->schema_version());
 
-  // We cannot get consensus state information unless the TabletPeer is running.
-  scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
+  // We cannot get consensus state information unless the TabletReplica is running.
+  scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
   if (consensus) {
     *reported_tablet->mutable_committed_consensus_state() =
         consensus->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED);
@@ -963,11 +964,11 @@ void TSTabletManager::PopulateIncrementalTabletReport(TabletReportPB* report,
                                                       const vector<string>& tablet_ids) const {
   shared_lock<rw_spinlock> shared_lock(lock_);
   for (const auto& id : tablet_ids) {
-    const scoped_refptr<tablet::TabletPeer>* tablet_peer =
+    const scoped_refptr<tablet::TabletReplica>* replica =
         FindOrNull(tablet_map_, id);
-    if (tablet_peer) {
+    if (replica) {
       // Dirty entry, report on it.
-      CreateReportedTabletPB(id, *tablet_peer, report->add_updated_tablets());
+      CreateReportedTabletPB(id, *replica, report->add_updated_tablets());
     } else {
       // Removed.
       report->add_removed_tablet_ids(id);
@@ -1007,7 +1008,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   // allows us to permanently delete replica tombstones when a table gets
   // deleted.
   if (data_state == TABLET_DATA_TOMBSTONED) {
-    CreateAndRegisterTabletPeer(meta, NEW_PEER);
+    CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
   }
 
   return Status::OK();

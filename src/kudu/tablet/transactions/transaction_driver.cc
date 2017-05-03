@@ -23,7 +23,7 @@
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/rpc/result_tracker.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/trace_event.h"
@@ -442,7 +442,7 @@ Status TransactionDriver::ApplyAsync() {
       order_verifier_->CheckApply(op_id_copy_.index(), prepare_physical_timestamp_);
       // Now that the transaction is committed in consensus advance the safe time.
       if (transaction_->state()->external_consistency_mode() != COMMIT_WAIT) {
-        transaction_->state()->tablet_peer()->tablet()->mvcc_manager()->
+        transaction_->state()->tablet_replica()->tablet()->mvcc_manager()->
             AdjustSafeTime(transaction_->state()->timestamp());
       }
     } else {
@@ -515,7 +515,7 @@ void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state
 Status TransactionDriver::CommitWait() {
   MonoTime before = MonoTime::Now();
   DCHECK(mutable_state()->external_consistency_mode() == COMMIT_WAIT);
-  RETURN_NOT_OK(mutable_state()->tablet_peer()->clock()->WaitUntilAfter(
+  RETURN_NOT_OK(mutable_state()->tablet_replica()->clock()->WaitUntilAfter(
       mutable_state()->timestamp(), MonoTime::Max()));
   mutable_state()->mutable_metrics()->commit_wait_duration_usec =
       (MonoTime::Now() - before).ToMicroseconds();

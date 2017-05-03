@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/tablet_peer_mm_ops.h"
+#include "kudu/tablet/tablet_replica_mm_ops.h"
 
 #include <algorithm>
 #include <gflags/gflags.h>
@@ -97,19 +97,20 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   std::lock_guard<simple_spinlock> l(lock_);
 
   map<int64_t, int64_t> replay_size_map;
-  if (tablet_peer_->tablet()->MemRowSetEmpty() ||
-      !tablet_peer_->GetReplaySizeMap(&replay_size_map).ok()) {
+  if (tablet_replica_->tablet()->MemRowSetEmpty() ||
+      !tablet_replica_->GetReplaySizeMap(&replay_size_map).ok()) {
     return;
   }
 
   {
-    std::unique_lock<Semaphore> lock(tablet_peer_->tablet()->rowsets_flush_sem_, std::defer_lock);
+    std::unique_lock<Semaphore> lock(tablet_replica_->tablet()->rowsets_flush_sem_,
+                                     std::defer_lock);
     stats->set_runnable(lock.try_lock());
   }
 
-  stats->set_ram_anchored(tablet_peer_->tablet()->MemRowSetSize());
+  stats->set_ram_anchored(tablet_replica_->tablet()->MemRowSetSize());
   stats->set_logs_retained_bytes(
-      tablet_peer_->tablet()->MemRowSetLogReplaySize(replay_size_map));
+      tablet_replica_->tablet()->MemRowSetLogReplaySize(replay_size_map));
 
   // TODO(todd): use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
@@ -122,28 +123,28 @@ bool FlushMRSOp::Prepare() {
   // Try to acquire the rowsets_flush_sem_.  If we can't, the Prepare step
   // fails.  This also implies that only one instance of FlushMRSOp can be
   // running at once.
-  return tablet_peer_->tablet()->rowsets_flush_sem_.try_lock();
+  return tablet_replica_->tablet()->rowsets_flush_sem_.try_lock();
 }
 
 void FlushMRSOp::Perform() {
-  CHECK(!tablet_peer_->tablet()->rowsets_flush_sem_.try_lock());
+  CHECK(!tablet_replica_->tablet()->rowsets_flush_sem_.try_lock());
 
-  KUDU_CHECK_OK_PREPEND(tablet_peer_->tablet()->FlushUnlocked(),
-                        Substitute("FlushMRS failed on $0", tablet_peer_->tablet_id()));
+  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushUnlocked(),
+                        Substitute("FlushMRS failed on $0", tablet_replica_->tablet_id()));
 
   {
     std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();
   }
-  tablet_peer_->tablet()->rowsets_flush_sem_.unlock();
+  tablet_replica_->tablet()->rowsets_flush_sem_.unlock();
 }
 
 scoped_refptr<Histogram> FlushMRSOp::DurationHistogram() const {
-  return tablet_peer_->tablet()->metrics()->flush_mrs_duration;
+  return tablet_replica_->tablet()->metrics()->flush_mrs_duration;
 }
 
 scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() const {
-  return tablet_peer_->tablet()->metrics()->flush_mrs_running;
+  return tablet_replica_->tablet()->metrics()->flush_mrs_running;
 }
 
 //
@@ -155,11 +156,11 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   int64_t dms_size;
   int64_t retention_size;
   map<int64_t, int64_t> max_idx_to_replay_size;
-  if (tablet_peer_->tablet()->DeltaMemRowSetEmpty() ||
-      !tablet_peer_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
+  if (tablet_replica_->tablet()->DeltaMemRowSetEmpty() ||
+      !tablet_replica_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
     return;
   }
-  tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_replay_size,
+  tablet_replica_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_replay_size,
                                                    &dms_size, &retention_size);
 
   stats->set_ram_anchored(dms_size);
@@ -173,14 +174,15 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
 
 void FlushDeltaMemStoresOp::Perform() {
   map<int64_t, int64_t> max_idx_to_replay_size;
-  if (!tablet_peer_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
-    LOG(WARNING) << "Won't flush deltas since tablet shutting down: " << tablet_peer_->tablet_id();
+  if (!tablet_replica_->GetReplaySizeMap(&max_idx_to_replay_size).ok()) {
+    LOG(WARNING) << "Won't flush deltas since tablet shutting down: "
+                 << tablet_replica_->tablet_id();
     return;
   }
-  KUDU_CHECK_OK_PREPEND(tablet_peer_->tablet()->FlushDMSWithHighestRetention(
+  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushDMSWithHighestRetention(
                             max_idx_to_replay_size),
-                        Substitute("Failed to flush DMS on $0",
-                                   tablet_peer_->tablet()->tablet_id()));
+                            Substitute("Failed to flush DMS on $0",
+                                       tablet_replica_->tablet()->tablet_id()));
   {
     std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();
@@ -188,31 +190,31 @@ void FlushDeltaMemStoresOp::Perform() {
 }
 
 scoped_refptr<Histogram> FlushDeltaMemStoresOp::DurationHistogram() const {
-  return tablet_peer_->tablet()->metrics()->flush_dms_duration;
+  return tablet_replica_->tablet()->metrics()->flush_dms_duration;
 }
 
 scoped_refptr<AtomicGauge<uint32_t> > FlushDeltaMemStoresOp::RunningGauge() const {
-  return tablet_peer_->tablet()->metrics()->flush_dms_running;
+  return tablet_replica_->tablet()->metrics()->flush_dms_running;
 }
 
 //
 // LogGCOp.
 //
 
-LogGCOp::LogGCOp(TabletPeer* tablet_peer)
-    : MaintenanceOp(StringPrintf("LogGCOp(%s)", tablet_peer->tablet()->tablet_id().c_str()),
+LogGCOp::LogGCOp(TabletReplica* tablet_replica)
+    : MaintenanceOp(StringPrintf("LogGCOp(%s)", tablet_replica->tablet()->tablet_id().c_str()),
                     MaintenanceOp::LOW_IO_USAGE),
-      tablet_peer_(tablet_peer),
+      tablet_replica_(tablet_replica),
       log_gc_duration_(METRIC_log_gc_duration.Instantiate(
-                           tablet_peer->tablet()->GetMetricEntity())),
+                           tablet_replica->tablet()->GetMetricEntity())),
       log_gc_running_(METRIC_log_gc_running.Instantiate(
-                          tablet_peer->tablet()->GetMetricEntity(), 0)),
+                          tablet_replica->tablet()->GetMetricEntity(), 0)),
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
   int64_t retention_size;
 
-  if (!tablet_peer_->GetGCableDataSize(&retention_size).ok()) {
+  if (!tablet_replica_->GetGCableDataSize(&retention_size).ok()) {
     return;
   }
 
@@ -227,7 +229,7 @@ bool LogGCOp::Prepare() {
 void LogGCOp::Perform() {
   CHECK(!sem_.try_lock());
 
-  tablet_peer_->RunLogGC();
+  tablet_replica_->RunLogGC();
 
   sem_.unlock();
 }

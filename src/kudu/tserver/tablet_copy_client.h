@@ -49,7 +49,7 @@ class RpcController;
 
 namespace tablet {
 class TabletMetadata;
-class TabletPeer;
+class TabletReplica;
 class TabletStatusListener;
 class TabletSuperBlockPB;
 } // namespace tablet

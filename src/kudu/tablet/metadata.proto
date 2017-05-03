@@ -125,7 +125,7 @@ message TabletSuperBlockPB {
 }
 
 // The enum of tablet states.
-// Tablet states are sent in TabletReports and kept in TabletPeer.
+// Tablet states are sent in TabletReports and kept in TabletReplica.
 enum TabletStatePB {
   UNKNOWN = 999;
 
@@ -140,7 +140,7 @@ enum TabletStatePB {
   // state Peers are available for client RPCs.
   RUNNING = 1;
 
-  // The tablet failed to for some reason. TabletPeer::error() will return
+  // The tablet failed to for some reason. TabletReplica::error() will return
   // the reason for the failure.
   FAILED = 2;
 

@@ -44,7 +44,7 @@ using kudu::rpc::RpcController;
 using kudu::server::Clock;
 using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletReplica;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -271,7 +271,7 @@ TEST_F(TabletServerTest, TestInsert) {
   WriteResponsePB resp;
   RpcController controller;
 
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   scoped_refptr<Counter> rows_inserted =
     METRIC_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
@@ -375,7 +375,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   WriteResponsePB resp;
   RpcController controller;
 
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
@@ -426,7 +426,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   RpcController controller;
   HybridClock* hclock = down_cast<HybridClock*, Clock>(mini_server_->server()->clock());
 
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
@@ -490,7 +490,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
 
 TEST_F(TabletServerTest, TestInsertAndMutate) {
 
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   scoped_refptr<Counter> rows_inserted =
       METRIC_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
@@ -779,11 +779,11 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
 
   shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
 
-  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
-  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
-  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_replica_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
 
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   // Shutdown the tserver and try and rebuild the tablet from the log
   // produced on recovery (recovery flushed no state, but produced a new
@@ -819,12 +819,12 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 
   shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
 
-  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
-  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
-  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_replica_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
 
   // flush the first time
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 10),
@@ -837,9 +837,9 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   hooks->increment_iteration();
 
   // set the hooks on the new tablet
-  tablet_peer_->tablet()->SetFlushHooksForTests(hooks);
-  tablet_peer_->tablet()->SetCompactionHooksForTests(hooks);
-  tablet_peer_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushHooksForTests(hooks);
+  tablet_replica_->tablet()->SetCompactionHooksForTests(hooks);
+  tablet_replica_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
 
   // insert an additional row so that we can flush
   InsertTestRowsRemote(0, 8, 1);
@@ -847,7 +847,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // flush an additional MRS so that we have two DiskRowSets and then compact
   // them making sure that mutations executed mid compaction are replayed as
   // expected
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   VerifyRows(schema_, { KeyValue(1, 11),
                         KeyValue(2, 21),
                         KeyValue(3, 31),
@@ -858,7 +858,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
                         KeyValue(8, 8) });
 
   hooks->increment_iteration();
-  ASSERT_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+  ASSERT_OK(tablet_replica_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
 
   // get the clock's current timestamp
   Timestamp now_before = mini_server_->server()->clock()->Now();
@@ -891,21 +891,21 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
 
   // Flush a DRS with 1 rows.
   ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(0, 1, 2));
-  ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
   ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 
   // Major compact deltas.
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
-    tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<ColumnId> col_ids = { tablet_peer_->tablet()->schema()->column_id(1),
-                                 tablet_peer_->tablet()->schema()->column_id(2) };
-    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
+    tablet_replica_->tablet()->GetRowSetsForTests(&rsets);
+    vector<ColumnId> col_ids = { tablet_replica_->tablet()->schema()->column_id(1),
+                                 tablet_replica_->tablet()->schema()->column_id(2) };
+    ASSERT_OK(tablet_replica_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
   }
 
   // Verify that data is still the same.
@@ -925,7 +925,7 @@ TEST_F(TabletServerTest, TestKUDU_1341) {
   for (int i = 0; i < 3; i++) {
     // Insert a row to DMS and flush it.
     ANFF(InsertTestRowsRemote(kTid, 1, 1));
-    ASSERT_OK(tablet_peer_->tablet()->Flush());
+    ASSERT_OK(tablet_replica_->tablet()->Flush());
 
     // Update and delete row (in DMS)
     ANFF(UpdateTestRowRemote(kTid, 1, i));
@@ -936,18 +936,18 @@ TEST_F(TabletServerTest, TestKUDU_1341) {
   // flush.
   ANFF(InsertTestRowsRemote(kTid, 1, 1));
   ANFF(UpdateTestRowRemote(kTid, 1, 12345));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
 
   // Test restart.
   ASSERT_OK(ShutdownAndRebuildTablet());
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
 
   // Test compaction after restart.
-  ASSERT_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+  ASSERT_OK(tablet_replica_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
 }
 
@@ -1016,12 +1016,12 @@ TEST_F(TabletServerTest, DISABLED_TestExactlyOnceForErrorsAcrossRestart) {
 TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction) {
   // Flush a DRS with 1 rows.
   ANFF(InsertTestRowsRemote(0, 1, 1));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(0, 1, 2));
-  ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+  ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
 
   // Update it again, so this last update is in the DMS.
   ANFF(UpdateTestRowRemote(0, 1, 3));
@@ -1031,10 +1031,10 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   // DMS should "move over" to the output of the delta compaction.
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
-    tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<ColumnId> col_ids = { tablet_peer_->tablet()->schema()->column_id(1),
-                                 tablet_peer_->tablet()->schema()->column_id(2) };
-    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));
+    tablet_replica_->tablet()->GetRowSetsForTests(&rsets);
+    vector<ColumnId> col_ids = { tablet_replica_->tablet()->schema()->column_id(1),
+                                 tablet_replica_->tablet()->schema()->column_id(2) };
+    ASSERT_OK(tablet_replica_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));
   }
   // Verify that data is still the same.
   ANFF(VerifyRows(schema_, { KeyValue(1, 3) }));
@@ -1047,11 +1047,11 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
 TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ANFF(InsertTestRowsRemote(0, 1, 7));
 
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   // Save the log path before shutting down the tablet (and destroying
-  // the tablet peer).
-  string log_path = tablet_peer_->log()->ActiveSegmentPathForTests();
+  // the TabletReplica).
+  string log_path = tablet_replica_->log()->ActiveSegmentPathForTests();
   ShutdownTablet();
 
   ASSERT_OK(log::CorruptLogFile(env_, log_path, log::FLIP_BYTE, 300));
@@ -1074,8 +1074,8 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, resp.error().code());
   ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING: FAILED");
 
-  // Check that the tablet peer's status message is updated with the failure.
-  ASSERT_STR_CONTAINS(tablet_peer_->last_status(),
+  // Check that the TabletReplica's status message is updated with the failure.
+  ASSERT_STR_CONTAINS(tablet_replica_->last_status(),
                       "Log file corruption detected");
 }
 
@@ -1286,7 +1286,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
   vector<uint64_t> write_timestamps_collector;
   // Write and flush and write, so we have some rows in MRS and DRS
   InsertTestRowsRemote(0, 0, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   InsertTestRowsRemote(0, 100, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
@@ -1326,7 +1326,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
 
   // Generate some interleaved rows
   for (int i = 0; i < batch_size; i++) {
-    ASSERT_OK(tablet_peer_->tablet()->Flush());
+    ASSERT_OK(tablet_replica_->tablet()->Flush());
     for (int j = 0; j < num_rows; j++) {
       if (j % batch_size == i) {
         InsertTestRowsDirect(j, 1);
@@ -1717,7 +1717,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.
 TEST_F(TabletServerTest, TestInvalidScanRequest_WithIds) {
-  const Schema* projection = tablet_peer_->tablet()->schema();
+  const Schema* projection = tablet_replica_->tablet()->schema();
   ASSERT_TRUE(projection->has_column_ids());
   VerifyScanRequestFailure(*projection,
                            TabletServerErrorPB::INVALID_SCHEMA,
@@ -1809,9 +1809,9 @@ TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
 void TabletServerTest::DoOrderedScanTest(const Schema& projection,
                                          const string& expected_rows_as_string) {
   InsertTestRowsDirect(0, 10);
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   InsertTestRowsDirect(10, 10);
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   InsertTestRowsDirect(20, 10);
 
   ScanResponsePB resp;
@@ -1911,7 +1911,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
 
   {
     InsertTestRowsRemote(0, 2, 2);
-    scoped_refptr<TabletPeer> tablet;
+    scoped_refptr<TabletReplica> tablet;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
     ASSERT_OK(tablet->tablet()->Flush());
   }
@@ -2006,7 +2006,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
 }
 
 TEST_F(TabletServerTest, TestDeleteTablet) {
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
 
   // Verify that the tablet exists
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
@@ -2024,7 +2024,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   // Put some data in the tablet. We flush and insert more rows to ensure that
   // there is data both in the MRS and on disk.
   ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 2, 1));
 
   const int block_count_after_flush = ondisk->value();
@@ -2035,7 +2035,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   // Drop any local references to the tablet from within this test,
   // so that when we delete it on the server, it's not held alive
   // by the test code.
-  tablet_peer_.reset();
+  tablet_replica_.reset();
   tablet.reset();
 
   DeleteTabletRequestPB req;
@@ -2101,7 +2101,7 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
 // the other fails, with no assertion failures. Regression test for KUDU-345.
 TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   // Verify that the tablet exists
-  scoped_refptr<TabletPeer> tablet;
+  scoped_refptr<TabletReplica> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
 
   static const int kNumDeletes = 2;
@@ -2390,15 +2390,15 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   // Insert a few rows...
   InsertTestRowsRemote(0, 0, 10);
   // ... now flush ...
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   // ... insert a few rows...
   InsertTestRowsRemote(0, 10, 10);
   // ... and flush again so that we have two disk row sets.
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   // Add a hook so that we can make the log wait right after an append
   // (before the callback is triggered).
-  log::Log* log = tablet_peer_->log();
+  log::Log* log = tablet_replica_->log();
   shared_ptr<DelayFsyncLogHook> log_hook(new DelayFsyncLogHook);
   log->SetLogFaultHooksForTests(log_hook);
 
@@ -2418,7 +2418,7 @@ TEST_F(TabletServerTest, TestKudu120PreRequisites) {
   CountDownLatch flush_done_latch(1);
   CHECK_OK(kudu::Thread::Create("CompactThread", "CompactThread",
                                 CompactAsync,
-                                tablet_peer_->tablet(),
+                                tablet_replica_->tablet(),
                                 &flush_done_latch,
                                 &flush_thread));
 

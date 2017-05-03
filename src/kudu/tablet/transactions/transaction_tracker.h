@@ -39,7 +39,7 @@ class MetricEntity;
 namespace tablet {
 class TransactionDriver;
 
-// Each TabletPeer has a TransactionTracker which keeps track of pending transactions.
+// Each TabletReplica has a TransactionTracker which keeps track of pending transactions.
 // Each "LeaderTransaction" will register itself by calling Add().
 // It will remove itself by calling Release().
 class TransactionTracker {

@@ -41,7 +41,7 @@
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/scanners.h"
@@ -107,7 +107,8 @@ class TabletServerTestBase : public KuduTest {
 
     // Set up a tablet inside the server.
     ASSERT_OK(mini_server_->AddTestTablet(kTableId, kTabletId, schema_));
-    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet_peer_));
+    ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
+                                                                       &tablet_replica_));
 
     // Creating a tablet is async, we wait here instead of having to handle errors later.
     ASSERT_OK(WaitForTabletRunning(kTabletId));
@@ -117,10 +118,11 @@ class TabletServerTestBase : public KuduTest {
   }
 
   Status WaitForTabletRunning(const char *tablet_id) {
-    scoped_refptr<tablet::TabletPeer> tablet_peer;
-    RETURN_NOT_OK(mini_server_->server()->tablet_manager()->GetTabletPeer(tablet_id, &tablet_peer));
-    RETURN_NOT_OK(tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
-    RETURN_NOT_OK(tablet_peer->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+    scoped_refptr<tablet::TabletReplica> tablet_replica;
+    RETURN_NOT_OK(mini_server_->server()->tablet_manager()->GetTabletReplica(tablet_id,
+                                                                             &tablet_replica));
+    RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+    RETURN_NOT_OK(tablet_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
     return Status::OK();
   }
 
@@ -158,7 +160,7 @@ class TabletServerTestBase : public KuduTest {
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
   void InsertTestRowsDirect(int64_t start_row, uint64_t num_rows) {
-    tablet::LocalTabletWriter writer(tablet_peer_->tablet(), &schema_);
+    tablet::LocalTabletWriter writer(tablet_replica_->tablet(), &schema_);
     KuduPartialRow row(&schema_);
     for (int64_t i = 0; i < num_rows; i++) {
       BuildTestRow(start_row + i, &row);
@@ -329,9 +331,9 @@ class TabletServerTestBase : public KuduTest {
 
   void ShutdownTablet() {
     if (mini_server_.get()) {
-      // The tablet peer must be destroyed before the TS, otherwise data
+      // The TabletReplica must be destroyed before the TS, otherwise data
       // blocks may be destroyed after their owning block manager.
-      tablet_peer_.reset();
+      tablet_replica_.reset();
       mini_server_->Shutdown();
       mini_server_.reset();
     }
@@ -347,11 +349,11 @@ class TabletServerTestBase : public KuduTest {
     // this should open the tablet created on StartTabletServer()
     RETURN_NOT_OK(mini_server_->Start());
 
-    // Don't RETURN_NOT_OK immediately -- even if we fail, we may still get a TabletPeer object
+    // Don't RETURN_NOT_OK immediately -- even if we fail, we may still get a TabletReplica object
     // which has information about the failure.
     Status wait_status = mini_server_->WaitStarted();
     bool found_peer = mini_server_->server()->tablet_manager()->LookupTablet(
-        kTabletId, &tablet_peer_);
+        kTabletId, &tablet_replica_);
     RETURN_NOT_OK(wait_status);
     if (!found_peer) {
       return Status::NotFound("Tablet was not found");
@@ -368,7 +370,7 @@ class TabletServerTestBase : public KuduTest {
   // Verifies that a set of expected rows (key, value) is present in the tablet.
   void VerifyRows(const Schema& schema, const vector<KeyValue>& expected) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet_peer_->tablet()->NewRowIterator(schema, &iter));
+    ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema, &iter));
     ASSERT_OK(iter->Init(NULL));
 
     int batch_size = std::max(
@@ -456,7 +458,7 @@ class TabletServerTestBase : public KuduTest {
   std::shared_ptr<rpc::Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
-  scoped_refptr<tablet::TabletPeer> tablet_peer_;
+  scoped_refptr<tablet::TabletReplica> tablet_replica_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
   gscoped_ptr<TabletServerAdminServiceProxy> admin_proxy_;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;

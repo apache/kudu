@@ -38,14 +38,14 @@ class ServerBase;
 
 namespace tablet {
 class Tablet;
-class TabletPeer;
+class TabletReplica;
 class TransactionState;
 } // namespace tablet
 
 namespace tserver {
 
 class ScanResultCollector;
-class TabletPeerLookupIf;
+class TabletReplicaLookupIf;
 class TabletServer;
 
 class TabletServiceImpl : public TabletServerServiceIf {
@@ -88,7 +88,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   virtual void Shutdown() OVERRIDE;
 
  private:
-  Status HandleNewScanRequest(tablet::TabletPeer* tablet_peer,
+  Status HandleNewScanRequest(tablet::TabletReplica* tablet_replica,
                               const ScanRequestPB* req,
                               const rpc::RpcContext* rpc_context,
                               ScanResultCollector* result_collector,
@@ -105,7 +105,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const rpc::RpcContext* rpc_context,
                               const Schema& projection,
-                              tablet::TabletPeer* tablet_peer,
+                              tablet::TabletReplica* tablet_replica,
                               gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 
@@ -139,7 +139,7 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
  public:
   ConsensusServiceImpl(server::ServerBase* server,
-                       TabletPeerLookupIf* tablet_manager);
+                       TabletReplicaLookupIf* tablet_manager);
 
   virtual ~ConsensusServiceImpl();
 
@@ -189,7 +189,7 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
 
  private:
   server::ServerBase* server_;
-  TabletPeerLookupIf* tablet_manager_;
+  TabletReplicaLookupIf* tablet_manager_;
 };
 
 } // namespace tserver

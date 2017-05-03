@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
-#define KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
+#ifndef KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_
+#define KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_
 
 #include <boost/optional/optional_fwd.hpp>
 #include <functional>
@@ -36,19 +36,19 @@ class StartTabletCopyRequestPB;
 } // namespace consensus
 
 namespace tablet {
-class TabletPeer;
+class TabletReplica;
 } // namespace tablet
 
 namespace tserver {
 
 // Pure virtual interface that provides an abstraction for something that
-// contains and manages TabletPeers. This interface is implemented on both
+// contains and manages TabletReplicas. This interface is implemented on both
 // tablet servers and master servers.
 // TODO: Rename this interface.
-class TabletPeerLookupIf {
+class TabletReplicaLookupIf {
  public:
-  virtual Status GetTabletPeer(const std::string& tablet_id,
-                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const = 0;
+  virtual Status GetTabletReplica(const std::string& tablet_id,
+                                  scoped_refptr<tablet::TabletReplica>* tablet_replica) const = 0;
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 
@@ -60,4 +60,4 @@ class TabletPeerLookupIf {
 } // namespace tserver
 } // namespace kudu
 
-#endif // KUDU_TSERVER_TABLET_PEER_LOOKUP_H_
+#endif // KUDU_TSERVER_TABLET_REPLICA_LOOKUP_H_

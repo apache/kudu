@@ -37,7 +37,7 @@
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -192,8 +192,8 @@ class FuzzTest : public KuduTest {
              .num_replicas(1)
              .Create());
 
-    // Find the peer.
-    tablet_peer_ = LookupTabletPeer();
+    // Find the replica.
+    tablet_replica_ = LookupTabletReplica();
 
     // Setup session and table.
     session_ = client_->NewSession();
@@ -203,19 +203,19 @@ class FuzzTest : public KuduTest {
   }
 
   void TearDown() override {
-    if (tablet_peer_) tablet_peer_.reset();
+    if (tablet_replica_) tablet_replica_.reset();
     if (cluster_) cluster_->Shutdown();
   }
 
-  scoped_refptr<TabletPeer> LookupTabletPeer() {
-    vector<scoped_refptr<TabletPeer> > peers;
-    cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletPeers(&peers);
-    CHECK_EQ(1, peers.size());
-    return peers[0];
+  scoped_refptr<TabletReplica> LookupTabletReplica() {
+    vector<scoped_refptr<TabletReplica> > replicas;
+    cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletReplicas(&replicas);
+    CHECK_EQ(1, replicas.size());
+    return replicas[0];
   }
 
   void RestartTabletServer() {
-    tablet_peer_.reset();
+    tablet_replica_.reset();
     auto ts = cluster_->mini_tablet_server(0);
     if (ts->server()) {
       ts->Shutdown();
@@ -225,11 +225,11 @@ class FuzzTest : public KuduTest {
     }
     ASSERT_OK(ts->server()->WaitInited());
 
-    tablet_peer_ = LookupTabletPeer();
+    tablet_replica_ = LookupTabletReplica();
   }
 
   Tablet* tablet() const {
-    return tablet_peer_->tablet();
+    return tablet_replica_->tablet();
   }
 
   // Adds an insert for the given key/value pair to 'ops', returning the new contents
@@ -434,7 +434,7 @@ class FuzzTest : public KuduTest {
       vector<optional<ExpectedKeyValueRow>>,
       std::greater<int>> saved_values_;
 
-  scoped_refptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletReplica> tablet_replica_;
 };
 
 // The set of ops to draw from.

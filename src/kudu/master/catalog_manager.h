@@ -33,7 +33,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
-#include "kudu/tserver/tablet_peer_lookup.h"
+#include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -300,7 +300,7 @@ typedef MetadataLock<TableInfo> TableMetadataLock;
 // the state of each tablet on a given tablet-server.
 //
 // Thread-safe.
-class CatalogManager : public tserver::TabletPeerLookupIf {
+class CatalogManager : public tserver::TabletReplicaLookupIf {
  public:
 
   // Scoped "shared lock" to serialize master leader elections.
@@ -504,12 +504,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // deleted the specified tablet.
   void NotifyTabletDeleteSuccess(const std::string& permanent_uuid, const std::string& tablet_id);
 
-  // Used by ConsensusService to retrieve the TabletPeer for a system
+  // Used by ConsensusService to retrieve the TabletReplica for a system
   // table specified by 'tablet_id'.
   //
-  // See also: TabletPeerLookupIf, ConsensusServiceImpl.
-  virtual Status GetTabletPeer(const std::string& tablet_id,
-                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const override;
+  // See also: TabletReplicaLookupIf, ConsensusServiceImpl.
+  virtual Status GetTabletReplica(const std::string& tablet_id,
+                                  scoped_refptr<tablet::TabletReplica>* replica) const override;
 
   virtual const NodeInstancePB& NodeInstance() const override;
 

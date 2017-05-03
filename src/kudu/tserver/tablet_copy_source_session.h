@@ -41,12 +41,12 @@ namespace kudu {
 class FsManager;
 
 namespace tablet {
-class TabletPeer;
+class TabletReplica;
 } // namespace tablet
 
 namespace tserver {
 
-class TabletPeerLookupIf;
+class TabletReplicaLookupIf;
 
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.
 // Assumes that the file underlying the RandomAccessFile is immutable.
@@ -86,9 +86,9 @@ struct ImmutableReadableBlockInfo {
 // on expiration while it is in use by another thread.
 class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSession> {
  public:
-  TabletCopySourceSession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                         std::string session_id, std::string requestor_uuid,
-                         FsManager* fs_manager);
+  TabletCopySourceSession(const scoped_refptr<tablet::TabletReplica>& tablet_replica,
+                          std::string session_id, std::string requestor_uuid,
+                          FsManager* fs_manager);
 
   // Initialize the session, including anchoring files (TODO) and fetching the
   // tablet superblock and list of WAL segments.
@@ -172,7 +172,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Unregister log anchor, if it's registered.
   Status UnregisterAnchorIfNeededUnlocked();
 
-  scoped_refptr<tablet::TabletPeer> tablet_peer_;
+  scoped_refptr<tablet::TabletReplica> tablet_replica_;
   const std::string session_id_;
   const std::string requestor_uuid_;
   FsManager* const fs_manager_;

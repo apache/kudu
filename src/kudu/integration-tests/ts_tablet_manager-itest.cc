@@ -33,7 +33,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.proxy.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -67,7 +67,7 @@ using rpc::Messenger;
 using rpc::MessengerBuilder;
 using std::shared_ptr;
 using strings::Substitute;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tserver::MiniTabletServer;
 using tserver::TSTabletManager;
 
@@ -134,21 +134,21 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   ASSERT_OK(CreateTabletServerMap(master_proxy, client_messenger_, &ts_map));
   ValueDeleter deleter(&ts_map);
 
-  // Collect the tablet peers so we get direct access to consensus.
-  vector<scoped_refptr<TabletPeer> > tablet_peers;
+  // Collect the TabletReplicas so we get direct access to Consensus.
+  vector<scoped_refptr<TabletReplica> > tablet_replicas;
   for (int replica = 0; replica < kNumReplicas; replica++) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(replica);
     ts->FailHeartbeats(); // Stop heartbeating we don't race against the Master.
-    vector<scoped_refptr<TabletPeer> > cur_ts_tablet_peers;
+    vector<scoped_refptr<TabletReplica> > cur_ts_tablet_replicas;
     // The replicas may not have been created yet, so loop until we see them.
     while (true) {
-      ts->server()->tablet_manager()->GetTabletPeers(&cur_ts_tablet_peers);
-      if (!cur_ts_tablet_peers.empty()) break;
+      ts->server()->tablet_manager()->GetTabletReplicas(&cur_ts_tablet_replicas);
+      if (!cur_ts_tablet_replicas.empty()) break;
       SleepFor(MonoDelta::FromMilliseconds(10));
     }
-    ASSERT_EQ(1, cur_ts_tablet_peers.size()); // Each TS should only have 1 tablet.
-    ASSERT_OK(cur_ts_tablet_peers[0]->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
-    tablet_peers.push_back(cur_ts_tablet_peers[0]);
+    ASSERT_EQ(1, cur_ts_tablet_replicas.size()); // Each TS should only have 1 tablet.
+    ASSERT_OK(cur_ts_tablet_replicas[0]->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+    tablet_replicas.push_back(cur_ts_tablet_replicas[0]);
   }
 
   // Loop and cause elections and term changes from different servers.
@@ -157,11 +157,11 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
     SCOPED_TRACE(Substitute("Iter: $0", i));
     int new_leader_idx = rand() % 2;
     LOG(INFO) << "Electing peer " << new_leader_idx << "...";
-    consensus::Consensus* con = CHECK_NOTNULL(tablet_peers[new_leader_idx]->consensus());
+    consensus::Consensus* con = CHECK_NOTNULL(tablet_replicas[new_leader_idx]->consensus());
     ASSERT_OK(con->EmulateElection());
     LOG(INFO) << "Waiting for servers to agree...";
     ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5),
-                                    ts_map, tablet_peers[0]->tablet_id(), i + 1));
+                                    ts_map, tablet_replicas[0]->tablet_id(), i + 1));
 
     // Now check that the tablet report reports the correct role for both servers.
     for (int replica = 0; replica < kNumReplicas; replica++) {
@@ -184,7 +184,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       ReportedTabletPB reported_tablet = report.updated_tablets(0);
       ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
 
-      string uuid = tablet_peers[replica]->permanent_uuid();
+      string uuid = tablet_replicas[replica]->permanent_uuid();
       RaftPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.committed_consensus_state());
       if (replica == new_leader_idx) {
         ASSERT_EQ(RaftPeerPB::LEADER, role)

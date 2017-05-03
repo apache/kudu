@@ -34,7 +34,7 @@
 #include "kudu/server/webui_util.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -51,7 +51,7 @@ using kudu::MaintenanceManagerStatusPB;
 using kudu::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
 using std::endl;
@@ -110,8 +110,8 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
                                                       std::ostringstream* output) {
   bool as_text = ContainsKey(req.parsed_args, "raw");
 
-  vector<scoped_refptr<TabletPeer> > peers;
-  tserver_->tablet_manager()->GetTabletPeers(&peers);
+  vector<scoped_refptr<TabletReplica> > replicas;
+  tserver_->tablet_manager()->GetTabletReplicas(&replicas);
 
   string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
   Transaction::TraceType trace_type = ParseLeadingBoolValue(
@@ -125,14 +125,14 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
       "Total time in-flight</th><th>Description</th></tr>\n";
   }
 
-  for (const scoped_refptr<TabletPeer>& peer : peers) {
+  for (const scoped_refptr<TabletReplica>& replica : replicas) {
     vector<TransactionStatusPB> inflight;
 
-    if (peer->tablet() == nullptr) {
+    if (replica->tablet() == nullptr) {
       continue;
     }
 
-    peer->GetInFlightTransactions(trace_type, &inflight);
+    replica->GetInFlightTransactions(trace_type, &inflight);
     for (const TransactionStatusPB& inflight_tx : inflight) {
       string total_time_str = Substitute("$0 us.", inflight_tx.running_for_micros());
       string description;
@@ -146,13 +146,13 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
       if (!as_text) {
         (*output) << Substitute(
           "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
-          EscapeForHtmlToString(peer->tablet_id()),
+          EscapeForHtmlToString(replica->tablet_id()),
           EscapeForHtmlToString(SecureShortDebugString(inflight_tx.op_id())),
           OperationType_Name(inflight_tx.tx_type()),
           total_time_str,
           EscapeForHtmlToString(description));
       } else {
-        (*output) << "Tablet: " << peer->tablet_id() << endl;
+        (*output) << "Tablet: " << replica->tablet_id() << endl;
         (*output) << "Op ID: " << SecureShortDebugString(inflight_tx.op_id()) << endl;
         (*output) << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
         (*output) << "Running: " << total_time_str;
@@ -178,32 +178,32 @@ string TabletLink(const string& id) {
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
                                                  std::ostringstream *output) {
-  vector<scoped_refptr<TabletPeer>> peers;
-  tserver_->tablet_manager()->GetTabletPeers(&peers);
+  vector<scoped_refptr<TabletReplica>> replicas;
+  tserver_->tablet_manager()->GetTabletReplicas(&replicas);
 
   // Sort by (table_name, tablet_id) tuples.
-  std::sort(peers.begin(), peers.end(),
-            [](const scoped_refptr<TabletPeer>& peer_a,
-               const scoped_refptr<TabletPeer>& peer_b) {
-              return std::make_pair(peer_a->tablet_metadata()->table_name(), peer_a->tablet_id()) <
-                     std::make_pair(peer_b->tablet_metadata()->table_name(), peer_b->tablet_id());
+  std::sort(replicas.begin(), replicas.end(),
+            [](const scoped_refptr<TabletReplica>& rep_a,
+               const scoped_refptr<TabletReplica>& rep_b) {
+              return std::make_pair(rep_a->tablet_metadata()->table_name(), rep_a->tablet_id()) <
+                     std::make_pair(rep_b->tablet_metadata()->table_name(), rep_b->tablet_id());
             });
 
   auto generate_table = [this](const string& header,
-                               const vector<scoped_refptr<TabletPeer>>& peers,
+                               const vector<scoped_refptr<TabletReplica>>& replicas,
                                ostream* output) {
     *output << "<h3>" << header << "</h3>\n";
     *output << "<table class='table table-striped'>\n";
     *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
          "<th>Partition</th>"
          "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
-    for (const scoped_refptr<TabletPeer>& peer : peers) {
+    for (const scoped_refptr<TabletReplica>& replica : replicas) {
       TabletStatusPB status;
-      peer->GetTabletStatusPB(&status);
+      replica->GetTabletStatusPB(&status);
       string id = status.tablet_id();
       string table_name = status.table_name();
       string tablet_id_or_link;
-      if (peer->tablet() != nullptr) {
+      if (replica->tablet() != nullptr) {
         tablet_id_or_link = TabletLink(id);
       } else {
         tablet_id_or_link = EscapeForHtmlToString(id);
@@ -212,13 +212,13 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
       if (status.has_estimated_on_disk_size()) {
         n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
       }
-      string partition = peer->tablet_metadata()
-                             ->partition_schema()
-                              .PartitionDebugString(peer->tablet_metadata()->partition(),
-                                                    peer->tablet_metadata()->schema());
+      string partition = replica->tablet_metadata()
+                                ->partition_schema()
+                                 .PartitionDebugString(replica->tablet_metadata()->partition(),
+                                                       replica->tablet_metadata()->schema());
 
       // TODO(unknown): would be nice to include some other stuff like memory usage
-      scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
+      scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
       (*output) << Substitute(
           // Table name, tablet id, partition
           "<tr><td>$0</td><td>$1</td><td>$2</td>"
@@ -227,7 +227,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
           EscapeForHtmlToString(table_name), // $0
           tablet_id_or_link, // $1
           EscapeForHtmlToString(partition), // $2
-          EscapeForHtmlToString(peer->HumanReadableState()), n_bytes, // $3, $4
+          EscapeForHtmlToString(replica->HumanReadableState()), n_bytes, // $3, $4
           consensus ? ConsensusStatePBToHtml(consensus->
               ConsensusState(CONSENSUS_CONFIG_COMMITTED))
                     : "", // $5
@@ -236,21 +236,21 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     *output << "</table>\n";
   };
 
-  vector<scoped_refptr<TabletPeer>> live_peers;
-  vector<scoped_refptr<TabletPeer>> tombstoned_peers;
-  for (const scoped_refptr<TabletPeer>& peer : peers) {
-    if (peer->HumanReadableState() != "TABLET_DATA_TOMBSTONED") {
-      live_peers.push_back(peer);
+  vector<scoped_refptr<TabletReplica>> live_replicas;
+  vector<scoped_refptr<TabletReplica>> tombstoned_replicas;
+  for (const scoped_refptr<TabletReplica>& replica : replicas) {
+    if (replica->HumanReadableState() != "TABLET_DATA_TOMBSTONED") {
+      live_replicas.push_back(replica);
     } else {
-      tombstoned_peers.push_back(peer);
+      tombstoned_replicas.push_back(replica);
     }
   }
 
-  if (!live_peers.empty()) {
-    generate_table("Live Tablets", live_peers, output);
+  if (!live_replicas.empty()) {
+    generate_table("Live Tablets", live_replicas, output);
   }
-  if (!tombstoned_peers.empty()) {
-    generate_table("Tombstoned Tablets", tombstoned_peers, output);
+  if (!tombstoned_replicas.empty()) {
+    generate_table("Tombstoned Tablets", tombstoned_replicas, output);
     *output << "<p><small>Tombstoned tablets are tablets that previously "
            "stored a replica on this server.</small></p>";
   }
@@ -304,19 +304,19 @@ bool GetTabletID(const Webserver::WebRequest& req, string* id, std::ostringstrea
   return true;
 }
 
-bool GetTabletPeer(TabletServer* tserver, const Webserver::WebRequest& req,
-                   scoped_refptr<TabletPeer>* peer, const string& tablet_id,
-                   std::ostringstream* out) {
-  if (!tserver->tablet_manager()->LookupTablet(tablet_id, peer)) {
+bool GetTabletReplica(TabletServer* tserver, const Webserver::WebRequest& req,
+                      scoped_refptr<TabletReplica>* replica, const string& tablet_id,
+                      std::ostringstream* out) {
+  if (!tserver->tablet_manager()->LookupTablet(tablet_id, replica)) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
     return false;
   }
   return true;
 }
 
-bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& tablet_id,
+bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica, const string& tablet_id,
                          std::ostringstream* out) {
-  if (peer->state() == tablet::BOOTSTRAPPING) {
+  if (replica->state() == tablet::BOOTSTRAPPING) {
     (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
     return false;
   }
@@ -327,11 +327,11 @@ bool TabletBootstrapping(const scoped_refptr<TabletPeer>& peer, const string& ta
 // tablet is found, and is in a non-bootstrapping state.
 bool LoadTablet(TabletServer* tserver,
                 const Webserver::WebRequest& req,
-                string* tablet_id, scoped_refptr<TabletPeer>* peer,
+                string* tablet_id, scoped_refptr<TabletReplica>* replica,
                 std::ostringstream* out) {
   if (!GetTabletID(req, tablet_id, out)) return false;
-  if (!GetTabletPeer(tserver, req, peer, *tablet_id, out)) return false;
-  if (!TabletBootstrapping(*peer, *tablet_id, out)) return false;
+  if (!GetTabletReplica(tserver, req, replica, *tablet_id, out)) return false;
+  if (!TabletBootstrapping(*replica, *tablet_id, out)) return false;
   return true;
 }
 
@@ -340,24 +340,24 @@ bool LoadTablet(TabletServer* tserver,
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req,
                                                 std::ostringstream *output) {
   string tablet_id;
-  scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
+  scoped_refptr<TabletReplica> replica;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, output)) return;
 
-  string table_name = peer->tablet_metadata()->table_name();
+  string table_name = replica->tablet_metadata()->table_name();
   RaftPeerPB::Role role = RaftPeerPB::UNKNOWN_ROLE;
-  auto consensus = peer->consensus();
+  auto consensus = replica->consensus();
   if (consensus) {
     role = consensus->role();
   }
 
   *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id)
-          << " (" << peer->HumanReadableState()
+          << " (" << replica->HumanReadableState()
           << "/" << RaftPeerPB::Role_Name(role) << ")</h1>\n";
   *output << "<h3>Table " << EscapeForHtmlToString(table_name) << "</h3>";
 
   // Output schema in tabular format.
   *output << "<h2>Schema</h2>\n";
-  const Schema& schema = peer->tablet_metadata()->schema();
+  const Schema& schema = replica->tablet_metadata()->schema();
   HtmlOutputSchemaTable(schema, output);
 
   *output << "<h2>Other Tablet Info Pages</h2>" << endl;
@@ -390,9 +390,9 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
 void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& req,
                                                    std::ostringstream* output) {
   string id;
-  scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
-  shared_ptr<Tablet> tablet = peer->shared_tablet();
+  scoped_refptr<TabletReplica> replica;
+  if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
+  shared_ptr<Tablet> tablet = replica->shared_tablet();
   if (!tablet) {
     *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
     return;
@@ -407,22 +407,22 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& 
 void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest& req,
                                                     std::ostringstream* output) {
   string tablet_id;
-  scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
+  scoped_refptr<TabletReplica> replica;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, output)) return;
 
   *output << "<h1>Log Anchors for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>"
           << std::endl;
 
-  string dump = peer->log_anchor_registry()->DumpAnchorInfo();
+  string dump = replica->log_anchor_registry()->DumpAnchorInfo();
   *output << "<pre>" << EscapeForHtmlToString(dump) << "</pre>" << std::endl;
 }
 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
                                                          std::ostringstream* output) {
   string id;
-  scoped_refptr<TabletPeer> peer;
-  if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
-  scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
+  scoped_refptr<TabletReplica> replica;
+  if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
+  scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
   if (!consensus) {
     *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
     return;
@@ -471,8 +471,8 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   scanner.GetIteratorStats(&stats);
   CHECK_EQ(stats.size(), projection->num_columns());
   html << Substitute("<td>$0</td>", IteratorStatsToHtml(*projection, stats));
-  scoped_refptr<TabletPeer> tablet_peer;
-  if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
+  scoped_refptr<TabletReplica> tablet_replica;
+  if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_replica)) {
     html << Substitute("<td colspan=\"2\"><b>Tablet $0 is no longer valid.</b></td></tr>\n",
                        scanner.tablet_id());
   } else {

@@ -19,7 +19,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/metrics.h"
@@ -29,20 +29,20 @@ DECLARE_int32(scanner_ttl_ms);
 
 namespace kudu {
 
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 
 namespace tserver {
 
 using std::vector;
 
 TEST(ScannersTest, TestManager) {
-  scoped_refptr<TabletPeer> null_peer(nullptr);
+  scoped_refptr<TabletReplica> null_replica(nullptr);
   ScannerManager mgr(nullptr);
 
   // Create two scanners, make sure their ids are different.
   SharedScanner s1, s2;
-  mgr.NewScanner(null_peer, "", RowFormatFlags::NO_FLAGS, &s1);
-  mgr.NewScanner(null_peer, "", RowFormatFlags::NO_FLAGS, &s2);
+  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s1);
+  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s2);
   ASSERT_NE(s1->id(), s2->id());
 
   // Check that they're both registered.
@@ -65,13 +65,13 @@ TEST(ScannersTest, TestManager) {
 }
 
 TEST(ScannerTest, TestExpire) {
-  scoped_refptr<TabletPeer> null_peer(nullptr);
+  scoped_refptr<TabletReplica> null_replica(nullptr);
   FLAGS_scanner_ttl_ms = 100;
   MetricRegistry registry;
   ScannerManager mgr(METRIC_ENTITY_server.Instantiate(&registry, "test"));
   SharedScanner s1, s2;
-  mgr.NewScanner(null_peer, "", RowFormatFlags::NO_FLAGS, &s1);
-  mgr.NewScanner(null_peer, "", RowFormatFlags::NO_FLAGS, &s2);
+  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s1);
+  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s2);
   SleepFor(MonoDelta::FromMilliseconds(200));
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();

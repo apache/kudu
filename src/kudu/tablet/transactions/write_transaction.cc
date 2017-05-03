@@ -29,7 +29,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
@@ -86,7 +86,7 @@ Status WriteTransaction::Prepare() {
     return s;
   }
 
-  Tablet* tablet = state()->tablet_peer()->tablet();
+  Tablet* tablet = state()->tablet_replica()->tablet();
 
   Status s = tablet->DecodeWriteOperations(&client_schema, state());
   if (!s.ok()) {
@@ -112,8 +112,8 @@ Status WriteTransaction::Start() {
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
-  state_->tablet_peer()->tablet()->StartTransaction(state_.get());
-  TRACE("Timestamp: $0", state_->tablet_peer()->clock()->Stringify(state_->timestamp()));
+  state_->tablet_replica()->tablet()->StartTransaction(state_.get());
+  TRACE("Timestamp: $0", state_->tablet_replica()->clock()->Stringify(state_->timestamp()));
   return Status::OK();
 }
 
@@ -130,7 +130,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
     SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_inject_latency_on_apply_write_txn_ms));
   }
 
-  Tablet* tablet = state()->tablet_peer()->tablet();
+  Tablet* tablet = state()->tablet_replica()->tablet();
 
   tablet->ApplyRowOperations(state());
 
@@ -171,7 +171,7 @@ void WriteTransaction::Finish(TransactionResult result) {
 
   TRACE("FINISH: updating metrics");
 
-  TabletMetrics* metrics = state_->tablet_peer()->tablet()->metrics();
+  TabletMetrics* metrics = state_->tablet_replica()->tablet()->metrics();
   if (metrics) {
     // TODO: should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
@@ -210,11 +210,11 @@ string WriteTransaction::ToString() const {
                     DriverType_Name(type()), abs_time_formatted, state_->ToString());
 }
 
-WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
+WriteTransactionState::WriteTransactionState(TabletReplica* tablet_replica,
                                              const tserver::WriteRequestPB *request,
                                              const rpc::RequestIdPB* request_id,
                                              tserver::WriteResponsePB *response)
-  : TransactionState(tablet_peer),
+  : TransactionState(tablet_replica),
     request_(DCHECK_NOTNULL(request)),
     response_(response),
     mvcc_tx_(nullptr),

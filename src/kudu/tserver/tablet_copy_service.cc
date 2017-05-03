@@ -30,8 +30,8 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tserver/tablet_copy_source_session.h"
-#include "kudu/tserver/tablet_peer_lookup.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tserver/tablet_replica_lookup.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
@@ -74,7 +74,7 @@ namespace kudu {
 
 using crc::Crc32c;
 using server::ServerBase;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 
 namespace tserver {
 
@@ -84,11 +84,11 @@ static MonoTime GetNewExpireTime() {
 
 TabletCopyServiceImpl::TabletCopyServiceImpl(
     ServerBase* server,
-    TabletPeerLookupIf* tablet_peer_lookup)
+    TabletReplicaLookupIf* tablet_replica_lookup)
     : TabletCopyServiceIf(server->metric_entity(), server->result_tracker()),
       server_(server),
       fs_manager_(CHECK_NOTNULL(server->fs_manager())),
-      tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
+      tablet_replica_lookup_(CHECK_NOTNULL(tablet_replica_lookup)),
       rand_(GetRandomSeed32()),
       shutdown_latch_(1) {
   CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
@@ -117,8 +117,8 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   // but there is no guarantee this will not change in the future.
   const string session_id = Substitute("$0-$1", requestor_uuid, tablet_id);
 
-  scoped_refptr<TabletPeer> tablet_peer;
-  RPC_RETURN_NOT_OK(tablet_peer_lookup_->GetTabletPeer(tablet_id, &tablet_peer),
+  scoped_refptr<TabletReplica> tablet_replica;
+  RPC_RETURN_NOT_OK(tablet_replica_lookup_->GetTabletReplica(tablet_id, &tablet_replica),
                     TabletCopyErrorPB::TABLET_NOT_FOUND,
                     Substitute("Unable to find specified tablet: $0", tablet_id),
                     context);
@@ -132,7 +132,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
           "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
-      session.reset(new TabletCopySourceSession(tablet_peer, session_id,
+      session.reset(new TabletCopySourceSession(tablet_replica, session_id,
                                                 requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
                         TabletCopyErrorPB::UNKNOWN_ERROR,

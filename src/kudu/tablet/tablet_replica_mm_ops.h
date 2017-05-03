@@ -15,10 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_TABLET_TABLET_PEER_MM_OPS_H_
-#define KUDU_TABLET_TABLET_PEER_MM_OPS_H_
+#ifndef KUDU_TABLET_TABLET_REPLICA_MM_OPS_H_
+#define KUDU_TABLET_TABLET_REPLICA_MM_OPS_H_
 
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/stopwatch.h"
 
@@ -45,10 +45,10 @@ class FlushOpPerfImprovementPolicy {
 // Maintenance op for MRS flush. Only one can happen at a time.
 class FlushMRSOp : public MaintenanceOp {
  public:
-  explicit FlushMRSOp(TabletPeer* tablet_peer)
-    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet_peer->tablet()->tablet_id().c_str()),
+  explicit FlushMRSOp(TabletReplica* tablet_replica)
+    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet_replica->tablet()->tablet_id().c_str()),
                     MaintenanceOp::HIGH_IO_USAGE),
-      tablet_peer_(tablet_peer) {
+      tablet_replica_(tablet_replica) {
     time_since_flush_.start();
   }
 
@@ -67,18 +67,18 @@ class FlushMRSOp : public MaintenanceOp {
   mutable simple_spinlock lock_;
   Stopwatch time_since_flush_;
 
-  TabletPeer *const tablet_peer_;
+  TabletReplica *const tablet_replica_;
 };
 
 // Maintenance op for DMS flush.
 // Reports stats for all the DMS this tablet contains but only flushes one in Perform().
 class FlushDeltaMemStoresOp : public MaintenanceOp {
  public:
-  explicit FlushDeltaMemStoresOp(TabletPeer* tablet_peer)
+  explicit FlushDeltaMemStoresOp(TabletReplica* tablet_replica)
     : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
-                                 tablet_peer->tablet()->tablet_id().c_str()),
+                                 tablet_replica->tablet()->tablet_id().c_str()),
                     MaintenanceOp::HIGH_IO_USAGE),
-      tablet_peer_(tablet_peer) {
+      tablet_replica_(tablet_replica) {
     time_since_flush_.start();
   }
 
@@ -99,7 +99,7 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
   mutable simple_spinlock lock_;
   Stopwatch time_since_flush_;
 
-  TabletPeer *const tablet_peer_;
+  TabletReplica *const tablet_replica_;
 };
 
 // Maintenance task that runs log GC. Reports log retention that represents the amount of data
@@ -108,7 +108,7 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
 // Only one LogGC op can run at a time.
 class LogGCOp : public MaintenanceOp {
  public:
-  explicit LogGCOp(TabletPeer* tablet_peer);
+  explicit LogGCOp(TabletReplica* tablet_replica);
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
 
@@ -121,7 +121,7 @@ class LogGCOp : public MaintenanceOp {
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
-  TabletPeer *const tablet_peer_;
+  TabletReplica *const tablet_replica_;
   scoped_refptr<Histogram> log_gc_duration_;
   scoped_refptr<AtomicGauge<uint32_t> > log_gc_running_;
   mutable Semaphore sem_;
@@ -130,4 +130,4 @@ class LogGCOp : public MaintenanceOp {
 } // namespace tablet
 } // namespace kudu
 
-#endif /* KUDU_TABLET_TABLET_PEER_MM_OPS_H_ */
+#endif /* KUDU_TABLET_TABLET_REPLICA_MM_OPS_H_ */

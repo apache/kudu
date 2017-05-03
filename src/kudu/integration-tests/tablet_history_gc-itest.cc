@@ -31,7 +31,7 @@
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -42,7 +42,7 @@ using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;
 using kudu::tserver::TSTabletManager;
@@ -121,10 +121,10 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
 
   // Find the tablet.
   tserver::MiniTabletServer* mts = cluster_->mini_tablet_server(0);
-  vector<scoped_refptr<TabletPeer>> tablet_peers;
-  mts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
-  ASSERT_EQ(1, tablet_peers.size());
-  std::shared_ptr<Tablet> tablet = tablet_peers[0]->shared_tablet();
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(1, tablet_replicas.size());
+  std::shared_ptr<Tablet> tablet = tablet_replicas[0]->shared_tablet();
 
   const int32_t kNumRows = AllowSlowTests() ? 100 : 10;
 
@@ -500,10 +500,10 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   MiniTabletServer* mts = cluster_->mini_tablet_server(0);
   TabletServer* ts = mts->server();
   clock_ = down_cast<HybridClock*>(ts->clock());
-  std::vector<scoped_refptr<TabletPeer>> peers;
-  ts->tablet_manager()->GetTabletPeers(&peers);
-  ASSERT_EQ(1, peers.size());
-  Tablet* tablet = peers[0]->tablet();
+  std::vector<scoped_refptr<TabletReplica>> replicas;
+  ts->tablet_manager()->GetTabletReplicas(&replicas);
+  ASSERT_EQ(1, replicas.size());
+  Tablet* tablet = replicas[0]->tablet();
 
   // Set initial clock time to 1000 seconds past 0, which is enough so that the
   // AHM will not be negative.

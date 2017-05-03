@@ -40,7 +40,7 @@
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -59,7 +59,7 @@ using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::server::HybridClock;
-using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;
 using std::string;
@@ -198,24 +198,24 @@ class ConsistencyITest : public MiniClusterITestBase {
   }
 
   Status FindPeerForTablet(const string& tablet_id,
-                           scoped_refptr<TabletPeer>* peer) {
+                           scoped_refptr<TabletReplica>* replica) {
     bool found = false;
     for (size_t i = 0; i < num_tablet_servers_; ++i) {
       MiniTabletServer* mts = cluster_->mini_tablet_server(i);
       TabletServer* ts = mts->server();
 
-      scoped_refptr<TabletPeer> p;
-      if (!ts->tablet_manager()->LookupTablet(tablet_id, &p)) {
+      scoped_refptr<TabletReplica> r;
+      if (!ts->tablet_manager()->LookupTablet(tablet_id, &r)) {
         // Not this one, continue.
         continue;
       }
-      peer->swap(p);
+      replica->swap(r);
       found = true;
       break;
     }
     if (!found) {
       return Status::NotFound(
-          Substitute("$0: cannot find peer for tablet"), tablet_id);
+          Substitute("$0: cannot find replica for tablet"), tablet_id);
     }
     return Status::OK();
   }
@@ -223,10 +223,10 @@ class ConsistencyITest : public MiniClusterITestBase {
   Status UpdateClockForTabletHostingKey(int32_t key, const MonoDelta& offset) {
     string tablet_id;
     RETURN_NOT_OK(GetTabletIdForKey(key, &tablet_id));
-    scoped_refptr<TabletPeer> p;
-    RETURN_NOT_OK(FindPeerForTablet(tablet_id, &p));
+    scoped_refptr<TabletReplica> r;
+    RETURN_NOT_OK(FindPeerForTablet(tablet_id, &r));
 
-    HybridClock* clock = CHECK_NOTNULL(dynamic_cast<HybridClock*>(p->clock()));
+    HybridClock* clock = CHECK_NOTNULL(dynamic_cast<HybridClock*>(r->clock()));
     UpdateClock(clock, offset);
     return Status::OK();
   }

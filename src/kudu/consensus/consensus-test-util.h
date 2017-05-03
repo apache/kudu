@@ -634,7 +634,7 @@ class TestDriver {
   Log* log_;
 };
 
-// A transaction factory for tests, usually this is implemented by TabletPeer.
+// A transaction factory for tests, usually this is implemented by TabletReplica.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:
   explicit TestTransactionFactory(Log* log) : consensus_(nullptr),

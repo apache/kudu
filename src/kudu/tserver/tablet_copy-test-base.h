@@ -47,13 +47,13 @@ class TabletCopyTest : public TabletServerTestBase {
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
     // starting a tablet copy session.
-    tablet_peer_->log_anchor_registry()->Register(
+    tablet_replica_->log_anchor_registry()->Register(
         consensus::MinimumOpId().index(), CURRENT_TEST_NAME(), &anchor_);
     NO_FATALS(GenerateTestData());
   }
 
   virtual void TearDown() OVERRIDE {
-    ASSERT_OK(tablet_peer_->log_anchor_registry()->Unregister(&anchor_));
+    ASSERT_OK(tablet_replica_->log_anchor_registry()->Unregister(&anchor_));
     NO_FATALS(TabletServerTestBase::TearDown());
   }
 
@@ -106,19 +106,19 @@ class TabletCopyTest : public TabletServerTestBase {
     LOG_TIMING(INFO, "Loading test data") {
       for (int row_id = 0; row_id < kNumLogRolls * kIncr; row_id += kIncr) {
         InsertTestRowsRemote(0, row_id, kIncr);
-        ASSERT_OK(tablet_peer_->tablet()->Flush());
-        ASSERT_OK(tablet_peer_->log()->AllocateSegmentAndRollOver());
+        ASSERT_OK(tablet_replica_->tablet()->Flush());
+        ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOver());
       }
     }
   }
 
   // Return the permananent_uuid of the local service.
   const std::string GetLocalUUID() const {
-    return tablet_peer_->permanent_uuid();
+    return tablet_replica_->permanent_uuid();
   }
 
   const std::string& GetTabletId() const {
-    return tablet_peer_->tablet()->tablet_id();
+    return tablet_replica_->tablet()->tablet_id();
   }
 
   // Read a block file from the file system fully into memory and return a

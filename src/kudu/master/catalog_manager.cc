@@ -232,7 +232,7 @@ using strings::Substitute;
 using tablet::TABLET_DATA_DELETED;
 using tablet::TABLET_DATA_TOMBSTONED;
 using tablet::TabletDataState;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tablet::TabletStatePB;
 using tserver::TabletServerErrorPB;
 
@@ -719,7 +719,7 @@ Status CatalogManager::ElectedAsLeaderCb() {
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
-  ConsensusStatePB cstate = sys_catalog_->tablet_peer()->consensus()->
+  ConsensusStatePB cstate = sys_catalog_->tablet_replica()->consensus()->
       ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   const string& uuid = master_->fs_manager()->uuid();
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
@@ -729,7 +729,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   }
 
   // Wait for all transactions to be committed.
-  RETURN_NOT_OK(sys_catalog_->tablet_peer()->transaction_tracker()->WaitForAllToFinish(timeout));
+  RETURN_NOT_OK(sys_catalog_->tablet_replica()->transaction_tracker()->WaitForAllToFinish(timeout));
   return Status::OK();
 }
 
@@ -800,7 +800,7 @@ void CatalogManager::VisitTablesAndTabletsTask() {
     // Hack to block this function until InitSysCatalogAsync() is finished.
     shared_lock<LockType> l(lock_);
   }
-  const Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
+  const Consensus* consensus = sys_catalog_->tablet_replica()->consensus();
   int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
@@ -977,7 +977,7 @@ RaftPeerPB::Role CatalogManager::Role() const {
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     if (state_ == kRunning) {
-      consensus = sys_catalog_->tablet_peer()->shared_consensus();
+      consensus = sys_catalog_->tablet_replica()->shared_consensus();
     }
   }
   return consensus ? consensus->role() : RaftPeerPB::UNKNOWN_ROLE;
@@ -1026,12 +1026,12 @@ void CatalogManager::Shutdown() {
   //     call does not return because the underlying Raft indefinitely
   //     retries to get the response for the submitted operations.
   if (sys_catalog_) {
-    sys_catalog_->tablet_peer()->consensus()->Shutdown();
+    sys_catalog_->tablet_replica()->consensus()->Shutdown();
   }
 
   // Wait for any outstanding ElectedAsLeaderCb tasks to finish.
   //
-  // Must be done before shutting down the catalog, otherwise its tablet peer
+  // Must be done before shutting down the catalog, otherwise its TabletReplica
   // may be destroyed while still in use by the ElectedAsLeaderCb task.
   leader_election_pool_->Shutdown();
 
@@ -2502,8 +2502,8 @@ Status CatalogManager::HandleRaftConfigChanged(
   return Status::OK();
 }
 
-Status CatalogManager::GetTabletPeer(const string& tablet_id,
-                                     scoped_refptr<TabletPeer>* tablet_peer) const {
+Status CatalogManager::GetTabletReplica(const string& tablet_id,
+                                        scoped_refptr<TabletReplica>* replica) const {
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
   shared_lock<LockType> l(lock_);
@@ -2511,7 +2511,7 @@ Status CatalogManager::GetTabletPeer(const string& tablet_id,
     return Status::ServiceUnavailable("Systable not yet initialized");
   }
   if (sys_catalog_->tablet_id() == tablet_id) {
-    *tablet_peer = sys_catalog_->tablet_peer();
+    *replica = sys_catalog_->tablet_replica();
   } else {
     return Status::NotFound(Substitute("no SysTable exists with tablet_id $0 in CatalogManager",
                                        tablet_id));
@@ -3951,8 +3951,8 @@ void CatalogManager::DumpState(std::ostream* out) const {
 
 std::string CatalogManager::LogPrefix() const {
   return Substitute("T $0 P $1: ",
-                    sys_catalog_->tablet_peer()->tablet_id(),
-                    sys_catalog_->tablet_peer()->permanent_uuid());
+                    sys_catalog_->tablet_replica()->tablet_id(),
+                    sys_catalog_->tablet_replica()->permanent_uuid());
 }
 
 void CatalogManager::AbortAndWaitForAllTasks(
@@ -3984,7 +3984,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   }
 
   // Check if the catalog manager is the leader.
-  ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_peer()->consensus()->
+  ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->consensus()->
       ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   string uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {

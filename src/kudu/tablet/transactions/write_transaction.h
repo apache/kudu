@@ -73,7 +73,7 @@ struct TabletComponents;
 // NOTE: this class isn't thread safe.
 class WriteTransactionState : public TransactionState {
  public:
-  WriteTransactionState(TabletPeer* tablet_peer,
+  WriteTransactionState(TabletReplica* tablet_replica,
                         const tserver::WriteRequestPB *request,
                         const rpc::RequestIdPB* request_id,
                         tserver::WriteResponsePB *response = NULL);

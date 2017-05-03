@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_TABLET_TABLET_PEER_H_
-#define KUDU_TABLET_TABLET_PEER_H_
+#ifndef KUDU_TABLET_TABLET_REPLICA_H_
+#define KUDU_TABLET_TABLET_REPLICA_H_
 
 #include <map>
 #include <memory>
@@ -56,14 +56,14 @@ class MaintenanceOp;
 namespace tablet {
 class LeaderTransactionDriver;
 class ReplicaTransactionDriver;
-class TabletPeer;
+class TabletReplica;
 class TabletStatusPB;
 class TabletStatusListener;
 class TransactionDriver;
 
 // Interface by which various tablet-related processes can report back their status
-// to TabletPeer without having to have a circular class dependency, and so that
-// those other classes can be easily tested without constructing a TabletPeer.
+// to TabletReplica without having to have a circular class dependency, and so that
+// those other classes can be easily tested without constructing a TabletReplica.
 class TabletStatusListener {
  public:
   virtual ~TabletStatusListener() {}
@@ -71,20 +71,20 @@ class TabletStatusListener {
   virtual void StatusMessage(const std::string& status) = 0;
 };
 
-// A peer in a tablet consensus configuration, which coordinates writes to tablets.
+// A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
-class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
-                   public consensus::ReplicaTransactionFactory,
-                   public TabletStatusListener {
+class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
+                      public consensus::ReplicaTransactionFactory,
+                      public TabletStatusListener {
  public:
-  TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-             const consensus::RaftPeerPB& local_peer_pb, ThreadPool* apply_pool,
-             Callback<void(const std::string& reason)> mark_dirty_clbk);
+  TabletReplica(const scoped_refptr<TabletMetadata>& meta,
+                const consensus::RaftPeerPB& local_peer_pb, ThreadPool* apply_pool,
+                Callback<void(const std::string& reason)> mark_dirty_clbk);
 
-  // Initializes the TabletPeer, namely creating the Log and initializing
+  // Initializes the TabletReplica, namely creating the Log and initializing
   // Consensus.
   Status Init(const std::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
@@ -93,12 +93,12 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
               const scoped_refptr<log::Log>& log,
               const scoped_refptr<MetricEntity>& metric_entity);
 
-  // Starts the TabletPeer, making it available for Write()s. If this
-  // TabletPeer is part of a consensus configuration this will connect it to other peers
+  // Starts the TabletReplica, making it available for Write()s. If this
+  // TabletReplica is part of a consensus configuration this will connect it to other replicas
   // in the consensus configuration.
   Status Start(const consensus::ConsensusBootstrapInfo& info);
 
-  // Shutdown this tablet peer.
+  // Shutdown this tablet replica.
   // If a shutdown is already in progress, blocks until that shutdown is complete.
   void Shutdown();
 
@@ -181,7 +181,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Implementation of TabletStatusListener::StatusMessage().
   void StatusMessage(const std::string& status) override;
 
-  // Retrieve the last human-readable status of this tablet peer.
+  // Retrieve the last human-readable status of this tablet replica.
   std::string last_status() const;
 
   // Sets the tablet state to FAILED additionally setting the error to the provided
@@ -218,7 +218,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status GetGCableDataSize(int64_t* retention_size) const;
 
   // Return a pointer to the Log.
-  // TabletPeer keeps a reference to Log after Init().
+  // TabletReplica keeps a reference to Log after Init().
   log::Log* log() const {
     return log_.get();
   }
@@ -231,7 +231,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return log_anchor_registry_;
   }
 
-  // Returns the tablet_id of the tablet managed by this TabletPeer.
+  // Returns the tablet_id of the tablet managed by this TabletReplica.
   // Returns the correct tablet_id even if the underlying tablet is not available
   // yet.
   const std::string& tablet_id() const { return tablet_id_; }
@@ -269,15 +269,15 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   }
 
  private:
-  friend class RefCountedThreadSafe<TabletPeer>;
-  friend class TabletPeerTest;
-  FRIEND_TEST(TabletPeerTest, TestMRSAnchorPreventsLogGC);
-  FRIEND_TEST(TabletPeerTest, TestDMSAnchorPreventsLogGC);
-  FRIEND_TEST(TabletPeerTest, TestActiveTransactionPreventsLogGC);
+  friend class RefCountedThreadSafe<TabletReplica>;
+  friend class TabletReplicaTest;
+  FRIEND_TEST(TabletReplicaTest, TestMRSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestDMSAnchorPreventsLogGC);
+  FRIEND_TEST(TabletReplicaTest, TestActiveTransactionPreventsLogGC);
 
-  ~TabletPeer();
+  ~TabletReplica();
 
-  // Wait until the TabletPeer is fully in SHUTDOWN state.
+  // Wait until the TabletReplica is fully in SHUTDOWN state.
   void WaitUntilShutdown();
 
   // After bootstrap is complete and consensus is setup this initiates the transactions
@@ -319,9 +319,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   mutable simple_spinlock state_change_lock_;
 
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_pool_'
-  // is single-threaded, moving to a multi-tablet setup where multiple TabletPeers
+  // is single-threaded, moving to a multi-tablet setup where multiple TabletReplicas
   // use the same 'prepare_pool_' needs to enforce that, for a single
-  // TabletPeer, PrepareTasks are executed *serially*.
+  // TabletReplica, PrepareTasks are executed *serially*.
   // TODO move the prepare pool to TabletServer.
   gscoped_ptr<ThreadPool> prepare_pool_;
 
@@ -334,7 +334,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 
-  // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
+  // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
   //
   // Must be called whenever cluster membership or leadership changes, or when
   // the tablet's schema changes.
@@ -347,7 +347,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // The result tracker for writes.
   scoped_refptr<rpc::ResultTracker> result_tracker_;
 
-  DISALLOW_COPY_AND_ASSIGN(TabletPeer);
+  DISALLOW_COPY_AND_ASSIGN(TabletReplica);
 };
 
 // A callback to wait for the in-flight transactions to complete and to flush
@@ -374,4 +374,4 @@ class FlushInflightsToLogCallback : public RefCountedThreadSafe<FlushInflightsTo
 }  // namespace tablet
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_TABLET_PEER_H_ */
+#endif /* KUDU_TABLET_TABLET_REPLICA_H_ */

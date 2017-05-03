@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 
 #include <algorithm>
 #include <gflags/gflags.h>
@@ -46,7 +46,7 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/tablet_peer_mm_ops.h"
+#include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -103,13 +103,10 @@ using rpc::ResultTracker;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
-// ============================================================================
-//  Tablet Peer
-// ============================================================================
-TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-                       const consensus::RaftPeerPB& local_peer_pb,
-                       ThreadPool* apply_pool,
-                       Callback<void(const std::string& reason)> mark_dirty_clbk)
+TabletReplica::TabletReplica(const scoped_refptr<TabletMetadata>& meta,
+                             const consensus::RaftPeerPB& local_peer_pb,
+                             ThreadPool* apply_pool,
+                             Callback<void(const std::string& reason)> mark_dirty_clbk)
     : meta_(meta),
       tablet_id_(meta->tablet_id()),
       local_peer_pb_(local_peer_pb),
@@ -119,24 +116,24 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
       log_anchor_registry_(new LogAnchorRegistry()),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)) {}
 
-TabletPeer::~TabletPeer() {
+TabletReplica::~TabletReplica() {
   std::lock_guard<simple_spinlock> lock(lock_);
   // We should either have called Shutdown(), or we should have never called
   // Init().
   CHECK(!tablet_)
-      << "TabletPeer not fully shut down. State: "
+      << "TabletReplica not fully shut down. State: "
       << TabletStatePB_Name(state_);
 }
 
-Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
-                        const scoped_refptr<server::Clock>& clock,
-                        const shared_ptr<Messenger>& messenger,
-                        const scoped_refptr<ResultTracker>& result_tracker,
-                        const scoped_refptr<Log>& log,
-                        const scoped_refptr<MetricEntity>& metric_entity) {
+Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
+                           const scoped_refptr<server::Clock>& clock,
+                           const shared_ptr<Messenger>& messenger,
+                           const scoped_refptr<ResultTracker>& result_tracker,
+                           const scoped_refptr<Log>& log,
+                           const scoped_refptr<MetricEntity>& metric_entity) {
 
-  DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
-  DCHECK(log) << "A TabletPeer must be provided with a Log";
+  DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
+  DCHECK(log) << "A TabletReplica must be provided with a Log";
 
   RETURN_NOT_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
   prepare_pool_->SetQueueLengthHistogram(
@@ -185,12 +182,12 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   }
   txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
-  TRACE("TabletPeer::Init() finished");
+  TRACE("TabletReplica::Init() finished");
   VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer Initted";
   return Status::OK();
 }
 
-Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
+Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   std::lock_guard<simple_spinlock> l(state_change_lock_);
   TRACE("Starting consensus");
 
@@ -206,19 +203,19 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   }
 
   // Because we changed the tablet state, we need to re-report the tablet to the master.
-  mark_dirty_clbk_.Run("Started TabletPeer");
+  mark_dirty_clbk_.Run("Started TabletReplica");
 
   return Status::OK();
 }
 
-const consensus::RaftConfigPB TabletPeer::RaftConfig() const {
+const consensus::RaftConfigPB TabletReplica::RaftConfig() const {
   CHECK(consensus_) << "consensus is null";
   return consensus_->CommittedConfig();
 }
 
-void TabletPeer::Shutdown() {
+void TabletReplica::Shutdown() {
 
-  LOG(INFO) << "Initiating TabletPeer shutdown for tablet: " << tablet_id_;
+  LOG(INFO) << "Initiating TabletReplica shutdown for tablet: " << tablet_id_;
 
   {
     std::unique_lock<simple_spinlock> lock(lock_);
@@ -242,7 +239,7 @@ void TabletPeer::Shutdown() {
 
   // TODO: KUDU-183: Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
-      Substitute("TabletPeer: tablet $0: Waiting for Transactions to complete", tablet_id())) {
+      Substitute("TabletReplica: tablet $0: Waiting for Transactions to complete", tablet_id())) {
     txn_tracker_.WaitForAllToFinish();
   }
 
@@ -255,7 +252,7 @@ void TabletPeer::Shutdown() {
   }
 
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
+    VLOG(1) << "TabletReplica: tablet " << tablet_id() << " shut down!";
   }
 
   if (tablet_) {
@@ -272,7 +269,7 @@ void TabletPeer::Shutdown() {
   }
 }
 
-void TabletPeer::WaitUntilShutdown() {
+void TabletReplica::WaitUntilShutdown() {
   while (true) {
     {
       std::lock_guard<simple_spinlock> lock(lock_);
@@ -284,7 +281,7 @@ void TabletPeer::WaitUntilShutdown() {
   }
 }
 
-Status TabletPeer::CheckRunning() const {
+Status TabletReplica::CheckRunning() const {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     if (state_ != RUNNING) {
@@ -295,7 +292,7 @@ Status TabletPeer::CheckRunning() const {
   return Status::OK();
 }
 
-Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
+Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
   MonoTime start(MonoTime::Now());
 
   int backoff_exp = 0;
@@ -330,7 +327,7 @@ Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
   return Status::OK();
 }
 
-Status TabletPeer::SubmitWrite(unique_ptr<WriteTransactionState> state) {
+Status TabletReplica::SubmitWrite(unique_ptr<WriteTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
   state->SetResultTracker(result_tracker_);
@@ -342,7 +339,7 @@ Status TabletPeer::SubmitWrite(unique_ptr<WriteTransactionState> state) {
   return driver->ExecuteAsync();
 }
 
-Status TabletPeer::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> state) {
+Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
   gscoped_ptr<AlterSchemaTransaction> transaction(
@@ -352,7 +349,7 @@ Status TabletPeer::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> sta
   return driver->ExecuteAsync();
 }
 
-void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
+void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   std::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(status_pb_out != nullptr);
   status_pb_out->set_tablet_id(meta_->tablet_id());
@@ -366,7 +363,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   }
 }
 
-Status TabletPeer::RunLogGC() {
+Status TabletReplica::RunLogGC() {
   if (!CheckRunning().ok()) {
     return Status::OK();
   }
@@ -374,23 +371,23 @@ Status TabletPeer::RunLogGC() {
   log::RetentionIndexes retention = GetRetentionIndexes();
   Status s = log_->GC(retention, &num_gced);
   if (!s.ok()) {
-    s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletPeer");
+    s = s.CloneAndPrepend("Unexpected error while running Log GC from TabletReplica");
     LOG(ERROR) << s.ToString();
   }
   return Status::OK();
 }
 
-void TabletPeer::StatusMessage(const std::string& status) {
+void TabletReplica::StatusMessage(const std::string& status) {
   std::lock_guard<simple_spinlock> lock(lock_);
   last_status_ = status;
 }
 
-string TabletPeer::last_status() const {
+string TabletReplica::last_status() const {
   std::lock_guard<simple_spinlock> lock(lock_);
   return last_status_;
 }
 
-void TabletPeer::SetFailed(const Status& error) {
+void TabletReplica::SetFailed(const Status& error) {
   std::lock_guard<simple_spinlock> lock(lock_);
   CHECK(!error.ok());
   state_ = FAILED;
@@ -398,7 +395,7 @@ void TabletPeer::SetFailed(const Status& error) {
   last_status_ = error.ToString();
 }
 
-string TabletPeer::HumanReadableState() const {
+string TabletReplica::HumanReadableState() const {
   std::lock_guard<simple_spinlock> lock(lock_);
   TabletDataState data_state = meta_->tablet_data_state();
   // If failed, any number of things could have gone wrong.
@@ -416,8 +413,8 @@ string TabletPeer::HumanReadableState() const {
   return TabletStatePB_Name(state_);
 }
 
-void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
-                                         vector<consensus::TransactionStatusPB>* out) const {
+void TabletReplica::GetInFlightTransactions(Transaction::TraceType trace_type,
+                                            vector<consensus::TransactionStatusPB>* out) const {
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
   for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
@@ -444,7 +441,7 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
   }
 }
 
-log::RetentionIndexes TabletPeer::GetRetentionIndexes() const {
+log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
   // Let consensus set a minimum index that should be anchored.
   // This ensures that we:
   //   (a) don't GC any operations which are still in flight
@@ -481,19 +478,19 @@ log::RetentionIndexes TabletPeer::GetRetentionIndexes() const {
   return ret;
 }
 
-Status TabletPeer::GetReplaySizeMap(map<int64_t, int64_t>* replay_size_map) const {
+Status TabletReplica::GetReplaySizeMap(map<int64_t, int64_t>* replay_size_map) const {
   RETURN_NOT_OK(CheckRunning());
   log_->GetReplaySizeMap(replay_size_map);
   return Status::OK();
 }
 
-Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
+Status TabletReplica::GetGCableDataSize(int64_t* retention_size) const {
   RETURN_NOT_OK(CheckRunning());
   *retention_size = log_->GetGCableDataSize(GetRetentionIndexes());
   return Status::OK();
 }
 
-Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
+Status TabletReplica::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     if (state_ != RUNNING && state_ != BOOTSTRAPPING) {
@@ -549,8 +546,8 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
   return Status::OK();
 }
 
-Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                              scoped_refptr<TransactionDriver>* driver) {
+Status TabletReplica::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                                 scoped_refptr<TransactionDriver>* driver) {
   scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
@@ -564,8 +561,8 @@ Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transacti
   return Status::OK();
 }
 
-Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                               scoped_refptr<TransactionDriver>* driver) {
+Status TabletReplica::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                                  scoped_refptr<TransactionDriver>* driver) {
   scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
@@ -579,7 +576,7 @@ Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transact
   return Status::OK();
 }
 
-void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
+void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   // Taking state_change_lock_ ensures that we don't shut down concurrently with
   // this last start-up task.
   std::lock_guard<simple_spinlock> l(state_change_lock_);
@@ -607,7 +604,7 @@ void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   tablet_->RegisterMaintenanceOps(maint_mgr);
 }
 
-void TabletPeer::UnregisterMaintenanceOps() {
+void TabletReplica::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
   for (MaintenanceOp* op : maintenance_ops_) {
     op->Unregister();

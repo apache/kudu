@@ -24,7 +24,7 @@
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -113,13 +113,13 @@ class SysCatalogTable {
 
   ~SysCatalogTable();
 
-  // Allow for orderly shutdown of tablet peer, etc.
+  // Allow for orderly shutdown of TabletReplica, etc.
   void Shutdown();
 
-  // Load the Metadata from disk, and initialize the TabletPeer for the sys-table
+  // Load the Metadata from disk, and initialize the TabletReplica for the sys-table
   Status Load(FsManager *fs_manager);
 
-  // Create the new Metadata and initialize the TabletPeer for the sys-table.
+  // Create the new Metadata and initialize the TabletReplica for the sys-table.
   Status CreateNew(FsManager *fs_manager);
 
   // Perform a series of table/tablet actions in one WriteTransaction.
@@ -183,12 +183,12 @@ class SysCatalogTable {
   Status CreateDistributedConfig(const MasterOptions& options,
                                  consensus::RaftConfigPB* committed_config);
 
-  const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
-    return tablet_peer_;
+  const scoped_refptr<tablet::TabletReplica>& tablet_replica() const {
+    return tablet_replica_;
   }
 
   std::string tablet_id() const {
-    return tablet_peer_->tablet_id();
+    return tablet_replica_->tablet_id();
   }
 
   // Conventional "T xxx P xxxx..." prefix for logging.
@@ -239,7 +239,7 @@ class SysCatalogTable {
   // Only useful for tests.
   static const char* const kInjectedFailureStatusMsg;
 
-  // Table schema, without IDs, used to send messages to the TabletPeer
+  // Table schema, without IDs, used to send messages to the TabletReplica
   Schema schema_;
   Schema key_schema_;
 
@@ -247,7 +247,7 @@ class SysCatalogTable {
 
   gscoped_ptr<ThreadPool> apply_pool_;
 
-  scoped_refptr<tablet::TabletPeer> tablet_peer_;
+  scoped_refptr<tablet::TabletReplica> tablet_replica_;
 
   Master* master_;
 

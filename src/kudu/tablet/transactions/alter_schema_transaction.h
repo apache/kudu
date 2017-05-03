@@ -42,10 +42,10 @@ class AlterSchemaTransactionState : public TransactionState {
   ~AlterSchemaTransactionState() {
   }
 
-  AlterSchemaTransactionState(TabletPeer* tablet_peer,
+  AlterSchemaTransactionState(TabletReplica* tablet_replica,
                               const tserver::AlterSchemaRequestPB* request,
                               tserver::AlterSchemaResponsePB* response)
-      : TransactionState(tablet_peer),
+      : TransactionState(tablet_replica),
         schema_(NULL),
         request_(request),
         response_(response) {

@@ -35,8 +35,8 @@
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tablet/tablet_peer.h"
-#include "kudu/tablet/tablet_peer_mm_ops.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/maintenance_manager.h"
@@ -80,9 +80,9 @@ static Schema GetTestSchema() {
   return Schema({ ColumnSchema("key", INT32) }, 1);
 }
 
-class TabletPeerTest : public KuduTabletTest {
+class TabletReplicaTest : public KuduTabletTest {
  public:
-  TabletPeerTest()
+  TabletReplicaTest()
     : KuduTabletTest(GetTestSchema()),
       insert_counter_(0),
       delete_counter_(0) {
@@ -104,19 +104,19 @@ class TabletPeerTest : public KuduTabletTest {
     config_peer.mutable_last_known_addr()->set_port(0);
     config_peer.set_member_type(RaftPeerPB::VOTER);
 
-    // "Bootstrap" and start the TabletPeer.
-    tablet_peer_.reset(
-      new TabletPeer(make_scoped_refptr(tablet()->metadata()),
-                     config_peer,
-                     apply_pool_.get(),
-                     Bind(&TabletPeerTest::TabletPeerStateChangedCallback,
-                          Unretained(this),
-                          tablet()->tablet_id())));
+    // "Bootstrap" and start the TabletReplica.
+    tablet_replica_.reset(
+      new TabletReplica(make_scoped_refptr(tablet()->metadata()),
+                        config_peer,
+                        apply_pool_.get(),
+                        Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
+                             Unretained(this),
+                             tablet()->tablet_id())));
 
-    // Make TabletPeer use the same LogAnchorRegistry as the Tablet created by the harness.
+    // Make TabletReplica use the same LogAnchorRegistry as the Tablet created by the harness.
     // TODO: Refactor TabletHarness to allow taking a LogAnchorRegistry, while also providing
-    // TabletMetadata for consumption by TabletPeer before Tablet is instantiated.
-    tablet_peer_->log_anchor_registry_ = tablet()->log_anchor_registry_;
+    // TabletMetadata for consumption by TabletReplica before Tablet is instantiated.
+    tablet_replica_->log_anchor_registry_ = tablet()->log_anchor_registry_;
 
     RaftConfigPB config;
     config.add_peers()->CopyFrom(config_peer);
@@ -134,8 +134,8 @@ class TabletPeerTest : public KuduTabletTest {
                                *tablet()->schema(), tablet()->metadata()->schema_version(),
                                metric_entity_.get(), &log));
 
-    tablet_peer_->SetBootstrapping();
-    ASSERT_OK(tablet_peer_->Init(tablet(),
+    tablet_replica_->SetBootstrapping();
+    ASSERT_OK(tablet_replica_->Init(tablet(),
                                  clock(),
                                  messenger_,
                                  scoped_refptr<rpc::ResultTracker>(),
@@ -144,17 +144,18 @@ class TabletPeerTest : public KuduTabletTest {
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
-    RETURN_NOT_OK(tablet_peer_->Start(info));
-    RETURN_NOT_OK(tablet_peer_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+    const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+    RETURN_NOT_OK(tablet_replica_->Start(info));
+    RETURN_NOT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(kTimeout));
     return Status::OK();
   }
 
-  void TabletPeerStateChangedCallback(const string& tablet_id, const string& reason) {
-    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id << ". Reason: " << reason;
+  void TabletReplicaStateChangedCallback(const string& tablet_id, const string& reason) {
+    LOG(INFO) << "Tablet replica state changed for tablet " << tablet_id << ". Reason: " << reason;
   }
 
   virtual void TearDown() OVERRIDE {
-    tablet_peer_->Shutdown();
+    tablet_replica_->Shutdown();
     apply_pool_->Shutdown();
     KuduTabletTest::TearDown();
   }
@@ -190,9 +191,9 @@ class TabletPeerTest : public KuduTabletTest {
     return Status::OK();
   }
 
-  Status ExecuteWriteAndRollLog(TabletPeer* tablet_peer, const WriteRequestPB& req) {
+  Status ExecuteWriteAndRollLog(TabletReplica* tablet_replica, const WriteRequestPB& req) {
     gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
-    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer,
+    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_replica,
                                                                          &req,
                                                                          nullptr, // No RequestIdPB
                                                                          resp.get()));
@@ -201,7 +202,7 @@ class TabletPeerTest : public KuduTabletTest {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
-    CHECK_OK(tablet_peer->SubmitWrite(std::move(tx_state)));
+    CHECK_OK(tablet_replica->SubmitWrite(std::move(tx_state)));
     rpc_latch.Wait();
     CHECK(!resp->has_error())
         << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
@@ -211,8 +212,8 @@ class TabletPeerTest : public KuduTabletTest {
     // this test the thread that is appending is not the same thread that is rolling the log
     // so we must make sure the Log's queue is flushed before we roll or we might have a race
     // between the appender thread and the thread executing the test.
-    CHECK_OK(tablet_peer->log_->WaitUntilAllFlushed());
-    CHECK_OK(tablet_peer->log_->AllocateSegmentAndRollOver());
+    CHECK_OK(tablet_replica->log_->WaitUntilAllFlushed());
+    CHECK_OK(tablet_replica->log_->AllocateSegmentAndRollOver());
     return Status::OK();
   }
 
@@ -221,7 +222,7 @@ class TabletPeerTest : public KuduTabletTest {
     for (int i = 0; i < num_inserts; i++) {
       gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
       RETURN_NOT_OK(GenerateSequentialInsertRequest(req.get()));
-      RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_peer_.get(), *req));
+      RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
     }
 
     return Status::OK();
@@ -232,7 +233,7 @@ class TabletPeerTest : public KuduTabletTest {
     for (int i = 0; i < num_deletes; i++) {
       gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
       CHECK_OK(GenerateSequentialDeleteRequest(req.get()));
-      CHECK_OK(ExecuteWriteAndRollLog(tablet_peer_.get(), *req));
+      CHECK_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
     }
 
     return Status::OK();
@@ -240,14 +241,14 @@ class TabletPeerTest : public KuduTabletTest {
 
   void AssertNoLogAnchors() {
     // Make sure that there are no registered anchors in the registry
-    CHECK_EQ(0, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
+    CHECK_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   }
 
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.
   void AssertLogAnchorEarlierThanLogLatest() {
-    log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+    log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
     OpId last_log_opid;
-    tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
+    tablet_replica_->log_->GetLatestEntryOpId(&last_log_opid);
     CHECK_LT(retention.for_durability, last_log_opid.index())
       << "Expected valid log anchor, got earliest opid: " << retention.for_durability
       << " (expected any value earlier than last log id: " << SecureShortDebugString(last_log_opid)
@@ -262,7 +263,7 @@ class TabletPeerTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;
-  scoped_refptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletReplica> tablet_replica_;
   gscoped_ptr<ThreadPool> apply_pool_;
 };
 
@@ -292,11 +293,11 @@ class DelayedApplyTransaction : public WriteTransaction {
 };
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
-TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
+TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
-  Log* log = tablet_peer_->log_.get();
+  Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
 
   AssertNoLogAnchors();
@@ -310,21 +311,21 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_EQ(4, segments.size());
 
   AssertLogAnchorEarlierThanLogLatest();
-  ASSERT_GT(tablet_peer_->log_anchor_registry()->GetAnchorCountForTests(), 0);
+  ASSERT_GT(tablet_replica_->log_anchor_registry()->GetAnchorCountForTests(), 0);
 
   // Ensure nothing gets deleted.
-  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(0, num_gced) << "earliest needed: " << retention.for_durability;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
-  tablet_peer_->tablet()->Flush();
+  tablet_replica_->tablet()->Flush();
   AssertNoLogAnchors();
 
   // The first two segments should be deleted.
   // The last is anchored due to the commit in the last segment being the last
   // OpId in the log.
-  retention = tablet_peer_->GetRetentionIndexes();
+  retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(2, num_gced) << "earliest needed: " << retention.for_durability;
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -332,11 +333,11 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
 }
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
-TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
+TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
-  Log* log = tablet_peer_->log_.get();
+  Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
 
   AssertNoLogAnchors();
@@ -350,8 +351,8 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(3, segments.size());
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
-  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
@@ -376,26 +377,26 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // Execute a mutation.
   ASSERT_OK(ExecuteDeletesAndRollLogs(2));
   AssertLogAnchorEarlierThanLogLatest();
-  ASSERT_GT(tablet_peer_->log_anchor_registry()->GetAnchorCountForTests(), 0);
+  ASSERT_GT(tablet_replica_->log_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
   ASSERT_OK(ExecuteInsertsAndRollLogs(2));
-  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(6, segments.size());
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
-  retention = tablet_peer_->GetRetentionIndexes();
+  retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
 
   // Flush DMS to release the anchor.
-  tablet_peer_->tablet()->FlushBiggestDMS();
+  tablet_replica_->tablet()->FlushBiggestDMS();
 
   // Verify no anchors after Flush().
   AssertNoLogAnchors();
@@ -404,7 +405,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // The last log OpId is the commit in the last segment, so it only anchors
   // that segment, not the previous, because it's not the first OpId in the
   // segment.
-  retention = tablet_peer_->GetRetentionIndexes();
+  retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -412,11 +413,11 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 }
 
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
-TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
+TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
-  Log* log = tablet_peer_->log_.get();
+  Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
 
   AssertNoLogAnchors();
@@ -430,8 +431,8 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(5, segments.size());
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
-  ASSERT_EQ(1, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
-  tablet_peer_->tablet()->Flush();
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  tablet_replica_->tablet()->Flush();
 
   // Verify no anchors after Flush().
   AssertNoLogAnchors();
@@ -448,7 +449,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   {
     // Long-running mutation.
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
-    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_peer_.get(),
+    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_replica_.get(),
                                                                          req.get(),
                                                                          nullptr, // No RequestIdPB
                                                                          resp.get()));
@@ -462,7 +463,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
                                     std::move(tx_state)));
 
     scoped_refptr<TransactionDriver> driver;
-    ASSERT_OK(tablet_peer_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(),
+    ASSERT_OK(tablet_replica_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(),
                                                        &driver));
 
     ASSERT_OK(driver->ExecuteAsync());
@@ -474,12 +475,12 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     ASSERT_OK(log->AllocateSegmentAndRollOver());
   }
 
-  ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
+  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
   // The log anchor is currently equal to the latest OpId written to the Log
   // because we are delaying the Commit message with the CountDownLatch.
 
   // GC the first four segments created by the inserts.
-  log::RetentionIndexes retention = tablet_peer_->GetRetentionIndexes();
+  log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(4, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -490,15 +491,15 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_OK(ExecuteDeletesAndRollLogs(3));
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
-  ASSERT_EQ(1, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
-  tablet_peer_->tablet()->FlushBiggestDMS();
-  ASSERT_EQ(0, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
-  ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
+  ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  tablet_replica_->tablet()->FlushBiggestDMS();
+  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
 
   AssertLogAnchorEarlierThanLogLatest();
 
   // Try to GC(), nothing should be deleted due to the in-flight transaction.
-  retention = tablet_peer_->GetRetentionIndexes();
+  retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(0, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -506,30 +507,30 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // Now we release the transaction and wait for everything to complete.
   // We fully quiesce and flush, which should release all anchors.
-  ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
+  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
   apply_continue.CountDown();
   rpc_latch.Wait();
-  tablet_peer_->txn_tracker_.WaitForAllToFinish();
-  ASSERT_EQ(0, tablet_peer_->txn_tracker_.GetNumPendingForTests());
-  tablet_peer_->tablet()->FlushBiggestDMS();
+  tablet_replica_->txn_tracker_.WaitForAllToFinish();
+  ASSERT_EQ(0, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+  tablet_replica_->tablet()->FlushBiggestDMS();
   AssertNoLogAnchors();
 
   // All should be deleted except the two last segments.
-  retention = tablet_peer_->GetRetentionIndexes();
+  retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 }
 
-TEST_F(TabletPeerTest, TestGCEmptyLog) {
+TEST_F(TabletReplicaTest, TestGCEmptyLog) {
   ConsensusBootstrapInfo info;
-  tablet_peer_->Start(info);
+  tablet_replica_->Start(info);
   // We don't wait on consensus on purpose.
-  ASSERT_OK(tablet_peer_->RunLogGC());
+  ASSERT_OK(tablet_replica_->RunLogGC());
 }
 
-TEST_F(TabletPeerTest, TestFlushOpsPerfImprovements) {
+TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
   FLAGS_flush_threshold_mb = 64;
 
   MaintenanceOpStats stats;

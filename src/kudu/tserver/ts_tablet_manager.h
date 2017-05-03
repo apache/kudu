@@ -27,7 +27,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tserver/tablet_peer_lookup.h"
+#include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/locks.h"
@@ -58,7 +58,7 @@ class ResultTracker;
 
 namespace tablet {
 class TabletMetadata;
-class TabletPeer;
+class TabletReplica;
 class TabletStatusPB;
 class TabletStatusListener;
 }
@@ -76,7 +76,7 @@ class TransitionInProgressDeleter;
 // TODO: will also be responsible for keeping the local metadata about
 // which tablets are hosted on this server persistent on disk, as well
 // as re-opening all the tablets at startup, etc.
-class TSTabletManager : public tserver::TabletPeerLookupIf {
+class TSTabletManager : public tserver::TabletReplicaLookupIf {
  public:
   // Construct the tablet manager.
   // 'fs_manager' must remain valid until this object is destructed.
@@ -103,7 +103,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Create a new tablet and register it with the tablet manager. The new tablet
   // is persisted on disk and opened before this method returns.
   //
-  // If tablet_peer is non-NULL, the newly created tablet will be returned.
+  // If 'replica' is non-NULL, the newly created tablet will be returned.
   //
   // If another tablet already exists with this ID, logs a DFATAL
   // and returns a bad Status.
@@ -114,7 +114,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          const Schema& schema,
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
-                         scoped_refptr<tablet::TabletPeer>* tablet_peer);
+                         scoped_refptr<tablet::TabletReplica>* replica);
 
   // Delete the specified tablet.
   // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED
@@ -129,18 +129,18 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                       const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                       boost::optional<TabletServerErrorPB::Code>* error_code);
 
-  // Lookup the given tablet peer by its ID.
+  // Lookup the given tablet replica by its ID.
   // Returns true if the tablet is found successfully.
   bool LookupTablet(const std::string& tablet_id,
-                    scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
+                    scoped_refptr<tablet::TabletReplica>* replica) const;
 
   // Same as LookupTablet but doesn't acquired the shared lock.
   bool LookupTabletUnlocked(const std::string& tablet_id,
-                            scoped_refptr<tablet::TabletPeer>* tablet_peer) const;
+                            scoped_refptr<tablet::TabletReplica>* replica) const;
 
-  virtual Status GetTabletPeer(const std::string& tablet_id,
-                               scoped_refptr<tablet::TabletPeer>* tablet_peer) const
-                               override;
+  virtual Status GetTabletReplica(const std::string& tablet_id,
+                                  scoped_refptr<tablet::TabletReplica>* replica) const
+                                  override;
 
   virtual const NodeInstancePB& NodeInstance() const override;
 
@@ -165,7 +165,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                                        const std::vector<std::string>& tablet_ids) const;
 
   // Get all of the tablets currently hosted on this server.
-  void GetTabletPeers(std::vector<scoped_refptr<tablet::TabletPeer> >* tablet_peers) const;
+  void GetTabletReplicas(std::vector<scoped_refptr<tablet::TabletReplica> >* replicas) const;
 
   // Marks tablet with 'tablet_id' as dirty so that it'll be included in the
   // next round of master heartbeats.
@@ -187,10 +187,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
-  // Flag specified when registering a TabletPeer.
-  enum RegisterTabletPeerMode {
-    NEW_PEER,
-    REPLACEMENT_PEER
+  // Flag specified when registering a TabletReplica.
+  enum RegisterTabletReplicaMode {
+    NEW_REPLICA,
+    REPLACEMENT_REPLICA
   };
 
   // Standard log prefix, given a tablet id.
@@ -222,7 +222,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // This method does not return anything as it can be run asynchronously.
   // Upon completion of this method the tablet should be initialized and running.
   // If something wrong happened on bootstrap/initialization the relevant error
-  // will be set on TabletPeer along with the state set to FAILED.
+  // will be set on TabletReplica along with the state set to FAILED.
   //
   // The tablet must be registered and an entry corresponding to this tablet
   // must be put into the transition_in_progress_ map before calling this
@@ -234,30 +234,30 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   // Open a tablet whose metadata has already been loaded.
   void BootstrapAndInitTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
-                              scoped_refptr<tablet::TabletPeer>* peer);
+                              scoped_refptr<tablet::TabletReplica>* replica);
 
   // Add the tablet to the tablet map.
   // 'mode' specifies whether to expect an existing tablet to exist in the map.
-  // If mode == NEW_PEER but a tablet with the same name is already registered,
-  // or if mode == REPLACEMENT_PEER but a tablet with the same name is not
+  // If mode == NEW_REPLICA but a tablet with the same name is already registered,
+  // or if mode == REPLACEMENT_REPLICA but a tablet with the same name is not
   // registered, a FATAL message is logged, causing a process crash.
   // Calls to this method are expected to be externally synchronized, typically
   // using the transition_in_progress_ map.
   void RegisterTablet(const std::string& tablet_id,
-                      const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                      RegisterTabletPeerMode mode);
+                      const scoped_refptr<tablet::TabletReplica>& replica,
+                      RegisterTabletReplicaMode mode);
 
-  // Create and register a new TabletPeer, given tablet metadata.
+  // Create and register a new TabletReplica, given tablet metadata.
   // Calls RegisterTablet() with the given 'mode' parameter after constructing
   // the TablerPeer object. See RegisterTablet() for details about the
   // semantics of 'mode' and the locking requirements.
-  scoped_refptr<tablet::TabletPeer> CreateAndRegisterTabletPeer(
+  scoped_refptr<tablet::TabletReplica> CreateAndRegisterTabletReplica(
       const scoped_refptr<tablet::TabletMetadata>& meta,
-      RegisterTabletPeerMode mode);
+      RegisterTabletReplicaMode mode);
 
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const std::string& tablet_id,
-                              const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+                              const scoped_refptr<tablet::TabletReplica>& replica,
                               master::ReportedTabletPB* reported_tablet) const;
 
   // Handle the case on startup where we find a tablet that is not in
@@ -287,7 +287,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   consensus::RaftPeerPB local_peer_pb_;
 
-  typedef std::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
+  typedef std::unordered_map<std::string, scoped_refptr<tablet::TabletReplica> > TabletMap;
 
   // Lock protecting tablet_map_, dirty_tablets_, state_,
   // transition_in_progress_, and perm_deleted_tablet_ids_.

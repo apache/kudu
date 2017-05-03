@@ -34,7 +34,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tserver/tablet_copy_source_session.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
@@ -64,7 +64,7 @@ using tablet::ColumnDataPB;
 using tablet::DeltaDataPB;
 using tablet::KuduTabletTest;
 using tablet::RowSetDataPB;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
 using tablet::WriteTransactionState;
 
@@ -78,19 +78,19 @@ class TabletCopyTest : public KuduTabletTest {
 
   virtual void SetUp() OVERRIDE {
     NO_FATALS(KuduTabletTest::SetUp());
-    NO_FATALS(SetUpTabletPeer());
+    NO_FATALS(SetUpTabletReplica());
     NO_FATALS(PopulateTablet());
     NO_FATALS(InitSession());
   }
 
   virtual void TearDown() OVERRIDE {
     session_.reset();
-    tablet_peer_->Shutdown();
+    tablet_replica_->Shutdown();
     KuduTabletTest::TearDown();
   }
 
  protected:
-  void SetUpTabletPeer() {
+  void SetUpTabletReplica() {
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                         *tablet()->schema(),
@@ -106,15 +106,15 @@ class TabletCopyTest : public KuduTabletTest {
     config_peer.mutable_last_known_addr()->set_port(0);
     config_peer.set_member_type(RaftPeerPB::VOTER);
 
-    tablet_peer_.reset(
-        new TabletPeer(tablet()->metadata(),
-                       config_peer,
-                       apply_pool_.get(),
-                       Bind(&TabletCopyTest::TabletPeerStateChangedCallback,
-                            Unretained(this),
-                            tablet()->tablet_id())));
+    tablet_replica_.reset(
+        new TabletReplica(tablet()->metadata(),
+                          config_peer,
+                          apply_pool_.get(),
+                          Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
+                               Unretained(this),
+                               tablet()->tablet_id())));
 
-    // TODO(dralves) similar to code in tablet_peer-test, consider refactor.
+    // TODO(dralves) similar to code in tablet_replica-test, consider refactor.
     RaftConfigPB config;
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
@@ -129,27 +129,27 @@ class TabletCopyTest : public KuduTabletTest {
     mbuilder.Build(&messenger);
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
-    tablet_peer_->SetBootstrapping();
-    ASSERT_OK(tablet_peer_->Init(tablet(),
+    tablet_replica_->SetBootstrapping();
+    ASSERT_OK(tablet_replica_->Init(tablet(),
                                  clock(),
                                  messenger,
                                  scoped_refptr<rpc::ResultTracker>(),
                                  log,
                                  metric_entity));
     consensus::ConsensusBootstrapInfo boot_info;
-    ASSERT_OK(tablet_peer_->Start(boot_info));
-    ASSERT_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
-    ASSERT_OK(tablet_peer_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+    ASSERT_OK(tablet_replica_->Start(boot_info));
+    ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+    ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   }
 
-  void TabletPeerStateChangedCallback(const string& tablet_id, const string& reason) {
-    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id << ". Reason: " << reason;
+  void TabletReplicaStateChangedCallback(const string& tablet_id, const string& reason) {
+    LOG(INFO) << "Tablet replica state changed for tablet " << tablet_id << ". Reason: " << reason;
   }
 
   void PopulateTablet() {
     for (int32_t i = 0; i < 1000; i++) {
       WriteRequestPB req;
-      req.set_tablet_id(tablet_peer_->tablet_id());
+      req.set_tablet_id(tablet_replica_->tablet_id());
       ASSERT_OK(SchemaToPB(client_schema_, req.mutable_schema()));
       RowOperationsPB* data = req.mutable_row_operations();
       RowOperationsPBEncoder enc(data);
@@ -164,13 +164,13 @@ class TabletCopyTest : public KuduTabletTest {
       CountDownLatch latch(1);
 
       unique_ptr<tablet::WriteTransactionState> state(
-          new tablet::WriteTransactionState(tablet_peer_.get(),
+          new tablet::WriteTransactionState(tablet_replica_.get(),
                                             &req,
                                             nullptr, // No RequestIdPB
                                             &resp));
       state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
-      ASSERT_OK(tablet_peer_->SubmitWrite(std::move(state)));
+      ASSERT_OK(tablet_replica_->SubmitWrite(std::move(state)));
       latch.Wait();
       ASSERT_FALSE(resp.has_error()) << "Request failed: " << SecureShortDebugString(resp.error());
       ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << SecureShortDebugString(resp);
@@ -179,7 +179,7 @@ class TabletCopyTest : public KuduTabletTest {
   }
 
   void InitSession() {
-    session_.reset(new TabletCopySourceSession(tablet_peer_.get(), "TestSession", "FakeUUID",
+    session_.reset(new TabletCopySourceSession(tablet_replica_.get(), "TestSession", "FakeUUID",
                    fs_manager()));
     ASSERT_OK(session_->Init());
   }
@@ -214,7 +214,7 @@ class TabletCopyTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   gscoped_ptr<ThreadPool> apply_pool_;
-  scoped_refptr<TabletPeer> tablet_peer_;
+  scoped_refptr<TabletReplica> tablet_replica_;
   scoped_refptr<TabletCopySourceSession> session_;
 };
 

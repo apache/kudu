@@ -56,7 +56,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/server/hybrid_clock.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
@@ -117,7 +117,7 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TabletLocationsPB;
 using sp::shared_ptr;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tserver::MiniTabletServer;
 
 class ClientTest : public KuduTest {
@@ -240,10 +240,10 @@ class ClientTest : public KuduTest {
 
   void FlushTablet(const string& tablet_id) {
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      scoped_refptr<TabletPeer> tablet_peer;
+      scoped_refptr<TabletReplica> tablet_replica;
       ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
-          tablet_id, &tablet_peer));
-      ASSERT_OK(tablet_peer->tablet()->Flush());
+          tablet_id, &tablet_replica));
+      ASSERT_OK(tablet_replica->tablet()->Flush());
     }
   }
 
@@ -3376,18 +3376,18 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_STR_CONTAINS(s.ToString(), "unsupported alter operation: string_val");
   }
 
-  // Need a tablet peer for the next set of tests.
+  // Need a TabletReplica for the next set of tests.
   string tablet_id = GetFirstTabletId(client_table_.get());
-  scoped_refptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletReplica> tablet_replica;
   ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-      tablet_id, &tablet_peer));
+      tablet_id, &tablet_replica));
 
   {
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
     table_alterer->DropColumn("int_val")
       ->AddColumn("new_col")->Type(KuduColumnSchema::INT32);
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(1, tablet_replica->tablet()->metadata()->schema_version());
   }
 
   // Specifying an encoding incompatible with the column's type is an error.
@@ -3398,7 +3398,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     Status s = table_alterer->Alter();
     ASSERT_TRUE(s.IsNotSupported());
     ASSERT_STR_CONTAINS(s.ToString(), "encoding GROUP_VARINT not supported for type BINARY");
-    ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(1, tablet_replica->tablet()->metadata()->schema_version());
   }
 
   // Test adding a new column of type string.
@@ -3407,7 +3407,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AddColumn("new_string_val")->Type(KuduColumnSchema::STRING)
       ->Encoding(KuduColumnStorageAttributes::PREFIX_ENCODING);
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(2, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(2, tablet_replica->tablet()->metadata()->schema_version());
   }
 
   // Test renaming a primary key column.
@@ -3416,7 +3416,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("key")->RenameTo("key2");
     Status s = table_alterer->Alter();
     ASSERT_FALSE(s.IsInvalidArgument());
-    ASSERT_EQ(3, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(3, tablet_replica->tablet()->metadata()->schema_version());
   }
 
   // Changing the type of a primary key column is an error.
@@ -3435,8 +3435,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("string_val")
         ->Default(KuduValue::CopyString("hello!"));
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(4, tablet_peer->tablet()->metadata()->schema_version());
-    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ASSERT_EQ(4, tablet_replica->tablet()->metadata()->schema_version());
+    Schema schema = tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_FALSE(col_schema.has_read_default());
     ASSERT_TRUE(col_schema.has_write_default());
@@ -3449,8 +3449,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("non_null_with_default")
         ->Default(KuduValue::FromInt(54321));
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(5, tablet_peer->tablet()->metadata()->schema_version());
-    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ASSERT_EQ(5, tablet_replica->tablet()->metadata()->schema_version());
+    Schema schema = tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
     ASSERT_TRUE(col_schema.has_read_default()); // Started with a default
     ASSERT_TRUE(col_schema.has_write_default());
@@ -3463,8 +3463,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("string_val")
         ->RemoveDefault();
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(6, tablet_peer->tablet()->metadata()->schema_version());
-    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ASSERT_EQ(6, tablet_replica->tablet()->metadata()->schema_version());
+    Schema schema = tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_FALSE(col_schema.has_read_default());
     ASSERT_FALSE(col_schema.has_write_default());
@@ -3476,8 +3476,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     table_alterer->AlterColumn("non_null_with_default")
         ->RemoveDefault();
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(7, tablet_peer->tablet()->metadata()->schema_version());
-    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ASSERT_EQ(7, tablet_replica->tablet()->metadata()->schema_version());
+    Schema schema = tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("non_null_with_default"));
     ASSERT_TRUE(col_schema.has_read_default());
     ASSERT_FALSE(col_schema.has_write_default());
@@ -3494,7 +3494,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     Status s = table_alterer->Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "wrong size for default value");
-    ASSERT_EQ(7, tablet_peer->tablet()->metadata()->schema_version());
+    ASSERT_EQ(7, tablet_replica->tablet()->metadata()->schema_version());
   }
 
   // Test altering encoding, compression, and block size.
@@ -3505,8 +3505,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
         ->Compression(KuduColumnStorageAttributes::LZ4)
         ->BlockSize(16 * 1024 * 1024);
     ASSERT_OK(table_alterer->Alter());
-    ASSERT_EQ(8, tablet_peer->tablet()->metadata()->schema_version());
-    Schema schema = tablet_peer->tablet()->metadata()->schema();
+    ASSERT_EQ(8, tablet_replica->tablet()->metadata()->schema_version());
+    Schema schema = tablet_replica->tablet()->metadata()->schema();
     ColumnSchema col_schema = schema.column(schema.find_column("string_val"));
     ASSERT_EQ(KuduColumnStorageAttributes::PLAIN_ENCODING, col_schema.attributes().encoding);
     ASSERT_EQ(KuduColumnStorageAttributes::LZ4, col_schema.attributes().compression);
@@ -3520,8 +3520,8 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_OK(table_alterer
               ->RenameTo(kRenamedTableName)
               ->Alter());
-    ASSERT_EQ(9, tablet_peer->tablet()->metadata()->schema_version());
-    ASSERT_EQ(kRenamedTableName, tablet_peer->tablet()->metadata()->table_name());
+    ASSERT_EQ(9, tablet_replica->tablet()->metadata()->schema_version());
+    ASSERT_EQ(kRenamedTableName, tablet_replica->tablet()->metadata()->table_name());
 
     CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
     CatalogManager::ScopedLeaderSharedLock l(catalog_manager);
@@ -3561,9 +3561,9 @@ TEST_F(ClientTest, TestDeleteTable) {
   int wait_time = 1000;
   bool tablet_found = true;
   for (int i = 0; i < 80 && tablet_found; ++i) {
-    scoped_refptr<TabletPeer> tablet_peer;
+    scoped_refptr<TabletReplica> tablet_replica;
     tablet_found = cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-                      tablet_id, &tablet_peer);
+                      tablet_id, &tablet_replica);
     SleepFor(MonoDelta::FromMicroseconds(wait_time));
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
@@ -4258,9 +4258,9 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
   ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Find the tablet.
-  scoped_refptr<TabletPeer> tablet_peer;
+  scoped_refptr<TabletReplica> tablet_replica;
   ASSERT_TRUE(cluster_->mini_tablet_server(0)->server()->tablet_manager()->LookupTablet(
-          GetFirstTabletId(table.get()), &tablet_peer));
+          GetFirstTabletId(table.get()), &tablet_replica));
 
   // Utility function to get the current value of the row.
   const auto ReadRowAsString = [&]() {
@@ -4285,7 +4285,7 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
   ASSERT_EQ("(string k1=\"\", string v1=\"initial\")", ReadRowAsString());
 
   // Make sure that Flush works properly, and the data is still readable.
-  ASSERT_OK(tablet_peer->tablet()->Flush());
+  ASSERT_OK(tablet_replica->tablet()->Flush());
   ASSERT_EQ("(string k1=\"\", string v1=\"initial\")", ReadRowAsString());
 
   // Perform an update.
@@ -4297,9 +4297,9 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
     ASSERT_OK(session->Flush());
   }
   ASSERT_EQ("(string k1=\"\", string v1=\"updated\")", ReadRowAsString());
-  ASSERT_OK(tablet_peer->tablet()->FlushAllDMSForTests());
+  ASSERT_OK(tablet_replica->tablet()->FlushAllDMSForTests());
   ASSERT_EQ("(string k1=\"\", string v1=\"updated\")", ReadRowAsString());
-  ASSERT_OK(tablet_peer->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
+  ASSERT_OK(tablet_replica->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
   ASSERT_EQ("(string k1=\"\", string v1=\"updated\")", ReadRowAsString());
 
   // Perform a delete.
@@ -4310,9 +4310,9 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
     ASSERT_OK(session->Flush());
   }
   ASSERT_EQ("<none>", ReadRowAsString());
-  ASSERT_OK(tablet_peer->tablet()->FlushAllDMSForTests());
+  ASSERT_OK(tablet_replica->tablet()->FlushAllDMSForTests());
   ASSERT_EQ("<none>", ReadRowAsString());
-  ASSERT_OK(tablet_peer->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
+  ASSERT_OK(tablet_replica->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
   ASSERT_EQ("<none>", ReadRowAsString());
 }
 

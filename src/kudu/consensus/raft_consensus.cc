@@ -1079,7 +1079,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //   state machine so, were we to crash afterwards, having the prepares in-flight
   //   won't hurt.
   // - Prepares depend on factors external to consensus (the transaction drivers and
-  //   the tablet peer) so if for some reason they cannot be enqueued we must know
+  //   the TabletReplica) so if for some reason they cannot be enqueued we must know
   //   before we try write them to the WAL. Once enqueued, we assume that prepare will
   //   always succeed on a replica transaction (because the leader already prepared them
   //   successfully, and thus we know they are valid).

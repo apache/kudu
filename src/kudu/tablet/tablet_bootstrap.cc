@@ -48,7 +48,7 @@
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
@@ -320,7 +320,7 @@ class TabletBootstrap {
   // Return a log prefix string in the standard "T xxx P yyy" format.
   string LogPrefix() const;
 
-  // Report a status message in the WAL as well as update the tablet peer's
+  // Report a status message in the WAL as well as update the TabletReplica's
   // status.
   void StatusMessage(const string& status);
 

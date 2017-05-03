@@ -47,7 +47,7 @@ it's not totally clear what happens when an RPC mutates multiple "server objects
 what these server objects really are.
 
 2. Handled ad-hoc by the client and the tablet server/master, outside of the RPC layer -
-With this option, we choose to handle errors at the TabletServer/TabletPeer, ad-hoc, and for
+With this option, we choose to handle errors at the TabletServer/TabletReplica, ad-hoc, and for
 each different RPC. For specific RPCs like Write() this option seems to map to existing
 components quite well. For instance the completion record can be the raft log and replica
 replay would mean that it would be relatively easy to implement a retry rendezvous
@@ -58,7 +58,7 @@ error handling for operations that are not tablet server transactions.
 such as retrying and retry rendez-vous logic, but other parts of the logic would be implemented
 ad-hoc in other layers. For instance, for Write()s, the RPC layer would know how to sequence and
 retry the RPCs but would delegate durability and cross-server replicated operation rendezvous
-to the tablet peer/transaction manager.
+to the tablet replica/transaction manager.
 
 # Design choices
 

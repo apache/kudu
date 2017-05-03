@@ -48,7 +48,7 @@ class Clock;
 }
 
 namespace tablet {
-class TabletPeer;
+class TabletReplica;
 }
 
 namespace tserver {
@@ -294,7 +294,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
  protected:
   friend class RefCountedThreadSafe<Consensus>;
-  friend class tablet::TabletPeer;
+  friend class tablet::TabletReplica;
   friend class master::SysCatalogTable;
 
   // This class is refcounted.

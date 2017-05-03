@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_PEER_HARNESS_H
-#define KUDU_TABLET_TABLET_PEER_HARNESS_H
+#ifndef KUDU_TABLET_TABLET_REPLICA_HARNESS_H
+#define KUDU_TABLET_TABLET_REPLICA_HARNESS_H
 
 #include <memory>
 #include <string>
@@ -155,4 +155,4 @@ class TabletHarness {
 
 } // namespace tablet
 } // namespace kudu
-#endif /* KUDU_TABLET_TABLET_PEER_HARNESS_H */
+#endif /* KUDU_TABLET_TABLET_REPLICA_HARNESS_H */

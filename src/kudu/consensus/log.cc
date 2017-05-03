@@ -499,9 +499,9 @@ Status Log::DoAppend(LogEntryBatch* entry_batch) {
   // We keep track of the last-written OpId here.
   // This is needed to initialize Consensus on startup.
   if (entry_batch->type_ == REPLICATE) {
-    // TODO Probably remove the code below as it looks suspicious: Tablet peer uses this
+    // TODO Probably remove the code below as it looks suspicious: TabletReplica uses this
     // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
-    // is not the last durable operation. Either move this to tablet peer (since we're
+    // is not the last durable operation. Either move this to TabletReplica (since we're
     // using in flights anyway no need to scan for ids here) or actually delay doing this
     // until fsync() has been done. See KUDU-527.
     std::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);

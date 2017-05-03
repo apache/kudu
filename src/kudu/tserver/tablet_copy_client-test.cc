@@ -46,12 +46,12 @@ class TabletCopyClientTest : public TabletCopyTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
-    tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
+    tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new TabletCopyClient(GetTabletId(),
                                        fs_manager_.get(),
                                        messenger_));
-    ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()
+    ASSERT_OK(GetRaftConfigLeader(tablet_replica_->consensus()
         ->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED), &leader_));
 
     HostPort host_port;
@@ -139,7 +139,7 @@ TEST_F(TabletCopyClientTest, TestDownloadWalSegment) {
   ASSERT_TRUE(fs_manager_->Exists(path));
 
   log::SegmentSequence local_segments;
-  ASSERT_OK(tablet_peer_->log()->reader()->GetSegmentsSnapshot(&local_segments));
+  ASSERT_OK(tablet_replica_->log()->reader()->GetSegmentsSnapshot(&local_segments));
   const scoped_refptr<log::ReadableLogSegment>& segment = local_segments[0];
   string server_path = segment->path();
 

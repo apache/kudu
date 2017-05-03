@@ -57,7 +57,7 @@
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_test_util.h"
@@ -107,7 +107,7 @@ using tablet::Tablet;
 using tablet::TabletDataState;
 using tablet::TabletHarness;
 using tablet::TabletMetadata;
-using tablet::TabletPeer;
+using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
 using tserver::DeleteTabletRequestPB;
 using tserver::DeleteTabletResponsePB;
@@ -1250,12 +1250,12 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   // is reduced at all.
   string tablet_id;
   {
-    vector<scoped_refptr<TabletPeer>> tablet_peers;
-    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
-    ASSERT_EQ(1, tablet_peers.size());
-    Tablet* tablet = tablet_peers[0]->tablet();
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(1, tablet_replicas.size());
+    Tablet* tablet = tablet_replicas[0]->tablet();
     ASSERT_OK(tablet->Flush());
-    tablet_id = tablet_peers[0]->tablet_id();
+    tablet_id = tablet_replicas[0]->tablet_id();
   }
   const string& tserver_dir = ts->options()->fs_opts.wal_path;
   // Using the delete tool with tablet server running fails.
@@ -1297,9 +1297,9 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
   // we can expect the tablet server to have nothing after it comes up.
   ASSERT_OK(ts->Start());
   ASSERT_OK(ts->WaitStarted());
-  vector<scoped_refptr<TabletPeer>> tablet_peers;
-  ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
-  ASSERT_EQ(0, tablet_peers.size());
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(0, tablet_replicas.size());
 }
 
 // Test 'kudu local_replica delete' tool for tombstoning the tablet.
@@ -1330,12 +1330,12 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
   last_logged_opid.Clear();
   string tablet_id;
   {
-    vector<scoped_refptr<TabletPeer>> tablet_peers;
-    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
-    ASSERT_EQ(1, tablet_peers.size());
-    tablet_id = tablet_peers[0]->tablet_id();
-    tablet_peers[0]->log()->GetLatestEntryOpId(&last_logged_opid);
-    Tablet* tablet = tablet_peers[0]->tablet();
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(1, tablet_replicas.size());
+    tablet_id = tablet_replicas[0]->tablet_id();
+    tablet_replicas[0]->log()->GetLatestEntryOpId(&last_logged_opid);
+    Tablet* tablet = tablet_replicas[0]->tablet();
     ASSERT_OK(tablet->Flush());
   }
   const string& tserver_dir = ts->options()->fs_opts.wal_path;
@@ -1362,13 +1362,13 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
   ASSERT_OK(ts->Start());
   ASSERT_OK(ts->WaitStarted());
   {
-    vector<scoped_refptr<TabletPeer>> tablet_peers;
-    ts->server()->tablet_manager()->GetTabletPeers(&tablet_peers);
-    ASSERT_EQ(1, tablet_peers.size());
-    ASSERT_EQ(tablet_id, tablet_peers[0]->tablet_id());
+    vector<scoped_refptr<TabletReplica>> tablet_replicas;
+    ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+    ASSERT_EQ(1, tablet_replicas.size());
+    ASSERT_EQ(tablet_id, tablet_replicas[0]->tablet_id());
     ASSERT_EQ(TabletDataState::TABLET_DATA_TOMBSTONED,
-              tablet_peers[0]->tablet_metadata()->tablet_data_state());
-    OpId tombstoned_opid = tablet_peers[0]->tablet_metadata()->tombstone_last_logged_opid();
+              tablet_replicas[0]->tablet_metadata()->tablet_data_state());
+    OpId tombstoned_opid = tablet_replicas[0]->tablet_metadata()->tombstone_last_logged_opid();
     ASSERT_TRUE(tombstoned_opid.IsInitialized());
     ASSERT_EQ(last_logged_opid.term(), tombstoned_opid.term());
     ASSERT_EQ(last_logged_opid.index(), tombstoned_opid.index());

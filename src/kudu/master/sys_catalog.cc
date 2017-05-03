@@ -71,7 +71,7 @@ using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
+using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatusListener;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
@@ -107,8 +107,8 @@ SysCatalogTable::~SysCatalogTable() {
 }
 
 void SysCatalogTable::Shutdown() {
-  if (tablet_peer_) {
-    tablet_peer_->Shutdown();
+  if (tablet_replica_) {
+    tablet_replica_->Shutdown();
   }
   apply_pool_->Shutdown();
 }
@@ -254,8 +254,8 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
 }
 
 void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const string& reason) {
-  CHECK_EQ(tablet_id, tablet_peer_->tablet_id());
-  scoped_refptr<consensus::Consensus> consensus  = tablet_peer_->shared_consensus();
+  CHECK_EQ(tablet_id, tablet_replica_->tablet_id());
+  scoped_refptr<consensus::Consensus> consensus  = tablet_replica_->shared_consensus();
   if (!consensus) {
     LOG_WITH_PREFIX(WARNING) << "Received notification of tablet state change "
                              << "but tablet no longer running. Tablet ID: "
@@ -265,7 +265,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
   consensus::ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
                         << "Latest consensus state: " << SecureShortDebugString(cstate);
-  RaftPeerPB::Role new_role = GetConsensusRole(tablet_peer_->permanent_uuid(), cstate);
+  RaftPeerPB::Role new_role = GetConsensusRole(tablet_replica_->permanent_uuid(), cstate);
   LOG_WITH_PREFIX(INFO) << "This master's current role is: "
                         << RaftPeerPB::Role_Name(new_role);
   if (new_role == RaftPeerPB::LEADER) {
@@ -286,40 +286,40 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
-  tablet_peer_.reset(new TabletPeer(
+  tablet_replica_.reset(new TabletReplica(
       metadata,
       local_peer_pb_,
       apply_pool_.get(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
 
   consensus::ConsensusBootstrapInfo consensus_info;
-  tablet_peer_->SetBootstrapping();
+  tablet_replica_->SetBootstrapping();
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 master_->mem_tracker(),
                                 scoped_refptr<rpc::ResultTracker>(),
                                 metric_registry_,
-                                implicit_cast<TabletStatusListener*>(tablet_peer_.get()),
+                                implicit_cast<TabletStatusListener*>(tablet_replica_.get()),
                                 &tablet,
                                 &log,
-                                tablet_peer_->log_anchor_registry(),
+                                tablet_replica_->log_anchor_registry(),
                                 &consensus_info));
 
   // TODO: Do we have a setSplittable(false) or something from the outside is
   // handling split in the TS?
 
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Init(tablet,
+  RETURN_NOT_OK_PREPEND(tablet_replica_->Init(tablet,
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
                                            scoped_refptr<rpc::ResultTracker>(),
                                            log,
                                            tablet->GetMetricEntity()),
-                        "Failed to Init() TabletPeer");
+                        "Failed to Init() TabletReplica");
 
-  RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),
-                        "Failed to Start() TabletPeer");
+  RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info),
+                        "Failed to Start() TabletReplica");
 
-  tablet_peer_->RegisterMaintenanceOps(master_->maintenance_manager());
+  tablet_replica_->RegisterMaintenanceOps(master_->maintenance_manager());
 
   const Schema* schema = tablet->schema();
   schema_ = SchemaBuilder(*schema).BuildWithoutIds();
@@ -329,8 +329,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 
 std::string SysCatalogTable::LogPrefix() const {
   return Substitute("T $0 P $1 [$2]: ",
-                    tablet_peer_->tablet_id(),
-                    tablet_peer_->permanent_uuid(),
+                    tablet_replica_->tablet_id(),
+                    tablet_replica_->permanent_uuid(),
                     table_name());
 }
 
@@ -338,7 +338,7 @@ Status SysCatalogTable::WaitUntilRunning() {
   TRACE_EVENT0("master", "SysCatalogTable::WaitUntilRunning");
   int seconds_waited = 0;
   while (true) {
-    Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
+    Status status = tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
     seconds_waited++;
     if (status.ok()) {
       LOG_WITH_PREFIX(INFO) << "configured and running, proceeding with master startup.";
@@ -363,13 +363,13 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
   gscoped_ptr<tablet::TransactionCompletionCallback> txn_callback(
       new LatchTransactionCompletionCallback<WriteResponsePB>(&latch, resp));
   unique_ptr<tablet::WriteTransactionState> tx_state(
-      new tablet::WriteTransactionState(tablet_peer_.get(),
+      new tablet::WriteTransactionState(tablet_replica_.get(),
                                         req,
                                         nullptr, // No RequestIdPB
                                         resp));
   tx_state->set_completion_callback(std::move(txn_callback));
 
-  RETURN_NOT_OK(tablet_peer_->SubmitWrite(std::move(tx_state)));
+  RETURN_NOT_OK(tablet_replica_->SubmitWrite(std::move(tx_state)));
   latch.Wait();
 
   if (resp->has_error()) {
@@ -525,7 +525,7 @@ Status SysCatalogTable::ProcessRows(
   spec.AddPredicate(pred);
 
   gscoped_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK(tablet_peer_->tablet()->NewRowIterator(schema_, &iter));
+  RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_, &iter));
   RETURN_NOT_OK(iter->Init(&spec));
 
   Arena arena(32 * 1024, 256 * 1024);

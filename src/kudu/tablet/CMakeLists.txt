@@ -20,8 +20,8 @@ set(TABLET_SRCS
   tablet_bootstrap.cc
   tablet_metrics.cc
   tablet_mm_ops.cc
-  tablet_peer_mm_ops.cc
-  tablet_peer.cc
+  tablet_replica_mm_ops.cc
+  tablet_replica.cc
   transactions/transaction.cc
   transactions/alter_schema_transaction.cc
   transactions/transaction_driver.cc
@@ -118,7 +118,7 @@ ADD_KUDU_TEST(mt-rowset_delta_compaction-test)
 ADD_KUDU_TEST(major_delta_compaction-test)
 ADD_KUDU_TEST(transactions/transaction_tracker-test)
 ADD_KUDU_TEST(tablet_history_gc-test)
-ADD_KUDU_TEST(tablet_peer-test)
+ADD_KUDU_TEST(tablet_replica-test)
 ADD_KUDU_TEST(tablet_random_access-test)
 ADD_KUDU_TEST(tablet_throttle-test)
 ADD_KUDU_TEST(tablet_mm_ops-test)
