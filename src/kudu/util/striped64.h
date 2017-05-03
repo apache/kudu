@@ -29,12 +29,6 @@ class Striped64;
 namespace striped64 {
 namespace internal {
 
-struct HashCode {
- public:
-  HashCode();
-  uint64_t code_;
-};
-
 #define ATOMIC_INT_SIZE sizeof(AtomicInt<int64_t>)
 // Padded POD container for AtomicInt. This prevents false sharing of cache lines.
 class Cell {
@@ -137,12 +131,14 @@ class Striped64 {
   striped64::internal::Cell* cells_;
   int32_t num_cells_;
 
+ protected:
+  static uint64_t get_tls_hashcode();
+
+ private:
   // Static hash code per-thread. Shared across all instances to limit thread-local pollution.
   // Also, if a thread hits a collision on one Striped64, it's also likely to collide on
   // other Striped64s too.
-  DECLARE_STATIC_THREAD_LOCAL(striped64::internal::HashCode, hashcode_);
-
- private:
+  static __thread uint64_t tls_hashcode_;
 
   // Number of CPUs, to place bound on table size.
   static const uint32_t kNumCpus;

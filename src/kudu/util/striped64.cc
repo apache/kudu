@@ -15,27 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/striped64.h"
+
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
-#include "kudu/util/striped64.h"
 #include "kudu/util/threadlocal.h"
 
-using kudu::striped64::internal::HashCode;
 using kudu::striped64::internal::Cell;
 
 namespace kudu {
 
 namespace striped64 {
 namespace internal {
-//
-// HashCode
-//
-
-HashCode::HashCode() {
-  Random r((MonoTime::Now() - MonoTime::Min()).ToNanoseconds());
-  const uint64_t hash = r.Next64();
-  code_ = (hash == 0) ? 1 : hash;  // Avoid zero to allow xorShift rehash
-}
 
 //
 // Cell
@@ -50,8 +41,8 @@ Cell::Cell()
 //
 // Striped64
 //
+__thread uint64_t Striped64::tls_hashcode_ = 0;
 const uint32_t Striped64::kNumCpus = sysconf(_SC_NPROCESSORS_ONLN);
-DEFINE_STATIC_THREAD_LOCAL(HashCode, Striped64, hashcode_);
 
 Striped64::Striped64()
     : busy_(false),
@@ -60,13 +51,25 @@ Striped64::Striped64()
       num_cells_(0) {
 }
 
+uint64_t Striped64::get_tls_hashcode() {
+  if (PREDICT_FALSE(tls_hashcode_ == 0)) {
+    Random r((MonoTime::Now() - MonoTime::Min()).ToNanoseconds());
+    const uint64_t hash = r.Next64();
+    // Avoid zero to allow xorShift rehash, and because 0 indicates an unset
+    // hashcode above.
+    tls_hashcode_ = (hash == 0) ? 1 : hash;
+  }
+  return tls_hashcode_;
+}
+
+
 Striped64::~Striped64() {
   // Cell is a POD, so no need to destruct each one.
   free(cell_buffer_);
 }
 
-void Striped64::RetryUpdate(int64_t x, Rehash contention) {
-  uint64_t h = hashcode_->code_;
+void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
+  uint64_t h = get_tls_hashcode();
   // There are three operations in this loop.
   //
   // 1. Try to add to the Cell hash table entry for the thread if the table exists.
@@ -79,9 +82,9 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
   while (true) {
     int32_t n = base::subtle::Acquire_Load(&num_cells_);
     if (n > 0) {
-      if (contention == kRehash) {
+      if (to_rehash == kRehash) {
         // CAS failed already, rehash before trying to increment.
-        contention = kNoRehash;
+        to_rehash = kNoRehash;
       } else {
         Cell *cell = &(cells_[(n - 1) & h]);
         int64_t v = cell->value_.Load();
@@ -124,7 +127,7 @@ void Striped64::RetryUpdate(int64_t x, Rehash contention) {
     }
   }
   // Record index for next time
-  hashcode_->code_ = h;
+  tls_hashcode_ = h;
 }
 
 void Striped64::InternalReset(int64_t initialValue) {
@@ -136,12 +139,11 @@ void Striped64::InternalReset(int64_t initialValue) {
 }
 
 void LongAdder::IncrementBy(int64_t x) {
-  INIT_STATIC_THREAD_LOCAL(HashCode, hashcode_);
   // Use hash table if present. If that fails, call RetryUpdate to rehash and retry.
   // If no hash table, try to CAS the base counter. If that fails, RetryUpdate to init the table.
   const int32_t n = base::subtle::Acquire_Load(&num_cells_);
   if (n > 0) {
-    Cell *cell = &(cells_[(n - 1) & hashcode_->code_]);
+    Cell *cell = &(cells_[(n - 1) & get_tls_hashcode()]);
     DCHECK_EQ(0, reinterpret_cast<const uintptr_t>(cell) & (sizeof(Cell) - 1))
         << " unaligned Cell not allowed for Striped64" << std::endl;
     const int64_t old = cell->value_.Load();
