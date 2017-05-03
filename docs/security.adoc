@@ -203,7 +203,7 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 # may access data in Kudu via the Impala service subject to its own
 # authorization rules.
 --user-acl=impala,nightly_etl_service_account
---admin-acl=hadoopadmin
+--superuser-acl=hadoopadmin
 ```
 
 Further information about these flags can be found in the configuration
