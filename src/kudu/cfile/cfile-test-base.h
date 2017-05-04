@@ -350,7 +350,7 @@ class CFileTestBase : public KuduTest {
                      uint32_t flags,
                      BlockId* block_id) {
     unique_ptr<WritableBlock> sink;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
     *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;

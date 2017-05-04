@@ -123,6 +123,12 @@ message TabletSuperBlockPB {
   // WAL before tombstoning.
   // Only relevant for TOMBSTONED tablets.
   optional consensus.OpId tombstone_last_logged_opid = 12;
+
+  // Tablet data is spread across a data directory group. If this is not set
+  // and the tablet state is TABLET_DATA_READY, it is assumed that the data is
+  // from a version of Kudu before 1.5.0. In this case, a new group will be
+  // created spanning all data directories.
+  optional DataDirGroupPB data_dir_group = 15;
 }
 
 // The enum of tablet states.

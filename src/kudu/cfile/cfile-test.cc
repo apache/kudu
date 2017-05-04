@@ -214,7 +214,7 @@ class TestCFile : public CFileTestBase {
   void TestReadWriteRawBlocks(CompressionType compression, int num_entries) {
     // Test Write
     unique_ptr<WritableBlock> sink;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
     BlockId id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
@@ -337,7 +337,7 @@ class TestCFile : public CFileTestBase {
     uint8_t corrupt = orig ^ (static_cast<uint8_t>(1) << flip_bit);
     data.mutable_data()[corrupt_offset] = corrupt;
     unique_ptr<fs::WritableBlock> writer;
-    RETURN_NOT_OK(fs_manager_->CreateNewBlock(&writer));
+    RETURN_NOT_OK(fs_manager_->CreateNewBlock({}, &writer));
     RETURN_NOT_OK(writer->Append(data));
     RETURN_NOT_OK(writer->Close());
 
@@ -715,7 +715,7 @@ TEST_P(TestCFileBothCacheTypes, TestMetadata) {
   // Write the file.
   {
     unique_ptr<WritableBlock> sink;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
     block_id = sink->id();
     WriterOptions opts;
     CFileWriter w(opts, GetTypeInfo(INT32), false, std::move(sink));
@@ -823,7 +823,7 @@ TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
 
   // Write some data
   unique_ptr<WritableBlock> sink;
-  ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+  ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
   BlockId id = sink->id();
   WriterOptions opts;
   opts.write_posidx = true;
@@ -887,7 +887,7 @@ TEST_P(TestCFileBothCacheTypes, TestNullDictStrings) {
 
 TEST_P(TestCFileBothCacheTypes, TestReleaseBlock) {
   unique_ptr<WritableBlock> sink;
-  ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+  ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
   WriterOptions opts;
   CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));

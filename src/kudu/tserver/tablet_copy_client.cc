@@ -26,6 +26,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -74,11 +75,8 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
-using consensus::ConsensusStatePB;
-using consensus::OpId;
-using consensus::RaftConfigPB;
-using consensus::RaftPeerPB;
 using env_util::CopyFile;
+using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using rpc::Messenger;
 using std::shared_ptr;
@@ -208,6 +206,10 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   superblock_->clear_rowsets();
   superblock_->clear_orphaned_blocks();
 
+  // The UUIDs within the DataDirGroupPB on the remote are also unique to the
+  // remote and have no meaning to us.
+  superblock_->clear_data_dir_group();
+
   // Set the data state to COPYING to indicate that, on crash, this replica
   // should be discarded.
   superblock_->set_tablet_data_state(tablet::TABLET_DATA_COPYING);
@@ -242,6 +244,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     RETURN_NOT_OK_PREPEND(
         TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_COPYING, boost::none),
         "Could not replace superblock with COPYING data state");
+    CHECK_OK(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_));
   } else {
     Partition partition;
     Partition::FromPB(superblock_->partition(), &partition);
@@ -259,6 +262,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             tablet::TABLET_DATA_COPYING,
                                             &meta_));
   }
+  CHECK(fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_,
+                                                     superblock_->mutable_data_dir_group()));
 
   state_ = kStarted;
   if (meta) {
@@ -544,7 +549,7 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
 
   unique_ptr<WritableBlock> block;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(CreateBlockOptions({ tablet_id_ }), &block),
                         "Unable to create new block");
 
   DataIdPB data_id;

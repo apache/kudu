@@ -21,14 +21,19 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <set>
 #include <vector>
 
+#include <boost/optional.hpp>
+
+#include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -37,9 +42,60 @@ class AtomicGauge;
 class Env;
 class MetricEntity;
 class ThreadPool;
+class DataDirGroupPB;
 
 namespace fs {
+
+typedef std::unordered_map<uint16_t, std::string> UuidByUuidIndexMap;
+typedef std::unordered_map<std::string, uint16_t> UuidIndexByUuidMap;
+
+class DataDirManager;
 class PathInstanceMetadataFile;
+struct CreateBlockOptions;
+
+const char kInstanceMetadataFileName[] = "block_manager_instance";
+
+namespace internal {
+
+// A DataDirGroup is a group of directories used by an entity for block
+// placement. A group is represented in memory by a list of 2-byte indices,
+// which index into the list of all UUIDs found in a PathSetPB. A group is
+// represented on-disk as a list of full UUIDs, and as such, when writing or
+// reading from disk, a mapping is needed to translate between index and UUID.
+//
+// The same directory may appear in multiple DataDirGroups.
+class DataDirGroup {
+ public:
+  explicit DataDirGroup(std::vector<uint16_t> uuid_indices)
+      : uuid_indices_(std::move(uuid_indices)) {}
+
+  static DataDirGroup FromPB(const DataDirGroupPB& pb,
+                             const UuidIndexByUuidMap& uuid_idx_by_uuid) {
+    std::vector<uint16_t> uuid_indices;
+    for (const std::string& uuid : pb.uuids()) {
+      uuid_indices.push_back(FindOrDie(uuid_idx_by_uuid, uuid));
+    }
+    return DataDirGroup(std::move(uuid_indices));
+  }
+
+  void CopyToPB(const UuidByUuidIndexMap& uuid_by_uuid_idx,
+                DataDirGroupPB* pb) const {
+    DCHECK(pb);
+    DataDirGroupPB group;
+    for (uint16_t uuid_idx : uuid_indices_) {
+      group.add_uuids(FindOrDie(uuid_by_uuid_idx, uuid_idx));
+    }
+    pb->Swap(&group);
+  }
+
+  const std::vector<uint16_t>& uuid_indices() const { return uuid_indices_; }
+
+ private:
+  // UUID indices corresponding to the data directories within the group.
+  const std::vector<uint16_t> uuid_indices_;
+};
+
+}  // namespace internal
 
 struct DataDirMetrics {
   explicit DataDirMetrics(const scoped_refptr<MetricEntity>& entity);
@@ -127,6 +183,11 @@ class DataDirManager {
     NONE,
   };
 
+  enum class DirDistributionMode {
+    ACROSS_ALL_DIRS,
+    USE_FLAG_SPEC,
+  };
+
   DataDirManager(Env* env,
                  scoped_refptr<MetricEntity> metric_entity,
                  std::string block_manager_type,
@@ -147,12 +208,39 @@ class DataDirManager {
   // 'max_data_dirs', or if 'mode' is MANDATORY and locks could not be taken.
   Status Open(int max_data_dirs, LockMode mode);
 
-  // Retrieves the next data directory that isn't full. Directories are rotated
-  // via round-robin. Full directories are skipped.
+  // Deserializes a DataDirGroupPB and associates the resulting DataDirGroup
+  // with a tablet_id.
   //
-  // Returns an error if all data directories are full, or upon filesystem
-  // error. On success, 'dir' is guaranteed to be set.
-  Status GetNextDataDir(DataDir** dir);
+  // Results in an error if the tablet already exists.
+  Status LoadDataDirGroupFromPB(const std::string& tablet_id,
+                                const DataDirGroupPB& pb);
+
+  // Creates a new data dir group for the specified tablet. Adds data
+  // directories to this new group until the limit specified by
+  // fs_target_data_dirs_per_tablet, or until there is no more space.
+  //
+  // If 'mode' is ACROSS_ALL_DIRS, ignores the above flag and stripes across
+  // all disks. This behavior is only used when loading a superblock with no
+  // DataDirGroup, allowing for backwards compatability with data from older
+  // version of Kudu.
+  //
+  // Results in an error if all disks are full or if the tablet already has a
+  // data dir group associated with it. If returning with an error, the
+  // DataDirManager will be unchanged.
+  Status CreateDataDirGroup(const std::string& tablet_id,
+                            DirDistributionMode mode = DirDistributionMode::USE_FLAG_SPEC);
+
+  // Deletes the group for the specified tablet. Maps from tablet_id to group
+  // and data dir to tablet set are cleared of all references to the tablet.
+  void DeleteDataDirGroup(const std::string& tablet_id);
+
+  // Serializes the DataDirGroupPB associated with the given tablet_id. Returns
+  // false if none exist.
+  bool GetDataDirGroupPB(const std::string& tablet_id, DataDirGroupPB* pb) const;
+
+  // Returns a random directory from the specfied option's data dir group. If
+  // there is no room in the group, returns an error.
+  Status GetNextDataDir(const CreateBlockOptions& opts, DataDir** dir);
 
   // Finds a data directory by uuid index, returning nullptr if it can't be
   // found.
@@ -170,6 +258,25 @@ class DataDirManager {
   }
 
  private:
+  FRIEND_TEST(DataDirGroupTest, TestCreateGroup);
+  FRIEND_TEST(DataDirGroupTest, TestLoadFromPB);
+  FRIEND_TEST(DataDirGroupTest, TestLoadBalancingBias);
+  FRIEND_TEST(DataDirGroupTest, TestLoadBalancingDistribution);
+
+  // Repeatedly selects directories from those available to put into a new
+  // DataDirGroup until 'group_indices' reaches 'target_size' elements.
+  // Selection is based on "The Power of Two Choices in Randomized Load
+  // Balancing", selecting two directories randomly and choosing the one with
+  // less load, quantified as the number of unique tablets in the directory.
+  // The resulting behavior fills directories that have fewer tablets stored on
+  // them while not completely neglecting those with more tablets.
+  //
+  // 'group_indices' is an output that stores the list of uuid_indices to be
+  // added. Although this function does not itself change DataDirManager state,
+  // its expected usage warrants that it is called within the scope of a
+  // lock_guard of dir_group_lock_.
+  Status GetDirsForGroupUnlocked(uint32_t target_size, vector<uint16_t>* group_indices);
+
   Env* env_;
   const std::string block_manager_type_;
   const std::vector<std::string> paths_;
@@ -178,13 +285,30 @@ class DataDirManager {
 
   std::vector<std::unique_ptr<DataDir>> data_dirs_;
 
-  AtomicInt<int32_t> data_dirs_next_;
-
   typedef std::unordered_map<uint16_t, DataDir*> UuidIndexMap;
   UuidIndexMap data_dir_by_uuid_idx_;
 
   typedef std::unordered_map<DataDir*, uint16_t> ReverseUuidIndexMap;
   ReverseUuidIndexMap uuid_idx_by_data_dir_;
+
+  typedef std::unordered_map<std::string, internal::DataDirGroup> TabletDataDirGroupMap;
+  TabletDataDirGroupMap group_by_tablet_map_;
+
+  typedef std::unordered_map<uint16_t, std::set<std::string>> TabletsByUuidIndexMap;
+  TabletsByUuidIndexMap tablets_by_uuid_idx_map_;
+
+  UuidByUuidIndexMap uuid_by_idx_;
+  UuidIndexByUuidMap idx_by_uuid_;
+
+  // Lock protecting reads and writes to the dir group maps.
+  // A percpu_rwlock is used so threads attempting to read (e.g. to get the
+  // next data directory for a Flush()) do not block each other, while threads
+  // attempting to write (e.g. to create a new tablet, thereby creating a new
+  // data directory group) block all threads.
+  mutable percpu_rwlock dir_group_lock_;
+
+  // RNG used to select directories.
+  ThreadSafeRandom rng_;
 
   DISALLOW_COPY_AND_ASSIGN(DataDirManager);
 };

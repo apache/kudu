@@ -38,6 +38,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::ReaderOptions;
+using fs::CreateBlockOptions;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
@@ -347,7 +348,8 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Open a writer for the new destination delta block
   FsManager* fs = rowset_metadata_->fs_manager();
   unique_ptr<WritableBlock> block;
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
+  CreateBlockOptions opts({ rowset_metadata_->tablet_metadata()->tablet_id() });
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(opts, &block),
                         "Could not allocate delta block");
   BlockId new_block_id(block->id());
 
@@ -613,7 +615,8 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Open file for write.
   FsManager* fs = rowset_metadata_->fs_manager();
   unique_ptr<WritableBlock> writable_block;
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&writable_block),
+  CreateBlockOptions opts({ rowset_metadata_->tablet_metadata()->tablet_id() });
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(opts, &writable_block),
                         "Unable to allocate new delta data writable_block");
   BlockId block_id(writable_block->id());
 

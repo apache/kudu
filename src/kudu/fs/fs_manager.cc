@@ -80,6 +80,8 @@ TAG_FLAG(fs_data_dirs, stable);
 
 using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
+using kudu::fs::CreateBlockOptions;
+using kudu::fs::DataDirManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManager;
@@ -411,6 +413,10 @@ vector<string> FsManager::GetDataRootDirs() const {
   return data_paths;
 }
 
+DataDirManager* FsManager::dd_manager() const {
+  return block_manager_->dd_manager();
+}
+
 string FsManager::GetTabletMetadataDir() const {
   DCHECK(initted_);
   return JoinPathSegments(canonicalized_metadata_fs_root_, kTabletMetadataDirName);
@@ -529,10 +535,10 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 //  Data read/write interfaces
 // ==========================================================================
 
-Status FsManager::CreateNewBlock(unique_ptr<WritableBlock>* block) {
+Status FsManager::CreateNewBlock(const CreateBlockOptions& opts, unique_ptr<WritableBlock>* block) {
   CHECK(!read_only_);
 
-  return block_manager_->CreateBlock(block);
+  return block_manager_->CreateBlock(opts, block);
 }
 
 Status FsManager::OpenBlock(const BlockId& block_id, unique_ptr<ReadableBlock>* block) {

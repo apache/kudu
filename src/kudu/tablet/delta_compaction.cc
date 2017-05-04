@@ -40,9 +40,7 @@ using std::shared_ptr;
 
 namespace kudu {
 
-using cfile::CFileIterator;
-using cfile::CFileReader;
-using cfile::IndexTreeIterator;
+using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using std::unique_ptr;
 using std::vector;
@@ -63,7 +61,8 @@ MajorDeltaCompaction::MajorDeltaCompaction(
     unique_ptr<DeltaIterator> delta_iter,
     vector<shared_ptr<DeltaStore> > included_stores,
     vector<ColumnId> col_ids,
-    HistoryGcOpts history_gc_opts)
+    HistoryGcOpts history_gc_opts,
+    string tablet_id)
     : fs_manager_(fs_manager),
       base_schema_(base_schema),
       column_ids_(std::move(col_ids)),
@@ -71,6 +70,7 @@ MajorDeltaCompaction::MajorDeltaCompaction(
       base_data_(base_data),
       included_stores_(std::move(included_stores)),
       delta_iter_(std::move(delta_iter)),
+      tablet_id_(std::move(tablet_id)),
       redo_delta_mutations_written_(0),
       undo_delta_mutations_written_(0),
       state_(kInitialized) {
@@ -241,7 +241,9 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
 Status MajorDeltaCompaction::OpenBaseDataWriter() {
   CHECK(!base_data_writer_);
 
-  gscoped_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_, &partial_schema_));
+  gscoped_ptr<MultiColumnWriter> w(new MultiColumnWriter(fs_manager_,
+                                                         &partial_schema_,
+                                                         tablet_id_));
   RETURN_NOT_OK(w->Open());
   base_data_writer_.swap(w);
   return Status::OK();
@@ -249,7 +251,8 @@ Status MajorDeltaCompaction::OpenBaseDataWriter() {
 
 Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
   unique_ptr<WritableBlock> block;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
+  CreateBlockOptions opts({ tablet_id_ });
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(opts, &block),
                         "Unable to create REDO delta output block");
   new_redo_delta_block_ = block->id();
   new_redo_delta_writer_.reset(new DeltaFileWriter(std::move(block)));
@@ -258,7 +261,8 @@ Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
 
 Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   unique_ptr<WritableBlock> block;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
+  CreateBlockOptions opts({ tablet_id_ });
+  RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(opts, &block),
                         "Unable to create UNDO delta output block");
   new_undo_delta_block_ = block->id();
   new_undo_delta_writer_.reset(new DeltaFileWriter(std::move(block)));

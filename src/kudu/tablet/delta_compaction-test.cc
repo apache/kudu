@@ -69,7 +69,7 @@ class TestDeltaCompaction : public KuduTest {
   Status GetDeltaFileWriter(gscoped_ptr<DeltaFileWriter>* dfw,
                             BlockId* block_id) const {
     unique_ptr<WritableBlock> block;
-    RETURN_NOT_OK(fs_manager_->CreateNewBlock(&block));
+    RETURN_NOT_OK(fs_manager_->CreateNewBlock({}, &block));
     *block_id = block->id();
     dfw->reset(new DeltaFileWriter(std::move(block)));
     RETURN_NOT_OK((*dfw)->Start());

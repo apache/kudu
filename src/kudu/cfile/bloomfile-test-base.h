@@ -71,7 +71,7 @@ class BloomFileTestBase : public KuduTest {
 
   void WriteTestBloomFile() {
     std::unique_ptr<WritableBlock> sink;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
     block_id_ = sink->id();
 
     // Set sizing based on flags

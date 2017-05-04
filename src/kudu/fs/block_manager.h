@@ -42,6 +42,7 @@ class Slice;
 namespace fs {
 
 class BlockManager;
+class DataDirManager;
 struct FsReport;
 
 // The smallest unit of Kudu data that is backed by the local filesystem.
@@ -165,8 +166,12 @@ class ReadableBlock : public Block {
   virtual size_t memory_footprint() const = 0;
 };
 
-// Provides options and hints for block placement.
+// Provides options and hints for block placement. This is used for identifying
+// the correct DataDirGroups to place blocks. In the future this may also be
+// used to specify directories based on block type (e.g. to prefer bloom block
+// placement into SSD-backed directories).
 struct CreateBlockOptions {
+  const std::string tablet_id;
 };
 
 // Block manager creation options.
@@ -226,9 +231,6 @@ class BlockManager {
   virtual Status CreateBlock(const CreateBlockOptions& opts,
                              std::unique_ptr<WritableBlock>* block) = 0;
 
-  // Like the above but uses default options.
-  virtual Status CreateBlock(std::unique_ptr<WritableBlock>* block) = 0;
-
   // Opens an existing block for reading.
   //
   // While it is safe to delete a block that has already been opened, it is
@@ -263,6 +265,9 @@ class BlockManager {
   // concurrent operations are ongoing, some of the blocks themselves may not
   // even exist after the call.
   virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) = 0;
+
+  // Exposes the underlying DataDirManager.
+  virtual DataDirManager* dd_manager() = 0;
 };
 
 // Closes a group of blocks.

@@ -21,6 +21,7 @@
 #include <glog/stl_logging.h>
 
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tserver/tablet_copy_client.h"
@@ -231,7 +232,7 @@ INSTANTIATE_TEST_CASE_P(BlockDeleteTriggers,
 void TabletCopyClientAbortTest::CreateTestBlocks(int num_blocks) {
   for (int i = 0; i < num_blocks; i++) {
     unique_ptr<fs::WritableBlock> block;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
     block->Append("Test");
     ASSERT_OK(block->Close());
   }

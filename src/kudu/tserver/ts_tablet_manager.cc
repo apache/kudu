@@ -506,6 +506,10 @@ void TSTabletManager::RunTabletCopy(
 
         // Tombstone the tablet and store the last-logged OpId.
         old_replica->Shutdown();
+        // Note that this leaves the data dir manager without any references to
+        // tablet_id. This is okay because the tablet_copy_client should
+        // generate a new disk group during the call to Start().
+        //
         // TODO(mpercy): Because we begin shutdown of the tablet after we check our
         // last-logged term against the leader's term, there may be operations
         // in flight and it may be possible for the same check in the tablet
@@ -1055,21 +1059,21 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
 }
 
 Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& meta,
-                                         TabletDataState data_state,
+                                         TabletDataState delete_type,
                                          const boost::optional<OpId>& last_logged_opid) {
   const string& tablet_id = meta->tablet_id();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "Deleting tablet data with delete state "
-            << TabletDataState_Name(data_state);
-  CHECK(data_state == TABLET_DATA_DELETED ||
-        data_state == TABLET_DATA_TOMBSTONED ||
-        data_state == TABLET_DATA_COPYING)
-      << "Unexpected data_state to delete tablet " << meta->tablet_id() << ": "
-      << TabletDataState_Name(data_state) << " (" << data_state << ")";
+            << TabletDataState_Name(delete_type);
+  CHECK(delete_type == TABLET_DATA_DELETED ||
+        delete_type == TABLET_DATA_TOMBSTONED ||
+        delete_type == TABLET_DATA_COPYING)
+      << "Unexpected delete_type to delete tablet " << meta->tablet_id() << ": "
+      << TabletDataState_Name(delete_type) << " (" << delete_type << ")";
 
   // Note: Passing an unset 'last_logged_opid' will retain the last_logged_opid
   // that was previously in the metadata.
-  RETURN_NOT_OK(meta->DeleteTabletData(data_state, last_logged_opid));
+  RETURN_NOT_OK(meta->DeleteTabletData(delete_type, last_logged_opid));
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "Tablet deleted. Last logged OpId: "
             << meta->tombstone_last_logged_opid();
@@ -1080,13 +1084,13 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
 
   // We do not delete the superblock or the consensus metadata when tombstoning
   // a tablet or marking it as entering the tablet copy process.
-  if (data_state == TABLET_DATA_COPYING ||
-      data_state == TABLET_DATA_TOMBSTONED) {
+  if (delete_type == TABLET_DATA_COPYING ||
+      delete_type == TABLET_DATA_TOMBSTONED) {
     return Status::OK();
   }
 
   // Only TABLET_DATA_DELETED tablets get this far.
-  DCHECK_EQ(TABLET_DATA_DELETED, data_state);
+  DCHECK_EQ(TABLET_DATA_DELETED, delete_type);
   RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
   return meta->DeleteSuperBlock();

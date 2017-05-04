@@ -585,7 +585,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   CHECK(!read_only_);
 
   DataDir* dir;
-  RETURN_NOT_OK(dd_manager_.GetNextDataDir(&dir));
+  RETURN_NOT_OK(dd_manager_.GetNextDataDir(opts, &dir));
   uint16_t uuid_idx;
   CHECK(dd_manager_.FindUuidIndexByDataDir(dir, &uuid_idx));
 
@@ -635,10 +635,6 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     block->reset(new internal::FileWritableBlock(this, location, writer));
   }
   return s;
-}
-
-Status FileBlockManager::CreateBlock(unique_ptr<WritableBlock>* block) {
-  return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,

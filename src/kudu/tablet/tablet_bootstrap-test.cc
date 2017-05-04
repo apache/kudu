@@ -27,6 +27,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/util/logging_test_util.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -213,6 +214,7 @@ TEST_F(BootstrapTest, TestIncompleteTabletCopy) {
   ASSERT_OK(PersistTestTabletMetadataState(TABLET_DATA_COPYING));
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
+  fs_manager_->dd_manager()->DeleteDataDirGroup(log::kTestTablet);
   Status s = BootstrapTestTablet(-1, -1, &tablet, &boot_info);
   ASSERT_TRUE(s.IsCorruption()) << "Expected corruption: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "TabletMetadata bootstrap state is TABLET_DATA_COPYING");
@@ -261,6 +263,10 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
     log::SegmentSequence segments;
     ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
     fs_manager_->env()->DeleteFile(segments[0]->path());
+
+    // Untrack the tablet in the data dir manager so upon the next call to
+    // BootstrapTestTablet, the tablet metadata's data dir group can be loaded.
+    fs_manager_->dd_manager()->DeleteDataDirGroup(tablet->tablet_id());
   }
   {
     shared_ptr<Tablet> tablet;

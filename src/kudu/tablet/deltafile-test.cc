@@ -69,7 +69,7 @@ class TestDeltaFile : public KuduTest {
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
     unique_ptr<WritableBlock> block;
-    ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+    ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
     test_block_ = block->id();
     DeltaFileWriter dfw(std::move(block));
     ASSERT_OK(dfw.Start());
@@ -219,7 +219,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   ASSERT_OK(s);
 
   unique_ptr<WritableBlock> block;
-  ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+  ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
   BlockId block_id(block->id());
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
@@ -366,7 +366,7 @@ TEST_F(TestDeltaFile, TestLazyInit) {
 // Finish() will return Status::Aborted().
 TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
   unique_ptr<WritableBlock> block;
-  ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+  ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
   test_block_ = block->id();
   {
     DeltaFileWriter dfw(std::move(block));

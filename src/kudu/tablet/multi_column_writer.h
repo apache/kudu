@@ -17,9 +17,11 @@
 #ifndef KUDU_TABLET_MULTI_COLUMN_WRITER_H
 #define KUDU_TABLET_MULTI_COLUMN_WRITER_H
 
-#include <glog/logging.h>
 #include <map>
+#include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/fs/fs_manager.h"
@@ -41,11 +43,12 @@ class ScopedWritableBlockCloser;
 namespace tablet {
 
 // Wrapper which writes several columns in parallel corresponding to some
-// Schema.
+// Schema. Written blocks will fall in the tablet_id's data dir group.
 class MultiColumnWriter {
  public:
   MultiColumnWriter(FsManager* fs,
-                    const Schema* schema);
+                    const Schema* schema,
+                    const std::string& tablet_id);
 
   virtual ~MultiColumnWriter();
 
@@ -84,6 +87,8 @@ class MultiColumnWriter {
   const Schema* const schema_;
 
   bool finished_;
+
+  const std::string tablet_id_;
 
   std::vector<cfile::CFileWriter *> cfile_writers_;
   std::vector<BlockId> block_ids_;

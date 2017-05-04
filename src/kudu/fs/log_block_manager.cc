@@ -1550,7 +1550,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // TODO(unknown): should we cap the number of outstanding containers and
   // force callers to block if we've reached it?
   LogBlockContainer* container;
-  RETURN_NOT_OK(GetOrCreateContainer(&container));
+  RETURN_NOT_OK(GetOrCreateContainer(opts, &container));
 
   // Generate a free block ID.
   // We have to loop here because earlier versions used non-sequential block IDs,
@@ -1566,10 +1566,6 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   VLOG(3) << "Created block " << (*block)->id() << " in container "
           << container->ToString();
   return Status::OK();
-}
-
-Status LogBlockManager::CreateBlock(unique_ptr<WritableBlock>* block) {
-  return CreateBlock(CreateBlockOptions(), block);
 }
 
 Status LogBlockManager::OpenBlock(const BlockId& block_id,
@@ -1670,9 +1666,10 @@ void LogBlockManager::RemoveFullContainerUnlocked(const string& container_name) 
   }
 }
 
-Status LogBlockManager::GetOrCreateContainer(LogBlockContainer** container) {
+Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
+                                             LogBlockContainer** container) {
   DataDir* dir;
-  RETURN_NOT_OK(dd_manager_.GetNextDataDir(&dir));
+  RETURN_NOT_OK(dd_manager_.GetNextDataDir(opts, &dir));
 
   {
     std::lock_guard<simple_spinlock> l(lock_);

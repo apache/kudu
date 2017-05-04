@@ -44,9 +44,12 @@ class MetricEntity;
 
 namespace fs {
 class BlockManager;
+class DataDirManager;
 class ReadableBlock;
 class WritableBlock;
 struct FsReport;
+
+struct CreateBlockOptions;
 } // namespace fs
 
 namespace itest {
@@ -132,10 +135,11 @@ class FsManager {
   //  Data read/write interfaces
   // ==========================================================================
 
-  // Creates a new anonymous block.
+  // Creates a new block based on the options specified in 'opts'.
   //
   // Block will be synced on close.
-  Status CreateNewBlock(std::unique_ptr<fs::WritableBlock>* block);
+  Status CreateNewBlock(const fs::CreateBlockOptions& opts,
+                        std::unique_ptr<fs::WritableBlock>* block);
 
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<fs::ReadableBlock>* block);
@@ -186,7 +190,7 @@ class FsManager {
     return JoinPathSegments(GetConsensusMetadataDir(), tablet_id);
   }
 
-  Env *env() { return env_; }
+  Env* env() { return env_; }
 
   bool read_only() const {
     return read_only_;
@@ -204,6 +208,8 @@ class FsManager {
   }
 
   Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
+
+  fs::DataDirManager* dd_manager() const;
 
   fs::BlockManager* block_manager() {
     return block_manager_.get();

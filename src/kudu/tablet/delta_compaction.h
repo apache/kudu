@@ -54,7 +54,8 @@ class MajorDeltaCompaction {
       std::unique_ptr<DeltaIterator> delta_iter,
       std::vector<std::shared_ptr<DeltaStore> > included_stores,
       std::vector<ColumnId> col_ids,
-      HistoryGcOpts history_gc_opts);
+      HistoryGcOpts history_gc_opts,
+      std::string tablet_id);
   ~MajorDeltaCompaction();
 
   // Executes the compaction.
@@ -114,6 +115,9 @@ class MajorDeltaCompaction {
 
   // The merged view of the deltas from included_stores_.
   const std::unique_ptr<DeltaIterator> delta_iter_;
+
+  // The ID of the tablet being compacted.
+  const std::string tablet_id_;
 
   // Outputs:
   gscoped_ptr<MultiColumnWriter> base_data_writer_;

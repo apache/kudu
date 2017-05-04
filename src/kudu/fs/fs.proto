@@ -110,3 +110,10 @@ message BlockRecordPB {
   // Required for CREATE.
   optional int64 length = 5;
 }
+
+// Tablet data is spread across a specified number of data directories. The
+// group is represented by the UUIDs of the data directories it consists of.
+message DataDirGroupPB {
+  // List of data directory UUIDs that make up the group. Must not be empty.
+  repeated bytes uuids = 1;
+}

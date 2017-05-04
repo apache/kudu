@@ -690,7 +690,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
   ASSERT_OK(fs.Open());
 
   unique_ptr<WritableBlock> block;
-  ASSERT_OK(fs.CreateNewBlock(&block));
+  ASSERT_OK(fs.CreateNewBlock({}, &block));
   BlockId block_id = block->id();
   StringDataGenerator<false> generator("hello %04d");
   WriterOptions opts;

@@ -92,6 +92,9 @@ class TabletCopyClient {
   // in progress. If the 'metadata' pointer is passed as NULL, it is ignored,
   // otherwise the TabletMetadata object resulting from the initial remote
   // bootstrap response is returned.
+  //
+  // Upon success, tablet metadata will be created and the tablet will be
+  // assigned to a data directory group.
   Status Start(const HostPort& copy_source_addr,
                scoped_refptr<tablet::TabletMetadata>* meta);
 

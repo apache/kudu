@@ -76,7 +76,7 @@ class FsManagerTestBase : public KuduTest {
 
     // Test Write
     unique_ptr<fs::WritableBlock> writer;
-    ASSERT_OK(fs_manager()->CreateNewBlock(&writer));
+    ASSERT_OK(fs_manager()->CreateNewBlock({}, &writer));
     ASSERT_OK(writer->Append(data));
     ASSERT_OK(writer->Close());
 

@@ -104,10 +104,10 @@ struct LogBlockManagerMetrics;
 // made available in memory if _all_ on-disk operations (including any
 // necessary synchronization calls) are successful.
 //
-// When a new block is created, a container is selected using a round-robin
-// policy (i.e. the least recently used container). If no containers are
-// available, a new one is created. Only when the block is fully written is
-// the container returned to the pool of available containers.
+// When a new block is created, a container is selected from the data
+// directory group appropriate for the block, as indicated by hints in
+// provided CreateBlockOptions (i.e. blocks for diskrowsets should be placed
+// within its tablet's data directory group).
 //
 // All log block manager metadata requests are served from memory. When an
 // existing block manager is opened, all on-disk container metadata is
@@ -175,8 +175,6 @@ class LogBlockManager : public BlockManager {
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
 
-  Status CreateBlock(std::unique_ptr<WritableBlock>* block) override;
-
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
@@ -185,6 +183,8 @@ class LogBlockManager : public BlockManager {
   Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
+
+  DataDirManager* dd_manager() override { return &dd_manager_; };
 
  private:
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
@@ -241,13 +241,14 @@ class LogBlockManager : public BlockManager {
   // Must be called with 'lock_' held.
   void RemoveFullContainerUnlocked(const std::string& container_name);
 
-  // Returns the next container available for writing using a round-robin
-  // selection policy, creating a new one if necessary.
+  // Returns a container appropriate for the given CreateBlockOptions, creating
+  // a new container if necessary.
   //
   // After returning, the container is considered to be in use. When
   // writing is finished, call MakeContainerAvailable() to make it
   // available to other writers.
-  Status GetOrCreateContainer(internal::LogBlockContainer** container);
+  Status GetOrCreateContainer(const CreateBlockOptions& opts,
+                              internal::LogBlockContainer** container);
 
   // Indicate that this container is no longer in use and can be handed out
   // to other writers.

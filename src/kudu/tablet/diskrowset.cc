@@ -64,6 +64,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::BloomFileWriter;
+using fs::CreateBlockOptions;
 using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
@@ -89,7 +90,8 @@ Status DiskRowSetWriter::Open() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Open");
 
   FsManager* fs = rowset_metadata_->fs_manager();
-  col_writer_.reset(new MultiColumnWriter(fs, schema_));
+  const string& tablet_id = rowset_metadata_->tablet_metadata()->tablet_id();
+  col_writer_.reset(new MultiColumnWriter(fs, schema_, tablet_id));
   RETURN_NOT_OK(col_writer_->Open());
 
   // Open bloom filter.
@@ -107,7 +109,9 @@ Status DiskRowSetWriter::InitBloomFileWriter() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::InitBloomFileWriter");
   unique_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
+  const string& tablet_id = rowset_metadata_->tablet_metadata()->tablet_id();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(CreateBlockOptions({ tablet_id }),
+                                           &block),
                         "Couldn't allocate a block for bloom filter");
   rowset_metadata_->set_bloom_block(block->id());
 
@@ -120,7 +124,9 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::InitAdHocIndexWriter");
   unique_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
-  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
+  const string& tablet_id = rowset_metadata_->tablet_metadata()->tablet_id();
+  RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(CreateBlockOptions({ tablet_id }),
+                                           &block),
                         "Couldn't allocate a block for compoound index");
 
   rowset_metadata_->set_adhoc_index_block(block->id());
@@ -317,8 +323,10 @@ Status RollingDiskRowSetWriter::RollWriter() {
   FsManager* fs = tablet_metadata_->fs_manager();
   unique_ptr<WritableBlock> undo_data_block;
   unique_ptr<WritableBlock> redo_data_block;
-  RETURN_NOT_OK(fs->CreateNewBlock(&undo_data_block));
-  RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_block));
+  RETURN_NOT_OK(fs->CreateNewBlock(CreateBlockOptions({ tablet_metadata_->tablet_id() }),
+                                   &undo_data_block));
+  RETURN_NOT_OK(fs->CreateNewBlock(CreateBlockOptions({ tablet_metadata_->tablet_id() }),
+                                   &redo_data_block));
   cur_undo_ds_block_id_ = undo_data_block->id();
   cur_redo_ds_block_id_ = redo_data_block->id();
   cur_undo_writer_.reset(new DeltaFileWriter(std::move(undo_data_block)));
@@ -586,7 +594,8 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
                                       std::move(delta_iter),
                                       std::move(included_stores),
                                       col_ids,
-                                      std::move(history_gc_opts)));
+                                      std::move(history_gc_opts),
+                                      rowset_metadata_->tablet_metadata()->tablet_id()));
   return Status::OK();
 }
 

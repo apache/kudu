@@ -62,10 +62,8 @@ struct BlockManagerMetrics;
 // resolved back into a filesystem path when the block is opened for reading.
 // The structure of this ID limits the block manager to at most 65,536 disks.
 //
-// When creating blocks, the block manager will round robin through the
-// available filesystem paths.
-//
-// TODO: Support path-based block placement hints.
+// When creating blocks, the block manager will place blocks based on the
+// provided CreateBlockOptions.
 
 // The file-backed block manager.
 class FileBlockManager : public BlockManager {
@@ -85,8 +83,6 @@ class FileBlockManager : public BlockManager {
   Status CreateBlock(const CreateBlockOptions& opts,
                      std::unique_ptr<WritableBlock>* block) override;
 
-  Status CreateBlock(std::unique_ptr<WritableBlock>* block) override;
-
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
@@ -95,6 +91,8 @@ class FileBlockManager : public BlockManager {
   Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
+
+  DataDirManager* dd_manager() override { return &dd_manager_; };
 
  private:
   friend class internal::FileBlockLocation;

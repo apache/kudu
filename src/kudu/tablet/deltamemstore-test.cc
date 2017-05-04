@@ -168,7 +168,7 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
   // Flush the delta file so that the stats get updated.
   unique_ptr<WritableBlock> block;
-  ASSERT_OK(fs_manager_->CreateNewBlock(&block));
+  ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
   gscoped_ptr<DeltaStats> stats;

@@ -55,6 +55,7 @@ set(KUDU_TEST_LINK_LIBS kudu_fs kudu_fs_test_util ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(block_manager-test)
 ADD_KUDU_TEST(block_manager_util-test)
 ADD_KUDU_TEST(block_manager-stress-test RUN_SERIAL true)
+ADD_KUDU_TEST(data_dirs-test)
 ADD_KUDU_TEST(fs_manager-test)
 if (NOT APPLE)
   # Will only pass on Linux.

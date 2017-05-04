@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "kudu/fs/fs.pb.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
@@ -91,6 +92,7 @@ class BlockManagerStressTest : public KuduTest {
   BlockManagerStressTest() :
     rand_seed_(SeedRandom()),
     stop_latch_(1),
+    test_tablet_name_("test_tablet"),
     total_blocks_written_(0),
     total_bytes_written_(0),
     total_blocks_read_(0),
@@ -124,6 +126,8 @@ class BlockManagerStressTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     CHECK_OK(bm_->Create());
     CHECK_OK(bm_->Open(nullptr));
+    CHECK_OK(bm_->dd_manager()->CreateDataDirGroup(test_tablet_name_));
+    CHECK(bm_->dd_manager()->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -223,6 +227,12 @@ class BlockManagerStressTest : public KuduTest {
   // The block manager.
   gscoped_ptr<BlockManager> bm_;
 
+  // Test group of disk to spread data across.
+  DataDirGroupPB test_group_pb_;
+
+  // Test tablet name.
+  string test_tablet_name_;
+
   // The running threads.
   vector<scoped_refptr<Thread> > threads_;
 
@@ -251,7 +261,7 @@ void BlockManagerStressTest<T>::WriterThread() {
     // Create the blocks and write out the PRNG seeds.
     for (int i = 0; i < FLAGS_block_group_size; i++) {
       unique_ptr<WritableBlock> block;
-      CHECK_OK(bm_->CreateBlock(&block));
+      CHECK_OK(bm_->CreateBlock(CreateBlockOptions({ test_tablet_name_ }), &block));
 
       const uint32_t seed = rand.Next() + 1;
       Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));
@@ -465,6 +475,8 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   this->bm_.reset(this->CreateBlockManager());
   FsReport report;
   ASSERT_OK(this->bm_->Open(&report));
+  ASSERT_OK(this->bm_->dd_manager()->LoadDataDirGroupFromPB(this->test_tablet_name_,
+                                                            this->test_group_pb_));
   ASSERT_OK(report.LogAndCheckForFatalErrors());
   this->RunTest(FLAGS_test_duration_secs / 2);
   checker.Stop();
