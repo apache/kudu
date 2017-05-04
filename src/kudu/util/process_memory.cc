@@ -19,7 +19,9 @@
 
 #include <gflags/gflags.h>
 #include <gperftools/malloc_extension.h>
+#include <gperftools/malloc_hook.h>
 
+#include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
@@ -27,6 +29,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random.h"
+#include "kudu/util/striped64.h"
 
 DEFINE_int64(memory_limit_hard_bytes, 0,
              "Maximum amount of memory this daemon should use, in bytes. "
@@ -77,6 +80,10 @@ Atomic64 g_released_memory_since_gc;
 // TODO(todd): this is a stopgap.
 const int64_t GC_RELEASE_SIZE = 128 * 1024L * 1024L;
 
+// The total memory consumption of the process, incrementally tracked by
+// New/Delete hooks.
+LongAdder* g_total_consumption = nullptr;
+
 #endif // TCMALLOC_ENABLED
 
 } // anonymous namespace
@@ -114,7 +121,7 @@ static int64_t GetTCMallocProperty(const char* prop) {
   return value;
 }
 
-static int64_t GetTCMallocCurrentAllocatedBytes() {
+int64_t GetTCMallocCurrentAllocatedBytes() {
   return GetTCMallocProperty("generic.current_allocated_bytes");
 }
 
@@ -145,38 +152,65 @@ void GcTcmalloc() {
 // Consumption and soft memory limit behavior
 // ------------------------------------------------------------
 namespace {
-void InitLimits() {
-  static std::once_flag once;
-  std::call_once(once, [&]() {
-      int64_t limit = FLAGS_memory_limit_hard_bytes;
-      if (limit == 0) {
-        // If no limit is provided, we'll use 80% of system RAM.
-        int64_t total_ram;
-        CHECK_OK(Env::Default()->GetTotalRAMBytes(&total_ram));
-        limit = total_ram * 4;
-        limit /= 5;
-      }
-      g_hard_limit = limit;
-      g_soft_limit = FLAGS_memory_limit_soft_percentage * g_hard_limit / 100;
+void DoInitLimits() {
+  int64_t limit = FLAGS_memory_limit_hard_bytes;
+  if (limit == 0) {
+    // If no limit is provided, we'll use 80% of system RAM.
+    int64_t total_ram;
+    CHECK_OK(Env::Default()->GetTotalRAMBytes(&total_ram));
+    limit = total_ram * 4;
+    limit /= 5;
+  }
+  g_hard_limit = limit;
+  g_soft_limit = FLAGS_memory_limit_soft_percentage * g_hard_limit / 100;
 
-      g_rand = new ThreadSafeRandom(1);
+  g_rand = new ThreadSafeRandom(1);
 
-      LOG(INFO) << StringPrintf("Process hard memory limit is %.6f GB",
-                                (static_cast<float>(g_hard_limit) / (1024.0 * 1024.0 * 1024.0)));
-      LOG(INFO) << StringPrintf("Process soft memory limit is %.6f GB",
-                                (static_cast<float>(g_soft_limit) /
-                                 (1024.0 * 1024.0 * 1024.0)));
-    });
+  LOG(INFO) << StringPrintf("Process hard memory limit is %.6f GB",
+                            (static_cast<float>(g_hard_limit) / (1024.0 * 1024.0 * 1024.0)));
+  LOG(INFO) << StringPrintf("Process soft memory limit is %.6f GB",
+                            (static_cast<float>(g_soft_limit) /
+                             (1024.0 * 1024.0 * 1024.0)));
 }
+
+void InitLimits() {
+  static GoogleOnceType once;
+  GoogleOnceInit(&once, &DoInitLimits);
+}
+
+#ifdef TCMALLOC_ENABLED
+
+void NewHook(const void* ptr, size_t size) {
+  // We ignore 'size' because it's possible the allocated size is actually
+  // rounded up to the next biggest slab class.
+  ssize_t alloc_size = MallocExtension::instance()->GetAllocatedSize(ptr);
+  g_total_consumption->IncrementBy(alloc_size);
+}
+void DeleteHook(const void* ptr) {
+  ssize_t size = MallocExtension::instance()->GetAllocatedSize(ptr);
+  g_total_consumption->IncrementBy(-size);
+}
+
+void InitConsumptionHook() {
+  CHECK(!g_total_consumption);
+  g_total_consumption = new LongAdder();
+  g_total_consumption->IncrementBy(GetTCMallocCurrentAllocatedBytes());
+  MallocHook::AddNewHook(&NewHook);
+  MallocHook::AddDeleteHook(&DeleteHook);
+}
+#endif // TCMALLOC_ENABLED
+
 } // anonymous namespace
 
 int64_t CurrentConsumption() {
-  // TODO(todd): this is slow to call frequently, since it takes the tcmalloc
-  // global lock. We should look into whether it's faster to hook malloc/free
-  // and update a LongAdder instead, or otherwise make this more incrementally
-  // tracked.
 #ifdef TCMALLOC_ENABLED
-  return GetTCMallocCurrentAllocatedBytes();
+  // Calling GetTCMallocCurrentAllocatedBytes() is too slow to do frequently, since it has to
+  // take the tcmalloc global lock and traverse all live threads to add up their caches.
+  // Instead, we install a new/delete hook to incrementally track allocated memory, and
+  // then just return the currently tracked value here.
+  static GoogleOnceType once;
+  GoogleOnceInit(&once, &InitConsumptionHook);
+  return g_total_consumption->Value();
 #else
   // Without tcmalloc, we have no reliable way of determining our own heap
   // size (e.g. mallinfo doesn't work in ASAN builds). So, we'll fall back

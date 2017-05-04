@@ -20,6 +20,7 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_int32(runtime_secs, 10,
@@ -138,6 +139,16 @@ TEST_F(TSStressTest, TestMTInserts) {
   // Ensure the timeout thread is stopped before exiting.
   stop_latch_.CountDown();
   if (timeout_thread.joinable()) timeout_thread.join();
+
+#ifdef TCMALLOC_ENABLED
+  // In TCMalloc-enabled builds, verify that our incremental memory tracking matches the
+  // actual memory consumed, within half a percent.
+  int64_t consumption = process_memory::CurrentConsumption();
+  LOG(INFO) << "consumption: " << consumption;
+  ASSERT_NEAR(process_memory::GetTCMallocCurrentAllocatedBytes(),
+              consumption,
+              consumption * 0.005);
+#endif
 }
 
 } // namespace tserver

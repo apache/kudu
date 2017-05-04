@@ -37,5 +37,13 @@ int64_t CurrentConsumption();
 // Return the configured hard limit for the process.
 int64_t HardLimit();
 
+#ifdef TCMALLOC_ENABLED
+// Get the current amount of allocated memory, according to tcmalloc.
+//
+// This should be equal to CurrentConsumption(), but is made available so that tests
+// can verify the correctness of CurrentConsumption().
+int64_t GetTCMallocCurrentAllocatedBytes();
+#endif
+
 } // namespace process_memory
 } // namespace kudu
