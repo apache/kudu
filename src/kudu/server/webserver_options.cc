@@ -17,13 +17,15 @@
 
 #include "kudu/server/webserver_options.h"
 
+#include <cstring>
+#include <cstdlib>
 #include <string>
+
 #include <gflags/gflags.h>
-#include <string.h>
-#include <stdlib.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 
 using std::string;
 
@@ -54,10 +56,11 @@ TAG_FLAG(webserver_enable_doc_root, advanced);
 // SSL configuration.
 DEFINE_string(webserver_certificate_file, "",
     "The location of the debug webserver's SSL certificate file, in PEM format. If "
-    "empty, webserver SSL support is not enabled");
+    "empty, webserver SSL support is not enabled. If --webserver_private_key_file "
+    "is set, this option must be set as well.");
 DEFINE_string(webserver_private_key_file, "", "The full path to the private key used as a"
-    " counterpart to the public key contained in --ssl_server_certificate. If "
-    "--ssl_server_certificate is set, this option must be set as well.");
+    " counterpart to the public key contained in --webserver_certificate_file. If "
+    "--webserver_certificate_file is set, this option must be set as well.");
 DEFINE_string(webserver_private_key_password_cmd, "", "A Unix command whose output "
     "returns the password used to decrypt the Webserver's certificate private key file "
     "specified in --webserver_private_key_file. If the PEM key file is not "
@@ -84,14 +87,14 @@ TAG_FLAG(webserver_port, stable);
 
 namespace kudu {
 
-static bool ValidateTlsFlags(const char* /*flag_name*/, const string& /*flag_value*/) {
+static bool ValidateTlsFlags() {
   bool has_cert = !FLAGS_webserver_certificate_file.empty();
   bool has_key = !FLAGS_webserver_private_key_file.empty();
   bool has_passwd = !FLAGS_webserver_private_key_password_cmd.empty();
 
   if (has_key != has_cert) {
     LOG(ERROR) << "--webserver_certificate_file and --webserver_private_key_file "
-                  "must be set as a group";
+                  "must be set as a group; i.e. either set all or none of them.";
     return false;
   }
   if (has_passwd && !has_key) {
@@ -102,7 +105,7 @@ static bool ValidateTlsFlags(const char* /*flag_name*/, const string& /*flag_val
 
   return true;
 }
-DEFINE_validator(webserver_private_key_file, &ValidateTlsFlags);
+GROUP_FLAG_VALIDATOR(webserver_tls_options, ValidateTlsFlags);
 
 // Returns KUDU_HOME if set, otherwise we won't serve any static files.
 static string GetDefaultDocumentRoot() {

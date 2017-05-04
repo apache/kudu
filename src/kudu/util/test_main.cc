@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdlib.h>
+#include <cstdlib>
+#include <thread>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <thread>
 
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/minidump.h"
@@ -42,7 +43,16 @@ namespace kudu {
 // the tests complete.
 static void CreateAndStartTimeoutThread() {
   if (FLAGS_test_timeout_after == 0) return;
+
+  // KUDU-1995: if running death tests using EXPECT_EXIT()/ASSERT_EXIT(), LSAN
+  // reports leaks in CreateAndStartTimeoutThread(). Adding a couple of scoped
+  // leak check disablers as a workaround since right now it's not clear what
+  // is going on exactly: LSAN does not report those leaks for tests which run
+  // ASSERT_DEATH(). This does not seem harmful or hiding any potential leaks
+  // since it's scoped and targeted only for this utility thread.
+  debug::ScopedLeakCheckDisabler disabler;
   std::thread([=](){
+      debug::ScopedLeakCheckDisabler disabler;
       SleepFor(MonoDelta::FromSeconds(FLAGS_test_timeout_after));
       // Dump a pstack to stdout.
       WARN_NOT_OK(PstackWatcher::DumpStacks(), "Unable to print pstack");
