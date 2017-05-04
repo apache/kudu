@@ -18,6 +18,7 @@
 #include "kudu/util/flags.h"
 
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -33,6 +34,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/os-util.h"
@@ -417,6 +419,20 @@ void CheckFlagsAllowed() {
   }
 }
 
+// Run 'late phase' custom validators: these can be run only when all flags are
+// already parsed and individually validated.
+void RunCustomValidators() {
+  const auto& validators(GetFlagValidators());
+  bool found_inconsistency = false;
+  for (const auto& e : validators) {
+    found_inconsistency = !e.second();
+  }
+  if (found_inconsistency) {
+    LOG(ERROR) << "Detected inconsistency in command-line flags; exiting";
+    exit(1);
+  }
+}
+
 // Redact the flag tagged as 'sensitive', if --redact is set
 // with 'flag'. Otherwise, return its value as-is. If EscapeMode
 // is set to HTML, return HTML escaped string.
@@ -457,6 +473,7 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
 
 void HandleCommonFlags() {
   CheckFlagsAllowed();
+  RunCustomValidators();
 
   if (FLAGS_helpxml) {
     DumpFlagsXML();

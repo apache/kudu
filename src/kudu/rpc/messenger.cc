@@ -22,13 +22,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <list>
 #include <mutex>
 #include <set>
 #include <string>
+
+#include <boost/algorithm/string/predicate.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
@@ -48,6 +49,7 @@
 #include "kudu/security/token_verifier.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
@@ -127,20 +129,34 @@ static Status ParseTriState(const char* flag_name, const string& flag_value, T* 
   return Status::OK();
 }
 
-static bool ValidateRpcAuthentication(const char* /*flag_name*/, const string& /*flag_value*/) {
-  RpcAuthentication authentication;
-  Status s = ParseTriState("--rpc_authentication", FLAGS_rpc_authentication, &authentication);
+static bool ValidateRpcAuthentication(const char* flag_name, const string& flag_value) {
+  RpcAuthentication result;
+  Status s = ParseTriState(flag_name, flag_value, &result);
   if (!s.ok()) {
     LOG(ERROR) << s.message().ToString();
     return false;
   }
+  return true;
+}
+DEFINE_validator(rpc_authentication, &ValidateRpcAuthentication);
+
+static bool ValidateRpcEncryption(const char* flag_name, const string& flag_value) {
+  RpcEncryption result;
+  Status s = ParseTriState(flag_name, flag_value, &result);
+  if (!s.ok()) {
+    LOG(ERROR) << s.message().ToString();
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rpc_encryption, &ValidateRpcEncryption);
+
+static bool ValidateRpcAuthnFlags() {
+  RpcAuthentication authentication;
+  CHECK_OK(ParseTriState("--rpc_authentication", FLAGS_rpc_authentication, &authentication));
 
   RpcEncryption encryption;
-  s = ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption);
-  if (!s.ok()) {
-    // This will be caught by the rpc_encryption validator.
-    return true;
-  }
+  CHECK_OK(ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption));
 
   if (encryption == RpcEncryption::DISABLED && authentication != RpcAuthentication::DISABLED) {
     LOG(ERROR) << "RPC authentication (--rpc_authentication) must be disabled "
@@ -150,33 +166,23 @@ static bool ValidateRpcAuthentication(const char* /*flag_name*/, const string& /
 
   return true;
 }
-DEFINE_validator(rpc_authentication, &ValidateRpcAuthentication);
+GROUP_FLAG_VALIDATOR(rpc_authn_flags, ValidateRpcAuthnFlags);
 
-static bool ValidateRpcEncryption(const char* /*flag_name*/, const string& /*flag_value*/) {
-  RpcEncryption encryption;
-  Status s = ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption);
-  if (!s.ok()) {
-    LOG(ERROR) << s.message().ToString();
-    return false;
-  }
-  return true;
-}
-DEFINE_validator(rpc_encryption, &ValidateRpcEncryption);
-
-static bool ValidatePkiFlags(const char* /*flag_name*/, const string& /*flag_value*/) {
+static bool ValidatePkiFlags() {
   bool has_cert = !FLAGS_rpc_certificate_file.empty();
   bool has_key = !FLAGS_rpc_private_key_file.empty();
   bool has_ca = !FLAGS_rpc_ca_certificate_file.empty();
 
   if (has_cert != has_key || has_cert != has_ca) {
     LOG(ERROR) << "--rpc_certificate_file, --rpc_private_key_file, and "
-                  "--rpc_ca_certificate_file flags must be set as a group";
+                  "--rpc_ca_certificate_file flags must be set as a group; "
+                  "i.e. either set all or none of them.";
     return false;
   }
 
   return true;
 }
-DEFINE_validator(rpc_certificate_file, &ValidatePkiFlags);
+GROUP_FLAG_VALIDATOR(pki_flags, ValidatePkiFlags);
 
 MessengerBuilder::MessengerBuilder(std::string name)
     : name_(std::move(name)),

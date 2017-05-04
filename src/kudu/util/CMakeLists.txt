@@ -138,6 +138,7 @@ set(UTIL_SRCS
   file_cache.cc
   flags.cc
   flag_tags.cc
+  flag_validators.cc
   group_varint.cc
   pstack_watcher.cc
   hdr_histogram.cc
@@ -340,6 +341,7 @@ ADD_KUDU_TEST(failure_detector-test)
 ADD_KUDU_TEST(file_cache-test)
 ADD_KUDU_TEST(file_cache-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(flag_tags-test)
+ADD_KUDU_TEST(flag_validators-test)
 ADD_KUDU_TEST(flags-test)
 ADD_KUDU_TEST(group_varint-test)
 ADD_KUDU_TEST(hash_util-test)
