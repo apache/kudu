@@ -445,7 +445,7 @@ class WritableFile {
   //
   // For implementation specific quirks and details, see comments in
   // implementation source code (e.g., env_posix.cc)
-  virtual Status AppendVector(const std::vector<Slice>& data_vector) = 0;
+  virtual Status AppendV(const std::vector<Slice>& data) = 0;
 
   // Pre-allocates 'size' bytes for the file in the underlying filesystem.
   // size bytes are added to the current pre-allocated size or to the current
@@ -538,6 +538,9 @@ class RWFile {
 
   // Writes 'data' to the file position given by 'offset'.
   virtual Status Write(uint64_t offset, const Slice& data) = 0;
+
+  // Writes the 'data' vector to the file position given by 'offset'.
+  virtual Status WriteV(uint64_t offset, const std::vector<Slice>& data) = 0;
 
   // Preallocates 'length' bytes for the file in the underlying filesystem
   // beginning at 'offset'. It is safe to preallocate the same range

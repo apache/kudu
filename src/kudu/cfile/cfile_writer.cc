@@ -18,6 +18,7 @@
 #include "kudu/cfile/cfile_writer.h"
 
 #include <glog/logging.h>
+#include <numeric>
 #include <string>
 #include <utility>
 
@@ -64,6 +65,7 @@ TAG_FLAG(cfile_do_on_finish, experimental);
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::ScopedWritableBlockCloser;
 using kudu::fs::WritableBlock;
+using std::accumulate;
 using std::string;
 using std::unique_ptr;
 
@@ -461,9 +463,7 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
     out_slices = data_slices;
   }
 
-  for (const Slice &data : out_slices) {
-    RETURN_NOT_OK(WriteRawData(data));
-  }
+  RETURN_NOT_OK(WriteRawData(out_slices));
 
   uint64_t total_size = off_ - start_offset;
 
@@ -473,14 +473,19 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
   return Status::OK();
 }
 
-Status CFileWriter::WriteRawData(const Slice& data) {
-  Status s = block_->Append(data);
+
+Status CFileWriter::WriteRawData(const vector<Slice>& data) {
+  size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
+                                [&](int sum, const Slice& curr) {
+                                  return sum + curr.size();
+                                });
+  Status s = block_->AppendV(data);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to append slice of size "
-                << data.size() << " at offset " << off_
-                << ": " << s.ToString();
+    LOG(WARNING) << "Unable to append data of size "
+                 << data_size << " at offset " << off_
+                 << ": " << s.ToString();
   }
-  off_ += data.size();
+  off_ += data_size;
   return s;
 }
 

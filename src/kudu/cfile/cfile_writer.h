@@ -184,7 +184,7 @@ class CFileWriter {
                   BlockPointer *block_ptr,
                   const char *name_for_log);
 
-  Status WriteRawData(const Slice& data);
+  Status WriteRawData(const vector<Slice>& data);
 
   Status FinishCurDataBlock();
 

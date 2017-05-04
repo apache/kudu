@@ -282,10 +282,11 @@ class LogBlockContainer {
   Status EnsurePreallocated(int64_t block_start_offset,
                             size_t next_append_length);
 
-  // Writes 'data' to this container's data file at offset 'offset'.
-  //
-  // The on-disk effects of this call are made durable only after SyncData().
+  // See RWFile::Write()
   Status WriteData(int64_t offset, const Slice& data);
+
+  // See RWFile::WriteV()
+  Status WriteVData(int64_t offset, const vector<Slice>& data);
 
   // See RWFile::Read().
   Status ReadData(int64_t offset, Slice* result) const;
@@ -821,14 +822,22 @@ Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
 }
 
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
+  return WriteVData(offset, { data });
+}
+
+Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) {
   DCHECK_GE(offset, next_block_offset_);
 
-  RETURN_NOT_OK(data_file_->Write(offset, data));
+  RETURN_NOT_OK(data_file_->WriteV(offset, data));
 
   // This append may have changed the container size if:
   // 1. It was large enough that it blew out the preallocated space.
   // 2. Preallocation was disabled.
-  if (offset + data.size() > preallocated_offset_) {
+  size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
+                                [&](int sum, const Slice& curr) {
+                                  return sum + curr.size();
+                                });
+  if (offset + data_size > preallocated_offset_) {
     RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
   }
   return Status::OK();
@@ -1051,6 +1060,8 @@ class LogWritableBlock : public WritableBlock {
 
   virtual Status Append(const Slice& data) OVERRIDE;
 
+  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
+
   virtual Status FlushDataAsync() OVERRIDE;
 
   virtual size_t BytesAppended() const OVERRIDE;
@@ -1130,18 +1141,28 @@ BlockManager* LogWritableBlock::block_manager() const {
 }
 
 Status LogWritableBlock::Append(const Slice& data) {
+  return AppendV({ data });
+}
+
+Status LogWritableBlock::AppendV(const vector<Slice>& data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY)
-      << "Invalid state: " << state_;
+  << "Invalid state: " << state_;
+
+  // Calculate the amount of data to write
+  size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
+                                [&](int sum, const Slice& curr) {
+                                  return sum + curr.size();
+                                });
 
   // The metadata change is deferred to Close() or FlushDataAsync(),
   // whichever comes first. We can't do it now because the block's
   // length is still in flux.
 
   int64_t cur_block_offset = block_offset_ + block_length_;
-  RETURN_NOT_OK(container_->EnsurePreallocated(cur_block_offset, data.size()));
+  RETURN_NOT_OK(container_->EnsurePreallocated(cur_block_offset, data_size));
 
   MicrosecondsInt64 start_time = GetMonoTimeMicros();
-  RETURN_NOT_OK(container_->WriteData(cur_block_offset, data));
+  RETURN_NOT_OK(container_->WriteVData(cur_block_offset, data));
   MicrosecondsInt64 end_time = GetMonoTimeMicros();
 
   int64_t dur = end_time - start_time;
@@ -1149,7 +1170,7 @@ Status LogWritableBlock::Append(const Slice& data) {
   const char* counter = BUCKETED_COUNTER_NAME("lbm_writes", dur);
   TRACE_COUNTER_INCREMENT(counter, 1);
 
-  block_length_ += data.size();
+  block_length_ += data_size;
   state_ = DIRTY;
   return Status::OK();
 }

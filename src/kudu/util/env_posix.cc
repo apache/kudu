@@ -24,6 +24,7 @@
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <numeric>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -122,9 +123,13 @@ TAG_FLAG(env_inject_io_error, hidden);
 DEFINE_int32(env_inject_short_read_bytes, 0,
              "The number of bytes less than the requested bytes to read");
 TAG_FLAG(env_inject_short_read_bytes, hidden);
+DEFINE_int32(env_inject_short_write_bytes, 0,
+             "The number of bytes less than the requested bytes to write");
+TAG_FLAG(env_inject_short_write_bytes, hidden);
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
+using std::accumulate;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -174,9 +179,7 @@ int fallocate(int fd, int mode, off_t offset, off_t len) {
   }
   return 0;
 }
-#endif
 
-#if defined(__APPLE__)
 // Simulates Linux's preadv API on OS X.
 ssize_t preadv(int fd, const struct iovec* iovec, int count, off_t offset) {
   ssize_t total_read_bytes = 0;
@@ -193,6 +196,24 @@ ssize_t preadv(int fd, const struct iovec* iovec, int count, off_t offset) {
     offset += iovec[i].iov_len;
   }
   return total_read_bytes;
+}
+
+// Simulates Linux's pwritev API on OS X.
+ssize_t pwritev(int fd, const struct iovec* iovec, int count, off_t offset) {
+  ssize_t total_written_bytes = 0;
+  for (int i = 0; i < count; i++) {
+    ssize_t r;
+    RETRY_ON_EINTR(r, pwrite(fd, iovec[i].iov_base, iovec[i].iov_len, offset));
+    if (r < 0) {
+      return r;
+    }
+    total_written_bytes += r;
+    if (static_cast<size_t>(r) < iovec[i].iov_len) {
+      break;
+    }
+    offset += iovec[i].iov_len;
+  }
+  return total_written_bytes;
 }
 #endif
 
@@ -341,6 +362,71 @@ Status DoReadV(int fd, const string& filename, uint64_t offset, vector<Slice>* r
   return Status::OK();
 }
 
+Status DoWriteV(int fd, const string& filename, uint64_t offset,
+                const vector<Slice>& data) {
+  MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                       Status::IOError(Env::kInjectedFailureStatusMsg));
+  ThreadRestrictions::AssertIOAllowed();
+
+  // Convert the results into the iovec vector to request
+  // and calculate the total bytes requested.
+  size_t bytes_req = 0;
+  size_t iov_size = data.size();
+  struct iovec iov[iov_size];
+  for (size_t i = 0; i < iov_size; i++) {
+    const Slice& result = data[i];
+    bytes_req += result.size();
+    iov[i] = { const_cast<uint8_t*>(result.data()), result.size() };
+  }
+
+  uint64_t cur_offset = offset;
+  size_t completed_iov = 0;
+  size_t rem = bytes_req;
+  while (rem > 0) {
+    // Never request more than IOV_MAX in one request.
+    size_t iov_count = std::min(iov_size - completed_iov, static_cast<size_t>(IOV_MAX));
+    ssize_t w;
+    RETRY_ON_EINTR(w, pwritev(fd, iov + completed_iov, iov_count, cur_offset));
+
+    // Fake a short write for testing.
+    if (PREDICT_FALSE(FLAGS_env_inject_short_write_bytes > 0 && rem == bytes_req)) {
+      DCHECK_LT(FLAGS_env_inject_short_write_bytes, w);
+      w -= FLAGS_env_inject_short_read_bytes;
+    }
+
+    if (PREDICT_FALSE(w < 0)) {
+      // An error: return a non-ok status.
+      return IOError(filename, errno);
+    }
+
+    DCHECK_LE(w, rem);
+
+    if (PREDICT_TRUE(w == rem)) {
+      // All requested bytes were read. This is almost always the case.
+      return Status::OK();
+    }
+    // Adjust iovec vector based on bytes read for the next request.
+    ssize_t bytes_rem = w;
+    for (size_t i = completed_iov; i < iov_size; i++) {
+      if (bytes_rem >= iov[i].iov_len) {
+        // The full length of this iovec was written.
+        completed_iov++;
+        bytes_rem -= iov[i].iov_len;
+      } else {
+        // Partially wrote this result.
+        // Adjust the iov_len and iov_base to write only the missing data.
+        iov[i].iov_base = static_cast<uint8_t *>(iov[i].iov_base) + bytes_rem;
+        iov[i].iov_len -= bytes_rem;
+        break; // Don't need to adjust remaining iovec's.
+      }
+    }
+    cur_offset += w;
+    rem -= w;
+  }
+  DCHECK_EQ(0, rem);
+  return Status::OK();
+}
+
 class PosixSequentialFile: public SequentialFile {
  private:
   std::string filename_;
@@ -441,23 +527,20 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) OVERRIDE {
-    vector<Slice> data_vector;
-    data_vector.push_back(data);
-    return AppendVector(data_vector);
+    return AppendV({ data });
   }
 
-  virtual Status AppendVector(const vector<Slice>& data_vector) OVERRIDE {
+  virtual Status AppendV(const vector<Slice> &data) OVERRIDE {
     ThreadRestrictions::AssertIOAllowed();
-    static const size_t kIovMaxElements = IOV_MAX;
-
-    Status s;
-    for (size_t i = 0; i < data_vector.size() && s.ok(); i += kIovMaxElements) {
-      size_t n = std::min(data_vector.size() - i, kIovMaxElements);
-      s = DoWritev(data_vector, i, n);
-    }
-
+    RETURN_NOT_OK(DoWriteV(fd_, filename_, filesize_, data));
+    // Calculate the amount of data written
+    size_t bytes_written = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
+                                      [&](int sum, const Slice& curr) {
+                                        return sum + curr.size();
+                                      });
+    filesize_ += bytes_written;
     pending_sync_ = true;
-    return s;
+    return Status::OK();
   }
 
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
@@ -555,68 +638,6 @@ class PosixWritableFile : public WritableFile {
   virtual const string& filename() const OVERRIDE { return filename_; }
 
  private:
-
-  Status DoWritev(const vector<Slice>& data_vector,
-                  size_t offset, size_t n) {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
-                         Status::IOError(Env::kInjectedFailureStatusMsg));
-
-    ThreadRestrictions::AssertIOAllowed();
-#if defined(__linux__)
-    DCHECK_LE(n, IOV_MAX);
-
-    struct iovec iov[n];
-    size_t j = 0;
-    size_t nbytes = 0;
-
-    for (size_t i = offset; i < offset + n; i++) {
-      const Slice& data = data_vector[i];
-      iov[j].iov_base = const_cast<uint8_t*>(data.data());
-      iov[j].iov_len = data.size();
-      nbytes += data.size();
-      ++j;
-    }
-
-    ssize_t written;
-    RETRY_ON_EINTR(written, pwritev(fd_, iov, n, filesize_));
-
-    if (PREDICT_FALSE(written == -1)) {
-      int err = errno;
-      return IOError(filename_, err);
-    }
-
-    filesize_ += written;
-
-    if (PREDICT_FALSE(written != nbytes)) {
-      return Status::IOError(
-          Substitute("pwritev error: expected to write $0 bytes, wrote $1 bytes instead"
-                     " (perhaps the disk is out of space)",
-                     nbytes, written));
-    }
-#else
-    for (size_t i = offset; i < offset + n; i++) {
-      const Slice& data = data_vector[i];
-      ssize_t written;
-      RETRY_ON_EINTR(written, pwrite(fd_, data.data(), data.size(), filesize_));
-      if (PREDICT_FALSE(written == -1)) {
-        int err = errno;
-        return IOError("pwrite error", err);
-      }
-
-      filesize_ += written;
-
-      if (PREDICT_FALSE(written != data.size())) {
-        return Status::IOError(
-            Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead"
-                       " (perhaps the disk is out of space)",
-                       data.size(), written));
-      }
-    }
-#endif
-
-    return Status::OK();
-  }
-
   const std::string filename_;
   int fd_;
   bool sync_on_close_;
@@ -649,27 +670,13 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
-    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
-                         Status::IOError(Env::kInjectedFailureStatusMsg));
+    return WriteV(offset, { data });
+  }
 
-    ThreadRestrictions::AssertIOAllowed();
-    ssize_t written;
-    RETRY_ON_EINTR(written, pwrite(fd_, data.data(), data.size(), offset));
-
-    if (PREDICT_FALSE(written == -1)) {
-      int err = errno;
-      return IOError(filename_, err);
-    }
-
-    if (PREDICT_FALSE(written != data.size())) {
-      return Status::IOError(
-          Substitute("pwrite error: expected to write $0 bytes, wrote $1 bytes instead"
-                     " (perhaps the disk is out of space)",
-                     data.size(), written));
-    }
-
+  virtual Status WriteV(uint64_t offset, const vector<Slice> &data) OVERRIDE {
+    Status s = DoWriteV(fd_, filename_, offset, data);
     pending_sync_.Store(true);
-    return Status::OK();
+    return s;
   }
 
   virtual Status PreAllocate(uint64_t offset,

@@ -18,6 +18,7 @@
 #include "kudu/fs/file_block_manager.h"
 
 #include <memory>
+#include <numeric>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 
+using std::accumulate;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -224,6 +226,8 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status Append(const Slice& data) OVERRIDE;
 
+  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
+
   virtual Status FlushDataAsync() OVERRIDE;
 
   virtual size_t BytesAppended() const OVERRIDE;
@@ -297,14 +301,23 @@ const BlockId& FileWritableBlock::id() const {
 }
 
 Status FileWritableBlock::Append(const Slice& data) {
-  DCHECK(state_ == CLEAN || state_ == DIRTY)
-      << "Invalid state: " << state_;
+  return AppendV({ data });
+}
 
-  RETURN_NOT_OK(writer_->Append(data));
+Status FileWritableBlock::AppendV(const vector<Slice>& data) {
+  DCHECK(state_ == CLEAN || state_ == DIRTY)
+  << "Invalid state: " << state_;
+  RETURN_NOT_OK(writer_->AppendV(data));
   RETURN_NOT_OK(location_.data_dir()->RefreshIsFull(
       DataDir::RefreshMode::ALWAYS));
   state_ = DIRTY;
-  bytes_appended_ += data.size();
+
+  // Calculate the amount of data written
+  size_t bytes_written = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
+                                    [&](int sum, const Slice& curr) {
+                                      return sum + curr.size();
+                                    });
+  bytes_appended_ += bytes_written;
   return Status::OK();
 }
 

@@ -226,6 +226,12 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->Write(offset, data);
   }
 
+  Status WriteV(uint64_t offset, const vector<Slice> &data) override {
+    ScopedOpenedDescriptor<RWFile> opened(&base_);
+    RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
+    return opened.file()->WriteV(offset, data);
+  }
+
   Status PreAllocate(uint64_t offset, size_t length, PreAllocateMode mode) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));

@@ -823,9 +823,10 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data,
   InlineEncodeFixed32(&header_buf[12], crc::Crc32c(&header_buf[0], kEntryHeaderSizeV2 - 4));
 
   // Write the header to the file, followed by the batch data itself.
-  RETURN_NOT_OK(writable_file_->AppendVector({
-        Slice(header_buf, arraysize(header_buf)),
-        data_to_write}));
+  RETURN_NOT_OK(writable_file_->AppendV({
+                                            Slice(header_buf,
+                                                  arraysize(header_buf)),
+                                            data_to_write}));
   written_offset_ += arraysize(header_buf) + data_to_write.size();
   return Status::OK();
 }

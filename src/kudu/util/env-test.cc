@@ -51,6 +51,7 @@
 
 DECLARE_bool(never_fsync);
 DECLARE_int32(env_inject_short_read_bytes);
+DECLARE_int32(env_inject_short_write_bytes);
 
 namespace kudu {
 
@@ -142,8 +143,9 @@ class TestEnv : public KuduTest {
     ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
   }
 
-  void TestAppendVector(size_t num_slices, size_t slice_size, size_t iterations,
-                        bool fast, bool pre_allocate, const WritableFileOptions& opts) {
+  void TestAppendV(size_t num_slices, size_t slice_size, size_t iterations,
+                   bool fast, bool pre_allocate,
+                   const WritableFileOptions &opts) {
     const string kTestPath = GetTestPath("test_env_appendvec_read_append");
     shared_ptr<WritableFile> file;
     ASSERT_OK(env_util::OpenFileForWrite(opts, env_, kTestPath, &file));
@@ -157,6 +159,9 @@ class TestEnv : public KuduTest {
     vector<vector<Slice> > input;
 
     MakeVectors(num_slices, slice_size, iterations, &data, &input);
+
+    // Force short writes to half the slice length.
+    FLAGS_env_inject_short_write_bytes = slice_size / 2;
 
     shared_ptr<RandomAccessFile> raf;
 
@@ -172,7 +177,7 @@ class TestEnv : public KuduTest {
     LOG_TIMING(INFO, test_descr)  {
       for (int i = 0; i < iterations; i++) {
         if (fast || random() % 2) {
-          ASSERT_OK(file->AppendVector(input[i]));
+          ASSERT_OK(file->AppendV(input[i]));
         } else {
           for (const Slice& slice : input[i]) {
             ASSERT_OK(file->Append(slice));
@@ -494,18 +499,18 @@ TEST_F(TestEnv, TestIOVMax) {
   VerifyTestData(Slice(scratch, data_size), 0);
 }
 
-TEST_F(TestEnv, TestAppendVector) {
+TEST_F(TestEnv, TestAppendV) {
   WritableFileOptions opts;
-  LOG(INFO) << "Testing AppendVector() only, NO pre-allocation";
-  ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, false, opts));
+  LOG(INFO) << "Testing AppendV() only, NO pre-allocation";
+  ASSERT_NO_FATAL_FAILURE(TestAppendV(2000, 1024, 5, true, false, opts));
 
   if (!fallocate_supported_) {
     LOG(INFO) << "fallocate not supported, skipping preallocated runs";
   } else {
-    LOG(INFO) << "Testing AppendVector() only, WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(2000, 1024, 5, true, true, opts));
-    LOG(INFO) << "Testing AppendVector() together with Append() and Read(), WITH pre-allocation";
-    ASSERT_NO_FATAL_FAILURE(TestAppendVector(128, 4096, 5, false, true, opts));
+    LOG(INFO) << "Testing AppendV() only, WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendV(2000, 1024, 5, true, true, opts));
+    LOG(INFO) << "Testing AppendV() together with Append() and Read(), WITH pre-allocation";
+    ASSERT_NO_FATAL_FAILURE(TestAppendV(128, 4096, 5, false, true, opts));
   }
 }
 

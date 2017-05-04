@@ -113,6 +113,12 @@ class WritableBlock : public Block {
   // outstanding data to reach the disk.
   virtual Status Append(const Slice& data) = 0;
 
+  // Appends multiple chunks of data referenced by 'data' to the block.
+  //
+  // Does not guarantee durability of 'data'; Close() must be called for all
+  // outstanding data to reach the disk.
+  virtual Status AppendV(const std::vector<Slice>& data) = 0;
+
   // Begins an asynchronous flush of dirty block data to disk.
   //
   // This is purely a performance optimization for Close(); if there is
