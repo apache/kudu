@@ -27,6 +27,13 @@ namespace process_memory {
 // of the hard limit consumed is written to it.
 bool SoftLimitExceeded(double* current_capacity_pct);
 
+// Return true if we are under memory pressure (i.e if we are nearing the point at which
+// SoftLimitExceeded will begin to return true).
+//
+// If the process is under memory pressure, and 'current_capacity_pct' is not NULL,
+// the percentage of the hard limit consumed is written to it.
+bool UnderMemoryPressure(double* current_capacity_pct);
+
 // Potentially trigger a call to release tcmalloc memory back to the
 // OS, after the given amount of memory was released.
 void MaybeGCAfterRelease(int64_t released_bytes);

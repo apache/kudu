@@ -37,7 +37,12 @@ DEFINE_int64(memory_limit_hard_bytes, 0,
              "A value of -1 disables all memory limiting.");
 TAG_FLAG(memory_limit_hard_bytes, stable);
 
-DEFINE_int32(memory_limit_soft_percentage, 60,
+DEFINE_int32(memory_pressure_percentage, 60,
+             "Percentage of the hard memory limit that this daemon may "
+             "consume before flushing of in-memory data becomes prioritized.");
+TAG_FLAG(memory_pressure_percentage, advanced);
+
+DEFINE_int32(memory_limit_soft_percentage, 80,
              "Percentage of the hard memory limit that this daemon may "
              "consume before memory throttling of writes begins. The greater "
              "the excess, the higher the chance of throttling. In general, a "
@@ -65,6 +70,7 @@ namespace process_memory {
 namespace {
 int64_t g_hard_limit;
 int64_t g_soft_limit;
+int64_t g_pressure_threshold;
 
 ThreadSafeRandom* g_rand = nullptr;
 
@@ -163,6 +169,7 @@ void DoInitLimits() {
   }
   g_hard_limit = limit;
   g_soft_limit = FLAGS_memory_limit_soft_percentage * g_hard_limit / 100;
+  g_pressure_threshold = FLAGS_memory_pressure_percentage * g_hard_limit / 100;
 
   g_rand = new ThreadSafeRandom(1);
 
@@ -170,6 +177,9 @@ void DoInitLimits() {
                             (static_cast<float>(g_hard_limit) / (1024.0 * 1024.0 * 1024.0)));
   LOG(INFO) << StringPrintf("Process soft memory limit is %.6f GB",
                             (static_cast<float>(g_soft_limit) /
+                             (1024.0 * 1024.0 * 1024.0)));
+  LOG(INFO) << StringPrintf("Process memory pressure threshold is %.6f GB",
+                            (static_cast<float>(g_pressure_threshold) /
                              (1024.0 * 1024.0 * 1024.0)));
 }
 
@@ -221,6 +231,18 @@ int64_t CurrentConsumption() {
 
 int64_t HardLimit() {
   return g_hard_limit;
+}
+
+bool UnderMemoryPressure(double* current_capacity_pct) {
+  InitLimits();
+  int64_t consumption = CurrentConsumption();
+  if (consumption < g_pressure_threshold) {
+    return false;
+  }
+  if (current_capacity_pct) {
+    *current_capacity_pct = static_cast<double>(consumption) / g_hard_limit * 100;
+  }
+  return true;
 }
 
 bool SoftLimitExceeded(double* current_capacity_pct) {

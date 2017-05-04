@@ -128,7 +128,7 @@ MaintenanceManager::MaintenanceManager(const Options& options)
           options.polling_interval_ms),
     completed_ops_count_(0),
     rand_(GetRandomSeed32()),
-    memory_pressure_func_(&process_memory::SoftLimitExceeded) {
+    memory_pressure_func_(&process_memory::UnderMemoryPressure) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
                .set_max_threads(num_threads_).Build(&thread_pool_));
   uint32_t history_size = options.history_size == 0 ?
