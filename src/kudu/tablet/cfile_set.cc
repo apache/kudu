@@ -203,7 +203,8 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
   return ret;
 }
 
-Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
+Status CFileSet::FindRow(const RowSetKeyProbe &probe,
+                         boost::optional<rowid_t>* idx,
                          ProbeStats* stats) const {
   if (bloom_reader_ != nullptr && FLAGS_consult_bloom_filters) {
     // Fully open the BloomFileReader if it was lazily opened earlier.
@@ -215,8 +216,10 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
     bool present;
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);
     if (s.ok() && !present) {
-      return Status::NotFound("not present in bloom filter");
-    } else if (!s.ok()) {
+      *idx = boost::none;
+      return Status::OK();
+    }
+    if (!s.ok()) {
       LOG(WARNING) << "Unable to query bloom: " << s.ToString()
                    << " (disabling bloom for this rowset from this point forward)";
       const_cast<CFileSet *>(this)->bloom_reader_.reset(nullptr);
@@ -231,10 +234,12 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   bool exact;
-  RETURN_NOT_OK(key_iter->SeekAtOrAfter(probe.encoded_key(), &exact));
-  if (!exact) {
-    return Status::NotFound("not present in storefile (failed seek)");
+  Status s = key_iter->SeekAtOrAfter(probe.encoded_key(), &exact);
+  if (s.IsNotFound() || !exact) {
+    *idx = boost::none;
+    return Status::OK();
   }
+  RETURN_NOT_OK(s);
 
   *idx = key_iter->GetCurrentOrdinal();
   return Status::OK();
@@ -242,17 +247,13 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
 
 Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                                  rowid_t *rowid, ProbeStats* stats) const {
-
-  Status s = FindRow(probe, rowid, stats);
-  if (s.IsNotFound()) {
-    // In the case that the key comes past the end of the file, Seek
-    // will return NotFound. In that case, it is OK from this function's
-    // point of view - just a non-present key.
-    *present = false;
-    return Status::OK();
+  boost::optional<rowid_t> opt_rowid;
+  RETURN_NOT_OK(FindRow(probe, &opt_rowid, stats));
+  *present = opt_rowid != boost::none;
+  if (*present) {
+    *rowid = *opt_rowid;
   }
-  *present = true;
-  return s;
+  return Status::OK();
 }
 
 Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {

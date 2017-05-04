@@ -17,15 +17,16 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
-#include <boost/container/flat_map.hpp>
-#include <gtest/gtest_prod.h>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <boost/container/flat_map.hpp>
+#include <boost/optional.hpp>
+#include <gtest/gtest_prod.h>
+
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_reader.h"
-
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
@@ -70,7 +71,10 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   uint64_t EstimateOnDiskSize() const;
 
   // Determine the index of the given row key.
-  Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx, ProbeStats* stats) const;
+  // Sets *idx to boost::none if the row is not found.
+  Status FindRow(const RowSetKeyProbe& probe,
+                 boost::optional<rowid_t>* idx,
+                 ProbeStats* stats) const;
 
   string ToString() const {
     return string("CFile base data in ") + rowset_metadata_->ToString();
@@ -104,7 +108,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
 
   Status NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
                            CFileIterator **iter) const;
-  Status NewKeyIterator(CFileIterator **iter) const;
+  Status NewKeyIterator(CFileIterator** key_iter) const;
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)

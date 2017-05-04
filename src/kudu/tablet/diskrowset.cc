@@ -22,6 +22,7 @@
 #include <mutex>
 #include <vector>
 
+#include <boost/optional.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 
@@ -620,18 +621,21 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
-  rowid_t row_idx;
+  boost::optional<rowid_t> row_idx;
   RETURN_NOT_OK(base_data_->FindRow(probe, &row_idx, stats));
+  if (PREDICT_FALSE(row_idx == boost::none)) {
+    return Status::NotFound("row not found");
+  }
 
   // It's possible that the row key exists in this DiskRowSet, but it has
   // in fact been Deleted already. Check with the delta tracker to be sure.
   bool deleted;
-  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(row_idx, &deleted, stats));
+  RETURN_NOT_OK(delta_tracker_->CheckRowDeleted(*row_idx, &deleted, stats));
   if (deleted) {
     return Status::NotFound("row not found");
   }
 
-  RETURN_NOT_OK(delta_tracker_->Update(timestamp, row_idx, update, op_id, result));
+  RETURN_NOT_OK(delta_tracker_->Update(timestamp, *row_idx, update, op_id, result));
 
   return Status::OK();
 }
