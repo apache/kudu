@@ -1316,32 +1316,8 @@ Status LogReadableBlock::Size(uint64_t* sz) const {
 }
 
 Status LogReadableBlock::Read(uint64_t offset, Slice* result) const {
-  DCHECK(!closed_.Load());
-
-  uint64_t read_offset = log_block_->offset() + offset;
-  if (log_block_->length() < offset + result->size()) {
-    return Status::IOError("Out-of-bounds read",
-                           Substitute("read of [$0-$1) in block [$2-$3)",
-                                      read_offset,
-                                      read_offset + result->size(),
-                                      log_block_->offset(),
-                                      log_block_->offset() + log_block_->length()));
-  }
-
-  MicrosecondsInt64 start_time = GetMonoTimeMicros();
-  RETURN_NOT_OK(container_->ReadData(read_offset, result));
-  MicrosecondsInt64 end_time = GetMonoTimeMicros();
-
-  int64_t dur = end_time - start_time;
-  TRACE_COUNTER_INCREMENT("lbm_read_time_us", dur);
-
-  const char* counter = BUCKETED_COUNTER_NAME("lbm_reads", dur);
-  TRACE_COUNTER_INCREMENT(counter, 1);
-
-  if (container_->metrics()) {
-    container_->metrics()->generic_metrics.total_bytes_read->IncrementBy(result->size());
-  }
-  return Status::OK();
+  vector<Slice> results = { *result };
+  return ReadV(offset, &results);
 }
 
 Status LogReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {

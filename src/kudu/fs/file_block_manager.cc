@@ -445,14 +445,8 @@ Status FileReadableBlock::Size(uint64_t* sz) const {
 }
 
 Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
-  DCHECK(!closed_.Load());
-
-  RETURN_NOT_OK(reader_->Read(offset, result));
-  if (block_manager_->metrics_) {
-    block_manager_->metrics_->total_bytes_read->IncrementBy(result->size());
-  }
-
-  return Status::OK();
+  vector<Slice> results = { *result };
+  return ReadV(offset, &results);
 }
 
 Status FileReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {

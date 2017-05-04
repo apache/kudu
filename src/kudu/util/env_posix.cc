@@ -276,43 +276,6 @@ Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
   return Status::OK();
 }
 
-Status DoRead(int fd, const string& filename, uint64_t offset, Slice* result) {
-  ThreadRestrictions::AssertIOAllowed();
-  uint64_t cur_offset = offset;
-  uint8_t* dst = result->mutable_data();
-  size_t rem = result->size();
-  while (rem > 0) {
-    size_t req = rem;
-    // Inject a short read for testing
-    if (PREDICT_FALSE(FLAGS_env_inject_short_read_bytes > 0 && req == result->size())) {
-      DCHECK_LT(FLAGS_env_inject_short_read_bytes, req);
-      req -= FLAGS_env_inject_short_read_bytes;
-    }
-    ssize_t r;
-    RETRY_ON_EINTR(r, pread(fd, dst, req, cur_offset));
-    if (PREDICT_FALSE(r < 0)) {
-      // An error: return a non-ok status.
-      return IOError(filename, errno);
-    }
-    if (PREDICT_FALSE(r == 0)) {
-      // EOF
-      return Status::IOError(Substitute("EOF trying to read $0 bytes at offset $1",
-                                        result->size(), offset));
-    }
-    if (PREDICT_TRUE(r == rem)) {
-      // All requested bytes were read.
-      // This is almost always the case.
-      return Status::OK();
-    }
-    DCHECK_LE(r, rem);
-    dst += r;
-    rem -= r;
-    cur_offset += r;
-  }
-  DCHECK_EQ(0, rem);
-  return Status::OK();
-}
-
 Status DoReadV(int fd, const string& filename, uint64_t offset, vector<Slice>* results) {
   ThreadRestrictions::AssertIOAllowed();
 
@@ -430,7 +393,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    return DoRead(fd_, filename_, offset, result);
+    vector<Slice> results = { *result };
+    return ReadV(offset, &results);
   }
 
   virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
@@ -676,7 +640,8 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    return DoRead(fd_, filename_, offset, result);
+    vector<Slice> results = { *result };
+    return ReadV(offset, &results);
   }
 
   virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
