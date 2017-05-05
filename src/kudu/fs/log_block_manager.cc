@@ -1668,6 +1668,19 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   }
 }
 
+void LogBlockManager::RemoveFullContainerUnlocked(const string& container_name) {
+  DCHECK(lock_.is_locked());
+  unique_ptr<LogBlockContainer> to_delete(EraseKeyReturnValuePtr(
+      &all_containers_by_name_, container_name));
+  CHECK(to_delete);
+  CHECK(to_delete->full())
+      << Substitute("Container $0 is not full", container_name);
+  if (metrics()) {
+    metrics()->containers->Decrement();
+    metrics()->full_containers->Decrement();
+  }
+}
+
 Status LogBlockManager::GetOrCreateContainer(LogBlockContainer** container) {
   DataDir* dir;
   RETURN_NOT_OK(dd_manager_.GetNextDataDir(&dir));
@@ -1818,8 +1831,13 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   local_report.misaligned_block_check.emplace();
   local_report.partial_record_check.emplace();
 
-  // Keep track of deleted blocks that we may need to repunch.
+  // Keep track of deleted blocks whose space hasn't been punched; they will
+  // be repunched during repair.
   vector<scoped_refptr<internal::LogBlock>> need_repunching;
+
+  // Keep track of containers that have nothing but dead blocks; they will be
+  // deleted during repair.
+  vector<string> dead_containers;
 
   // Find all containers and open them.
   unordered_set<string> containers_seen;
@@ -1897,10 +1915,21 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       }
     }
 
-    // Having processed the block records, let's check whether any full
-    // containers have any extra space (left behind after a crash or from an
-    // older version of Kudu).
     if (container->full()) {
+      // Full containers without any live blocks can be deleted outright.
+      //
+      // TODO(adar): this should be reported as an inconsistency once dead
+      // container deletion is also done in real time. Until then, it would be
+      // confusing to report it as such since it'll be a natural event at startup.
+      if (container->live_blocks() == 0) {
+        DCHECK(live_blocks.empty());
+        dead_containers.emplace_back(container->ToString());
+      }
+
+      // Having processed the block records, let's check whether any full
+      // containers have any extra space (left behind after a crash or from an
+      // older version of Kudu).
+      //
       // Filesystems are unpredictable beasts and may misreport the amount of
       // space allocated to a file in various interesting ways. Some examples:
       // - XFS's speculative preallocation feature may artificially enlarge the
@@ -1936,8 +1965,14 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       if (reported_size > cleanup_threshold_size) {
         local_report.full_container_space_check->entries.emplace_back(
             container->ToString(), reported_size - container->live_bytes_aligned());
-        need_repunching.insert(need_repunching.end(),
-                               dead_blocks.begin(), dead_blocks.end());
+
+        // If the container is to be deleted outright, don't bother repunching
+        // its blocks. The report entry remains, however, so it's clear that
+        // there was a space discrepancy.
+        if (container->live_blocks()) {
+          need_repunching.insert(need_repunching.end(),
+                                 dead_blocks.begin(), dead_blocks.end());
+        }
       }
 
       local_report.stats.lbm_full_container_count++;
@@ -1975,7 +2010,10 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
 
   // Like the rest of Open(), repairs are performed per data directory to take
   // advantage of parallelism.
-  s = Repair(&local_report, std::move(need_repunching));
+  s = Repair(dir,
+             &local_report,
+             std::move(need_repunching),
+             std::move(dead_containers));
   if (!s.ok()) {
     *result_status = s.CloneAndPrepend(Substitute(
         "fatal error while repairing inconsistencies in data directory $0",
@@ -1988,8 +2026,10 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
 }
 
 Status LogBlockManager::Repair(
+    DataDir* dir,
     FsReport* report,
-    vector<scoped_refptr<internal::LogBlock>> need_repunching) {
+    vector<scoped_refptr<internal::LogBlock>> need_repunching,
+    vector<string> dead_containers) {
   if (read_only_) {
     LOG(INFO) << "Read-only block manager, skipping repair";
     return Status::OK();
@@ -2005,18 +2045,66 @@ Status LogBlockManager::Repair(
   unordered_map<std::string, internal::LogBlockContainer*> containers_by_name;
   {
     std::lock_guard<simple_spinlock> l(lock_);
+
+    // Remove all of the dead containers from the block manager. They will be
+    // deleted from disk shortly thereafter, outside of the lock.
+    for (const auto& d : dead_containers) {
+      RemoveFullContainerUnlocked(d);
+    }
+
+    // Fetch all the containers we're going to need.
     if (report->partial_record_check) {
       for (const auto& pr : report->partial_record_check->entries) {
-        containers_by_name[pr.container] =
-            FindOrDie(all_containers_by_name_, pr.container);
+        LogBlockContainer* c = FindPtrOrNull(all_containers_by_name_,
+                                             pr.container);
+        if (c) {
+          containers_by_name[pr.container] = c;
+        }
       }
     }
     if (report->full_container_space_check) {
       for (const auto& fcp : report->full_container_space_check->entries) {
-        containers_by_name[fcp.container] =
-            FindOrDie(all_containers_by_name_, fcp.container);
+        LogBlockContainer* c = FindPtrOrNull(all_containers_by_name_,
+                                             fcp.container);
+        if (c) {
+          containers_by_name[fcp.container] = c;
+        }
       }
     }
+  }
+
+
+  // Delete all dead containers.
+  //
+  // After the deletions, the data directory is sync'ed to reduce the chance
+  // of a data file existing without its corresponding metadata file (or vice
+  // versa) in the event of a crash. The block manager would treat such a case
+  // as corruption and require manual intervention.
+  //
+  // TODO(adar) the above is not fool-proof; a crash could manifest in between
+  // any pair of deletions. That said, the odds of it happening are incredibly
+  // rare, and manual resolution isn't hard (just delete the existing file).
+  for (const auto& d : dead_containers) {
+    string data_file_name = StrCat(d, kContainerDataFileSuffix);
+    string metadata_file_name = StrCat(d, kContainerMetadataFileSuffix);
+
+    Status data_file_status;
+    Status metadata_file_status;
+    if (file_cache_) {
+      data_file_status = file_cache_->DeleteFile(data_file_name);
+      metadata_file_status = file_cache_->DeleteFile(metadata_file_name);
+    } else {
+      data_file_status = env_->DeleteFile(data_file_name);
+      metadata_file_status = env_->DeleteFile(metadata_file_name);
+    }
+
+    WARN_NOT_OK(data_file_status,
+                "Could not delete dead container data file " + data_file_name);
+    WARN_NOT_OK(metadata_file_status,
+                "Could not delete dead container metadata file " + metadata_file_name);
+  }
+  if (!dead_containers.empty()) {
+    WARN_NOT_OK(env_->SyncDir(dir->dir()), "Could not sync data directory");
   }
 
   // Truncate partial metadata records.
@@ -2027,8 +2115,13 @@ Status LogBlockManager::Repair(
       unique_ptr<RWFile> file;
       RWFileOptions opts;
       opts.mode = Env::OPEN_EXISTING;
-      internal::LogBlockContainer* container = FindOrDie(containers_by_name,
-                                                         pr.container);
+      internal::LogBlockContainer* container = FindPtrOrNull(containers_by_name,
+                                                             pr.container);
+      if (!container) {
+        // The container was deleted outright.
+        pr.repaired = true;
+        continue;
+      }
       RETURN_NOT_OK_PREPEND(
           env_->NewRWFile(opts,
                           StrCat(pr.container, kContainerMetadataFileSuffix),
@@ -2080,8 +2173,14 @@ Status LogBlockManager::Repair(
   // disk space consumption.
   if (report->full_container_space_check) {
     for (auto& fcp : report->full_container_space_check->entries) {
-      internal::LogBlockContainer* container = FindOrDie(containers_by_name,
-                                                         fcp.container);
+      internal::LogBlockContainer* container = FindPtrOrNull(containers_by_name,
+                                                             fcp.container);
+      if (!container) {
+        // The container was deleted outright.
+        fcp.repaired = true;
+        continue;
+      }
+
       Status s = container->TruncateDataToNextBlockOffset();
       if (s.ok()) {
         fcp.repaired = true;

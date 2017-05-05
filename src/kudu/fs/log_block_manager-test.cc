@@ -1097,5 +1097,32 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
   NO_FATALS(AssertEmptyReport(report));
 }
 
+TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
+  // Force our single container to become full once created.
+  FLAGS_log_container_max_size = 0;
+
+  // Create one container.
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(bm_->CreateBlock(&block));
+  ASSERT_OK(block->Append("a"));
+  ASSERT_OK(block->Close());
+  string data_file_name;
+  string metadata_file_name;
+  NO_FATALS(GetOnlyContainerDataFile(&data_file_name));
+  NO_FATALS(GetOnlyContainerDataFile(&metadata_file_name));
+
+  // Reopen the block manager. The container files should still be there.
+  ASSERT_OK(ReopenBlockManager());
+  ASSERT_TRUE(env_->FileExists(data_file_name));
+  ASSERT_TRUE(env_->FileExists(metadata_file_name));
+
+  // Delete the one block and reopen it again. The container files should have
+  // been deleted.
+  ASSERT_OK(bm_->DeleteBlock(block->id()));
+  ASSERT_OK(ReopenBlockManager());
+  ASSERT_FALSE(env_->FileExists(data_file_name));
+  ASSERT_FALSE(env_->FileExists(metadata_file_name));
+}
+
 } // namespace fs
 } // namespace kudu

@@ -211,7 +211,15 @@ class LogBlockManager : public BlockManager {
       BlockAllocator> BlockMap;
 
   // Adds an as of yet unseen container to this block manager.
+  //
+  // Must be called with 'lock_' held.
   void AddNewContainerUnlocked(internal::LogBlockContainer* container);
+
+  // Removes a previously added container from this block manager. The
+  // container must be full.
+  //
+  // Must be called with 'lock_' held.
+  void RemoveFullContainerUnlocked(const std::string& container_name);
 
   // Returns the next container available for writing using a round-robin
   // selection policy, creating a new one if necessary.
@@ -258,12 +266,15 @@ class LogBlockManager : public BlockManager {
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
-  // Repairs any inconsistencies described in 'report'. Any blocks in
-  // 'need_repunching' will be punched out again.
+  // Repairs any inconsistencies for 'dir' described in 'report'. Any blocks in
+  // 'need_repunching' will be punched out again. Any containers in
+  // 'dead_containers' will be deleted from disk.
   //
   // Returns an error if repairing a fatal inconsistency failed.
-  Status Repair(FsReport* report,
-                std::vector<scoped_refptr<internal::LogBlock>> need_repunching);
+  Status Repair(DataDir* dir,
+                FsReport* report,
+                std::vector<scoped_refptr<internal::LogBlock>> need_repunching,
+                std::vector<std::string> dead_containers);
 
   // Opens a particular data directory belonging to the block manager. The
   // results of consistency checking (and repair, if applicable) are written to
