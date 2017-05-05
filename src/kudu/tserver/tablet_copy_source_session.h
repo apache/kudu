@@ -128,9 +128,9 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
     return tablet_superblock_;
   }
 
-  const consensus::ConsensusStatePB& initial_committed_cstate() const {
+  const consensus::ConsensusStatePB& initial_cstate() const {
     DCHECK(initted_);
-    return initial_committed_cstate_;
+    return initial_cstate_;
   }
 
   const log::SegmentSequence& log_segments() const {
@@ -186,7 +186,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
 
   tablet::TabletSuperBlockPB tablet_superblock_;
 
-  consensus::ConsensusStatePB initial_committed_cstate_;
+  consensus::ConsensusStatePB initial_cstate_;
 
   // The sequence of log segments that will be sent in the course of this
   // session.

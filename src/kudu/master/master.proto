@@ -122,8 +122,8 @@ message SysTabletsEntryPB {
   // Tablet partition.
   optional PartitionPB partition = 7;
 
-  // The latest committed consensus configuration reported to the Master.
-  optional consensus.ConsensusStatePB committed_consensus_state = 3;
+  // The latest consensus state reported to the Master.
+  optional consensus.ConsensusStatePB consensus_state = 3;
 
   // Debug state for the tablet.
   optional State state = 4 [ default = UNKNOWN ];
@@ -211,10 +211,10 @@ message ReportedTabletPB {
   optional tablet.TabletStatePB state = 2 [ default = UNKNOWN ];
   optional tablet.TabletDataState tablet_data_state = 6 [ default = TABLET_DATA_UNKNOWN ];
 
-  // The latest _committed_ consensus state.
+  // The latest consensus state.
   // This will be missing if the tablet is not in a RUNNING state
   // (i.e. if it is BOOTSTRAPPING).
-  optional consensus.ConsensusStatePB committed_consensus_state = 3;
+  optional consensus.ConsensusStatePB consensus_state = 3;
 
   optional AppStatusPB error = 4;
   optional uint32 schema_version = 5;

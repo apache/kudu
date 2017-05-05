@@ -456,9 +456,6 @@ message GetConsensusStateRequestPB {
 
   // The id of the tablet.
   required bytes tablet_id = 1;
-
-  // Whether to fetch the committed or active consensus state.
-  optional ConsensusConfigType type = 3 [ default = CONSENSUS_CONFIG_COMMITTED ];
 }
 
 message GetConsensusStateResponsePB {
@@ -539,7 +536,7 @@ service ConsensusService {
 
   rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
 
-  // Returns the committed Consensus state.
+  // Returns the consensus state.
   rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
 
   // Instruct this server to copy a tablet from another host.

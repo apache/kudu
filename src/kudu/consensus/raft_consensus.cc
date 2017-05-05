@@ -1537,10 +1537,9 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
           return Status::InvalidArgument(
               Substitute("Cannot remove peer $0 from the config because it is the leader. "
                          "Force another leader to be elected to remove this server. "
-                         "Active consensus state: $1",
+                         "Consensus state: $1",
                          server_uuid,
-                         SecureShortDebugString(state_->ConsensusStateUnlocked(
-                             CONSENSUS_CONFIG_ACTIVE))));
+                         SecureShortDebugString(state_->ConsensusStateUnlocked())));
         }
         if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
           return Status::NotFound(
@@ -1654,7 +1653,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   new_config.set_opid_index(replicate_opid_index);
 
   // Sanity check the new config. 'type' is irrelevant here.
-  Status s = VerifyRaftConfig(new_config, UNCOMMITTED_QUORUM);
+  Status s = VerifyRaftConfig(new_config, PENDING_CONFIG);
   if (!s.ok()) {
     *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument(Substitute("The resulting new config for tablet $0  "
@@ -1974,10 +1973,10 @@ string RaftConsensus::tablet_id() const {
   return state_->GetOptions().tablet_id;
 }
 
-ConsensusStatePB RaftConsensus::ConsensusState(ConsensusConfigType type) const {
+ConsensusStatePB RaftConsensus::ConsensusState() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return state_->ConsensusStateUnlocked(type);
+  return state_->ConsensusStateUnlocked();
 }
 
 RaftConfigPB RaftConsensus::CommittedConfig() const {

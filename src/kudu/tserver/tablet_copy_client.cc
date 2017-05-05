@@ -213,7 +213,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   superblock_->set_tablet_data_state(tablet::TABLET_DATA_COPYING);
 
   wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
-  remote_committed_cstate_.reset(resp.release_initial_committed_cstate());
+  remote_cstate_.reset(resp.release_initial_cstate());
 
   Schema schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock_->schema(), &schema),
@@ -226,13 +226,13 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     // source peer, even after passing the term check from the caller in
     // SetTabletToReplace().
     int64_t last_logged_term = meta_->tombstone_last_logged_opid().term();
-    if (last_logged_term > remote_committed_cstate_->current_term()) {
+    if (last_logged_term > remote_cstate_->current_term()) {
       return Status::InvalidArgument(
           Substitute("Tablet $0: source peer has term $1 but "
                      "tombstoned replica has last-logged opid with higher term $2. "
                      "Refusing tablet copy from source peer $3",
                      tablet_id_,
-                     remote_committed_cstate_->current_term(),
+                     remote_cstate_->current_term(),
                      last_logged_term,
                      copy_peer_uuid));
     }
@@ -507,14 +507,14 @@ Status TabletCopyClient::WriteConsensusMetadata() {
   if (!cmeta_) {
     unique_ptr<ConsensusMetadata> cmeta;
     return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
-                                     remote_committed_cstate_->config(),
-                                     remote_committed_cstate_->current_term(),
+                                     remote_cstate_->committed_config(),
+                                     remote_cstate_->current_term(),
                                      &cmeta);
   }
 
   // Otherwise, update the consensus metadata to reflect the config and term
   // sent by the tablet copy source.
-  cmeta_->MergeCommittedConsensusStatePB(*remote_committed_cstate_);
+  cmeta_->MergeCommittedConsensusStatePB(*remote_cstate_);
   RETURN_NOT_OK(cmeta_->Flush());
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {

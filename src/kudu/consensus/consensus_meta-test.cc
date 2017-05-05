@@ -206,27 +206,18 @@ TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
   pending_config.set_opid_index(2);
 
   // Set the pending configuration to be one containing the current leader (who is not
-  // in the committed configuration). Ensure that the leader shows up when we ask for
-  // the active consensus state.
+  // in the committed configuration). Ensure that the leader shows up in the pending
+  // configuration.
   cmeta->set_pending_config(pending_config);
   cmeta->set_leader_uuid(peer_uuid);
-  ConsensusStatePB active_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_ACTIVE);
-  ASSERT_TRUE(active_cstate.has_leader_uuid());
-  ASSERT_OK(VerifyConsensusState(active_cstate, UNCOMMITTED_QUORUM));
+  ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
+  ASSERT_OK(VerifyConsensusState(cstate));
 
-  // Without changing anything, ask for the committed consensus state.
-  // Since the current leader is not a voter in the committed configuration, the
-  // returned consensus state should not list a leader.
-  ConsensusStatePB committed_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
-  ASSERT_FALSE(committed_cstate.has_leader_uuid());
-  ASSERT_OK(VerifyConsensusState(committed_cstate, COMMITTED_QUORUM));
-
-  // Set a new leader to be a member of the committed configuration. Now the committed
-  // consensus state should list a leader.
+  // Set a new leader to be a member of the committed configuration.
   cmeta->set_leader_uuid("a");
-  ConsensusStatePB new_committed_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
-  ASSERT_TRUE(new_committed_cstate.has_leader_uuid());
-  ASSERT_OK(VerifyConsensusState(new_committed_cstate, COMMITTED_QUORUM));
+  ConsensusStatePB new_cstate = cmeta->ToConsensusStatePB();
+  ASSERT_TRUE(new_cstate.has_leader_uuid());
+  ASSERT_OK(VerifyConsensusState(new_cstate));
 }
 
 // Helper for TestMergeCommittedConsensusStatePB.
@@ -238,7 +229,7 @@ static void AssertConsensusMergeExpected(const unique_ptr<ConsensusMetadata>& cm
   // a "spec" of these assertions.
   ASSERT_TRUE(!cmeta->has_pending_config());
   ASSERT_EQ(SecureShortDebugString(cmeta->committed_config()),
-            SecureShortDebugString(cstate.config()));
+            SecureShortDebugString(cstate.committed_config()));
   ASSERT_EQ("", cmeta->leader_uuid());
   ASSERT_EQ(expected_term, cmeta->current_term());
   if (expected_voted_for.empty()) {
@@ -267,19 +258,19 @@ TEST_F(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
   // Keep the term and votes because the merged term is lower.
   ConsensusStatePB remote_state;
   remote_state.set_current_term(0);
-  *remote_state.mutable_config() = BuildConfig({ "x", "y", "z" });
+  *remote_state.mutable_committed_config() = BuildConfig({ "x", "y", "z" });
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
 
   // Same as above because the merged term is the same as the cmeta term.
   remote_state.set_current_term(1);
-  *remote_state.mutable_config() = BuildConfig({ "f", "g", "h" });
+  *remote_state.mutable_committed_config() = BuildConfig({ "f", "g", "h" });
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
 
   // Higher term, so wipe out the prior state.
   remote_state.set_current_term(2);
-  *remote_state.mutable_config() = BuildConfig({ "i", "j", "k" });
+  *remote_state.mutable_committed_config() = BuildConfig({ "i", "j", "k" });
   cmeta->set_pending_config(pending_config);
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 2, ""));

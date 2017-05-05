@@ -131,8 +131,8 @@ class ReplicaState {
   Status ShutdownUnlocked() WARN_UNUSED_RESULT;
 
   // Return current consensus state summary.
-  ConsensusStatePB ConsensusStateUnlocked(ConsensusConfigType type) const {
-    return cmeta_->ToConsensusStatePB(type);
+  ConsensusStatePB ConsensusStateUnlocked() const {
+    return cmeta_->ToConsensusStatePB();
   }
 
   // Returns the currently active Raft role.

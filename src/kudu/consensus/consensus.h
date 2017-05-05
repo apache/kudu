@@ -265,8 +265,8 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   virtual scoped_refptr<TimeManager> time_manager() const = 0;
 
-  // Returns a copy of the committed state of the Consensus system.
-  virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const = 0;
+  // Returns a copy of the state of the consensus system.
+  virtual ConsensusStatePB ConsensusState() const = 0;
 
   // Returns a copy of the current committed Raft configuration.
   virtual RaftConfigPB CommittedConfig() const = 0;

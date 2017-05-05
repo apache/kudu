@@ -45,7 +45,6 @@
 #include "kudu/util/url-coding.h"
 
 using kudu::consensus::GetConsensusRole;
-using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
@@ -264,9 +263,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
           tablet_id_or_link, // $1
           EscapeForHtmlToString(partition), // $2
           EscapeForHtmlToString(replica->HumanReadableState()), mem_bytes, n_bytes, // $3, $4, $5
-          consensus ? ConsensusStatePBToHtml(consensus->
-              ConsensusState(CONSENSUS_CONFIG_COMMITTED))
-                    : "", // $6
+          consensus ? ConsensusStatePBToHtml(consensus->ConsensusState()) : "", // $6
           EscapeForHtmlToString(status.last_status())); // $7
     }
     *output << "<tbody></table>\n</div>\n";
@@ -307,7 +304,8 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
 
   html << "<ul>\n";
   std::vector<RaftPeerPB> sorted_peers;
-  sorted_peers.assign(cstate.config().peers().begin(), cstate.config().peers().end());
+  sorted_peers.assign(cstate.committed_config().peers().begin(),
+                      cstate.committed_config().peers().end());
   std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByMemberType);
   for (const RaftPeerPB& peer : sorted_peers) {
     string peer_addr_or_uuid =

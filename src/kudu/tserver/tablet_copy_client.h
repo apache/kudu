@@ -215,7 +215,7 @@ class TabletCopyClient {
   uint64_t session_idle_timeout_millis_;
   std::unique_ptr<tablet::TabletSuperBlockPB> remote_superblock_;
   std::unique_ptr<tablet::TabletSuperBlockPB> superblock_;
-  std::unique_ptr<consensus::ConsensusStatePB> remote_committed_cstate_;
+  std::unique_ptr<consensus::ConsensusStatePB> remote_cstate_;
   std::vector<uint64_t> wal_seqnos_;
   int64_t start_time_micros_;
 

@@ -117,7 +117,7 @@ Status ReplicaState::CheckActiveLeaderUnlocked() const {
     case RaftPeerPB::LEADER:
       return Status::OK();
     default:
-      ConsensusStatePB cstate = ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE);
+      ConsensusStatePB cstate = ConsensusStateUnlocked();
       return Status::IllegalState(Substitute("Replica $0 is not leader of this config. Role: $1. "
                                              "Consensus state: $2",
                                              peer_uuid_,
@@ -196,7 +196,7 @@ Status ReplicaState::CheckNoConfigChangePendingUnlocked() const {
 
 Status ReplicaState::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   DCHECK(update_lock_.is_locked());
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config, UNCOMMITTED_QUORUM),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config, PENDING_CONFIG),
                         "Invalid config to set as pending");
   if (!new_config.unsafe_config_change()) {
     CHECK(!cmeta_->has_pending_config())
@@ -227,7 +227,7 @@ Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_co
   TRACE_EVENT0("consensus", "ReplicaState::SetCommittedConfigUnlocked");
   DCHECK(update_lock_.is_locked());
   DCHECK(config_to_commit.IsInitialized());
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config_to_commit, COMMITTED_QUORUM),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config_to_commit, COMMITTED_CONFIG),
                         "Invalid config to set as committed");
 
   // Compare committed with pending configuration, ensure that they are the same.

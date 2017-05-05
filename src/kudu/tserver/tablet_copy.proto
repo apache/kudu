@@ -114,9 +114,9 @@ message BeginTabletCopySessionResponsePB {
   // Each WAL segment is keyed by its sequence number.
   repeated uint64 wal_segment_seqnos = 4;
 
-  // A snapshot of the committed Consensus state at the time that the
+  // A snapshot of the consensus state at the time that the
   // tablet copy session was started.
-  required consensus.ConsensusStatePB initial_committed_cstate = 5;
+  required consensus.ConsensusStatePB initial_cstate = 5;
 
   // permanent_uuid of the responding peer.
   optional bytes responder_uuid = 6;

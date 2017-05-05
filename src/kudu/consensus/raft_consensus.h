@@ -138,7 +138,7 @@ class RaftConsensus : public Consensus,
 
   scoped_refptr<TimeManager> time_manager() const override { return time_manager_; }
 
-  ConsensusStatePB ConsensusState(ConsensusConfigType type) const override;
+  ConsensusStatePB ConsensusState() const override;
 
   RaftConfigPB CommittedConfig() const override;
 

@@ -22,6 +22,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -39,10 +40,9 @@ using client::KuduClientBuilder;
 using client::KuduSchema;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
-using consensus::CONSENSUS_CONFIG_COMMITTED;
+using consensus::COMMITTED_OPID;
 using consensus::ConsensusStatePB;
 using consensus::OpId;
-using consensus::COMMITTED_OPID;
 using itest::GetConsensusState;
 using itest::TabletServerMap;
 using itest::TServerDetails;
@@ -955,10 +955,10 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
   ConsensusStatePB cstate;
   for (auto& ts : tservers) {
     RETURN_NOT_OK(
-        GetConsensusState(ts, tablet_id,
-                          CONSENSUS_CONFIG_COMMITTED,
-                          MonoDelta::FromSeconds(10), &cstate));
-    if (cstate.has_leader_uuid() && cstate.has_current_term()) {
+        GetConsensusState(ts, tablet_id, MonoDelta::FromSeconds(10), &cstate));
+    if (cstate.has_leader_uuid() &&
+        IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config()) &&
+        cstate.has_current_term()) {
       *current_term = cstate.current_term();
       return Status::OK();
     }

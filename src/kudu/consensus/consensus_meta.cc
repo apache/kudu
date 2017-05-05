@@ -162,33 +162,25 @@ RaftPeerPB::Role ConsensusMetadata::active_role() const {
   return active_role_;
 }
 
-ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConsensusConfigType type) const {
-  CHECK(type == CONSENSUS_CONFIG_ACTIVE || type == CONSENSUS_CONFIG_COMMITTED)
-      << "Unsupported ConsensusConfigType: " << ConsensusConfigType_Name(type) << ": " << type;
+ConsensusStatePB ConsensusMetadata::ToConsensusStatePB() const {
   ConsensusStatePB cstate;
   cstate.set_current_term(pb_.current_term());
-  if (type == CONSENSUS_CONFIG_ACTIVE) {
-    *cstate.mutable_config() = active_config();
-    cstate.set_leader_uuid(leader_uuid_);
-  } else {
-    *cstate.mutable_config() = committed_config();
-    // It's possible, though unlikely, that a new node from a pending configuration
-    // could be elected leader. Do not indicate a leader in this case.
-    if (PREDICT_TRUE(IsRaftConfigVoter(leader_uuid_, cstate.config()))) {
-      cstate.set_leader_uuid(leader_uuid_);
-    }
+  cstate.set_leader_uuid(leader_uuid_);
+  *cstate.mutable_committed_config() = committed_config();
+  if (has_pending_config()) {
+    *cstate.mutable_pending_config() = pending_config();
   }
   return cstate;
 }
 
-void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& committed_cstate) {
-  if (committed_cstate.current_term() > current_term()) {
-    set_current_term(committed_cstate.current_term());
+void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& cstate) {
+  if (cstate.current_term() > current_term()) {
+    set_current_term(cstate.current_term());
     clear_voted_for();
   }
 
   set_leader_uuid("");
-  set_committed_config(committed_cstate.config());
+  set_committed_config(cstate.committed_config());
   clear_pending_config();
 }
 
@@ -198,7 +190,7 @@ Status ConsensusMetadata::Flush() {
 
   flush_count_for_tests_++;
   // Sanity test to ensure we never write out a bad configuration.
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_QUORUM),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_CONFIG),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
 
   // Create directories if needed.
@@ -241,7 +233,7 @@ std::string ConsensusMetadata::LogPrefix() const {
 }
 
 void ConsensusMetadata::UpdateActiveRole() {
-  ConsensusStatePB cstate = ToConsensusStatePB(CONSENSUS_CONFIG_ACTIVE);
+  ConsensusStatePB cstate = ToConsensusStatePB();
   active_role_ = GetConsensusRole(peer_uuid_, cstate);
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
                       << ". Consensus state: " << SecureShortDebugString(cstate);

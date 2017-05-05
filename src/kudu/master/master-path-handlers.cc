@@ -261,10 +261,11 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+
     summary_states[SysTabletsEntryPB_State_Name(l.data().pb.state())]++;
-    if (l.data().pb.has_committed_consensus_state()) {
-      const ConsensusStatePB& cstate = l.data().pb.committed_consensus_state();
-      for (const auto& peer : cstate.config().peers()) {
+    if (l.data().pb.has_consensus_state()) {
+      const ConsensusStatePB& cstate = l.data().pb.consensus_state();
+      for (const auto& peer : cstate.committed_config().peers()) {
         RaftPeerPB::Role role = GetConsensusRole(peer.permanent_uuid(), cstate);
         string html;
         string location_html;
@@ -466,11 +467,11 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
     jw_->String(SysTabletsEntryPB::State_Name(metadata.state()));
 
     // Dump replica UUIDs
-    if (metadata.has_committed_consensus_state()) {
-      const consensus::ConsensusStatePB& cs = metadata.committed_consensus_state();
+    if (metadata.has_consensus_state()) {
+      const consensus::ConsensusStatePB& cs = metadata.consensus_state();
       jw_->String("replicas");
       jw_->StartArray();
-      for (const RaftPeerPB& peer : cs.config().peers()) {
+      for (const RaftPeerPB& peer : cs.committed_config().peers()) {
         jw_->StartObject();
         jw_->String("type");
         jw_->String(RaftPeerPB::MemberType_Name(peer.member_type()));

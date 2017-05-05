@@ -63,7 +63,7 @@ DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
 TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
-using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
+using kudu::consensus::COMMITTED_CONFIG;
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftConfigPB;
@@ -131,9 +131,9 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id,
                                                   fs_manager->uuid(), &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
-    ConsensusStatePB cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
-    RETURN_NOT_OK(consensus::VerifyConsensusState(
-        cstate, consensus::COMMITTED_QUORUM));
+    ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
+    RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config(), COMMITTED_CONFIG));
+    CHECK(!cstate.has_pending_config());
 
     // Make sure the set of masters passed in at start time matches the set in
     // the on-disk cmeta.
@@ -142,7 +142,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
       peer_addrs_from_opts.insert(hp.ToString());
     }
     set<string> peer_addrs_from_disk;
-    for (const auto& p : cstate.config().peers()) {
+    for (const auto& p : cstate.committed_config().peers()) {
       HostPort hp;
       RETURN_NOT_OK(HostPortFromPB(p.last_known_addr(), &hp));
       peer_addrs_from_disk.insert(hp.ToString());
@@ -246,7 +246,7 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
     }
   }
 
-  RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config, consensus::COMMITTED_QUORUM));
+  RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config, consensus::COMMITTED_CONFIG));
   VLOG(1) << "Distributed Raft configuration: " << SecureShortDebugString(resolved_config);
 
   *committed_config = resolved_config;
@@ -262,7 +262,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
                              << tablet_id << ". Reason: " << reason;
     return;
   }
-  consensus::ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  consensus::ConsensusStatePB cstate = consensus->ConsensusState();
   LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
                         << "Latest consensus state: " << SecureShortDebugString(cstate);
   RaftPeerPB::Role new_role = GetConsensusRole(tablet_replica_->permanent_uuid(), cstate);

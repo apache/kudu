@@ -153,7 +153,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
   resp->set_session_id(session_id);
   resp->set_session_idle_timeout_millis(FLAGS_tablet_copy_idle_timeout_ms);
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
-  resp->mutable_initial_committed_cstate()->CopyFrom(session->initial_committed_cstate());
+  resp->mutable_initial_cstate()->CopyFrom(session->initial_cstate());
 
   for (const scoped_refptr<log::ReadableLogSegment>& segment : session->log_segments()) {
     resp->add_wal_segment_seqnos(segment->header().sequence_number());

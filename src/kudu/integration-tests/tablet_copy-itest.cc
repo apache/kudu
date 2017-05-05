@@ -53,7 +53,6 @@ DEFINE_int32(test_delete_leader_num_writer_threads, 1,
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
-using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForNumTabletServers;
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -406,8 +405,7 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   int64_t term = 0;
   for (int i = 0; i < 1000; i++) {
     consensus::ConsensusStatePB cstate;
-    ASSERT_OK(itest::GetConsensusState(follower_ts, tablet_id, CONSENSUS_CONFIG_COMMITTED,
-                                       timeout, &cstate));
+    ASSERT_OK(itest::GetConsensusState(follower_ts, tablet_id, timeout, &cstate));
     term = cstate.current_term();
     if (term == 2) break;
     SleepFor(MonoDelta::FromMilliseconds(10));

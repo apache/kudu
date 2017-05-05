@@ -65,20 +65,6 @@ message RaftPeerPB {
   optional HostPortPB last_known_addr = 3;
 }
 
-enum ConsensusConfigType {
-  CONSENSUS_CONFIG_UNKNOWN = 999;
-
-  // Committed consensus config. This includes the consensus configuration that
-  // has been serialized through consensus and committed, thus having a valid
-  // opid_index field set.
-  CONSENSUS_CONFIG_COMMITTED = 1;
-
-  // Active consensus config. This could be a pending consensus config that
-  // has not yet been committed. If the config is not committed, its opid_index
-  // field will not be set.
-  CONSENSUS_CONFIG_ACTIVE = 2;
-}
-
 // A set of peers, serving a single tablet.
 message RaftConfigPB {
   // The index of the operation which serialized this RaftConfigPB through
@@ -115,25 +101,15 @@ message ConsensusStatePB {
   // vote for a peer is not sufficient to assume that that peer has won the
   // election, so we do not update this field based on our vote.
   //
-  // The leader listed here, if any, should always be a member of 'configuration', and
-  // the term that the node is leader of _must_ equal the term listed above in
-  // the 'current_term' field. The Master will use the combination of current
-  // term and leader uuid to determine when to update its cache of the current
-  // leader for client lookup purposes.
-  //
-  // There is a corner case in Raft where a node may be elected leader of a
-  // pending (uncommitted) configuration. In such a case, if the leader of the pending
-  // configuration is not a member of the committed configuration, and it is the committed
-  // configuration that is being reported, then the leader_uuid field should be
-  // cleared by the process filling in the ConsensusStatePB object.
+  // The leader may be a part of the committed or the pending configuration (or both).
   optional string leader_uuid = 2;
 
-  // The peers. In some contexts, this will be the committed configuration,
-  // which will always have configuration.opid_index set. In other contexts, this may
-  // a "pending" configuration, which is active but in the process of being committed.
-  // In any case, initial peership is set on tablet start, so this
+  // The committed peers. Initial peership is set on tablet start, so this
   // field should always be present.
-  required RaftConfigPB config = 3;
+  required RaftConfigPB committed_config = 3;
+
+  // The peers in the pending configuration, if there is one.
+  optional RaftConfigPB pending_config = 4;
 }
 
 // This PB is used to serialize all of the persistent state needed for

@@ -101,10 +101,7 @@ DECLARE_int32(tablet_history_max_age_sec);
 using google::protobuf::RepeatedPtrField;
 using kudu::consensus::ChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigResponsePB;
-using kudu::consensus::CONSENSUS_CONFIG_ACTIVE;
-using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::Consensus;
-using kudu::consensus::ConsensusConfigType;
 using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::GetLastOpIdRequestPB;
@@ -1053,15 +1050,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 
   scoped_refptr<Consensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  ConsensusConfigType type = req->type();
-  if (PREDICT_FALSE(type != CONSENSUS_CONFIG_ACTIVE && type != CONSENSUS_CONFIG_COMMITTED)) {
-    HandleUnknownError(
-        Status::InvalidArgument(Substitute("Unsupported ConsensusConfigType $0 ($1)",
-                                           ConsensusConfigType_Name(type), type)),
-        resp, context);
-    return;
-  }
-  *resp->mutable_cstate() = consensus->ConsensusState(req->type());
+  *resp->mutable_cstate() = consensus->ConsensusState();
   context->RespondSuccess();
 }
 

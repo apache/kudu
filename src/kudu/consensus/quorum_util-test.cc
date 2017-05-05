@@ -49,7 +49,7 @@ TEST(QuorumUtilTest, TestMemberExtraction) {
 
   // Basic test for GetRaftConfigLeader().
   ConsensusStatePB cstate;
-  *cstate.mutable_config() = config;
+  *cstate.mutable_committed_config() = config;
   s = GetRaftConfigLeader(cstate, &peer_pb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   cstate.set_leader_uuid("B");
@@ -59,12 +59,12 @@ TEST(QuorumUtilTest, TestMemberExtraction) {
 
 TEST(QuorumUtilTest, TestDiffConsensusStates) {
   ConsensusStatePB old_cs;
-  SetPeerInfo("A", RaftPeerPB::VOTER, old_cs.mutable_config()->add_peers());
-  SetPeerInfo("B", RaftPeerPB::VOTER, old_cs.mutable_config()->add_peers());
-  SetPeerInfo("C", RaftPeerPB::VOTER, old_cs.mutable_config()->add_peers());
+  SetPeerInfo("A", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
+  SetPeerInfo("B", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
+  SetPeerInfo("C", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
   old_cs.set_current_term(1);
   old_cs.set_leader_uuid("A");
-  old_cs.mutable_config()->set_opid_index(1);
+  old_cs.mutable_committed_config()->set_opid_index(1);
 
   // Simple case of no change.
   EXPECT_EQ("no change",
@@ -84,8 +84,8 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   // Simulate eviction of a peer.
   {
     auto new_cs = old_cs;
-    new_cs.mutable_config()->set_opid_index(2);
-    new_cs.mutable_config()->mutable_peers()->RemoveLast();
+    new_cs.mutable_committed_config()->set_opid_index(2);
+    new_cs.mutable_committed_config()->mutable_peers()->RemoveLast();
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "VOTER C (C.example.com) evicted",
@@ -95,8 +95,8 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   // Simulate addition of a peer.
   {
     auto new_cs = old_cs;
-    new_cs.mutable_config()->set_opid_index(2);
-    SetPeerInfo("D", RaftPeerPB::NON_VOTER, new_cs.mutable_config()->add_peers());
+    new_cs.mutable_committed_config()->set_opid_index(2);
+    SetPeerInfo("D", RaftPeerPB::NON_VOTER, new_cs.mutable_committed_config()->add_peers());
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "NON_VOTER D (D.example.com) added",
@@ -106,8 +106,9 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   // Simulate change of a peer's member type.
   {
     auto new_cs = old_cs;
-    new_cs.mutable_config()->set_opid_index(2);
-    new_cs.mutable_config()->mutable_peers()->Mutable(2)->set_member_type(RaftPeerPB::NON_VOTER);
+    new_cs.mutable_committed_config()->set_opid_index(2);
+    new_cs.mutable_committed_config()
+      ->mutable_peers()->Mutable(2)->set_member_type(RaftPeerPB::NON_VOTER);
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "C (C.example.com) changed from VOTER to NON_VOTER",
@@ -126,6 +127,31 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
               DiffConsensusStates(no_leader_cs, new_cs));
   }
 
+  // Simulate gaining a pending config
+  {
+    auto pending_config_cs = old_cs;
+    pending_config_cs.mutable_pending_config();
+    EXPECT_EQ("now has a pending config: ", DiffConsensusStates(old_cs, pending_config_cs));
+  }
+
+  // Simulate losing a pending config
+  {
+    auto pending_config_cs = old_cs;
+    pending_config_cs.mutable_pending_config();
+    EXPECT_EQ("no longer has a pending config: ", DiffConsensusStates(pending_config_cs, old_cs));
+  }
+
+  // Simulate a change in a pending config
+  {
+    auto before_cs = old_cs;
+    SetPeerInfo("A", RaftPeerPB::VOTER, before_cs.mutable_pending_config()->add_peers());
+    auto after_cs = before_cs;
+    after_cs.mutable_pending_config()
+      ->mutable_peers()->Mutable(0)->set_member_type(RaftPeerPB::NON_VOTER);
+
+    EXPECT_EQ("pending config changed, A (A.example.com) changed from VOTER to NON_VOTER",
+              DiffConsensusStates(before_cs, after_cs));
+  }
 }
 
 } // namespace consensus

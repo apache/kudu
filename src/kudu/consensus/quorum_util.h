@@ -28,8 +28,8 @@ class Status;
 namespace consensus {
 
 enum RaftConfigState {
-  UNCOMMITTED_QUORUM,
-  COMMITTED_QUORUM,
+  PENDING_CONFIG,
+  COMMITTED_CONFIG,
 };
 
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
@@ -71,7 +71,7 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type);
 
 // Superset of checks performed by VerifyRaftConfig. Also ensures that the
 // leader is a configuration voter, if it is set, and that a valid term is set.
-Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type);
+Status VerifyConsensusState(const ConsensusStatePB& cstate);
 
 // Provide a textual description of the difference between two consensus states,
 // suitable for logging.

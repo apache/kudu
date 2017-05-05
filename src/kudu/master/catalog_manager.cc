@@ -222,7 +222,6 @@ namespace master {
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
 using cfile::TypeEncodingInfo;
-using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::Consensus;
 using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
@@ -744,8 +743,7 @@ Status CatalogManager::ElectedAsLeaderCb() {
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
-  ConsensusStatePB cstate = sys_catalog_->tablet_replica()->consensus()->
-      ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+  ConsensusStatePB cstate = sys_catalog_->tablet_replica()->consensus()->ConsensusState();
   const string& uuid = master_->fs_manager()->uuid();
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
@@ -928,8 +926,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     shared_lock<LockType> l(lock_);
   }
   const Consensus* consensus = sys_catalog_->tablet_replica()->consensus();
-  const int64_t term_before_wait =
-      consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  const int64_t term_before_wait = consensus->ConsensusState().current_term();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     if (leader_ready_term_ == term_before_wait) {
@@ -954,8 +951,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     return;
   }
 
-  const int64_t term =
-      consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+  const int64_t term = consensus->ConsensusState().current_term();
   if (term_before_wait != term) {
     // If we got elected leader again while waiting to catch up then we will
     // get another callback to visit the tables and tablets, so bail.
@@ -993,8 +989,7 @@ void CatalogManager::PrepareForLeadershipTask() {
         }
       }
 
-      const int64_t term =
-          consensus.ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
+      const int64_t term = consensus.ConsensusState().current_term();
       if (term != start_term) {
         // If the term has changed we assume the new leader catalog is about
         // to do the necessary work in its leadership preparation task.
@@ -2365,8 +2360,11 @@ bool ShouldTransitionTabletToRunning(const ReportedTabletPB& report) {
     return true;
   }
 
-  // Otherwise, we only transition to RUNNING once a leader is elected.
-  return report.committed_consensus_state().has_leader_uuid();
+  // Otherwise, we only transition to RUNNING once there is a leader that is a
+  // member of the committed configuration.
+  const ConsensusStatePB& cstate = report.consensus_state();
+  return cstate.has_leader_uuid() &&
+      IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config());
 }
 } // anonymous namespace
 
@@ -2466,11 +2464,11 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  // The report will not have a committed_consensus_state if it is in the
+  // The report will not have a consensus_state if it is in the
   // middle of starting up, such as during tablet bootstrap.
-  if (report.has_committed_consensus_state()) {
-    const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
-    ConsensusStatePB cstate = report.committed_consensus_state();
+  if (report.has_consensus_state()) {
+    const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.consensus_state();
+    ConsensusStatePB cstate = report.consensus_state();
 
     // Check if we got a report from a tablet that is no longer part of the raft
     // config. If so, tombstone it. We only tombstone replicas that include a
@@ -2481,15 +2479,22 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     // in the process of catching up to the log entry where they were added to
     // the config.
     if (FLAGS_master_tombstone_evicted_tablet_replicas &&
-        cstate.config().opid_index() < prev_cstate.config().opid_index() &&
-        !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.config())) {
+        cstate.committed_config().opid_index() < prev_cstate.committed_config().opid_index() &&
+        !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.committed_config())) {
       SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
-                               prev_cstate.config().opid_index(),
+                               prev_cstate.committed_config().opid_index(),
                                tablet->table(), ts_desc->permanent_uuid(),
                                Substitute("Replica from old config with index $0 (latest is $1)",
-                                          cstate.config().opid_index(),
-                                          prev_cstate.config().opid_index()));
+                                          cstate.committed_config().opid_index(),
+                                          prev_cstate.committed_config().opid_index()));
       return Status::OK();
+    }
+
+    // If the reported leader is not a member of the committed config, then we
+    // disregard the leader state.
+    if (cstate.has_leader_uuid() &&
+        !IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config())) {
+      cstate.clear_leader_uuid();
     }
 
     // If the tablet was not RUNNING, and we have a leader elected, mark it as RUNNING.
@@ -2511,13 +2516,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
     // The Master only accepts committed consensus configurations since it needs the committed index
     // to only cache the most up-to-date config.
-    if (PREDICT_FALSE(!cstate.config().has_opid_index())) {
+    if (PREDICT_FALSE(!cstate.committed_config().has_opid_index())) {
       LOG(DFATAL) << "Missing opid_index in reported config:\n" << SecureDebugString(report);
       return Status::InvalidArgument("Missing opid_index in reported config");
     }
 
     bool modified_cstate = false;
-    if (cstate.config().opid_index() > prev_cstate.config().opid_index() ||
+    if (cstate.committed_config().opid_index() > prev_cstate.committed_config().opid_index() ||
         (cstate.has_leader_uuid() &&
          (!prev_cstate.has_leader_uuid() || cstate.current_term() > prev_cstate.current_term()))) {
 
@@ -2557,7 +2562,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       ReportedTabletPB updated_report;
       if (modified_cstate) {
         updated_report = report;
-        *updated_report.mutable_committed_consensus_state() = cstate;
+        *updated_report.mutable_consensus_state() = cstate;
         final_report = &updated_report;
       }
 
@@ -2565,9 +2570,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
               << final_report->tablet_id()
               << " from config reported by " << ts_desc->ToString()
               << " to that committed in log index "
-              << final_report->committed_consensus_state().config().opid_index()
+              << final_report->consensus_state().committed_config().opid_index()
               << " with leader state from term "
-              << final_report->committed_consensus_state().current_term();
+              << final_report->consensus_state().current_term();
 
       RETURN_NOT_OK(HandleRaftConfigChanged(*final_report, tablet,
                                             &tablet_lock, &table_lock));
@@ -2607,30 +2612,31 @@ Status CatalogManager::HandleRaftConfigChanged(
     TableMetadataLock* table_lock) {
 
   DCHECK(tablet_lock->is_write_locked());
-  ConsensusStatePB prev_cstate = tablet_lock->mutable_data()->pb.committed_consensus_state();
-  const ConsensusStatePB& cstate = report.committed_consensus_state();
-  *tablet_lock->mutable_data()->pb.mutable_committed_consensus_state() = cstate;
+  ConsensusStatePB prev_cstate = tablet_lock->mutable_data()->pb.consensus_state();
+  const ConsensusStatePB& cstate = report.consensus_state();
+  *tablet_lock->mutable_data()->pb.mutable_consensus_state() = cstate;
 
   if (FLAGS_master_tombstone_evicted_tablet_replicas) {
     unordered_set<string> current_member_uuids;
-    for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
+    for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
       InsertOrDie(&current_member_uuids, peer.permanent_uuid());
     }
     // Send a DeleteTablet() request to peers that are not in the new config.
-    for (const consensus::RaftPeerPB& prev_peer : prev_cstate.config().peers()) {
+    for (const consensus::RaftPeerPB& prev_peer : prev_cstate.committed_config().peers()) {
       const string& peer_uuid = prev_peer.permanent_uuid();
       if (!ContainsKey(current_member_uuids, peer_uuid)) {
         SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
-                                 prev_cstate.config().opid_index(), tablet->table(), peer_uuid,
+                                 prev_cstate.committed_config().opid_index(),
+                                 tablet->table(), peer_uuid,
                                  Substitute("TS $0 not found in new config with opid_index $1",
-                                            peer_uuid, cstate.config().opid_index()));
+                                            peer_uuid, cstate.committed_config().opid_index()));
       }
     }
   }
 
   // If the config is under-replicated, add a server to the config.
   if (FLAGS_master_add_server_when_underreplicated &&
-      CountVoters(cstate.config()) < table_lock->data().pb.num_replicas()) {
+      CountVoters(cstate.committed_config()) < table_lock->data().pb.num_replicas()) {
     SendAddServerRequest(tablet, cstate);
   }
 
@@ -2710,16 +2716,16 @@ class PickLeaderReplica : public TSPicker {
     TabletMetadataLock l(tablet_.get(), TabletMetadataLock::READ);
 
     string err_msg;
-    if (!l.data().pb.has_committed_consensus_state()) {
+    if (!l.data().pb.has_consensus_state()) {
       // The tablet is still in the PREPARING state and has no replicas.
       err_msg = Substitute("Tablet $0 has no consensus state",
                            tablet_->tablet_id());
-    } else if (!l.data().pb.committed_consensus_state().has_leader_uuid()) {
+    } else if (!l.data().pb.consensus_state().has_leader_uuid()) {
       // The tablet may be in the midst of a leader election.
       err_msg = Substitute("Tablet $0 consensus state has no leader",
                            tablet_->tablet_id());
     } else {
-      *ts_uuid = l.data().pb.committed_consensus_state().leader_uuid();
+      *ts_uuid = l.data().pb.consensus_state().leader_uuid();
       return Status::OK();
     }
     return Status::NotFound("No leader found", err_msg);
@@ -3011,7 +3017,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     req_.mutable_partition_schema()->CopyFrom(
         table_lock.data().pb.partition_schema());
     req_.mutable_config()->CopyFrom(
-        tablet_lock.data().pb.committed_consensus_state().config());
+        tablet_lock.data().pb.consensus_state().committed_config());
   }
 
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
@@ -3290,7 +3296,7 @@ string AsyncAddServerTask::description() const {
   return Substitute("AddServer ChangeConfig RPC for tablet $0 "
                     "with cas_config_opid_index $1",
                     tablet_->tablet_id(),
-                    cstate_.config().opid_index());
+                    cstate_.committed_config().opid_index());
 }
 
 bool AsyncAddServerTask::SendRequest(int attempt) {
@@ -3301,12 +3307,13 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   int64_t latest_index;
   {
     TabletMetadataLock tablet_lock(tablet_.get(), TabletMetadataLock::READ);
-    latest_index = tablet_lock.data().pb.committed_consensus_state().config().opid_index();
+    latest_index = tablet_lock.data().pb.consensus_state()
+      .committed_config().opid_index();
   }
-  if (latest_index > cstate_.config().opid_index()) {
+  if (latest_index > cstate_.committed_config().opid_index()) {
     LOG_WITH_PREFIX(INFO) << "Latest config for has opid_index of " << latest_index
                           << " while this task has opid_index of "
-                          << cstate_.config().opid_index() << ". Aborting task.";
+                          << cstate_.committed_config().opid_index() << ". Aborting task.";
     MarkAborted();
     return false;
   }
@@ -3314,7 +3321,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   // Select the replica we wish to add to the config.
   // Do not include current members of the config.
   unordered_set<string> replica_uuids;
-  for (const RaftPeerPB& peer : cstate_.config().peers()) {
+  for (const RaftPeerPB& peer : cstate_.committed_config().peers()) {
     InsertOrDie(&replica_uuids, peer.permanent_uuid());
   }
   TSDescriptorVector ts_descs;
@@ -3329,7 +3336,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   req_.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req_.set_tablet_id(tablet_->tablet_id());
   req_.set_type(consensus::ADD_SERVER);
-  req_.set_cas_config_opid_index(cstate_.config().opid_index());
+  req_.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req_.mutable_server();
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
   ServerRegistrationPB peer_reg;
@@ -3403,7 +3410,7 @@ void CatalogManager::SendDeleteTableRequest(const scoped_refptr<TableInfo>& tabl
 void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                              const TabletMetadataLock& tablet_lock,
                                              const string& deletion_msg) {
-  if (!tablet_lock.data().pb.has_committed_consensus_state()) {
+  if (!tablet_lock.data().pb.has_consensus_state()) {
     // We could end up here if we're deleting a tablet that never made it to
     // the CREATING state. That would mean no replicas were ever assigned, so
     // there's nothing to delete.
@@ -3411,11 +3418,11 @@ void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& ta
               << tablet->tablet_id();
     return;
   }
-  const ConsensusStatePB& cstate = tablet_lock.data().pb.committed_consensus_state();
+  const ConsensusStatePB& cstate = tablet_lock.data().pb.consensus_state();
   LOG_WITH_PREFIX(INFO)
-      << "Sending DeleteTablet for " << cstate.config().peers().size()
+      << "Sending DeleteTablet for " << cstate.committed_config().peers().size()
       << " replicas of tablet " << tablet->tablet_id();
-  for (const auto& peer : cstate.config().peers()) {
+  for (const auto& peer : cstate.committed_config().peers()) {
     SendDeleteReplicaRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
                              boost::none, tablet->table(),
                              peer.permanent_uuid(), deletion_msg);
@@ -3773,9 +3780,9 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 
   // Select the set of replicas for the tablet.
   ConsensusStatePB* cstate = tablet->mutable_metadata()->mutable_dirty()
-          ->pb.mutable_committed_consensus_state();
+          ->pb.mutable_consensus_state();
   cstate->set_current_term(kMinimumTerm);
-  consensus::RaftConfigPB *config = cstate->mutable_config();
+  consensus::RaftConfigPB *config = cstate->mutable_committed_config();
 
   // Maintain ability to downgrade Kudu to a version with LocalConsensus.
   if (nreplicas == 1) {
@@ -3792,7 +3799,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                              const TabletMetadataLock& tablet_lock) {
   const consensus::RaftConfigPB& config =
-      tablet_lock.data().pb.committed_consensus_state().config();
+      tablet_lock.data().pb.consensus_state().committed_config();
   tablet->set_last_create_tablet_time(MonoTime::Now());
   for (const RaftPeerPB& peer : config.peers()) {
     AsyncCreateReplica* task = new AsyncCreateReplica(master_,
@@ -3926,11 +3933,11 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
   }
 
   // Guaranteed because the tablet is RUNNING.
-  DCHECK(l_tablet.data().pb.has_committed_consensus_state());
+  DCHECK(l_tablet.data().pb.has_consensus_state());
 
-  const ConsensusStatePB& cstate = l_tablet.data().pb.committed_consensus_state();
-  for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
-    // TODO: GetConsensusRole() iterates over all of the peers, making this an
+  const ConsensusStatePB& cstate = l_tablet.data().pb.consensus_state();
+  for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
+    // TODO(adar): GetConsensusRole() iterates over all of the peers, making this an
     // O(n^2) loop. If replication counts get high, it should be optimized.
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
     replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
@@ -4139,7 +4146,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
 
   // Check if the catalog manager is the leader.
   const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
-      consensus()->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+      consensus()->ConsensusState();
   initial_term_ = cstate.current_term();
   const string& uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
@@ -4160,7 +4167,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
 bool CatalogManager::ScopedLeaderSharedLock::has_term_changed() const {
   DCHECK(leader_status().ok());
   const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
-      consensus()->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
+      consensus()->ConsensusState();
   return cstate.current_term() != initial_term_;
 }
 

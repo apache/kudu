@@ -156,22 +156,22 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
                                          const string& tablet_id) {
   ASSERT_GE(report.updated_tablets_size(), 0);
   bool found_tablet = false;
-  for (ReportedTabletPB reported_tablet : report.updated_tablets()) {
+  for (const ReportedTabletPB& reported_tablet : report.updated_tablets()) {
     if (reported_tablet.tablet_id() == tablet_id) {
       found_tablet = true;
-      ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
-      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_current_term())
+      ASSERT_TRUE(reported_tablet.has_consensus_state());
+      ASSERT_TRUE(reported_tablet.consensus_state().has_current_term())
           << SecureShortDebugString(reported_tablet);
-      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_leader_uuid())
+      ASSERT_TRUE(reported_tablet.consensus_state().has_leader_uuid())
           << SecureShortDebugString(reported_tablet);
-      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_config());
-      const RaftConfigPB& committed_config = reported_tablet.committed_consensus_state().config();
+      ASSERT_TRUE(reported_tablet.consensus_state().has_committed_config());
+      const RaftConfigPB& committed_config = reported_tablet.consensus_state().committed_config();
       ASSERT_EQ(kInvalidOpIdIndex, committed_config.opid_index());
       ASSERT_EQ(1, committed_config.peers_size());
       ASSERT_TRUE(committed_config.peers(0).has_permanent_uuid())
           << SecureShortDebugString(reported_tablet);
       ASSERT_EQ(committed_config.peers(0).permanent_uuid(),
-                reported_tablet.committed_consensus_state().leader_uuid())
+                reported_tablet.consensus_state().leader_uuid())
           << SecureShortDebugString(reported_tablet);
     }
   }

@@ -145,7 +145,6 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
 // Get the consensus state from the given replica.
 Status GetConsensusState(const TServerDetails* replica,
                          const std::string& tablet_id,
-                         consensus::ConsensusConfigType type,
                          const MonoDelta& timeout,
                          consensus::ConsensusStatePB* consensus_state);
 

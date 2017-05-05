@@ -118,22 +118,22 @@ class ConsensusMetadata {
   // ConsensusStatePB using only the committed configuration. In this case, if the
   // current leader is not a member of the committed configuration, then the
   // leader_uuid field of the returned ConsensusStatePB will be cleared.
-  ConsensusStatePB ToConsensusStatePB(ConsensusConfigType type) const;
+  ConsensusStatePB ToConsensusStatePB() const;
 
-  // Merge the committed consensus state from the source node during remote
-  // bootstrap.
+  // Merge the committed portion of the consensus state from the source node
+  // during remote bootstrap.
   //
   // This method will clear any pending config change, replace the committed
-  // consensus config with the one in 'committed_cstate', and clear the
-  // currently tracked leader.
+  // consensus config with the one in 'cstate', and clear the currently
+  // tracked leader.
   //
-  // It will also check whether the current term passed in 'committed_cstate'
+  // It will also check whether the current term passed in 'cstate'
   // is greater than the currently recorded one. If so, it will update the
   // local current term to match the passed one and it will clear the voting
-  // record for this node. If the current term in 'committed_cstate' is less
+  // record for this node. If the current term in 'cstate' is less
   // than the locally recorded term, the locally recorded term and voting
   // record are not changed.
-  void MergeCommittedConsensusStatePB(const ConsensusStatePB& committed_cstate);
+  void MergeCommittedConsensusStatePB(const ConsensusStatePB& cstate);
 
   // Persist current state of the protobuf to disk.
   Status Flush();
