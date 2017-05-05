@@ -52,8 +52,8 @@ DECLARE_uint64(log_container_max_size);
 // Log block manager metrics.
 METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
-METRIC_DECLARE_counter(log_block_manager_containers);
-METRIC_DECLARE_counter(log_block_manager_full_containers);
+METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
+METRIC_DECLARE_gauge_uint64(log_block_manager_full_containers);
 
 namespace kudu {
 namespace fs {
@@ -185,10 +185,10 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
   ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
                 entity->FindOrNull(METRIC_log_block_manager_blocks_under_management)
                 .get())->value());
-  ASSERT_EQ(containers, down_cast<Counter*>(
+  ASSERT_EQ(containers, down_cast<AtomicGauge<uint64_t>*>(
                 entity->FindOrNull(METRIC_log_block_manager_containers)
                 .get())->value());
-  ASSERT_EQ(full_containers, down_cast<Counter*>(
+  ASSERT_EQ(full_containers, down_cast<AtomicGauge<uint64_t>*>(
                 entity->FindOrNull(METRIC_log_block_manager_full_containers)
                 .get())->value());
 }

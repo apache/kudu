@@ -99,21 +99,15 @@ METRIC_DEFINE_gauge_uint64(server, log_block_manager_blocks_under_management,
                            kudu::MetricUnit::kBlocks,
                            "Number of data blocks currently under management");
 
-METRIC_DEFINE_counter(server, log_block_manager_containers,
-                      "Number of Block Containers",
-                      kudu::MetricUnit::kLogBlockContainers,
-                      "Number of log block containers");
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_containers,
+                           "Number of Block Containers",
+                           kudu::MetricUnit::kLogBlockContainers,
+                           "Number of log block containers");
 
-METRIC_DEFINE_counter(server, log_block_manager_full_containers,
-                      "Number of Full Block Counters",
-                      kudu::MetricUnit::kLogBlockContainers,
-                      "Number of full log block containers");
-
-METRIC_DEFINE_counter(server, log_block_manager_unavailable_containers,
-                      "Number of Unavailable Log Block Containers",
-                      kudu::MetricUnit::kLogBlockContainers,
-                      "Number of non-full log block containers that are under root paths "
-                      "whose disks are full");
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_full_containers,
+                           "Number of Full Block Containers",
+                           kudu::MetricUnit::kLogBlockContainers,
+                           "Number of full log block containers");
 
 namespace kudu {
 
@@ -148,24 +142,22 @@ struct LogBlockManagerMetrics {
   // Implementation-agnostic metrics.
   BlockManagerMetrics generic_metrics;
 
-  scoped_refptr<AtomicGauge<uint64_t> > bytes_under_management;
-  scoped_refptr<AtomicGauge<uint64_t> > blocks_under_management;
+  scoped_refptr<AtomicGauge<uint64_t>> bytes_under_management;
+  scoped_refptr<AtomicGauge<uint64_t>> blocks_under_management;
 
-  scoped_refptr<Counter> containers;
-  scoped_refptr<Counter> full_containers;
+  scoped_refptr<AtomicGauge<uint64_t>> containers;
+  scoped_refptr<AtomicGauge<uint64_t>> full_containers;
 };
 
-#define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
 #define GINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity, 0))
 LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
   : generic_metrics(metric_entity),
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
-    MINIT(containers),
-    MINIT(full_containers) {
+    GINIT(containers),
+    GINIT(full_containers) {
 }
 #undef GINIT
-#undef MINIT
 
 ////////////////////////////////////////////////////////////
 // LogBlock (declaration)
