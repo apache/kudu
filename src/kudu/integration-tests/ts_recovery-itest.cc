@@ -18,6 +18,8 @@
 #include <memory>
 #include <string>
 
+#include <glog/stl_logging.h>
+
 #include "kudu/client/client.h"
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -362,6 +364,32 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
       // This will cause a crash, but only after they have been written to disk.
       ASSERT_OK(AppendNoOpsToLogSync(clock, log.get(), &opid, kNumOverflowedEntriesToWrite));
     }, "Check failed: log_index > 0");
+
+    // Before restarting the tablet server, delete the initial log segment from
+    // disk (the original leader election NO_OP) if it exists since it will
+    // contain OpId 1.1; If the COMMIT message for this NO_OP (OpId 1.1) was
+    // not written to disk yet, then it might get written _after_ the ops with
+    // the overflowed ids above, triggering a CHECK about non sequential OpIds.
+    // If we remove the first segment then the tablet will just assume that
+    // commit messages for all replicates in previous segments have already
+    // been written, thus avoiding the check.
+    string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
+    vector<string> wal_children;
+    ASSERT_OK(fs_manager->env()->GetChildren(wal_dir, &wal_children));
+    // Skip '.', '..', and index files.
+    unordered_set<string> wal_segments;
+    for (const auto& filename : wal_children) {
+      if (HasPrefixString(filename, FsManager::kWalFileNamePrefix)) {
+        wal_segments.insert(filename);
+      }
+    }
+    ASSERT_GE(wal_segments.size(), 2) << "Too few WAL segments. Files in dir (" << wal_dir << "): "
+                                      << wal_children;
+    int64_t kLogSegmentIndex = 1;
+    string first_segment = fs_manager->GetWalSegmentFileName(tablet_id, kLogSegmentIndex);
+    if (ContainsKey(wal_segments, first_segment)) {
+      ASSERT_OK(fs_manager->env()->DeleteFile(JoinPathSegments(wal_dir, first_segment)));
+    }
 
     // We also need to update the ConsensusMetadata to match with the term we
     // want to end up with.
