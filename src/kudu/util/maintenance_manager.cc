@@ -210,24 +210,37 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
 }
 
 void MaintenanceManager::RunSchedulerThread() {
+  if (!FLAGS_enable_maintenance_manager) {
+    LOG(INFO) << "Maintenance manager is disabled. Stopping thread.";
+    return;
+  }
+
   MonoDelta polling_interval = MonoDelta::FromMilliseconds(polling_interval_ms_);
 
   std::unique_lock<Mutex> guard(lock_);
+
+  // Set to true if the scheduler runs and finds that there is no work to do.
+  bool prev_iter_found_no_work = false;
+
   while (true) {
-    // Loop until we are shutting down or it is time to run another op.
-    cond_.TimedWait(polling_interval);
+    // We'll keep sleeping if:
+    //    1) there are no free threads available to perform a maintenance op.
+    // or 2) we just tried to schedule an op but found nothing to run.
+    // However, if it's time to shut down, we want to do so immediately.
+    while ((running_ops_ >= num_threads_ || prev_iter_found_no_work) && !shutdown_) {
+      cond_.TimedWait(polling_interval);
+      prev_iter_found_no_work = false;
+    }
     if (shutdown_) {
       VLOG_AND_TRACE("maintenance", 1) << LogPrefix() << "Shutting down maintenance manager.";
       return;
     }
 
-    if (!FLAGS_enable_maintenance_manager) {
-      KLOG_EVERY_N_SECS(INFO, 30) << "Maintenance manager is disabled. Doing nothing";
-      return;
-    }
-
     // Find the best op.
     MaintenanceOp* op = FindBestOp();
+    // If we found no work to do, then we should sleep before trying again to schedule.
+    // Otherwise, we can go right into trying to find the next op.
+    prev_iter_found_no_work = (op == nullptr);
     if (!op) {
       VLOG_AND_TRACE("maintenance", 2) << LogPrefix()
                                        << "No maintenance operations look worth doing.";
@@ -437,6 +450,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   running_ops_--;
   op->running_--;
   op->cond_->Signal();
+  cond_.Signal(); // wake up scheduler
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
