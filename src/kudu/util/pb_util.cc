@@ -604,7 +604,7 @@ Status WritablePBContainerFile::SetVersionForTests(int version) {
   return Status::OK();
 }
 
-Status WritablePBContainerFile::Init(const Message& msg) {
+Status WritablePBContainerFile::CreateNew(const Message& msg) {
   DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
 
   const uint64_t kHeaderLen = (version_ == 1) ? kPBContainerV1HeaderLen
@@ -645,16 +645,12 @@ Status WritablePBContainerFile::Init(const Message& msg) {
   return Status::OK();
 }
 
-Status WritablePBContainerFile::Reopen() {
-  DCHECK(state_ == FileState::NOT_INITIALIZED || state_ == FileState::OPEN) << state_;
-  {
-    std::lock_guard<Mutex> l(offset_lock_);
-    offset_ = 0;
-    RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &offset_, &version_));
-    ContainerSupHeaderPB sup_header;
-    RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &offset_, &sup_header));
-    RETURN_NOT_OK(writer_->Size(&offset_)); // Reset the write offset to the end of the file.
-  }
+Status WritablePBContainerFile::OpenExisting() {
+  DCHECK_EQ(FileState::NOT_INITIALIZED, state_);
+  RETURN_NOT_OK(ParsePBFileHeader(writer_.get(), &offset_, &version_));
+  ContainerSupHeaderPB sup_header;
+  RETURN_NOT_OK(ReadSupplementalHeader(writer_.get(), version_, &offset_, &sup_header));
+  RETURN_NOT_OK(writer_->Size(&offset_)); // Reset the write offset to the end of the file.
   state_ = FileState::OPEN;
   return Status::OK();
 }
@@ -923,7 +919,7 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
 
   WritablePBContainerFile pb_file(std::move(file));
-  RETURN_NOT_OK(pb_file.Init(msg));
+  RETURN_NOT_OK(pb_file.CreateNew(msg));
   RETURN_NOT_OK(pb_file.Append(msg));
   if (sync == pb_util::SYNC) {
     RETURN_NOT_OK(pb_file.Sync());

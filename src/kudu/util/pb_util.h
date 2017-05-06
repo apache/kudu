@@ -271,17 +271,17 @@ class WritablePBContainerFile {
 
   // Writes the file header to disk and initializes the write offset to the
   // byte after the file header. This method should NOT be called when opening
-  // an existing file for append; use Reopen() for that.
+  // an existing file for append; use OpenExisting() for that.
   //
   // 'msg' need not be populated; its type is used to "lock" the container
   // to a particular protobuf message type in Append().
   //
   // Not thread-safe.
-  Status Init(const google::protobuf::Message& msg);
+  Status CreateNew(const google::protobuf::Message& msg);
 
-  // Reopen a protobuf container file for append. The file must already have a
-  // valid file header. To initialize a new blank file for writing, use Init()
-  // instead.
+  // Opens an existing protobuf container file for append. The file must
+  // already have a valid file header. To initialize a new blank file for
+  // writing, use CreateNew() instead.
   //
   // The file header is read and the version specified there is used as the
   // format version. The length of the file is also read and is used as the
@@ -289,17 +289,12 @@ class WritablePBContainerFile {
   // the write offset instead of constantly calling stat() on the file each
   // time append is called.
   //
-  // Calling Reopen() several times on the same object is allowed. If the
-  // length of the file is modified externally then Reopen() must be called
-  // again for the writer to see the change. For example, if a file is
-  // truncated, and you wish to continue writing from that point forward, you
-  // must call Reopen() again for the writer to reset its write offset to the
-  // new end-of-file location.
-  Status Reopen();
+  // Not thread-safe.
+  Status OpenExisting();
 
   // Writes a protobuf message to the container, beginning with its size
-  // and ending with its CRC32 checksum. One of Init() or Reopen() must be
-  // called prior to calling Append(), i.e. the file must be open.
+  // and ending with its CRC32 checksum. One of CreateNew() or OpenExisting()
+  // must be called prior to calling Append(), i.e. the file must be open.
   Status Append(const google::protobuf::Message& msg);
 
   // Asynchronously flushes all dirty container data to the filesystem.
@@ -328,7 +323,7 @@ class WritablePBContainerFile {
   FRIEND_TEST(TestPBUtil, TestPopulateDescriptorSet);
 
   // Set the file format version. Only used for testing.
-  // Must be called before Init().
+  // Must be called before CreateNew().
   Status SetVersionForTests(int version);
 
   // Write the protobuf schemas belonging to 'desc' and all of its

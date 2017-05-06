@@ -378,9 +378,6 @@ class LogBlockContainer {
   int64_t live_bytes() const { return live_bytes_.Load(); }
   int64_t live_bytes_aligned() const { return live_bytes_aligned_.Load(); }
   int64_t live_blocks() const { return live_blocks_.Load(); }
-  int64_t preallocated_window() const {
-    return std::max<int64_t>(0, preallocated_offset_ - next_block_offset_);
-  }
   bool full() const {
     return next_block_offset_ >= FLAGS_log_container_max_size ||
         (max_num_blocks_ && (total_blocks_ >= max_num_blocks_));
@@ -528,7 +525,7 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     data_file.reset();
     RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
         data_path, &cached_data_file));
-    RETURN_NOT_OK(metadata_file->Init(BlockRecordPB()));
+    RETURN_NOT_OK(metadata_file->CreateNew(BlockRecordPB()));
 
     container->reset(new LogBlockContainer(block_manager,
                                            dir,
@@ -582,7 +579,7 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   unique_ptr<WritablePBContainerFile> metadata_pb_writer;
   metadata_pb_writer.reset(new WritablePBContainerFile(
       std::move(metadata_file)));
-  RETURN_NOT_OK(metadata_pb_writer->Reopen());
+  RETURN_NOT_OK(metadata_pb_writer->OpenExisting());
 
   shared_ptr<RWFile> data_file;
   RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
@@ -858,7 +855,7 @@ Status LogBlockContainer::ReopenMetadataWriter() {
       metadata_file_->filename(), &f));
   unique_ptr<WritablePBContainerFile> w;
   w.reset(new WritablePBContainerFile(std::move(f)));
-  RETURN_NOT_OK(w->Reopen());
+  RETURN_NOT_OK(w->OpenExisting());
 
   RETURN_NOT_OK(metadata_file_->Close());
   metadata_file_.swap(w);

@@ -48,6 +48,10 @@ class MetricEntity;
 class RWFile;
 class ThreadPool;
 
+namespace pb_util {
+class WritablePBContainerFile;
+} // namespace pb_util
+
 namespace fs {
 struct FsReport;
 

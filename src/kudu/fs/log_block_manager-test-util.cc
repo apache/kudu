@@ -426,7 +426,7 @@ Status LBMCorruptor::OpenMetadataWriter(
                                 &metadata_file));
   unique_ptr<WritablePBContainerFile> local_writer(
       new WritablePBContainerFile(shared_ptr<RWFile>(metadata_file.release())));
-  RETURN_NOT_OK(local_writer->Reopen());
+  RETURN_NOT_OK(local_writer->OpenExisting());
 
   *writer = std::move(local_writer);
   return Status::OK();

@@ -132,7 +132,7 @@ Status TestPBUtil::CreateKnownGoodContainerFileWithVersion(int version,
 
   unique_ptr<WritablePBContainerFile> pb_writer;
   RETURN_NOT_OK(NewPBCWriter(version, RWFileOptions(), &pb_writer));
-  RETURN_NOT_OK(pb_writer->Init(test_pb));
+  RETURN_NOT_OK(pb_writer->CreateNew(test_pb));
   RETURN_NOT_OK(pb_writer->Append(test_pb));
   RETURN_NOT_OK(pb_writer->Close());
   return Status::OK();
@@ -368,7 +368,7 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
   RWFileOptions opts;
   opts.mode = Env::OPEN_EXISTING;
   ASSERT_OK(NewPBCWriter(version_, opts, &writer));
-  ASSERT_OK(writer->Reopen());
+  ASSERT_OK(writer->OpenExisting());
 
   ASSERT_OK(TruncateFile(path_, known_good_size - 2));
 
@@ -393,7 +393,8 @@ TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
 
   // Reopen the writer to allow appending more records.
   // Append a record and read it back.
-  ASSERT_OK(writer->Reopen());
+  ASSERT_OK(NewPBCWriter(version_, opts, &writer));
+  ASSERT_OK(writer->OpenExisting());
   test_pb.set_name("hello");
   test_pb.set_value(1);
   ASSERT_OK(writer->Append(test_pb));
@@ -419,7 +420,7 @@ TEST_P(TestPBContainerVersions, TestMultipleMessages) {
 
   unique_ptr<WritablePBContainerFile> pb_writer;
   ASSERT_OK(NewPBCWriter(version_, RWFileOptions(), &pb_writer));
-  ASSERT_OK(pb_writer->Init(pb));
+  ASSERT_OK(pb_writer->CreateNew(pb));
 
   for (int i = 0; i < 10; i++) {
     pb.set_value(i);
@@ -461,7 +462,7 @@ TEST_P(TestPBContainerVersions, TestInterleavedReadWrite) {
   ReadablePBContainerFile pb_reader(std::move(reader));
 
   // Write the header (writer) and validate it (reader).
-  ASSERT_OK(pb_writer->Init(pb));
+  ASSERT_OK(pb_writer->CreateNew(pb));
   ASSERT_OK(pb_reader.Open());
 
   for (int i = 0; i < 10; i++) {
@@ -558,7 +559,7 @@ TEST_P(TestPBContainerVersions, TestDumpPBContainer) {
 
   unique_ptr<WritablePBContainerFile> pb_writer;
   ASSERT_OK(NewPBCWriter(version_, RWFileOptions(), &pb_writer));
-  ASSERT_OK(pb_writer->Init(pb));
+  ASSERT_OK(pb_writer->CreateNew(pb));
 
   for (int i = 0; i < 2; i++) {
     pb.mutable_record_one()->set_value(i);
