@@ -45,6 +45,7 @@ template<> struct SslTypeTraits<GENERAL_NAMES> {
 static const char* kKuduKerberosPrincipalOidStr = "2.25.243346677289068076843480765133256509912";
 
 string X509NameToString(X509_NAME* name) {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(name);
   auto bio = ssl_make_unique(BIO_new(BIO_s_mem()));
   OPENSSL_CHECK_OK(X509_NAME_print_ex(bio.get(), name, 0, XN_FLAG_ONELINE));
@@ -56,6 +57,7 @@ string X509NameToString(X509_NAME* name) {
 
 int GetKuduKerberosPrincipalOidNid() {
   InitializeOpenSSL();
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
   int nid = OBJ_txt2nid(kKuduKerberosPrincipalOidStr);
   if (nid != NID_undef) return nid;
@@ -85,6 +87,7 @@ string Cert::IssuerName() const {
 }
 
 boost::optional<string> Cert::UserId() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   X509_NAME* name = X509_get_subject_name(data_.get());
   char buf[1024];
   int len = X509_NAME_get_text_by_NID(name, NID_userId, buf, arraysize(buf));
@@ -93,6 +96,7 @@ boost::optional<string> Cert::UserId() const {
 }
 
 vector<string> Cert::Hostnames() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   vector<string> result;
   auto gens = ssl_make_unique(reinterpret_cast<GENERAL_NAMES*>(X509_get_ext_d2i(
       data_.get(), NID_subject_alt_name, nullptr, nullptr)));
@@ -114,6 +118,7 @@ vector<string> Cert::Hostnames() const {
 }
 
 boost::optional<string> Cert::KuduKerberosPrincipal() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   int idx = X509_get_ext_by_NID(data_.get(), GetKuduKerberosPrincipalOidNid(), -1);
   if (idx < 0) return boost::none;
   X509_EXTENSION* ext = X509_get_ext(data_.get(), idx);
@@ -131,12 +136,14 @@ boost::optional<string> Cert::KuduKerberosPrincipal() const {
 }
 
 Status Cert::CheckKeyMatch(const PrivateKey& key) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   OPENSSL_RET_NOT_OK(X509_check_private_key(data_.get(), key.GetRawData()),
                      "certificate does not match private key");
   return Status::OK();
 }
 
 Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   // Find the signature type of the certificate. This corresponds to the digest
   // (hash) algorithm, and the public key type which signed the cert.
 
@@ -203,6 +210,7 @@ void Cert::AdoptAndAddRefRawData(X509* data) {
 }
 
 Status Cert::GetPublicKey(PublicKey* key) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   EVP_PKEY* raw_key = X509_get_pubkey(data_.get());
   OPENSSL_RET_IF_NULL(raw_key, "unable to get certificate public key");
   key->AdoptRawData(raw_key);
@@ -231,6 +239,7 @@ CertSignRequest CertSignRequest::Clone() const {
 }
 
 Status CertSignRequest::GetPublicKey(PublicKey* key) const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
   EVP_PKEY* raw_key = X509_REQ_get_pubkey(data_.get());
   OPENSSL_RET_IF_NULL(raw_key, "unable to get CSR public key");
   key->AdoptRawData(raw_key);
