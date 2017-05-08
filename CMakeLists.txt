@@ -889,8 +889,10 @@ ADD_THIRDPARTY_LIB(krb5
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see comment
 ## near definition of KUDU_USING_GOLD).
+## As a workaround for KUDU-1998, tcmalloc is disabled in OS X builds.
 find_package(GPerf REQUIRED)
-if (NOT "${KUDU_USE_ASAN}" AND
+if (NOT APPLE AND
+    NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
     NOT ("${KUDU_USING_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
   ADD_THIRDPARTY_LIB(tcmalloc
