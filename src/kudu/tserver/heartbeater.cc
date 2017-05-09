@@ -301,13 +301,13 @@ Status Heartbeater::Thread::SetupRegistration(ServerRegistrationPB* reg) {
   reg->Clear();
 
   vector<Sockaddr> addrs;
-  RETURN_NOT_OK(CHECK_NOTNULL(server_->rpc_server())->GetBoundAddresses(&addrs));
+  RETURN_NOT_OK(CHECK_NOTNULL(server_->rpc_server())->GetAdvertisedAddresses(&addrs));
   RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_rpc_addresses()),
                         "Failed to add RPC addresses to registration");
 
   addrs.clear();
   if (server_->web_server()) {
-    RETURN_NOT_OK_PREPEND(server_->web_server()->GetBoundAddresses(&addrs),
+    RETURN_NOT_OK_PREPEND(server_->web_server()->GetAdvertisedAddresses(&addrs),
                           "Unable to get bound HTTP addresses");
     RETURN_NOT_OK_PREPEND(AddHostPortPBs(addrs, reg->mutable_http_addresses()),
                           "Failed to add HTTP addresses to registration");

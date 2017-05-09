@@ -43,6 +43,15 @@ DEFINE_string(webserver_interface, "",
     "Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0");
 TAG_FLAG(webserver_interface, advanced);
 
+DEFINE_string(webserver_advertised_addresses, "",
+              "Comma-separated list of addresses to advertise externally for "
+              "HTTP(S) connections. Ephemeral ports (i.e. port 0) are not "
+              "allowed. This should be configured when the locally bound "
+              "webserver address specified in --webserver_interface and "
+              "--webserver_port are not externally resolvable, for example, if "
+              "Kudu is deployed in a container.");
+TAG_FLAG(webserver_advertised_addresses, advanced);
+
 DEFINE_string(webserver_doc_root, kudu::GetDefaultDocumentRoot(),
     "Files under <webserver_doc_root> are accessible via the debug webserver. "
     "Defaults to $KUDU_HOME/www, or if $KUDU_HOME is not set, disables the document "
@@ -116,6 +125,7 @@ static string GetDefaultDocumentRoot() {
 
 WebserverOptions::WebserverOptions()
   : bind_interface(FLAGS_webserver_interface),
+    webserver_advertised_addresses(FLAGS_webserver_advertised_addresses),
     port(FLAGS_webserver_port),
     doc_root(FLAGS_webserver_doc_root),
     enable_doc_root(FLAGS_webserver_enable_doc_root),

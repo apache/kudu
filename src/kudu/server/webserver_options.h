@@ -29,6 +29,7 @@ struct WebserverOptions {
   WebserverOptions();
 
   std::string bind_interface;
+  std::string webserver_advertised_addresses;
   uint16_t port;
   std::string doc_root;
   bool enable_doc_root;

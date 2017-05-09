@@ -232,13 +232,13 @@ Status Master::InitMasterRegistration() {
 
   ServerRegistrationPB reg;
   vector<Sockaddr> rpc_addrs;
-  RETURN_NOT_OK_PREPEND(rpc_server()->GetBoundAddresses(&rpc_addrs),
+  RETURN_NOT_OK_PREPEND(rpc_server()->GetAdvertisedAddresses(&rpc_addrs),
                         "Couldn't get RPC addresses");
   RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg.mutable_rpc_addresses()));
 
   if (web_server()) {
     vector<Sockaddr> http_addrs;
-    web_server()->GetBoundAddresses(&http_addrs);
+    RETURN_NOT_OK(web_server()->GetAdvertisedAddresses(&http_addrs));
     RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
     reg.set_https_enabled(web_server()->IsSecure());
   }

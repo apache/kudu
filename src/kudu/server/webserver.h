@@ -53,7 +53,11 @@ class Webserver : public WebCallbackRegistry {
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
-  Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const;
+  Status GetBoundAddresses(std::vector<Sockaddr>* addrs) const WARN_UNUSED_RESULT;
+
+  // Return the addresses that this server is advertising externally
+  // to the world. Requires that the server has been Start()ed.
+  Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
 
   virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
                                    const PathHandlerCallback& callback,
@@ -99,7 +103,7 @@ class Webserver : public WebCallbackRegistry {
   bool static_pages_available() const;
 
   // Build the string to pass to mongoose specifying where to bind.
-  Status BuildListenSpec(std::string* spec) const;
+  Status BuildListenSpec(std::string* spec) const WARN_UNUSED_RESULT;
 
   // Renders a common Bootstrap-styled header
   void BootstrapPageHeader(std::ostringstream* output);
@@ -147,6 +151,10 @@ class Webserver : public WebCallbackRegistry {
 
   // The address of the interface on which to run this webserver.
   std::string http_address_;
+
+  // Parsed addresses to advertise. Set by Start(). Empty if the bind addresses
+  // should be advertised.
+  std::vector<Sockaddr> webserver_advertised_addresses_;
 
   // Handle to Mongoose context; owned and freed by Mongoose internally
   struct sq_context* context_;
