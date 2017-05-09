@@ -30,6 +30,10 @@ namespace kudu {
 // instead of memsetting to \0)
 class faststring {
  public:
+  enum {
+    kInitialCapacity = 32
+  };
+
   faststring() :
     data_(initial_data_),
     len_(0),
@@ -198,6 +202,18 @@ class faststring {
                 str.size());
   }
 
+  // Reallocates the internal storage to fit only the current data.
+  //
+  // This may revert to using internal storage if the current length is shorter than
+  // kInitialCapacity. Note that, in that case, after this call, capacity() will return
+  // a capacity larger than the data length.
+  //
+  // Any pointers within this instance are invalidated.
+  void shrink_to_fit() {
+    if (data_ == initial_data_ || capacity_ == len_) return;
+    ShrinkToFitInternal();
+  }
+
   // Return a copy of this string as a std::string.
   std::string ToString() const {
     return std::string(reinterpret_cast<const char *>(data()),
@@ -227,9 +243,7 @@ class faststring {
   // the current capacity.
   void GrowArray(size_t newcapacity);
 
-  enum {
-    kInitialCapacity = 32
-  };
+  void ShrinkToFitInternal();
 
   uint8_t* data_;
   uint8_t initial_data_[kInitialCapacity];
