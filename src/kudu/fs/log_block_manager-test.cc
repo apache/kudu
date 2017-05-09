@@ -45,6 +45,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
+DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(log_container_max_blocks);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
@@ -93,6 +94,15 @@ class LogBlockManagerTest : public KuduTest {
     DoGetContainers(DATA_FILES, &data_files);
     ASSERT_EQ(1, data_files.size());
     *data_file = data_files[0];
+  }
+
+  // Returns the only container metadata file in the test directory. Yields an
+  // assert failure if more than one is found.
+  void GetOnlyContainerMetadataFile(string* metadata_file) {
+    vector<string> metadata_files;
+    DoGetContainers(METADATA_FILES, &metadata_files);
+    ASSERT_EQ(1, metadata_files.size());
+    *metadata_file = metadata_files[0];
   }
 
   // Like GetOnlyContainerDataFile(), but returns a container name (i.e. data
@@ -1122,6 +1132,60 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
   ASSERT_OK(ReopenBlockManager());
   ASSERT_FALSE(env_->FileExists(data_file_name));
   ASSERT_FALSE(env_->FileExists(metadata_file_name));
+}
+
+TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
+  // With this ratio, the metadata of a full container comprised of half dead
+  // blocks will be compacted at startup.
+  FLAGS_log_container_live_metadata_before_compact_ratio = 0.50;
+
+  // Set an easy-to-test upper bound on container size.
+  FLAGS_log_container_max_blocks = 10;
+
+  // Create one full container and store the initial size of its metadata file.
+  vector<BlockId> block_ids;
+  for (int i = 0; i < FLAGS_log_container_max_blocks; i++) {
+    unique_ptr<WritableBlock> block;
+    ASSERT_OK(bm_->CreateBlock(&block));
+    ASSERT_OK(block->Append("a"));
+    ASSERT_OK(block->Close());
+    block_ids.emplace_back(block->id());
+  }
+  string metadata_file_name;
+  NO_FATALS(GetOnlyContainerMetadataFile(&metadata_file_name));
+  uint64_t pre_compaction_file_size;
+  ASSERT_OK(env_->GetFileSize(metadata_file_name, &pre_compaction_file_size));
+
+  // Delete a block and reopen the block manager. Eventually, the container's
+  // metadata file should get compacted at startup (we look for this by testing
+  // its file size).
+  uint64_t post_compaction_file_size;
+  int64_t last_live_aligned_bytes;
+  int num_blocks_deleted = 0;
+  for (const auto& id : block_ids) {
+    ASSERT_OK(bm_->DeleteBlock(id));
+    num_blocks_deleted++;
+    FsReport report;
+    ASSERT_OK(ReopenBlockManager(&report));
+    last_live_aligned_bytes = report.stats.live_block_bytes_aligned;
+
+    ASSERT_OK(env_->GetFileSize(metadata_file_name, &post_compaction_file_size));
+    if (post_compaction_file_size < pre_compaction_file_size) {
+      break;
+    }
+  }
+
+  // We should be able to anticipate precisely when the compaction occurred.
+  ASSERT_EQ(FLAGS_log_container_max_blocks *
+              FLAGS_log_container_live_metadata_before_compact_ratio,
+            num_blocks_deleted);
+
+  // The "gap" in the compacted container's block records (corresponding to
+  // dead blocks that were removed) shouldn't affect the number of live bytes
+  // post-alignment.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_EQ(last_live_aligned_bytes, report.stats.live_block_bytes_aligned);
 }
 
 } // namespace fs

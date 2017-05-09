@@ -44,6 +44,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
@@ -667,7 +668,11 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   FLAGS_log_container_preallocate_bytes = 8 * 1024;
 
   // Force some file operations to fail.
-  FLAGS_env_inject_io_error = 0.2;
+  FLAGS_env_inject_io_error = 0.1;
+
+  // Compact log block manager metadata aggressively at startup; injected
+  // errors may also crop up here.
+  FLAGS_log_container_live_metadata_before_compact_ratio = 0.5;
 
   // Creates a block, writing the result to 'out' on success.
   auto create_a_block = [&](BlockId* out) -> Status {

@@ -194,24 +194,41 @@ class LogBlockManager : public BlockManager {
 
   friend class internal::LogBlockContainer;
 
-  // Simpler typedef for a block map which isn't tracked in the memory tracker.
-  // Used during startup.
-  typedef std::unordered_map<
-      const BlockId,
-      scoped_refptr<internal::LogBlock>,
-      BlockIdHash,
-      BlockIdEqual> UntrackedBlockMap;
-
   // Type for the actual block map used to store all live blocks.
   // We use sparse_hash_map<> here to reduce memory overhead.
   typedef MemTrackerAllocator<
-      std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
+      std::pair<const BlockId, scoped_refptr<internal::LogBlock>>> BlockAllocator;
   typedef google::sparse_hash_map<
       BlockId,
       scoped_refptr<internal::LogBlock>,
       BlockIdHash,
       BlockIdEqual,
       BlockAllocator> BlockMap;
+
+  // Simpler typedef for a block map which isn't tracked in the memory tracker.
+  //
+  // Only used during startup.
+  typedef std::unordered_map<
+      const BlockId,
+      scoped_refptr<internal::LogBlock>,
+      BlockIdHash,
+      BlockIdEqual> UntrackedBlockMap;
+
+  // Map used to store live block records during container metadata processing.
+  //
+  // Only used during startup.
+  typedef std::unordered_map<
+      const BlockId,
+      BlockRecordPB,
+      BlockIdHash,
+      BlockIdEqual> BlockRecordMap;
+
+  // Map used to aggregate BlockRecordMap instances across containers.
+  //
+  // Only used during startup.
+  typedef std::unordered_map<
+      std::string,
+      std::vector<BlockRecordPB>> BlockRecordsByContainerMap;
 
   // Adds an as of yet unseen container to this block manager.
   //
@@ -269,15 +286,34 @@ class LogBlockManager : public BlockManager {
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
-  // Repairs any inconsistencies for 'dir' described in 'report'. Any blocks in
-  // 'need_repunching' will be punched out again. Any containers in
-  // 'dead_containers' will be deleted from disk.
+  // Repairs any inconsistencies for 'dir' described in 'report'.
+  //
+  // The following additional repairs will be performed:
+  // 1. Blocks in 'need_repunching' will be punched out again.
+  // 2. Containers in 'dead_containers' will be deleted from disk.
+  // 3. Containers in 'low_live_block_containers' will have their metadata
+  //    files compacted.
   //
   // Returns an error if repairing a fatal inconsistency failed.
   Status Repair(DataDir* dir,
                 FsReport* report,
                 std::vector<scoped_refptr<internal::LogBlock>> need_repunching,
-                std::vector<std::string> dead_containers);
+                std::vector<std::string> dead_containers,
+                std::unordered_map<
+                    std::string,
+                    std::vector<BlockRecordPB>> low_live_block_containers);
+
+  // Rewrites a container metadata file with name 'metadata_file_name',
+  // appending all entries in 'records'. The new metadata file is created as a
+  // temporary file and renamed over the existing file after it is fully written.
+  //
+  // On success, writes the difference in file sizes to 'file_bytes_delta'. On
+  // failure, an effort is made to delete the temporary file.
+  //
+  // Note: the new file is synced but its parent directory is not.
+  Status RewriteMetadataFile(const std::string& metadata_file_name,
+                             const std::vector<BlockRecordPB>& records,
+                             int64_t* file_bytes_delta);
 
   // Opens a particular data directory belonging to the block manager. The
   // results of consistency checking (and repair, if applicable) are written to

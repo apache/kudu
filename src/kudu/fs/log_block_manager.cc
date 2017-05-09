@@ -84,6 +84,12 @@ DEFINE_double(log_container_excess_space_before_cleanup_fraction, 0.10,
               "manager startup.");
 TAG_FLAG(log_container_excess_space_before_cleanup_fraction, advanced);
 
+DEFINE_double(log_container_live_metadata_before_compact_ratio, 0.50,
+              "Desired ratio of live block metadata in log containers. If a "
+              "container's live to total block ratio dips below this value, "
+              "the container's metadata file will be compacted at startup.");
+TAG_FLAG(log_container_live_metadata_before_compact_ratio, experimental);
+
 DEFINE_bool(log_block_manager_test_hole_punching, true,
             "Ensure hole punching is supported by the underlying filesystem");
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
@@ -335,14 +341,15 @@ class LogBlockContainer {
   //
   // Malformed records and other container inconsistencies are written to
   // 'report'. Healthy blocks are written either to 'live_blocks' or
-  // 'dead_blocks'. The greatest block ID seen thus far in the container is
-  // written to 'max_block_id'.
+  // 'dead_blocks'. Live records are written to 'live_block_records'. The
+  // greatest block ID seen thus far in the container is written to 'max_block_id'.
   //
   // Returns an error only if there was a problem accessing the container from
   // disk; such errors are fatal and effectively halt processing immediately.
   Status ProcessRecords(
       FsReport* report,
       LogBlockManager::UntrackedBlockMap* live_blocks,
+      LogBlockManager::BlockRecordMap* live_block_records,
       std::vector<scoped_refptr<internal::LogBlock>>* dead_blocks,
       uint64_t* max_block_id);
 
@@ -393,7 +400,8 @@ class LogBlockContainer {
                     shared_ptr<RWFile> data_file);
 
   // Processes a single block record, performing sanity checks on it and adding
-  // it either to 'live_blocks' or 'dead_blocks'.
+  // it either to 'live_blocks' or 'dead_blocks'. If the record is live, it is
+  // added to 'live_block_records'.
   //
   // Returns an error only if there was a problem accessing the container from
   // disk; such errors are fatal and effectively halt processing immediately.
@@ -402,10 +410,14 @@ class LogBlockContainer {
   // record, 'data_file_size' may be updated with the latest size of the
   // container's data file, and 'max_block_id' reflects the largest block ID
   // seen thus far in the container.
+  //
+  // Note: 'record' may be swapped into 'report'; do not use it after calling
+  // this function.
   Status ProcessRecord(
-      const BlockRecordPB& record,
+      BlockRecordPB* record,
       FsReport* report,
       LogBlockManager::UntrackedBlockMap* live_blocks,
+      LogBlockManager::BlockRecordMap* live_block_records,
       std::vector<scoped_refptr<internal::LogBlock>>* dead_blocks,
       uint64_t* data_file_size,
       uint64_t* max_block_id);
@@ -611,6 +623,7 @@ Status LogBlockContainer::TruncateDataToNextBlockOffset() {
 Status LogBlockContainer::ProcessRecords(
     FsReport* report,
     LogBlockManager::UntrackedBlockMap* live_blocks,
+    LogBlockManager::BlockRecordMap* live_block_records,
     vector<scoped_refptr<internal::LogBlock>>* dead_blocks,
     uint64_t* max_block_id) {
   string metadata_path = metadata_file_->filename();
@@ -627,8 +640,8 @@ Status LogBlockContainer::ProcessRecords(
     if (!read_status.ok()) {
       break;
     }
-    RETURN_NOT_OK(ProcessRecord(record, report,
-                                live_blocks, dead_blocks,
+    RETURN_NOT_OK(ProcessRecord(&record, report,
+                                live_blocks, live_block_records, dead_blocks,
                                 &data_file_size, max_block_id));
   }
 
@@ -650,21 +663,22 @@ Status LogBlockContainer::ProcessRecords(
 }
 
 Status LogBlockContainer::ProcessRecord(
-    const BlockRecordPB& record,
+    BlockRecordPB* record,
     FsReport* report,
     LogBlockManager::UntrackedBlockMap* live_blocks,
+    LogBlockManager::BlockRecordMap* live_block_records,
     vector<scoped_refptr<internal::LogBlock>>* dead_blocks,
     uint64_t* data_file_size,
     uint64_t* max_block_id) {
-  BlockId block_id(BlockId::FromPB(record.block_id()));
+  const BlockId block_id(BlockId::FromPB(record->block_id()));
   scoped_refptr<LogBlock> lb;
-  switch (record.op_type()) {
+  switch (record->op_type()) {
     case CREATE:
       // First verify that the record's offset/length aren't wildly incorrect.
-      if (PREDICT_FALSE(!record.has_offset() ||
-                        !record.has_length() ||
-                        record.offset() < 0  ||
-                        record.length() < 0)) {
+      if (PREDICT_FALSE(!record->has_offset() ||
+                        !record->has_length() ||
+                        record->offset() < 0  ||
+                        record->length() < 0)) {
         report->malformed_record_check->entries.emplace_back(ToString(), record);
         break;
       }
@@ -676,18 +690,18 @@ Status LogBlockContainer::ProcessRecord(
       // frequently in order to account for the latest appends. Inspecting the
       // file size is expensive, so we only do it when the metadata indicates
       // that additional data has been written to the file.
-      if (PREDICT_FALSE(record.offset() + record.length() > *data_file_size)) {
+      if (PREDICT_FALSE(record->offset() + record->length() > *data_file_size)) {
         RETURN_NOT_OK(data_file_->Size(data_file_size));
       }
 
       // If the record still extends beyond the end of the file, it is malformed.
-      if (PREDICT_FALSE(record.offset() + record.length() > *data_file_size)) {
+      if (PREDICT_FALSE(record->offset() + record->length() > *data_file_size)) {
         // TODO(adar): treat as a different kind of inconsistency?
         report->malformed_record_check->entries.emplace_back(ToString(), record);
         break;
       }
 
-      lb = new LogBlock(this, block_id, record.offset(), record.length());
+      lb = new LogBlock(this, block_id, record->offset(), record->length());
       if (!InsertIfNotPresent(live_blocks, block_id, lb)) {
         // We found a record whose ID matches that of an already created block.
         //
@@ -699,7 +713,7 @@ Status LogBlockContainer::ProcessRecord(
 
       VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
                             block_id.ToString(),
-                            record.offset(), record.length());
+                            record->offset(), record->length());
 
       // This block must be included in the container's logical size, even if
       // it has since been deleted. This helps satisfy one of our invariants:
@@ -710,6 +724,7 @@ Status LogBlockContainer::ProcessRecord(
       // belonging to the last deleted block in the container.
       BlockCreated(lb);
 
+      (*live_block_records)[block_id].Swap(record);
       *max_block_id = std::max(*max_block_id, block_id.id());
       break;
     case DELETE:
@@ -723,6 +738,8 @@ Status LogBlockContainer::ProcessRecord(
       }
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
       BlockDeleted(lb);
+
+      CHECK_EQ(1, live_block_records->erase(block_id));
       dead_blocks->emplace_back(std::move(lb));
       break;
     default:
@@ -909,13 +926,12 @@ void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
         "(from $1 to $2), ignoring",
         ToString(), next_block_offset_, new_next_block_offset);
   } else {
-    int64_t aligned_block_length = new_next_block_offset - next_block_offset_;
-    total_bytes_+= aligned_block_length;
-    live_bytes_.IncrementBy(block->length());
-    live_bytes_aligned_.IncrementBy(aligned_block_length);
     next_block_offset_ = new_next_block_offset;
   }
+  total_bytes_ += block->fs_aligned_length();
   total_blocks_++;
+  live_bytes_.IncrementBy(block->length());
+  live_bytes_aligned_.IncrementBy(block->fs_aligned_length());
   live_blocks_.Increment();
 
   if (full()) {
@@ -1812,6 +1828,10 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   // deleted during repair.
   vector<string> dead_containers;
 
+  // Keep track of containers whose live block ratio is low; their metadata
+  // files will be compacted during repair.
+  unordered_map<string, vector<BlockRecordPB>> low_live_block_containers;
+
   // Find all containers and open them.
   unordered_set<string> containers_seen;
   vector<string> children;
@@ -1861,10 +1881,12 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
     // exceedingly unlikely. However, we might have old data which still exhibits
     // the above issue.
     UntrackedBlockMap live_blocks;
+    BlockRecordMap live_block_records;
     vector<scoped_refptr<internal::LogBlock>> dead_blocks;
     uint64_t max_block_id = 0;
     s = container->ProcessRecords(&local_report,
                                   &live_blocks,
+                                  &live_block_records,
                                   &dead_blocks,
                                   &max_block_id);
     if (!s.ok()) {
@@ -1897,6 +1919,43 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       if (container->live_blocks() == 0) {
         DCHECK(live_blocks.empty());
         dead_containers.emplace_back(container->ToString());
+      } else if (static_cast<double>(container->live_blocks()) /
+          container->total_blocks() <= FLAGS_log_container_live_metadata_before_compact_ratio) {
+        // Metadata files of containers with very few live blocks will be compacted.
+        //
+        // TODO(adar): this should be reported as an inconsistency once
+        // container metadata compaction is also done in realtime. Until then,
+        // it would be confusing to report it as such since it'll be a natural
+        // event at startup.
+        vector<BlockRecordPB> records(live_block_records.size());
+        int i = 0;
+        for (auto& e : live_block_records) {
+          records[i].Swap(&e.second);
+          i++;
+        }
+
+        // Sort the records such that their ordering reflects the ordering in
+        // the pre-compacted metadata file.
+        //
+        // This is preferred to storing the records in an order-preserving
+        // container (such as std::map) because while records are temporarily
+        // retained for every container, only some containers will actually
+        // undergo metadata compaction.
+        std::sort(records.begin(), records.end(),
+                  [](const BlockRecordPB& a, const BlockRecordPB& b) {
+          // Sort by timestamp.
+          if (a.timestamp_us() != b.timestamp_us()) {
+            return a.timestamp_us() < b.timestamp_us();
+          }
+
+          // If the timestamps match, sort by offset.
+          //
+          // If the offsets also match (i.e. both blocks are of zero length),
+          // it doesn't matter which of the two records comes first.
+          return a.offset() < b.offset();
+        });
+
+        low_live_block_containers[container->ToString()] = std::move(records);
       }
 
       // Having processed the block records, let's check whether any full
@@ -1986,7 +2045,8 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   s = Repair(dir,
              &local_report,
              std::move(need_repunching),
-             std::move(dead_containers));
+             std::move(dead_containers),
+             std::move(low_live_block_containers));
   if (!s.ok()) {
     *result_status = s.CloneAndPrepend(Substitute(
         "fatal error while repairing inconsistencies in data directory $0",
@@ -2002,7 +2062,8 @@ Status LogBlockManager::Repair(
     DataDir* dir,
     FsReport* report,
     vector<scoped_refptr<internal::LogBlock>> need_repunching,
-    vector<string> dead_containers) {
+    vector<string> dead_containers,
+    unordered_map<string, vector<BlockRecordPB>> low_live_block_containers) {
   if (read_only_) {
     LOG(INFO) << "Read-only block manager, skipping repair";
     return Status::OK();
@@ -2044,6 +2105,13 @@ Status LogBlockManager::Repair(
         }
       }
     }
+    for (const auto& e : low_live_block_containers) {
+      LogBlockContainer* c = FindPtrOrNull(all_containers_by_name_,
+                                           e.first);
+      if (c) {
+        containers_by_name[e.first] = c;
+      }
+    }
   }
 
 
@@ -2057,9 +2125,18 @@ Status LogBlockManager::Repair(
   // TODO(adar) the above is not fool-proof; a crash could manifest in between
   // any pair of deletions. That said, the odds of it happening are incredibly
   // rare, and manual resolution isn't hard (just delete the existing file).
+  int64_t deleted_metadata_bytes = 0;
   for (const auto& d : dead_containers) {
     string data_file_name = StrCat(d, kContainerDataFileSuffix);
     string metadata_file_name = StrCat(d, kContainerMetadataFileSuffix);
+
+    uint64_t metadata_size;
+    Status s = env_->GetFileSize(metadata_file_name, &metadata_size);
+    if (s.ok()) {
+      deleted_metadata_bytes += metadata_size;
+    } else {
+      WARN_NOT_OK(s, "Could not get size of dead container metadata file " + metadata_file_name);
+    }
 
     WARN_NOT_OK(file_cache_.DeleteFile(data_file_name),
                 "Could not delete dead container data file " + data_file_name);
@@ -2068,6 +2145,8 @@ Status LogBlockManager::Repair(
   }
   if (!dead_containers.empty()) {
     WARN_NOT_OK(env_->SyncDir(dir->dir()), "Could not sync data directory");
+    LOG(INFO) << Substitute("Deleted $0 dead containers ($1 metadata bytes)",
+                            dead_containers.size(), deleted_metadata_bytes);
   }
 
   // Truncate partial metadata records.
@@ -2165,6 +2244,90 @@ Status LogBlockManager::Repair(
   // triggering the repunching operations.
   need_repunching.clear();
 
+  // "Compact" metadata files with few live blocks by rewriting them with only
+  // the live block records.
+  int64_t metadata_files_compacted = 0;
+  int64_t metadata_bytes_delta = 0;
+  for (const auto& e : low_live_block_containers) {
+    internal::LogBlockContainer* container = FindPtrOrNull(containers_by_name,
+                                                           e.first);
+    if (!container) {
+      // The container was deleted outright.
+      continue;
+    }
+
+    // Rewrite this metadata file. Failures are non-fatal.
+    int64_t file_bytes_delta;
+    Status s = RewriteMetadataFile(StrCat(e.first, kContainerMetadataFileSuffix),
+                                   e.second,
+                                   &file_bytes_delta);
+    if (!s.ok()) {
+      WARN_NOT_OK(s, "could not rewrite metadata file");
+      continue;
+    }
+
+    // However, we're hosed if we can't open the new metadata file.
+    RETURN_NOT_OK_PREPEND(container->ReopenMetadataWriter(),
+                          "could not reopen new metadata file");
+
+    metadata_files_compacted++;
+    metadata_bytes_delta += file_bytes_delta;
+  }
+
+  // The data directory can be synchronized once for all of the new metadata files.
+  //
+  // Failures are fatal: if a new metadata file doesn't durably exist in the
+  // data directory, it would be unsafe to append new block records to it. This
+  // is because after a crash the old metadata file may appear instead, and
+  // that file lacks the newly appended block records.
+  if (metadata_files_compacted > 0) {
+    RETURN_NOT_OK_PREPEND(env_->SyncDir(dir->dir()),
+                          "Could not sync data directory");
+    LOG(INFO) << Substitute("Compacted $0 metadata files ($1 metadata bytes)",
+                            metadata_files_compacted, metadata_bytes_delta);
+  }
+
+  return Status::OK();
+}
+
+Status LogBlockManager::RewriteMetadataFile(const string& metadata_file_name,
+                                            const vector<BlockRecordPB>& records,
+                                            int64_t* file_bytes_delta) {
+  uint64_t old_metadata_size;
+  RETURN_NOT_OK_PREPEND(env_->GetFileSize(metadata_file_name, &old_metadata_size),
+                        "could not get size of old metadata file");
+
+  // Create a new container metadata file with only the live block records.
+  //
+  // By using a temporary file and renaming it over the original file at the
+  // end, we ensure that we can recover from a failure at any point. Any
+  // temporary files left behind are cleaned up by the FsManager at startup.
+  string tmpl = metadata_file_name + kTmpInfix + ".XXXXXX";
+  unique_ptr<RWFile> tmp_file;
+  string tmp_file_name;
+  RETURN_NOT_OK_PREPEND(env_->NewTempRWFile(RWFileOptions(), tmpl,
+                                            &tmp_file_name, &tmp_file),
+                        "could not create temporary metadata file");
+  env_util::ScopedFileDeleter tmp_deleter(env_, tmp_file_name);
+  WritablePBContainerFile pb_file(std::move(tmp_file));
+  RETURN_NOT_OK_PREPEND(pb_file.CreateNew(BlockRecordPB()),
+                        "could not initialize temporary metadata file");
+  for (const auto& r : records) {
+    RETURN_NOT_OK_PREPEND(pb_file.Append(r),
+                          "could not append to temporary metadata file");
+  }
+  RETURN_NOT_OK_PREPEND(pb_file.Sync(),
+                        "could not sync temporary metadata file");
+  RETURN_NOT_OK_PREPEND(pb_file.Close(),
+                        "could not close temporary metadata file");
+  uint64_t new_metadata_size;
+  RETURN_NOT_OK_PREPEND(env_->GetFileSize(tmp_file_name, &new_metadata_size),
+                        "could not get file size of temporary metadata file");
+  RETURN_NOT_OK_PREPEND(env_->RenameFile(tmp_file_name, metadata_file_name),
+                        "could not rename temporary metadata file");
+
+  tmp_deleter.Cancel();
+  *file_bytes_delta = (static_cast<int64_t>(old_metadata_size) - new_metadata_size);
   return Status::OK();
 }
 

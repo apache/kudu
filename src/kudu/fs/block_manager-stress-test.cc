@@ -36,8 +36,9 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-DECLARE_int64(block_manager_max_open_files);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
+DECLARE_double(log_container_live_metadata_before_compact_ratio);
+DECLARE_int64(block_manager_max_open_files);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
 
@@ -105,6 +106,9 @@ class BlockManagerStressTest : public KuduTest {
 
     // Maximize the amount of cleanup triggered by the extra space heuristic.
     FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
+
+    // Compact block manager metadata aggressively.
+    FLAGS_log_container_live_metadata_before_compact_ratio = 0.80;
 
     if (FLAGS_block_manager_paths.empty()) {
       data_dirs_.push_back(test_dir_);

@@ -256,6 +256,8 @@ Status IOError(const std::string& context, int err_number) {
 }
 
 Status DoSync(int fd, const string& filename) {
+  MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                       Status::IOError(Env::kInjectedFailureStatusMsg));
   ThreadRestrictions::AssertIOAllowed();
   if (FLAGS_never_fsync) return Status::OK();
   if (FLAGS_env_use_fsync) {
@@ -546,7 +548,6 @@ class PosixWritableFile : public WritableFile {
   virtual Status PreAllocate(uint64_t size) OVERRIDE {
     MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
-
     TRACE_EVENT1("io", "PosixWritableFile::PreAllocate", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
@@ -564,6 +565,8 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Close() OVERRIDE {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT1("io", "PosixWritableFile::Close", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     Status s;
@@ -600,6 +603,8 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Flush(FlushMode mode) OVERRIDE {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT1("io", "PosixWritableFile::Flush", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
 #if defined(__linux__)
@@ -684,7 +689,6 @@ class PosixRWFile : public RWFile {
                              PreAllocateMode mode) OVERRIDE {
     MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
                          Status::IOError(Env::kInjectedFailureStatusMsg));
-
     TRACE_EVENT1("io", "PosixRWFile::PreAllocate", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     int falloc_mode = 0;
@@ -704,6 +708,8 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Truncate(uint64_t length) OVERRIDE {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT2("io", "PosixRWFile::Truncate", "path", filename_, "length", length);
     ThreadRestrictions::AssertIOAllowed();
     int ret;
@@ -733,6 +739,8 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Flush(FlushMode mode, uint64_t offset, size_t length) OVERRIDE {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT1("io", "PosixRWFile::Flush", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
 #if defined(__linux__)
@@ -768,7 +776,8 @@ class PosixRWFile : public RWFile {
     if (closed_) {
       return Status::OK();
     }
-
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT1("io", "PosixRWFile::Close", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     Status s;
@@ -1166,6 +1175,8 @@ class PosixEnv : public Env {
   }
 
   virtual Status RenameFile(const std::string& src, const std::string& target) OVERRIDE {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     TRACE_EVENT2("io", "PosixEnv::RenameFile", "src", src, "dst", target);
     ThreadRestrictions::AssertIOAllowed();
     Status result;
@@ -1507,6 +1518,8 @@ class PosixEnv : public Env {
   };
 
   Status MkTmpFile(const string& name_template, int* fd, string* created_filename) {
+    MAYBE_RETURN_FAILURE(FLAGS_env_inject_io_error,
+                         Status::IOError(Env::kInjectedFailureStatusMsg));
     ThreadRestrictions::AssertIOAllowed();
     unique_ptr<char[]> fname(new char[name_template.size() + 1]);
     ::snprintf(fname.get(), name_template.size() + 1, "%s", name_template.c_str());

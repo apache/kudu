@@ -124,7 +124,9 @@ struct LBMMalformedRecordCheck {
   std::string ToString() const;
 
   struct Entry {
-    Entry(std::string c, BlockRecordPB r);
+    // Note: the BlockRecordPB is passed by pointer so that it can be swapped
+    // into the entry.
+    Entry(std::string c, BlockRecordPB* r);
     std::string container;
     BlockRecordPB record;
   };

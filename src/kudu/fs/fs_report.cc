@@ -193,9 +193,9 @@ string LBMMalformedRecordCheck::ToString() const {
   return s;
 }
 
-LBMMalformedRecordCheck::Entry::Entry(string c, BlockRecordPB r)
+LBMMalformedRecordCheck::Entry::Entry(string c, BlockRecordPB* r)
     : container(std::move(c)) {
-  record.Swap(&r);
+  record.Swap(r);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
