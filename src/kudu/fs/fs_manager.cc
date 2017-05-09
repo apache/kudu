@@ -234,12 +234,10 @@ void FsManager::InitBlockManager() {
 Status FsManager::Open(FsReport* report) {
   RETURN_NOT_OK(Init());
 
-  // Remove leftover tmp files and fix permissions.
-  if (!read_only_) {
-    CleanTmpFiles();
-    CheckAndFixPermissions();
-  }
-
+  // Load and verify the instance metadata files.
+  //
+  // Done first to minimize side effects in the case that the configured roots
+  // are not yet initialized on disk.
   for (const string& root : canonicalized_all_fs_roots_) {
     gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root),
@@ -251,6 +249,15 @@ Status FsManager::Open(FsReport* report) {
           "Mismatched UUIDs across filesystem roots: $0 vs. $1",
           metadata_->uuid(), pb->uuid()));
     }
+  }
+
+  // Remove leftover temporary files from the WAL root and fix permissions.
+  //
+  // Temporary files in the data directory roots will be removed by the block
+  // manager.
+  if (!read_only_) {
+    CleanTmpFilesInWalRoot();
+    CheckAndFixPermissions();
   }
 
   LOG_TIMING(INFO, "opening block manager") {
@@ -466,56 +473,10 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
                                               StringPrintf("%09" PRIu64, sequence_number)));
 }
 
-void FsManager::CleanTmpFiles() {
+void FsManager::CleanTmpFilesInWalRoot() {
   DCHECK(!read_only_);
-  string canonized_path;
-  vector<string> children;
-  unordered_set<string> checked_dirs;
-  stack<string> paths;
-  for (const string& root : canonicalized_all_fs_roots_) {
-    paths.push(root);
-  }
-
-  while (!paths.empty()) {
-    string path = paths.top();
-    paths.pop();
-
-    Status s = env_->GetChildren(path, &children);
-    if (s.ok()) {
-      for (const string& child : children) {
-        if (child == "." || child == "..") continue;
-
-        // Canonicalize in case of symlinks
-        s = env_->Canonicalize(JoinPathSegments(path, child), &canonized_path);
-        if (!s.ok()) {
-          LOG(WARNING) << "Unable to get the real path: " << s.ToString();
-          continue;
-        }
-
-        bool is_directory;
-        s = env_->IsDirectory(canonized_path, &is_directory);
-        if (!s.ok()) {
-          LOG(WARNING) << "Unable to get information about file: " << s.ToString();
-          continue;
-        }
-
-        if (is_directory) {
-          // Check if we didn't handle this path yet
-          if (!ContainsKey(checked_dirs, canonized_path)) {
-            checked_dirs.insert(canonized_path);
-            paths.push(canonized_path);
-          }
-        } else if (child.find(kTmpInfix) != string::npos) {
-          s = env_->DeleteFile(canonized_path);
-          if (!s.ok()) {
-            LOG(WARNING) << "Unable to delete tmp file: " << s.ToString();
-          }
-        }
-      }
-    } else {
-      LOG(WARNING) << "Unable to read directory: " << s.ToString();
-    }
-  }
+  WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env_, canonicalized_wal_fs_root_),
+              "Error while deleting tmp files");
 }
 
 void FsManager::CheckAndFixPermissions() {

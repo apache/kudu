@@ -135,6 +135,14 @@ Status CheckHolePunch(Env* env, const string& path) {
   return Status::OK();
 }
 
+// Wrapper for env_util::DeleteTmpFilesRecursively that is suitable for parallel
+// execution on a data directory's thread pool (which requires the return value
+// be void).
+void DeleteTmpFilesRecursively(Env* env, const string& path) {
+  WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env, path),
+              "Error while deleting temp files");
+}
+
 } // anonymous namespace
 
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
@@ -359,6 +367,14 @@ Status DataDirManager::Open(int max_data_dirs, LockMode mode) {
   RETURN_NOT_OK_PREPEND(PathInstanceMetadataFile::CheckIntegrity(instances),
                         Substitute("Could not verify integrity of files: $0",
                                    JoinStrings(paths_, ",")));
+
+  // Use the per-dir thread pools to delete temporary files in parallel.
+  for (const auto& dd : dds) {
+    dd->ExecClosure(Bind(&DeleteTmpFilesRecursively, env_, dd->dir()));
+  }
+  for (const auto& dd : dds) {
+    dd->WaitOnClosures();
+  }
 
   // Build uuid index and data directory maps.
   UuidIndexMap dd_by_uuid_idx;

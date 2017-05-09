@@ -26,6 +26,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
@@ -236,6 +237,31 @@ Status DeleteExcessFilesByPattern(Env* env, const string& pattern, int max_match
   }
 
   return Status::OK();
+}
+
+// Callback for DeleteTmpFilesRecursively().
+//
+// Tests 'basename' for the Kudu-specific tmp file infix, and if found,
+// deletes the file.
+static Status DeleteTmpFilesRecursivelyCb(Env* env,
+                                          Env::FileType file_type,
+                                          const string& dirname,
+                                          const string& basename) {
+  if (file_type != Env::FILE_TYPE) {
+    // Skip directories.
+    return Status::OK();
+  }
+
+  if (basename.find(kTmpInfix) != string::npos) {
+    string filename = JoinPathSegments(dirname, basename);
+    WARN_NOT_OK(env->DeleteFile(filename),
+                Substitute("Failed to remove temporary file $0", filename));
+  }
+  return Status::OK();
+}
+
+Status DeleteTmpFilesRecursively(Env* env, const string& path) {
+  return env->Walk(path, Env::PRE_ORDER, Bind(&DeleteTmpFilesRecursivelyCb, env));
 }
 
 ScopedFileDeleter::ScopedFileDeleter(Env* env, std::string path)

@@ -74,6 +74,12 @@ Status CopyFile(Env* env, const std::string& source_path, const std::string& des
 // defined which file will be deleted first.
 Status DeleteExcessFilesByPattern(Env* env, const std::string& pattern, int max_matches);
 
+// Traverses 'path' recursively and deletes all files matching the special Kudu
+// tmp file infix. Does not follow symlinks.
+//
+// Deletion errors generate warnings but do not halt the traversal.
+Status DeleteTmpFilesRecursively(Env* env, const std::string& path);
+
 // Deletes a file or directory when this object goes out of scope.
 //
 // The deletion may be cancelled by calling .Cancel().
