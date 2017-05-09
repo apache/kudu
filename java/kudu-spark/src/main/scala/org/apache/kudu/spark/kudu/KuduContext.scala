@@ -17,30 +17,41 @@
 
 package org.apache.kudu.spark.kudu
 
+import java.security.{AccessController, PrivilegedAction}
 import java.util
+import javax.security.auth.Subject
+import javax.security.auth.login.{AppConfigurationEntry, Configuration, LoginContext}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import org.apache.hadoop.util.ShutdownHookManager
+import org.apache.kudu.annotations.InterfaceStability
+import org.apache.kudu.client.SessionConfiguration.FlushMode
+import org.apache.kudu.client._
+import org.apache.kudu.spark.kudu
+import org.apache.kudu.{ColumnSchema, Schema, Type}
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
-
-import org.apache.kudu.annotations.InterfaceStability
-import org.apache.kudu.client.SessionConfiguration.FlushMode
-import org.apache.kudu.client._
-import org.apache.kudu.{ColumnSchema, Schema, Type}
+import org.slf4j.{Logger, LoggerFactory}
 
 /**
   * KuduContext is a serializable container for Kudu client connections.
   *
   * If a Kudu client connection is needed as part of a Spark application, a
-  * [[KuduContext]] should used as a broadcast variable in the job in order to
-  * share connections among the tasks in a JVM.
+  * [[KuduContext]] should be created in the driver, and shared with executors
+  * as a serializable field.
   */
 @InterfaceStability.Unstable
-class KuduContext(kuduMaster: String) extends Serializable {
+class KuduContext(val kuduMaster: String,
+                  sc: SparkContext) extends Serializable {
+  import kudu.KuduContext._
+
+  @Deprecated()
+  def this(kuduMaster: String) {
+    this(kuduMaster, new SparkContext())
+  }
 
   @transient lazy val syncClient = {
     val c = KuduConnection.getSyncClient(kuduMaster)
@@ -59,8 +70,11 @@ class KuduContext(kuduMaster: String) extends Serializable {
   }
 
   // Visible for testing.
-  private[kudu] val authnCredentials : Array[Byte] =
-    syncClient.exportAuthenticationCredentials()
+  private[kudu] val authnCredentials : Array[Byte] = {
+    Subject.doAs(getSubject(sc), new PrivilegedAction[Array[Byte]] {
+      override def run(): Array[Byte] = syncClient.exportAuthenticationCredentials()
+    })
+  }
 
   /**
     * Create an RDD from a Kudu table.
@@ -237,6 +251,56 @@ class KuduContext(kuduMaster: String) extends Serializable {
       session.close()
     }
     session.getPendingErrors
+  }
+}
+
+private object KuduContext {
+  val Log: Logger = LoggerFactory.getLogger(classOf[KuduContext])
+
+  /**
+    * Returns a new Kerberos-authenticated [[Subject]] if the Spark context contains
+    * principal and keytab options, otherwise returns the currently active subject.
+    *
+    * The keytab and principal options should be set when deploying a Spark
+    * application in cluster mode with Yarn against a secure Kudu cluster. Spark
+    * internally will grab HDFS and HBase delegation tokens (see
+    * [[org.apache.spark.deploy.SparkSubmit]]), so we do something similar.
+    *
+    * This method can only be called on the driver, where the SparkContext is
+    * available.
+    *
+    * @return A Kerberos-authenticated subject if the Spark context contains
+    *         principal and keytab options, otherwise returns the currently
+    *         active subject
+    */
+  private def getSubject(sc: SparkContext): Subject = {
+    val subject = Subject.getSubject(AccessController.getContext)
+
+    val principal = sc.getConf.getOption("spark.yarn.principal").getOrElse(return subject)
+    val keytab = sc.getConf.getOption("spark.yarn.keytab").getOrElse(return subject)
+
+    Log.info(s"Logging in as principal $principal with keytab $keytab")
+
+    val conf = new Configuration {
+      override def getAppConfigurationEntry(name: String): Array[AppConfigurationEntry] = {
+        val options = Map(
+          "principal" -> principal,
+          "keyTab" -> keytab,
+          "useKeyTab" -> "true",
+          "useTicketCache" -> "false",
+          "doNotPrompt" -> "true",
+          "refreshKrb5Config" -> "true"
+        )
+
+        Array(new AppConfigurationEntry("com.sun.security.auth.module.Krb5LoginModule",
+                                        AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
+                                        options.asJava))
+      }
+    }
+
+    val loginContext = new LoginContext("kudu-spark", new Subject(), null, conf)
+    loginContext.login()
+    loginContext.getSubject
   }
 }
 

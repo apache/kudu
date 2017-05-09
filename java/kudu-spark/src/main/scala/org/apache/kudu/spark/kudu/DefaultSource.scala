@@ -124,14 +124,14 @@ class KuduRelation(private val tableName: String,
                    private val masterAddrs: String,
                    private val operationType: OperationType,
                    private val userSchema: Option[StructType])(
-                    val sqlContext: SQLContext)
+                   val sqlContext: SQLContext)
   extends BaseRelation
     with PrunedFilteredScan
     with InsertableRelation {
 
   import KuduRelation._
 
-  private val context: KuduContext = new KuduContext(masterAddrs)
+  private val context: KuduContext = new KuduContext(masterAddrs, sqlContext.sparkContext)
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] =
