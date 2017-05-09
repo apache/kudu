@@ -122,7 +122,7 @@ df.registerTempTable("kudu_table")
 val filteredDF = sqlContext.sql("select id from kudu_table where id >= 5").show()
 
 // Use KuduContext to create, delete, or write to Kudu tables
-val kuduContext = new KuduContext("kudu.master:7051")
+val kuduContext = new KuduContext("kudu.master:7051", sqlContext.sparkContext)
 
 // Create a new Kudu table from a dataframe schema
 // NB: No rows from the dataframe are inserted into the table

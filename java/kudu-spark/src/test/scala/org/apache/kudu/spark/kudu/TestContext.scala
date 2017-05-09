@@ -77,7 +77,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     kuduClient = new KuduClientBuilder(miniCluster.getMasterAddresses).build()
     assert(miniCluster.waitForTabletServers(1))
 
-    kuduContext = new KuduContext(miniCluster.getMasterAddresses)
+    kuduContext = new KuduContext(miniCluster.getMasterAddresses, sc)
 
     val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
                                                .setNumReplicas(1)

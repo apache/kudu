@@ -152,7 +152,7 @@ object Generator {
 
   def run(args: Args, sc: SparkContext): Unit = {
 
-    val kc = new KuduContext(args.masterAddrs)
+    val kc = new KuduContext(args.masterAddrs, sc)
     val applicationId = sc.applicationId
 
     val client: KuduClient = kc.syncClient
