@@ -195,7 +195,7 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
     if (allow_crashes) {
       RestartAnyCrashedTabletServers();
     } else {
-      AssertNoTabletServersCrashed();
+      NO_FATALS(AssertNoTabletServersCrashed());
     }
 
     SleepFor(MonoDelta::FromMilliseconds(10));
