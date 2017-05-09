@@ -151,7 +151,12 @@ class RemoteKsckTest : public KuduTest {
       if (!status.ok()) {
         promise->Set(status);
       }
-      started_writing->CountDown(1);
+      // Wait for the first 100 writes so that it's very likely all replicas have committed a
+      // message in each tablet; otherwise, safe time might not have been updated on all replicas
+      // and some might refuse snapshot scans because of lag.
+      if (i > 100) {
+        started_writing->CountDown(1);
+      }
     }
     promise->Set(Status::OK());
   }
@@ -231,7 +236,9 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   Status s;
   while (MonoTime::Now() < deadline) {
+    ASSERT_OK(ksck_->CheckMasterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+    ASSERT_OK(ksck_->FetchInfoFromTabletServers());
 
     err_stream_.str("");
     s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
@@ -254,7 +261,9 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
   uint64_t num_writes = 10000;
   LOG(INFO) << "Generating row writes...";
   ASSERT_OK(GenerateRowWrites(num_writes));
+  ASSERT_OK(ksck_->CheckMasterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
   // Use an impossibly low timeout value of zero!
   Status s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromNanoseconds(0), 16, false, 0));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected TimedOut Status, got: " << s.ToString();
@@ -273,45 +282,32 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   uint64_t ts = client_->GetLatestObservedTimestamp();
-  MonoTime start(MonoTime::Now());
-  MonoTime deadline = start + MonoDelta::FromSeconds(30);
-  Status s;
-  // TODO: We need to loop here because safe time is not yet implemented.
-  // Remove this loop when that is done. See KUDU-1056.
-  while (true) {
-    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-    Status s = ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts));
-    if (s.ok()) break;
-    if (MonoTime::Now() > deadline) break;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  if (!s.ok()) {
-    LOG(WARNING) << Substitute("Timed out after $0 waiting for ksck to become consistent on TS $1. "
-                               "Status: $2",
-                               (MonoTime::Now() - start).ToString(),
-                               ts, s.ToString());
-    EXPECT_OK(s); // To avoid ASAN complaints due to thread reading the CountDownLatch.
-  }
+  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts)));
   continue_writing.Store(false);
   ASSERT_OK(promise.Get());
   writer_thread->Join();
 }
 
 // Test that followers & leader wait until safe time to respond to a snapshot
-// scan at current timestamp. TODO: Safe time not yet implemented. See KUDU-1056.
-TEST_F(RemoteKsckTest, DISABLED_TestChecksumSnapshotCurrentTimestamp) {
+// scan at current timestamp.
+TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   CountDownLatch started_writing(1);
   AtomicBool continue_writing(true);
   Promise<Status> promise;
   scoped_refptr<Thread> writer_thread;
 
-  Thread::Create("RemoteKsckTest", "TestChecksumSnapshot",
+  Thread::Create("RemoteKsckTest", "TestChecksumSnapshotCurrentTimestamp",
                  &RemoteKsckTest::GenerateRowWritesLoop, this,
                  &started_writing, boost::cref(continue_writing), &promise,
                  &writer_thread);
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
+  ASSERT_OK(ksck_->CheckMasterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
   ASSERT_OK(ksck_->ChecksumData(ChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
                                                 ChecksumOptions::kCurrentTimestamp)));
   continue_writing.Store(false);

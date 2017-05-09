@@ -537,11 +537,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
                     num_results, num_tablet_replicas);
 
   if (num_mismatches != 0) {
-    // TODO(KUDU-1020): remove the below note once safe time advancement is fully implemented.
-    return Status::Corruption(Substitute(
-        "$0 checksum mismatches were detected. "
-        "NOTE: if the table is actively being written to, this may generate spurious "
-        "checksum mismatches.", num_mismatches));
+    return Status::Corruption(Substitute("$0 checksum mismatches were detected.", num_mismatches));
   }
   if (num_errors != 0) {
     return Status::Aborted(Substitute("$0 errors were detected", num_errors));
