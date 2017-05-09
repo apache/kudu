@@ -1017,10 +1017,6 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
-  boolean isTableNotServed(String tableId) {
-    return tablesNotServed.contains(tableId);
-  }
-
   long getSleepTimeForRpc(KuduRpc<?> rpc) {
     byte attemptCount = rpc.attempt;
     assert (attemptCount > 0);
