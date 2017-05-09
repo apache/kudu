@@ -52,7 +52,7 @@
         <maven-assembly-plugin.version>2.6</maven-assembly-plugin.version>
         <maven-enforcer-plugin.version>1.4</maven-enforcer-plugin.version>
         <maven-failsafe-plugin.version>2.18</maven-failsafe-plugin.version>
-        <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
+        <maven-protoc-plugin.version>0.5.0</maven-protoc-plugin.version>
         <maven-shade-plugin.version>2.4</maven-shade-plugin.version>
         <maven-surefire-plugin.version>2.18</maven-surefire-plugin.version>
         <schema-validator-maven-plugin.version>5.5.3</schema-validator-maven-plugin.version>
@@ -272,12 +272,6 @@
     </build>
 
     <pluginRepositories>
-      <!-- For maven-protoc-plugin -->
-      <pluginRepository>
-        <id>protoc-plugin</id>
-        <url>http://maven.davidtrott.com/repository</url>
-        <name>Protoc Plugin Repository</name>
-      </pluginRepository>
       <!-- For schema-validator-maven-plugin -->
       <pluginRepository>
         <id>schema-validator-maven-plugin</id>

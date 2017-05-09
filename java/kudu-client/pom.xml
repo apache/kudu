@@ -114,12 +114,12 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>com.google.protobuf.tools</groupId>
-                <artifactId>maven-protoc-plugin</artifactId>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
                 <version>${maven-protoc-plugin.version}</version>
                 <configuration>
                     <!-- Documented at:
-                         http://sergei-ivanov.github.io/maven-protoc-plugin/compile-mojo.html -->
+                         https://www.xolstice.org/protobuf-maven-plugin/usage.html -->
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>${project.basedir}/../../src</protoSourceRoot>
                     <excludes>
@@ -296,8 +296,8 @@
                     </pluginExecution>
                     <pluginExecution>
                       <pluginExecutionFilter>
-                        <groupId>com.google.protobuf.tools</groupId>
-                        <artifactId>maven-protoc-plugin</artifactId>
+                        <groupId>org.xolstice.maven.plugins</groupId>
+                        <artifactId>protobuf-maven-plugin</artifactId>
                         <versionRange>[${maven-protoc-plugin.version},)</versionRange>
                         <goals>
                           <goal>compile</goal>
@@ -338,8 +338,8 @@
         <build>
           <plugins>
             <plugin>
-              <groupId>com.google.protobuf.tools</groupId>
-              <artifactId>maven-protoc-plugin</artifactId>
+              <groupId>org.xolstice.maven.plugins</groupId>
+              <artifactId>protobuf-maven-plugin</artifactId>
               <version>${maven-protoc-plugin.version}</version>
               <configuration>
                 <protocExecutable>
@@ -365,8 +365,8 @@
         <build>
           <plugins>
             <plugin>
-              <groupId>com.google.protobuf.tools</groupId>
-              <artifactId>maven-protoc-plugin</artifactId>
+              <groupId>org.xolstice.maven.plugins</groupId>
+              <artifactId>protobuf-maven-plugin</artifactId>
               <version>${maven-protoc-plugin.version}</version>
               <configuration>
                 <protocExecutable>
@@ -390,8 +390,8 @@
         <build>
           <plugins>
             <plugin>
-              <groupId>com.google.protobuf.tools</groupId>
-              <artifactId>maven-protoc-plugin</artifactId>
+              <groupId>org.xolstice.maven.plugins</groupId>
+              <artifactId>protobuf-maven-plugin</artifactId>
               <version>${maven-protoc-plugin.version}</version>
               <configuration>
                 <protocExecutable>protoc</protocExecutable>
