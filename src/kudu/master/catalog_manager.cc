@@ -1268,7 +1268,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   int max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
   if (req.num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
     s = Status::InvalidArgument(Substitute("The requested number of tablets is over the "
-                                           "permitted maximum ($0)", max_tablets));
+                                           "maximum permitted at creation time ($0). Additional "
+                                           "tablets may be added by adding range partitions to the "
+                                           "table post-creation.", max_tablets));
     return SetError(MasterErrorPB::TOO_MANY_TABLETS, s);
   }
 

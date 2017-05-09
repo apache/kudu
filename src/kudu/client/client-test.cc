@@ -4083,7 +4083,8 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
       .Create();
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(),
-                      "The requested number of tablets is over the permitted maximum (1)");
+                      "The requested number of tablets is over the "
+                      "maximum permitted at creation time (1)");
 }
 
 // Tests for too many replicas, too few replicas, even replica count, etc.
