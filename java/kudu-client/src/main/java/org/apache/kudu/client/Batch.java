@@ -24,7 +24,7 @@ import java.util.List;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.annotations.InterfaceAudience;
@@ -91,7 +91,7 @@ class Batch extends KuduRpc<BatchResponse> {
         Operation.createAndFillWriteRequestPB(operations);
     rowOperationsSizeBytes = builder.getRowOperations().getRows().size() +
                              builder.getRowOperations().getIndirectData().size();
-    builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
+    builder.setTabletId(UnsafeByteOperations.unsafeWrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
     return builder.build();
   }

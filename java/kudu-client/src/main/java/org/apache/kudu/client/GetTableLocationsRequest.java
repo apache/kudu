@@ -19,7 +19,7 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
@@ -80,10 +80,10 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     builder.setTable(Master.TableIdentifierPB.newBuilder()
         .setTableId(ByteString.copyFromUtf8(tableId)));
     if (startPartitionKey != null) {
-      builder.setPartitionKeyStart(ZeroCopyLiteralByteString.wrap(startPartitionKey));
+      builder.setPartitionKeyStart(UnsafeByteOperations.unsafeWrap(startPartitionKey));
     }
     if (endKey != null) {
-      builder.setPartitionKeyEnd(ZeroCopyLiteralByteString.wrap(endKey));
+      builder.setPartitionKeyEnd(UnsafeByteOperations.unsafeWrap(endKey));
     }
     builder.setMaxReturnedLocations(maxReturnedLocations);
     return builder.build();

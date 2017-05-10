@@ -22,7 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
@@ -55,12 +55,12 @@ public class ColumnRangePredicate {
 
   private void setLowerBoundInternal(byte[] value) {
     this.lowerBound = value;
-    pb.setLowerBound(ZeroCopyLiteralByteString.wrap(this.lowerBound));
+    pb.setLowerBound(UnsafeByteOperations.unsafeWrap(this.lowerBound));
   }
 
   private void setUpperBoundInternal(byte[] value) {
     this.upperBound = value;
-    pb.setInclusiveUpperBound(ZeroCopyLiteralByteString.wrap(this.upperBound));
+    pb.setInclusiveUpperBound(UnsafeByteOperations.unsafeWrap(this.upperBound));
   }
 
   /**

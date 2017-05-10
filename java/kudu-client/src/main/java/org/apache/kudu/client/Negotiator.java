@@ -58,7 +58,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -558,7 +558,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     if (saslClient.hasInitialResponse()) {
       byte[] initialResponse = evaluateChallenge(new byte[0]);
-      builder.setToken(ZeroCopyLiteralByteString.wrap(initialResponse));
+      builder.setToken(UnsafeByteOperations.unsafeWrap(initialResponse));
     }
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
     builder.addSaslMechanismsBuilder().setMechanism(chosenMech);
@@ -573,7 +573,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       throw new IllegalStateException("Not expecting an empty token");
     }
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
-    builder.setToken(ZeroCopyLiteralByteString.wrap(saslToken));
+    builder.setToken(UnsafeByteOperations.unsafeWrap(saslToken));
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_RESPONSE);
     sendSaslMessage(chan, builder.build());
   }
@@ -655,7 +655,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       buf.order(ByteOrder.BIG_ENDIAN);
       buf.putInt(encodedNonce.length);
       buf.put(encodedNonce);
-      builder.setEncodedNonce(ZeroCopyLiteralByteString.wrap(buf.array()));
+      builder.setEncodedNonce(UnsafeByteOperations.unsafeWrap(buf.array()));
     }
 
     RpcHeader.ConnectionContextPB pb = builder.build();

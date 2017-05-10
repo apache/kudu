@@ -651,13 +651,6 @@ Other libraries and headers are internal to Kudu and have no stability guarantee
 .Requirements
 - JDK 7
 - Apache Maven 3.x
-- `protoc` 2.6 or newer installed in your path, or built from the `thirdparty/` directory.
-You can run the following commands to build `protoc` from the third-party dependencies:
-[source,bash]
-----
-$ thirdparty/download-thirdparty.sh
-$ thirdparty/build-thirdparty.sh protobuf
-----
 
 To build the Java client, clone the Kudu Git
 repository, change to the `java` directory, and issue the following command:

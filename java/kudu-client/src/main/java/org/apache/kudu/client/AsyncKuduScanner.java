@@ -39,7 +39,7 @@ import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.slf4j.Logger;
@@ -783,7 +783,7 @@ public final class AsyncKuduScanner {
           NewScanRequestPB.Builder newBuilder = NewScanRequestPB.newBuilder();
           newBuilder.setLimit(limit); // currently ignored
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
-          newBuilder.setTabletId(ZeroCopyLiteralByteString.wrap(tablet.getTabletIdAsBytes()));
+          newBuilder.setTabletId(UnsafeByteOperations.unsafeWrap(tablet.getTabletIdAsBytes()));
           newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());
           newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
@@ -800,16 +800,16 @@ public final class AsyncKuduScanner {
 
           if (isFaultTolerant) {
             if (AsyncKuduScanner.this.lastPrimaryKey.length > 0) {
-              newBuilder.setLastPrimaryKey(ZeroCopyLiteralByteString.copyFrom(lastPrimaryKey));
+              newBuilder.setLastPrimaryKey(UnsafeByteOperations.unsafeWrap(lastPrimaryKey));
             }
           }
 
           if (AsyncKuduScanner.this.startPrimaryKey.length > 0) {
-            newBuilder.setStartPrimaryKey(ZeroCopyLiteralByteString.copyFrom(startPrimaryKey));
+            newBuilder.setStartPrimaryKey(UnsafeByteOperations.unsafeWrap(startPrimaryKey));
           }
 
           if (AsyncKuduScanner.this.endPrimaryKey.length > 0) {
-            newBuilder.setStopPrimaryKey(ZeroCopyLiteralByteString.copyFrom(endPrimaryKey));
+            newBuilder.setStopPrimaryKey(UnsafeByteOperations.unsafeWrap(endPrimaryKey));
           }
 
           for (KuduPredicate pred : predicates.values()) {
@@ -819,12 +819,12 @@ public final class AsyncKuduScanner {
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case NEXT:
-          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
+          builder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId))
                  .setCallSeqId(AsyncKuduScanner.this.sequenceId)
                  .setBatchSizeBytes(batchSizeBytes);
           break;
         case CLOSING:
-          builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
+          builder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId))
                  .setBatchSizeBytes(0)
                  .setCloseScanner(true);
           break;

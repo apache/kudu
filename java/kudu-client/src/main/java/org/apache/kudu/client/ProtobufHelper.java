@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,7 +26,7 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
@@ -77,7 +78,7 @@ public class ProtobufHelper {
       schemaBuilder.setCompression(column.getCompressionAlgorithm().getInternalPbType());
     }
     if (column.getDefaultValue() != null) {
-      schemaBuilder.setReadDefaultValue(ZeroCopyLiteralByteString.wrap(
+      schemaBuilder.setReadDefaultValue(UnsafeByteOperations.unsafeWrap(
           objectToWireFormat(column, column.getDefaultValue())));
     }
     return schemaBuilder.build();
@@ -210,27 +211,28 @@ public class ProtobufHelper {
   }
 
   private static Object byteStringToObject(Type type, ByteString value) {
-    byte[] buf = ZeroCopyLiteralByteString.zeroCopyGetBytes(value);
+    ByteBuffer buf = value.asReadOnlyByteBuffer();
+    buf.order(ByteOrder.LITTLE_ENDIAN);
     switch (type) {
       case BOOL:
-        return Bytes.getBoolean(buf);
+        return buf.get() != 0;
       case INT8:
-        return Bytes.getByte(buf);
+        return buf.get();
       case INT16:
-        return Bytes.getShort(buf);
+        return buf.getShort();
       case INT32:
-        return Bytes.getInt(buf);
+        return buf.getInt();
       case INT64:
       case UNIXTIME_MICROS:
-        return Bytes.getLong(buf);
+        return buf.getLong();
       case FLOAT:
-        return Bytes.getFloat(buf);
+        return buf.getFloat();
       case DOUBLE:
-        return Bytes.getDouble(buf);
+        return buf.getDouble();
       case STRING:
-        return new String(buf, Charsets.UTF_8);
+        return value.toStringUtf8();
       case BINARY:
-        return buf;
+        return value.toByteArray();
       default:
         throw new IllegalArgumentException("This type is unknown: " + type);
     }
@@ -272,7 +274,7 @@ public class ProtobufHelper {
           "column " + colName + " is of class " + value.getClass().getName() +
           " which does not map to a supported Kudu type");
     }
-    return ZeroCopyLiteralByteString.wrap(bytes);
+    return UnsafeByteOperations.unsafeWrap(bytes);
   }
 
   /**

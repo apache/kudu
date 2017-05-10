@@ -26,7 +26,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
-import com.google.protobuf.ZeroCopyLiteralByteString;
+import com.google.protobuf.UnsafeByteOperations;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
@@ -309,10 +309,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       }
 
       if (lowerBoundPrimaryKey.length > 0) {
-        proto.setLowerBoundPrimaryKey(ZeroCopyLiteralByteString.copyFrom(lowerBoundPrimaryKey));
+        proto.setLowerBoundPrimaryKey(UnsafeByteOperations.unsafeWrap(lowerBoundPrimaryKey));
       }
       if (upperBoundPrimaryKey.length > 0) {
-        proto.setUpperBoundPrimaryKey(ZeroCopyLiteralByteString.copyFrom(upperBoundPrimaryKey));
+        proto.setUpperBoundPrimaryKey(UnsafeByteOperations.unsafeWrap(upperBoundPrimaryKey));
       }
 
       proto.setLimit(limit);
@@ -356,9 +356,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         for (LocatedTablet tablet : tablets) {
           Client.ScanTokenPB.Builder builder = proto.clone();
           builder.setLowerBoundPartitionKey(
-              ZeroCopyLiteralByteString.wrap(tablet.getPartition().getPartitionKeyStart()));
+              UnsafeByteOperations.unsafeWrap(tablet.getPartition().getPartitionKeyStart()));
           builder.setUpperBoundPartitionKey(
-              ZeroCopyLiteralByteString.wrap(tablet.getPartition().getPartitionKeyEnd()));
+              UnsafeByteOperations.unsafeWrap(tablet.getPartition().getPartitionKeyEnd()));
           tokens.add(new KuduScanToken(tablet, builder.build()));
         }
         return tokens;

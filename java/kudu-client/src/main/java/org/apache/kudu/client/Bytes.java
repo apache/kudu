@@ -39,8 +39,6 @@ import java.util.BitSet;
 import java.util.Comparator;
 
 import com.google.common.io.BaseEncoding;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
 
@@ -686,15 +684,6 @@ public final class Bytes {
     return b;
   }
 
-  /**
-   * Extracts the byte array from the given {@link ByteString} without copy.
-   * @param buf A buffer from which to extract the array.  This buffer must be
-   * actually an instance of a {@code LiteralByteString}.
-   * @since 1.5
-   */
-  public static byte[] get(final ByteString buf) {
-    return ZeroCopyLiteralByteString.zeroCopyGetBytes(buf);
-  }
   // CHECKSTYLE:OFF
   /** Transforms a string into an UTF-8 encoded byte array.  */
   public static byte[] UTF8(final String s) {
