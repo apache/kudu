@@ -532,20 +532,13 @@ FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
     dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
+    file_cache_("fbm", env_, GetFileCacheCapacityForBlockManager(env_),
+                opts.metric_entity),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
                                            opts.parent_mem_tracker)) {
-
-  int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
-  if (file_cache_capacity != kint64max) {
-    file_cache_.reset(new FileCache<RandomAccessFile>("fbm",
-                                                      env_,
-                                                      file_cache_capacity,
-                                                      opts.metric_entity));
-  }
-
   if (opts.metric_entity) {
     metrics_.reset(new internal::BlockManagerMetrics(opts.metric_entity));
   }
@@ -571,9 +564,7 @@ Status FileBlockManager::Open(FsReport* report) {
   }
   RETURN_NOT_OK(dd_manager_.Open(kMaxPaths, mode));
 
-  if (file_cache_) {
-    RETURN_NOT_OK(file_cache_->Init());
-  }
+  RETURN_NOT_OK(file_cache_.Init());
 
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
@@ -661,11 +652,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
   VLOG(1) << "Opening block with id " << block_id.ToString() << " at " << path;
 
   shared_ptr<RandomAccessFile> reader;
-  if (file_cache_) {
-    RETURN_NOT_OK(file_cache_->OpenExistingFile(path, &reader));
-  } else {
-    RETURN_NOT_OK(env_util::OpenFileForRandom(env_, path, &reader));
-  }
+  RETURN_NOT_OK(file_cache_.OpenExistingFile(path, &reader));
   block->reset(new internal::FileReadableBlock(this, block_id, reader));
   return Status::OK();
 }
@@ -678,11 +665,7 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
     return Status::NotFound(
         Substitute("Block $0 not found", block_id.ToString()));
   }
-  if (file_cache_) {
-    RETURN_NOT_OK(file_cache_->DeleteFile(path));
-  } else {
-    RETURN_NOT_OK(env_->DeleteFile(path));
-  }
+  RETURN_NOT_OK(file_cache_.DeleteFile(path));
 
   // We don't bother fsyncing the parent directory as there's nothing to be
   // gained by ensuring that the deletion is made durable. Even if we did

@@ -37,14 +37,13 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 
 namespace kudu {
 class Env;
-template <class FileType>
-class FileCache;
 class MetricEntity;
 class RWFile;
 class ThreadPool;
@@ -324,7 +323,7 @@ class LogBlockManager : public BlockManager {
                      boost::optional<int64_t>> block_limits_by_data_dir_;
 
   // Manages files opened for reading.
-  std::unique_ptr<FileCache<RWFile>> file_cache_;
+  FileCache<RWFile> file_cache_;
 
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because

@@ -27,14 +27,13 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/file_cache.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 
 namespace kudu {
 
 class Env;
-template <class FileType>
-class FileCache;
 class MemTracker;
 class MetricEntity;
 class RandomAccessFile;
@@ -122,7 +121,7 @@ class FileBlockManager : public BlockManager {
   DataDirManager dd_manager_;
 
   // Manages files opened for reading.
-  std::unique_ptr<FileCache<RandomAccessFile>> file_cache_;
+  FileCache<RandomAccessFile> file_cache_;
 
   // For generating block IDs.
   ThreadSafeRandom rand_;

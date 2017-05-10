@@ -518,22 +518,16 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
     unique_ptr<WritablePBContainerFile> metadata_file;
     shared_ptr<RWFile> cached_data_file;
 
-    if (block_manager->file_cache_) {
-      metadata_writer.reset();
-      shared_ptr<RWFile> cached_metadata_writer;
-      RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
-          metadata_path, &cached_metadata_writer));
-      metadata_file.reset(new WritablePBContainerFile(
-          std::move(cached_metadata_writer)));
+    metadata_writer.reset();
+    shared_ptr<RWFile> cached_metadata_writer;
+    RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+        metadata_path, &cached_metadata_writer));
+    metadata_file.reset(new WritablePBContainerFile(
+        std::move(cached_metadata_writer)));
 
-      data_file.reset();
-      RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
-          data_path, &cached_data_file));
-    } else {
-      metadata_file.reset(new WritablePBContainerFile(
-          std::move(metadata_writer)));
-      cached_data_file = std::move(data_file);
-    }
+    data_file.reset();
+    RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+        data_path, &cached_data_file));
     RETURN_NOT_OK(metadata_file->Init(BlockRecordPB()));
 
     container->reset(new LogBlockContainer(block_manager,
@@ -582,36 +576,17 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
   }
 
   // Open the existing metadata and data files for writing.
+  shared_ptr<RWFile> metadata_file;
+  RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+      metadata_path, &metadata_file));
   unique_ptr<WritablePBContainerFile> metadata_pb_writer;
-  shared_ptr<RWFile> data_file;
-
-  if (block_manager->file_cache_) {
-    shared_ptr<RWFile> metadata_writer;
-    RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
-        metadata_path, &metadata_writer));
-    metadata_pb_writer.reset(new WritablePBContainerFile(
-        std::move(metadata_writer)));
-
-    RETURN_NOT_OK(block_manager->file_cache_->OpenExistingFile(
-        data_path, &data_file));
-  } else {
-    RWFileOptions wr_opts;
-    wr_opts.mode = Env::OPEN_EXISTING;
-
-    unique_ptr<RWFile> metadata_writer;
-    RETURN_NOT_OK(block_manager->env_->NewRWFile(wr_opts,
-                                                 metadata_path,
-                                                 &metadata_writer));
-    metadata_pb_writer.reset(new WritablePBContainerFile(
-        std::move(metadata_writer)));
-
-    unique_ptr<RWFile> uw;
-    RETURN_NOT_OK(block_manager->env_->NewRWFile(wr_opts,
-                                                 data_path,
-                                                 &uw));
-    data_file = std::move(uw);
-  }
+  metadata_pb_writer.reset(new WritablePBContainerFile(
+      std::move(metadata_file)));
   RETURN_NOT_OK(metadata_pb_writer->Reopen());
+
+  shared_ptr<RWFile> data_file;
+  RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+        data_path, &data_file));
 
   uint64_t data_file_size;
   RETURN_NOT_OK(data_file->Size(&data_file_size));
@@ -878,7 +853,16 @@ Status LogBlockContainer::SyncMetadata() {
 }
 
 Status LogBlockContainer::ReopenMetadataWriter() {
-  return metadata_file_->Reopen();
+  shared_ptr<RWFile> f;
+  RETURN_NOT_OK(block_manager_->file_cache_.OpenExistingFile(
+      metadata_file_->filename(), &f));
+  unique_ptr<WritablePBContainerFile> w;
+  w.reset(new WritablePBContainerFile(std::move(f)));
+  RETURN_NOT_OK(w->Reopen());
+
+  RETURN_NOT_OK(metadata_file_->Close());
+  metadata_file_.swap(w);
+  return Status::OK();
 }
 
 Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
@@ -1394,6 +1378,8 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
                                            "log_block_manager",
                                            opts.parent_mem_tracker)),
     dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
+    file_cache_("lbm", env, GetFileCacheCapacityForBlockManager(env),
+                opts.metric_entity),
     blocks_by_block_id_(10,
                         BlockMap::hasher(),
                         BlockMap::key_equal(),
@@ -1403,14 +1389,6 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1) {
   blocks_by_block_id_.set_deleted_key(BlockId());
-
-  int64_t file_cache_capacity = GetFileCacheCapacityForBlockManager(env_);
-  if (file_cache_capacity != kint64max) {
-    file_cache_.reset(new FileCache<RWFile>("lbm",
-                                            env_,
-                                            file_cache_capacity,
-                                            opts.metric_entity));
-  }
 
   // HACK: when running in a test environment, we often instantiate many
   // LogBlockManagers in the same process, eg corresponding to different
@@ -1466,9 +1444,7 @@ Status LogBlockManager::Open(FsReport* report) {
   }
   RETURN_NOT_OK(dd_manager_.Open(kuint32max, mode));
 
-  if (file_cache_) {
-    RETURN_NOT_OK(file_cache_->Init());
-  }
+  RETURN_NOT_OK(file_cache_.Init());
 
   // Establish (and log) block limits for each data directory using kernel,
   // filesystem, and gflags information.
@@ -2088,19 +2064,9 @@ Status LogBlockManager::Repair(
     string data_file_name = StrCat(d, kContainerDataFileSuffix);
     string metadata_file_name = StrCat(d, kContainerMetadataFileSuffix);
 
-    Status data_file_status;
-    Status metadata_file_status;
-    if (file_cache_) {
-      data_file_status = file_cache_->DeleteFile(data_file_name);
-      metadata_file_status = file_cache_->DeleteFile(metadata_file_name);
-    } else {
-      data_file_status = env_->DeleteFile(data_file_name);
-      metadata_file_status = env_->DeleteFile(metadata_file_name);
-    }
-
-    WARN_NOT_OK(data_file_status,
+    WARN_NOT_OK(file_cache_.DeleteFile(data_file_name),
                 "Could not delete dead container data file " + data_file_name);
-    WARN_NOT_OK(metadata_file_status,
+    WARN_NOT_OK(file_cache_.DeleteFile(metadata_file_name),
                 "Could not delete dead container metadata file " + metadata_file_name);
   }
   if (!dead_containers.empty()) {
