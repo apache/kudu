@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <glog/logging.h>
 #include <gmock/gmock.h>
 #include <string>
@@ -29,6 +30,7 @@
 #include "kudu/util/logging_test_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util.h"
 
 using std::string;
 using std::vector;
@@ -115,8 +117,8 @@ class CountingLogger : public google::base::Logger {
     return 0;
   }
 
-  int flush_count_ = 0;
-  int message_count_ = 0;
+  std::atomic<int> flush_count_ = {0};
+  std::atomic<int> message_count_ = {0};
 };
 
 TEST(LoggingTest, TestAsyncLogger) {
@@ -158,6 +160,28 @@ TEST(LoggingTest, TestAsyncLogger) {
   // 'flush' set to true.
   ASSERT_LT(base.flush_count_, kNumMessages * kNumThreads);
   ASSERT_GT(async.app_threads_blocked_count_for_tests(), 0);
+}
+
+TEST(LoggingTest, TestAsyncLoggerAutoFlush) {
+  const int kBuffer = 10000;
+  CountingLogger base;
+  AsyncLogger async(&base, kBuffer);
+
+  FLAGS_logbufsecs = 1;
+  async.Start();
+
+  // Write some log messages with non-force_flush types.
+  async.Write(false, 0, "test-x", 1);
+  async.Write(false, 1, "test-y", 1);
+
+  // The flush wait timeout might take a little bit of time to run.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(base.message_count_, 2);
+    // The AsyncLogger should have flushed at least once by the timer automatically
+    // so there should be no more messages in the buffer.
+    ASSERT_GT(base.flush_count_, 0);
+  });
+  async.Stop();
 }
 
 // Basic test that the redaction utilities work as expected.

@@ -454,6 +454,10 @@ void SetUmask() {
 } // anonymous namespace
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
+  // The logbufsecs default is 30 seconds which is a bit too long.
+  google::SetCommandLineOptionWithMode("logbufsecs", "5",
+                                       google::FlagSettingMode::SET_FLAGS_DEFAULT);
+
   int ret = google::ParseCommandLineNonHelpFlags(argc, argv, remove_flags);
   HandleCommonFlags();
   return ret;
