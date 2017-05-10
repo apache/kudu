@@ -71,7 +71,7 @@ NUM_SAMPLES=${NUM_SAMPLES:-10}
 ################################################################
 
 BENCHMARK_MODE=$MODE_JENKINS # we default to "jenkins mode"
-BASE_DIR=""
+BASE_DIR=$(pwd)
 LOGDIR=""
 OUTDIR=""
 
@@ -90,7 +90,7 @@ usage_and_die() {
 }
 
 ensure_cpu_scaling() {
-  $(dirname $BASH_SOURCE)/ensure_cpu_scaling.sh "$@"
+  $BASE_DIR/src/kudu/scripts/ensure_cpu_scaling.sh "$@"
 }
 
 record_result() {
@@ -615,7 +615,6 @@ run() {
 ################################################################
 
 # Figure out where we are, store in global variables.
-BASE_DIR=$(pwd)
 LOGDIR="$BASE_DIR/$LOG_DIR_NAME"
 OUTDIR="$BASE_DIR/$OUT_DIR_NAME"
 
