@@ -248,7 +248,7 @@ class WebserverNegativeTests : public KuduTest {
     func(&opts);
     Webserver server(opts);
     Status s = server.Start();
-    ASSERT_FALSE(s.ok());
+    ASSERT_FALSE(s.ok()) << s.ToString();
   }
 };
 

@@ -40,6 +40,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -57,6 +58,7 @@ using std::make_pair;
 using std::ostringstream;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 DEFINE_int32(webserver_max_post_length_bytes, 1024 * 1024,
              "The maximum length of a POST request that will be accepted by "
@@ -68,6 +70,12 @@ DEFINE_string(webserver_x_frame_options, "DENY",
               "The webserver will add an 'X-Frame-Options' HTTP header with this value "
               "to all responses. This can help prevent clickjacking attacks.");
 TAG_FLAG(webserver_x_frame_options, advanced);
+
+
+namespace {
+  // Last error message from the webserver.
+  string kWebserverLastErrMsg;
+}  // anonymous namespace
 
 namespace kudu {
 
@@ -233,12 +241,14 @@ Status Webserver::Start() {
   signal(SIGCHLD, sig_chld);
 
   if (context_ == nullptr) {
-    ostringstream error_msg;
-    error_msg << "Webserver: Could not start on address " << http_address_;
     Sockaddr addr;
     addr.set_port(opts_.port);
     TryRunLsof(addr);
-    return Status::NetworkError(error_msg.str());
+    string err_msg = Substitute("Webserver: could not start on address $0", http_address_);
+    if (!kWebserverLastErrMsg.empty()) {
+      err_msg = Substitute("$0: $1", err_msg, kWebserverLastErrMsg);
+    }
+    return Status::RuntimeError(err_msg);
   }
 
   PathHandlerCallback default_callback =
@@ -294,7 +304,16 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
 int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection,
                                         const char* message) {
   if (message != nullptr) {
-    LOG(INFO) << "Webserver: " << message;
+    // Using the ERROR severity for squeasel messages: as per source code at
+    // https://github.com/cloudera/squeasel/blob/\
+    //     c304d3f3481b07bf153979155f02e0aab24d01de/squeasel.c#L392
+    // the squeasel server uses the log callback to report on errors.
+    {
+      static simple_spinlock kErrMsgLock_;
+      std::unique_lock<simple_spinlock> l(kErrMsgLock_);
+      kWebserverLastErrMsg = message;
+    }
+    LOG(ERROR) << "Webserver: " << message;
     return 1;
   }
   return 0;

@@ -46,7 +46,7 @@ class Webserver : public WebCallbackRegistry {
 
   // Starts a webserver on the port passed to the constructor. The webserver runs in a
   // separate thread, so this call is non-blocking.
-  Status Start();
+  Status Start() WARN_UNUSED_RESULT;
 
   // Stops the webserver synchronously.
   void Stop();
