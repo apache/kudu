@@ -90,7 +90,10 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()));
 
   if (pb->block_manager_type() != block_manager_type_) {
-    return Status::IOError("Wrong block manager type", pb->block_manager_type());
+    return Status::IOError(Substitute(
+      "existing data was written using the '$0' block manager; cannot restart "
+      "with a different block manager '$1' without reformatting",
+      pb->block_manager_type(), block_manager_type_));
   }
 
   uint64_t block_size;
