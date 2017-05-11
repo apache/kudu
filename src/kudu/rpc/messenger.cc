@@ -165,11 +165,20 @@ static bool ValidateRpcAuthnFlags() {
     return false;
   }
 
+  const bool has_keytab = !FLAGS_keytab_file.empty();
+  const bool has_cert = !FLAGS_rpc_certificate_file.empty();
+  if (authentication == RpcAuthentication::REQUIRED && !has_keytab && !has_cert) {
+    LOG(ERROR) << "RPC authentication (--rpc_authentication) may not be "
+                  "required unless Kerberos (--keytab_file) or external PKI "
+                  "(--rpc_certificate_file et al) are configured";
+    return false;
+  }
+
   return true;
 }
 GROUP_FLAG_VALIDATOR(rpc_authn_flags, ValidateRpcAuthnFlags);
 
-static bool ValidatePkiFlags() {
+static bool ValidateExternalPkiFlags() {
   bool has_cert = !FLAGS_rpc_certificate_file.empty();
   bool has_key = !FLAGS_rpc_private_key_file.empty();
   bool has_ca = !FLAGS_rpc_ca_certificate_file.empty();
@@ -183,7 +192,7 @@ static bool ValidatePkiFlags() {
 
   return true;
 }
-GROUP_FLAG_VALIDATOR(pki_flags, ValidatePkiFlags);
+GROUP_FLAG_VALIDATOR(external_pki_flags, ValidateExternalPkiFlags);
 
 MessengerBuilder::MessengerBuilder(std::string name)
     : name_(std::move(name)),
