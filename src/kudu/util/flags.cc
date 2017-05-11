@@ -425,7 +425,7 @@ void RunCustomValidators() {
   const auto& validators(GetFlagValidators());
   bool found_inconsistency = false;
   for (const auto& e : validators) {
-    found_inconsistency = !e.second();
+    found_inconsistency |= !e.second();
   }
   if (found_inconsistency) {
     LOG(ERROR) << "Detected inconsistency in command-line flags; exiting";
