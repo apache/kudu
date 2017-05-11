@@ -117,6 +117,9 @@ class RowSet {
   // Estimate the number of bytes on-disk
   virtual uint64_t EstimateOnDiskSize() const = 0;
 
+  // Estimate the number of bytes relevant for compaction.
+  virtual uint64_t EstimateCompactionSize() const = 0;
+
   // Return the lock used for including this DiskRowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
   // the same rowset.
@@ -327,6 +330,8 @@ class DuplicatingRowSet : public RowSet {
                            std::string* max_encoded_key) const OVERRIDE;
 
   uint64_t EstimateOnDiskSize() const OVERRIDE;
+
+  uint64_t EstimateCompactionSize() const OVERRIDE;
 
   string ToString() const OVERRIDE;
 

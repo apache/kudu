@@ -331,12 +331,14 @@ class DiskRowSet : public RowSet {
   // Estimate the number of bytes on-disk for the base data.
   uint64_t EstimateBaseDataDiskSize() const;
 
-  // Estimate the number of bytes on-disk for the delta stores.
-  uint64_t EstimateDeltaDiskSize() const;
+  // Estimate the number of bytes on-disk of REDO deltas.
+  uint64_t EstimateRedoDeltaDiskSize() const;
 
-  // Estimate the total number of bytes on-disk, excluding the bloom files and the ad hoc index.
-  // TODO Offer a version that has the real total disk space usage.
+  // Estimate the total number of bytes on-disk. Excludes the bloom files and the ad hoc index.
+  // TODO(wdberkeley) Offer a version that has the real total disk space usage. See KUDU-1755.
   uint64_t EstimateOnDiskSize() const OVERRIDE;
+
+  uint64_t EstimateCompactionSize() const OVERRIDE;
 
   size_t DeltaMemStoreSize() const OVERRIDE;
 

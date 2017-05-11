@@ -680,16 +680,22 @@ uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {
   return base_data_->EstimateOnDiskSize();
 }
 
-uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
+uint64_t DiskRowSet::EstimateRedoDeltaDiskSize() const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
-  return delta_tracker_->EstimateOnDiskSize();
+  return delta_tracker_->EstimateRedoDeltaOnDiskSize();
 }
 
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
   return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateOnDiskSize();
+}
+
+uint64_t DiskRowSet::EstimateCompactionSize() const {
+  DCHECK(open_);
+  shared_lock<rw_spinlock> l(component_lock_);
+  return base_data_->EstimateOnDiskSize() + delta_tracker_->EstimateRedoDeltaOnDiskSize();
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {
@@ -739,7 +745,7 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
     delta_tracker_->GetColumnIdsWithUpdates(&col_ids_with_updates);
     // If we have files but no updates, we don't want to major compact.
     if (!col_ids_with_updates.empty()) {
-      double ratio = static_cast<double>(EstimateDeltaDiskSize()) / base_data_size;
+      double ratio = static_cast<double>(EstimateRedoDeltaDiskSize()) / base_data_size;
       if (ratio >= FLAGS_tablet_delta_store_major_compact_min_ratio) {
         perf_improv = ratio;
       }

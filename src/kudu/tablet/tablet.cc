@@ -146,12 +146,9 @@ METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          "Size of this tablet's memrowset");
 METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          kudu::MetricUnit::kBytes,
-                         "Size of this tablet on disk.");
+                         "Space used by this tablet's data blocks.");
 
-using base::subtle::Barrier_AtomicIncrement;
 using kudu::MaintenanceManager;
-using kudu::consensus::OpId;
-using kudu::consensus::MaximumOpId;
 using kudu::log::LogAnchorRegistry;
 using kudu::server::HybridClock;
 using std::shared_ptr;
@@ -1470,7 +1467,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   if (input.num_rowsets() > 1) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_compaction);
   } else if (input.num_rowsets() == 1 &&
-             input.rowsets()[0]->EstimateOnDiskSize() == 0) {
+             input.rowsets()[0]->EstimateCompactionSize() == 0) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_flush_mrs);
   }
 

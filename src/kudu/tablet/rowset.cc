@@ -208,11 +208,19 @@ Status DuplicatingRowSet::GetBounds(string* min_encoded_key,
 }
 
 uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
+  uint64_t size = 0;
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
+    size += rs->EstimateOnDiskSize();
+  }
+  return size;
+}
+
+uint64_t DuplicatingRowSet::EstimateCompactionSize() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
   uint64_t size = 0;
   for (const shared_ptr<RowSet> &rs : new_rowsets_) {
-    size += rs->EstimateOnDiskSize();
+    size += rs->EstimateCompactionSize();
   }
   return size;
 }

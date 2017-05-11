@@ -216,7 +216,11 @@ class DeltaTracker {
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;
 
+  // Estimate the number of bytes on disk of all delta blocks.
   uint64_t EstimateOnDiskSize() const;
+
+  // Estimate the number of bytes on disk of REDO deltas.
+  uint64_t EstimateRedoDeltaOnDiskSize() const;
 
   // Retrieves the list of column indexes that currently have updates.
   void GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const;

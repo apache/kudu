@@ -569,5 +569,45 @@ TEST_F(TestRowSet, TestGCAncientStores) {
   ASSERT_EQ(0, dt->CountRedoDeltaStores());
 }
 
+TEST_F(TestRowSet, TestDiskSizeEstimation) {
+  // Force the files to be opened so the stats are read.
+  FLAGS_cfile_lazy_open = false;
+
+  // Write a rowset.
+  WriteTestRowSet();
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_OK(OpenTestRowSet(&rs));
+
+  // Write a first delta file.
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
+  ASSERT_OK(rs->FlushDeltas());
+
+  // The rowset consists of base data and REDO deltas, so
+  // 1. the delta tracker's on-disk estimate should be the same as the on-disk estimate for REDOs.
+  // 2. the rowset's on-disk estimate and the sum of the base data and REDO estimates should equal.
+  ASSERT_EQ(rs->delta_tracker()->EstimateOnDiskSize(),
+            rs->delta_tracker()->EstimateRedoDeltaOnDiskSize());
+  ASSERT_EQ(rs->EstimateOnDiskSize(),
+            rs->EstimateBaseDataDiskSize() + rs->EstimateRedoDeltaDiskSize());
+
+  // Convert the REDO delta to an UNDO delta.
+  // REDO size should be zero, but there should be UNDOs, so the on-disk size of the rowset
+  // should be larger than the base data.
+  ASSERT_OK(rs->MajorCompactDeltaStores(HistoryGcOpts::Disabled()));
+  ASSERT_EQ(0, rs->EstimateRedoDeltaDiskSize());
+  ASSERT_GT(rs->EstimateOnDiskSize(), rs->EstimateBaseDataDiskSize());
+
+  // Write a second delta file.
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
+  ASSERT_OK(rs->FlushDeltas());
+
+  // There's base data, REDOs, and UNDOs, so the delta tracker and rowset's sizes should be larger
+  // than estimates counting only base data and REDOs.
+  ASSERT_GT(rs->delta_tracker()->EstimateOnDiskSize(),
+            rs->delta_tracker()->EstimateRedoDeltaOnDiskSize());
+  ASSERT_GT(rs->EstimateOnDiskSize(),
+            rs->EstimateBaseDataDiskSize() + rs->EstimateRedoDeltaDiskSize());
+}
+
 } // namespace tablet
 } // namespace kudu

@@ -740,6 +740,18 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
     size += ds->EstimateSize();
   }
+  for (const shared_ptr<DeltaStore>& ds : undo_delta_stores_) {
+    size += ds->EstimateSize();
+  }
+  return size;
+}
+
+uint64_t DeltaTracker::EstimateRedoDeltaOnDiskSize() const {
+  shared_lock<rw_spinlock> lock(component_lock_);
+  uint64_t size = 0;
+  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
+    size += ds->EstimateSize();
+  }
   return size;
 }
 

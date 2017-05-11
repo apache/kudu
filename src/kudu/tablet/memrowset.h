@@ -237,6 +237,10 @@ class MemRowSet : public RowSet,
     return 0;
   }
 
+  uint64_t EstimateCompactionSize() const OVERRIDE {
+    return 0;
+  }
+
   std::mutex *compact_flush_lock() OVERRIDE {
     return &compact_flush_lock_;
   }

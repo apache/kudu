@@ -79,6 +79,10 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
+  virtual uint64_t EstimateCompactionSize() const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+  }
   virtual std::mutex *compact_flush_lock() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return NULL;
@@ -161,6 +165,10 @@ class MockDiskRowSet : public MockRowSet {
   }
 
   virtual uint64_t EstimateOnDiskSize() const OVERRIDE {
+    return size_;
+  }
+
+  virtual uint64_t EstimateCompactionSize() const OVERRIDE {
     return size_;
   }
 
