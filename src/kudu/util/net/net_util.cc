@@ -289,10 +289,9 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
       "done",
       addr.port());
 #endif // defined(__APPLE__)
-
-  LOG_STRING(WARNING, log) << "Failed to bind to " << addr.ToString() << ". "
-                           << "Trying to use lsof to find any processes listening "
-                           << "on the same port:";
+  LOG_STRING(WARNING, log)
+      << "Trying to use lsof to find any processes listening on "
+      << addr.ToString();
   LOG_STRING(INFO, log) << "$ " << cmd;
   vector<string> argv = { "bash", "-c", cmd };
   string results;
