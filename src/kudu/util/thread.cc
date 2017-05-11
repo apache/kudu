@@ -371,14 +371,15 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     }
 
     (*output) << "<table class='table table-hover table-border'>";
-    (*output) << "<tr><th>Thread name</th><th>Cumulative User CPU(s)</th>"
+    (*output) << "<thead><tr><th>Thread name</th><th>Cumulative User CPU(s)</th>"
               << "<th>Cumulative Kernel CPU(s)</th>"
-              << "<th>Cumulative IO-wait(s)</th></tr>";
+              << "<th>Cumulative IO-wait(s)</th></tr></thead>";
+    (*output) << "<tbody>\n";
 
     for (const ThreadCategory* category : categories_to_print) {
       PrintThreadCategoryRows(*category, output);
     }
-    (*output) << "</table>";
+    (*output) << "</tbody></table>";
   } else {
     (*output) << "<h2>Thread Groups</h2>";
     if (metrics_enabled_) {

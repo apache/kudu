@@ -440,6 +440,8 @@ const char* const PAGE_HEADER = "<!DOCTYPE html>"
 "   <head><title>Kudu</title>"
 " <meta charset='utf-8'/>"
 " <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
+" <script src='/jquery-1.11.1.min.js' defer></script>"
+" <script src='/bootstrap/js/bootstrap.min.js' defer></script>"
 " <link href='/kudu.css' rel='stylesheet' />"
 " </head>"
 " <body>";

@@ -170,8 +170,9 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
 
   *output << "<h1>Memory usage by subsystem</h1>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"
-      "<th>Peak consumption</th></tr>\n";
+  *output << "  <thead><tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"
+      "<th>Peak consumption</th></tr></thead>\n";
+  *output << "<tbody>\n";
 
   vector<shared_ptr<MemTracker> > trackers;
   MemTracker::ListTrackers(&trackers);
@@ -186,7 +187,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
                             tracker->id(), parent, limit_str, current_consumption_str,
                             peak_consumption_str);
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 }
 
 void AddDefaultPathHandlers(Webserver* webserver) {

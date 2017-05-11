@@ -34,12 +34,12 @@ namespace kudu {
 void HtmlOutputSchemaTable(const Schema& schema,
                            std::ostringstream* output) {
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr>"
+  *output << "  <thead><tr>"
           << "<th>Column</th><th>ID</th><th>Type</th>"
           << "<th>Encoding</th><th>Compression</th>"
           << "<th>Read default</th><th>Write default</th>"
-          << "</tr>\n";
-
+          << "</tr></thead>\n";
+  *output << "<tbody>";
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
     string read_default = "-";
@@ -63,7 +63,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
                           EscapeForHtmlToString(read_default),
                           EscapeForHtmlToString(write_default));
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 }
 
 void HtmlOutputImpalaSchema(const std::string& table_name,

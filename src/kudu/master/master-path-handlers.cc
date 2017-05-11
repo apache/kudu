@@ -99,12 +99,13 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 
   *output << "<h3>Version Summary</h3>";
   *output << "<table class='table table-striped'>\n";
-  *output << "<tr><th>Version</th><th>Count (Live)</th><th>Count (Dead)</th></tr>\n";
+  *output << "<thead><tr><th>Version</th><th>Count (Live)</th><th>Count (Dead)</th></tr></thead>\n";
+  *output << "<tbody>\n";
   for (const auto& entry : version_counts) {
     *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
                           entry.first, entry.second[0], entry.second[1]);
   }
-  *output << "</table>";
+  *output << "</tbody></table>\n";
 
   *output << "<h3>" << "Registrations" << "</h3>\n";
   auto generate_table = [](const vector<string>& rows,
@@ -113,9 +114,11 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
     if (!rows.empty()) {
       *output << "<h4>" << header << "</h4>\n";
       *output << "<table class='table table-striped'>\n";
-      *output << "<tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
+      *output << "<thead><tr><th>UUID</th><th>Time since heartbeat</th>"
+          "<th>Registration</th></tr></thead>\n";
+      *output << "<tbody>\n";
       *output << JoinStrings(rows, "\n");
-      *output << "</table>\n";
+      *output << "</tbody></table>\n";
     }
   };
   generate_table(live_tserver_rows, "Live Tablet Servers", output);
@@ -135,9 +138,10 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   std::vector<scoped_refptr<TableInfo>> tables;
   master_->catalog_manager()->GetAllTables(&tables);
 
+  *output << Substitute("There are $0 tables\n", tables.size());
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Table Name</th><th>Table Id</th>" <<
-      "<th>State</th><th>State Message</th></tr>\n";
+  *output << "  <thead><tr><th>Table Name</th><th>Table Id</th>" <<
+      "<th>State</th><th>State Message</th></tr></thead>\n";
   typedef std::map<string, string> StringMap;
   StringMap ordered_tables;
   for (const scoped_refptr<TableInfo>& table : tables) {
@@ -155,10 +159,11 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()));
   }
+  *output << "<tbody>\n";
   for (const StringMap::value_type& table : ordered_tables) {
     *output << table.second;
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 }
 
 namespace {
@@ -183,7 +188,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   // Parse argument.
   string table_id;
   if (!FindCopy(req.parsed_args, "id", &table_id)) {
-    // TODO: webserver should give a way to return a non-200 response code
+    // TODO(wdb): webserver should give a way to return a non-200 response code
     *output << "Missing 'id' argument";
     return;
   }
@@ -239,18 +244,24 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << "<h3>Schema</h3>";
   HtmlOutputSchemaTable(schema, output);
 
-  // Prepare the tablets table first because the tablet partition information is
-  // also used to make the range bounds.
+  // Visit (& lock) each tablet once to build the partition schema, tablets summary,
+  // and tablets detail tables all at once.
   std::vector<string> range_partitions;
-  std::ostringstream tablets_output;
-  tablets_output << "<h3>Tablets</h3>";
-  tablets_output << "<table class='table table-striped'>\n";
-  tablets_output << "  <tr><th>Tablet ID</th>"
+  map<string, int> summary_states;
+  std::ostringstream detail_output;
+
+  detail_output << "<h4>Detail</h4>\n";
+  detail_output << "<a href='#detail' data-toggle='collapse'>(toggle)</a>";
+  detail_output << "<div id='detail' class='collapse'>\n";
+  detail_output << "<table class='table table-striped table-hover'>\n";
+  detail_output << "  <thead><tr><th>Tablet ID</th>"
                  << partition_schema.PartitionTableHeader(schema)
-                 << "<th>State</th><th>Message</th><th>Peers</th></tr>\n";
+                 << "<th>State</th><th>Message</th><th>Peers</th></tr></thead>\n";
+  detail_output << "<tbody>\n";
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+    summary_states[SysTabletsEntryPB_State_Name(l.data().pb.state())]++;
     if (l.data().pb.has_committed_consensus_state()) {
       const ConsensusStatePB& cstate = l.data().pb.committed_consensus_state();
       for (const auto& peer : cstate.config().peers()) {
@@ -298,7 +309,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    tablets_output << Substitute(
+    detail_output << Substitute(
         "<tr><th>$0</th>$1<td>$2</td><td>$3</td><td>$4</td></tr>\n",
         tablet->tablet_id(),
         partition_schema.PartitionTableEntry(schema, partition),
@@ -306,7 +317,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(l.data().pb.state_msg()),
         raft_config_html.str());
   }
-  tablets_output << "</table>\n";
+  detail_output << "</tbody></table></div>\n";
 
   // Write out the partition schema and range bound information...
   *output << "<h3>Partition Schema</h3>";
@@ -314,8 +325,21 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << EscapeForHtmlToString(partition_schema.DisplayString(schema, range_partitions));
   *output << "</pre>";
 
-  // ...then the tablets table.
-  *output << tablets_output.str();
+  // ...then the summary table...
+  *output << "<h3>Tablets</h3>";
+  *output << "<h4>Summary</h4>\n";
+  *output << "<table class='table table-striped'>\n";
+  *output << "<thead><tr><th>State</th><th>Count</th><th>Percentage</th></tr></thead>";
+  *output << "<tbody>\n";
+  for (const auto& entry : summary_states) {
+    double percentage = tablets.size() == 0 ? 0.0 : (100.0 * entry.second) / tablets.size();
+    *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
+                                 entry.first, entry.second, StringPrintf("%.2f", percentage));
+  }
+  *output << "</tbody></table>\n";
+
+  // ...and finally the tablet detail table.
+  *output << detail_output.str();
 
   *output << "<h3>Impala CREATE TABLE statement</h3>\n";
   string master_addresses;
@@ -357,8 +381,8 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
   }
   *output << "<h1> Masters </h1>\n";
   *output <<  "<table class='table table-striped'>\n";
-  *output <<  "  <tr><th>UUID</th><th>Role</th><th>Registration</th></tr>\n";
-
+  *output <<  "  <thead><tr><th>UUID</th><th>Role</th><th>Registration</th></tr></thead>\n";
+  *output << "<tbody>\n";
   for (const ServerEntryPB& master : masters) {
     if (master.has_error()) {
       Status error = StatusFromPB(master.error());
@@ -378,7 +402,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
         reg_str);
   }
 
-  *output << "</table>";
+  *output << "</tbody></table>";
 }
 
 namespace {

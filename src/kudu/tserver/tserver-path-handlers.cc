@@ -18,6 +18,7 @@
 #include "kudu/tserver/tserver-path-handlers.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -32,6 +33,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -52,6 +54,7 @@ using kudu::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
+using kudu::tablet::TabletStatePB;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
 using std::endl;
@@ -120,9 +123,10 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
   if (!as_text) {
     *output << "<h1>Transactions</h1>\n";
     *output << "<table class='table table-striped'>\n";
-    *output << "   <tr><th>Tablet id</th><th>Op Id</th>"
+    *output << "   <thead><tr><th>Tablet id</th><th>Op Id</th>"
       "<th>Transaction Type</th><th>"
-      "Total time in-flight</th><th>Description</th></tr>\n";
+      "Total time in-flight</th><th>Description</th></tr></thead>\n";
+    *output << "<tbody>\n";
   }
 
   for (const scoped_refptr<TabletReplica>& replica : replicas) {
@@ -163,7 +167,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
   }
 
   if (!as_text) {
-    *output << "</table>\n";
+    *output << "</tbody></table>\n";
   }
 }
 
@@ -189,14 +193,42 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                      std::make_pair(rep_b->tablet_metadata()->table_name(), rep_b->tablet_id());
             });
 
-  auto generate_table = [this](const string& header,
-                               const vector<scoped_refptr<TabletReplica>>& replicas,
-                               ostream* output) {
+  // For assigning ids to table divs;
+  int i = 0;
+  auto generate_table = [this, &i](const string& header,
+                                   const vector<scoped_refptr<TabletReplica>>& replicas,
+                                   ostream* output) {
+    i++;
     *output << "<h3>" << header << "</h3>\n";
-    *output << "<table class='table table-striped'>\n";
-    *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
-         "<th>Partition</th>"
-         "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
+
+    *output << "<h4>Summary</h4>\n";
+    map<string, int> tablet_statuses;
+    for (const scoped_refptr<TabletReplica>& replica : replicas) {
+      tablet_statuses[TabletStatePB_Name(replica->state())]++;
+    }
+    *output << "<table class='table table-striped table-hover'>\n";
+    *output << "<thead><tr><th>Status</th><th>Count</th><th>Percentage</th></tr></thead>\n";
+    *output << "<tbody>\n";
+    for (const auto& entry : tablet_statuses) {
+      double percent = replicas.size() == 0 ? 0 : (100.0 * entry.second) / replicas.size();
+      *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
+                            entry.first,
+                            entry.second,
+                            StringPrintf("%.2f", percent));
+    }
+    *output << "</tbody>\n";
+    *output << Substitute("<tfoot><tr><td>Total</td><td>$0</td><td></td></tr></tfoot>\n",
+                          replicas.size());
+    *output << "</table>\n";
+
+    *output << "<h4>Detail</h4>";
+    *output << Substitute("<a href='#detail$0' data-toggle='collapse'>(toggle)</a>\n", i);
+    *output << Substitute("<div id='detail$0' class='collapse'>\n", i);
+    *output << "<table class='table table-striped table-hover'>\n";
+    *output << "<thead><tr><th>Table name</th><th>Tablet ID</th>"
+        "<th>Partition</th><th>State</th><th>Write buffer memory usage</th>"
+        "<th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr></thead>\n";
+    *output << "<tbody>\n";
     for (const scoped_refptr<TabletReplica>& replica : replicas) {
       TabletStatusPB status;
       replica->GetTabletStatusPB(&status);
@@ -208,6 +240,11 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
       } else {
         tablet_id_or_link = EscapeForHtmlToString(id);
       }
+      string mem_bytes = "";
+      if (replica->tablet() != nullptr) {
+        mem_bytes = HumanReadableNumBytes::ToString(
+            replica->tablet()->mem_tracker()->consumption());
+      }
       string n_bytes = "";
       if (status.has_estimated_on_disk_size()) {
         n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
@@ -217,23 +254,22 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                                  .PartitionDebugString(replica->tablet_metadata()->partition(),
                                                        replica->tablet_metadata()->schema());
 
-      // TODO(unknown): would be nice to include some other stuff like memory usage
       scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
       (*output) << Substitute(
           // Table name, tablet id, partition
           "<tr><td>$0</td><td>$1</td><td>$2</td>"
           // State, on-disk size, consensus configuration, last status
-          "<td>$3</td><td>$4</td><td>$5</td><td>$6</td></tr>\n",
+          "<td>$3</td><td>$4</td><td>$5</td><td>$6</td><td>$7</td></tr>\n",
           EscapeForHtmlToString(table_name), // $0
           tablet_id_or_link, // $1
           EscapeForHtmlToString(partition), // $2
-          EscapeForHtmlToString(replica->HumanReadableState()), n_bytes, // $3, $4
+          EscapeForHtmlToString(replica->HumanReadableState()), mem_bytes, n_bytes, // $3, $4, $5
           consensus ? ConsensusStatePBToHtml(consensus->
               ConsensusState(CONSENSUS_CONFIG_COMMITTED))
-                    : "", // $5
-          EscapeForHtmlToString(status.last_status())); // $6
+                    : "", // $6
+          EscapeForHtmlToString(status.last_status())); // $7
     }
-    *output << "</table>\n";
+    *output << "<tbody></table>\n</div>\n";
   };
 
   vector<scoped_refptr<TabletReplica>> live_replicas;
@@ -434,16 +470,17 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
                                                std::ostringstream* output) {
   *output << "<h1>Scans</h1>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "<tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
+  *output << "<thead><tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
       "<th>Time since last update</th><th>Requestor</th><th>Iterator Stats</th>"
-      "<th>Pushed down key predicates</th><th>Other predicates</th></tr>\n";
+      "<th>Pushed down key predicates</th><th>Other predicates</th></tr></thead>\n";
+  *output << "<tbody>\n";
 
   vector<SharedScanner> scanners;
   tserver_->scanner_manager()->ListScanners(&scanners);
   for (const SharedScanner& scanner : scanners) {
     *output << ScannerToHtml(*scanner);
   }
-  *output << "</table>";
+  *output << "</tbody></table>";
 }
 
 string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
@@ -534,13 +571,15 @@ void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest&
 
   *output << "<h3>Dashboards</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Dashboard</th><th>Description</th></tr>\n";
+  *output << "  <thead><tr><th>Dashboard</th><th>Description</th></tr></thead>\n";
+  *output << "  <tbody\n";
   *output << GetDashboardLine("scans", "Scans", "List of scanners that are currently running.");
   *output << GetDashboardLine("transactions", "Transactions", "List of transactions that are "
                                                               "currently running.");
   *output << GetDashboardLine("maintenance-manager", "Maintenance Manager",
                               "List of operations that are currently running and those "
                               "that are registered.");
+  *output << "</tbody></table>\n";
 }
 
 string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
@@ -567,7 +606,8 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
   *output << "<h1>Maintenance Manager state</h1>\n";
   *output << "<h3>Running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Name</th><th>Instances running</th></tr>\n";
+  *output << "  <thead><tr><th>Name</th><th>Instances running</th></tr></thead>\n";
+  *output << "<tbody>\n";
   for (int i = 0; i < ops_count; i++) {
     MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
     if (op_pb.running() > 0) {
@@ -576,11 +616,13 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
                              op_pb.running());
     }
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 
   *output << "<h3>Recent completed operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Name</th><th>Duration</th><th>Time since op started</th></tr>\n";
+  *output << "  <thead><tr><th>Name</th><th>Duration</th>"
+      "<th>Time since op started</th></tr></thead>\n";
+  *output << "<tbody>\n";
   for (int i = 0; i < pb.completed_operations_size(); i++) {
     MaintenanceManagerStatusPB_CompletedOpPB op_pb = pb.completed_operations(i);
     *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
@@ -590,12 +632,13 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
                            HumanReadableElapsedTime::ToShortString(
                                op_pb.secs_since_start()));
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 
   *output << "<h3>Non-running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Name</th><th>Runnable</th><th>RAM anchored</th>\n"
-          << "       <th>Logs retained</th><th>Perf</th></tr>\n";
+  *output << "  <thead><tr><th>Name</th><th>Runnable</th><th>RAM anchored</th>\n"
+          << "       <th>Logs retained</th><th>Perf</th></tr></thead>\n";
+  *output << "<tbody>\n";
   for (int i = 0; i < ops_count; i++) {
     MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
     if (op_pb.running() == 0) {
@@ -607,7 +650,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
                             op_pb.perf_improvement());
     }
   }
-  *output << "</table>\n";
+  *output << "</tbody></table>\n";
 }
 
 } // namespace tserver
