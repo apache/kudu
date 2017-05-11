@@ -693,12 +693,7 @@ Before upgrading, you should read the link:release_notes.html[Release Notes] for
 the version of Kudu that you are about to install. Pay close attention to the
 incompatibilities, upgrade, and downgrade notes that are documented there.
 
-Additionally, during the beta period:
-
-- Upgrades are only supported when going from the previous latest version to
-  the newest released version.
-
-- Rolling upgrades are not supported. Please shut down all Kudu services before
+NOTE: Currently rolling upgrades are not supported. Please shut down all Kudu services before
   upgrading the software.
 
 [[upgrade_procedure]]
