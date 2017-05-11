@@ -28,10 +28,12 @@
 
 DEFINE_string(grouped_0, "", "First flag to set.");
 DEFINE_string(grouped_1, "", "Second flag to set.");
+DEFINE_string(grouped_2, "", "Third flag to set.");
+DEFINE_string(grouped_3, "", "Fourth flag to set.");
 
 namespace kudu {
 
-static bool CheckGroupedFlags() {
+static bool CheckGroupedFlags01() {
   const bool is_set_0 = !FLAGS_grouped_0.empty();
   const bool is_set_1 = !FLAGS_grouped_1.empty();
 
@@ -42,7 +44,20 @@ static bool CheckGroupedFlags() {
 
   return true;
 }
-GROUP_FLAG_VALIDATOR(test_group_validator, CheckGroupedFlags)
+GROUP_FLAG_VALIDATOR(test_group_validator01, CheckGroupedFlags01)
+
+static bool CheckGroupedFlags23() {
+  const bool is_set_2 = !FLAGS_grouped_2.empty();
+  const bool is_set_3 = !FLAGS_grouped_3.empty();
+
+  if (is_set_2 != is_set_3) {
+    LOG(ERROR) << "--grouped_2 and --grouped_3 must be set as a group";
+    return false;
+  }
+
+  return true;
+}
+GROUP_FLAG_VALIDATOR(test_group_validator23, CheckGroupedFlags23)
 
 class FlagsValidatorsBasicTest : public KuduTest {
  public:
@@ -55,8 +70,10 @@ class FlagsValidatorsBasicTest : public KuduTest {
 
 TEST_F(FlagsValidatorsBasicTest, Grouped) {
   const auto& validators = GetFlagValidators();
-  ASSERT_EQ(1, validators.size());
-  const auto& validator = validators.begin()->second;
+  ASSERT_EQ(2, validators.size());
+  const auto& it = validators.find("test_group_validator01");
+  ASSERT_NE(validators.end(), it);
+  const auto& validator = it->second;
   EXPECT_TRUE(validator());
   FLAGS_grouped_0 = "0";
   EXPECT_FALSE(validator());
@@ -117,6 +134,16 @@ TEST_F(FlagsValidatorsDeathTest, GroupedSuccessSimple) {
       "--grouped_1=",
       "--grouped_0=",
     },
+    {
+      "argv_set_4",
+      "--grouped_2=2",
+      "--grouped_3=3",
+    },
+    {
+      "argv_set_5",
+      "--grouped_3=",
+      "--grouped_2=",
+    },
   };
   for (auto argv : argv_sets) {
     RunSuccess(argv, kArgvSize);
@@ -133,6 +160,52 @@ TEST_F(FlagsValidatorsDeathTest, GroupedFailureSimple) {
     {
       "argv_set_1",
       "--grouped_1=b",
+    },
+    {
+      "argv_set_2",
+      "--grouped_2=2",
+    },
+    {
+      "argv_set_3",
+      "--grouped_3=3",
+    },
+  };
+  for (auto argv : argv_sets) {
+    RunFailure(argv, kArgvSize);
+  }
+}
+
+// Test for correct behavior when only one of two group validators is failing.
+TEST_F(FlagsValidatorsDeathTest, GroupedFailureOneOfTwoValidators) {
+  static const size_t kArgvSize = 4 + 1;
+  const char* argv_sets[][kArgvSize] = {
+    {
+      "argv_set_0",
+      "--grouped_0=0",
+      "--grouped_1=1",
+      "--grouped_2=",
+      "--grouped_3=3",
+    },
+    {
+      "argv_set_1",
+      "--grouped_2=",
+      "--grouped_3=3",
+      "--grouped_0=0",
+      "--grouped_1=1",
+    },
+    {
+      "argv_set_2",
+      "--grouped_0=0",
+      "--grouped_1=",
+      "--grouped_2=2",
+      "--grouped_3=3",
+    },
+    {
+      "argv_set_3",
+      "--grouped_3=3",
+      "--grouped_2=2",
+      "--grouped_1=1",
+      "--grouped_0=",
     },
   };
   for (auto argv : argv_sets) {
