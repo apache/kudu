@@ -16,6 +16,7 @@
 // under the License.
 //
 // Test protocol for kudu RPC.
+syntax = "proto2";
 package kudu.rpc_test;
 
 import "kudu/rpc/rpc_header.proto";

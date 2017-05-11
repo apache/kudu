@@ -16,7 +16,7 @@
 // under the License.
 
 // Protobufs which are specific to client implementations.
-
+syntax = "proto2";
 package kudu.client;
 
 option java_package = "org.apache.kudu.client";

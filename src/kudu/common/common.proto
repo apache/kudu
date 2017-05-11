@@ -23,6 +23,7 @@
 // in common/wire_protocol.proto instead. If it is only used within
 // the server(s), it should go in cfile/cfile.proto, server/metadata.proto,
 // etc, as appropriate.
+syntax = "proto2";
 package kudu;
 
 option java_package = "org.apache.kudu";
