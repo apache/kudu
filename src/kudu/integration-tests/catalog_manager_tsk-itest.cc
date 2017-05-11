@@ -52,11 +52,12 @@ class CatalogManagerTskITest : public KuduTest {
         num_tservers_(1),
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
         hb_interval_ms_(32),
+        run_time_seconds_(5)
 #else
         hb_interval_ms_(16),
+        run_time_seconds_(AllowSlowTests() ? 100 : 5)
 #endif
-        run_time_seconds_(AllowSlowTests() ? 300 : 10) {
-
+        {
     cluster_opts_.num_masters = num_masters_;
     cluster_opts_.master_rpc_ports = { 11030, 11031, 11032 };
     cluster_opts_.num_tablet_servers = num_tservers_;
@@ -64,6 +65,11 @@ class CatalogManagerTskITest : public KuduTest {
     // Add common flags for both masters and tservers.
     const vector<string> common_flags = {
       Substitute("--raft_heartbeat_interval_ms=$0", hb_interval_ms_),
+      // Added a workaround for memory accounting bug, otherwise the assertion
+      // from MemTracker destructor fires in rare cases. Since the memory
+      // accounting code is slated for revamping, let's disable the memory
+      // tracking for this test.
+      "--tablet_transaction_memory_limit_mb=-1",
     };
     copy(common_flags.begin(), common_flags.end(),
         back_inserter(cluster_opts_.extra_master_flags));
@@ -79,7 +85,6 @@ class CatalogManagerTskITest : public KuduTest {
       "--leader_failure_max_missed_heartbeat_periods=1.0",
       "--master_non_leader_masters_propagate_tsk",
       "--tsk_rotation_seconds=2",
-      Substitute("--authn_token_validity_seconds=$0", run_time_seconds_),
     };
     copy(master_flags.begin(), master_flags.end(),
         back_inserter(cluster_opts_.extra_master_flags));
@@ -101,7 +106,7 @@ class CatalogManagerTskITest : public KuduTest {
     using ::kudu::client::sp::shared_ptr;
     static const char* kTableName = "test-table";
     // Using the setting for both RPC and admin operation timeout.
-    const MonoDelta timeout = MonoDelta::FromSeconds(run_time_seconds_);
+    const MonoDelta timeout = MonoDelta::FromSeconds(600);
     KuduClientBuilder builder;
     builder.default_admin_operation_timeout(timeout).default_rpc_timeout(timeout);
     shared_ptr<KuduClient> client;
