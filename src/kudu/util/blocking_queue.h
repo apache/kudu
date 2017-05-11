@@ -99,8 +99,13 @@ class BlockingQueue {
     return true;
   }
 
-  // Get all elements from the queue and append them to a
-  // vector. Returns false if shutdown prior to getting the elements.
+  // Get all elements from the queue and append them to a vector.
+  //
+  // If the queue has been shut down, but there are still elements waiting,
+  // then it returns those elements as if the queue were not yet shut down.
+  //
+  // Returns false if the queue has been shut down and has no more remaining
+  // elements.
   bool BlockingDrainTo(std::vector<T>* out) {
     MutexLock l(lock_);
     while (true) {

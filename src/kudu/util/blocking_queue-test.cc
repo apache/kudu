@@ -65,6 +65,31 @@ TEST(BlockingQueueTest, TestBlockingDrainTo) {
   ASSERT_EQ(3, out[2]);
 }
 
+// Test that, when the queue is shut down with elements still pending,
+// Drain still returns true until the elements are all gone.
+TEST(BlockingQueueTest, TestGetAndDrainAfterShutdown) {
+  // Put some elements into the queue and then shut it down.
+  BlockingQueue<int32_t> q(3);
+  ASSERT_EQ(q.Put(1), QUEUE_SUCCESS);
+  ASSERT_EQ(q.Put(2), QUEUE_SUCCESS);
+
+  q.Shutdown();
+
+  // Get() should still return an element.
+  int i;
+  ASSERT_TRUE(q.BlockingGet(&i));
+  ASSERT_EQ(1, i);
+
+  // Drain should still return true, since it yielded elements.
+  vector<int32_t> out;
+  ASSERT_TRUE(q.BlockingDrainTo(&out));
+  ASSERT_EQ(2, out[0]);
+
+  // Now that it's empty, it should return false.
+  ASSERT_FALSE(q.BlockingDrainTo(&out));
+  ASSERT_FALSE(q.BlockingGet(&i));
+}
+
 TEST(BlockingQueueTest, TestTooManyInsertions) {
   BlockingQueue<int32_t> test_queue(2);
   ASSERT_EQ(test_queue.Put(123), QUEUE_SUCCESS);

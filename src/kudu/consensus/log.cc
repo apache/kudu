@@ -193,18 +193,13 @@ Status Log::AppendThread::Init() {
 }
 
 void Log::AppendThread::RunThread() {
-  bool shutting_down = false;
-  while (PREDICT_TRUE(!shutting_down)) {
+  while (true) {
     vector<LogEntryBatch*> entry_batches;
     ElementDeleter d(&entry_batches);
 
-    // We shut down the entry_queue when it's time to shut down the append
-    // thread, which causes this call to return false, while still populating
-    // the entry_batches vector with the final set of log entry batches that
-    // were enqueued. We finish processing this last bunch of log entry batches
-    // before exiting the main RunThread() loop.
     if (PREDICT_FALSE(!log_->entry_queue()->BlockingDrainTo(&entry_batches))) {
-      shutting_down = true;
+      CHECK(entry_batches.empty());
+      break;
     }
 
     if (log_->metrics_) {
