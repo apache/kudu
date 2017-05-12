@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <list>
 #include <memory>
 #include <string>
 
@@ -31,6 +30,7 @@
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/rtest.proxy.h"
@@ -50,10 +50,10 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
 using kudu::rpc_test::AddRequestPB;
-using kudu::rpc_test::AddRequestPartialPB;
 using kudu::rpc_test::AddResponsePB;
 using kudu::rpc_test::CalculatorError;
 using kudu::rpc_test::CalculatorServiceIf;
@@ -419,13 +419,15 @@ class RpcTestBase : public KuduTest {
     return messenger;
   }
 
-  Status DoTestSyncCall(const Proxy &p, const char *method) {
+  Status DoTestSyncCall(const Proxy &p, const char *method,
+                        CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS) {
     AddRequestPB req;
     req.set_x(rand());
     req.set_y(rand());
     AddResponsePB resp;
     RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(10000));
+    controller.set_credentials_policy(policy);
     RETURN_NOT_OK(p.SyncRequest(method, req, &resp, &controller));
 
     CHECK_EQ(req.x() + req.y(), resp.result());

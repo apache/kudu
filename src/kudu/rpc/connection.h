@@ -18,8 +18,7 @@
 #ifndef KUDU_RPC_CONNECTION_H
 #define KUDU_RPC_CONNECTION_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <set>
@@ -35,6 +34,7 @@
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/remote_user.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -49,6 +49,7 @@ class DumpRunningRpcsRequestPB;
 class RpcConnectionPB;
 class ReactorThread;
 class RpczStore;
+enum class CredentialsPolicy;
 
 //
 // A connection between an endpoint and us.
@@ -84,7 +85,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   Connection(ReactorThread *reactor_thread,
              Sockaddr remote,
              std::unique_ptr<Socket> socket,
-             Direction direction);
+             Direction direction,
+             CredentialsPolicy policy = CredentialsPolicy::ANY_CREDENTIALS);
 
   // Set underlying socket to non-blocking (or blocking) mode.
   Status SetNonBlocking(bool enabled);
@@ -133,6 +135,20 @@ class Connection : public RefCountedThreadSafe<Connection> {
     return local_user_credentials_;
   }
 
+  // Credentials policy to start connection negotiation.
+  CredentialsPolicy credentials_policy() const { return credentials_policy_; }
+
+  // Whether the connection satisfies the specified credentials policy.
+  //
+  // NOTE: The policy is set prior to connection negotiation, and the actual
+  //       authentication credentials used for connection negotiation might
+  //       effectively make the connection to satisfy a stronger policy.
+  //       An example: the credentials policy for the connection was set to
+  //       ANY_CREDENTIALS, but since the authn token was not available
+  //       at the time of negotiation, the primary credentials were used, making
+  //       the connection de facto satisfying the PRIMARY_CREDENTIALS policy.
+  bool SatisfiesCredentialsPolicy(CredentialsPolicy policy) const;
+
   RpczStore* rpcz_store();
 
   // libev callback when data is available to read.
@@ -179,6 +195,19 @@ class Connection : public RefCountedThreadSafe<Connection> {
   const RemoteUser& remote_user() const {
     DCHECK_EQ(direction_, SERVER);
     return remote_user_;
+  }
+
+  // Whether the connection is scheduled for shutdown.
+  bool scheduled_for_shutdown() const {
+    DCHECK_EQ(direction_, CLIENT);
+    return scheduled_for_shutdown_;
+  }
+
+  // Mark the connection as scheduled to be shut down. Reactor does not dispatch
+  // new calls on such a connection.
+  void set_scheduled_for_shutdown() {
+    DCHECK_EQ(direction_, CLIENT);
+    scheduled_for_shutdown_ = true;
   }
 
  private:
@@ -300,8 +329,26 @@ class Connection : public RefCountedThreadSafe<Connection> {
   ObjectPool<CallAwaitingResponse> car_pool_;
   typedef ObjectPool<CallAwaitingResponse>::scoped_ptr scoped_car;
 
+  // The credentials policy to use for connection negotiation. It defines which
+  // type of user credentials used to negotiate a connection. The actual type of
+  // credentials used for authentication during the negotiation process depends
+  // on the credentials availability, but the result credentials guaranteed to
+  // always satisfy the specified credentials policy. In other words, the actual
+  // type of credentials used for connection negotiation might effectively make
+  // the connection to satisfy a stronger/narrower policy.
+  //
+  // An example:
+  //   The credentials policy for the connection was set to ANY_CREDENTIALS,
+  //   but since no secondary credentials (such authn token) were available
+  //   at the time of negotiation, the primary credentials were used,making the
+  //   connection satisfying the PRIMARY_CREDENTIALS policy de facto.
+  const CredentialsPolicy credentials_policy_;
+
   // Whether we completed connection negotiation.
   bool negotiation_complete_;
+
+  // Whether the connection is scheduled for shutdown.
+  bool scheduled_for_shutdown_;
 };
 
 } // namespace rpc

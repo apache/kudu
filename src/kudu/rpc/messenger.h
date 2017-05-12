@@ -233,7 +233,7 @@ class Messenger {
 
   int num_reactors() const { return reactors_.size(); }
 
-  std::string name() const {
+  const std::string& name() const {
     return name_;
   }
 
@@ -248,6 +248,7 @@ class Messenger {
 
  private:
   FRIEND_TEST(TestRpc, TestConnectionKeepalive);
+  FRIEND_TEST(TestRpc, TestCredentialsPolicy);
   FRIEND_TEST(TestRpc, TestReopenOutboundConnections);
 
   explicit Messenger(const MessengerBuilder &bld);

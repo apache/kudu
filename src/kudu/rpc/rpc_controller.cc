@@ -18,18 +18,21 @@
 #include "kudu/rpc/rpc_controller.h"
 
 #include <algorithm>
-#include <glog/logging.h>
 #include <memory>
 #include <mutex>
+
+#include <glog/logging.h>
 
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/outbound_call.h"
 
 using std::unique_ptr;
 
-namespace kudu { namespace rpc {
+namespace kudu {
+namespace rpc {
 
-RpcController::RpcController() {
+RpcController::RpcController()
+    : credentials_policy_(CredentialsPolicy::ANY_CREDENTIALS) {
   DVLOG(4) << "RpcController " << this << " constructed";
 }
 
@@ -48,6 +51,7 @@ void RpcController::Swap(RpcController* other) {
 
   std::swap(outbound_sidecars_, other->outbound_sidecars_);
   std::swap(timeout_, other->timeout_);
+  std::swap(credentials_policy_, other->credentials_policy_);
   std::swap(call_, other->call_);
 }
 
@@ -58,6 +62,7 @@ void RpcController::Reset() {
   }
   call_.reset();
   required_server_features_.clear();
+  credentials_policy_ = CredentialsPolicy::ANY_CREDENTIALS;
 }
 
 bool RpcController::finished() const {

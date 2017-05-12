@@ -158,9 +158,12 @@ static Status DoClientNegotiation(Connection* conn,
                                   RpcEncryption encryption,
                                   MonoTime deadline) {
   const auto* messenger = conn->reactor_thread()->reactor()->messenger();
+  // Prefer secondary credentials (such as authn token) if permitted by policy.
+  const auto authn_token = (conn->credentials_policy() == CredentialsPolicy::PRIMARY_CREDENTIALS)
+      ? boost::none : messenger->authn_token();
   ClientNegotiation client_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
-                                       messenger->authn_token(),
+                                       authn_token,
                                        encryption);
 
   // Note that the fqdn is an IP address here: we've already lost whatever DNS
@@ -186,7 +189,7 @@ static Status DoClientNegotiation(Connection* conn,
       }
 
       if (authentication == RpcAuthentication::REQUIRED &&
-          !messenger->authn_token() &&
+          !authn_token &&
           !messenger->tls_context().has_signed_cert()) {
         return Status::InvalidArgument(
             "Kerberos, token, or PKI certificate credentials must be provided in order to "
@@ -209,6 +212,11 @@ static Status DoClientNegotiation(Connection* conn,
   // Transfer the negotiated socket and state back to the connection.
   conn->adopt_socket(client_negotiation.release_socket());
   conn->set_remote_features(client_negotiation.take_server_features());
+
+  // Sanity check: if no authn token was supplied as user credentials,
+  // the negotiated authentication type cannot be AuthenticationType::TOKEN.
+  DCHECK(!(authn_token == boost::none &&
+           client_negotiation.negotiated_authn() == AuthenticationType::TOKEN));
 
   return Status::OK();
 }

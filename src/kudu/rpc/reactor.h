@@ -27,6 +27,7 @@
 
 #include <boost/function.hpp>
 #include <boost/intrusive/list.hpp>
+#include <boost/optional.hpp>
 #include <ev++.h>
 
 #include "kudu/gutil/ref_counted.h"
@@ -51,6 +52,7 @@ class DumpRunningRpcsResponsePB;
 class Messenger;
 class MessengerBuilder;
 class Reactor;
+enum class CredentialsPolicy;
 
 // Simple metrics information from within a reactor.
 struct ReactorMetrics {
@@ -131,9 +133,11 @@ class ReactorThread {
  public:
   friend class Connection;
 
-  // Client-side connection map.
-  typedef std::unordered_map<ConnectionId, scoped_refptr<Connection>,
-                             ConnectionIdHash, ConnectionIdEqual> conn_map_t;
+  // Client-side connection map. Multiple connections could be open to a remote
+  // server if multiple credential policies are used for individual RPCs.
+  typedef std::unordered_multimap<ConnectionId, scoped_refptr<Connection>,
+                                  ConnectionIdHash, ConnectionIdEqual>
+      conn_multimap_t;
 
   ReactorThread(Reactor *reactor, const MessengerBuilder &bld);
 
@@ -200,6 +204,7 @@ class ReactorThread {
   // May return a bad Status if the connect() call fails.
   // The resulting connection object is managed internally by the reactor thread.
   Status FindOrStartConnection(const ConnectionId& conn_id,
+                               CredentialsPolicy cred_policy,
                                scoped_refptr<Connection>* conn);
 
   // Shut down the given connection, removing it from the connection tracking
@@ -255,7 +260,7 @@ class ReactorThread {
   MonoTime last_unused_tcp_scan_;
 
   // Map of sockaddrs to Connection objects for outbound (client) connections.
-  conn_map_t client_conns_;
+  conn_multimap_t client_conns_;
 
   // List of current connections coming into the server.
   conn_list_t server_conns_;

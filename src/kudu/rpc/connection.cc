@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -66,7 +67,8 @@ namespace rpc {
 Connection::Connection(ReactorThread *reactor_thread,
                        Sockaddr remote,
                        unique_ptr<Socket> socket,
-                       Direction direction)
+                       Direction direction,
+                       CredentialsPolicy policy)
     : reactor_thread_(reactor_thread),
       remote_(remote),
       socket_(std::move(socket)),
@@ -74,7 +76,9 @@ Connection::Connection(ReactorThread *reactor_thread,
       last_activity_time_(MonoTime::Now()),
       is_epoll_registered_(false),
       next_call_id_(1),
-      negotiation_complete_(false) {
+      credentials_policy_(policy),
+      negotiation_complete_(false),
+      scheduled_for_shutdown_(false) {
 }
 
 Status Connection::SetNonBlocking(bool enabled) {
@@ -435,6 +439,12 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 
+bool Connection::SatisfiesCredentialsPolicy(CredentialsPolicy policy) const {
+  DCHECK_EQ(direction_, CLIENT);
+  return (policy == CredentialsPolicy::ANY_CREDENTIALS) ||
+      (policy == credentials_policy_);
+}
+
 RpczStore* Connection::rpcz_store() {
   return reactor_thread_->reactor()->messenger()->rpcz_store();
 }
@@ -647,7 +657,7 @@ class NegotiationCompletedTask : public ReactorTask {
 
  private:
   scoped_refptr<Connection> conn_;
-  Status negotiation_status_;
+  const Status negotiation_status_;
 };
 
 void Connection::CompleteNegotiation(const Status& negotiation_status) {

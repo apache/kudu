@@ -76,11 +76,11 @@ void Proxy::AsyncRequest(const string& method,
                          google::protobuf::Message* response,
                          RpcController* controller,
                          const ResponseCallback& callback) const {
-  CHECK(controller->call_.get() == nullptr) << "Controller should be reset";
+  CHECK(!controller->call_) << "Controller should be reset";
   base::subtle::NoBarrier_Store(&is_started_, true);
   RemoteMethod remote_method(service_name_, method);
-  OutboundCall* call = new OutboundCall(conn_id_, remote_method, response, controller, callback);
-  controller->call_.reset(call);
+  controller->call_.reset(
+      new OutboundCall(conn_id_, remote_method, response, controller, callback));
   controller->SetRequestParam(req);
 
   // If this fails to queue, the callback will get called immediately

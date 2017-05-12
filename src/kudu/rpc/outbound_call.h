@@ -258,7 +258,7 @@ class OutboundCall {
   // RPC-system features required to send this call.
   std::set<RpcFeatureFlag> required_rpc_features_;
 
-  ConnectionId conn_id_;
+  const ConnectionId conn_id_;
   ResponseCallback callback_;
   RpcController* controller_;
 

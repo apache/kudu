@@ -235,7 +235,7 @@ TEST_F(RpcStubTest, TestRemoteAddress) {
 TEST_F(RpcStubTest, TestCallWithInvalidParam) {
   Proxy p(client_messenger_, server_addr_, CalculatorService::static_service_name());
 
-  AddRequestPartialPB req;
+  rpc_test::AddRequestPartialPB req;
   req.set_x(rand());
   // AddRequestPartialPB is missing the 'y' field.
   AddResponsePB resp;

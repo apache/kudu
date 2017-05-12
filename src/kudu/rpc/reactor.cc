@@ -24,15 +24,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <memory>
 #include <mutex>
 #include <string>
 
 #include <boost/intrusive/list.hpp>
+#include <boost/optional.hpp>
 #include <ev++.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/client_negotiation.h"
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
@@ -64,6 +67,8 @@ static const int kDefaultLibEvFlags = ev::AUTO;
 
 using std::string;
 using std::shared_ptr;
+using std::unique_ptr;
+using strings::Substitute;
 
 // TODO(KUDU-1580). This timeout has been bumped from 3 seconds up to
 // 15 seconds to workaround a bug. We should drop it back down when
@@ -189,7 +194,7 @@ Status ReactorThread::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
   for (const scoped_refptr<Connection>& conn : server_conns_) {
     RETURN_NOT_OK(conn->DumpPB(req, resp->add_inbound_connections()));
   }
-  for (const conn_map_t::value_type& entry : client_conns_) {
+  for (const conn_multimap_t::value_type& entry : client_conns_) {
     Connection* conn = entry.second.get();
     RETURN_NOT_OK(conn->DumpPB(req, resp->add_outbound_connections()));
   }
@@ -244,7 +249,9 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
   DCHECK(IsCurrentThread());
   scoped_refptr<Connection> conn;
 
-  Status s = FindOrStartConnection(call->conn_id(), &conn);
+  Status s = FindOrStartConnection(call->conn_id(),
+                                   call->controller()->credentials_policy(),
+                                   &conn);
   if (PREDICT_FALSE(!s.ok())) {
     call->SetFailed(s);
     return;
@@ -278,36 +285,49 @@ void ReactorThread::RegisterTimeout(ev::timer *watcher) {
 
 void ReactorThread::ScanIdleConnections() {
   DCHECK(IsCurrentThread());
-  // enforce TCP connection timeouts
-  auto c = server_conns_.begin();
-  auto c_end = server_conns_.end();
+  // Enforce TCP connection timeouts: server-side connections.
+  const auto server_conns_end = server_conns_.end();
   uint64_t timed_out = 0;
-  for (; c != c_end; ) {
-    const scoped_refptr<Connection>& conn = *c;
+  for (auto it = server_conns_.begin(); it != server_conns_end; ) {
+    Connection* conn = it->get();
     if (!conn->Idle()) {
       VLOG(10) << "Connection " << conn->ToString() << " not idle";
-      ++c; // TODO(todd): clean up this loop
+      ++it;
       continue;
     }
 
-    MonoDelta connection_delta(cur_time_ - conn->last_activity_time());
-    if (connection_delta > connection_keepalive_time_) {
-      conn->Shutdown(Status::NetworkError(
-                       StringPrintf("connection timed out after %s seconds",
-                                    connection_keepalive_time_.ToString().c_str())));
-      VLOG(1) << "Timing out connection " << conn->ToString() << " - it has been idle for "
-              << connection_delta.ToSeconds() << "s";
-      server_conns_.erase(c++);
-      ++timed_out;
-    } else {
-      ++c;
+    const MonoDelta connection_delta(cur_time_ - conn->last_activity_time());
+    if (connection_delta <= connection_keepalive_time_) {
+      ++it;
+      continue;
     }
+
+    conn->Shutdown(Status::NetworkError(
+        Substitute("connection timed out after $0", connection_keepalive_time_.ToString())));
+    VLOG(1) << "Timing out connection " << conn->ToString() << " - it has been idle for "
+            << connection_delta.ToString();
+    ++timed_out;
+    it = server_conns_.erase(it);
   }
 
-  // TODO: above only times out on the server side.
-  // Clients may want to set their keepalive timeout as well.
+  // Take care of idle client-side connections marked for shutdown.
+  uint64_t shutdown = 0;
+  for (auto it = client_conns_.begin(); it != client_conns_.end();) {
+    Connection* conn = it->second.get();
+    if (conn->scheduled_for_shutdown() && conn->Idle()) {
+      conn->Shutdown(Status::NetworkError(
+          "connection has been marked for shutdown"));
+      it = client_conns_.erase(it);
+      ++shutdown;
+    } else {
+      ++it;
+    }
+  }
+  // TODO(aserbin): clients may want to set their keepalive timeout for idle
+  //                but not scheduled for shutdown connections.
 
   VLOG_IF(1, timed_out > 0) << name() << ": timed out " << timed_out << " TCP connections.";
+  VLOG_IF(1, shutdown > 0) << name() << ": shutdown " << shutdown << " TCP connections.";
 }
 
 const std::string& ReactorThread::name() const {
@@ -339,25 +359,49 @@ void ReactorThread::RunThread() {
 }
 
 Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
+                                            CredentialsPolicy cred_policy,
                                             scoped_refptr<Connection>* conn) {
   DCHECK(IsCurrentThread());
-  conn_map_t::const_iterator it = client_conns_.find(conn_id);
-  if (it != client_conns_.end()) {
-    const auto& c = it->second;
-    // Regular mode: reuse the connection to the same server.
-    if (PREDICT_TRUE(!FLAGS_rpc_reopen_outbound_connections)) {
-      *conn = c;
-      return Status::OK();
+  const auto range = client_conns_.equal_range(conn_id);
+  scoped_refptr<Connection> found_conn;
+  for (auto it = range.first; it != range.second;) {
+    const auto& c = it->second.get();
+    // * Do not use connections scheduled for shutdown to place new calls.
+    //
+    // * Do not use a connection with a non-compliant credentials policy.
+    //   Instead, open a new one, while marking the former as scheduled for
+    //   shutdown. This process converges: any connection that satisfies the
+    //   PRIMARY_CREDENTIALS policy automatically satisfies the ANY_CREDENTIALS
+    //   policy as well. The idea is to keep only one usable connection
+    //   identified by the specified 'conn_id'.
+    //
+    // * If the test-only 'one-connection-per-RPC' mode is enabled, connections
+    //   are re-established at every RPC call.
+    if (c->scheduled_for_shutdown() ||
+        !c->SatisfiesCredentialsPolicy(cred_policy) ||
+        PREDICT_FALSE(FLAGS_rpc_reopen_outbound_connections)) {
+      if (c->Idle()) {
+        // Shutdown idle connections to the target destination. Non-idle ones
+        // will be taken care of later by the idle connection scanner.
+        DCHECK_EQ(Connection::CLIENT, c->direction());
+        c->Shutdown(Status::NetworkError("connection is closed due to non-reuse policy"));
+        it = client_conns_.erase(it);
+        continue;
+      }
+      c->set_scheduled_for_shutdown();
+    } else {
+      DCHECK(!found_conn);
+      found_conn = c;
+      // Appropriate connection is found; continue further to take care of the
+      // rest of connections to mark them for shutdown if they are not
+      // satisfying the policy.
     }
-
-    // Kind of 'one-connection-per-RPC' mode: reopen the idle connection.
-    if (!c->Idle()) {
-      *conn = c;
-      return Status::OK();
-    }
-    DCHECK_EQ(Connection::CLIENT, c->direction());
-    c->Shutdown(Status::NetworkError("connection is closed due to non-reuse policy"));
-    client_conns_.erase(it);
+    ++it;
+  }
+  if (found_conn) {
+    // Found matching not-to-be-shutdown connection: return it as the result.
+    conn->swap(found_conn);
+    return Status::OK();
   }
 
   // No connection to this remote. Need to create one.
@@ -369,10 +413,11 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   RETURN_NOT_OK(CreateClientSocket(&sock));
   RETURN_NOT_OK(StartConnect(&sock, conn_id.remote()));
 
-  std::unique_ptr<Socket> new_socket(new Socket(sock.Release()));
+  unique_ptr<Socket> new_socket(new Socket(sock.Release()));
 
   // Register the new connection in our map.
-  *conn = new Connection(this, conn_id.remote(), std::move(new_socket), Connection::CLIENT);
+  *conn = new Connection(
+      this, conn_id.remote(), std::move(new_socket), Connection::CLIENT, cred_policy);
   (*conn)->set_local_user_credentials(conn_id.user_credentials());
 
   // Kick off blocking client connection negotiation.
@@ -386,7 +431,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   RETURN_NOT_OK_PREPEND(s, "Unable to start connection negotiation thread");
 
   // Insert into the client connection map to avoid duplicate connection requests.
-  client_conns_.insert(conn_map_t::value_type(conn_id, *conn));
+  client_conns_.emplace(conn_id, *conn);
   ++total_client_conns_cnt_;
 
   return Status::OK();
@@ -467,9 +512,16 @@ void ReactorThread::DestroyConnection(Connection *conn,
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
     ConnectionId conn_id(conn->remote(), conn->local_user_credentials());
-    auto it = client_conns_.find(conn_id);
-    CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
-    client_conns_.erase(it);
+    const auto range = client_conns_.equal_range(conn_id);
+    CHECK(range.first != range.second) << "Couldn't find connection " << conn->ToString();
+    // The client_conns_ container is a multi-map.
+    for (auto it = range.first; it != range.second;) {
+      if (it->second.get() == conn) {
+        it = client_conns_.erase(it);
+        break;
+      }
+      ++it;
+    }
   } else if (conn->direction() == Connection::SERVER) {
     auto it = server_conns_.begin();
     while (it != server_conns_.end()) {
@@ -636,7 +688,7 @@ class RegisterConnectionTask : public ReactorTask {
 
 void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr& remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
-  std::unique_ptr<Socket> new_socket(new Socket(socket->Release()));
+  unique_ptr<Socket> new_socket(new Socket(socket->Release()));
   auto task = new RegisterConnectionTask(
       new Connection(&thread_, remote, std::move(new_socket), Connection::SERVER));
   ScheduleReactorTask(task);
@@ -666,8 +718,7 @@ class AssignOutboundCallTask : public ReactorTask {
 void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall>& call) {
   DVLOG(3) << name_ << ": queueing outbound call "
            << call->ToString() << " to remote " << call->conn_id().remote().ToString();
-  AssignOutboundCallTask *task = new AssignOutboundCallTask(call);
-  ScheduleReactorTask(task);
+  ScheduleReactorTask(new AssignOutboundCallTask(call));
 }
 
 void Reactor::ScheduleReactorTask(ReactorTask *task) {
