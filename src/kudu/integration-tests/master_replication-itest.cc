@@ -265,7 +265,7 @@ TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {
   Status s = cluster_->mini_master(0)->WaitForCatalogManagerInit();
   SCOPED_TRACE(s.ToString());
   ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(), "55555")
+  ASSERT_STR_CONTAINS(s.ToString(), "55555");
 }
 
 } // namespace master

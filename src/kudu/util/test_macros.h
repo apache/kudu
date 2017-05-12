@@ -56,21 +56,12 @@
   } \
 } while (0);
 
-#define ASSERT_STR_CONTAINS(str, substr) do { \
-  const std::string& _s = (str); \
-  if (_s.find((substr)) == std::string::npos) { \
-    FAIL() << "Expected to find substring '" << (substr) \
-    << "'. Got: '" << _s << "'"; \
-  } \
-} while (0);
+// Substring matches.
+#define ASSERT_STR_CONTAINS(str, substr) \
+  ASSERT_THAT(str, testing::HasSubstr(substr))
 
-#define ASSERT_STR_NOT_CONTAINS(str, substr) do { \
-  const std::string& _s = (str); \
-  if (_s.find((substr)) != std::string::npos) { \
-    FAIL() << "Expected not to find substring '" << (substr) \
-    << "'. Got: '" << _s << "'"; \
-  } \
-} while (0);
+#define ASSERT_STR_NOT_CONTAINS(str, substr) \
+  ASSERT_THAT(str, testing::Not(testing::HasSubstr(substr)))
 
 // Substring regular expressions in extended regex (POSIX) syntax.
 #define ASSERT_STR_MATCHES(str, pattern) \

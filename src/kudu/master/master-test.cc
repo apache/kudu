@@ -512,7 +512,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: split rows may only contain values "
-                        "for range partitioned columns: val")
+                        "for range partitioned columns: val");
   }
 
   { // Overlapping bounds.

@@ -86,11 +86,11 @@ TEST_F(FlagsTest, TestNonDefaultFlags) {
   std::string result = GetNonDefaultFlags(default_flags);
 
   for (const auto& expected : expected_flags) {
-    ASSERT_STR_CONTAINS(result, expected)
+    ASSERT_STR_CONTAINS(result, expected);
   }
 
   for (const auto& unexpected : unexpected_flags) {
-    ASSERT_STR_NOT_CONTAINS(result, unexpected)
+    ASSERT_STR_NOT_CONTAINS(result, unexpected);
   }
 
   ASSERT_STR_CONTAINS(result, strings::Substitute("--test_sensitive_flag=$0",

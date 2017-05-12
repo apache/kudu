@@ -93,7 +93,7 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
   // We have to loop a little bit because it takes a little while for the thread
   // to start up and actually call our function.
   ASSERT_EVENTUALLY([&]() {
-      ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread")
+      ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
     });
 
   // Test that we can change the signal and that the stack traces still work,
