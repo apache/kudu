@@ -195,10 +195,6 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       builder.limit(message.getLimit());
     }
 
-    if (message.hasFaultTolerant()) {
-      // TODO(KUDU-1040)
-    }
-
     if (message.hasReadMode()) {
       switch (message.getReadMode()) {
         case READ_AT_SNAPSHOT: {
