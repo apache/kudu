@@ -94,19 +94,29 @@ void HexStackTraceToString(char* buf, size_t size);
 // Requires external synchronization.
 class StackTrace {
  public:
+
+  // Constructs a new (uncollected) stack trace.
   StackTrace()
     : num_frames_(0) {
   }
 
+  // Resets the stack trace to an uncollected state.
   void Reset() {
     num_frames_ = 0;
   }
 
+  // Returns true if Collect() (but not Reset()) has been called on this stack trace.
+  bool HasCollected() const {
+    return num_frames_ > 0;
+  }
+
+  // Copies the contents of 's' into this stack trace.
   void CopyFrom(const StackTrace& s) {
     memcpy(this, &s, sizeof(s));
   }
 
-  bool Equals(const StackTrace& s) {
+  // Returns true if the stack trace 's' matches this trace.
+  bool Equals(const StackTrace& s) const {
     return s.num_frames_ == num_frames_ &&
       strings::memeq(frames_, s.frames_,
                      num_frames_ * sizeof(frames_[0]));
