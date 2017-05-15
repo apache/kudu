@@ -524,7 +524,7 @@ Status ClientNegotiation::AuthenticateByToken(faststring* recv_buf,
   // Send the token to the server.
   NegotiatePB pb;
   pb.set_step(NegotiatePB::TOKEN_EXCHANGE);
-  pb.mutable_authn_token()->Swap(authn_token_.get_ptr());
+  *pb.mutable_authn_token() = std::move(*authn_token_);
   RETURN_NOT_OK(SendNegotiatePB(pb));
   pb.Clear();
 
