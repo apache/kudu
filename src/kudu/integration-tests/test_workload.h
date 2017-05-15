@@ -73,6 +73,10 @@ class TestWorkload {
     client_builder_.default_rpc_timeout(MonoDelta::FromMilliseconds(t));
   }
 
+  void set_client_default_admin_operation_timeout_millis(int t) {
+    client_builder_.default_admin_operation_timeout(MonoDelta::FromMilliseconds(t));
+  }
+
   void set_read_timeout_millis(int t) {
     read_timeout_millis_ = t;
   }
