@@ -35,14 +35,16 @@ class MonoDelta;
 class ClusterVerifier {
  public:
   explicit ClusterVerifier(ExternalMiniCluster* cluster);
-  ~ClusterVerifier();
+
+  // Set the timeout for read/write/admin operations.
+  void SetOperationsTimeout(const MonoDelta& timeout);
 
   // Set the amount of time which we'll retry trying to verify the cluster
   // state. We retry because it's possible that one of the replicas is behind
   // but in the process of catching up.
   void SetVerificationTimeout(const MonoDelta& timeout);
 
-  /// Set the number of concurrent scans to execute per tablet server.
+  // Set the number of concurrent scans to execute per tablet server.
   void SetScanConcurrency(int concurrency);
 
   // Verify that the cluster is in good state. Triggers a gtest assertion failure
@@ -87,6 +89,8 @@ class ClusterVerifier {
 
 
   ExternalMiniCluster* cluster_;
+
+  MonoDelta operations_timeout_;
 
   ChecksumOptions checksum_options_;
 

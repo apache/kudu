@@ -15,17 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/log_verifier.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
@@ -42,12 +43,14 @@ using tools::KsckMaster;
 using tools::RemoteKsckMaster;
 
 ClusterVerifier::ClusterVerifier(ExternalMiniCluster* cluster)
-  : cluster_(cluster),
-    checksum_options_(ChecksumOptions()) {
+    : cluster_(cluster),
+      checksum_options_(ChecksumOptions()),
+      operations_timeout_(MonoDelta::FromSeconds(60)) {
   checksum_options_.use_snapshot = false;
 }
 
-ClusterVerifier::~ClusterVerifier() {
+void ClusterVerifier::SetOperationsTimeout(const MonoDelta& timeout) {
+  operations_timeout_ = timeout;
 }
 
 void ClusterVerifier::SetVerificationTimeout(const MonoDelta& timeout) {
@@ -117,8 +120,12 @@ Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
                                         ComparisonMode mode,
                                         int expected_row_count) {
   client::sp::shared_ptr<client::KuduClient> client;
-  RETURN_NOT_OK_PREPEND(cluster_->CreateClient(nullptr, &client),
-                        "Unable to connect to cluster");
+  RETURN_NOT_OK_PREPEND(cluster_->CreateClient(
+      &client::KuduClientBuilder()
+          .default_admin_operation_timeout(operations_timeout_)
+          .default_rpc_timeout(operations_timeout_),
+      &client),
+      "Unable to connect to cluster");
   client::sp::shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK_PREPEND(client->OpenTable(table_name, &table),
                         "Unable to open table");
