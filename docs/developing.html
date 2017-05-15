@@ -2,7 +2,7 @@
 title: Developing Applications With Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-04-18 21:59:13 PDT'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -202,7 +202,7 @@ df.registerTempTable("kudu_table")
 val filteredDF = sqlContext.sql("select id from kudu_table where id &gt;= 5").show()
 
 // Use KuduContext to create, delete, or write to Kudu tables
-val kuduContext = new KuduContext("kudu.master:7051")
+val kuduContext = new KuduContext("kudu.master:7051", sqlContext.sparkContext)
 
 // Create a new Kudu table from a dataframe schema
 // NB: No rows from the dataframe are inserted into the table
@@ -251,12 +251,17 @@ may not be used with SparkSQL. Non-primary key columns may be renamed in Kudu
 to work around this issue.</p>
 </li>
 <li>
-<p><code>NULL</code>, <code>NOT NULL</code>, <code>&lt;&gt;</code>, <code>OR</code>, <code>LIKE</code>, and <code>IN</code> predicates are not pushed to
-Kudu, and instead will be evaluated by the Spark task.</p>
+<p><code>&lt;&gt;</code> and <code>OR</code> predicates are not pushed to Kudu, and instead will be evaluated
+by the Spark task. Only <code>LIKE</code> predicates with a suffix wildcard are pushed to
+Kudu, meaning that <code>LIKE "FOO%"</code> is pushed down but <code>LIKE "FOO%BAR"</code> isn&#8217;t.</p>
 </li>
 <li>
 <p>Kudu does not support all types supported by Spark SQL, such as <code>Date</code>,
 <code>Decimal</code> and complex types.</p>
+</li>
+<li>
+<p>Kudu tables may only be registered as temporary tables in SparkSQL.
+Kudu tables may not be queried using HiveContext.</p>
 </li>
 </ul>
 </div>
@@ -407,6 +412,10 @@ using YARN and Spark in the future.</p>
       </li> 
       <li>
 
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
       <li>
@@ -416,6 +425,10 @@ using YARN and Spark in the future.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
       </li> 
       <li>
 

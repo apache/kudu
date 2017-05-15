@@ -2,7 +2,7 @@
 title: Using Apache Kudu with Apache Impala (incubating)
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-04-18 21:59:13 PDT'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -1009,6 +1009,15 @@ or nested-typed columns.</p>
 instead will be evaluated by the Impala scan node. This may decrease performance
 relative to other types of predicates.</p>
 </li>
+<li>
+<p>Updates, inserts, and deletes via Impala are non-transactional. If a query
+fails part of the way through, its partial effects will not be rolled back.</p>
+</li>
+<li>
+<p>The maximum parallelism of a single query is limited to the number of tablets
+in a table. For good analytic performance, aim for 10 or more tablets per host
+or use large tables.</p>
+</li>
 </ul>
 </div>
 </div>
@@ -1085,6 +1094,10 @@ relative to other types of predicates.</p>
       </li> 
       <li>
 
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
       <li>
@@ -1094,6 +1107,10 @@ relative to other types of predicates.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
       </li> 
       <li>
 

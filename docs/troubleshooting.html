@@ -2,7 +2,7 @@
 title: Apache Kudu Troubleshooting
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-02-03 10:13:21 PST'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -376,6 +376,20 @@ below Kudu, such as disk controllers or file systems.</p>
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_issues_using_kudu"><a class="link" href="#_issues_using_kudu">Issues using Kudu</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="hive_handler"><a class="link" href="#hive_handler">ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler</a></h3>
+<div class="paragraph">
+<p>Users will encounter this exception when trying to use a Kudu table via Hive. This
+is not a case of a missing jar, but simply that Impala stores Kudu metadata in
+Hive in a format that&#8217;s unreadable to other tools, including Hive itself and Spark.
+There is no workaround for Hive users. Spark users need to create temporary tables.</p>
+</div>
+</div>
+</div>
+</div>
     </div>
     <div class="col-md-3">
 
@@ -426,6 +440,11 @@ below Kudu, such as disk controllers or file systems.</p>
 <li><a href="#_kernel_stack_watchdog_traces">Kernel Stack Watchdog Traces</a></li>
 </ul>
 </li>
+<li><a href="#_issues_using_kudu">Issues using Kudu</a>
+<ul class="sectlevel2">
+<li><a href="#hive_handler">ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler</a></li>
+</ul>
+</li>
 </ul> 
       </li> 
       <li>
@@ -438,6 +457,10 @@ below Kudu, such as disk controllers or file systems.</p>
       </li> 
       <li>
 
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
       <li>
@@ -447,6 +470,10 @@ below Kudu, such as disk controllers or file systems.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
       </li> 
       <li>
 

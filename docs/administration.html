@@ -2,7 +2,7 @@
 title: Apache Kudu Administration
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-04-18 21:59:26 PDT'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -1063,6 +1063,44 @@ be done with the following command:</p>
 </div>
 </div>
 </div>
+<div class="sect2">
+<h3 id="disk_failure_recovery"><a class="link" href="#disk_failure_recovery">Recovering from Disk Failure</a></h3>
+<div class="paragraph">
+<p>Kudu tablet servers are not resilient to disk failure. When a disk containing a
+data directory or the write-ahead log (WAL) dies, the entire tablet server must
+be rebuilt. Kudu will automatically re-replicate tablets on other servers after
+a tablet server fails, but manual intervention is needed in order to restore the
+failed tablet server to a running state.</p>
+</div>
+<div class="paragraph">
+<p>The first step to restoring a tablet server after a disk failure is to replace
+the failed disk, or remove the failed disk from the data-directory and/or WAL
+configuration. Next, the contents of the data directories and WAL directory must
+be removed. For example, if the tablet server is configured with
+<code>--fs_wal_dir=/data/0/kudu-tserver-wal</code> and
+<code>--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver</code>, the following
+commands will remove the data directories and WAL directory contents:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ rm -rf /data/0/kudu-tserver-wal/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>After the WAL and data directories are emptied, the tablet server process can be
+started. When Kudu is installed using system packages, <code>service</code> is typically
+used:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-tserver start</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Once the tablet server is running again, new tablet replicas will be created on
+it as necessary.</p>
+</div>
+</div>
 </div>
 </div>
     </div>
@@ -1128,6 +1166,7 @@ be done with the following command:</p>
 </ul>
 </li>
 <li><a href="#ksck">Checking Cluster Health with <code>ksck</code></a></li>
+<li><a href="#disk_failure_recovery">Recovering from Disk Failure</a></li>
 </ul>
 </li>
 </ul> 
@@ -1146,6 +1185,10 @@ be done with the following command:</p>
       </li> 
       <li>
 
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
       <li>
@@ -1155,6 +1198,10 @@ be done with the following command:</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
       </li> 
       <li>
 

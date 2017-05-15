@@ -2,7 +2,7 @@
 title: Known Issues and Limitations
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-04-18 21:59:13 PDT'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -26,22 +26,20 @@ limitations under the License.
 
 <h1>Known Issues and Limitations</h1>
       <div class="sect1">
-<h2 id="_schema_and_usage_limitations"><a class="link" href="#_schema_and_usage_limitations">Schema and Usage Limitations</a></h2>
+<h2 id="_schema"><a class="link" href="#_schema">Schema</a></h2>
 <div class="sectionbody">
+<div class="sect2">
+<h3 id="_primary_keys"><a class="link" href="#_primary_keys">Primary keys</a></h3>
 <div class="ulist">
 <ul>
-<li>
-<p>Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
-a single row contains multiple kilobytes of data.</p>
-</li>
-<li>
-<p>The columns which make up the primary key must be listed first in the schema.</p>
-</li>
 <li>
 <p>Columns that are part of the primary key cannot be renamed.
 The primary key may not be changed after the table is created.
 You must drop and recreate a table to select a new primary key
 or rename key columns.</p>
+</li>
+<li>
+<p>The columns which make up the primary key must be listed first in the schema.</p>
 </li>
 <li>
 <p>The primary key of a row may not be modified using the <code>UPDATE</code> functionality.
@@ -54,14 +52,84 @@ primary key definition. Additionally, all columns that are part of a primary
 key definition must be <code>NOT NULL</code>.</p>
 </li>
 <li>
-<p>Type and nullability of existing columns cannot be changed by altering the table.</p>
+<p>Auto-generated primary keys are not supported.</p>
 </li>
 <li>
-<p>Dropping a column does not immediately reclaim space. Compaction must run first.
-There is no way to run compaction manually, but dropping the table will reclaim the
+<p>Cells making up a composite primary key are limited to a total of 16KB after the internal
+composite-key encoding done by Kudu.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_columns"><a class="link" href="#_columns">Columns</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>TIMESTAMP, DECIMAL, CHAR, VARCHAR, DATE, and complex types like ARRAY are not supported.</p>
+</li>
+<li>
+<p>Type, nullability, compression, and encoding of existing columns cannot be changed by altering the table.</p>
+</li>
+<li>
+<p>Tables can have a maximum of 300 columns.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_tables"><a class="link" href="#_tables">Tables</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Tables must have an odd number of replicas, with a maximum of 7.</p>
+</li>
+<li>
+<p>Replication factor (set at table creation time) cannot be changed.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_cells_individual_values"><a class="link" href="#_cells_individual_values">Cells (individual values)</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Cells cannot be larger than 64KB.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_other_usage_limitations"><a class="link" href="#_other_usage_limitations">Other usage limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
+a single row contains multiple kilobytes of data.</p>
+</li>
+<li>
+<p>Secondary indexes are not supported.</p>
+</li>
+<li>
+<p>Multi-row transactions are not supported.</p>
+</li>
+<li>
+<p>Relational features, like foreign keys, are not supported.</p>
+</li>
+<li>
+<p>Identifiers such as column and table names are restricted to be valid UTF-8 strings.
+Additionally, a maximum length of 256 characters is enforced.</p>
+</li>
+<li>
+<p>Dropping a column does not immediately reclaim space. Compaction must run first.</p>
+</li>
+<li>
+<p>There is no way to run compaction manually, but dropping the table will reclaim the
 space immediately.</p>
 </li>
 </ul>
+</div>
 </div>
 </div>
 </div>
@@ -81,6 +149,95 @@ or dropped after a table has been created. See
 create a new table with the new partitioning and insert the contents of the old
 table.</p>
 </li>
+<li>
+<p>Tablets that lose a majority of replicas (such as 1 left out of 3) require manual
+intervention to be repaired.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_cluster_management"><a class="link" href="#_cluster_management">Cluster management</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Rack awareness is not supported.</p>
+</li>
+<li>
+<p>Multi-datacenter is not supported.</p>
+</li>
+<li>
+<p>Rolling restart is not supported.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_server_management"><a class="link" href="#_server_management">Server management</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Production deployments should configure a least 4GB of memory for tablet servers,
+and ideally more than 10GB.</p>
+</li>
+<li>
+<p>Write ahead logs (WAL) can only be stored on one disk.</p>
+</li>
+<li>
+<p>Disk failures are not tolerated and tablets servers will crash as soon as one is detected.</p>
+</li>
+<li>
+<p>Failed disks with unrecoverable data require the formatting of all the Kudu data for
+that tablet server before it can be started again.</p>
+</li>
+<li>
+<p>Data directories cannot be added/removed; all must be reformatted to change the set
+of directories.</p>
+</li>
+<li>
+<p>Tablet servers cannot be gracefully decommissioned.</p>
+</li>
+<li>
+<p>Tablet servers can’t change address/port.</p>
+</li>
+<li>
+<p>Kudu has a hard requirement on having up-to-date NTP. Kudu masters and tablet servers
+will crash when out of sync.</p>
+</li>
+<li>
+<p>Kudu releases are only tested with NTP. Other time synchronization providers like Chrony
+may or may not work.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_scale"><a class="link" href="#_scale">Scale</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Recommended maximum number of tablet servers is 100.</p>
+</li>
+<li>
+<p>Recommended maximum number of masters is 3.</p>
+</li>
+<li>
+<p>Recommended maximum amount of stored data, post-replication and post-compression,
+per tablet server is 4TB.</p>
+</li>
+<li>
+<p>Recommended maximum number of tablets per tablet server is 1000, post-replication.</p>
+</li>
+<li>
+<p>Maximum number of tablets per table for each tablet server is 60, post-replication,
+at table-creation time.</p>
+</li>
 </ul>
 </div>
 </div>
@@ -94,27 +251,6 @@ table.</p>
 <p>Kudu does not currently include any built-in features for backup and restore.
 Users are encouraged to use tools such as Spark or Impala to export or import
 tables as necessary.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_impala_limitations"><a class="link" href="#_impala_limitations">Impala Limitations</a></h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>Updates, inserts, and deletes via Impala are non-transactional. If a query
-fails part of the way through, its partial effects will not be rolled back.</p>
-</li>
-<li>
-<p>No timestamp and decimal type support.</p>
-</li>
-<li>
-<p>The maximum parallelism of a single query is limited to the number of tablets
-in a table. For good analytic performance, aim for 10 or more tablets per host
-or use large tables.</p>
 </li>
 </ul>
 </div>
@@ -222,6 +358,10 @@ you can monitor the number of tablets per server in the web UI.</p>
       </li> 
       <li>
 
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
       <li>
@@ -233,12 +373,26 @@ you can monitor the number of tablets per server in the web UI.</p>
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
       </li> 
       <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
 <span class="active-toc">Known Issues and Limitations</span>
             <ul class="sectlevel1">
-<li><a href="#_schema_and_usage_limitations">Schema and Usage Limitations</a></li>
+<li><a href="#_schema">Schema</a>
+<ul class="sectlevel2">
+<li><a href="#_primary_keys">Primary keys</a></li>
+<li><a href="#_columns">Columns</a></li>
+<li><a href="#_tables">Tables</a></li>
+<li><a href="#_cells_individual_values">Cells (individual values)</a></li>
+<li><a href="#_other_usage_limitations">Other usage limitations</a></li>
+</ul>
+</li>
 <li><a href="#_partitioning_limitations">Partitioning Limitations</a></li>
+<li><a href="#_cluster_management">Cluster management</a></li>
+<li><a href="#_server_management">Server management</a></li>
+<li><a href="#_scale">Scale</a></li>
 <li><a href="#_replication_and_backup_limitations">Replication and Backup Limitations</a></li>
-<li><a href="#_impala_limitations">Impala Limitations</a></li>
 <li><a href="#_security_limitations">Security Limitations</a></li>
 <li><a href="#_other_known_issues">Other Known Issues</a></li>
 </ul> 

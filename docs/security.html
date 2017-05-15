@@ -1,8 +1,8 @@
 ---
-title: Security
+title: Apache Kudu Security
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2017-04-18 21:59:26 PDT'
+last_updated: 'Last updated 2017-05-15 12:38:07 PDT'
 ---
 <!--
 
@@ -24,7 +24,7 @@ limitations under the License.
   <div class="row">
     <div class="col-md-9">
 
-<h1>Security</h1>
+<h1>Apache Kudu Security</h1>
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
@@ -298,7 +298,7 @@ tablet server) in order to ensure that a Kudu cluster is secure:</p>
 # may access data in Kudu via the Impala service subject to its own
 # authorization rules.
 --user-acl=impala,nightly_etl_service_account
---admin-acl=hadoopadmin</code></pre>
+--superuser-acl=hadoopadmin</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -405,6 +405,25 @@ which require authentication or encryption.</p>
           <a href="schema_design.html">Kudu Schema Design</a> 
       </li> 
       <li>
+<span class="active-toc">Kudu Security</span>
+            <ul class="sectlevel1">
+<li><a href="#_authentication">Authentication</a>
+<ul class="sectlevel2">
+<li><a href="#_internal_pki">Internal PKI</a></li>
+<li><a href="#_authentication_tokens">Authentication Tokens</a></li>
+</ul>
+</li>
+<li><a href="#_scalability">Scalability</a></li>
+<li><a href="#_encryption">Encryption</a></li>
+<li><a href="#_coarse_grained_authorization">Coarse-Grained Authorization</a></li>
+<li><a href="#web-ui">Web UI Encryption</a></li>
+<li><a href="#_web_ui_redaction">Web UI Redaction</a></li>
+<li><a href="#logs">Log Security</a></li>
+<li><a href="#configuration">Configuring a Secure Kudu Cluster</a></li>
+<li><a href="#known-limitations">Known Limitations</a></li>
+</ul> 
+      </li> 
+      <li>
 
           <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
       </li> 
@@ -415,6 +434,10 @@ which require authentication or encryption.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
       </li> 
       <li>
 
