@@ -1,0 +1,2174 @@
+---
+title: Apache Kudu Command Line Tools Reference
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2017-05-15 12:46:02 PDT'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Command Line Tools Reference</h1>
+      <div class="sect1">
+<h2 id="_command_hierarchy"><a class="link" href="#_command_hierarchy">Command Hierarchy</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#cluster">cluster</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#cluster-ksck">ksck</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#fs">fs</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#fs-format">format</a></p>
+</li>
+<li>
+<p><a href="#fs-dump">dump</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#dump-cfile">cfile</a></p>
+</li>
+<li>
+<p><a href="#dump-tree">tree</a></p>
+</li>
+<li>
+<p><a href="#dump-uuid">uuid</a></p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#local_replica">local_replica</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#local_replica-copy_from_remote">copy_from_remote</a></p>
+</li>
+<li>
+<p><a href="#local_replica-delete">delete</a></p>
+</li>
+<li>
+<p><a href="#local_replica-list">list</a></p>
+</li>
+<li>
+<p><a href="#local_replica-cmeta">cmeta</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#cmeta-print_replica_uuids">print_replica_uuids</a></p>
+</li>
+<li>
+<p><a href="#cmeta-rewrite_raft_config">rewrite_raft_config</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#local_replica-dump">dump</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#dump-block_ids">block_ids</a></p>
+</li>
+<li>
+<p><a href="#dump-meta">meta</a></p>
+</li>
+<li>
+<p><a href="#dump-rowset">rowset</a></p>
+</li>
+<li>
+<p><a href="#dump-wals">wals</a></p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#master">master</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#master-set_flag">set_flag</a></p>
+</li>
+<li>
+<p><a href="#master-status">status</a></p>
+</li>
+<li>
+<p><a href="#master-timestamp">timestamp</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#pbc">pbc</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#pbc-dump">dump</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#remote_replica">remote_replica</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#remote_replica-check">check</a></p>
+</li>
+<li>
+<p><a href="#remote_replica-copy">copy</a></p>
+</li>
+<li>
+<p><a href="#remote_replica-delete">delete</a></p>
+</li>
+<li>
+<p><a href="#remote_replica-dump">dump</a></p>
+</li>
+<li>
+<p><a href="#remote_replica-list">list</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#table">table</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#table-delete">delete</a></p>
+</li>
+<li>
+<p><a href="#table-list">list</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#tablet">tablet</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#tablet-leader_step_down">leader_step_down</a></p>
+</li>
+<li>
+<p><a href="#tablet-change_config">change_config</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#change_config-add_replica">add_replica</a></p>
+</li>
+<li>
+<p><a href="#change_config-change_replica_type">change_replica_type</a></p>
+</li>
+<li>
+<p><a href="#change_config-remove_replica">remove_replica</a></p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#test">test</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#test-loadgen">loadgen</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#tserver">tserver</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#tserver-set_flag">set_flag</a></p>
+</li>
+<li>
+<p><a href="#tserver-status">status</a></p>
+</li>
+<li>
+<p><a href="#tserver-timestamp">timestamp</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><a href="#wal">wal</a></p>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="#wal-dump">dump</a></p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_command_details"><a class="link" href="#_command_details">Command Details</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="cluster"><a class="link" href="#cluster"><code>cluster</code>: Operate on a Kudu cluster</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="cluster-ksck"><a class="link" href="#cluster-ksck"><code>ksck</code>: Check the health of a Kudu cluster&#160;</a></h4>
+<div class="paragraph">
+<p>By default, ksck checks that master and tablet server processes are running, and that table metadata is consistent. Use the 'checksum' flag to check that tablet data is consistent (also see the 'tables' and 'tablets' flags). Use the 'checksum_snapshot' along with 'checksum' if the table or tablets are actively receiving inserts or updates.<br>
+<strong>Usage:</strong><br>
+<code>kudu cluster ksck &lt;master_addresses&gt; [-checksum_cache_blocks] [-checksum_scan] [-checksum_scan_concurrency=&lt;concurrency&gt;] [-nochecksum_snapshot] [-color=&lt;color&gt;] [-tables=&lt;tables&gt;] [-tablets=&lt;tablets&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">checksum_cache_blocks (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should the checksum scanners cache the read blocks</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">checksum_scan (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Perform a checksum scan on data in the cluster.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">checksum_scan_concurrency (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number of concurrent checksum scans to execute per tablet server.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>4</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">checksum_snapshot (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should the checksum scanner use a snapshot scan</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">color (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Specifies whether output should be colorized. The default value 'auto' colorizes output if the output is a terminal. The other valid values are 'always' or 'never'.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>auto</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tables (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tables to check (comma-separated list of names). If not specified, checks all tables.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablets (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablets to check (comma-separated list of IDs) If not specified, checks all tablets.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="fs"><a class="link" href="#fs"><code>fs</code>: Operate on a local Kudu filesystem</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="fs-format"><a class="link" href="#fs-format"><code>format</code>: Format a new Kudu filesystem&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu fs format [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-uuid=&lt;uuid&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uuid (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The uuid to use in the filesystem. If not provided, one is generated</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="fs-dump"><a class="link" href="#fs-dump"><code>dump</code>: Dump a Kudu filesystem</a></h4>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect4">
+<h5 id="dump-cfile"><a class="link" href="#dump-cfile"><code>cfile</code>: Dump the contents of a CFile (column file)&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu fs dump cfile &lt;block_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-noprint_meta] [-noprint_rows]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">block_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">block identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_meta (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include metadata in output</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_rows (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Print each row in the CFile</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="dump-tree"><a class="link" href="#dump-tree"><code>tree</code>: Dump the tree of a Kudu filesystem&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu fs dump tree [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="dump-uuid"><a class="link" href="#dump-uuid"><code>uuid</code>: Dump the UUID of a Kudu filesystem&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu fs dump uuid [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="local_replica"><a class="link" href="#local_replica"><code>local_replica</code>: Operate on local tablet replicas via the local filesystem</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="local_replica-copy_from_remote"><a class="link" href="#local_replica-copy_from_remote"><code>copy_from_remote</code>: Copy a tablet replica from a remote server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica copy_from_remote &lt;tablet_id&gt; &lt;source&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">source</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Source RPC address of form hostname:port</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="local_replica-delete"><a class="link" href="#local_replica-delete"><code>delete</code>: Delete a tablet replica from the local filesystem. By default, leaves a tombstone record.&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica delete &lt;tablet_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-clean_unsafe]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">clean_unsafe (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Delete the local replica completely, not leaving a tombstone. This is not guaranteed to be safe because it also removes the consensus metadata (including Raft voting record) for the specified tablet, which violates the Raft vote durability requirements.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="local_replica-list"><a class="link" href="#local_replica-list"><code>list</code>: Show list of tablet replicas in the local filesystem&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica list [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-list_detail]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">list_detail (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Print partition info for the local replicas</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="local_replica-cmeta"><a class="link" href="#local_replica-cmeta"><code>cmeta</code>: Operate on a local tablet replica&#8217;s consensus metadata file</a></h4>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect4">
+<h5 id="cmeta-print_replica_uuids"><a class="link" href="#cmeta-print_replica_uuids"><code>print_replica_uuids</code>: Print all tablet replica peer UUIDs found in a tablet&#8217;s Raft configuration&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica cmeta print_replica_uuids &lt;tablet_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="cmeta-rewrite_raft_config"><a class="link" href="#cmeta-rewrite_raft_config"><code>rewrite_raft_config</code>: Rewrite a tablet replica&#8217;s Raft configuration&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica cmeta rewrite_raft_config &lt;tablet_id&gt; &lt;peers&gt;&#8230;&#8203; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">peers&#8230;&#8203;</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">List of peers where each peer is of form 'uuid:hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="local_replica-dump"><a class="link" href="#local_replica-dump"><code>dump</code>: Dump a Kudu filesystem</a></h4>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect4">
+<h5 id="dump-block_ids"><a class="link" href="#dump-block_ids"><code>block_ids</code>: Dump the IDs of all blocks belonging to a local replica&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica dump block_ids &lt;tablet_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="dump-meta"><a class="link" href="#dump-meta"><code>meta</code>: Dump the metadata of a local replica&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica dump meta &lt;tablet_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="dump-rowset"><a class="link" href="#dump-rowset"><code>rowset</code>: Dump the rowset contents of a local replica&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica dump rowset &lt;tablet_id&gt; [-dump_data] [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-metadata_only] [-nrows=&lt;nrows&gt;] [-rowset_index=&lt;index&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">dump_data (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Dump the data for each column in the rowset.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">metadata_only (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Only dump the block metadata when printing blocks.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">nrows (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number of rows to dump</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">rowset_index (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Index of the rowset in local replica, default value(-1) will dump all the rowsets of the local replica</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>-1</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="dump-wals"><a class="link" href="#dump-wals"><code>wals</code>: Dump all WAL (write-ahead log) segments of a local replica&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu local_replica dump wals &lt;tablet_id&gt; [-fs_wal_dir=&lt;dir&gt;] [-fs_data_dirs=&lt;dirs&gt;] [-print_entries=&lt;entries&gt;] [-noprint_meta] [-truncate_data=&lt;data&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_wal_dir (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory with write-ahead logs. If this is not specified, the program will not start. May be the same as fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">fs_data_dirs (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of directories with data blocks. If this is not specified, fs_wal_dir will be used as the sole data block directory.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_entries (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">How to print entries:
+  false|0|no = don&#8217;t print
+  true|1|yes|decoded = print them decoded
+  pb = print the raw protobuf
+  id = print only their ids</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>decoded</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_meta (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include metadata in output</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">truncate_data (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Truncate the data fields to the given number of bytes before printing. Set to 0 to disable</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="master"><a class="link" href="#master"><code>master</code>: Operate on a Kudu Master</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="master-set_flag"><a class="link" href="#master-set_flag"><code>set_flag</code>: Change a gflag value on a Kudu Master&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu master set_flag &lt;master_address&gt; &lt;flag&gt; &lt;value&gt; [-force]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Master of form 'hostname:port'. Port may be omitted if the Master is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">flag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the gflag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">value</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">New value for the gflag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">force (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">If true, allows the set_flag command to set a flag which is not explicitly marked as runtime-settable. Such flag changes may be simply ignored on the server, or may cause the server to crash.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="master-status"><a class="link" href="#master-status"><code>status</code>: Get the status of a Kudu Master&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu master status &lt;master_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Master of form 'hostname:port'. Port may be omitted if the Master is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="master-timestamp"><a class="link" href="#master-timestamp"><code>timestamp</code>: Get the current timestamp of a Kudu Master&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu master timestamp &lt;master_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Master of form 'hostname:port'. Port may be omitted if the Master is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="pbc"><a class="link" href="#pbc"><code>pbc</code>: Operate on PBC (protobuf container) files</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="pbc-dump"><a class="link" href="#pbc-dump"><code>dump</code>: Dump a PBC (protobuf container) file&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu pbc dump &lt;path&gt; [-oneline]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">path</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">path to PBC file</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">oneline (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print each protobuf on a single line</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="remote_replica"><a class="link" href="#remote_replica"><code>remote_replica</code>: Operate on remote tablet replicas on a Kudu Tablet Server</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="remote_replica-check"><a class="link" href="#remote_replica-check"><code>check</code>: Check if all tablet replicas on a Kudu Tablet Server are running&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu remote_replica check &lt;tserver_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="remote_replica-copy"><a class="link" href="#remote_replica-copy"><code>copy</code>: Copy a tablet replica from one Kudu Tablet Server to another&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu remote_replica copy &lt;tablet_id&gt; &lt;src_address&gt; &lt;dst_address&gt; [-force_copy]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">src_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">dst_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">force_copy (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Force the copy when the destination tablet server has this replica</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="remote_replica-delete"><a class="link" href="#remote_replica-delete"><code>delete</code>: Delete a tablet replica from a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu remote_replica delete &lt;tserver_address&gt; &lt;tablet_id&gt; &lt;reason&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">reason</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reason for deleting the replica</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="remote_replica-dump"><a class="link" href="#remote_replica-dump"><code>dump</code>: Dump the data of a tablet replica on a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu remote_replica dump &lt;tserver_address&gt; &lt;tablet_id&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="remote_replica-list"><a class="link" href="#remote_replica-list"><code>list</code>: List all tablet replicas on a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu remote_replica list &lt;tserver_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="table"><a class="link" href="#table"><code>table</code>: Operate on Kudu tables</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="table-delete"><a class="link" href="#table-delete"><code>delete</code>: Delete a table&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu table delete &lt;master_addresses&gt; &lt;table_name&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">table_name</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the table to delete</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="table-list"><a class="link" href="#table-list"><code>list</code>: List all tables&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu table list &lt;master_addresses&gt; [-list_tablets]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">list_tablets (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include tablet and replica UUIDs in the output</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tablet"><a class="link" href="#tablet"><code>tablet</code>: Operate on remote Kudu tablets</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="tablet-leader_step_down"><a class="link" href="#tablet-leader_step_down"><code>leader_step_down</code>: Force the tablet&#8217;s leader replica to step down&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tablet leader_step_down &lt;master_addresses&gt; &lt;tablet_id&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="tablet-change_config"><a class="link" href="#tablet-change_config"><code>change_config</code>: Change a tablet&#8217;s Raft configuration</a></h4>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect4">
+<h5 id="change_config-add_replica"><a class="link" href="#change_config-add_replica"><code>add_replica</code>: Add a new replica to a tablet&#8217;s Raft configuration&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tablet change_config add_replica &lt;master_addresses&gt; &lt;tablet_id&gt; &lt;replica_uuid&gt; &lt;replica_type&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">replica_uuid</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">New replica&#8217;s UUID</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">replica_type</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">New replica&#8217;s type. Must be VOTER or NON-VOTER.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="change_config-change_replica_type"><a class="link" href="#change_config-change_replica_type"><code>change_replica_type</code>: Change the type of an existing replica in a tablet&#8217;s Raft configuration&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tablet change_config change_replica_type &lt;master_addresses&gt; &lt;tablet_id&gt; &lt;replica_uuid&gt; &lt;replica_type&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">replica_uuid</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Existing replica&#8217;s UUID</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">replica_type</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Existing replica&#8217;s new type. Must be VOTER or NON-VOTER.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="change_config-remove_replica"><a class="link" href="#change_config-remove_replica"><code>remove_replica</code>: Remove an existing replica from a tablet&#8217;s Raft configuration&#160;</a></h5>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tablet change_config remove_replica &lt;master_addresses&gt; &lt;tablet_id&gt; &lt;replica_uuid&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of Kudu Master addresses where each address is of form 'hostname:port'</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tablet_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Identifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">replica_uuid</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Existing replica&#8217;s UUID</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="test"><a class="link" href="#test"><code>test</code>: Run various tests against a Kudu cluster</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="test-loadgen"><a class="link" href="#test-loadgen"><code>loadgen</code>: Run load generation test with optional scan afterwards&#160;</a></h4>
+<div class="paragraph">
+<p>Run load generation tool which inserts auto-generated data into already existing or auto-created table as fast as possible. If requested, also run scan over the inserted rows to check whether the actual count or inserted rows matches the expected one.<br>
+<strong>Usage:</strong><br>
+<code>kudu test loadgen &lt;master_addresses&gt; [-buffer_flush_watermark_pct=&lt;pct&gt;] [-buffer_size_bytes=&lt;bytes&gt;] [-buffers_num=&lt;num&gt;] [-flush_per_n_rows=&lt;rows&gt;] [-keep_auto_table] [-num_rows_per_thread=&lt;thread&gt;] [-num_threads=&lt;threads&gt;] [-run_scan] [-seq_start=&lt;start&gt;] [-show_first_n_errors=&lt;errors&gt;] [-string_fixed=&lt;fixed&gt;] [-string_len=&lt;len&gt;] [-table_name=&lt;name&gt;] [-table_num_buckets=&lt;buckets&gt;] [-table_num_replicas=&lt;replicas&gt;] [-use_random]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">master_addresses</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of master addresses to run against. Addresses are in 'hostname:port' form where port may be omitted if a master server listens at the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">buffer_flush_watermark_pct (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Mutation buffer flush watermark, in percentage of total size.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">double</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0.5</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">buffer_size_bytes (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Size of the mutation buffer, per session (bytes).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>4194304</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">buffers_num (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number of mutation buffers per session.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>2</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">flush_per_n_rows (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Perform async flush per given number of rows added. Setting to non-zero implicitly turns on manual flush mode.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">keep_auto_table (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">If using the auto-generated table, enabling this option retains the table populated with the data after the test finishes. By default, the auto-generated table is dropped after sucessfully finishing the test. NOTE: this parameter has no effect if using already existing table (see the '--table_name' flag): the existing tables nor their data are never dropped/deleted.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">num_rows_per_thread (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number of rows each thread generates and inserts; 0 means unlimited. All rows generated by a thread are inserted in the context of the same session.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">num_threads (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Number of generator threads to run. Each thread runs its own KuduSession.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>2</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">run_scan (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether to run post-insertion scan to verify that the count of the inserted rows matches the expected number. If enabled, the scan is run only if no errors were encountered while inserting the generated rows.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">seq_start (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Initial value for the generator in sequential mode. This is useful when running multiple times against already existing table: for every next run, set this flag to (num_threads * num_rows_per_thread * column_num + seq_start).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">show_first_n_errors (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Output detailed information on the specified number of first n errors (if any).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string_fixed (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Pre-defined string to write into binary and string columns. Client generates more data per second using pre-defined string compared with auto-generated strings of the same length if run with the same CPU/memory configuration. If left empty, then auto-generated strings of length specified by the '--string_len' parameter are used instead.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string_len (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Length of strings to put into string and binary columns. This parameter is not in effect if '--string_fixed' is specified.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>32</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">table_name (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of an existing table to use for the test. The test will determine the structure of the table schema and populate it with data accordingly. If left empty, the test automatically creates a table of pre-defined columnar structure with unique name and uses it to insert auto-generated data. The auto-created table is dropped upon successful completion of the test if not overridden by the '--keep_auto_table' flag. If running the test against an already existing table, it&#8217;s highly recommended to use a dedicated table created just for testing purposes: the existing table nor its data is never dropped/deleted.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">table_num_buckets (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The number of buckets to create when this tool creates a new table.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>8</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">table_num_replicas (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The number of replicas for the auto-created table; 0 means 'use server-side default'.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">use_random (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whether to use random numbers instead of sequential ones. In case of using random numbers collisions are possible over the data for columns with unique constraint (e.g. primary key).</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tserver"><a class="link" href="#tserver"><code>tserver</code>: Operate on a Kudu Tablet Server</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="tserver-set_flag"><a class="link" href="#tserver-set_flag"><code>set_flag</code>: Change a gflag value on a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tserver set_flag &lt;tserver_address&gt; &lt;flag&gt; &lt;value&gt; [-force]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">flag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the gflag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">value</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">New value for the gflag</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">force (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">If true, allows the set_flag command to set a flag which is not explicitly marked as runtime-settable. Such flag changes may be simply ignored on the server, or may cause the server to crash.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="tserver-status"><a class="link" href="#tserver-status"><code>status</code>: Get the status of a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tserver status &lt;tserver_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="tserver-timestamp"><a class="link" href="#tserver-timestamp"><code>timestamp</code>: Get the current timestamp of a Kudu Tablet Server&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu tserver timestamp &lt;tserver_address&gt;</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tserver_address</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Address of a Kudu Tablet Server of form 'hostname:port'. Port may be omitted if the Tablet Server is bound to the default port.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="wal"><a class="link" href="#wal"><code>wal</code>: Operate on WAL (write-ahead log) files</a></h3>
+<div class="paragraph">
+<p><br></p>
+</div>
+<div class="sect3">
+<h4 id="wal-dump"><a class="link" href="#wal-dump"><code>dump</code>: Dump a WAL (write-ahead log) file&#160;</a></h4>
+<div class="paragraph">
+<p><strong>Usage:</strong><br>
+<code>kudu wal dump &lt;path&gt; [-print_entries=&lt;entries&gt;] [-noprint_meta] [-truncate_data=&lt;data&gt;]</code>
+<br>
+<strong>Arguments:</strong></p>
+</div>
+<table class="tableblock frame-topbot grid-all spread">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">path</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">path to WAL file</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_entries (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">How to print entries:
+  false|0|no = don&#8217;t print
+  true|1|yes|decoded = print them decoded
+  pb = print the raw protobuf
+  id = print only their ids</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>decoded</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">print_meta (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Include metadata in output</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">truncate_data (optional)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Truncate the data fields to the given number of bytes before printing. Set to 0 to disable</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><br></p>
+</div>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Command Line Tools Reference</span>
+            <ul class="sectlevel1">
+<li><a href="#_command_hierarchy">Command Hierarchy</a></li>
+<li><a href="#_command_details">Command Details</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
