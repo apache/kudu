@@ -77,6 +77,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_string(block_manager);
+
 namespace kudu {
 
 namespace tools {
@@ -236,8 +238,10 @@ class ToolTest : public KuduTest {
     } else {
       ASSERT_TRUE(s.ok());
     }
+    // Some stats aren't gathered for the FBM: see FileBlockManager::Open.
     ASSERT_STR_CONTAINS(
-        stdout, Substitute("Total live blocks: $0", expected_num_live));
+        stdout, Substitute("Total live blocks: $0",
+                           FLAGS_block_manager == "file" ? 0 : expected_num_live));
     ASSERT_STR_CONTAINS(
         stdout, Substitute("Total missing blocks: $0", expected_missing_blocks.size()));
     if (!expected_missing_blocks.empty()) {
