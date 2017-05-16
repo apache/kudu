@@ -43,6 +43,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
+#include "kudu/util/trace.h"
 
 // Mac OS 10.9 does not appear to define HOST_NAME_MAX in unistd.h
 #ifndef HOST_NAME_MAX
@@ -114,6 +115,7 @@ Status HostPort::ParseString(const string& str, uint16_t default_port) {
 Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   TRACE_EVENT1("net", "HostPort::ResolveAddresses",
                "host", host_);
+  TRACE_COUNTER_SCOPE_LATENCY_US("dns_us");
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
