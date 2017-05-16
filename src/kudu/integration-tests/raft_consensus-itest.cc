@@ -631,10 +631,10 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
     // Use short and synchronous rolls so that we can test log segment retention.
     "--log_segment_size_mb=1",
     "--log_async_preallocate_segments=false",
-    // Run the maintenance manager frequently so that we don't have to wait
-    // long for GC.
+    // Run the maintenance manager frequently and flush quickly,
+    // so that we don't have to wait long for GC.
     "--maintenance_manager_polling_interval_ms=100",
-    "--log_target_replay_size_mb=1",
+    "--flush_threshold_secs=3",
     // We write 128KB cells in this test, so bump the limit.
     "--max_cell_size_bytes=1000000",
     // And disable WAL compression so the 128KB cells don't get compressed away.
@@ -680,7 +680,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
       for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
         SCOPED_TRACE(Substitute("TS $0", i));
         int num_wals = inspect_->CountFilesInWALDirForTS(i, tablet_id_, "wal-*");
-        ASSERT_EQ(2, num_wals);
+        ASSERT_EQ(1, num_wals);
       }
     });
 }

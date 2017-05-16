@@ -481,6 +481,7 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
 
 // Tests that segments can be GC'd while the log is running.
 TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
+  FLAGS_log_min_segments_to_retain = 2;
   ASSERT_OK(BuildLog());
 
   vector<LogAnchor*> anchors;

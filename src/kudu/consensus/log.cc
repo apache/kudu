@@ -56,7 +56,7 @@
 
 // Log retention configuration.
 // -----------------------------
-DEFINE_int32(log_min_segments_to_retain, 2,
+DEFINE_int32(log_min_segments_to_retain, 1,
              "The minimum number of past log segments to keep at all times,"
              " regardless of what is required for durability. "
              "Must be at least 1.");
