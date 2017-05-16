@@ -159,20 +159,15 @@ void TransactionTracker::DecrementCounters(const TransactionDriver& driver) cons
 void TransactionTracker::Release(TransactionDriver* driver) {
   DecrementCounters(*driver);
 
-  State st;
-  {
-    // Remove the transaction from the map, retaining the state for use
-    // below.
-    std::lock_guard<simple_spinlock> l(lock_);
-    st = FindOrDie(pending_txns_, driver);
-    if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
-      LOG(FATAL) << "Could not remove pending transaction from map: "
-          << driver->ToStringUnlocked();
-    }
-  }
-
+  // Remove the transaction from the map updating memory consumption if needed.
+  std::lock_guard<simple_spinlock> l(lock_);
+  State st = FindOrDie(pending_txns_, driver);
   if (mem_tracker_) {
     mem_tracker_->Release(st.memory_footprint);
+  }
+  if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
+    LOG(FATAL) << "Could not remove pending transaction from map: "
+        << driver->ToStringUnlocked();
   }
 }
 
