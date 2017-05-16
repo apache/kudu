@@ -158,7 +158,17 @@ class rw_spinlock {
 class percpu_rwlock {
  public:
   percpu_rwlock() {
+#if defined(__APPLE__) || defined(THREAD_SANITIZER)
+    // OSX doesn't have a way to get the index of the CPU running this thread, so
+    // we'll just use a single lock.
+    //
+    // TSAN limits the number of simultaneous lock acquisitions to 64, so we
+    // can't create one lock per core on machines with lots of cores. So, we'll
+    // also just use a single lock.
+    n_cpus_ = 1;
+#else
     n_cpus_ = base::MaxCPUIndex() + 1;
+#endif
     CHECK_GT(n_cpus_, 0);
     locks_ = new padded_lock[n_cpus_];
   }
@@ -168,9 +178,8 @@ class percpu_rwlock {
   }
 
   rw_spinlock &get_lock() {
-#if defined(__APPLE__)
-    // OSX doesn't have a way to get the CPU, so we'll pick a random one.
-    int cpu = reinterpret_cast<uintptr_t>(this) % n_cpus_;
+#if defined(__APPLE__) || defined(THREAD_SANITIZER)
+    int cpu = 0;
 #else
     int cpu = sched_getcpu();
     CHECK_LT(cpu, n_cpus_);
