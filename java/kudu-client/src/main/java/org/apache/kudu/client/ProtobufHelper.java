@@ -86,8 +86,8 @@ public class ProtobufHelper {
 
   public static ColumnSchema pbToColumnSchema(Common.ColumnSchemaPB pb) {
     Type type = Type.getTypeForDataType(pb.getType());
-    Object defaultValue = pb.hasReadDefaultValue() ?
-        byteStringToObject(type, pb.getReadDefaultValue()) : null;
+    Object defaultValue = pb.hasWriteDefaultValue() ?
+        byteStringToObject(type, pb.getWriteDefaultValue()) : null;
     ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
     ColumnSchema.CompressionAlgorithm compressionAlgorithm =
         ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());

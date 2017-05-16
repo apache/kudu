@@ -34,6 +34,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnSchema.CompressionAlgorithm;
+import org.apache.kudu.ColumnSchema.Encoding;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.Pair;
@@ -146,6 +148,33 @@ public class TestAlterTable extends BaseKuduTest {
         ", INT32 addNullable=101, INT32 addNullableDef=NULL");
     Collections.sort(expected);
     assertArrayEquals(expected.toArray(new String[0]), actual.toArray(new String[0]));
+  }
+
+  @Test
+  public void testAlterModifyColumns() throws Exception {
+    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    insertRows(table, 0, 100);
+    assertEquals(100, countRowsInTable(table));
+
+    // Check for expected defaults.
+    ColumnSchema col = table.getSchema().getColumns().get(1);
+    assertEquals(CompressionAlgorithm.DEFAULT_COMPRESSION, col.getCompressionAlgorithm());
+    assertEquals(Encoding.AUTO_ENCODING, col.getEncoding());
+    assertEquals(null, col.getDefaultValue());
+
+    // Alter the table.
+    syncClient.alterTable(tableName, new AlterTableOptions()
+        .changeCompressionAlgorithm(col.getName(), CompressionAlgorithm.SNAPPY)
+        .changeEncoding(col.getName(), Encoding.RLE)
+        .changeDefault(col.getName(), 0));
+    assertTrue(syncClient.isAlterTableDone(tableName));
+
+    // Check for new values.
+    table = syncClient.openTable(tableName);
+    col = table.getSchema().getColumns().get(1);
+    assertEquals(CompressionAlgorithm.SNAPPY, col.getCompressionAlgorithm());
+    assertEquals(Encoding.RLE, col.getEncoding());
+    assertEquals(0, col.getDefaultValue());
   }
 
   @Test
