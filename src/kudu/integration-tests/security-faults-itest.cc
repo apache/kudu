@@ -30,6 +30,7 @@
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_bool(rpc_trace_negotiation);
 
 using kudu::client::KuduClient;
@@ -52,9 +53,13 @@ namespace kudu {
 class SecurityComponentsFaultsITest : public KuduTest {
  public:
   SecurityComponentsFaultsITest()
-      : krb_lifetime_seconds_(64),
+      : krb_lifetime_seconds_(120),
         num_masters_(3),
         num_tservers_(3) {
+
+    // Reopen client-->server connections on every RPC. This is to make sure the
+    // servers authenticate the client on every RPC call.
+    FLAGS_rpc_reopen_outbound_connections = true;
 
     // Want to run with Kerberos enabled.
     cluster_opts_.enable_kerberos = true;
