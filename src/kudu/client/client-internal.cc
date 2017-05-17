@@ -654,7 +654,7 @@ void KuduClient::Data::ConnectedToClusterCb(
   // Adopt the authentication token from the response, if it's been set.
   if (connect_response.has_authn_token()) {
     messenger_->set_authn_token(connect_response.authn_token());
-    LOG(INFO) << "Received and adopted authn token";
+    VLOG(2) << "Received and adopted authn token";
   }
 
   vector<StatusCallback> cbs;
