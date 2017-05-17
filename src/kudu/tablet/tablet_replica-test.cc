@@ -547,10 +547,10 @@ TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
   ASSERT_GT(stats.perf_improvement(), 0.01);
   stats.Clear();
 
-  // Way over the threshold, number is much higher than 1.
+  // Over the threshold, we expect improvement equal to the excess MB.
   stats.set_ram_anchored(128 * 1024 * 1024);
   FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1);
-  ASSERT_LT(1.0, stats.perf_improvement());
+  ASSERT_NEAR(stats.perf_improvement(), 64, 0.01);
   stats.Clear();
 
   // Below the threshold but have been there a long time, closing in to 1.0.
