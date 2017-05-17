@@ -63,7 +63,7 @@ DEFINE_int32(log_min_segments_to_retain, 1,
 TAG_FLAG(log_min_segments_to_retain, runtime);
 TAG_FLAG(log_min_segments_to_retain, advanced);
 
-DEFINE_int32(log_max_segments_to_retain, 10,
+DEFINE_int32(log_max_segments_to_retain, 80,
              "The maximum number of past log segments to keep at all times for "
              "the purposes of catching up other peers.");
 TAG_FLAG(log_max_segments_to_retain, runtime);
@@ -1051,6 +1051,8 @@ Status Log::SwitchToAllocatedSegment() {
   }
 
   // Open the segment we just created in readable form and add it to the reader.
+  // TODO(todd): consider using a global FileCache here? With short log segments and
+  // lots of tablets, this file descriptor usage may add up.
   unique_ptr<RandomAccessFile> readable_file;
 
   RandomAccessFileOptions opts;

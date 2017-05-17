@@ -2508,6 +2508,49 @@ TEST_F(RaftConsensusITest, TestSlowLeader) {
   SleepFor(MonoDelta::FromSeconds(60));
 }
 
+// Test write batches just below the maximum limit.
+TEST_F(RaftConsensusITest, TestLargeBatches) {
+  vector<string> ts_flags = {
+    // We write 128KB cells in this test, so bump the limit, and disable compression.
+    "--max_cell_size_bytes=1000000",
+    "--log_segment_size_mb=1",
+    "--log_compression_codec=none",
+    "--log_min_segments_to_retain=100", // disable GC of logs.
+  };
+  BuildAndStart(ts_flags);
+
+  const int64_t kBatchSize = 40; // Write 40 * 128kb = 5MB per batch.
+  const int64_t kNumBatchesToWrite = 100;
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_payload_bytes(128 * 1024); // Write ops of size 128KB.
+  workload.set_write_batch_size(kBatchSize);
+  workload.set_num_write_threads(1);
+  workload.Setup();
+  workload.Start();
+  LOG(INFO) << "Waiting until we've written enough data...";
+  while (workload.rows_inserted() < kBatchSize * kNumBatchesToWrite) {
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  workload.StopAndJoin();
+
+  // Verify replication.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(),
+                            ClusterVerifier::EXACTLY,
+                            workload.rows_inserted()));
+
+  int num_wals = inspect_->CountFilesInWALDirForTS(0, tablet_id_, "wal-*");
+  int num_batches = workload.rows_inserted() / kBatchSize;
+  // The number of WALs should be similar to 'num_batches'. We can't make
+  // an exact assertion because async preallocation may take a small amount
+  // of time, in which case it's possible to put more than one batch in a
+  // single WAL.
+  ASSERT_GE(num_wals, num_batches / 2);
+  ASSERT_LE(num_wals, num_batches + 2);
+}
+
 void RaftConsensusITest::InsertPayloadIgnoreErrors(int start_row, int num_rows, int payload_size) {
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableId, &table));

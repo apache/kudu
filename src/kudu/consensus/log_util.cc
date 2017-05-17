@@ -45,8 +45,8 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 
-DEFINE_int32(log_segment_size_mb, 64,
-             "The default segment size for log roll-overs, in MB");
+DEFINE_int32(log_segment_size_mb, 8,
+             "The default size for log segments, in MB");
 TAG_FLAG(log_segment_size_mb, advanced);
 
 DEFINE_bool(log_force_fsync_all, false,

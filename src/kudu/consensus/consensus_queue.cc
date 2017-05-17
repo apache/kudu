@@ -445,7 +445,6 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       request->mutable_ops()->AddAllocated(msg->get());
     }
     msg_refs->swap(messages);
-    DCHECK_LE(request->ByteSize(), FLAGS_consensus_max_batch_size_bytes);
   }
 
   DCHECK(preceding_id.IsInitialized());
