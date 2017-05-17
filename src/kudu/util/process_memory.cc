@@ -19,10 +19,10 @@
 
 #include <gflags/gflags.h>
 #include <gperftools/malloc_extension.h>
-#include <gperftools/malloc_hook.h>
 
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -85,10 +85,6 @@ Atomic64 g_released_memory_since_gc;
 // efficient). A lower value will mean our memory overhead is lower.
 // TODO(todd): this is a stopgap.
 const int64_t GC_RELEASE_SIZE = 128 * 1024L * 1024L;
-
-// The total memory consumption of the process, incrementally tracked by
-// New/Delete hooks.
-LongAdder* g_total_consumption = nullptr;
 
 #endif // TCMALLOC_ENABLED
 
@@ -188,39 +184,27 @@ void InitLimits() {
   GoogleOnceInit(&once, &DoInitLimits);
 }
 
-#ifdef TCMALLOC_ENABLED
-
-void NewHook(const void* ptr, size_t size) {
-  // We ignore 'size' because it's possible the allocated size is actually
-  // rounded up to the next biggest slab class.
-  ssize_t alloc_size = MallocExtension::instance()->GetAllocatedSize(ptr);
-  g_total_consumption->IncrementBy(alloc_size);
-}
-void DeleteHook(const void* ptr) {
-  ssize_t size = MallocExtension::instance()->GetAllocatedSize(ptr);
-  g_total_consumption->IncrementBy(-size);
-}
-
-void InitConsumptionHook() {
-  CHECK(!g_total_consumption);
-  g_total_consumption = new LongAdder();
-  g_total_consumption->IncrementBy(GetTCMallocCurrentAllocatedBytes());
-  MallocHook::AddNewHook(&NewHook);
-  MallocHook::AddDeleteHook(&DeleteHook);
-}
-#endif // TCMALLOC_ENABLED
-
 } // anonymous namespace
 
 int64_t CurrentConsumption() {
 #ifdef TCMALLOC_ENABLED
-  // Calling GetTCMallocCurrentAllocatedBytes() is too slow to do frequently, since it has to
-  // take the tcmalloc global lock and traverse all live threads to add up their caches.
-  // Instead, we install a new/delete hook to incrementally track allocated memory, and
-  // then just return the currently tracked value here.
-  static GoogleOnceType once;
-  GoogleOnceInit(&once, &InitConsumptionHook);
-  return g_total_consumption->Value();
+  const int64_t kReadIntervalMicros = 50000;
+  static Atomic64 last_read_time = 0;
+  static simple_spinlock read_lock;
+  static Atomic64 consumption = 0;
+  uint64_t time = GetMonoTimeMicros();
+  if (time > last_read_time + kReadIntervalMicros && read_lock.try_lock()) {
+    base::subtle::NoBarrier_Store(&consumption, GetTCMallocCurrentAllocatedBytes());
+    // Re-fetch the time after getting the consumption. This way, in case fetching
+    // consumption is extremely slow for some reason (eg due to lots of contention
+    // in tcmalloc) we at least ensure that we wait at least another full interval
+    // before fetching the information again.
+    time = GetMonoTimeMicros();
+    base::subtle::NoBarrier_Store(&last_read_time, time);
+    read_lock.unlock();
+  }
+
+  return base::subtle::NoBarrier_Load(&consumption);
 #else
   // Without tcmalloc, we have no reliable way of determining our own heap
   // size (e.g. mallinfo doesn't work in ASAN builds). So, we'll fall back

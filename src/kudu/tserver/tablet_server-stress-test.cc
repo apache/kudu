@@ -141,13 +141,16 @@ TEST_F(TSStressTest, TestMTInserts) {
   if (timeout_thread.joinable()) timeout_thread.join();
 
 #ifdef TCMALLOC_ENABLED
-  // In TCMalloc-enabled builds, verify that our incremental memory tracking matches the
-  // actual memory consumed, within half a percent.
-  int64_t consumption = process_memory::CurrentConsumption();
-  LOG(INFO) << "consumption: " << consumption;
-  ASSERT_NEAR(process_memory::GetTCMallocCurrentAllocatedBytes(),
-              consumption,
-              consumption * 0.005);
+  // In TCMalloc-enabled builds, verify that our memory tracking matches the
+  // actual memory consumed, within a short period of time (the memory tracking
+  // can lag by up to 50ms).
+  ASSERT_EVENTUALLY([&]() {
+      int64_t consumption = process_memory::CurrentConsumption();
+      LOG(INFO) << "consumption: " << consumption;
+      ASSERT_NEAR(process_memory::GetTCMallocCurrentAllocatedBytes(),
+                  consumption,
+                  consumption * 0.005);
+    });
 #endif
 }
 
