@@ -206,16 +206,21 @@ Status TSTabletManager::Init() {
   // First, load all of the tablet metadata. We do this before we start
   // submitting the actual OpenTablet() tasks so that we don't have to compete
   // for disk resources, etc, with bootstrap processes and running tablets.
+  int loaded_count = 0;
   for (const string& tablet_id : tablet_ids) {
+    KLOG_EVERY_N_SECS(INFO, 1) << Substitute("Loading tablet metadata ($0/$1 complete)",
+                                             loaded_count, tablet_ids.size());
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
+    loaded_count++;
     if (PREDICT_FALSE(meta->tablet_data_state() != TABLET_DATA_READY)) {
       RETURN_NOT_OK(HandleNonReadyTabletOnStartup(meta));
       continue;
     }
     metas.push_back(meta);
   }
+  LOG(INFO) << Substitute("Loaded tablet metadata ($0 live tablets)", metas.size());
 
   // Now submit the "Open" task for each.
   for (const scoped_refptr<TabletMetadata>& meta : metas) {

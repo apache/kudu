@@ -148,14 +148,15 @@ Status LogEntryReader::ReadNextEntry(LogEntryPB* entry) {
 
     // Read and validate the entry header first.
     Status s;
+    EntryHeaderStatus s_detail = EntryHeaderStatus::OTHER_ERROR;
     if (offset_ + seg_->entry_header_size() < read_up_to_) {
-      s = seg_->ReadEntryHeaderAndBatch(&offset_, &tmp_buf_, &current_batch);
+      s = seg_->ReadEntryHeaderAndBatch(&offset_, &tmp_buf_, &current_batch, &s_detail);
     } else {
       s = Status::Corruption(Substitute("Truncated log entry at offset $0", offset_));
     }
 
     if (PREDICT_FALSE(!s.ok())) {
-      return HandleReadError(s);
+      return HandleReadError(s, s_detail);
     }
 
     // Add the entries from this batch to our pending queue.
@@ -185,12 +186,11 @@ Status LogEntryReader::ReadNextEntry(LogEntryPB* entry) {
   return Status::OK();
 }
 
-Status LogEntryReader::HandleReadError(const Status& s) const {
+Status LogEntryReader::HandleReadError(const Status& s, EntryHeaderStatus status_detail) const {
   if (!s.IsCorruption()) {
     // IO errors should always propagate back
     return s.CloneAndPrepend(Substitute("error reading from log $0", seg_->path_));
   }
-
   Status corruption_status = MakeCorruptionStatus(s);
 
   // If we have a valid footer in the segment, then the segment was correctly
@@ -216,11 +216,20 @@ Status LogEntryReader::HandleReadError(const Status& s) const {
     return corruption_status;
   }
 
-  LOG(INFO) << "Ignoring log segment corruption in " << seg_->path_ << " because "
-            << "there are no log entries following the corrupted one. "
-            << "The server probably crashed in the middle of writing an entry "
-            << "to the write-ahead log or downloaded an active log via tablet copy. "
-            << "Error detail: " << corruption_status.ToString();
+  CHECK(status_detail != EntryHeaderStatus::OK);
+  if (status_detail == EntryHeaderStatus::ALL_ZEROS) {
+    // In the common case of hitting the end of valid entries, we'll read a header which
+    // is all zero bytes, and find no more entries following it. This isn't really a
+    // "Corruption" so much as an expected EOF-type condition, so we'll just log
+    // at VLOG(1) instead of INFO.
+    VLOG(1) << "Reached preallocated space while reading log segment " << seg_->path_;
+  } else {
+    LOG(INFO) << "Ignoring log segment corruption in " << seg_->path_ << " because "
+              << "there are no log entries following the corrupted one. "
+              << "The server probably crashed in the middle of writing an entry "
+              << "to the write-ahead log or downloaded an active log via tablet copy. "
+              << "Error detail: " << corruption_status.ToString();
+  }
   return Status::EndOfFile("");
 }
 
@@ -318,8 +327,8 @@ Status ReadableLogSegment::Init() {
   Status s = ReadFooter();
   if (!s.ok()) {
     if (s.IsNotFound()) {
-      LOG(INFO) << "Log segment " << path_ << " has no footer. This segment was likely "
-                << "being written when the server previously shut down.";
+      VLOG(1) << "Log segment " << path_ << " has no footer. This segment was likely "
+              << "being written when the server previously shut down.";
     } else {
       LOG(WARNING) << "Could not read footer for segment: " << path_
           << ": " << s.ToString();
@@ -380,8 +389,8 @@ Status ReadableLogSegment::RebuildFooterByScanning() {
   footer_was_rebuilt_ = true;
   readable_to_offset_.Store(reader.offset());
 
-  LOG(INFO) << "Successfully rebuilt footer for segment: " << path_
-            << " (valid entries through byte offset " << reader.offset() << ")";
+  VLOG(1) << "Successfully rebuilt footer for segment: " << path_
+          << " (valid entries through byte offset " << reader.offset() << ")";
   return Status::OK();
 }
 
@@ -586,8 +595,8 @@ size_t ReadableLogSegment::entry_header_size() const {
 Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_valid_entries) {
   TRACE_EVENT1("log", "ReadableLogSegment::ScanForValidEntryHeaders",
                "path", path_);
-  LOG(INFO) << "Scanning " << path_ << " for valid entry headers "
-            << "following offset " << offset << "...";
+  VLOG(1) << "Scanning " << path_ << " for valid entry headers "
+          << "following offset " << offset << "...";
   *has_valid_entries = false;
 
   const int kChunkSize = 1024 * 1024;
@@ -615,43 +624,62 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_va
       Slice potential_header = Slice(&chunk[off_in_chunk], entry_header_size());
 
       EntryHeader header;
-      if (DecodeEntryHeader(potential_header, &header)) {
-        LOG(INFO) << "Found a valid entry header at offset " << (offset + off_in_chunk);
+      if (DecodeEntryHeader(potential_header, &header) == EntryHeaderStatus::OK) {
+        VLOG(1) << "Found a valid entry header at offset " << (offset + off_in_chunk);
         *has_valid_entries = true;
         return Status::OK();
       }
     }
   }
 
-  LOG(INFO) << "Found no log entry headers";
+  VLOG(1) << "Found no log entry headers";
   return Status::OK();
 }
 
 Status ReadableLogSegment::ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                                   gscoped_ptr<LogEntryBatchPB>* batch) {
+                                                   gscoped_ptr<LogEntryBatchPB>* batch,
+                                                   EntryHeaderStatus* status_detail) {
   int64_t cur_offset = *offset;
   EntryHeader header;
-  RETURN_NOT_OK(ReadEntryHeader(&cur_offset, &header));
-  RETURN_NOT_OK(ReadEntryBatch(&cur_offset, header, tmp_buf, batch));
+  RETURN_NOT_OK(ReadEntryHeader(&cur_offset, &header, status_detail));
+  Status s = ReadEntryBatch(&cur_offset, header, tmp_buf, batch);
+  if (PREDICT_FALSE(!s.ok())) {
+    // If we failed to actually decode the batch, make sure to set status_detail to
+    // non-OK.
+    *status_detail = EntryHeaderStatus::OTHER_ERROR;
+    return s;
+  }
   *offset = cur_offset;
   return Status::OK();
 }
 
-Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header) {
+Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header,
+                                           EntryHeaderStatus* status_detail) {
   const size_t header_size = entry_header_size();
   uint8_t scratch[header_size];
   Slice slice(scratch, header_size);
   RETURN_NOT_OK_PREPEND(readable_file()->Read(*offset, &slice),
                         "Could not read log entry header");
 
-  if (PREDICT_FALSE(!DecodeEntryHeader(slice, header))) {
-    return Status::Corruption("CRC mismatch in log entry header");
+  *status_detail = DecodeEntryHeader(slice, header);
+  switch (*status_detail) {
+    case EntryHeaderStatus::CRC_MISMATCH:
+      return Status::Corruption("CRC mismatch in log entry header");
+    case EntryHeaderStatus::ALL_ZEROS:
+      return Status::Corruption("preallocated space found");
+    case EntryHeaderStatus::OK:
+      break;
+    default:
+      LOG(FATAL) << "unexpected result from decoding";
+      return Status::Corruption("unexpected result from decoded");
   }
+
   *offset += slice.size();
   return Status::OK();
 }
 
-bool ReadableLogSegment::DecodeEntryHeader(const Slice& data, EntryHeader* header) {
+EntryHeaderStatus ReadableLogSegment::DecodeEntryHeader(
+    const Slice& data, EntryHeader* header) {
   uint32_t computed_header_crc;
   if (entry_header_size() == kEntryHeaderSizeV2) {
     header->msg_length_compressed = DecodeFixed32(&data[0]);
@@ -669,7 +697,13 @@ bool ReadableLogSegment::DecodeEntryHeader(const Slice& data, EntryHeader* heade
   }
 
   // Verify the header.
-  return computed_header_crc == header->header_crc;
+  if (computed_header_crc == header->header_crc) {
+    return EntryHeaderStatus::OK;
+  }
+  if (IsAllZeros(data)) {
+    return EntryHeaderStatus::ALL_ZEROS;
+  }
+  return EntryHeaderStatus::CRC_MISMATCH;
 }
 
 

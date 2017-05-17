@@ -1116,7 +1116,7 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
   // rewind the schema before replaying any operations. So, we just
   // swap in a new one with the correct schema, rather than attempting
   // to flush.
-  LOG_WITH_PREFIX(INFO) << "Rewinding schema during bootstrap to " << new_schema.ToString();
+  VLOG_WITH_PREFIX(1) << "Rewinding schema during bootstrap to " << new_schema.ToString();
 
   metadata_->SetSchema(new_schema, schema_version);
   {

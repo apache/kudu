@@ -584,7 +584,8 @@ Status TabletBootstrap::OpenTablet(bool* has_blocks) {
                                         metric_registry_,
                                         log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.
-  LOG_TIMING_PREFIX(INFO, LogPrefix(), "opening tablet") {
+  {
+    SCOPED_LOG_SLOW_EXECUTION_PREFIX(INFO, 100, LogPrefix(), "opening tablet");
     RETURN_NOT_OK(tablet->Open());
   }
   *has_blocks = tablet->num_rowsets() != 0;
@@ -640,16 +641,16 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 
     string source_path = JoinPathSegments(log_dir, child);
     string dest_path = JoinPathSegments(recovery_path, child);
-    LOG_WITH_PREFIX(INFO) << "Will attempt to recover log segment " << source_path
-                          << " to " << dest_path;
+    VLOG_WITH_PREFIX(1) << "Will attempt to recover log segment " << source_path
+                        << " to " << dest_path;
     *needs_recovery = true;
   }
 
   if (*needs_recovery) {
     // Atomically rename the log directory to the recovery directory
     // and then re-create the log directory.
-    LOG_WITH_PREFIX(INFO) << "Moving log directory " << log_dir << " to recovery directory "
-                          << recovery_path << " in preparation for log replay";
+    VLOG_WITH_PREFIX(1) << "Moving log directory " << log_dir << " to recovery directory "
+                        << recovery_path << " in preparation for log replay";
     RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(log_dir, recovery_path),
                           Substitute("Could not move log directory $0 to recovery dir $1",
                                      log_dir, recovery_path));
@@ -677,10 +678,10 @@ Status TabletBootstrap::RemoveRecoveryDir() {
   CHECK(fs_manager->Exists(recovery_path))
       << "Tablet WAL recovery dir " << recovery_path << " does not exist.";
 
-  LOG_WITH_PREFIX(INFO) << "Preparing to delete log recovery files and directory " << recovery_path;
+  VLOG_WITH_PREFIX(1) << "Preparing to delete log recovery files and directory " << recovery_path;
 
   string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
-  LOG_WITH_PREFIX(INFO) << "Renaming log recovery dir from "  << recovery_path
+  VLOG_WITH_PREFIX(1) << "Renaming log recovery dir from "  << recovery_path
                         << " to " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
                         Substitute("Could not rename old recovery dir from: $0 to: $1",
@@ -690,10 +691,10 @@ Status TabletBootstrap::RemoveRecoveryDir() {
     LOG_WITH_PREFIX(INFO) << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
     return Status::OK();
   }
-  LOG_WITH_PREFIX(INFO) << "Deleting all files from renamed log recovery directory " << tmp_path;
+  VLOG_WITH_PREFIX(1) << "Deleting all files from renamed log recovery directory " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
                         "Could not remove renamed recovery dir " + tmp_path);
-  LOG_WITH_PREFIX(INFO) << "Completed deletion of old log recovery files and directory "
+  VLOG_WITH_PREFIX(1) << "Completed deletion of old log recovery files and directory "
                         << tmp_path;
   return Status::OK();
 }
@@ -1236,7 +1237,9 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   //   no later committed replicate message (with index > Y) is visible across reboots
   //   in the tablet data.
 
-  DumpReplayStateToLog(state);
+  if (VLOG_IS_ON(1)) {
+    DumpReplayStateToLog(state);
+  }
 
   // Set up the ConsensusBootstrapInfo structure for the caller.
   for (OpIndexToEntryMap::value_type& e : state.pending_replicates) {

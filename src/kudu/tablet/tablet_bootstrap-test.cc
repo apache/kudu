@@ -28,6 +28,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/server/logical_clock.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -164,7 +165,17 @@ TEST_F(BootstrapTest, TestBootstrap) {
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
-  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  StringVectorSink capture_logs;
+  {
+    // Capture the log messages during bootstrap.
+    ScopedRegisterSink reg(&capture_logs);
+    ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  }
+
+  // Make sure we don't see anything in the logs that would make a user scared.
+  for (const string& s : capture_logs.logged_msgs()) {
+    ASSERT_STR_NOT_MATCHES(s, "[cC]orrupt");
+  }
 
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);

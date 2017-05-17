@@ -72,9 +72,24 @@ struct LogOptions {
   LogOptions();
 };
 
-
 // A sequence of segments, ordered by increasing sequence number.
 typedef std::vector<scoped_refptr<ReadableLogSegment> > SegmentSequence;
+
+// Detailed error codes when decoding entry headers. Used for more fine-grained
+// error-handling.
+enum class EntryHeaderStatus {
+  OK,
+
+  // The entry was just a run of zeros. It's likely we are trying to
+  // read from pre-allocated space.
+  ALL_ZEROS,
+
+  // The entry checksum didn't match the expected value.
+  CRC_MISMATCH,
+
+  // Some other error occurred (eg an IO error while reading)
+  OTHER_ERROR
+};
 
 // LogEntryReader provides iterator-style access to read the entries
 // from an open log segment.
@@ -106,7 +121,7 @@ class LogEntryReader {
   friend class ReadableLogSegment;
 
   // Handle an error reading an entry.
-  Status HandleReadError(const Status& s) const;
+  Status HandleReadError(const Status& s, EntryHeaderStatus status_detail) const;
 
   // Format a nice error message to report on a corruption in a log file.
   Status MakeCorruptionStatus(const Status& status) const;
@@ -314,22 +329,28 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Read an entry header and its associated batch at the given offset.
   // If successful, updates '*offset' to point to the next batch
-  // in the file. If unsuccessful, '*offset' is not updated.
+  // in the file.
+  //
+  // If unsuccessful, '*offset' is not updated, and *status_detail will be updated
+  // to indicate the cause of the error.
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                 gscoped_ptr<LogEntryBatchPB>* batch);
+                                 gscoped_ptr<LogEntryBatchPB>* batch,
+                                 EntryHeaderStatus* status_detail);
 
   // Reads a log entry header from the segment.
-  // Also increments the passed offset* by the length of the entry.
-  Status ReadEntryHeader(int64_t *offset, EntryHeader* header);
+  //
+  // Also increments the passed offset* by the length of the entry on successful
+  // read.
+  Status ReadEntryHeader(int64_t *offset, EntryHeader* header,
+                         EntryHeaderStatus* status_detail);
 
   // Decode a log entry header from the given slice. The header length is
   // determined by 'entry_header_size()'.
   // Returns true if successful, false if corrupt.
   //
   // NOTE: this is performance-critical since it is used by ScanForValidEntryHeaders
-  // and thus returns bool instead of Status.
-  bool DecodeEntryHeader(const Slice& data, EntryHeader* header);
-
+  // and thus returns an enum instead of Status.
+  EntryHeaderStatus DecodeEntryHeader(const Slice& data, EntryHeader* header);
 
   // Reads a log entry batch from the provided readable segment, which gets decoded
   // into 'entry_batch' and increments 'offset' by the batch's length.

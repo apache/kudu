@@ -157,8 +157,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
       CHECK(segment->IsInitialized()) << "Uninitialized segment at: " << segment->path();
 
       if (!segment->HasFooter()) {
-        LOG(INFO) << "Log segment " << fqp << " was likely left in-progress "
-            "after a previous crash. Will try to rebuild footer by scanning data.";
+        VLOG(1) << "Log segment " << fqp << " was likely left in-progress "
+                << "after a previous crash. Will try to rebuild footer by scanning data.";
         RETURN_NOT_OK(segment->RebuildFooterByScanning());
       }
 
@@ -251,7 +251,9 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   CHECK_GT(index_entry.offset_in_segment, 0);
   int64_t offset = index_entry.offset_in_segment;
   ScopedLatencyMetric scoped(read_batch_latency_.get());
-  RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch),
+  EntryHeaderStatus unused_status_detail;
+  RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch,
+                                                         &unused_status_detail),
                         Substitute("Failed to read LogEntry for index $0 from log segment "
                                    "$1 offset $2",
                                    index,
