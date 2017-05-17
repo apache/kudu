@@ -209,8 +209,8 @@ class ThreadPool {
   void CheckNotPoolThreadUnlocked();
 
  private:
-  FRIEND_TEST(TestThreadPool, TestThreadPoolWithNoMinimum);
-  FRIEND_TEST(TestThreadPool, TestVariableSizeThreadPool);
+  FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMinimum);
+  FRIEND_TEST(ThreadPoolTest, TestVariableSizeThreadPool);
 
   struct QueueEntry {
     std::shared_ptr<Runnable> runnable;
