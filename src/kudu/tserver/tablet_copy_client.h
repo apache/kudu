@@ -124,10 +124,6 @@ class TabletCopyClient {
     kFinished,
   };
 
-  // Extract the embedded Status message from the given ErrorStatusPB.
-  // The given ErrorStatusPB must extend TabletCopyErrorPB.
-  static Status ExtractRemoteError(const rpc::ErrorStatusPB& remote_error);
-
   static Status UnwindRemoteError(const Status& status, const rpc::RpcController& controller);
 
   // Update the bootstrap StatusListener with a message.

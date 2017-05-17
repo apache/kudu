@@ -326,27 +326,21 @@ Status TabletCopyClient::Abort() {
   return Status::OK();
 }
 
-// Decode the remote error into a human-readable Status object.
-Status TabletCopyClient::ExtractRemoteError(const rpc::ErrorStatusPB& remote_error) {
-  if (PREDICT_TRUE(remote_error.HasExtension(TabletCopyErrorPB::tablet_copy_error_ext))) {
-    const TabletCopyErrorPB& error =
-        remote_error.GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
-    return StatusFromPB(error.status()).CloneAndPrepend("Received error code " +
-              TabletCopyErrorPB::Code_Name(error.code()) + " from remote service");
-  } else {
-    return Status::InvalidArgument("Unable to decode tablet copy RPC error message",
-                                   SecureShortDebugString(remote_error));
-  }
-}
-
 // Enhance a RemoteError Status message with additional details from the remote.
 Status TabletCopyClient::UnwindRemoteError(const Status& status,
                                            const rpc::RpcController& controller) {
-  if (!status.IsRemoteError()) {
+  if (!status.IsRemoteError() ||
+      !controller.error_response()->HasExtension(TabletCopyErrorPB::tablet_copy_error_ext)) {
     return status;
   }
-  Status extension_status = ExtractRemoteError(*controller.error_response());
-  return status.CloneAndAppend(extension_status.ToString());
+
+  const TabletCopyErrorPB& error =
+    controller.error_response()->GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
+
+  return status.CloneAndAppend(
+      strings::Substitute("$0: received error code $1 from remote service",
+                          TabletCopyErrorPB::Code_Name(error.code()),
+                          StatusFromPB(error.status()).ToString()));
 }
 
 void TabletCopyClient::UpdateStatusMessage(const string& message) {
