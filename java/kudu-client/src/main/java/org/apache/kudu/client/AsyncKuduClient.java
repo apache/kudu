@@ -507,6 +507,11 @@ public class AsyncKuduClient implements AutoCloseable {
         String tableName = table.getName();
         Deferred<KuduTable> d = rpc.getDeferred();
         if (isCreateTableDoneResponsePB.getDone()) {
+          // When opening a table, clear the existing cached non-covered range entries.
+          TableLocationsCache cache = tableLocations.get(table.getTableId());
+          if (cache != null) {
+            cache.clearNonCoveredRangeEntries();
+          }
           LOG.debug("Table {}'s tablets are now created", tableName);
           rpc.callback(table);
         } else {
