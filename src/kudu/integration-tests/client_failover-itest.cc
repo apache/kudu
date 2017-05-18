@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/optional.hpp>
 #include <memory>
 #include <set>
+#include <string>
 #include <unordered_map>
+#include <vector>
+
+#include <boost/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol.h"
@@ -26,6 +30,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tserver/tserver.pb.h"
 
 using kudu::client::CountTableRows;
 using kudu::client::KuduInsert;
@@ -243,6 +248,97 @@ TEST_F(ClientFailoverITest, TestClusterCrashDuringWorkload) {
   cluster_->master()->Shutdown();
   cluster_->tablet_server(0)->Shutdown();
   workload.StopAndJoin();
+}
+
+class ClientFailoverTServerTimeoutITest : public ExternalMiniClusterITestBase {
+ public:
+  void SetUp() override {
+    ExternalMiniClusterITestBase::SetUp();
+
+    // Extra flags to speed up the test.
+    const vector<string> extra_flags_tserver = {
+      "--consensus_rpc_timeout_ms=250",
+      "--heartbeat_interval_ms=10",
+      "--raft_heartbeat_interval_ms=25",
+      "--leader_failure_exp_backoff_max_delta_ms=1000",
+    };
+    const vector<string> extra_flags_master = {
+      "--raft_heartbeat_interval_ms=25",
+      "--leader_failure_exp_backoff_max_delta_ms=1000",
+    };
+    NO_FATALS(StartCluster(extra_flags_tserver, extra_flags_master, kTSNum));
+  }
+
+ protected:
+  static const int kTSNum = 3;
+
+  Status GetLeaderReplica(TServerDetails** leader) {
+    string tablet_id;
+    RETURN_NOT_OK(GetTabletId(&tablet_id));
+    Status s;
+    for (int i = 0; i < 128; ++i) {
+      // FindTabletLeader tries to connect the the reported leader to verify
+      // that it thinks it's the leader.
+      s = itest::FindTabletLeader(
+          ts_map_, tablet_id, MonoDelta::FromMilliseconds(100), leader);
+      if (s.ok()) {
+        break;
+      }
+      SleepFor(MonoDelta::FromMilliseconds(10L * (i + 1)));
+    }
+    return s;
+  }
+
+ private:
+  // Get identifier of any tablet running on the tablet server with index 0.
+  Status GetTabletId(string* tablet_id) {
+    TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+    vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+    RETURN_NOT_OK(itest::WaitForNumTabletsOnTS(
+        ts, 1, MonoDelta::FromSeconds(32), &tablets));
+    *tablet_id = tablets[0].tablet_status().tablet_id();
+
+    return Status::OK();
+  }
+};
+
+// Test that a client fails over to other available tablet replicas when a RPC
+// with the former leader times out. This is a regression test for KUDU-1034.
+TEST_F(ClientFailoverTServerTimeoutITest, FailoverOnLeaderTimeout) {
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(kTSNum);
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplica(&leader));
+  ASSERT_NE(nullptr, leader);
+
+  // Pause the leader: this will cause the client to get timeout errors
+  // if trying to send RPCs to the corresponding tablet server.
+  ExternalTabletServer* ts(cluster_->tablet_server_by_uuid(leader->uuid()));
+  ASSERT_NE(nullptr, ts);
+  ScopedResumeExternalDaemon leader_resumer(ts);
+  ASSERT_OK(ts->Pause());
+
+  // Write 100 more rows.
+  int rows_target = workload.rows_inserted() + 100;
+  workload.set_timeout_allowed(true);
+  workload.set_write_timeout_millis(500);
+  workload.Start();
+  for (int i = 0; i < 1000; ++i) {
+    if (workload.rows_inserted() >= rows_target) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Verify all rows have reached the destiation.
+  EXPECT_GE(workload.rows_inserted(), rows_target);
 }
 
 } // namespace kudu

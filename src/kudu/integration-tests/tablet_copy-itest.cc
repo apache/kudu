@@ -157,7 +157,12 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // leader's tablet copy request when we bring it back online.
   int log_index = workload.batches_completed() + 2; // 2 terms == 2 additional NO_OP entries.
   ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, log_index));
-  // TODO: Write more rows to the new leader once KUDU-1034 is fixed.
+  // Write more rows to the new leader.
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
 
   // Now kill the new leader and tombstone the replica on TS 0.
   cluster_->tablet_server(new_leader_index)->Shutdown();

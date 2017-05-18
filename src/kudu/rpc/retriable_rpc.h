@@ -179,6 +179,9 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(
       // test coverage here to understand why the back-off is not taking effect.
       if (server != nullptr) {
         VLOG(1) << "Failing " << ToString() << " to a new target: " << result.status.ToString();
+        // Mark the server as failed. As for details on the only existing
+        // implementation of ServerPicker::MarkServerFailed(), see the note on
+        // the MetaCacheServerPicker::MarkServerFailed() method.
         server_picker_->MarkServerFailed(server, result.status);
       }
       break;
@@ -209,8 +212,21 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(
       return false;
     }
 
+    case RetriableRpcStatus::NON_RETRIABLE_ERROR:
+      if (server != nullptr && result.status.IsTimedOut()) {
+        // For the NON_RETRIABLE_ERROR result in case of TimedOut status,
+        // mark the server as failed. As for details on the only existing
+        // implementation of ServerPicker::MarkServerFailed(), see the note on
+        // the MetaCacheServerPicker::MarkServerFailed() method.
+        VLOG(1) << "Failing " << ToString() << " to a new target: " << result.status.ToString();
+        server_picker_->MarkServerFailed(server, result.status);
+      }
+      // Do not retry in the case of non-retriable error.
+      return false;
+
     default:
-      // For the OK and NON_RETRIABLE_ERROR cases we can't/won't retry.
+      // For the OK case we should not retry.
+      DCHECK(result.result == RetriableRpcStatus::OK);
       return false;
   }
   resp_.Clear();

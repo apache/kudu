@@ -130,7 +130,12 @@ class MetaCacheServerPicker : public rpc::ServerPicker<RemoteTabletServer> {
 
   virtual ~MetaCacheServerPicker() {}
   void PickLeader(const ServerPickedCallback& callback, const MonoTime& deadline) override;
+
+  // In the case of this MetaCacheServerPicker class, the implementation of this
+  // method is very selective. It marks only servers hosting the remote tablet
+  // the MetaCacheServerPicker object is bound to, not the entire RemoteTabletServer.
   void MarkServerFailed(RemoteTabletServer* replica, const Status& status) override;
+
   void MarkReplicaNotLeader(RemoteTabletServer* replica) override;
   void MarkResourceNotFound(RemoteTabletServer* replica) override;
  private:
