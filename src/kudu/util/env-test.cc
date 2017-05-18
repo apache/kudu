@@ -50,8 +50,11 @@
 #endif
 
 DECLARE_bool(never_fsync);
+DECLARE_bool(suicide_on_eio);
+DECLARE_double(env_inject_eio);
 DECLARE_int32(env_inject_short_read_bytes);
 DECLARE_int32(env_inject_short_write_bytes);
+DECLARE_string(env_inject_eio_globs);
 
 namespace kudu {
 
@@ -976,6 +979,77 @@ TEST_F(TestEnv, TestGetExtentMap) {
   ASSERT_OK(f->GetExtentMap(&extents));
   ASSERT_EQ(num_extents + 1, extents.size()) <<
       "Punching a hole should have increased the number of extents by one";
+}
+
+TEST_F(TestEnv, TestInjectEIO) {
+  // Use two files to fail with.
+  FLAGS_suicide_on_eio = false;
+  const string kTestRWPath1 = GetTestPath("test_env_rw_file1");
+  unique_ptr<RWFile> rw1;
+  ASSERT_OK(env_->NewRWFile(kTestRWPath1, &rw1));
+
+  const string kTestRWPath2 = GetTestPath("test_env_rw_file2");
+  unique_ptr<RWFile> rw2;
+  ASSERT_OK(env_->NewRWFile(kTestRWPath2, &rw2));
+
+  // Inject EIOs to all operations that might result in an EIO, without
+  // specifying a glob pattern (not specifying the glob pattern will inject
+  // EIOs wherever possible by default).
+  FLAGS_env_inject_eio = 1.0;
+  uint64_t size;
+  Status s = rw1->Size(&size);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+  s = rw2->Size(&size);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+
+  // Specify and verify that both files should fail by matching glob patterns
+  // to of each's literal paths.
+  FLAGS_env_inject_eio_globs = Substitute("$0,$1", kTestRWPath1, kTestRWPath2);
+  Slice result;
+  s = rw1->Read(0, &result);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+  s = rw2->Size(&size);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+
+  // Inject EIOs to all operations that might result in an EIO across paths,
+  // specified with a glob pattern.
+  FLAGS_env_inject_eio_globs = "*";
+  Slice data("data");
+  s = rw1->Write(0, data);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+  s = rw2->Size(&size);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+
+  // Specify and verify that one of the files should fail by matching a glob
+  // pattern of one of the literal paths.
+  FLAGS_env_inject_eio_globs = kTestRWPath1;
+  s = rw1->Size(&size);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+  ASSERT_OK(rw2->Write(0, data));
+
+  // Specify the directory of one of the files and ensure that fails.
+  FLAGS_env_inject_eio_globs = JoinPathSegments(DirName(kTestRWPath2), "**");
+  s = rw2->Sync();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+
+  // Specify a directory and check that failed directory operations are caught.
+  FLAGS_env_inject_eio_globs = DirName(kTestRWPath2);
+  s = env_->SyncDir(DirName(kTestRWPath2));
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
+
+  // Specify that neither file fails.
+  FLAGS_env_inject_eio_globs = "neither_path";
+  ASSERT_OK(rw1->Close());
+  ASSERT_OK(rw2->Close());
 }
 
 }  // namespace kudu

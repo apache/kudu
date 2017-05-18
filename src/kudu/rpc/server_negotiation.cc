@@ -701,10 +701,8 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
         res = security::VerificationResult::EXPIRED_SIGNING_KEY;
         break;
     }
-    const Status s = kudu::fault_injection::MaybeReturnFailure(
-        FLAGS_rpc_inject_invalid_authn_token_ratio,
-        Status::NotAuthorized(VerificationResultToString(res)));
-    if (!s.ok()) {
+    if (kudu::fault_injection::MaybeTrue(FLAGS_rpc_inject_invalid_authn_token_ratio)) {
+      Status s = Status::NotAuthorized(VerificationResultToString(res));
       RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
       return s;
     }

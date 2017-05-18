@@ -56,7 +56,8 @@ DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 DECLARE_uint32(fs_target_data_dirs_per_tablet);
 DECLARE_string(block_manager);
-DECLARE_double(env_inject_io_error);
+DECLARE_double(env_inject_eio);
+DECLARE_bool(suicide_on_eio);
 
 // Generic block manager metrics.
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
@@ -851,7 +852,8 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   FLAGS_log_container_preallocate_bytes = 8 * 1024;
 
   // Force some file operations to fail.
-  FLAGS_env_inject_io_error = 0.1;
+  FLAGS_suicide_on_eio = false;
+  FLAGS_env_inject_eio = 0.1;
 
   // Compact log block manager metadata aggressively at startup; injected
   // errors may also crop up here.
@@ -926,14 +928,19 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
     LOG(INFO) << Substitute("Successfully deleted $0 blocks on $1 attempts",
                             num_deleted, num_deleted_attempts);
 
-    for (const auto& id : ids) {
-      ASSERT_OK(read_a_block(id));
+    {
+      // Since this test is for failed writes, don't inject faults during reads
+      // or while reopening the block manager.
+      google::FlagSaver saver;
+      FLAGS_env_inject_eio = false;
+      for (const auto& id : ids) {
+        ASSERT_OK(read_a_block(id));
+      }
+      ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                         shared_ptr<MemTracker>(),
+                                         { GetTestDataDirectory() },
+                                         false /* create */));
     }
-
-    ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
-                                       shared_ptr<MemTracker>(),
-                                       { GetTestDataDirectory() },
-                                       false /* create */));
   }
 }
 
