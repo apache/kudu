@@ -33,7 +33,7 @@ namespace kudu {
 // This is implemented based on the idea of double-hashing from the following paper:
 //   "Less Hashing, Same Performance: Building a Better Bloom Filter"
 //   Kirsch and Mitzenmacher, ESA 2006
-//   http://www.eecs.harvard.edu/~kirsch/pubs/bbbf/esa06.pdf
+//   https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
 //
 // Currently, the implementation uses the 64-bit City Hash.
 // TODO: an SSE CRC32 hash is probably ~20% faster. Come back to this
