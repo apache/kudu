@@ -46,9 +46,19 @@ Authentication can be configured on Kudu servers using the
 `--rpc-authentication` flag, which can be set to `required`, `optional`, or
 `disabled`. By default, the flag is set to `optional`. When `required`, Kudu
 will reject connections from clients and servers who lack authentication
-credentials. When `optional`, Kudu will attempt to use strong authentication,
-but will allow unauthenticated connections. When `disabled`, Kudu will only
-allow unauthenticated connections.
+credentials. When `optional`, Kudu will attempt to use strong authentication.
+When `disabled` or strong authentication fails for 'optional', by default Kudu
+will only allow unauthenticated connections from trusted subnets, which are
+private networks (127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,
+169.254.0.0/16) and local subnets of all local network interfaces. Unauthenticated
+connections from publicly routable IPs will be rejected.
+
+The trusted subnets can be configured using the `--trusted_subnets` flag,
+which can be set to IP blocks in CIDR notation separated by comma. Set it to
+'0.0.0.0/0' to allow unauthenticated connections from all remote IP addresses.
+However, if network access is not otherwise restricted by a firewall,
+malicious users may be able to gain unauthorized access. This can be mitigated
+if authentication is configured to be required.
 
 WARNING: When the `--rpc-authentication` flag is set to `optional`,
 the cluster does not prevent access from unauthenticated users. To secure a
@@ -106,9 +116,10 @@ to be encrypted with TLS.
 Encryption can be configured on Kudu servers using the `--rpc-encryption` flag,
 which can be set to `required`, `optional`, or `disabled`. By default, the flag
 is set to `optional`. When `required`, Kudu will reject unencrypted connections.
-When `optional`, Kudu will attempt to use encryption, but will allow unencrypted
-connections. When `disabled`, Kudu will never use encryption. To secure a
-cluster, use `--rpc-encryption=required`.
+When `optional`, Kudu will attempt to use encryption. Same as authentication,
+when `disabled` or encryption fails for `optional`, Kudu will only allow
+unencrypted connections from trusted subnets and reject any unencrypted connections
+from publicly routable IPs. To secure a cluster, use `--rpc-encryption=required`.
 
 NOTE: Kudu will automatically turn off encryption on local loopback connections,
 since traffic from these connections is never exposed externally. This allows
