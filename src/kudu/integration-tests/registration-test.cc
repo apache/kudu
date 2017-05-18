@@ -30,20 +30,26 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
 DECLARE_int32(heartbeat_interval_ms);
+METRIC_DECLARE_counter(rows_inserted);
+METRIC_DECLARE_counter(rows_updated);
 
 namespace kudu {
 
@@ -186,16 +192,29 @@ TEST_F(RegistrationTest, TestTabletReports) {
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);
 
-  // Add a tablet, make sure it reports itself.
-  CreateTabletForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
+  auto GetCatalogMetric = [&](CounterPrototype& prototype) {
+    auto metrics = cluster_->mini_master()->master()->catalog_manager()->sys_catalog()
+        ->tablet_replica()->tablet()->GetMetricEntity();
+    return prototype.Instantiate(metrics)->value();
+  };
+  int startup_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
+
+  // Add a table, make sure it reports itself.
+  CreateTableForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
 
   TabletLocationsPB locs;
   ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_EQ(1, locs.replicas_size());
   LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
 
-  // Add another tablet, make sure it is reported via incremental.
-  CreateTabletForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
+  // Check that we inserted the right number of rows for the new single-tablet table
+  // (one for the table, one for the tablet).
+  int post_create_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
+  EXPECT_EQ(2, post_create_rows_inserted - startup_rows_inserted)
+      << "Should have inserted one row each for the table and tablet";
+
+  // Add another table, make sure it is reported via incremental.
+  CreateTableForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
   ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Shut down the whole system, bring it back up, and make sure the tablets
@@ -208,9 +227,23 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
 
-  // TODO: KUDU-870: once the master supports detecting failed/lost replicas,
-  // we should add a test case here which removes or corrupts metadata, restarts
-  // the TS, and verifies that the master notices the issue.
+  SleepFor(MonoDelta::FromSeconds(1));
+
+  // After restart, check that the tablet reports produced the expected number of
+  // writes to the catalog table:
+  // - No inserts, because there are no new tablets.
+  // - Two updates, since both replicas should have increased their term on restart.
+  EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_inserted));
+  EXPECT_EQ(2, GetCatalogMetric(METRIC_rows_updated));
+
+  // If we restart just the master, it should not write any data to the catalog, since the
+  // tablets themselves are not changing term, etc.
+  cluster_->mini_master()->Shutdown();
+  ASSERT_OK(cluster_->mini_master()->Restart());
+  // Sleep for a second to make sure the TS has plenty of time to re-heartbeat.
+  SleepFor(MonoDelta::FromSeconds(1));
+  EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_inserted));
+  EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_updated));
 }
 
 // Check that after the tablet server registers, it gets a signed cert

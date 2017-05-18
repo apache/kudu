@@ -27,6 +27,7 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <google/protobuf/util/message_differencer.h>
 
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/partial_row.h"
@@ -78,6 +79,7 @@ using kudu::tserver::WriteResponsePB;
 using std::function;
 using std::shared_ptr;
 using std::unique_ptr;
+using std::string;
 using std::vector;
 using strings::Substitute;
 
@@ -94,6 +96,26 @@ const char* const SysCatalogTable::kSysCertAuthorityEntryId =
     "root-ca-info";
 const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
+
+
+namespace {
+
+// Return true if the two PBs are equal.
+//
+// If 'diff_str' is not null, stores a textual description of the
+// difference.
+bool ArePBsEqual(const google::protobuf::Message& prev_pb,
+                 const google::protobuf::Message& new_pb,
+                 string* diff_str) {
+  google::protobuf::util::MessageDifferencer md;
+  if (diff_str) {
+    md.ReportDifferencesToString(diff_str);
+  }
+  return md.Compare(prev_pb, new_pb);
+}
+
+} // anonymous namespace
+
 
 SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
                                  ElectedLeaderCallback leader_cb)
@@ -434,6 +456,11 @@ Status SysCatalogTable::Write(const Actions& actions) {
   ReqUpdateTablets(&req, actions.tablets_to_update);
   ReqDeleteTablets(&req, actions.tablets_to_delete);
 
+  if (req.row_operations().rows().empty()) {
+    // No actual changes were written (i.e the data to be updated matched the
+    // previous version of the data).
+    return Status::OK();
+  }
   RETURN_NOT_OK(SyncWrite(&req, &resp));
   return Status::OK();
 }
@@ -443,6 +470,9 @@ Status SysCatalogTable::Write(const Actions& actions) {
 // ==================================================================
 
 void SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
+  VLOG(2) << "Adding table " << table->id() << " in catalog: " <<
+      SecureShortDebugString(table->metadata().dirty().pb);
+
   faststring metadata_buf;
   pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf);
 
@@ -455,6 +485,15 @@ void SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
 }
 
 void SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* table) {
+  string diff;
+  if (ArePBsEqual(table->metadata().state().pb,
+                  table->metadata().dirty().pb,
+                  VLOG_IS_ON(2) ? &diff : nullptr)) {
+    // Short-circuit empty updates.
+    return;
+  }
+  VLOG(2) << "Updating table " << table->id() << " in catalog: " << diff;
+
   faststring metadata_buf;
   pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf);
 
@@ -653,6 +692,8 @@ void SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
+    VLOG(2) << "Adding tablet " << tablet->tablet_id() << " in catalog: "
+            << SecureShortDebugString(tablet->metadata().dirty().pb);
     pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
@@ -667,6 +708,15 @@ void SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (auto tablet : tablets) {
+    string diff;
+    if (ArePBsEqual(tablet->metadata().state().pb,
+                    tablet->metadata().dirty().pb,
+                    VLOG_IS_ON(2) ? &diff : nullptr)) {
+      // Short-circuit empty updates.
+      continue;
+    }
+    VLOG(2) << "Updating tablet " << tablet->tablet_id() << " in catalog: "
+            << diff;
     pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));

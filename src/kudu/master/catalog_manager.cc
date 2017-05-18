@@ -2581,8 +2581,11 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
   table_lock.Unlock();
-  // We update the tablets each time that someone reports it.
-  // This shouldn't be very frequent and should only happen when something in fact changed.
+
+  // We update the tablets each time they are reported.
+  // SysCatalogTable::Write will short-circuit the case where the data
+  // has not in fact changed since the previous version and avoid any
+  // unnecessary operations.
   SysCatalogTable::Actions actions;
   actions.tablets_to_update.push_back(tablet.get());
   Status s = sys_catalog_->Write(actions);

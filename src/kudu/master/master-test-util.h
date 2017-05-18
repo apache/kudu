@@ -68,10 +68,10 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
   return Status::RuntimeError("Unreachable statement"); // Suppress compiler warnings.
 }
 
-void CreateTabletForTesting(MiniMaster* mini_master,
-                            const string& table_name,
-                            const Schema& schema,
-                            string *tablet_id) {
+void CreateTableForTesting(MiniMaster* mini_master,
+                           const string& table_name,
+                           const Schema& schema,
+                           string *tablet_id) {
   {
     CreateTableRequestPB req;
     CreateTableResponsePB resp;

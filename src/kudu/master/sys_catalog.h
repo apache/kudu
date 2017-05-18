@@ -158,6 +158,13 @@ class SysCatalogTable {
   // (as in 'entry_id' column) from the system table.
   Status RemoveTskEntries(const std::set<std::string>& entry_ids);
 
+  // Return the underlying TabletReplica instance hosting the metadata.
+  // This should be used with caution -- typically the various methods
+  // above should be used rather than directly accessing the replica.
+  const scoped_refptr<tablet::TabletReplica>& tablet_replica() const {
+    return tablet_replica_;
+  }
+
  private:
   FRIEND_TEST(MasterTest, TestMasterMetadataConsistentDespiteFailures);
   DISALLOW_COPY_AND_ASSIGN(SysCatalogTable);
@@ -182,10 +189,6 @@ class SysCatalogTable {
   // In addition, resolve all UUIDs of this consensus configuration.
   Status CreateDistributedConfig(const MasterOptions& options,
                                  consensus::RaftConfigPB* committed_config);
-
-  const scoped_refptr<tablet::TabletReplica>& tablet_replica() const {
-    return tablet_replica_;
-  }
 
   std::string tablet_id() const {
     return tablet_replica_->tablet_id();
