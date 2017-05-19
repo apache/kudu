@@ -64,7 +64,6 @@ ADD_KUDU_TEST(create-table-itest)
 ADD_KUDU_TEST(create-table-stress-test)
 ADD_KUDU_TEST(delete_table-itest)
 ADD_KUDU_TEST(delete_tablet-itest)
-ADD_KUDU_TEST(dense_node-itest)
 ADD_KUDU_TEST(disk_reservation-itest)
 ADD_KUDU_TEST(exactly_once_writes-itest)
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
@@ -100,6 +99,10 @@ ADD_KUDU_TEST(write_throttling-itest)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump_generation-itest)
+  # Opens too many files on macOS because we're not using a file cache for
+  # reading log segments.
+  # TODO(wdb): Re-enable once a file cache is being used.
+  ADD_KUDU_TEST(dense_node-itest)
 endif()
 
 # Tests that should not be run automatically by ctest.
