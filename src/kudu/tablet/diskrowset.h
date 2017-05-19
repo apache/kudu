@@ -328,17 +328,19 @@ class DiskRowSet : public RowSet {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
 
-  // Estimate the number of bytes on-disk for the base data.
-  uint64_t EstimateBaseDataDiskSize() const;
+  // Estimate the on-disk size of this rowset's cfile set, including bloomfiles
+  // and the ad hoc index.
+  uint64_t BaseDataOnDiskSize() const;
 
-  // Estimate the number of bytes on-disk of REDO deltas.
-  uint64_t EstimateRedoDeltaDiskSize() const;
+  // Estimate the size on-disk of the data in this rowset's cfile set.
+  uint64_t BaseDataOnDiskSizeNoMetadata() const;
 
-  // Estimate the total number of bytes on-disk. Excludes the bloom files and the ad hoc index.
-  // TODO(wdberkeley) Offer a version that has the real total disk space usage. See KUDU-1755.
-  uint64_t EstimateOnDiskSize() const OVERRIDE;
+  // Estimate the size on-disk of this rowset's REDO deltas.
+  uint64_t RedoDeltaOnDiskSize() const;
 
-  uint64_t EstimateCompactionSize() const OVERRIDE;
+  uint64_t OnDiskSize() const OVERRIDE;
+
+  uint64_t OnDiskDataSizeNoUndos() const OVERRIDE;
 
   size_t DeltaMemStoreSize() const OVERRIDE;
 

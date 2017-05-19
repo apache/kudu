@@ -734,7 +734,7 @@ size_t DeltaTracker::CountRedoDeltaStores() const {
   return redo_delta_stores_.size();
 }
 
-uint64_t DeltaTracker::EstimateOnDiskSize() const {
+uint64_t DeltaTracker::OnDiskSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   uint64_t size = 0;
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
@@ -746,7 +746,7 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
   return size;
 }
 
-uint64_t DeltaTracker::EstimateRedoDeltaOnDiskSize() const {
+uint64_t DeltaTracker::RedoDeltaOnDiskSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   uint64_t size = 0;
   for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {

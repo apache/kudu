@@ -585,17 +585,17 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
   // The rowset consists of base data and REDO deltas, so
   // 1. the delta tracker's on-disk estimate should be the same as the on-disk estimate for REDOs.
   // 2. the rowset's on-disk estimate and the sum of the base data and REDO estimates should equal.
-  ASSERT_EQ(rs->delta_tracker()->EstimateOnDiskSize(),
-            rs->delta_tracker()->EstimateRedoDeltaOnDiskSize());
-  ASSERT_EQ(rs->EstimateOnDiskSize(),
-            rs->EstimateBaseDataDiskSize() + rs->EstimateRedoDeltaDiskSize());
+  ASSERT_EQ(rs->delta_tracker()->OnDiskSize(),
+            rs->delta_tracker()->RedoDeltaOnDiskSize());
+  ASSERT_EQ(rs->OnDiskSize(),
+            rs->BaseDataOnDiskSize() + rs->RedoDeltaOnDiskSize());
 
   // Convert the REDO delta to an UNDO delta.
   // REDO size should be zero, but there should be UNDOs, so the on-disk size of the rowset
   // should be larger than the base data.
   ASSERT_OK(rs->MajorCompactDeltaStores(HistoryGcOpts::Disabled()));
-  ASSERT_EQ(0, rs->EstimateRedoDeltaDiskSize());
-  ASSERT_GT(rs->EstimateOnDiskSize(), rs->EstimateBaseDataDiskSize());
+  ASSERT_EQ(0, rs->RedoDeltaOnDiskSize());
+  ASSERT_GT(rs->OnDiskSize(), rs->BaseDataOnDiskSize());
 
   // Write a second delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
@@ -603,10 +603,10 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
 
   // There's base data, REDOs, and UNDOs, so the delta tracker and rowset's sizes should be larger
   // than estimates counting only base data and REDOs.
-  ASSERT_GT(rs->delta_tracker()->EstimateOnDiskSize(),
-            rs->delta_tracker()->EstimateRedoDeltaOnDiskSize());
-  ASSERT_GT(rs->EstimateOnDiskSize(),
-            rs->EstimateBaseDataDiskSize() + rs->EstimateRedoDeltaDiskSize());
+  ASSERT_GT(rs->delta_tracker()->OnDiskSize(),
+            rs->delta_tracker()->RedoDeltaOnDiskSize());
+  ASSERT_GT(rs->OnDiskSize(),
+            rs->BaseDataOnDiskSize() + rs->RedoDeltaOnDiskSize());
 }
 
 } // namespace tablet

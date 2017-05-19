@@ -17,6 +17,7 @@
 #ifndef KUDU_TABLET_TABLET_METADATA_H
 #define KUDU_TABLET_TABLET_METADATA_H
 
+#include <atomic>
 #include <boost/optional/optional_fwd.hpp>
 #include <memory>
 #include <string>
@@ -225,6 +226,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Fully replace a superblock (used for bootstrap).
   Status ReplaceSuperBlock(const TabletSuperBlockPB &pb);
 
+  int64_t on_disk_size() const {
+    return on_disk_size_.load(std::memory_order_relaxed);
+  }
+
   // ==========================================================================
   // Stuff used by the tests
   // ==========================================================================
@@ -351,6 +356,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // A callback that, if set, is called before this metadata is flushed
   // to disk.
   StatusClosure pre_flush_callback_;
+
+  // The on-disk size of the tablet metadata, as of the last successful
+  // call to Flush() or LoadFromDisk().
+  std::atomic<int64_t> on_disk_size_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

@@ -235,8 +235,11 @@ class Tablet {
   // the current MRS.
   size_t MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) const;
 
-  // Estimate the total on-disk size of this tablet, in bytes.
-  size_t EstimateOnDiskSize() const;
+  // Return the total on-disk size of this tablet, in bytes.
+  size_t OnDiskSize() const;
+
+  // Return the total on-disk size of this tablet's data, in bytes.
+  size_t OnDiskDataSize() const;
 
   // Get the total size of all the DMS
   size_t DeltaMemStoresSize() const;

@@ -101,7 +101,8 @@ TEST_F(BloomFileTest, TestLazyInit) {
   unique_ptr<ReadableBlock> count_block(
       new CountingReadableBlock(std::move(block), &bytes_read));
 
-  // Lazily opening the bloom file should not trigger any reads.
+  // Lazily opening the bloom file should not trigger any reads,
+  // and the file size should be available before Init().
   gscoped_ptr<BloomFileReader> reader;
   ReaderOptions opts;
   opts.parent_mem_tracker = tracker;
@@ -109,6 +110,7 @@ TEST_F(BloomFileTest, TestLazyInit) {
   ASSERT_EQ(0, bytes_read);
   int64_t lazy_mem_usage = tracker->consumption();
   ASSERT_GT(lazy_mem_usage, initial_mem_usage);
+  ASSERT_GT(reader->FileSize(), 0);
 
   // But initializing it should (only the first time), and the bloom's
   // memory usage should increase.

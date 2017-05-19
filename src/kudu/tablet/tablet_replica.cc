@@ -359,7 +359,7 @@ void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   status_pb_out->set_state(state_);
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   if (tablet_) {
-    status_pb_out->set_estimated_on_disk_size(tablet_->EstimateOnDiskSize());
+    status_pb_out->set_estimated_on_disk_size(tablet_->OnDiskSize());
   }
 }
 

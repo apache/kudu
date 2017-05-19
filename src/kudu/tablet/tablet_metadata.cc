@@ -48,6 +48,7 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 
+using std::memory_order_relaxed;
 using std::shared_ptr;
 
 using base::subtle::Barrier_AtomicIncrement;
@@ -369,6 +370,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     DeleteOrphanedBlocks(orphaned_blocks);
   }
 
+  on_disk_size_.store(superblock.ByteSizeLong(), memory_order_relaxed);
   return Status::OK();
 }
 
@@ -533,6 +535,7 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
                             fs_manager_->env(), path, pb,
                             pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
+  on_disk_size_.store(pb.ByteSizeLong(), memory_order_relaxed);
 
   return Status::OK();
 }

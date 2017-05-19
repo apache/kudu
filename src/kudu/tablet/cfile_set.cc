@@ -195,7 +195,18 @@ Status CFileSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
-uint64_t CFileSet::EstimateOnDiskSize() const {
+uint64_t CFileSet::OnDiskSize() const {
+  uint64_t ret = OnDiskDataSize();
+  if (bloom_reader_) {
+    ret += bloom_reader_->FileSize();
+  }
+  if (ad_hoc_idx_reader_) {
+    ret += ad_hoc_idx_reader_->file_size();
+  }
+  return ret;
+}
+
+uint64_t CFileSet::OnDiskDataSize() const {
   uint64_t ret = 0;
   for (const auto& e : readers_by_col_id_) {
     ret += e.second->file_size();

@@ -62,7 +62,7 @@
 //
 // MetricEntity instances may also carry a key-value map of string attributes. These
 // attributes are directly exposed to monitoring systems via the JSON output. Monitoring
-// systems may use this information to allow hierarchical aggregation beteween entities,
+// systems may use this information to allow hierarchical aggregation between entities,
 // display them to the user, etc.
 //
 // Metric instances

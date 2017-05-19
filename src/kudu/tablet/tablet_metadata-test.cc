@@ -94,6 +94,41 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
             << SecureDebugString(superblock_pb_1);
 }
 
+TEST_F(TestTabletMetadata, TestOnDiskSize) {
+  TabletMetadata* meta = harness_->tablet()->metadata();
+
+  // The tablet metadata was flushed on creation.
+  int64_t initial_size = meta->on_disk_size();
+  ASSERT_GT(initial_size, 0);
+
+  // Write some data to the tablet and flush.
+  gscoped_ptr<KuduPartialRow> row;
+  BuildPartialRow(0, 0, "foo", &row);
+  writer_->Insert(*row);
+  ASSERT_OK(harness_->tablet()->Flush());
+
+  // The tablet metadata grows after flushing a new rowset.
+  int64_t middle_size = meta->on_disk_size();
+  ASSERT_GT(middle_size, initial_size);
+
+  // Create another rowset.
+  // The on-disk size shouldn't change until after flush.
+  BuildPartialRow(1, 1, "bar", &row);
+  writer_->Insert(*row);
+  ASSERT_EQ(middle_size, meta->on_disk_size());
+  ASSERT_OK(harness_->tablet()->Flush());
+  int64_t final_size = meta->on_disk_size();
+  ASSERT_GT(final_size, middle_size);
+
+  // Shut down the tablet.
+  harness_->tablet()->Shutdown();
+
+  // The on-disk size and the size of the superblock PB should agree.
+  TabletSuperBlockPB superblock_pb;
+  ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
+  ASSERT_EQ(superblock_pb.ByteSize(), final_size);
+}
+
 
 } // namespace tablet
 } // namespace kudu

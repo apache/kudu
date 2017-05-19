@@ -237,7 +237,7 @@ TEST_F(TabletHistoryGcTest, TestNoGenerateUndoOnMRSFlush) {
   for (const auto& rsmd : tablet()->metadata()->rowsets()) {
     ASSERT_EQ(0, rsmd->undo_delta_blocks().size());
   }
-  ASSERT_EQ(0, tablet()->EstimateOnDiskSize());
+  ASSERT_EQ(0, tablet()->OnDiskDataSize());
 
   // Now check the same thing (flush not generating an UNDO), but without the
   // delete following the insert. We do it with a single row.
@@ -310,7 +310,7 @@ TEST_F(TabletHistoryGcTest, TestRowRemovalGCOnMergeCompaction) {
   ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
   ASSERT_DEBUG_DUMP_ROWS_MATCH("");
   NO_FATALS(VerifyTestRowsWithTimestampAndVerifier(kStartRow, 0, prev_time, boost::none));
-  ASSERT_EQ(0, tablet()->EstimateOnDiskSize());
+  ASSERT_EQ(0, tablet()->OnDiskDataSize());
 }
 
 // Test that we don't over-aggressively GC history prior to the AHM.

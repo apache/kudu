@@ -68,7 +68,12 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const;
 
-  uint64_t EstimateOnDiskSize() const;
+  // The total on-disk size of this cfile set, including the ad hoc index and
+  // bloom files, in bytes.
+  uint64_t OnDiskSize() const;
+
+  // The size on-disk of this cfile set's data, in bytes.
+  uint64_t OnDiskDataSize() const;
 
   // Determine the index of the given row key.
   // Sets *idx to boost::none if the row is not found.

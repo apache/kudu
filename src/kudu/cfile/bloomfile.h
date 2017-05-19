@@ -103,6 +103,11 @@ class BloomFileReader {
   Status CheckKeyPresent(const BloomKeyProbe &probe,
                          bool *maybe_present);
 
+  // Can be called before Init().
+  uint64_t FileSize() const {
+    return reader_->file_size();
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(BloomFileReader);
 

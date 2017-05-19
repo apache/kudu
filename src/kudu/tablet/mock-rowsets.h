@@ -75,11 +75,11 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual uint64_t EstimateOnDiskSize() const OVERRIDE {
+  virtual uint64_t OnDiskSize() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual uint64_t EstimateCompactionSize() const OVERRIDE {
+  virtual uint64_t OnDiskDataSizeNoUndos() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
@@ -164,11 +164,11 @@ class MockDiskRowSet : public MockRowSet {
     return Status::OK();
   }
 
-  virtual uint64_t EstimateOnDiskSize() const OVERRIDE {
+  virtual uint64_t OnDiskSize() const OVERRIDE {
     return size_;
   }
 
-  virtual uint64_t EstimateCompactionSize() const OVERRIDE {
+  virtual uint64_t OnDiskDataSizeNoUndos() const OVERRIDE {
     return size_;
   }
 

@@ -115,10 +115,10 @@ class RowSet {
   virtual Status DebugDump(vector<string> *lines = NULL) = 0;
 
   // Estimate the number of bytes on-disk
-  virtual uint64_t EstimateOnDiskSize() const = 0;
+  virtual uint64_t OnDiskSize() const = 0;
 
   // Estimate the number of bytes relevant for compaction.
-  virtual uint64_t EstimateCompactionSize() const = 0;
+  virtual uint64_t OnDiskDataSizeNoUndos() const = 0;
 
   // Return the lock used for including this DiskRowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
@@ -329,9 +329,11 @@ class DuplicatingRowSet : public RowSet {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
 
-  uint64_t EstimateOnDiskSize() const OVERRIDE;
+  // Return the total size on-disk of this rowset.
+  uint64_t OnDiskSize() const OVERRIDE;
 
-  uint64_t EstimateCompactionSize() const OVERRIDE;
+  // Return the size of this rowset relevant for merge compactions.
+  uint64_t OnDiskDataSizeNoUndos() const OVERRIDE;
 
   string ToString() const OVERRIDE;
 

@@ -254,7 +254,7 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
 RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
   : rowset_(rs),
-    size_bytes_(rs->EstimateCompactionSize()),
+    size_bytes_(rs->OnDiskDataSizeNoUndos()),
     size_mb_(std::max(implicit_cast<int>(size_bytes_ / 1024 / 1024), kMinSizeMb)),
     cdf_min_key_(init_cdf),
     cdf_max_key_(init_cdf) {

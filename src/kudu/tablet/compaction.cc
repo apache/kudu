@@ -882,7 +882,7 @@ void RowSetsInCompaction::DumpToLog() const {
   // Dump the selected rowsets to the log, and collect corresponding iterators.
   for (const shared_ptr<RowSet> &rs : rowsets_) {
     LOG(INFO) << rs->ToString() << "(current size on disk: ~"
-              << rs->EstimateOnDiskSize() << " bytes)";
+              << rs->OnDiskSize() << " bytes)";
   }
 }
 
