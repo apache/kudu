@@ -756,7 +756,7 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
-                    const TabletDataState delete_type,
+                    const TabletDataState& delete_type,
                     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                     const MonoDelta& timeout,
                     tserver::TabletServerErrorPB::Code* error_code) {
@@ -806,7 +806,8 @@ Status StartTabletCopy(const TServerDetails* ts,
                        const string& copy_source_uuid,
                        const HostPort& copy_source_addr,
                        int64_t caller_term,
-                       const MonoDelta& timeout) {
+                       const MonoDelta& timeout,
+                       tserver::TabletServerErrorPB::Code* error_code) {
   consensus::StartTabletCopyRequestPB req;
   consensus::StartTabletCopyResponsePB resp;
   RpcController rpc;
@@ -820,6 +821,12 @@ Status StartTabletCopy(const TServerDetails* ts,
 
   RETURN_NOT_OK(ts->consensus_proxy->StartTabletCopy(req, &resp, &rpc));
   if (resp.has_error()) {
+    CHECK(resp.error().has_code()) << "Tablet copy error response has no code";
+    CHECK(tserver::TabletServerErrorPB::Code_IsValid(resp.error().code()))
+        << "Tablet copy error response code is not valid";
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();

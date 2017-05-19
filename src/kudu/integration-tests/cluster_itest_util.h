@@ -197,7 +197,7 @@ Status StartElection(const TServerDetails* replica,
 Status LeaderStepDown(const TServerDetails* replica,
                       const std::string& tablet_id,
                       const MonoDelta& timeout,
-                      tserver::TabletServerErrorPB* error = NULL);
+                      tserver::TabletServerErrorPB* error = nullptr);
 
 // Write a "simple test schema" row to the specified tablet on the given
 // replica. This schema is commonly used by tests and is defined in
@@ -220,7 +220,7 @@ Status AddServer(const TServerDetails* leader,
                  consensus::RaftPeerPB::MemberType member_type,
                  const boost::optional<int64_t>& cas_config_opid_index,
                  const MonoDelta& timeout,
-                 tserver::TabletServerErrorPB::Code* error_code = NULL);
+                 tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.
 // The RPC request is sent to 'leader'.
@@ -229,7 +229,7 @@ Status RemoveServer(const TServerDetails* leader,
                     const TServerDetails* replica_to_remove,
                     const boost::optional<int64_t>& cas_config_opid_index,
                     const MonoDelta& timeout,
-                    tserver::TabletServerErrorPB::Code* error_code = NULL);
+                    tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Get the list of tablets from the remote server.
 Status ListTablets(const TServerDetails* ts,
@@ -294,10 +294,10 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 // Send a DeleteTablet() to the server at 'ts' of the specified 'delete_type'.
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
-                    const tablet::TabletDataState delete_type,
+                    const tablet::TabletDataState& delete_type,
                     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                     const MonoDelta& timeout,
-                    tserver::TabletServerErrorPB::Code* error_code = NULL);
+                    tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Repeatedly try to delete the tablet, retrying on failure up to the
 // specified timeout. Deletion can fail when other operations, such as
@@ -315,7 +315,8 @@ Status StartTabletCopy(const TServerDetails* ts,
                        const std::string& copy_source_uuid,
                        const HostPort& copy_source_addr,
                        int64_t caller_term,
-                       const MonoDelta& timeout);
+                       const MonoDelta& timeout,
+                       tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 } // namespace itest
 } // namespace kudu

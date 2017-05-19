@@ -376,10 +376,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       NotifyObserversOfFailedFollower(uuid, queue_state_.current_term, msg);
     }
   }
-
   if (PREDICT_FALSE(peer->needs_tablet_copy)) {
-    KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer->status_log_throttler, "tablet copy")
-        << LogPrefixUnlocked() << "Peer " << uuid << " needs tablet copy" << THROTTLE_MSG;
+    VLOG(3) << LogPrefixUnlocked() << "Peer " << uuid << " needs tablet copy" << THROTTLE_MSG;
     *needs_tablet_copy = true;
     return Status::OK();
   }
@@ -582,7 +580,7 @@ void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
   UpdateMetrics();
 }
 
-void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid) {
+void PeerMessageQueue::NotifyPeerIsResponsive(const std::string& peer_uuid) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
   if (!peer) return;
