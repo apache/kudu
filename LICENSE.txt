@@ -535,14 +535,14 @@ The following dependencies or pieces of incorporated source code have licenses
 under one of the following categories:
 
   (a) do not require their license text to be re-distributed with binary
-      distributions (e.g. MIT license, Boost license)
+      distributions (e.g. Boost license)
 
   (b) have no requirements about re-distributing their license text in either
       source or binary distributions (e.g. public domain)
 
   (c) require inclusion of the license text in both source and binary distributions,
       but are used only at build-time and thus not incorporated in binary artifacts
-      (e.g. BSD-licensed build tooling)
+      (e.g. BSD- or MIT-licensed build tooling)
 
   (d) are the same Apache 2.0 license reproduced in its entirety above.
 
@@ -550,8 +550,8 @@ Therefore, we do not reproduce their licenses in their entirety in this file.
 --------------------------------------------------------------------------------
 
 .ycm_extra_conf.py: public domain
-cmake_modules/FindGMock.cmake: MIT license
-cmake_modules/FindProtobuf.cmake: BSD 3-clause license
+cmake_modules/FindGMock.cmake: MIT license, build-only
+cmake_modules/FindProtobuf.cmake: BSD 3-clause license, build-only
 src/kudu/util (HdrHistogram-related classes): public domain
 src/kudu/gutil/valgrind.h: Hybrid BSD (half BSD, half zlib)
   - See the file headers for full license text.
