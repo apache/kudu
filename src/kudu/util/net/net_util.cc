@@ -278,10 +278,12 @@ Status GetLocalNetworks(std::vector<Network>* net) {
 
   net->clear();
   for (struct ifaddrs *ifa = ifap; ifa; ifa = ifa->ifa_next) {
+    if (ifa->ifa_addr == nullptr || ifa->ifa_netmask == nullptr) continue;
+
     if (ifa->ifa_addr->sa_family == AF_INET) {
       Sockaddr addr(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr));
-      Sockaddr mask(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask));
-      Network network(addr.addr().sin_addr.s_addr, mask.addr().sin_addr.s_addr);
+      Sockaddr netmask(*reinterpret_cast<struct sockaddr_in*>(ifa->ifa_netmask));
+      Network network(addr.addr().sin_addr.s_addr, netmask.addr().sin_addr.s_addr);
       net->push_back(network);
     }
   }
