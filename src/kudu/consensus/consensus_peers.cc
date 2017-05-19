@@ -41,10 +41,6 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
-// This file uses C++14 'generalized lambda capture' syntax, which is supported
-// in C++11 mode both by clang and by GCC. Disable the accompanying warning.
-#pragma clang diagnostic ignored "-Wc++14-extensions"
-
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC communications.");
 TAG_FLAG(consensus_rpc_timeout_ms, advanced);
