@@ -132,8 +132,10 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   if (PREDICT_FALSE(closed_)) {
     return Status::IllegalState("Peer was closed.");
   }
-
-  RETURN_NOT_OK(thread_pool_->SubmitFunc([=, s_this = shared_from_this()]() {
+  // Capture a shared_ptr reference into the submitted functor so that we're
+  // guaranteed that this object outlives the functor.
+  shared_ptr<Peer> s_this = shared_from_this();
+  RETURN_NOT_OK(thread_pool_->SubmitFunc([even_if_queue_empty, s_this]() {
         s_this->SendNextRequest(even_if_queue_empty);
       }));
   return Status::OK();
@@ -195,8 +197,9 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
       l.unlock();
       // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
       // that this object outlives the RPC.
+      shared_ptr<Peer> s_this = shared_from_this();
       proxy_->StartTabletCopy(&tc_request_, &tc_response_, &controller_,
-                              [s_this = shared_from_this()]() {
+                              [s_this]() {
                                 s_this->ProcessTabletCopyResponse();
                               });
     } else {
@@ -234,8 +237,9 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   l.unlock();
   // Capture a shared_ptr reference into the RPC callback so that we're guaranteed
   // that this object outlives the RPC.
+  shared_ptr<Peer> s_this = shared_from_this();
   proxy_->UpdateAsync(&request_, &response_, &controller_,
-                      [s_this = shared_from_this()]() {
+                      [s_this]() {
                         s_this->ProcessResponse();
                       });
 }
@@ -281,7 +285,11 @@ void Peer::ProcessResponse() {
   // the WAL) and SendNextRequest() may do the same thing. So we run the rest
   // of the response handling logic on our thread pool and not on the reactor
   // thread.
-  Status s = thread_pool_->SubmitFunc([s_this = shared_from_this()]() {
+  //
+  // Capture a shared_ptr reference into the submitted functor so that we're
+  // guaranteed that this object outlives the functor.
+  shared_ptr<Peer> s_this = shared_from_this();
+  Status s = thread_pool_->SubmitFunc([s_this]() {
       s_this->DoProcessResponse();
     });
   if (PREDICT_FALSE(!s.ok())) {
