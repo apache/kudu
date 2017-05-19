@@ -16,12 +16,14 @@
 // under the License.
 
 #include <atomic>
-#include <boost/optional.hpp>
-#include <gflags/gflags.h>
+#include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include <boost/optional.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
@@ -60,6 +62,7 @@ using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
 using kudu::tserver::TabletCopyClient;
+using std::set;
 using std::string;
 using std::unordered_map;
 using std::vector;
@@ -892,8 +895,15 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
   TServerDetails* ts1 = ts_map_[cluster_->tablet_server(1)->uuid()];
 
-  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kNumTablets, kTimeout, &tablets));
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablet_states;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kNumTablets, kTimeout, &tablet_states));
+
+  // Gather the set of tablet IDs.
+  set<string> tablets;
+  for (const auto& state : tablet_states) {
+    tablets.insert(state.tablet_status().tablet_id());
+  }
+  ASSERT_EQ(4, tablets.size());
 
   workload.StopAndJoin();
 
@@ -903,28 +913,54 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   // ServiceUnavailable error.
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
 
-  // Attempt to copy all of the tablets from TS0 to TS1.
-  // Collect the status messages.
-  vector<Status> statuses(kNumTablets);
-  for (const auto& t : tablets) {
-    HostPort src_addr;
-    ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
-    statuses.push_back(StartTabletCopy(ts1, t.tablet_status().tablet_id(), ts0->uuid(),
-                                       src_addr, 0, kTimeout));
+  HostPort ts0_hostport;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &ts0_hostport));
+
+  // Attempt to copy all of the tablets from TS0 to TS1 in parallel. Tablet
+  // copies are repeated periodically until complete.
+  int num_service_unavailable = 0;
+  int num_inprogress = 0;
+  while (!tablets.empty()) {
+    for (auto tablet_id = tablets.begin(); tablet_id != tablets.end(); ) {
+      tserver::TabletServerErrorPB::Code error_code = tserver::TabletServerErrorPB::UNKNOWN_ERROR;
+      Status s = StartTabletCopy(ts1, *tablet_id, ts0->uuid(),
+                                 ts0_hostport, 0, kTimeout, &error_code);
+      if (!s.ok()) {
+        switch (error_code) {
+          case tserver::TabletServerErrorPB::THROTTLED:
+            // The tablet copy threadpool is full.
+            ASSERT_TRUE(s.IsServiceUnavailable()) << s.ToString();
+            ++num_service_unavailable;
+            break;
+          case tserver::TabletServerErrorPB::ALREADY_INPROGRESS:
+            // The tablet is already being copied
+            ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+            ++num_inprogress;
+            break;
+          case tserver::TabletServerErrorPB::INVALID_CONFIG:
+            // The tablet copy has already completed, and the remote tablet now
+            // has the correct term (not 0).
+            ASSERT_STR_MATCHES(s.ToString(),
+                               "Leader has replica of tablet .* with term 0, "
+                               "which is lower than last-logged term .* on local replica. "
+                               "Rejecting tablet copy request");
+            tablet_id = tablets.erase(tablet_id);
+            continue;
+          default:
+            FAIL() << "Unexpected tablet copy failure: " << s.ToString()
+                  << ": " << tserver::TabletServerErrorPB::Code_Name(error_code);
+        }
+      }
+      ++tablet_id;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1));
   }
 
-  // The "Service unavailable" messages are serialized as RemoteError type.
-  // Ensure that we got at least one.
-  int num_service_unavailable = 0;
-  for (const Status& s : statuses) {
-    if (!s.ok()) {
-      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
-      ASSERT_STR_CONTAINS(s.ToString(), "Service unavailable: Thread pool is at capacity");
-      num_service_unavailable++;
-    }
-  }
+  // Ensure that we get at least one service unavailable and copy in progress responses.
   ASSERT_GT(num_service_unavailable, 0);
+  ASSERT_GT(num_inprogress, 0);
   LOG(INFO) << "Number of Service unavailable responses: " << num_service_unavailable;
+  LOG(INFO) << "Number of in progress responses: " << num_inprogress;
 }
 
 // This test uses CountBlocksUnderManagement() which only works with the

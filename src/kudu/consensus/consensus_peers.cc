@@ -258,7 +258,7 @@ void Peer::ProcessResponse() {
       // However, a RemoteError wraps some other error propagated from the
       // remote peer, so we know the remote is alive. Therefore, we will let
       // the queue know that the remote is responsive.
-      queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
+      queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
     }
     ProcessResponseError(controller_.status());
     return;
@@ -272,7 +272,7 @@ void Peer::ProcessResponse() {
           response_.status().error().code() == consensus::ConsensusErrorPB::CANNOT_PREPARE)) {
     // Again, let the queue know that the remote is still responsive, since we
     // will not be sending this error response through to the queue.
-    queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
+    queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
     ProcessResponseError(StatusFromPB(response_.error().status()));
     return;
   }
@@ -337,16 +337,20 @@ void Peer::ProcessTabletCopyResponse() {
   CHECK(request_pending_);
   request_pending_ = false;
 
-  if (controller_.status().ok() && tc_response_.has_error()) {
-    // ALREADY_INPROGRESS is expected, so we do not log this error.
-    if (tc_response_.error().code() ==
-        TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS) {
-      lock.unlock();
-      queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
-    } else {
-      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
-                                        << SecureShortDebugString(tc_response_);
-    }
+  // If the response is OK, or ALREADY_INPROGRESS, then consider the RPC successful.
+  bool success =
+    controller_.status().ok() &&
+    (!tc_response_.has_error() ||
+     tc_response_.error().code() == TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS);
+
+  if (success) {
+    lock.unlock();
+    queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
+  } else {
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
+                                      << (controller_.status().ok() ?
+                                          SecureShortDebugString(tc_response_) :
+                                          controller_.status().ToString());
   }
 }
 
@@ -416,9 +420,9 @@ void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
 }
 
 void RpcPeerProxy::StartTabletCopy(const StartTabletCopyRequestPB* request,
-                                        StartTabletCopyResponsePB* response,
-                                        rpc::RpcController* controller,
-                                        const rpc::ResponseCallback& callback) {
+                                   StartTabletCopyResponsePB* response,
+                                   rpc::RpcController* controller,
+                                   const rpc::ResponseCallback& callback) {
   consensus_proxy_->StartTabletCopyAsync(*request, response, controller, callback);
 }
 

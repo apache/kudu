@@ -1060,12 +1060,16 @@ void ConsensusServiceImpl::StartTabletCopy(const StartTabletCopyRequestPB* req,
   if (!CheckUuidMatchOrRespond(tablet_manager_, "StartTabletCopy", req, resp, context)) {
     return;
   }
-  auto response_callback = [context, resp](const Status& s, TabletServerErrorPB::Code error_code) {
-    if (!s.ok()) {
-      SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
-      return;
+  auto response_callback = [context, resp](const Status& s, TabletServerErrorPB::Code code) {
+    if (s.ok()) {
+      context->RespondSuccess();
+    } else {
+      // Skip calling SetupErrorAndRespond since this path doesn't need the
+      // error to be transformed.
+      StatusToPB(s, resp->mutable_error()->mutable_status());
+      resp->mutable_error()->set_code(code);
+      context->RespondNoCache();
     }
-    context->RespondSuccess();
   };
   tablet_manager_->StartTabletCopy(req, response_callback);
 }

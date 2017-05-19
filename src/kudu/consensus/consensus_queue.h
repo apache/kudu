@@ -225,11 +225,12 @@ class PeerMessageQueue {
   Status GetTabletCopyRequestForPeer(const std::string& uuid,
                                      StartTabletCopyRequestPB* req);
 
-  // Update the last successful communication timestamp for the given peer
-  // to the current time. This should be called when a non-network related
-  // error is received from the peer, indicating that it is alive, even if it
-  // may not be fully up and running or able to accept updates.
-  void NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid);
+  // Update the last successful communication timestamp for the given peer to
+  // the current time.
+  //
+  // This should be called when the peer responds with a message indicating that
+  // it is alive and making progress.
+  void NotifyPeerIsResponsive(const std::string& peer_uuid);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
