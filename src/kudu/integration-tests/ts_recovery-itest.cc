@@ -30,6 +30,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/hybrid_clock.h"
@@ -67,34 +68,20 @@ int IntToKey(int i) {
 }
 } // anonymous namespace
 
-class TsRecoveryITest : public KuduTest {
- public:
-  virtual void TearDown() OVERRIDE {
-    if (cluster_) cluster_->Shutdown();
-    KuduTest::TearDown();
-  }
-
+class TsRecoveryITest : public ExternalMiniClusterITestBase {
  protected:
-  void StartCluster(const vector<string>& extra_tserver_flags = {},
-                    int num_tablet_servers = 1);
-
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  void StartClusterOneTs(const vector<string>& extra_tserver_flags = {});
 };
 
-void TsRecoveryITest::StartCluster(const vector<string>& extra_tserver_flags,
-                                   int num_tablet_servers) {
-  ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = num_tablet_servers;
-  opts.extra_tserver_flags = extra_tserver_flags;
-  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
-  ASSERT_OK(cluster_->Start());
+void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flags) {
+  StartCluster(extra_tserver_flags, {}, 1 /* replicas */);
 }
 
 // Test crashing a server just before appending a COMMIT message.
 // We then restart the server and ensure that all rows successfully
 // inserted before the crash are recovered.
 TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
-  NO_FATALS(StartCluster());
+  NO_FATALS(StartClusterOneTs());
   cluster_->SetFlag(cluster_->tablet_server(0),
                     "fault_crash_before_append_commit", "0.05");
 
@@ -133,7 +120,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 // bootstrap to fail if that message only included errors and no
 // successful operations.
 TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
-  NO_FATALS(StartCluster());
+  NO_FATALS(StartClusterOneTs());
   cluster_->SetFlag(cluster_->tablet_server(0),
                     "fault_crash_before_append_commit", "0.01");
 
@@ -172,7 +159,7 @@ TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
 
 // Test that we replay from the recovery directory, if it exists.
 TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
-  NO_FATALS(StartCluster({ "--fault_crash_during_log_replay=0.05" }));
+  NO_FATALS(StartClusterOneTs({"--fault_crash_during_log_replay=0.05"}));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -219,7 +206,8 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
 // but before writing its header, the TS would previously crash on restart.
 // Instead, it should ignore the uninitialized segment.
 TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
-  NO_FATALS(StartCluster({ "--log_segment_size_mb=1", "--log_compression_codec=NO_COMPRESSION" }));
+  NO_FATALS(StartClusterOneTs({"--log_segment_size_mb=1",
+                               "--log_compression_codec=NO_COMPRESSION"}));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -256,7 +244,7 @@ TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
 // - the bootstrap should fail (but not crash) because it cannot apply the cell size
 // - if we manually increase the cell size limit again, it should replay correctly.
 TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
-  NO_FATALS(StartCluster({}));
+  NO_FATALS(StartClusterOneTs());
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_payload_bytes(10000);
@@ -274,15 +262,9 @@ TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
   ASSERT_OK(ts->Restart());
 
   // The bootstrap should fail and leave the tablet in FAILED state.
-  std::unordered_map<std::string, itest::TServerDetails*> ts_map;
-  ValueDeleter del(&ts_map);
-
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
-                                         cluster_->messenger(),
-                                         &ts_map));
   ASSERT_EVENTUALLY([&]() {
       vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-      ASSERT_OK(ListTablets(ts_map[ts->uuid()], MonoDelta::FromSeconds(10), &tablets));
+      ASSERT_OK(ListTablets(ts_map_[ts->uuid()], MonoDelta::FromSeconds(10), &tablets));
       ASSERT_EQ(1, tablets.size());
       ASSERT_EQ(tablet::FAILED, tablets[0].tablet_status().state());
       ASSERT_STR_CONTAINS(tablets[0].tablet_status().last_status(),
@@ -315,19 +297,14 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
-  NO_FATALS(StartCluster());
+  NO_FATALS(StartClusterOneTs());
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup();
 
-  std::unordered_map<std::string, itest::TServerDetails*> ts_map;
-  ValueDeleter del(&ts_map);
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
-                                         cluster_->messenger(),
-                                         &ts_map));
   vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
   auto* ets = cluster_->tablet_server(0);
-  auto* ts = ts_map[ets->uuid()];
+  auto* ts = ts_map_[ets->uuid()];
   ASSERT_OK(ListTablets(ts, MonoDelta::FromSeconds(10), &tablets));
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0].tablet_status().tablet_id();
@@ -385,10 +362,11 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     }
     ASSERT_GE(wal_segments.size(), 2) << "Too few WAL segments. Files in dir (" << wal_dir << "): "
                                       << wal_children;
-    int64_t kLogSegmentIndex = 1;
-    string first_segment = fs_manager->GetWalSegmentFileName(tablet_id, kLogSegmentIndex);
-    if (ContainsKey(wal_segments, first_segment)) {
-      ASSERT_OK(fs_manager->env()->DeleteFile(JoinPathSegments(wal_dir, first_segment)));
+    // If WAL segment index 1 exists, delete it.
+    string first_segment = fs_manager->GetWalSegmentFileName(tablet_id, 1);
+    if (fs_manager->env()->FileExists(first_segment)) {
+      LOG(INFO) << "Deleting first WAL segment: " << first_segment;
+      ASSERT_OK(fs_manager->env()->DeleteFile(first_segment));
     }
 
     // We also need to update the ConsensusMetadata to match with the term we
@@ -419,6 +397,7 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
   // ensure they get written. This checks for overflows in the write path.
 
   // We have to first remove the flag disabling failure detection.
+  NO_FATALS(cluster_->AssertNoCrashes());
   cluster_->Shutdown();
   ets->mutable_flags()->pop_back();
   ASSERT_OK(cluster_->Restart());
@@ -544,15 +523,12 @@ TEST_P(Kudu969Test, Test) {
   // more likely to trigger races. We can also verify that the server
   // with the injected fault recovers to the same state as the other
   // servers.
-  ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = 3;
+  const int kThreeReplicas = 3;
 
   // Jack up the number of maintenance manager threads to try to trigger
   // concurrency bugs where a compaction and a flush might be happening
   // at the same time during the crash.
-  opts.extra_tserver_flags.push_back("--maintenance_manager_num_threads=3");
-  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
-  ASSERT_OK(cluster_->Start());
+  NO_FATALS(StartCluster({"--maintenance_manager_num_threads=3"}, {}, kThreeReplicas));
 
   // Set a small flush threshold so that we flush a lot (causing more compactions
   // as well).
@@ -560,7 +536,7 @@ TEST_P(Kudu969Test, Test) {
 
   // Use TestWorkload to create a table
   TestWorkload work(cluster_.get());
-  work.set_num_replicas(3);
+  work.set_num_replicas(kThreeReplicas);
   work.Setup();
 
   // Open the client and table.
@@ -609,6 +585,5 @@ TEST_P(Kudu969Test, Test) {
   v.SetVerificationTimeout(MonoDelta::FromSeconds(30));
   NO_FATALS(v.CheckCluster());
 }
-
 
 } // namespace kudu
