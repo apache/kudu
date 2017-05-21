@@ -17,9 +17,9 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -29,28 +29,23 @@
 
 namespace kudu {
 
+namespace itest {
+struct TServerDetails;
+}
+
 // Simple base utility class to provide a mini cluster with common setup
 // routines useful for integration tests.
 class MiniClusterITestBase : public KuduTest {
  public:
-  virtual void TearDown() OVERRIDE {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
-    KuduTest::TearDown();
-  }
+  void TearDown() override;
 
  protected:
-  void StartCluster(int num_tablet_servers = 3) {
-    InternalMiniClusterOptions opts;
-    opts.num_tablet_servers = num_tablet_servers;
-    cluster_.reset(new InternalMiniCluster(env_, opts));
-    ASSERT_OK(cluster_->Start());
-    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
-  }
+  void StartCluster(int num_tablet_servers = 3);
+  void StopCluster();
 
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  std::unique_ptr<InternalMiniCluster> cluster_;
   client::sp::shared_ptr<client::KuduClient> client_;
+  std::unordered_map<std::string, itest::TServerDetails*> ts_map_;
 };
 
 } // namespace kudu

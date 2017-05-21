@@ -19,16 +19,16 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
-
 class FsManager;
+class Status;
 
 namespace consensus {
 class RaftConfigPB;
@@ -80,6 +80,9 @@ class MiniTabletServer {
                        const std::string& tablet_id,
                        const Schema& schema,
                        const consensus::RaftConfigPB& config);
+
+  // Return the ids of all non-tombstoned tablets on this server.
+  std::vector<std::string> ListTablets() const;
 
   // Create a RaftConfigPB which should be used to create a local-only
   // tablet on the given tablet server.

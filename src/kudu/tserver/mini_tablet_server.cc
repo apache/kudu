@@ -17,7 +17,6 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,6 +25,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/env_util.h"
@@ -38,6 +38,7 @@ DECLARE_bool(rpc_server_allow_ephemeral_ports);
 
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
+using kudu::tablet::TabletReplica;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -135,6 +136,16 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
   return server_->tablet_manager()->CreateNewTablet(
       table_id, tablet_id, partition.second, table_id,
       schema_with_ids, partition.first, config, nullptr);
+}
+
+vector<string> MiniTabletServer::ListTablets() const {
+  vector<string> tablet_ids;
+  vector<scoped_refptr<TabletReplica>> replicas;
+  server_->tablet_manager()->GetTabletReplicas(&replicas);
+  for (const auto& replica : replicas) {
+    tablet_ids.push_back(replica->tablet_id());
+  }
+  return tablet_ids;
 }
 
 void MiniTabletServer::FailHeartbeats() {
