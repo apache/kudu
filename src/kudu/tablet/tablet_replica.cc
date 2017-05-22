@@ -156,7 +156,7 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
 
     TRACE("Creating consensus instance");
 
-    unique_ptr<ConsensusMetadata> cmeta;
+    scoped_refptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
                                           meta_->fs_manager()->uuid(), &cmeta));
 
@@ -164,7 +164,7 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
         clock, tablet_->mvcc_manager()->GetCleanTimestamp()));
 
     consensus_ = RaftConsensus::Create(options,
-                                       std::move(cmeta),
+                                       cmeta,
                                        local_peer_pb_,
                                        metric_entity,
                                        time_manager,

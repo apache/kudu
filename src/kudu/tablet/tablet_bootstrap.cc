@@ -346,7 +346,7 @@ class TabletBootstrap {
   scoped_refptr<log::Log> log_;
   std::shared_ptr<log::LogReader> log_reader_;
 
-  unique_ptr<ConsensusMetadata> cmeta_;
+  scoped_refptr<ConsensusMetadata> cmeta_;
 
   // Statistics on the replay of entries in the log.
   struct Stats {
@@ -1413,7 +1413,7 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
   ChangeConfigRecordPB* change_config = replicate_msg->mutable_change_config_record();
   RaftConfigPB config = change_config->new_config();
 
-  int64_t cmeta_opid_index =  cmeta_->committed_config().opid_index();
+  int64_t cmeta_opid_index =  cmeta_->GetConfigOpIdIndex(consensus::COMMITTED_CONFIG);
   if (replicate_msg->id().index() > cmeta_opid_index) {
     DCHECK(!config.has_opid_index());
     config.set_opid_index(replicate_msg->id().index());

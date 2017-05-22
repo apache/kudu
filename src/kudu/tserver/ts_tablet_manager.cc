@@ -271,7 +271,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletReplica and RaftConsensus implementation.
-  unique_ptr<ConsensusMetadata> cmeta;
+  scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);

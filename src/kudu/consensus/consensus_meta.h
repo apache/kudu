@@ -18,11 +18,13 @@
 #define KUDU_CONSENSUS_CONSENSUS_META_H_
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -53,8 +55,8 @@ namespace consensus {
 // the pending configuration if a pending configuration is set, otherwise the committed
 // configuration.
 //
-// This class is not thread-safe and requires external synchronization.
-class ConsensusMetadata {
+// This class is thread-safe.
+class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
  public:
 
   // Specify whether we are allowed to overwrite an existing file when flushing.
@@ -70,7 +72,7 @@ class ConsensusMetadata {
                        const std::string& peer_uuid,
                        const RaftConfigPB& config,
                        int64_t current_term,
-                       std::unique_ptr<ConsensusMetadata>* cmeta_out);
+                       scoped_refptr<ConsensusMetadata>* cmeta_out);
 
   // Load a ConsensusMetadata object from disk.
   // Returns Status::NotFound if the file could not be found. May return other
@@ -78,31 +80,46 @@ class ConsensusMetadata {
   static Status Load(FsManager* fs_manager,
                      const std::string& tablet_id,
                      const std::string& peer_uuid,
-                     std::unique_ptr<ConsensusMetadata>* cmeta_out);
+                     scoped_refptr<ConsensusMetadata>* cmeta_out);
 
   // Delete the ConsensusMetadata file associated with the given tablet from
   // disk.
   static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
   // Accessors for current term.
-  const int64_t current_term() const;
+  int64_t current_term() const;
   void set_current_term(int64_t term);
 
   // Accessors for voted_for.
   bool has_voted_for() const;
-  const std::string& voted_for() const;
+  std::string voted_for() const;
   void clear_voted_for();
   void set_voted_for(const std::string& uuid);
 
+  // Returns true iff peer with specified uuid is a voter in the specified
+  // local Raft config.
+  bool IsVoterInConfig(const std::string& uuid, RaftConfigState type);
+
+  // Returns true iff peer with specified uuid is a member of the specified
+  // local Raft config.
+  bool IsMemberInConfig(const std::string& uuid, RaftConfigState type);
+
+  // Returns a count of the number of voters in the specified local Raft
+  // config.
+  int CountVotersInConfig(RaftConfigState type);
+
+  // Returns the opid_index of the specified local Raft config.
+  int64_t GetConfigOpIdIndex(RaftConfigState type);
+
   // Accessors for committed configuration.
-  const RaftConfigPB& committed_config() const;
+  RaftConfigPB CommittedConfig() const;
   void set_committed_config(const RaftConfigPB& config);
 
   // Returns whether a pending configuration is set.
   bool has_pending_config() const;
 
   // Returns the pending configuration if one is set. Otherwise, fires a DCHECK.
-  const RaftConfigPB& pending_config() const;
+  RaftConfigPB PendingConfig() const;
 
   // Set & clear the pending configuration.
   void clear_pending_config();
@@ -110,10 +127,11 @@ class ConsensusMetadata {
 
   // If a pending configuration is set, return it.
   // Otherwise, return the committed configuration.
-  const RaftConfigPB& active_config() const;
+  RaftConfigPB ActiveConfig() const;
+  const RaftConfigPB& active_config_unlocked() const;
 
   // Accessors for setting the active leader.
-  const std::string& leader_uuid() const;
+  std::string leader_uuid() const;
   void set_leader_uuid(const std::string& uuid);
 
   // Returns the currently active role of the current node.
@@ -145,25 +163,45 @@ class ConsensusMetadata {
   // Persist current state of the protobuf to disk.
   Status Flush(FlushMode mode = OVERWRITE);
 
-  int flush_count_for_tests() const {
+  int64_t flush_count_for_tests() const {
     return flush_count_for_tests_;
   }
 
  private:
+  friend class RefCountedThreadSafe<ConsensusMetadata>;
+
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
+
+  // Return the specified config.
+  const RaftConfigPB& config_unlocked(RaftConfigState type) const;
+
+  const RaftConfigPB& committed_config_unlocked() const;
+  void set_committed_config_unlocked(const RaftConfigPB& config);
+
+  int64_t current_term_unlocked() const;
+  void set_current_term_unlocked(int64_t term);
+  void clear_voted_for_unlocked();
+  const RaftConfigPB& pending_config_unlocked() const;
+  bool has_pending_config_unlocked() const;
+  void clear_pending_config_unlocked();
+  void set_leader_uuid_unlocked(const std::string& uuid);
+
+  ConsensusStatePB ToConsensusStatePBUnlocked() const;
 
   std::string LogPrefix() const;
 
   // Updates the cached active role.
   void UpdateActiveRole();
+  void UpdateActiveRoleUnlocked();
 
-  // Transient fields.
-  // Constants:
   FsManager* const fs_manager_;
   const std::string tablet_id_;
   const std::string peer_uuid_;
-  // Mutable:
+
+  // Protects all of the mutable fields below.
+  mutable Mutex lock_;
+
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
                             // configuration change pending.
@@ -174,7 +212,7 @@ class ConsensusMetadata {
   RaftPeerPB::Role active_role_;
 
   // The number of times the metadata has been flushed to disk.
-  int flush_count_for_tests_;
+  int64_t flush_count_for_tests_;
 
   // Durable fields.
   ConsensusMetadataPB pb_;

@@ -205,7 +205,7 @@ class TabletCopyClient {
 
   // Local Consensus metadata file. This may initially be NULL if this is
   // bootstrapping a new replica (rather than replacing an old one).
-  std::unique_ptr<consensus::ConsensusMetadata> cmeta_;
+  scoped_refptr<consensus::ConsensusMetadata> cmeta_;
 
   scoped_refptr<tablet::TabletReplica> tablet_replica_;
   std::shared_ptr<TabletCopyServiceProxy> proxy_;

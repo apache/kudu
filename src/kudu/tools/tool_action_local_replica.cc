@@ -222,10 +222,10 @@ Status PrintReplicaUuids(const RunnerContext& context) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   // Load the cmeta file and print all peer uuids.
-  unique_ptr<ConsensusMetadata> cmeta;
+  scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(ConsensusMetadata::Load(fs_manager.get(), tablet_id,
                                         fs_manager->uuid(), &cmeta));
-  cout << JoinMapped(cmeta->committed_config().peers(),
+  cout << JoinMapped(cmeta->CommittedConfig().peers(),
                      [](const RaftPeerPB& p){ return p.permanent_uuid(); },
                      " ") << endl;
   return Status::OK();
@@ -269,10 +269,10 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
 
   // Load the cmeta file and rewrite the raft config.
-  unique_ptr<ConsensusMetadata> cmeta;
+  scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
                                         fs_manager.uuid(), &cmeta));
-  RaftConfigPB current_config = cmeta->committed_config();
+  RaftConfigPB current_config = cmeta->CommittedConfig();
   RaftConfigPB new_config = current_config;
   new_config.clear_peers();
   for (const auto& p : peers) {
@@ -302,7 +302,7 @@ Status SetRaftTerm(const RunnerContext& context) {
   FsManager fs_manager(env, FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
   // Load the cmeta file and rewrite the raft config.
-  unique_ptr<ConsensusMetadata> cmeta;
+  scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
                                         fs_manager.uuid(), &cmeta));
   if (new_term <= cmeta->current_term()) {

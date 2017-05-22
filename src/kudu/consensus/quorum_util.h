@@ -30,6 +30,7 @@ namespace consensus {
 enum RaftConfigState {
   PENDING_CONFIG,
   COMMITTED_CONFIG,
+  ACTIVE_CONFIG,
 };
 
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);

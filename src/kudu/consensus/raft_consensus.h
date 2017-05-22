@@ -120,7 +120,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
 
   static scoped_refptr<RaftConsensus> Create(
     ConsensusOptions options,
-    std::unique_ptr<ConsensusMetadata> cmeta,
+    scoped_refptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
     scoped_refptr<TimeManager> time_manager,
@@ -132,7 +132,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
     ThreadPool* raft_pool);
 
   RaftConsensus(ConsensusOptions options,
-                std::unique_ptr<ConsensusMetadata> cmeta,
+                scoped_refptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
                 gscoped_ptr<PeerManager> peer_manager,
@@ -461,9 +461,8 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
   Status StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg);
 
-  // Returns OK and sets 'single_voter' if this node is the only voter in the
-  // Raft configuration.
-  Status IsSingleVoterConfig(bool* single_voter) const;
+  // Returns true if this node is the only voter in the Raft configuration.
+  bool IsSingleVoterConfig() const;
 
   // Return header string for RequestVote log messages. 'lock_' must be held.
   std::string GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const;
@@ -634,9 +633,6 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Returns OK if leader, IllegalState otherwise.
   Status CheckActiveLeaderUnlocked() const WARN_UNUSED_RESULT;
 
-  // Return current consensus state summary.
-  ConsensusStatePB ConsensusStateUnlocked() const;
-
   // Returns the currently active Raft role.
   RaftPeerPB::Role GetActiveRoleUnlocked() const;
 
@@ -657,7 +653,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   void ClearPendingConfigUnlocked();
 
   // Return the pending configuration, or crash if one is not set.
-  const RaftConfigPB& GetPendingConfigUnlocked() const;
+  RaftConfigPB GetPendingConfigUnlocked() const;
 
   // Changes the committed config for this replica. Checks that there is a
   // pending configuration and that it is equal to this one. Persists changes to disk.
@@ -665,11 +661,11 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit);
 
   // Return the persisted configuration.
-  const RaftConfigPB& GetCommittedConfigUnlocked() const;
+  RaftConfigPB GetCommittedConfigUnlocked() const;
 
   // Return the "active" configuration - if there is a pending configuration return it;
   // otherwise return the committed configuration.
-  const RaftConfigPB& GetActiveConfigUnlocked() const;
+  RaftConfigPB GetActiveConfigUnlocked() const;
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
@@ -683,7 +679,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   const int64_t GetCurrentTermUnlocked() const;
 
   // Accessors for the leader of the current term.
-  const std::string& GetLeaderUuidUnlocked() const;
+  std::string GetLeaderUuidUnlocked() const;
   bool HasLeaderUnlocked() const;
   void ClearLeaderUnlocked();
 
@@ -696,7 +692,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
 
   // Return replica's vote for the current term.
   // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
-  const std::string& GetVotedForCurrentTermUnlocked() const;
+  std::string GetVotedForCurrentTermUnlocked() const;
 
   const ConsensusOptions& GetOptions() const;
 
@@ -731,7 +727,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   State state_;
 
   // Consensus metadata persistence object.
-  std::unique_ptr<ConsensusMetadata> cmeta_;
+  scoped_refptr<ConsensusMetadata> cmeta_;
 
   // Threadpool token for constructing requests to peers, handling RPC callbacks, etc.
   std::unique_ptr<ThreadPoolToken> raft_pool_token_;

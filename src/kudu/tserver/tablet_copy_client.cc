@@ -136,7 +136,7 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
   }
 
   // Load the old consensus metadata, if it exists.
-  unique_ptr<ConsensusMetadata> cmeta;
+  scoped_refptr<ConsensusMetadata> cmeta;
   Status s = ConsensusMetadata::Load(fs_manager_, tablet_id_,
                                      fs_manager_->uuid(), &cmeta);
   if (s.IsNotFound()) {
@@ -504,7 +504,7 @@ Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
 Status TabletCopyClient::WriteConsensusMetadata() {
   // If we didn't find a previous consensus meta file, create one.
   if (!cmeta_) {
-    unique_ptr<ConsensusMetadata> cmeta;
+    scoped_refptr<ConsensusMetadata> cmeta;
     return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
                                      remote_cstate_->committed_config(),
                                      remote_cstate_->current_term(),

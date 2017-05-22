@@ -379,7 +379,7 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 
     // We also need to update the ConsensusMetadata to match with the term we
     // want to end up with.
-    unique_ptr<ConsensusMetadata> cmeta;
+    scoped_refptr<ConsensusMetadata> cmeta;
     ConsensusMetadata::Load(fs_manager.get(), tablet_id, fs_manager->uuid(), &cmeta);
     cmeta->set_current_term(kDesiredIndexValue);
     ASSERT_OK(cmeta->Flush());
