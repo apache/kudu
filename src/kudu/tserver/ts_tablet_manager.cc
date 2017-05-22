@@ -54,7 +54,6 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
@@ -104,29 +103,7 @@ TAG_FLAG(fault_crash_after_tc_files_fetched, unsafe);
 namespace kudu {
 namespace tserver {
 
-METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Length",
-                        MetricUnit::kTasks,
-                        "Number of operations waiting to be applied to the tablet. "
-                        "High queue lengths indicate that the server is unable to process "
-                        "operations as fast as they are being written to the WAL.",
-                        10000, 2);
-
-METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time",
-                        MetricUnit::kMicroseconds,
-                        "Time that operations spent waiting in the apply queue before being "
-                        "processed. High queue times indicate that the server is unable to "
-                        "process operations as fast as they are being written to the WAL.",
-                        10000000, 2);
-
-METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
-                        MetricUnit::kMicroseconds,
-                        "Time that operations spent being applied to the tablet. "
-                        "High values may indicate that the server is under-provisioned or "
-                        "that operations consist of very large batches.",
-                        10000000, 2);
-
 using consensus::ConsensusMetadata;
-using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
@@ -150,21 +127,11 @@ using tablet::TabletMetadata;
 using tablet::TabletReplica;
 using tserver::TabletCopyClient;
 
-TSTabletManager::TSTabletManager(FsManager* fs_manager,
-                                 TabletServer* server,
-                                 MetricRegistry* metric_registry)
-  : fs_manager_(fs_manager),
+TSTabletManager::TSTabletManager(TabletServer* server)
+  : fs_manager_(server->fs_manager()),
     server_(server),
-    metric_registry_(metric_registry),
+    metric_registry_(server->metric_registry()),
     state_(MANAGER_INITIALIZING) {
-
-  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
-  apply_pool_->SetQueueLengthHistogram(
-      METRIC_op_apply_queue_length.Instantiate(server_->metric_entity()));
-  apply_pool_->SetQueueTimeMicrosHistogram(
-      METRIC_op_apply_queue_time.Instantiate(server_->metric_entity()));
-  apply_pool_->SetRunTimeMicrosHistogram(
-      METRIC_op_apply_run_time.Instantiate(server_->metric_entity()));
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -594,7 +561,7 @@ scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
   scoped_refptr<TabletReplica> replica(
       new TabletReplica(meta,
                         local_peer_pb_,
-                        apply_pool_.get(),
+                        server_->tablet_apply_pool(),
                         Bind(&TSTabletManager::MarkTabletDirty,
                              Unretained(this),
                              meta->tablet_id())));
@@ -876,9 +843,6 @@ void TSTabletManager::Shutdown() {
   for (const scoped_refptr<TabletReplica>& replica : replicas_to_shutdown) {
     replica->Shutdown();
   }
-
-  // Shut down the apply pool.
-  apply_pool_->Shutdown();
 
   {
     std::lock_guard<rw_spinlock> l(lock_);

@@ -1085,7 +1085,6 @@ Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   std::lock_guard<LockType> l(lock_);
   unique_ptr<SysCatalogTable> new_catalog(
       new SysCatalogTable(master_,
-                          master_->metric_registry(),
                           Bind(&CatalogManager::ElectedAsLeaderCb,
                                Unretained(this))));
   if (is_first_run) {

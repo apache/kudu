@@ -96,7 +96,6 @@ const char* const SysCatalogTable::kSysCertAuthorityEntryId =
 const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
 
-
 namespace {
 
 // Return true if the two PBs are equal.
@@ -116,12 +115,11 @@ bool ArePBsEqual(const google::protobuf::Message& prev_pb,
 } // anonymous namespace
 
 
-SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
+SysCatalogTable::SysCatalogTable(Master* master,
                                  ElectedLeaderCallback leader_cb)
-    : metric_registry_(metrics),
+    : metric_registry_(master->metric_registry()),
       master_(master),
       leader_cb_(std::move(leader_cb)) {
-  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }
 
 SysCatalogTable::~SysCatalogTable() {
@@ -131,7 +129,6 @@ void SysCatalogTable::Shutdown() {
   if (tablet_replica_) {
     tablet_replica_->Shutdown();
   }
-  apply_pool_->Shutdown();
 }
 
 Status SysCatalogTable::Load(FsManager *fs_manager) {
@@ -310,7 +307,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   tablet_replica_.reset(new TabletReplica(
       metadata,
       local_peer_pb_,
-      apply_pool_.get(),
+      master_->tablet_apply_pool(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
 
   consensus::ConsensusBootstrapInfo consensus_info;

@@ -108,8 +108,7 @@ class SysCatalogTable {
   // the consensus configuration's progress, any long running tasks (e.g., scanning
   // tablets) should be performed asynchronously (by, e.g., submitting
   // them to a to a separate threadpool).
-  SysCatalogTable(Master* master, MetricRegistry* metrics,
-                  ElectedLeaderCallback leader_cb);
+  SysCatalogTable(Master* master,  ElectedLeaderCallback leader_cb);
 
   ~SysCatalogTable();
 
@@ -247,8 +246,6 @@ class SysCatalogTable {
   Schema key_schema_;
 
   MetricRegistry* metric_registry_;
-
-  gscoped_ptr<ThreadPool> apply_pool_;
 
   scoped_refptr<tablet::TabletReplica> tablet_replica_;
 

@@ -21,7 +21,9 @@
 #include <utility>
 
 #include "kudu/server/server_base_options.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/threadpool.h"
 
 using std::string;
 
@@ -31,6 +33,28 @@ using server::ServerBaseOptions;
 
 namespace kserver {
 
+METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Length",
+                        MetricUnit::kTasks,
+                        "Number of operations waiting to be applied to the tablet. "
+                        "High queue lengths indicate that the server is unable to process "
+                        "operations as fast as they are being written to the WAL.",
+                        10000, 2);
+
+METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time",
+                        MetricUnit::kMicroseconds,
+                        "Time that operations spent waiting in the apply queue before being "
+                        "processed. High queue times indicate that the server is unable to "
+                        "process operations as fast as they are being written to the WAL.",
+                        10000000, 2);
+
+METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
+                        MetricUnit::kMicroseconds,
+                        "Time that operations spent being applied to the tablet. "
+                        "High values may indicate that the server is under-provisioned or "
+                        "that operations consist of very large batches.",
+                        10000000, 2);
+
+
 KuduServer::KuduServer(string name,
                        const ServerBaseOptions& options,
                        const string& metric_namespace)
@@ -39,6 +63,16 @@ KuduServer::KuduServer(string name,
 
 Status KuduServer::Init() {
   RETURN_NOT_OK(ServerBase::Init());
+
+  RETURN_NOT_OK(ThreadPoolBuilder("apply")
+                .Build(&tablet_apply_pool_));
+  tablet_apply_pool_->SetQueueLengthHistogram(
+      METRIC_op_apply_queue_length.Instantiate(metric_entity_));
+  tablet_apply_pool_->SetQueueTimeMicrosHistogram(
+      METRIC_op_apply_queue_time.Instantiate(metric_entity_));
+  tablet_apply_pool_->SetRunTimeMicrosHistogram(
+      METRIC_op_apply_run_time.Instantiate(metric_entity_));
+
   return Status::OK();
 }
 
@@ -48,6 +82,19 @@ Status KuduServer::Start() {
 }
 
 void KuduServer::Shutdown() {
+  // Shut down the messenger early, waiting for any reactor threads to finish
+  // running. This ensures that any ref-counted objects inside closures run by
+  // reactor threads will be destroyed before we shut down server-wide thread
+  // pools below, which is important because those objects may own tokens
+  // belonging to the pools.
+  //
+  // Note: prior to this call, it is assumed that any incoming RPCs deferred
+  // from reactor threads have already been cleaned up.
+  messenger_->Shutdown();
+
+  if (tablet_apply_pool_) {
+    tablet_apply_pool_->Shutdown();
+  }
   ServerBase::Shutdown();
 }
 

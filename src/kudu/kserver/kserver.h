@@ -19,11 +19,13 @@
 
 #include <string>
 
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/server/server_base.h"
 
 namespace kudu {
 class Status;
+class ThreadPool;
 
 namespace server {
 struct ServerBaseOptions;
@@ -54,7 +56,13 @@ class KuduServer : public server::ServerBase {
   // Shuts down a KuduServer instance.
   virtual void Shutdown() override;
 
+  ThreadPool* tablet_apply_pool() const { return tablet_apply_pool_.get(); }
+
  private:
+
+  // Thread pool for applying transactions, shared between all tablets.
+  gscoped_ptr<ThreadPool> tablet_apply_pool_;
+
   DISALLOW_COPY_AND_ASSIGN(KuduServer);
 };
 

@@ -46,7 +46,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
     initted_(false),
     fail_heartbeats_for_tests_(false),
     opts_(opts),
-    tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_registry())),
+    tablet_manager_(new TSTabletManager(this)),
     scanner_manager_(new ScannerManager(metric_entity())),
     path_handlers_(new TabletServerPathHandlers(this)),
     maintenance_manager_(new MaintenanceManager(MaintenanceManager::kDefaultOptions)) {

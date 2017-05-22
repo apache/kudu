@@ -78,10 +78,7 @@ class TransitionInProgressDeleter;
 class TSTabletManager : public tserver::TabletReplicaLookupIf {
  public:
   // Construct the tablet manager.
-  // 'fs_manager' must remain valid until this object is destructed.
-  TSTabletManager(FsManager* fs_manager,
-                  TabletServer* server,
-                  MetricRegistry* metric_registry);
+  explicit TSTabletManager(TabletServer* server);
 
   virtual ~TSTabletManager();
 
@@ -314,9 +311,6 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
   gscoped_ptr<ThreadPool> open_tablet_pool_;
-
-  // Thread pool for apply transactions, shared between all tablets.
-  gscoped_ptr<ThreadPool> apply_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };
