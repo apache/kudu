@@ -217,6 +217,7 @@ class ThreadPool {
   void SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist);
 
  private:
+  FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMaxThreads);
   FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMinimum);
   FRIEND_TEST(ThreadPoolTest, TestVariableSizeThreadPool);
 
