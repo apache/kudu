@@ -541,7 +541,10 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
-  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(100)));
+  bool is_negotiation_error = false;
+  ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(
+      p, MonoDelta::FromMilliseconds(100), &is_negotiation_error));
+  EXPECT_TRUE(is_negotiation_error);
 
   acceptor_thread->Join();
 }

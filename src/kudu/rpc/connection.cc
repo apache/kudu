@@ -61,6 +61,8 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
+typedef OutboundCall::Phase Phase;
+
 ///
 /// Connection
 ///
@@ -164,7 +166,10 @@ void Connection::Shutdown(const Status &status,
       if (rpc_error) {
         error.reset(new ErrorStatusPB(*rpc_error));
       }
-      c->call->SetFailed(status, error.release());
+      c->call->SetFailed(status,
+                         negotiation_complete_ ? Phase::REMOTE_CALL
+                                               : Phase::CONNECTION_NEGOTIATION,
+                         error.release());
     }
     // And we must return the CallAwaitingResponse to the pool
     car_pool_.Destroy(c);
@@ -238,7 +243,8 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   DCHECK(!car->call->IsFinished());
 
   // Mark the call object as failed.
-  car->call->SetTimedOut();
+  car->call->SetTimedOut(negotiation_complete_ ? Phase::REMOTE_CALL
+                                               : Phase::CONNECTION_NEGOTIATION);
 
   // Drop the reference to the call. If the original caller has moved on after
   // seeing the timeout, we no longer need to hold onto the allocated memory
@@ -289,7 +295,9 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
 
   if (PREDICT_FALSE(!shutdown_status_.ok())) {
     // Already shutdown
-    call->SetFailed(shutdown_status_);
+    call->SetFailed(shutdown_status_,
+                    negotiation_complete_ ? Phase::REMOTE_CALL
+                                          : Phase::CONNECTION_NEGOTIATION);
     return;
   }
 
@@ -305,7 +313,8 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   slices_tmp_.clear();
   Status s = call->SerializeTo(&slices_tmp_);
   if (PREDICT_FALSE(!s.ok())) {
-    call->SetFailed(s);
+    call->SetFailed(s, negotiation_complete_ ? Phase::REMOTE_CALL
+                                             : Phase::CONNECTION_NEGOTIATION);
     return;
   }
 
@@ -599,7 +608,8 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
           outbound_transfers_.pop_front();
           Status s = Status::NotSupported("server does not support the required RPC features");
           transfer->Abort(s);
-          car->call->SetFailed(s);
+          car->call->SetFailed(s, negotiation_complete_ ? Phase::REMOTE_CALL
+                                                        : Phase::CONNECTION_NEGOTIATION);
           car->call.reset();
           delete transfer;
           continue;

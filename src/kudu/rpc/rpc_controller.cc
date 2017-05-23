@@ -23,8 +23,8 @@
 
 #include <glog/logging.h>
 
-#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/outbound_call.h"
+#include "kudu/rpc/rpc_header.pb.h"
 
 using std::unique_ptr;
 
@@ -68,6 +68,14 @@ void RpcController::Reset() {
 bool RpcController::finished() const {
   if (call_) {
     return call_->IsFinished();
+  }
+  return false;
+}
+
+bool RpcController::negotiation_failed() const {
+  if (call_) {
+    DCHECK(finished());
+    return call_->IsNegotiationError();
   }
   return false;
 }

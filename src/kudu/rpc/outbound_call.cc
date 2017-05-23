@@ -153,8 +153,12 @@ string OutboundCall::StateName(State state) {
       return "SENDING";
     case SENT:
       return "SENT";
+    case NEGOTIATION_TIMED_OUT:
+      return "NEGOTIATION_TIMED_OUT";
     case TIMED_OUT:
       return "TIMED_OUT";
+    case FINISHED_NEGOTIATION_ERROR:
+      return "FINISHED_NEGOTIATION_ERROR";
     case FINISHED_ERROR:
       return "FINISHED_ERROR";
     case FINISHED_SUCCESS:
@@ -190,6 +194,9 @@ void OutboundCall::set_state_unlocked(State new_state) {
       break;
     case SENT:
       DCHECK_EQ(state_, SENDING);
+      break;
+    case NEGOTIATION_TIMED_OUT:
+      DCHECK(state_ == ON_OUTBOUND_QUEUE);
       break;
     case TIMED_OUT:
       DCHECK(state_ == SENT || state_ == ON_OUTBOUND_QUEUE || state_ == SENDING);
@@ -251,7 +258,7 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
       return;
     }
     ErrorStatusPB* err_raw = err.release();
-    SetFailed(Status::RemoteError(err_raw->message()), err_raw);
+    SetFailed(Status::RemoteError(err_raw->message()), Phase::REMOTE_CALL, err_raw);
   }
 }
 
@@ -279,38 +286,65 @@ void OutboundCall::SetSent() {
 }
 
 void OutboundCall::SetFailed(const Status &status,
+                             Phase phase,
                              ErrorStatusPB* err_pb) {
+  DCHECK(!status.ok());
+  DCHECK(phase == Phase::CONNECTION_NEGOTIATION || phase == Phase::REMOTE_CALL);
   {
     std::lock_guard<simple_spinlock> l(lock_);
     status_ = status;
     if (err_pb) {
       error_pb_.reset(err_pb);
     }
-    set_state_unlocked(FINISHED_ERROR);
+    set_state_unlocked(phase == Phase::CONNECTION_NEGOTIATION
+        ? FINISHED_NEGOTIATION_ERROR
+        : FINISHED_ERROR);
   }
   CallCallback();
 }
 
-void OutboundCall::SetTimedOut() {
+void OutboundCall::SetTimedOut(Phase phase) {
+  static const char* kErrMsgNegotiation =
+      "connection negotiation to $1 for RPC $0 timed out after $2 ($3)";
+  static const char* kErrMsgCall = "$0 RPC to $1 timed out after $2 ($3)";
+  DCHECK(phase == Phase::CONNECTION_NEGOTIATION || phase == Phase::REMOTE_CALL);
+
   // We have to fetch timeout outside the lock to avoid a lock
   // order inversion between this class and RpcController.
-  MonoDelta timeout = controller_->timeout();
+  const MonoDelta timeout = controller_->timeout();
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    status_ = Status::TimedOut(Substitute(
-        "$0 RPC to $1 timed out after $2 ($3)",
-        remote_method_.method_name(),
-        conn_id_.remote().ToString(),
-        timeout.ToString(),
-        StateName(state_)));
-    set_state_unlocked(TIMED_OUT);
+    status_ = Status::TimedOut(
+        Substitute((phase == Phase::REMOTE_CALL) ? kErrMsgCall : kErrMsgNegotiation,
+                   remote_method_.method_name(),
+                   conn_id_.remote().ToString(),
+                   timeout.ToString(),
+                   StateName(state_)));
+    set_state_unlocked((phase == Phase::REMOTE_CALL) ? TIMED_OUT : NEGOTIATION_TIMED_OUT);
   }
   CallCallback();
 }
 
 bool OutboundCall::IsTimedOut() const {
   std::lock_guard<simple_spinlock> l(lock_);
-  return state_ == TIMED_OUT;
+  switch (state_) {
+    case NEGOTIATION_TIMED_OUT:       // fall-through
+    case TIMED_OUT:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool OutboundCall::IsNegotiationError() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  switch (state_) {
+    case FINISHED_NEGOTIATION_ERROR:  // fall-through
+    case NEGOTIATION_TIMED_OUT:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool OutboundCall::IsFinished() const {
@@ -321,7 +355,9 @@ bool OutboundCall::IsFinished() const {
     case ON_OUTBOUND_QUEUE:
     case SENT:
       return false;
+    case NEGOTIATION_TIMED_OUT:
     case TIMED_OUT:
+    case FINISHED_NEGOTIATION_ERROR:
     case FINISHED_ERROR:
     case FINISHED_SUCCESS:
       return true;
@@ -339,8 +375,7 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
                           RpcCallInProgressPB* resp) {
   std::lock_guard<simple_spinlock> l(lock_);
   resp->mutable_header()->CopyFrom(header_);
-  resp->set_micros_elapsed(
-      (MonoTime::Now() - start_time_).ToMicroseconds());
+  resp->set_micros_elapsed((MonoTime::Now() - start_time_).ToMicroseconds());
 
   switch (state_) {
     case READY:
@@ -356,8 +391,14 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
     case SENT:
       resp->set_state(RpcCallInProgressPB::SENT);
       break;
+    case NEGOTIATION_TIMED_OUT:
+      resp->set_state(RpcCallInProgressPB::NEGOTIATION_TIMED_OUT);
+      break;
     case TIMED_OUT:
       resp->set_state(RpcCallInProgressPB::TIMED_OUT);
+      break;
+    case FINISHED_NEGOTIATION_ERROR:
+      resp->set_state(RpcCallInProgressPB::FINISHED_NEGOTIATION_ERROR);
       break;
     case FINISHED_ERROR:
       resp->set_state(RpcCallInProgressPB::FINISHED_ERROR);
@@ -366,7 +407,6 @@ void OutboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
       resp->set_state(RpcCallInProgressPB::FINISHED_SUCCESS);
       break;
   }
-
 }
 
 ///

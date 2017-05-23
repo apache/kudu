@@ -402,6 +402,19 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
     return result;
   }
 
+  // Handle the connection negotiation failure case if overall RPC's timeout
+  // hasn't expired yet: if the connection negotiation returned non-OK status,
+  // mark the server as not accessible and rely on the RetriableRpc's logic
+  // to switch to an alternative tablet replica.
+  //
+  // NOTE: Connection negotiation errors related to security are handled in the
+  //       code above: see the handlers for IsNotAuthorized(), IsRemoteError().
+  if (!rpc_cb_status.IsTimedOut() && !result.status.ok() &&
+      mutable_retrier()->controller().negotiation_failed()) {
+    result.result = RetriableRpcStatus::SERVER_NOT_ACCESSIBLE;
+    return result;
+  }
+
   if (result.status.ok()) {
     result.result = RetriableRpcStatus::OK;
   } else {

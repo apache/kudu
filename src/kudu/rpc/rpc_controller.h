@@ -89,6 +89,9 @@ class RpcController {
   // has timed out.
   bool finished() const;
 
+  // Whether the call failed due to connection negotiation error.
+  bool negotiation_failed() const;
+
   // Return the current status of a call.
   //
   // A call is "OK" status until it finishes, at which point it may

@@ -52,7 +52,6 @@ DEFINE_int64(client_inserts_per_thread, 50,
 DEFINE_int64(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
 DECLARE_int32(consensus_rpc_timeout_ms);
-DECLARE_int64(rpc_negotiation_timeout_ms);
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
@@ -1043,10 +1042,6 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
-
-  // TODO(KUDU-1580): this test seems to frequently trigger RPC negotiation timeouts,
-  // and the client doesn't properly fail over in this case.
-  FLAGS_rpc_negotiation_timeout_ms = 10000;
 
   // Start a 7 node configuration cluster (since we can't bring leaders back we start with a
   // higher replica count so that we kill more leaders).

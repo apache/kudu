@@ -486,7 +486,9 @@ class RpcTestBase : public KuduTest {
     CHECK_EQ(resp.data2(), s2);
   }
 
-  void DoTestExpectTimeout(const Proxy &p, const MonoDelta &timeout) {
+  void DoTestExpectTimeout(const Proxy& p,
+                           const MonoDelta& timeout,
+                           bool* is_negotiaton_error = nullptr) {
     SleepRequestPB req;
     SleepResponsePB resp;
     // Sleep for 500ms longer than the call timeout.
@@ -498,8 +500,11 @@ class RpcTestBase : public KuduTest {
     Stopwatch sw;
     sw.start();
     Status s = p.SyncRequest(GenericCalculatorService::kSleepMethodName, req, &resp, &c);
-    ASSERT_FALSE(s.ok());
     sw.stop();
+    ASSERT_FALSE(s.ok());
+    if (is_negotiaton_error != nullptr) {
+      *is_negotiaton_error = c.negotiation_failed();
+    }
 
     int expected_millis = timeout.ToMilliseconds();
     int elapsed_millis = sw.elapsed().wall_millis();

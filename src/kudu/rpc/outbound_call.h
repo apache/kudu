@@ -55,7 +55,6 @@ class RpcCallInProgressPB;
 class RpcController;
 class RpcSidecar;
 
-
 // Used to key on Connection information.
 // For use as a key in an unordered STL collection, use ConnectionIdHash and ConnectionIdEqual.
 // This class is copyable for STL compatibility, but not assignable (use CopyFrom() for that).
@@ -120,6 +119,18 @@ class ConnectionIdEqual {
 // of different threads, making it tricky to enforce single ownership.
 class OutboundCall {
  public:
+
+  // Phases of an outbound RPC. Making an outbound RPC might involve establishing
+  // a connection to the remote server first, and the actual call is made only
+  // once the connection to the server is established.
+  enum class Phase {
+    // The phase of connection negotiation between the caller and the callee.
+    CONNECTION_NEGOTIATION,
+
+    // The phase of sending a call over already established connection.
+    REMOTE_CALL,
+  };
+
   OutboundCall(const ConnectionId& conn_id, const RemoteMethod& remote_method,
                google::protobuf::Message* response_storage,
                RpcController* controller, ResponseCallback callback);
@@ -160,12 +171,15 @@ class OutboundCall {
   // should be set to the error returned by the remote server. Takes
   // ownership of 'err_pb'.
   void SetFailed(const Status& status,
+                 Phase phase = Phase::REMOTE_CALL,
                  ErrorStatusPB* err_pb = nullptr);
 
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
-  void SetTimedOut();
+  void SetTimedOut(Phase phase);
   bool IsTimedOut() const;
+
+  bool IsNegotiationError() const;
 
   // Is the call finished?
   bool IsFinished() const;
@@ -212,7 +226,9 @@ class OutboundCall {
     ON_OUTBOUND_QUEUE,
     SENDING,
     SENT,
+    NEGOTIATION_TIMED_OUT,
     TIMED_OUT,
+    FINISHED_NEGOTIATION_ERROR,
     FINISHED_ERROR,
     FINISHED_SUCCESS
   };

@@ -70,17 +70,14 @@ using std::shared_ptr;
 using std::unique_ptr;
 using strings::Substitute;
 
-// TODO(KUDU-1580). This timeout has been bumped from 3 seconds up to
-// 15 seconds to workaround a bug. We should drop it back down when
-// KUDU-1580 is fixed.
-DEFINE_int64(rpc_negotiation_timeout_ms, 15000,
+DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
              "Timeout for negotiating an RPC connection.");
 TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
 TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
 
 DEFINE_bool(rpc_reopen_outbound_connections, false,
-            "Open a new connection to the server for every RPC call, "
-            "if possible. If not enabled, an already existing connection to a "
+            "Open a new connection to the server for every RPC call. "
+            "If not enabled, an already existing connection to a "
             "server is reused upon making another call to the same server. "
             "When this flag is enabled, an already existing _idle_ connection "
             "to the server is closed upon making another RPC call which would "
@@ -253,7 +250,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
                                    call->controller()->credentials_policy(),
                                    &conn);
   if (PREDICT_FALSE(!s.ok())) {
-    call->SetFailed(s);
+    call->SetFailed(s, OutboundCall::Phase::CONNECTION_NEGOTIATION);
     return;
   }
 
@@ -710,7 +707,9 @@ class AssignOutboundCallTask : public ReactorTask {
   }
 
   void Abort(const Status& status) override {
-    call_->SetFailed(status);
+    // It doesn't matter what is the actual phase of the OutboundCall: just set
+    // it to Phase::REMOTE_CALL to finilize the state of the call.
+    call_->SetFailed(status, OutboundCall::Phase::REMOTE_CALL);
     delete this;
   }
 
