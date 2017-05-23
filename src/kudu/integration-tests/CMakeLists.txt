@@ -56,6 +56,8 @@ ADD_KUDU_TEST(alter_table-test)
 ADD_KUDU_TEST(authn_token_expire-itest)
 ADD_KUDU_TEST(catalog_manager_tsk-itest)
 ADD_KUDU_TEST(client_failover-itest)
+ADD_KUDU_TEST(client-negotiation-failover-itest
+  RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(client-stress-test
   RESOURCE_LOCK "master-rpc-ports"
   RUN_SERIAL true)

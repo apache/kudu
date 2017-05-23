@@ -18,14 +18,10 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <thread>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional.hpp>
 #include <glog/logging.h>
-
-#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -35,32 +31,21 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/integration-tests/ts_itest-base.h"
-#include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/scoped_cleanup.h"
 
 using kudu::client::CountTableRows;
-using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
-using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
-using kudu::client::KuduTableCreator;
 using kudu::client::KuduUpdate;
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using std::set;
 using std::string;
-using std::thread;
 using std::vector;
-using std::unique_ptr;
 using std::unordered_map;
-
-DECLARE_bool(rpc_reopen_outbound_connections);
-DECLARE_int64(rpc_negotiation_timeout_ms);
 
 namespace kudu {
 
@@ -356,121 +341,6 @@ TEST_F(ClientFailoverTServerTimeoutITest, FailoverOnLeaderTimeout) {
 
   // Verify all rows have reached the destiation.
   EXPECT_GE(workload.rows_inserted(), rows_target);
-}
-
-// Series of tests to verify that client fails over to another available server
-// if it experiences a timeout on connection negotiation with current server.
-// The 'server' can be both a master and a tablet server.
-class ClientFailoverOnNegotiationTimeoutITest : public KuduTest {
- public:
-  ClientFailoverOnNegotiationTimeoutITest() {
-    // Since we want to catch timeout during connection negotiation phase,
-    // let's make the client re-establishing connections on every RPC.
-    FLAGS_rpc_reopen_outbound_connections = true;
-    // Set the connection negotiation timeout shorter than its default value
-    // to run the test faster.
-    FLAGS_rpc_negotiation_timeout_ms = 1000;
-
-    cluster_opts_.extra_tserver_flags = {
-        // Speed up Raft elections.
-        "--raft_heartbeat_interval_ms=25",
-        "--leader_failure_exp_backoff_max_delta_ms=1000",
-        // Decreasing TS->master heartbeat interval speeds up the test.
-        "--heartbeat_interval_ms=25",
-    };
-    cluster_opts_.extra_master_flags = {
-        // Speed up Raft elections.
-        "--raft_heartbeat_interval_ms=25",
-        "--leader_failure_exp_backoff_max_delta_ms=1000",
-    };
-  }
-
-  Status CreateAndStartCluster() {
-    cluster_.reset(new ExternalMiniCluster(cluster_opts_));
-    return cluster_->Start();
-  }
-
-  void TearDown() override {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
-    KuduTest::TearDown();
-  }
- protected:
-  ExternalMiniClusterOptions cluster_opts_;
-  shared_ptr<ExternalMiniCluster> cluster_;
-};
-
-// Regression test for KUDU-1580: if a client times out on negotiating a connection
-// to a tablet server, it should retry with other available tablet server.
-TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
-  static const int kNumTabletServers = 3;
-  static const int kTimeoutMs = 5 * 60 * 1000;
-  static const char* kTableName = "kudu1580";
-
-  if (!AllowSlowTests()) {
-    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
-    return;
-  }
-
-  cluster_opts_.num_tablet_servers = kNumTabletServers;
-  ASSERT_OK(CreateAndStartCluster());
-
-  shared_ptr<KuduClient> client;
-  ASSERT_OK(cluster_->CreateClient(
-      &KuduClientBuilder()
-          .default_admin_operation_timeout(MonoDelta::FromMilliseconds(kTimeoutMs))
-          .default_rpc_timeout(MonoDelta::FromMilliseconds(kTimeoutMs)),
-      &client));
-  unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-  KuduSchema schema(client::KuduSchemaFromSchema(CreateKeyValueTestSchema()));
-  ASSERT_OK(table_creator->table_name(kTableName)
-      .schema(&schema)
-      .add_hash_partitions({ "key" }, kNumTabletServers)
-      .num_replicas(kNumTabletServers)
-      .Create());
-  shared_ptr<KuduTable> table;
-  ASSERT_OK(client->OpenTable(kTableName, &table));
-
-  shared_ptr<KuduSession> session = client->NewSession();
-  session->SetTimeoutMillis(kTimeoutMs);
-  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
-
-  // Running multiple iterations to cover possible variations of tablet leader
-  // placement among tablet servers.
-  for (int i = 0; i < 8 * kNumTabletServers; ++i) {
-    vector<unique_ptr<ScopedResumeExternalDaemon>> resumers;
-    for (int tsi = 0; tsi < kNumTabletServers; ++tsi) {
-      ExternalTabletServer* ts(cluster_->tablet_server(tsi));
-      ASSERT_NE(nullptr, ts);
-      ASSERT_OK(ts->Pause());
-      resumers.emplace_back(new ScopedResumeExternalDaemon(ts));
-    }
-
-    // Resume 2 out of 3 tablet servers (i.e. the majority), so the client
-    // could eventially succeed with its write operations.
-    thread resume_thread([&]() {
-        const int idx0 = rand() % kNumTabletServers;
-        unique_ptr<ScopedResumeExternalDaemon> r0(resumers[idx0].release());
-        const int idx1 = (idx0 + 1) % kNumTabletServers;
-        unique_ptr<ScopedResumeExternalDaemon> r1(resumers[idx1].release());
-        SleepFor(MonoDelta::FromSeconds(1));
-      });
-    // An automatic clean-up to handle both success and failure cases
-    // in the code below.
-    auto cleanup = MakeScopedCleanup([&]() {
-        resume_thread.join();
-      });
-
-    // Since the table is hash-partitioned with kNumTabletServer partitions,
-    // hopefully three sequential numbers would go into different partitions.
-    for (int ii = 0; ii < kNumTabletServers; ++ii) {
-      unique_ptr<KuduInsert> ins(table->NewInsert());
-      ASSERT_OK(ins->mutable_row()->SetInt32(0, kNumTabletServers * i + ii));
-      ASSERT_OK(ins->mutable_row()->SetInt32(1, 0));
-      ASSERT_OK(session->Apply(ins.release()));
-    }
-  }
 }
 
 } // namespace kudu
