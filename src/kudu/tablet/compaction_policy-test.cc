@@ -116,7 +116,7 @@ TEST(TestCompactionPolicy, TestYcsbCompaction) {
     LOG(INFO) << "quality=" << quality;
     int total_size = 0;
     for (const auto* rs : picked) {
-      total_size += rs->OnDiskDataSizeNoUndos() / 1024 / 1024;
+      total_size += rs->OnDiskBaseDataSizeWithRedos() / 1024 / 1024;
     }
     ASSERT_LE(total_size, budget_mb);
     qualities.push_back(quality);

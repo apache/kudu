@@ -279,6 +279,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   Status LoadFromDisk();
 
+  // Updates the cached on-disk size of the tablet superblock.
+  Status UpdateOnDiskSize();
+
   // Update state of metadata to that of the given superblock PB.
   Status LoadFromSuperBlock(const TabletSuperBlockPB& superblock);
 

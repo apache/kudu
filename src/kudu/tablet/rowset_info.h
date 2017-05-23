@@ -83,7 +83,7 @@ class RowSetInfo {
 
   RowSet* const rowset_;
 
-  // Cached version of rowset_->OnDiskDataSize().
+  // Cached version of rowset_->OnDiskBaseDataSize().
   const int size_bytes_;
 
   // The size in MB, already clamped so that all rowsets have size at least

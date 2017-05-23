@@ -233,8 +233,8 @@ class DeltaTracker {
   // Return the number of redo delta stores, not including the DeltaMemStore.
   size_t CountRedoDeltaStores() const;
 
-  // Return the size on-disk of all delta blocks, in bytes.
-  uint64_t OnDiskSize() const;
+  // Return the size on-disk of UNDO deltas, in bytes.
+  uint64_t UndoDeltaOnDiskSize() const;
 
   // Return the size on-disk of REDO deltas, in bytes.
   uint64_t RedoDeltaOnDiskSize() const;

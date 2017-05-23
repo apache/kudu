@@ -325,6 +325,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // GCing these before the peer has caught up.
   log::RetentionIndexes GetRetentionIndexes();
 
+  // Return the on-disk size of the consensus metadata, in bytes.
+  int64_t MetadataOnDiskSize() const;
+
  private:
   ALLOW_MAKE_SHARED(RaftConsensus);
   friend class RaftConsensusQuorumTest;

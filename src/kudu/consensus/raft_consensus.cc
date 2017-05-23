@@ -2703,6 +2703,10 @@ string RaftConsensus::ToStringUnlocked() const {
                     peer_uuid(), State_Name(state_), RaftPeerPB::Role_Name(cmeta_->active_role()));
 }
 
+int64_t RaftConsensus::MetadataOnDiskSize() const {
+  return cmeta_->on_disk_size();
+}
+
 ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
   return cmeta_.get();
 }

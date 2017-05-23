@@ -238,10 +238,12 @@ class Tablet {
   // the current MRS.
   size_t MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) const;
 
-  // Return the total on-disk size of this tablet, in bytes.
+  // Returns the total on-disk size of this tablet, in bytes.
+  // Includes the tablet superblock.
   size_t OnDiskSize() const;
 
-  // Return the total on-disk size of this tablet's data, in bytes.
+  // Returns the on-disk size of this tablet's data, in bytes.
+  // Excludes all metadata (both tablet metadata and the metadata of this tablet's rowsets).
   size_t OnDiskDataSize() const;
 
   // Get the total size of all the DMS
@@ -571,7 +573,6 @@ class Tablet {
   // NOTE: callers should avoid taking this lock for a long time, even in shared mode.
   // This is because the lock has some concept of fairness -- if, while a long reader
   // is active, a writer comes along, then all future short readers will be blocked.
-  // TODO: now that this is single-threaded again, we should change it to rw_spinlock
   mutable rw_spinlock component_lock_;
 
   // The current components of the tablet. These should always be read

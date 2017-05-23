@@ -216,15 +216,18 @@ Status CFileSet::GetBounds(string* min_encoded_key,
   return Status::OK();
 }
 
-uint64_t CFileSet::OnDiskSize() const {
-  uint64_t ret = OnDiskDataSize();
-  if (bloom_reader_) {
-    ret += bloom_reader_->FileSize();
-  }
+uint64_t CFileSet::AdhocIndexOnDiskSize() const {
   if (ad_hoc_idx_reader_) {
-    ret += ad_hoc_idx_reader_->file_size();
+    return ad_hoc_idx_reader_->file_size();
   }
-  return ret;
+  return 0;
+}
+
+uint64_t CFileSet::BloomFileOnDiskSize() const {
+  if (bloom_reader_) {
+    return bloom_reader_->FileSize();
+  }
+  return 0;
 }
 
 uint64_t CFileSet::OnDiskDataSize() const {

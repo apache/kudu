@@ -701,34 +701,32 @@ Status DiskRowSet::GetBounds(std::string* min_encoded_key,
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
-uint64_t DiskRowSet::BaseDataOnDiskSize() const {
+void DiskRowSet::GetDiskRowSetSpaceUsage(DiskRowSetSpace* drss) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
-  return base_data_->OnDiskSize();
-}
-
-uint64_t DiskRowSet::BaseDataOnDiskSizeNoMetadata() const {
-  DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-  return base_data_->OnDiskDataSize();
-}
-
-uint64_t DiskRowSet::RedoDeltaOnDiskSize() const {
-  DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-  return delta_tracker_->RedoDeltaOnDiskSize();
+  drss->base_data_size = base_data_->OnDiskDataSize();
+  drss->bloom_size = base_data_->BloomFileOnDiskSize();
+  drss->ad_hoc_index_size = base_data_->AdhocIndexOnDiskSize();
+  drss->redo_deltas_size = delta_tracker_->RedoDeltaOnDiskSize();
+  drss->undo_deltas_size = delta_tracker_->UndoDeltaOnDiskSize();
 }
 
 uint64_t DiskRowSet::OnDiskSize() const {
-  DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-  return base_data_->OnDiskSize() + delta_tracker_->OnDiskSize();
+  DiskRowSetSpace drss;
+  GetDiskRowSetSpaceUsage(&drss);
+  return drss.CFileSetOnDiskSize() + drss.redo_deltas_size + drss.undo_deltas_size;
 }
 
-uint64_t DiskRowSet::OnDiskDataSizeNoUndos() const {
-  DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-  return base_data_->OnDiskDataSize() + delta_tracker_->RedoDeltaOnDiskSize();
+uint64_t DiskRowSet::OnDiskBaseDataSize() const {
+  DiskRowSetSpace drss;
+  GetDiskRowSetSpaceUsage(&drss);
+  return drss.base_data_size;
+}
+
+uint64_t DiskRowSet::OnDiskBaseDataSizeWithRedos() const {
+  DiskRowSetSpace drss;
+  GetDiskRowSetSpaceUsage(&drss);
+  return drss.base_data_size + drss.redo_deltas_size;
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {
@@ -767,7 +765,6 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   DCHECK(open_);
   double perf_improv = 0;
   size_t store_count = CountDeltaStores();
-  uint64_t base_data_size = BaseDataOnDiskSizeNoMetadata();
 
   if (store_count == 0) {
     return perf_improv;
@@ -778,7 +775,9 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
     delta_tracker_->GetColumnIdsWithUpdates(&col_ids_with_updates);
     // If we have files but no updates, we don't want to major compact.
     if (!col_ids_with_updates.empty()) {
-      double ratio = static_cast<double>(RedoDeltaOnDiskSize()) / base_data_size;
+      DiskRowSetSpace drss;
+      GetDiskRowSetSpaceUsage(&drss);
+      double ratio = static_cast<double>(drss.redo_deltas_size) / drss.base_data_size;
       if (ratio >= FLAGS_tablet_delta_store_major_compact_min_ratio) {
         perf_improv = ratio;
       }

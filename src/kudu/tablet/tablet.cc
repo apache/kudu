@@ -168,7 +168,7 @@ METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
                          "Size of this tablet's memrowset");
-METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
+METRIC_DEFINE_gauge_size(tablet, on_disk_data_size, "Tablet Data Size On Disk",
                          kudu::MetricUnit::kBytes,
                          "Space used by this tablet's data blocks.");
 
@@ -233,8 +233,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     METRIC_memrowset_size.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
-    METRIC_on_disk_size.InstantiateFunctionGauge(
-      metric_entity_, Bind(&Tablet::OnDiskSize, Unretained(this)))
+    METRIC_on_disk_data_size.InstantiateFunctionGauge(
+      metric_entity_, Bind(&Tablet::OnDiskDataSize, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }
 
@@ -1501,7 +1501,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   if (input.num_rowsets() > 1) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_compaction);
   } else if (input.num_rowsets() == 1 &&
-      input.rowsets()[0]->OnDiskDataSizeNoUndos() == 0) {
+      input.rowsets()[0]->OnDiskBaseDataSizeWithRedos() == 0) {
     MAYBE_FAULT(FLAGS_fault_crash_before_flush_tablet_meta_after_flush_mrs);
   }
 
@@ -1695,7 +1695,17 @@ size_t Tablet::MemRowSetLogReplaySize(const ReplaySizeMap& replay_size_map) cons
 }
 
 size_t Tablet::OnDiskSize() const {
-  return OnDiskDataSize() + metadata()->on_disk_size();
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  if (!comps) return 0;
+
+  size_t ret = metadata()->on_disk_size();
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
+    ret += rowset->OnDiskSize();
+  }
+
+  return ret;
 }
 
 size_t Tablet::OnDiskDataSize() const {
@@ -1706,9 +1716,8 @@ size_t Tablet::OnDiskDataSize() const {
 
   size_t ret = 0;
   for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
-    ret += rowset->OnDiskSize();
+    ret += rowset->OnDiskBaseDataSize();
   }
-
   return ret;
 }
 

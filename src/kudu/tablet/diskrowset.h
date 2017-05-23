@@ -274,6 +274,28 @@ class RollingDiskRowSetWriter {
   DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };
 
+// A rowset's disk-space-occupying components are as follows:
+// - cfile set
+//   - base data
+//   - bloom file
+//   - ad hoc index
+// - delta files
+//   - UNDO deltas
+//   - REDO deltas
+// This struct is a container for the sizes of these components.
+struct DiskRowSetSpace {
+  uint64_t base_data_size;
+  uint64_t bloom_size;
+  uint64_t ad_hoc_index_size;
+  uint64_t redo_deltas_size;
+  uint64_t undo_deltas_size;
+
+  // Helper method to compute the size of the diskrowset's underlying cfile set.
+  uint64_t CFileSetOnDiskSize() {
+    return base_data_size + bloom_size + ad_hoc_index_size;
+  }
+};
+
 ////////////////////////////////////////////////////////////
 // DiskRowSet
 ////////////////////////////////////////////////////////////
@@ -345,19 +367,13 @@ class DiskRowSet : public RowSet {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
 
-  // Estimate the on-disk size of this rowset's cfile set, including bloomfiles
-  // and the ad hoc index.
-  uint64_t BaseDataOnDiskSize() const;
-
-  // Estimate the size on-disk of the data in this rowset's cfile set.
-  uint64_t BaseDataOnDiskSizeNoMetadata() const;
-
-  // Estimate the size on-disk of this rowset's REDO deltas.
-  uint64_t RedoDeltaOnDiskSize() const;
+  void GetDiskRowSetSpaceUsage(DiskRowSetSpace* drss) const;
 
   uint64_t OnDiskSize() const OVERRIDE;
 
-  uint64_t OnDiskDataSizeNoUndos() const OVERRIDE;
+  uint64_t OnDiskBaseDataSize() const OVERRIDE;
+
+  uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE;
 
   size_t DeltaMemStoreSize() const OVERRIDE;
 
@@ -409,10 +425,10 @@ class DiskRowSet : public RowSet {
   virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
 
  private:
+  FRIEND_TEST(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns);
+  FRIEND_TEST(TestCompaction, TestOneToOne);
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
-  FRIEND_TEST(TestCompaction, TestOneToOne);
-  FRIEND_TEST(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns);
 
   friend class CompactionInput;
   friend class Tablet;

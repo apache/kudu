@@ -613,31 +613,30 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
 
-  // The rowset consists of base data and REDO deltas, so
-  // 1. the delta tracker's on-disk estimate should be the same as the on-disk estimate for REDOs.
-  // 2. the rowset's on-disk estimate and the sum of the base data and REDO estimates should equal.
-  ASSERT_EQ(rs->delta_tracker()->OnDiskSize(),
-            rs->delta_tracker()->RedoDeltaOnDiskSize());
-  ASSERT_EQ(rs->OnDiskSize(),
-            rs->BaseDataOnDiskSize() + rs->RedoDeltaOnDiskSize());
+  // The rowset consists of the cfile set and REDO deltas, so the rowset's
+  // on-disk size and the sum of the cfile set and REDO sizes should equal.
+  DiskRowSetSpace drss;
+  rs->GetDiskRowSetSpaceUsage(&drss);
+  ASSERT_GT(drss.redo_deltas_size, 0);
+  ASSERT_EQ(rs->OnDiskSize(), drss.CFileSetOnDiskSize() + drss.redo_deltas_size);
 
   // Convert the REDO delta to an UNDO delta.
-  // REDO size should be zero, but there should be UNDOs, so the on-disk size of the rowset
-  // should be larger than the base data.
   ASSERT_OK(rs->MajorCompactDeltaStores(HistoryGcOpts::Disabled()));
-  ASSERT_EQ(0, rs->RedoDeltaOnDiskSize());
-  ASSERT_GT(rs->OnDiskSize(), rs->BaseDataOnDiskSize());
+
+  // REDO size should be zero, but there should be UNDOs, so the on-disk size
+  // of the rowset should be the sum of the cfile set and UNDO sizes.
+  rs->GetDiskRowSetSpaceUsage(&drss);
+  ASSERT_GT(drss.undo_deltas_size, 0);
+  ASSERT_EQ(rs->OnDiskSize(), drss.CFileSetOnDiskSize() + drss.undo_deltas_size);
 
   // Write a second delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
 
-  // There's base data, REDOs, and UNDOs, so the delta tracker and rowset's sizes should be larger
-  // than estimates counting only base data and REDOs.
-  ASSERT_GT(rs->delta_tracker()->OnDiskSize(),
-            rs->delta_tracker()->RedoDeltaOnDiskSize());
-  ASSERT_GT(rs->OnDiskSize(),
-            rs->BaseDataOnDiskSize() + rs->RedoDeltaOnDiskSize());
+  // Now there's base data, REDOs, and UNDOs.
+  rs->GetDiskRowSetSpaceUsage(&drss);
+  ASSERT_GT(drss.undo_deltas_size, 0);
+  ASSERT_GT(drss.redo_deltas_size, 0);
 }
 
 } // namespace tablet

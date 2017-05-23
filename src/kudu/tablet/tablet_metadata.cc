@@ -316,7 +316,16 @@ Status TabletMetadata::LoadFromDisk() {
   RETURN_NOT_OK(ReadSuperBlockFromDisk(&superblock));
   RETURN_NOT_OK_PREPEND(LoadFromSuperBlock(superblock),
                         "Failed to load data from superblock protobuf");
+  RETURN_NOT_OK(UpdateOnDiskSize());
   state_ = kInitialized;
+  return Status::OK();
+}
+
+Status TabletMetadata::UpdateOnDiskSize() {
+  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+  uint64_t on_disk_size;
+  RETURN_NOT_OK(fs_manager()->env()->GetFileSize(path, &on_disk_size));
+  on_disk_size_.store(on_disk_size, memory_order_relaxed);
   return Status::OK();
 }
 
@@ -425,7 +434,6 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     DeleteOrphanedBlocks(orphaned_blocks);
   }
 
-  on_disk_size_.store(superblock.ByteSizeLong(), memory_order_relaxed);
   return Status::OK();
 }
 
@@ -591,7 +599,7 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
                             fs_manager_->env(), path, pb,
                             pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
-  on_disk_size_.store(pb.ByteSizeLong(), memory_order_relaxed);
+  RETURN_NOT_OK(UpdateOnDiskSize());
 
   return Status::OK();
 }

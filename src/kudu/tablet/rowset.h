@@ -125,11 +125,16 @@ class RowSet {
   // This is very verbose so only useful within unit tests.
   virtual Status DebugDump(std::vector<std::string> *lines = NULL) = 0;
 
-  // Estimate the number of bytes on-disk
+  // Return the size of this rowset on disk, in bytes.
   virtual uint64_t OnDiskSize() const = 0;
 
-  // Estimate the number of bytes relevant for compaction.
-  virtual uint64_t OnDiskDataSizeNoUndos() const = 0;
+  // Return the size of this rowset's base data on disk, in bytes.
+  // Excludes bloomfiles and the ad hoc index.
+  virtual uint64_t OnDiskBaseDataSize() const = 0;
+
+  // Return the size, in bytes, of this rowset's base data and REDO deltas.
+  // Does not include bloomfiles, the ad hoc index, or UNDO deltas.
+  virtual uint64_t OnDiskBaseDataSizeWithRedos() const = 0;
 
   // Return the lock used for including this DiskRowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
@@ -340,11 +345,14 @@ class DuplicatingRowSet : public RowSet {
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
 
-  // Return the total size on-disk of this rowset.
+  // Return the total size on-disk of this rowset, in bytes.
   uint64_t OnDiskSize() const OVERRIDE;
 
-  // Return the size of this rowset relevant for merge compactions.
-  uint64_t OnDiskDataSizeNoUndos() const OVERRIDE;
+  // Return the total size on-disk of this rowset's data (i.e. excludes metadata), in bytes.
+  uint64_t OnDiskBaseDataSize() const OVERRIDE;
+
+  // Return the size, in bytes, of this rowset's data, not including UNDOs.
+  uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE;
 
   std::string ToString() const OVERRIDE;
 

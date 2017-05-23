@@ -135,10 +135,11 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   // Shut down the tablet.
   harness_->tablet()->Shutdown();
 
-  // The on-disk size and the size of the superblock PB should agree.
+  // The tablet metadata is a container file holding the superblock PB,
+  // so the on_disk_size should be at least as big.
   TabletSuperBlockPB superblock_pb;
   ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
-  ASSERT_EQ(superblock_pb.ByteSize(), final_size);
+  ASSERT_GE(final_size, superblock_pb.ByteSize());
 }
 
 

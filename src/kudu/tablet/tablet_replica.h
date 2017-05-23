@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -281,6 +282,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void MarkTabletDirty(const std::string& reason) {
     mark_dirty_clbk_.Run(reason);
   }
+
+  // Return the total on-disk size of this tablet replica, in bytes.
+  size_t OnDiskSize() const;
 
  private:
   friend class RefCountedThreadSafe<TabletReplica>;

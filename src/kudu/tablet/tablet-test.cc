@@ -97,9 +97,20 @@ TYPED_TEST(TestTablet, TestFlush) {
   uint64_t max_rows = this->ClampRowCount(FLAGS_testflush_num_inserts);
   this->InsertTestRows(0, max_rows, 0);
 
+  // Pre-flush, there should be no data on disk, and no diskrowsets, so the
+  // on-disk size of the tablet should be size of the tablet metadata.
+  ASSERT_EQ(0, this->tablet()->OnDiskDataSize());
+  ASSERT_GT(this->tablet()->OnDiskSize(), 0);
+  ASSERT_EQ(this->tablet()->metadata()->on_disk_size(), this->tablet()->OnDiskSize());
+
   // Flush it.
   ASSERT_OK(this->tablet()->Flush());
   TabletMetadata* tablet_meta = this->tablet()->metadata();
+
+  // Post-flush, there should be data on-disk. On-disk size should exceed
+  // on-disk data size due to per-diskrowset metadata and tablet metadata.
+  ASSERT_GT(this->tablet()->OnDiskDataSize(), 0);
+  ASSERT_GT(this->tablet()->OnDiskSize(), this->tablet()->OnDiskDataSize());
 
   // Make sure the files were created as expected.
   RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);

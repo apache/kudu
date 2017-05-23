@@ -180,8 +180,6 @@ class LogTestOptionalCompression : public LogTest,
 };
 INSTANTIATE_TEST_CASE_P(Codecs, LogTestOptionalCompression, ::testing::Values(NO_COMPRESSION, LZ4));
 
-
-
 // If we write more than one entry in a batch, we should be able to
 // read all of those entries back.
 TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
@@ -1146,6 +1144,53 @@ TEST_F(LogTest, TestAutoStopIdleAppendThread) {
   ASSERT_EVENTUALLY([&]() {
       ASSERT_FALSE(log_->append_thread_active_for_tests());
     });
+}
+
+// Test that Log::TotalSize() captures creation, addition, and deletion of log segments.
+TEST_P(LogTestOptionalCompression, TestTotalSize) {
+  // Build a log. There is an active segment, so on-disk size should be positive.
+  ASSERT_OK(BuildLog());
+  int64_t one_segment_size = log_->OnDiskSize();
+  ASSERT_GT(one_segment_size, 0);
+
+  // Append entries and roll over to new segments.
+  vector<LogAnchor*> anchors;
+  ElementDeleter deleter(&anchors);
+  SegmentSequence segments;
+  const int kNumTotalSegments = 3;
+  const int kNumOpsPerSegment = 2;
+
+  OpId op_id = MakeOpId(1, 1);
+  ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
+                                       &op_id, &anchors));
+  ASSERT_EQ(3, anchors.size());
+
+  // Now that there's multiple segments, the total size should be larger than
+  // the one-segment size.
+  int64_t three_segment_size = log_->OnDiskSize();
+  ASSERT_GT(three_segment_size, one_segment_size);
+
+  // Free an anchor so we can GC the segment it points to.
+  RetentionIndexes retention;
+  ASSERT_OK(log_anchor_registry_->Unregister(anchors[0]));
+  ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&retention.for_durability));
+  int num_gced_segments;
+  ASSERT_OK(log_->GC(retention, &num_gced_segments));
+  ASSERT_EQ(1, num_gced_segments) << DumpSegmentsToString(segments);
+  ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments))
+  ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
+
+  // Now we've added two segments and GC'd one, so the total size should be
+  // between the one-segment size and the three-segment size.
+  int64_t two_segment_size = log_->OnDiskSize();
+  ASSERT_LT(two_segment_size, three_segment_size);
+  ASSERT_GT(two_segment_size, one_segment_size);
+
+  // Cleanup: close the log and unregister the remaining registered anchors.
+  ASSERT_OK(log_->Close());
+  for (int i = 1; i < kNumTotalSegments; i++) {
+    ASSERT_OK(log_anchor_registry_->Unregister(anchors[i]));
+  }
 }
 
 } // namespace log

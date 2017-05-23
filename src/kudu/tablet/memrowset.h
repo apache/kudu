@@ -260,7 +260,11 @@ class MemRowSet : public RowSet,
     return 0;
   }
 
-  uint64_t OnDiskDataSizeNoUndos() const OVERRIDE {
+  uint64_t OnDiskBaseDataSize() const OVERRIDE {
+    return 0;
+  }
+
+  uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE {
     return 0;
   }
 

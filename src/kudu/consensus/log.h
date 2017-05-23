@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -205,6 +206,10 @@ class Log : public RefCountedThreadSafe<Log> {
   //
   // Note that the returned values are in units of bytes, not MB.
   void GetReplaySizeMap(std::map<int64_t, int64_t>* replay_size) const;
+
+  // Returns the total size of the current segments, in bytes.
+  // Returns 0 if the log is shut down.
+  int64_t OnDiskSize();
 
   // Returns the file system location of the currently active WAL segment.
   const std::string& ActiveSegmentPathForTests() const {
@@ -402,6 +407,9 @@ class Log : public RefCountedThreadSafe<Log> {
   gscoped_ptr<LogMetrics> metrics_;
 
   std::shared_ptr<LogFaultHooks> log_hooks_;
+
+  // The cached on-disk size of the log, used to track its size even if it has been closed.
+  std::atomic<int64_t> on_disk_size_;
 
   DISALLOW_COPY_AND_ASSIGN(Log);
 };

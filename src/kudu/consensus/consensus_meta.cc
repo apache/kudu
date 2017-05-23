@@ -291,6 +291,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       FLAGS_log_force_fsync_all ? pb_util::SYNC : pb_util::NO_SYNC),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
+  RETURN_NOT_OK(UpdateOnDiskSize());
   return Status::OK();
 }
 
@@ -301,7 +302,8 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
       tablet_id_(std::move(tablet_id)),
       peer_uuid_(std::move(peer_uuid)),
       has_pending_config_(false),
-      flush_count_for_tests_(0) {
+      flush_count_for_tests_(0),
+      on_disk_size_(0) {
 }
 
 Status ConsensusMetadata::Create(FsManager* fs_manager,
@@ -338,6 +340,8 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
                                                  fs_manager->GetConsensusMetadataPath(tablet_id),
                                                  &cmeta->pb_));
   cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
+
+  RETURN_NOT_OK(cmeta->UpdateOnDiskSize());
   if (cmeta_out) *cmeta_out = std::move(cmeta);
   return Status::OK();
 }
@@ -366,6 +370,14 @@ void ConsensusMetadata::UpdateActiveRoleUnlocked() {
   active_role_ = GetConsensusRole(peer_uuid_, cstate);
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
                       << ". Consensus state: " << pb_util::SecureShortDebugString(cstate);
+}
+
+Status ConsensusMetadata::UpdateOnDiskSize() {
+  string path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
+  uint64_t on_disk_size;
+  RETURN_NOT_OK(fs_manager_->env()->GetFileSize(path, &on_disk_size));
+  on_disk_size_ = on_disk_size;
+  return Status::OK();
 }
 
 } // namespace consensus

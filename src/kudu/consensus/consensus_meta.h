@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 
@@ -155,6 +156,12 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
     return flush_count_for_tests_;
   }
 
+  // The on-disk size of the consensus metadata, as of the last call to
+  // Load() or Flush().
+  int64_t on_disk_size() const {
+    return on_disk_size_.load(std::memory_order_relaxed);
+  }
+
  private:
   friend class RefCountedThreadSafe<ConsensusMetadata>;
   friend class ConsensusMetadataManager;
@@ -219,6 +226,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   void UpdateActiveRole();
   void UpdateActiveRoleUnlocked();
 
+  // Updates the cached on-disk size of the consensus metadata.
+  Status UpdateOnDiskSize();
+
   FsManager* const fs_manager_;
   const std::string tablet_id_;
   const std::string peer_uuid_;
@@ -240,6 +250,13 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
   // Durable fields.
   ConsensusMetadataPB pb_;
+
+  // The on-disk size of the consensus metadata, as of the last call to
+  // Load() or Flush().
+  // The type is int64_t for consistency with other on-disk size metrics,
+  // as opposed to uint64_t, which is the return type of the underlying function
+  // used to populate this value.
+  std::atomic<int64_t> on_disk_size_;
 
   DISALLOW_COPY_AND_ASSIGN(ConsensusMetadata);
 };

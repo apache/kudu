@@ -761,12 +761,9 @@ size_t DeltaTracker::CountRedoDeltaStores() const {
   return redo_delta_stores_.size();
 }
 
-uint64_t DeltaTracker::OnDiskSize() const {
+uint64_t DeltaTracker::UndoDeltaOnDiskSize() const {
   shared_lock<rw_spinlock> lock(component_lock_);
   uint64_t size = 0;
-  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
-    size += ds->EstimateSize();
-  }
   for (const shared_ptr<DeltaStore>& ds : undo_delta_stores_) {
     size += ds->EstimateSize();
   }

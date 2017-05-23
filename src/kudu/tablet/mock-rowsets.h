@@ -80,7 +80,11 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
-  virtual uint64_t OnDiskDataSizeNoUndos() const OVERRIDE {
+  virtual uint64_t OnDiskBaseDataSize() const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+  }
+  virtual uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
@@ -169,7 +173,11 @@ class MockDiskRowSet : public MockRowSet {
     return size_;
   }
 
-  virtual uint64_t OnDiskDataSizeNoUndos() const OVERRIDE {
+  virtual uint64_t OnDiskBaseDataSize() const OVERRIDE {
+    return size_;
+  }
+
+  virtual uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE {
     return size_;
   }
 

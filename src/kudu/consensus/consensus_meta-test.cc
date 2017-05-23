@@ -102,6 +102,7 @@ TEST_F(ConsensusMetadataTest, TestCreateLoad) {
   scoped_refptr<ConsensusMetadata> cmeta;
   ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta));
   ASSERT_VALUES_EQUAL(cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
+  ASSERT_GT(cmeta->on_disk_size(), 0);
 }
 
 // Test deferred creation.
@@ -160,14 +161,17 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
     scoped_refptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
     ASSERT_VALUES_EQUAL(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
+    ASSERT_GT(cmeta->on_disk_size(), 0);
   }
 
   ASSERT_OK(cmeta->Flush());
+  size_t cmeta_size = cmeta->on_disk_size();
 
   {
     scoped_refptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
     ASSERT_VALUES_EQUAL(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kNewTerm);
+    ASSERT_EQ(cmeta_size, cmeta_read->on_disk_size());
   }
 }
 

@@ -58,34 +58,37 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
-namespace kudu {
-namespace tablet {
-
 METRIC_DEFINE_histogram(tablet, op_prepare_queue_length, "Operation Prepare Queue Length",
-                        MetricUnit::kTasks,
+                        kudu::MetricUnit::kTasks,
                         "Number of operations waiting to be prepared within this tablet. "
                         "High queue lengths indicate that the server is unable to process "
                         "operations as fast as they are being written to the WAL.",
                         10000, 2);
 
 METRIC_DEFINE_histogram(tablet, op_prepare_queue_time, "Operation Prepare Queue Time",
-                        MetricUnit::kMicroseconds,
+                        kudu::MetricUnit::kMicroseconds,
                         "Time that operations spent waiting in the prepare queue before being "
                         "processed. High queue times indicate that the server is unable to "
                         "process operations as fast as they are being written to the WAL.",
                         10000000, 2);
 
 METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time",
-                        MetricUnit::kMicroseconds,
+                        kudu::MetricUnit::kMicroseconds,
                         "Time that operations spent being prepared in the tablet. "
                         "High values may indicate that the server is under-provisioned or "
                         "that operations are experiencing high contention with one another for "
                         "locks.",
                         10000000, 2);
 
+METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
+                         kudu::MetricUnit::kBytes,
+                         "Space used by this tablet on disk, including metadata.");
 METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
                            kudu::MetricUnit::kState,
                            "State of this tablet.");
+
+namespace kudu {
+namespace tablet {
 
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusOptions;
@@ -187,10 +190,13 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
               METRIC_op_prepare_run_time.Instantiate(metric_entity)
           });
 
-      if (tablet_->metrics()) {
+      if (tablet_->metrics() != nullptr) {
         TRACE("Starting instrumentation");
         txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
 
+        METRIC_on_disk_size.InstantiateFunctionGauge(
+                tablet_->GetMetricEntity(), Bind(&TabletReplica::OnDiskSize, Unretained(this)))
+            ->AutoDetach(&metric_detacher_);
         METRIC_state.InstantiateFunctionGauge(
             tablet_->GetMetricEntity(), Bind(&TabletReplica::StateName, Unretained(this)))
             ->AutoDetach(&metric_detacher_);
@@ -420,17 +426,17 @@ Status TabletReplica::SubmitAlterSchema(unique_ptr<AlterSchemaTransactionState> 
 }
 
 void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
-  std::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(status_pb_out != nullptr);
+  {
+    std::lock_guard<simple_spinlock> lock(lock_);
+    status_pb_out->set_state(state_);
+    status_pb_out->set_last_status(last_status_);
+  }
   status_pb_out->set_tablet_id(meta_->tablet_id());
   status_pb_out->set_table_name(meta_->table_name());
-  status_pb_out->set_last_status(last_status_);
   meta_->partition().ToPB(status_pb_out->mutable_partition());
-  status_pb_out->set_state(state_);
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
-  if (tablet_) {
-    status_pb_out->set_estimated_on_disk_size(tablet_->OnDiskSize());
-  }
+  status_pb_out->set_estimated_on_disk_size(OnDiskSize());
 }
 
 Status TabletReplica::RunLogGC() {
@@ -686,6 +692,30 @@ void TabletReplica::UnregisterMaintenanceOps() {
     op->Unregister();
   }
   STLDeleteElements(&maintenance_ops_);
+}
+
+size_t TabletReplica::OnDiskSize() const {
+  size_t ret = 0;
+
+  // Consensus metadata.
+  if (consensus_ != nullptr) {
+    ret += consensus_->MetadataOnDiskSize();
+  }
+
+  shared_ptr<Tablet> tablet;
+  scoped_refptr<Log> log;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    tablet = tablet_;
+    log = log_;
+  }
+  if (tablet) {
+    ret += tablet->OnDiskSize();
+  }
+  if (log) {
+    ret += log->OnDiskSize();
+  }
+  return ret;
 }
 
 Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {

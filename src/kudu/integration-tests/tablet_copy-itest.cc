@@ -123,7 +123,7 @@ using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
-METRIC_DECLARE_entity(server);
+METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateConsensus);
 METRIC_DECLARE_counter(glog_info_messages);
 METRIC_DECLARE_counter(glog_warning_messages);
@@ -132,6 +132,8 @@ METRIC_DECLARE_counter(tablet_copy_bytes_fetched);
 METRIC_DECLARE_counter(tablet_copy_bytes_sent);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
+METRIC_DECLARE_gauge_size(on_disk_data_size);
+METRIC_DECLARE_gauge_size(on_disk_size);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 
 namespace kudu {
@@ -1524,7 +1526,7 @@ int64_t TabletCopyOpenClientSessions(ExternalTabletServer* ets) {
 }
 } // anonymous namespace
 
-// Test that tablet copy metrics work correctly.
+// Test that metrics work correctly with tablet copy.
 TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
   MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   const int kTsIndex = 1; // Pick a random TS.

@@ -219,12 +219,20 @@ uint64_t DuplicatingRowSet::OnDiskSize() const {
   return size;
 }
 
-uint64_t DuplicatingRowSet::OnDiskDataSizeNoUndos() const {
+uint64_t DuplicatingRowSet::OnDiskBaseDataSize() const {
+  uint64_t size = 0;
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
+    size += rs->OnDiskBaseDataSize();
+  }
+  return size;
+}
+
+uint64_t DuplicatingRowSet::OnDiskBaseDataSizeWithRedos() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
   uint64_t size = 0;
   for (const shared_ptr<RowSet> &rs : new_rowsets_) {
-    size += rs->OnDiskDataSizeNoUndos();
+    size += rs->OnDiskBaseDataSizeWithRedos();
   }
   return size;
 }
