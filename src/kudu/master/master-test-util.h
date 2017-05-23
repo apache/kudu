@@ -68,65 +68,6 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
   return Status::RuntimeError("Unreachable statement"); // Suppress compiler warnings.
 }
 
-void CreateTableForTesting(MiniMaster* mini_master,
-                           const string& table_name,
-                           const Schema& schema,
-                           string *tablet_id) {
-  {
-    CreateTableRequestPB req;
-    CreateTableResponsePB resp;
-
-    req.set_name(table_name);
-    req.set_num_replicas(1);
-    ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
-    CatalogManager* catalog = mini_master->master()->catalog_manager();
-    CatalogManager::ScopedLeaderSharedLock l(catalog);
-    ASSERT_OK(l.first_failed_status());
-    ASSERT_OK(catalog->CreateTable(&req, &resp, NULL));
-  }
-
-  int wait_time = 1000;
-  bool is_table_created = false;
-  for (int i = 0; i < 80; ++i) {
-    IsCreateTableDoneRequestPB req;
-    IsCreateTableDoneResponsePB resp;
-
-    req.mutable_table()->set_table_name(table_name);
-    CatalogManager* catalog = mini_master->master()->catalog_manager();
-    {
-      CatalogManager::ScopedLeaderSharedLock l(catalog);
-      ASSERT_OK(l.first_failed_status());
-      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp));
-    }
-    if (resp.done()) {
-      is_table_created = true;
-      break;
-    }
-
-    VLOG(1) << "Waiting for table '" << table_name << "'to be created";
-
-    SleepFor(MonoDelta::FromMicroseconds(wait_time));
-    wait_time = std::min(wait_time * 5 / 4, 1000000);
-  }
-  ASSERT_TRUE(is_table_created);
-
-  {
-    GetTableSchemaRequestPB req;
-    GetTableSchemaResponsePB resp;
-    req.mutable_table()->set_table_name(table_name);
-    CatalogManager* catalog = mini_master->master()->catalog_manager();
-    CatalogManager::ScopedLeaderSharedLock l(catalog);
-    ASSERT_OK(l.first_failed_status());
-    ASSERT_OK(catalog->GetTableSchema(&req, &resp));
-    ASSERT_TRUE(resp.create_table_done());
-  }
-
-  GetTableLocationsResponsePB resp;
-  ASSERT_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
-  *tablet_id = resp.tablet_locations(0).tablet_id();
-  LOG(INFO) << "Got tablet " << *tablet_id << " for table " << table_name;
-}
-
 } // namespace master
 } // namespace kudu
 
