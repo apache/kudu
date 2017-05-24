@@ -73,8 +73,8 @@ column types include:
 * unixtime_micros (64-bit microseconds since the Unix epoch)
 * single-precision (32-bit) IEEE-754 floating-point number
 * double-precision (64-bit) IEEE-754 floating-point number
-* UTF-8 encoded string (up to 64KB)
-* binary (up to 64KB)
+* UTF-8 encoded string (up to 64KB uncompressed)
+* binary (up to 64KB uncompressed)
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
 format to provide efficient encoding and serialization. To make the most of
@@ -449,10 +449,11 @@ Number of Columns:: By default, Kudu will not permit the creation of tables with
 more than 300 columns. We recommend schema designs that use fewer columns for best
 performance.
 
-Size of Cells:: No individual cell may be larger than 64KB. The cells making up
-a composite key are limited to a total of 16KB after the internal composite-key encoding
-done by Kudu. Inserting rows not conforming to these limitations will result in errors
-being returned to the client.
+Size of Cells:: No individual cell may be larger than 64KB before encoding or
+compression. The cells making up a composite key are limited to a total of 16KB
+after the internal composite-key encoding done by Kudu. Inserting rows not
+conforming to these limitations will result in errors being returned to the
+client.
 
 Size of Rows:: Although individual cells may be up to 64KB, and Kudu supports up to
 300 columns, it is recommended that no single row be larger than a few hundred KB.

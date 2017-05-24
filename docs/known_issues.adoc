@@ -65,7 +65,7 @@
 
 === Cells (individual values)
 
-* Cells cannot be larger than 64KB.
+* Cells cannot be larger than 64KB before encoding or compression.
 
 === Other usage limitations
 
