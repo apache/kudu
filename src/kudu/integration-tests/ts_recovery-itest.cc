@@ -82,8 +82,6 @@ void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flag
 // inserted before the crash are recovered.
 TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   NO_FATALS(StartClusterOneTs());
-  cluster_->SetFlag(cluster_->tablet_server(0),
-                    "fault_crash_before_append_commit", "0.05");
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -91,6 +89,10 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   work.set_write_timeout_millis(100);
   work.set_timeout_allowed(true);
   work.Setup();
+
+  // Crash when the WAL contains a replicate message but no corresponding commit.
+  cluster_->SetFlag(cluster_->tablet_server(0),
+                    "fault_crash_before_append_commit", "0.05");
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
@@ -101,6 +103,8 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 
   // Restart the server, and it should recover.
   cluster_->tablet_server(0)->Shutdown();
+
+  // Restart the server and check to make sure that the change is eventually applied.
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
 
