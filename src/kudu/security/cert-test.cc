@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
@@ -25,11 +27,14 @@
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::pair;
+using std::thread;
+using std::vector;
 
 namespace kudu {
 namespace security {
@@ -59,6 +64,25 @@ class CertTest : public KuduTest {
   Cert ca_exp_cert_;
   PrivateKey ca_exp_private_key_;
 };
+
+// Regression test to make sure that GetKuduKerberosPrincipalOidNid is thread
+// safe. OpenSSL 1.0.0's OBJ_create method is not thread safe.
+TEST_F(CertTest, GetKuduKerberosPrincipalOidNidConcurrent) {
+  int kConcurrency = 16;
+  Barrier barrier(kConcurrency);
+
+  vector<thread> threads;
+  for (int i = 0; i < kConcurrency; i++) {
+    threads.emplace_back([&] () {
+        barrier.Wait();
+        CHECK_NE(NID_undef, GetKuduKerberosPrincipalOidNid());
+    });
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+}
 
 // Check input/output of the X509 certificates in PEM format.
 TEST_F(CertTest, CertInputOutputPEM) {
