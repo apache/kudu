@@ -111,7 +111,6 @@ class AuthnTokenExpireITestBase : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
     cluster_.reset(new ExternalMiniCluster(cluster_opts_));
-    ASSERT_OK(cluster_->Start());
   }
 
   void TearDown() override {
@@ -132,8 +131,8 @@ class AuthnTokenExpireITestBase : public KuduTest {
 
 class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
  public:
-  AuthnTokenExpireITest()
-      : AuthnTokenExpireITestBase(3, 2) {
+  explicit AuthnTokenExpireITest(int64_t token_validity_seconds = 2)
+      : AuthnTokenExpireITestBase(3, token_validity_seconds) {
     // Masters and tservers inject FATAL_INVALID_AUTHENTICATION_TOKEN errors.
     // The client should retry the operation again and eventually it should
     // succeed even with the high ratio of injected errors.
@@ -158,6 +157,7 @@ class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
 
   void SetUp() override {
     AuthnTokenExpireITestBase::SetUp();
+    ASSERT_OK(cluster_->Start());
   }
 };
 
@@ -221,9 +221,27 @@ TEST_F(AuthnTokenExpireITest, RestartCluster) {
                            num_tablet_servers_, num_tablet_servers_ * 2));
 }
 
-// Run the workload and check that client retries INVALID_AUTH_TOKEN errors,
+class AuthnTokenExpireDuringWorkloadITest : public AuthnTokenExpireITest {
+ public:
+  AuthnTokenExpireDuringWorkloadITest()
+      : AuthnTokenExpireITest(5) {
+    // Close an already established idle connection to the server and open
+    // a new one upon making another call to the same server. This is to force
+    // authn token verification at every RPC.
+    FLAGS_rpc_reopen_outbound_connections = true;
+  }
+
+  void SetUp() override {
+    AuthnTokenExpireITestBase::SetUp();
+    // Do not start the cluster as a part of setup phase. Don't waste time on
+    // on that because the scenario contains a test which is marked slow and
+    // will be skipped if KUDU_ALLOW_SLOW_TESTS environment variable is not set.
+  }
+};
+
+// Run the workload and check that client retries on ERROR_INVALID_AUTH_TOKEN,
 // eventually succeeding with its RPCs.
-TEST_F(AuthnTokenExpireITest, InvalidTokenDuringWorkload) {
+TEST_F(AuthnTokenExpireDuringWorkloadITest, TokenExpiration) {
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
   if (!AllowSlowTests()) {
@@ -231,10 +249,7 @@ TEST_F(AuthnTokenExpireITest, InvalidTokenDuringWorkload) {
     return;
   }
 
-  // Close an already established idle connection to the server and open
-  // a new one upon making another call to the same server. This is to force
-  // authn token verification at every RPC.
-  FLAGS_rpc_reopen_outbound_connections = true;
+  ASSERT_OK(cluster_->Start());
 
   TestWorkload w(cluster_.get());
   w.set_client_default_admin_operation_timeout_millis(kTimeoutMs);
@@ -261,9 +276,12 @@ TEST_F(AuthnTokenExpireITest, InvalidTokenDuringWorkload) {
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 
-class AuthnTokenReacquireITest : public AuthnTokenExpireITestBase {
+// Scenarios to verify that the client automatically re-acquires authn token
+// when receiving ERROR_INVALID_AUTHENTICATION_TOKEN from the servers in case
+// if the client has established a token-based connection to master server.
+class TokenBasedConnectionITest : public AuthnTokenExpireITestBase {
  public:
-  AuthnTokenReacquireITest()
+  TokenBasedConnectionITest()
       : AuthnTokenExpireITestBase(3, 2) {
 
     cluster_opts_.extra_master_flags = {
@@ -275,14 +293,19 @@ class AuthnTokenReacquireITest : public AuthnTokenExpireITestBase {
       "--heartbeat_interval_ms=10",
     };
   }
+
+  void SetUp() override {
+    AuthnTokenExpireITestBase::SetUp();
+    ASSERT_OK(cluster_->Start());
+  }
 };
 
 // This test verifies that the token re-acquire logic behaves correctly in case
 // if the connection to the master is established using previously acquired
 // authn token. The master has particular constraint to prohibit re-issuing
 // a new authn token over a connection established with authn token itself
-// (otherwise, a authn token would never effectively expire).
-TEST_F(AuthnTokenReacquireITest, ConnectionToMasterViaAuthnToken) {
+// (otherwise, an authn token would never effectively expire).
+TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
   const string table_name = "authn-token-reacquire";
 
   // Create a client and perform some basic operations to acquire authn token.
