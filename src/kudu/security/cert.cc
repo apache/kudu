@@ -17,6 +17,7 @@
 
 #include "kudu/security/cert.h"
 
+#include <mutex>
 #include <string>
 
 #include <openssl/evp.h>
@@ -57,12 +58,12 @@ string X509NameToString(X509_NAME* name) {
 
 int GetKuduKerberosPrincipalOidNid() {
   InitializeOpenSSL();
-  SCOPED_OPENSSL_NO_PENDING_ERRORS;
-
-  int nid = OBJ_txt2nid(kKuduKerberosPrincipalOidStr);
-  if (nid != NID_undef) return nid;
-  nid = OBJ_create(kKuduKerberosPrincipalOidStr, "kuduPrinc", "kuduKerberosPrincipal");
-  CHECK_NE(nid, NID_undef) << "could not create kuduPrinc oid";
+  static std::once_flag flag;
+  static int nid;
+  std::call_once(flag, [&] () {
+      nid = OBJ_create(kKuduKerberosPrincipalOidStr, "kuduPrinc", "kuduKerberosPrincipal");
+      CHECK_NE(nid, NID_undef) << "failed to create kuduPrinc oid: " << GetOpenSSLErrors();
+  });
   return nid;
 }
 
