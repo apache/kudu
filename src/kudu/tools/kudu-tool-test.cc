@@ -222,6 +222,19 @@ class ToolTest : public KuduTest {
     }
   }
 
+  // Run tool without a required positional argument, expecting error message
+  void RunActionMissingRequiredArg(const string& arg_str, const string& required_arg,
+                                   bool variadic = false) const {
+    const string kPositionalArgumentMessage = "must provide positional argument";
+    const string kVariadicArgumentMessage = "must provide variadic positional argument";
+    const string& message = variadic ? kVariadicArgumentMessage : kPositionalArgumentMessage;
+    string err;
+    RunTool(arg_str, nullptr, &err, nullptr, nullptr);
+
+    Status expected_status = Status::InvalidArgument(Substitute("$0 $1", message, required_arg));
+    ASSERT_EQ(expected_status.ToString(), err);
+  }
+
   void RunFsCheck(const string& arg_str,
                   int expected_num_live,
                   const string& tablet_id,
@@ -492,6 +505,14 @@ TEST_F(ToolTest, TestActionHelp) {
   NO_FATALS(RunTestHelp("fs format --help", kFormatActionRegexes));
   NO_FATALS(RunTestHelp("fs format extra_arg", kFormatActionRegexes,
       Status::InvalidArgument("too many arguments: 'extra_arg'")));
+}
+
+TEST_F(ToolTest, TestActionMissingRequiredArg) {
+  NO_FATALS(RunActionMissingRequiredArg("master list", "master_addresses"));
+  NO_FATALS(RunActionMissingRequiredArg("cluster ksck --master_addresses=master.example.com",
+                                        "master_addresses"));
+  NO_FATALS(RunActionMissingRequiredArg("local_replica cmeta rewrite_raft_config fake_id",
+                                        "peers", /* variadic */ true));
 }
 
 TEST_F(ToolTest, TestFsCheck) {

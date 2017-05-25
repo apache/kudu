@@ -82,7 +82,7 @@ Status MarshalArgs(const vector<Mode*>& chain,
   // Marshal the required arguments from the command line.
   for (const auto& a : args.required) {
     if (input.empty()) {
-      return Status::InvalidArgument(Substitute("must provide $0", a.name));
+      return Status::InvalidArgument(Substitute("must provide positional argument $0", a.name));
     }
     InsertOrDie(required, a.name, input.front());
     input.pop_front();
@@ -92,7 +92,8 @@ Status MarshalArgs(const vector<Mode*>& chain,
   if (args.variadic) {
     const ActionArgsDescriptor::Arg& a = args.variadic.get();
     if (input.empty()) {
-      return Status::InvalidArgument(Substitute("must provide $0", a.name));
+      return Status::InvalidArgument(Substitute("must provide variadic positional argument $0",
+                                                a.name));
     }
 
     variadic->assign(input.begin(), input.end());
