@@ -621,8 +621,7 @@ void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
 void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
   CHECK_EQ(1, ops_.erase(op))
     << "Could not remove op " << op->ToString() << " from in-flight list";
-  gscoped_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
-  error_collector_->AddError(std::move(error));
+  error_collector_->AddError(unique_ptr<KuduError>(new KuduError(op->write_op.release(), s)));
   had_errors_ = true;
   delete op;
 }
@@ -771,7 +770,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   } else {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
     for (InFlightOp* op : rpc.ops()) {
-      gscoped_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
+      unique_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
       error_collector_->AddError(std::move(error));
     }
 
@@ -795,7 +794,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     VLOG(2) << "Error on op " << op->ToString() << ": "
             << SecureShortDebugString(err_pb.error());
     Status op_status = StatusFromPB(err_pb.error());
-    gscoped_ptr<KuduError> error(new KuduError(op.release(), op_status));
+    unique_ptr<KuduError> error(new KuduError(op.release(), op_status));
     error_collector_->AddError(std::move(error));
     MarkHadErrors();
   }

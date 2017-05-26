@@ -14,12 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_ERROR_COLLECTOR_H
-#define KUDU_CLIENT_ERROR_COLLECTOR_H
+#pragma once
 
+#include <memory>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
@@ -43,7 +42,7 @@ class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
   // See KuduSession::SetErrorBufferSpace() for details.
   Status SetMaxMemSize(size_t size_bytes);
 
-  virtual void AddError(gscoped_ptr<KuduError> error);
+  virtual void AddError(std::unique_ptr<KuduError> error);
 
   // See KuduSession for details.
   size_t CountErrors() const;
@@ -70,4 +69,3 @@ class ErrorCollector : public RefCountedThreadSafe<ErrorCollector> {
 } // namespace internal
 } // namespace client
 } // namespace kudu
-#endif /* KUDU_CLIENT_ERROR_COLLECTOR_H */

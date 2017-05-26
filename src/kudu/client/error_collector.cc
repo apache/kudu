@@ -17,6 +17,7 @@
 
 #include "kudu/client/error_collector.h"
 
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -63,7 +64,7 @@ Status ErrorCollector::SetMaxMemSize(size_t size_bytes) {
   return Status::OK();
 }
 
-void ErrorCollector::AddError(gscoped_ptr<KuduError> error) {
+void ErrorCollector::AddError(std::unique_ptr<KuduError> error) {
   std::lock_guard<simple_spinlock> l(lock_);
   const size_t error_size_bytes = error->data_->failed_op_->SizeInBuffer();
 

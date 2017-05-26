@@ -17,6 +17,7 @@
 
 #include "kudu/client/session-internal.h"
 
+#include <memory>
 #include <mutex>
 
 #include "kudu/client/batcher.h"
@@ -26,6 +27,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/logging.h"
+
+using std::unique_ptr;
 
 namespace kudu {
 
@@ -325,7 +328,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
   }
   if (PREDICT_FALSE(!write_op->row().IsKeySet())) {
     Status status = Status::IllegalState("Key not specified", KUDU_REDACT(write_op->ToString()));
-    error_collector_->AddError(gscoped_ptr<KuduError>(new KuduError(write_op, status)));
+    error_collector_->AddError(unique_ptr<KuduError>(new KuduError(write_op, status)));
     return status;
   }
 
@@ -351,8 +354,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
           "buffer size limit is too small to fit operation: "
           "required $0, size limit $1",
           required_size, max_size));
-    error_collector_->AddError(
-        gscoped_ptr<KuduError>(new KuduError(write_op, s)));
+    error_collector_->AddError(unique_ptr<KuduError>(new KuduError(write_op, s)));
     return s;
   }
 
@@ -398,7 +400,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
           "required additional $0 when $1 of $2 already used",
           required_size, buffer_bytes_used_, max_size));
       error_collector_->AddError(
-          gscoped_ptr<KuduError>(new KuduError(write_op, s)));
+          unique_ptr<KuduError>(new KuduError(write_op, s)));
       return s;
     }
 
@@ -427,7 +429,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
     Status op_add_status = batcher_->Add(write_op);
     if (PREDICT_FALSE(!op_add_status.ok())) {
       error_collector_->AddError(
-          gscoped_ptr<KuduError>(new KuduError(write_op, op_add_status)));
+          unique_ptr<KuduError>(new KuduError(write_op, op_add_status)));
       return op_add_status;
     }
     // Finally, update the buffer space usage.
