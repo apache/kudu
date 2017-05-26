@@ -2093,18 +2093,25 @@ static Status ApplyDeleteToSession(KuduSession* session,
 TEST_F(ClientTest, TestWriteTimeout) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+#if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+  static const int kSessionTimeoutMs = 2000;
+#else
+  static const int kSessionTimeoutMs = 200;
+#endif
+  session->SetTimeoutMillis(kSessionTimeoutMs);
 
   // First time out the lookup on the master side.
   {
     google::FlagSaver saver;
-    FLAGS_master_inject_latency_on_tablet_lookups_ms = 110;
-    session->SetTimeoutMillis(100);
+    FLAGS_master_inject_latency_on_tablet_lookups_ms = kSessionTimeoutMs + 10;
+
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
     Status s = session->Flush();
-    ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
     unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
-    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
-    ASSERT_STR_CONTAINS(error->status().ToString(),
+    const Status& status = error->status();
+    ASSERT_TRUE(status.IsTimedOut()) << status.ToString();
+    ASSERT_STR_CONTAINS(status.ToString(),
                         "GetTableLocations { table: 'client-testtb', "
                         "partition-key: (RANGE (key): 1), attempt: 1 } failed: "
                         "timed out after deadline expired");
@@ -2114,18 +2121,19 @@ TEST_F(ClientTest, TestWriteTimeout) {
   {
     google::FlagSaver saver;
     FLAGS_log_inject_latency = true;
-    FLAGS_log_inject_latency_ms_mean = 110;
+    FLAGS_log_inject_latency_ms_mean = kSessionTimeoutMs + 10;
     FLAGS_log_inject_latency_ms_stddev = 0;
 
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
     Status s = session->Flush();
-    ASSERT_TRUE(s.IsIOError());
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
     unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
-    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
-    ASSERT_STR_CONTAINS(error->status().ToString(),
+    const Status& status = error->status();
+    ASSERT_TRUE(status.IsTimedOut()) << status.ToString();
+    ASSERT_STR_CONTAINS(status.ToString(),
                         "Failed to write batch of 1 ops to tablet");
-    ASSERT_STR_CONTAINS(error->status().ToString(), "Write RPC to 127.0.0.1:");
-    ASSERT_STR_CONTAINS(error->status().ToString(), "after 1 attempt");
+    ASSERT_STR_CONTAINS(status.ToString(), "Write RPC to 127.0.0.1:");
+    ASSERT_STR_CONTAINS(status.ToString(), "after 1 attempt");
   }
 }
 
