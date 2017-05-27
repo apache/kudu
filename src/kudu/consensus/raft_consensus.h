@@ -528,8 +528,8 @@ class RaftConsensus : public Consensus,
 
   // Accessors for the leader of the current term.
   const std::string& GetLeaderUuidUnlocked() const;
-  bool HasLeaderUnlocked() const { return !GetLeaderUuidUnlocked().empty(); }
-  void ClearLeaderUnlocked() { SetLeaderUuidUnlocked(""); }
+  bool HasLeaderUnlocked() const;
+  void ClearLeaderUnlocked();
 
   // Return whether this peer has voted in the current term.
   const bool HasVotedCurrentTermUnlocked() const;
