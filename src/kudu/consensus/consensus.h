@@ -258,10 +258,10 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual RaftPeerPB::Role role() const = 0;
 
   // Returns the uuid of this peer.
-  virtual std::string peer_uuid() const = 0;
+  virtual const std::string& peer_uuid() const = 0;
 
   // Returns the id of the tablet whose updates this consensus instance helps coordinate.
-  virtual std::string tablet_id() const = 0;
+  virtual const std::string& tablet_id() const = 0;
 
   virtual scoped_refptr<TimeManager> time_manager() const = 0;
 

@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_CONSENSUS_RAFT_CONSENSUS_H_
-#define KUDU_CONSENSUS_RAFT_CONSENSUS_H_
+#pragma once
 
 #include <boost/optional/optional_fwd.hpp>
 #include <memory>
@@ -30,7 +29,6 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/pending_rounds.h"
-#include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/failure_detector.h"
@@ -64,8 +62,10 @@ struct ElectionResult;
 class RaftConsensus : public Consensus,
                       public PeerMessageQueueObserver {
  public:
+  typedef std::unique_lock<simple_spinlock> UniqueLock;
+
   static scoped_refptr<RaftConsensus> Create(
-    const ConsensusOptions& options,
+    ConsensusOptions options,
     std::unique_ptr<ConsensusMetadata> cmeta,
     const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
@@ -76,14 +76,14 @@ class RaftConsensus : public Consensus,
     const std::shared_ptr<MemTracker>& parent_mem_tracker,
     const Callback<void(const std::string& reason)>& mark_dirty_clbk);
 
-  RaftConsensus(const ConsensusOptions& options,
+  RaftConsensus(ConsensusOptions options,
                 std::unique_ptr<ConsensusMetadata> cmeta,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
                 gscoped_ptr<PeerManager> peer_manager,
                 gscoped_ptr<ThreadPool> thread_pool,
                 const scoped_refptr<MetricEntity>& metric_entity,
-                const std::string& peer_uuid,
+                std::string peer_uuid,
                 scoped_refptr<TimeManager> time_manager,
                 ReplicaTransactionFactory* txn_factory,
                 const scoped_refptr<log::Log>& log,
@@ -133,9 +133,11 @@ class RaftConsensus : public Consensus,
 
   RaftPeerPB::Role role() const override;
 
-  std::string peer_uuid() const override;
+  // Thread-safe.
+  const std::string& peer_uuid() const override;
 
-  std::string tablet_id() const override;
+  // Thread-safe.
+  const std::string& tablet_id() const override;
 
   scoped_refptr<TimeManager> time_manager() const override { return time_manager_; }
 
@@ -149,11 +151,6 @@ class RaftConsensus : public Consensus,
 
   // Makes this peer advance it's term (and step down if leader), for tests.
   Status AdvanceTermForTests(int64_t new_term);
-
-  // Returns the replica state for tests. This should never be used outside of
-  // tests, in particular calling the LockFor* methods on the returned object
-  // can cause consensus to deadlock.
-  ReplicaState* GetReplicaStateForTests();
 
   int update_calls_for_tests() const {
     return update_calls_for_tests_.Load();
@@ -177,15 +174,41 @@ class RaftConsensus : public Consensus,
   log::RetentionIndexes GetRetentionIndexes() override;
 
  private:
-  friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
+  FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind);
+  FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind);
+  FRIEND_TEST(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum);
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
+  FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
+
+  enum State {
+    // State after the replica is built.
+    kInitialized,
+
+    // State signaling the replica accepts requests (from clients
+    // if leader, from leader if follower)
+    kRunning,
+
+    // State signaling that the replica is shutting down and no longer accepting
+    // new transactions or commits.
+    kShuttingDown,
+
+    // State signaling the replica is shut down and does not accept
+    // any more requests.
+    kShutDown,
+  };
 
   // Control whether printing of log messages should be done for a particular
   // function call.
   enum AllowLogging {
     DO_NOT_LOG = 0,
     ALLOW_LOGGING = 1,
+  };
+
+  // Enum for the 'flush' argument to SetCurrentTermUnlocked() below.
+  enum FlushToDisk {
+    SKIP_FLUSH_TO_DISK,
+    FLUSH_TO_DISK,
   };
 
   // Helper struct that contains the messages from the leader that we need to
@@ -200,10 +223,6 @@ class RaftConsensus : public Consensus,
 
     std::string OpsRangeString() const;
   };
-
-  std::string LogPrefixUnlocked();
-
-  std::string LogPrefix();
 
   // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
@@ -224,12 +243,12 @@ class RaftConsensus : public Consensus,
   // Returns OK once the change config transaction that has this peer as leader
   // has been enqueued, the transaction will complete asynchronously.
   //
-  // The ReplicaState must be locked for configuration change before calling.
+  // 'lock_' must be held for configuration change before calling.
   Status BecomeLeaderUnlocked();
 
   // Makes the peer become a replica, i.e. a FOLLOWER or a LEARNER.
   //
-  // The ReplicaState must be locked for configuration change before calling.
+  // 'lock_' must be held for configuration change before calling.
   Status BecomeReplicaUnlocked();
 
   // Updates the state in a replica by storing the received operations in the log
@@ -286,7 +305,7 @@ class RaftConsensus : public Consensus,
   // Raft configuration.
   Status IsSingleVoterConfig(bool* single_voter) const;
 
-  // Return header string for RequestVote log messages. The ReplicaState lock must be held.
+  // Return header string for RequestVote log messages. 'lock_' must be held.
   std::string GetRequestVoteLogPrefixUnlocked(const VoteRequestPB& request) const;
 
   // Fills the response with the current status, if an update was successful.
@@ -386,7 +405,7 @@ class RaftConsensus : public Consensus,
   //
   // 'flush' may be used to control whether the term change is flushed to disk.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term,
-                                   ReplicaState::FlushToDisk flush = ReplicaState::FLUSH_TO_DISK);
+                                   FlushToDisk flush = FLUSH_TO_DISK);
 
   // Asynchronously (on thread_pool_) notify the TabletReplica that the consensus configuration
   // has changed, thus reporting it back to the master.
@@ -426,24 +445,161 @@ class RaftConsensus : public Consensus,
   // type of message it is.
   // The 'client_cb' will be invoked at the end of this execution.
   //
-  // NOTE: this must be called with the ReplicaState lock held.
+  // NOTE: Must be called while holding 'lock_'.
   void NonTxRoundReplicationFinished(ConsensusRound* round,
                                      const StatusCallback& client_cb,
                                      const Status& status);
 
   // As a leader, append a new ConsensusRound to the queue.
-  // Only virtual and protected for mocking purposes.
   Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
 
   // As a follower, start a consensus round not associated with a Transaction.
-  // Only virtual and protected for mocking purposes.
   Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
 
-  // Add a new pending operation to the ReplicaState, including the special handling
+  // Add a new pending operation to PendingRounds, including the special handling
   // necessary if this round contains a configuration change. These rounds must
   // take effect as soon as they are received, rather than waiting for commitment
   // (see Diego Ongaro's thesis section 4.1).
   Status AddPendingOperationUnlocked(const scoped_refptr<ConsensusRound>& round);
+
+  // Locks a replica in preparation for StartUnlocked(). Makes
+  // sure the replica is in kInitialized state.
+  Status LockForStart(UniqueLock* lock) const WARN_UNUSED_RESULT;
+
+  // Obtains the lock for a state read, does not check state.
+  Status LockForRead(UniqueLock* lock) const WARN_UNUSED_RESULT;
+
+  // Locks a replica down until the critical section of an append completes,
+  // i.e. until the replicate message has been assigned an id and placed in
+  // the log queue.
+  // This also checks that the replica is in the appropriate
+  // state (role) to replicate the provided operation, that the operation
+  // contains a replicate message and is of the appropriate type, and returns
+  // Status::IllegalState if that is not the case.
+  Status LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const WARN_UNUSED_RESULT;
+
+  // Locks a replica down until the critical section of a commit completes.
+  // This succeeds for all states since a replica which has initiated
+  // a Prepare()/Replicate() must eventually commit even if it's state
+  // has changed after the initial Append()/Update().
+  Status LockForCommit(UniqueLock* lock) const WARN_UNUSED_RESULT;
+
+  // Locks a replica down until an the critical section of an update completes.
+  // Further updates from the same or some other leader will be blocked until
+  // this completes. This also checks that the replica is in the appropriate
+  // state (role) to be updated and returns Status::IllegalState if that
+  // is not the case.
+  Status LockForUpdate(UniqueLock* lock) const WARN_UNUSED_RESULT;
+
+  Status LockForConfigChange(UniqueLock* lock) const WARN_UNUSED_RESULT;
+
+  // Changes the role to non-participant and returns a lock that can be
+  // used to make sure no state updates come in until Shutdown() is
+  // completed.
+  Status LockForShutdown(UniqueLock* lock) WARN_UNUSED_RESULT;
+
+  // Ensure the local peer is the active leader.
+  // Returns OK if leader, IllegalState otherwise.
+  Status CheckActiveLeaderUnlocked() const;
+
+  // Return current consensus state summary.
+  ConsensusStatePB ConsensusStateUnlocked() const;
+
+  // Returns the currently active Raft role.
+  RaftPeerPB::Role GetActiveRoleUnlocked() const;
+
+  // Returns true if there is a configuration change currently in-flight but not yet
+  // committed.
+  bool IsConfigChangePendingUnlocked() const;
+
+  // Inverse of IsConfigChangePendingUnlocked(): returns OK if there is
+  // currently *no* configuration change pending, and IllegalState is there *is* a
+  // configuration change pending.
+  Status CheckNoConfigChangePendingUnlocked() const;
+
+  // Sets the given configuration as pending commit. Does not persist into the peers
+  // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
+  Status SetPendingConfigUnlocked(const RaftConfigPB& new_config) WARN_UNUSED_RESULT;
+
+  // Clear (cancel) the pending configuration.
+  void ClearPendingConfigUnlocked();
+
+  // Return the pending configuration, or crash if one is not set.
+  const RaftConfigPB& GetPendingConfigUnlocked() const;
+
+  // Changes the committed config for this replica. Checks that there is a
+  // pending configuration and that it is equal to this one. Persists changes to disk.
+  // Resets the pending configuration to null.
+  Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit);
+
+  // Return the persisted configuration.
+  const RaftConfigPB& GetCommittedConfigUnlocked() const;
+
+  // Return the "active" configuration - if there is a pending configuration return it;
+  // otherwise return the committed configuration.
+  const RaftConfigPB& GetActiveConfigUnlocked() const;
+
+  // Checks if the term change is legal. If so, sets 'current_term'
+  // to 'new_term' and sets 'has voted' to no for the current term.
+  //
+  // If the caller knows that it will call another method soon after
+  // to flush the change to disk, it may set 'flush' to 'SKIP_FLUSH_TO_DISK'.
+  Status SetCurrentTermUnlocked(int64_t new_term,
+                                FlushToDisk flush) WARN_UNUSED_RESULT;
+
+  // Returns the term set in the last config change round.
+  const int64_t GetCurrentTermUnlocked() const;
+
+  // Accessors for the leader of the current term.
+  const std::string& GetLeaderUuidUnlocked() const;
+  bool HasLeaderUnlocked() const { return !GetLeaderUuidUnlocked().empty(); }
+  void ClearLeaderUnlocked() { SetLeaderUuidUnlocked(""); }
+
+  // Return whether this peer has voted in the current term.
+  const bool HasVotedCurrentTermUnlocked() const;
+
+  // Record replica's vote for the current term, then flush the consensus
+  // metadata to disk.
+  Status SetVotedForCurrentTermUnlocked(const std::string& uuid) WARN_UNUSED_RESULT;
+
+  // Return replica's vote for the current term.
+  // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
+  const std::string& GetVotedForCurrentTermUnlocked() const;
+
+  const ConsensusOptions& GetOptions() const;
+
+  std::string LogPrefix() const;
+  std::string LogPrefixUnlocked() const;
+
+  // A variant of LogPrefix which does not take the lock. This is a slightly
+  // less thorough prefix which only includes immutable (and thus thread-safe)
+  // information, but does not require the lock.
+  std::string LogPrefixThreadSafe() const;
+
+  std::string ToString() const;
+  std::string ToStringUnlocked() const;
+
+  ConsensusMetadata* consensus_metadata_for_tests() const;
+
+  const ConsensusOptions options_;
+
+  // The UUID of the local peer.
+  const std::string peer_uuid_;
+
+  // TODO(dralves) hack to serialize updates due to repeated/out-of-order messages
+  // should probably be refactored out.
+  //
+  // Lock ordering note: If both 'update_lock_' and 'lock_' are to be taken,
+  // 'update_lock_' lock must be taken first.
+  mutable simple_spinlock update_lock_;
+
+  // Coarse-grained lock that protects all mutable data members.
+  mutable simple_spinlock lock_;
+
+  State state_;
+
+  // Consensus metadata persistence object.
+  std::unique_ptr<ConsensusMetadata> cmeta_;
 
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.
@@ -462,10 +618,8 @@ class RaftConsensus : public Consensus,
   // The queue of messages that must be sent to peers.
   gscoped_ptr<PeerMessageQueue> queue_;
 
-  gscoped_ptr<ReplicaState> state_;
-
   // The currently pending rounds that have not yet been committed by
-  // consensus. Protected by the locks inside state_.
+  // consensus. Protected by 'lock_'.
   // TODO(todd) these locks will become more fine-grained.
   PendingRounds pending_;
 
@@ -493,13 +647,6 @@ class RaftConsensus : public Consensus,
 
   const Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
-  // TODO(dralves) hack to serialize updates due to repeated/out-of-order messages
-  // should probably be refactored out.
-  //
-  // Lock ordering note: If both this lock and the ReplicaState lock are to be
-  // taken, this lock must be taken first.
-  mutable simple_spinlock update_lock_;
-
   AtomicBool shutdown_;
 
   // The number of times Update() has been called, used for some test assertions.
@@ -515,5 +662,3 @@ class RaftConsensus : public Consensus,
 
 }  // namespace consensus
 }  // namespace kudu
-
-#endif /* KUDU_CONSENSUS_RAFT_CONSENSUS_H_ */

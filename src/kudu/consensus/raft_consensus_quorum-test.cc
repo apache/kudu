@@ -31,7 +31,6 @@
 #include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -661,9 +660,8 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     scoped_refptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
 
-    ReplicaState* follower0_rs = follower0->GetReplicaStateForTests();
-    ReplicaState::UniqueLock lock;
-    ASSERT_OK(follower0_rs->LockForRead(&lock));
+    RaftConsensus::UniqueLock lock;
+    ASSERT_OK(follower0->LockForRead(&lock));
 
     // If the locked replica would stop consensus we would hang here
     // as we wait for operations to be replicated to a majority.
@@ -705,15 +703,13 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
     // and never letting them go.
     scoped_refptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
-    ReplicaState* follower0_rs = follower0->GetReplicaStateForTests();
-    ReplicaState::UniqueLock lock0;
-    ASSERT_OK(follower0_rs->LockForRead(&lock0));
+    RaftConsensus::UniqueLock lock0;
+    ASSERT_OK(follower0->LockForRead(&lock0));
 
     scoped_refptr<RaftConsensus> follower1;
     CHECK_OK(peers_->GetPeerByIdx(kFollower1Idx, &follower1));
-    ReplicaState* follower1_rs = follower1->GetReplicaStateForTests();
-    ReplicaState::UniqueLock lock1;
-    ASSERT_OK(follower1_rs->LockForRead(&lock1));
+    RaftConsensus::UniqueLock lock1;
+    ASSERT_OK(follower1->LockForRead(&lock1));
 
     // Append a single message to the queue
     ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));
@@ -895,15 +891,13 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
     // This will force an election in which we expect to make the last
     // non-shutdown peer in the list become leader.
-    int flush_count_before = new_leader->GetReplicaStateForTests()
-        ->consensus_metadata_for_tests()->flush_count_for_tests();
+    int flush_count_before = new_leader->consensus_metadata_for_tests()->flush_count_for_tests();
     LOG(INFO) << "Running election for future leader with index " << (current_config_size - 1);
     ASSERT_OK(new_leader->StartElection(Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
                                         Consensus::EXTERNAL_REQUEST));
     WaitUntilLeaderForTests(new_leader.get());
     LOG(INFO) << "Election won";
-    int flush_count_after = new_leader->GetReplicaStateForTests()
-        ->consensus_metadata_for_tests()->flush_count_for_tests();
+    int flush_count_after = new_leader->consensus_metadata_for_tests()->flush_count_for_tests();
     ASSERT_EQ(flush_count_after, flush_count_before + 1)
         << "Expected only one consensus metadata flush for a leader election";
 
@@ -1021,8 +1015,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   scoped_refptr<RaftConsensus> peer;
   CHECK_OK(peers_->GetPeerByIdx(kPeerIndex, &peer));
   auto flush_count = [&]() {
-    return peer->GetReplicaStateForTests()
-      ->consensus_metadata_for_tests()->flush_count_for_tests();
+    return peer->consensus_metadata_for_tests()->flush_count_for_tests();
   };
 
   VoteRequestPB request;

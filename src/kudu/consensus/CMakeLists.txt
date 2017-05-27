@@ -106,7 +106,6 @@ set(CONSENSUS_SRCS
   pending_rounds.cc
   quorum_util.cc
   raft_consensus.cc
-  raft_consensus_state.cc
   time_manager.cc
 )
 
