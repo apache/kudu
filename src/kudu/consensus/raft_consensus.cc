@@ -648,7 +648,7 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
   ReplicaState::UniqueLock lock;
   Status s = state_->LockForCommit(&lock);
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX(WARNING)
+    LOG(WARNING) << state_->LogPrefixThreadSafe()
         << "Unable to take state lock to update committed index: "
         << s.ToString();
     return;
