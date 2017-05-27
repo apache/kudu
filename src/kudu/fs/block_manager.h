@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_FS_BLOCK_MANAGER_H
-#define KUDU_FS_BLOCK_MANAGER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +42,7 @@ namespace fs {
 
 class BlockManager;
 class DataDirManager;
+class FsErrorManager;
 struct FsReport;
 
 // The smallest unit of Kudu data that is backed by the local filesystem.
@@ -268,6 +268,9 @@ class BlockManager {
 
   // Exposes the underlying DataDirManager.
   virtual DataDirManager* dd_manager() = 0;
+
+  // Exposes the FsErrorManager used to handle fs errors.
+  virtual FsErrorManager* error_manager() = 0;
 };
 
 // Closes a group of blocks.
@@ -314,5 +317,3 @@ int64_t GetFileCacheCapacityForBlockManager(Env* env);
 
 } // namespace fs
 } // namespace kudu
-
-#endif

@@ -13,7 +13,9 @@
 #ifndef KUDU_UTIL_STATUS_H_
 #define KUDU_UTIL_STATUS_H_
 
+#include <errno.h>
 #include <stdint.h>
+
 #include <string>
 
 #ifdef KUDU_HEADERS_NO_STUBS
@@ -336,6 +338,18 @@ class KUDU_EXPORT Status {
 
   /// @return @c true iff the status indicates end of file.
   bool IsEndOfFile() const { return code() == kEndOfFile; }
+
+  /// @return @c true iff the status indicates a disk failure.
+  bool IsDiskFailure() const {
+    switch (posix_code()) {
+      case EIO:
+      case ENODEV:
+      case ENXIO:
+      case EROFS:
+        return true;
+    }
+    return false;
+  }
 
   /// @return A string representation of this status suitable for printing.
   ///   Returns the string "OK" for success.

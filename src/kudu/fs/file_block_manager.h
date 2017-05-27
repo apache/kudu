@@ -94,6 +94,8 @@ class FileBlockManager : public BlockManager {
 
   DataDirManager* dd_manager() override { return &dd_manager_; }
 
+  FsErrorManager* error_manager() override { return error_manager_; }
+
  private:
   friend class internal::FileBlockLocation;
   friend class internal::FileReadableBlock;

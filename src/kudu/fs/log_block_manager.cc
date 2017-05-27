@@ -28,6 +28,7 @@
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/callback.h"
@@ -378,6 +379,9 @@ class LogBlockContainer {
   // Produces a debug-friendly string representation of this container.
   string ToString() const;
 
+  // Handles errors if the input status is not OK.
+  void HandleError(const Status& s) const;
+
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
   int64_t next_block_offset() const { return next_block_offset_; }
@@ -392,7 +396,6 @@ class LogBlockContainer {
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const DataDir* data_dir() const { return data_dir_; }
-  DataDir* mutable_data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
  private:
@@ -487,6 +490,16 @@ LogBlockContainer::LogBlockContainer(
       metrics_(block_manager->metrics()) {
 }
 
+void LogBlockContainer::HandleError(const Status& s) const {
+  HANDLE_DISK_FAILURE(
+      s, block_manager()->error_manager()->RunErrorNotificationCb(data_dir_));
+}
+
+#define RETURN_NOT_OK_CONTAINER_DISK_FAILURE(status_expr) do { \
+  RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
+    block_manager->error_manager()->RunErrorNotificationCb(dir)); \
+} while (0);
+
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
                                  DataDir* dir,
                                  unique_ptr<LogBlockContainer>* container) {
@@ -530,15 +543,15 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
 
     metadata_writer.reset();
     shared_ptr<RWFile> cached_metadata_writer;
-    RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_.OpenExistingFile(
         metadata_path, &cached_metadata_writer));
     metadata_file.reset(new WritablePBContainerFile(
         std::move(cached_metadata_writer)));
 
     data_file.reset();
-    RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_.OpenExistingFile(
         data_path, &cached_data_file));
-    RETURN_NOT_OK(metadata_file->CreateNew(BlockRecordPB()));
+    RETURN_NOT_OK_CONTAINER_DISK_FAILURE(metadata_file->CreateNew(BlockRecordPB()));
 
     container->reset(new LogBlockContainer(block_manager,
                                            dir,
@@ -548,6 +561,8 @@ Status LogBlockContainer::Create(LogBlockManager* block_manager,
   }
 
   // Prefer metadata status (arbitrarily).
+  HANDLE_DISK_FAILURE(metadata_status, block_manager->error_manager()->RunErrorNotificationCb(dir));
+  HANDLE_DISK_FAILURE(data_status, block_manager->error_manager()->RunErrorNotificationCb(dir));
   return !metadata_status.ok() ? metadata_status : data_status;
 }
 
@@ -571,11 +586,13 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
     uint64_t data_size = 0;
     Status s = env->GetFileSize(metadata_path, &metadata_size);
     if (!s.IsNotFound()) {
-      RETURN_NOT_OK_PREPEND(s, "unable to determine metadata file size");
+      s = s.CloneAndPrepend("unable to determine metadata file size");
+      RETURN_NOT_OK_CONTAINER_DISK_FAILURE(s);
     }
     s = env->GetFileSize(data_path, &data_size);
     if (!s.IsNotFound()) {
-      RETURN_NOT_OK_PREPEND(s, "unable to determine data file size");
+      s = s.CloneAndPrepend("unable to determine data file size");
+      RETURN_NOT_OK_CONTAINER_DISK_FAILURE(s);
     }
 
     if (metadata_size < pb_util::kPBContainerMinimumValidLength &&
@@ -587,19 +604,18 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 
   // Open the existing metadata and data files for writing.
   shared_ptr<RWFile> metadata_file;
-  RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+  RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_.OpenExistingFile(
       metadata_path, &metadata_file));
   unique_ptr<WritablePBContainerFile> metadata_pb_writer;
-  metadata_pb_writer.reset(new WritablePBContainerFile(
-      std::move(metadata_file)));
-  RETURN_NOT_OK(metadata_pb_writer->OpenExisting());
+  metadata_pb_writer.reset(new WritablePBContainerFile(std::move(metadata_file)));
+  RETURN_NOT_OK_CONTAINER_DISK_FAILURE(metadata_pb_writer->OpenExisting());
 
   shared_ptr<RWFile> data_file;
-  RETURN_NOT_OK(block_manager->file_cache_.OpenExistingFile(
+  RETURN_NOT_OK_CONTAINER_DISK_FAILURE(block_manager->file_cache_.OpenExistingFile(
         data_path, &data_file));
 
   uint64_t data_file_size;
-  RETURN_NOT_OK(data_file->Size(&data_file_size));
+  RETURN_NOT_OK_CONTAINER_DISK_FAILURE(data_file->Size(&data_file_size));
 
   // Create the in-memory container and populate it.
   unique_ptr<LogBlockContainer> open_container(new LogBlockContainer(block_manager,
@@ -616,7 +632,7 @@ Status LogBlockContainer::TruncateDataToNextBlockOffset() {
   if (full()) {
     VLOG(2) << Substitute("Truncating container $0 to offset $1",
                           ToString(), next_block_offset_);
-    RETURN_NOT_OK(data_file_->Truncate(next_block_offset_));
+    RETURN_NOT_OK_HANDLE_ERROR(data_file_->Truncate(next_block_offset_));
   }
   return Status::OK();
 }
@@ -629,9 +645,10 @@ Status LogBlockContainer::ProcessRecords(
     uint64_t* max_block_id) {
   string metadata_path = metadata_file_->filename();
   unique_ptr<RandomAccessFile> metadata_reader;
-  RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
+  RETURN_NOT_OK_HANDLE_ERROR(block_manager()->env()->NewRandomAccessFile(
+      metadata_path, &metadata_reader));
   ReadablePBContainerFile pb_reader(std::move(metadata_reader));
-  RETURN_NOT_OK(pb_reader.Open());
+  RETURN_NOT_OK_HANDLE_ERROR(pb_reader.Open());
 
   uint64_t data_file_size = 0;
   Status read_status;
@@ -660,6 +677,8 @@ Status LogBlockContainer::ProcessRecords(
     return Status::OK();
   }
   // If we've made it here, we've found (and are returning) an unrecoverable error.
+  // Handle any errors we can, e.g. disk failures.
+  HandleError(read_status);
   return read_status;
 }
 
@@ -692,7 +711,7 @@ Status LogBlockContainer::ProcessRecord(
       // file size is expensive, so we only do it when the metadata indicates
       // that additional data has been written to the file.
       if (PREDICT_FALSE(record->offset() + record->length() > *data_file_size)) {
-        RETURN_NOT_OK(data_file_->Size(data_file_size));
+        RETURN_NOT_OK_HANDLE_ERROR(data_file_->Size(data_file_size));
       }
 
       // If the record still extends beyond the end of the file, it is malformed.
@@ -799,7 +818,7 @@ Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
   if (length) {
     // It's OK if we exceed the file's total size; the kernel will truncate
     // our request.
-    return data_file_->PunchHole(offset, length);
+    RETURN_NOT_OK_HANDLE_ERROR(data_file_->PunchHole(offset, length));
   }
   return Status::OK();
 }
@@ -811,7 +830,7 @@ Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
 Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) {
   DCHECK_GE(offset, next_block_offset_);
 
-  RETURN_NOT_OK(data_file_->WriteV(offset, data));
+  RETURN_NOT_OK_HANDLE_ERROR(data_file_->WriteV(offset, data));
 
   // This append may have changed the container size if:
   // 1. It was large enough that it blew out the preallocated space.
@@ -821,62 +840,64 @@ Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) 
                                   return sum + curr.size();
                                 });
   if (offset + data_size > preallocated_offset_) {
-    RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
   }
   return Status::OK();
 }
 
 Status LogBlockContainer::ReadData(int64_t offset, Slice* result) const {
   DCHECK_GE(offset, 0);
-
-  return data_file_->Read(offset, result);
+  RETURN_NOT_OK_HANDLE_ERROR(data_file_->Read(offset, result));
+  return Status::OK();
 }
-
 Status LogBlockContainer::ReadVData(int64_t offset, vector<Slice>* results) const {
   DCHECK_GE(offset, 0);
-
-  return data_file_->ReadV(offset, results);
+  RETURN_NOT_OK_HANDLE_ERROR(data_file_->ReadV(offset, results));
+  return Status::OK();
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
-  return metadata_file_->Append(pb);
+  RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Append(pb));
+  return Status::OK();
 }
 
 Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
-  return data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length);
+  RETURN_NOT_OK_HANDLE_ERROR(data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length));
+  return Status::OK();
 }
 
 Status LogBlockContainer::FlushMetadata() {
-  return metadata_file_->Flush();
+  RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Flush());
+  return Status::OK();
 }
 
 Status LogBlockContainer::SyncData() {
   if (FLAGS_enable_data_block_fsync) {
-    return data_file_->Sync();
+    RETURN_NOT_OK_HANDLE_ERROR(data_file_->Sync());
   }
   return Status::OK();
 }
 
 Status LogBlockContainer::SyncMetadata() {
   if (FLAGS_enable_data_block_fsync) {
-    return metadata_file_->Sync();
+    RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Sync());
   }
   return Status::OK();
 }
 
 Status LogBlockContainer::ReopenMetadataWriter() {
   shared_ptr<RWFile> f;
-  RETURN_NOT_OK(block_manager_->file_cache_.OpenExistingFile(
+  RETURN_NOT_OK_HANDLE_ERROR(block_manager_->file_cache_.OpenExistingFile(
       metadata_file_->filename(), &f));
   unique_ptr<WritablePBContainerFile> w;
   w.reset(new WritablePBContainerFile(std::move(f)));
-  RETURN_NOT_OK(w->OpenExisting());
+  RETURN_NOT_OK_HANDLE_ERROR(w->OpenExisting());
 
-  RETURN_NOT_OK(metadata_file_->Close());
+  RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Close());
   metadata_file_.swap(w);
   return Status::OK();
 }
@@ -895,8 +916,8 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
       next_append_length > preallocated_offset_ - block_start_offset) {
     int64_t off = std::max(preallocated_offset_, block_start_offset);
     int64_t len = FLAGS_log_container_preallocate_bytes;
-    RETURN_NOT_OK(data_file_->PreAllocate(off, len, RWFile::CHANGE_FILE_SIZE));
-    RETURN_NOT_OK(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
+    RETURN_NOT_OK_HANDLE_ERROR(data_file_->PreAllocate(off, len, RWFile::CHANGE_FILE_SIZE));
+    RETURN_NOT_OK_HANDLE_ERROR(data_dir_->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
     VLOG(2) << Substitute("Preallocated $0 bytes at offset $1 in container $2",
                           len, off, ToString());
 
@@ -1522,19 +1543,29 @@ Status LogBlockManager::Open(FsReport* report) {
   for (const auto& dd : dd_manager_.data_dirs()) {
     dd->WaitOnClosures();
   }
+  if (dd_manager_.GetFailedDataDirs().size() == dd_manager_.data_dirs().size()) {
+    return Status::IOError("All data dirs failed to open", "", EIO);
+  }
 
-  // Ensure that no open failed.
-  for (const auto& s : statuses) {
-    if (!s.ok()) {
+  // Ensure that no open failed without being handled.
+  //
+  // Currently only disk failures are handled. Reports from failed disks are
+  // unusable.
+  FsReport merged_report;
+  for (i = 0; i < statuses.size(); i++) {
+    const Status& s = statuses[i];
+    if (PREDICT_TRUE(s.ok())) {
+      merged_report.MergeFrom(reports[i]);
+      continue;
+    }
+    if (!s.IsDiskFailure()) {
       return s;
     }
+    LOG(ERROR) << Substitute("Not using report from $0: $1",
+        dd_manager_.data_dirs()[i]->dir(), s.ToString());
   }
 
-  // Merge the reports and either return or log the result.
-  FsReport merged_report;
-  for (const auto& r : reports) {
-    merged_report.MergeFrom(r);
-  }
+  // Either return or log the report.
   if (report) {
     *report = std::move(merged_report);
   } else {
@@ -1686,10 +1717,13 @@ Status LogBlockManager::GetOrCreateContainer(const CreateBlockOptions& opts,
 
   // All containers are in use; create a new one.
   unique_ptr<LogBlockContainer> new_container;
-  RETURN_NOT_OK_PREPEND(LogBlockContainer::Create(this,
-                                                  dir,
-                                                  &new_container),
-                        "Could not create new log block container at " + dir->dir());
+  Status s = LogBlockContainer::Create(this, dir, &new_container);
+
+  // We could create a container in a different directory, but there's
+  // currently no point in doing so. On disk failure, the tablet specified by
+  // 'opts' will be shut down, so the returned container would not be used.
+  HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
+  RETURN_NOT_OK_PREPEND(s, "Could not create new log block container at " + dir->dir());
   {
     std::lock_guard<simple_spinlock> l(lock_);
     dirty_dirs_.insert(dir->dir());
@@ -1731,6 +1765,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
     // In the worst case (another block synced this container as we did),
     // we'll sync it again needlessly.
     if (!s.ok()) {
+      container.HandleError(s);
       std::lock_guard<simple_spinlock> l(lock_);
       dirty_dirs_.insert(container.data_dir()->dir());
     }
@@ -1837,6 +1872,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   vector<string> children;
   Status s = env_->GetChildren(dir->dir(), &children);
   if (!s.ok()) {
+    HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
     *result_status = s.CloneAndPrepend(Substitute(
         "Could not list children of $0", dir->dir()));
     return;
@@ -1989,6 +2025,7 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       uint64_t reported_size;
       s = env_->GetFileSizeOnDisk(data_filename, &reported_size);
       if (!s.ok()) {
+        HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
         *result_status = s.CloneAndPrepend(Substitute(
             "Could not get on-disk file size of container $0", container->ToString()));
         return;
@@ -2067,6 +2104,18 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
   *result_status = Status::OK();
 }
 
+#define RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(status_expr, msg) do { \
+  Status s_ = (status_expr); \
+  s_ = s_.CloneAndPrepend(msg); \
+  RETURN_NOT_OK_HANDLE_DISK_FAILURE(s_, error_manager_->RunErrorNotificationCb(dir)); \
+} while (0);
+
+#define WARN_NOT_OK_LBM_DISK_FAILURE(status_expr, msg) do { \
+  Status s_ = (status_expr); \
+  HANDLE_DISK_FAILURE(s_, error_manager_->RunErrorNotificationCb(dir)); \
+  WARN_NOT_OK(s_, msg); \
+} while (0);
+
 Status LogBlockManager::Repair(
     DataDir* dir,
     FsReport* report,
@@ -2144,16 +2193,17 @@ Status LogBlockManager::Repair(
     if (s.ok()) {
       deleted_metadata_bytes += metadata_size;
     } else {
-      WARN_NOT_OK(s, "Could not get size of dead container metadata file " + metadata_file_name);
+      WARN_NOT_OK_LBM_DISK_FAILURE(s,
+          "Could not get size of dead container metadata file " + metadata_file_name);
     }
 
-    WARN_NOT_OK(file_cache_.DeleteFile(data_file_name),
+    WARN_NOT_OK_LBM_DISK_FAILURE(file_cache_.DeleteFile(data_file_name),
                 "Could not delete dead container data file " + data_file_name);
-    WARN_NOT_OK(file_cache_.DeleteFile(metadata_file_name),
+    WARN_NOT_OK_LBM_DISK_FAILURE(file_cache_.DeleteFile(metadata_file_name),
                 "Could not delete dead container metadata file " + metadata_file_name);
   }
   if (!dead_containers.empty()) {
-    WARN_NOT_OK(env_->SyncDir(dir->dir()), "Could not sync data directory");
+    WARN_NOT_OK_LBM_DISK_FAILURE(env_->SyncDir(dir->dir()), "Could not sync data directory");
     LOG(INFO) << Substitute("Deleted $0 dead containers ($1 metadata bytes)",
                             dead_containers.size(), deleted_metadata_bytes);
   }
@@ -2173,27 +2223,25 @@ Status LogBlockManager::Repair(
         pr.repaired = true;
         continue;
       }
-      RETURN_NOT_OK_PREPEND(
+      RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(
           env_->NewRWFile(opts,
                           StrCat(pr.container, kContainerMetadataFileSuffix),
                           &file),
           "could not reopen container to truncate partial metadata record");
 
-      RETURN_NOT_OK_PREPEND(file->Truncate(pr.offset),
-                            "could not truncate partial metadata record");
+      RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(file->Truncate(pr.offset),
+          "could not truncate partial metadata record");
 
       // Technically we've "repaired" the inconsistency if the truncation
       // succeeded, even if the following logic fails.
       pr.repaired = true;
 
-      RETURN_NOT_OK_PREPEND(
-          file->Close(),
+      RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(file->Close(),
           "could not close container after truncating partial metadata record");
 
       // Reopen the PB writer so that it will refresh its metadata about the
       // underlying file and resume appending to the new end of the file.
-      RETURN_NOT_OK_PREPEND(
-          container->ReopenMetadataWriter(),
+      RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(container->ReopenMetadataWriter(),
           "could not reopen container metadata file");
     }
   }
@@ -2207,12 +2255,12 @@ Status LogBlockManager::Repair(
       Status s = env_->DeleteFile(
           StrCat(ic.container, kContainerMetadataFileSuffix));
       if (!s.ok() && !s.IsNotFound()) {
-        WARN_NOT_OK(s, "could not delete incomplete container metadata file");
+        WARN_NOT_OK_LBM_DISK_FAILURE(s, "could not delete incomplete container metadata file");
       }
 
       s = env_->DeleteFile(StrCat(ic.container, kContainerDataFileSuffix));
       if (!s.ok() && !s.IsNotFound()) {
-        WARN_NOT_OK(s, "could not delete incomplete container data file");
+        WARN_NOT_OK_LBM_DISK_FAILURE(s, "could not delete incomplete container data file");
       }
       ic.repaired = true;
     }
@@ -2268,7 +2316,7 @@ Status LogBlockManager::Repair(
     // Rewrite this metadata file. Failures are non-fatal.
     int64_t file_bytes_delta;
     const auto& meta_path = StrCat(e.first, kContainerMetadataFileSuffix);
-    Status s = RewriteMetadataFile(meta_path, e.second, &file_bytes_delta);
+    Status s = RewriteMetadataFile(*container, e.second, &file_bytes_delta);
     if (!s.ok()) {
       WARN_NOT_OK(s, "could not rewrite metadata file");
       continue;
@@ -2287,13 +2335,17 @@ Status LogBlockManager::Repair(
 
   // The data directory can be synchronized once for all of the new metadata files.
   //
-  // Failures are fatal: if a new metadata file doesn't durably exist in the
-  // data directory, it would be unsafe to append new block records to it. This
-  // is because after a crash the old metadata file may appear instead, and
-  // that file lacks the newly appended block records.
+  // Non-disk failures are fatal: if a new metadata file doesn't durably exist
+  // in the data directory, it would be unsafe to append new block records to
+  // it. This is because after a crash the old metadata file may appear
+  // instead, and that file lacks the newly appended block records.
+  //
+  // TODO(awong): The below will only be true with persistent disk states.
+  // Disk failures do not suffer from this issue because, on the next startup,
+  // the entire directory will not be used.
   if (metadata_files_compacted > 0) {
-    RETURN_NOT_OK_PREPEND(env_->SyncDir(dir->dir()),
-                          "Could not sync data directory");
+    Status s = env_->SyncDir(dir->dir());
+    RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(s, "Could not sync data directory");
     LOG(INFO) << Substitute("Compacted $0 metadata files ($1 metadata bytes)",
                             metadata_files_compacted, metadata_bytes_delta);
   }
@@ -2301,12 +2353,16 @@ Status LogBlockManager::Repair(
   return Status::OK();
 }
 
-Status LogBlockManager::RewriteMetadataFile(const string& metadata_file_name,
+Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
                                             const vector<BlockRecordPB>& records,
                                             int64_t* file_bytes_delta) {
   uint64_t old_metadata_size;
-  RETURN_NOT_OK_PREPEND(env_->GetFileSize(metadata_file_name, &old_metadata_size),
-                        "could not get size of old metadata file");
+  const string metadata_file_name = StrCat(container.ToString(), kContainerMetadataFileSuffix);
+
+  // Get the container's data directory's UUID for error handling.
+  const string dir = container.data_dir()->dir();
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->GetFileSize(metadata_file_name, &old_metadata_size),
+                                         "could not get size of old metadata file");
 
   // Create a new container metadata file with only the live block records.
   //
@@ -2316,26 +2372,26 @@ Status LogBlockManager::RewriteMetadataFile(const string& metadata_file_name,
   string tmpl = metadata_file_name + kTmpInfix + ".XXXXXX";
   unique_ptr<RWFile> tmp_file;
   string tmp_file_name;
-  RETURN_NOT_OK_PREPEND(env_->NewTempRWFile(RWFileOptions(), tmpl,
-                                            &tmp_file_name, &tmp_file),
-                        "could not create temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->NewTempRWFile(RWFileOptions(), tmpl,
+                                                             &tmp_file_name, &tmp_file),
+                                         "could not create temporary metadata file");
   env_util::ScopedFileDeleter tmp_deleter(env_, tmp_file_name);
   WritablePBContainerFile pb_file(std::move(tmp_file));
-  RETURN_NOT_OK_PREPEND(pb_file.CreateNew(BlockRecordPB()),
-                        "could not initialize temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(pb_file.CreateNew(BlockRecordPB()),
+                                         "could not initialize temporary metadata file");
   for (const auto& r : records) {
-    RETURN_NOT_OK_PREPEND(pb_file.Append(r),
-                          "could not append to temporary metadata file");
+    RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(pb_file.Append(r),
+                                           "could not append to temporary metadata file");
   }
-  RETURN_NOT_OK_PREPEND(pb_file.Sync(),
-                        "could not sync temporary metadata file");
-  RETURN_NOT_OK_PREPEND(pb_file.Close(),
-                        "could not close temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(pb_file.Sync(),
+                                         "could not sync temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(pb_file.Close(),
+                                         "could not close temporary metadata file");
   uint64_t new_metadata_size;
-  RETURN_NOT_OK_PREPEND(env_->GetFileSize(tmp_file_name, &new_metadata_size),
-                        "could not get file size of temporary metadata file");
-  RETURN_NOT_OK_PREPEND(env_->RenameFile(tmp_file_name, metadata_file_name),
-                        "could not rename temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->GetFileSize(tmp_file_name, &new_metadata_size),
+                                         "could not get file size of temporary metadata file");
+  RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->RenameFile(tmp_file_name, metadata_file_name),
+                                         "could not rename temporary metadata file");
   // Evict the old path from the file cache, so that when we re-open the new
   // metadata file for write, we don't accidentally get a cache hit on the
   // old file descriptor pointing to the now-deleted old version.

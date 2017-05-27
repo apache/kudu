@@ -38,6 +38,39 @@ namespace fs {
 typedef Callback<void(const std::string&)> ErrorNotificationCb;
 static void DoNothingErrorNotification(const std::string& /* uuid */) {}
 
+// Evaluates the expression and handles it if it results in an error.
+// Returns if the status is an error.
+#define RETURN_NOT_OK_HANDLE_ERROR(status_expr) do { \
+  const Status& _s = (status_expr); \
+  if (PREDICT_TRUE(_s.ok())) { \
+    break; \
+  } \
+  HandleError(_s); \
+  return _s; \
+} while (0);
+
+// Evaluates the expression and runs 'err_handler' if it results in a disk
+// failure. Returns if the expression results in an error.
+#define RETURN_NOT_OK_HANDLE_DISK_FAILURE(status_expr, err_handler) do { \
+  const Status& _s = (status_expr); \
+  if (PREDICT_TRUE(_s.ok())) { \
+    break; \
+  } \
+  if (_s.IsDiskFailure()) { \
+    (err_handler); \
+  } \
+  return _s; \
+} while (0);
+
+// Evaluates the expression and runs 'err_handler' if it results in a disk
+// failure.
+#define HANDLE_DISK_FAILURE(status_expr, err_handler) do { \
+  const Status& _s = (status_expr); \
+  if (PREDICT_FALSE(_s.IsDiskFailure())) { \
+    (err_handler); \
+  } \
+} while (0);
+
 // When certain operations fail, the side effects of the error can span
 // multiple layers, many of which we prefer to keep separate. The FsErrorManager
 // registers and runs error handlers without adding cross-layer dependencies.
@@ -69,6 +102,11 @@ class FsErrorManager {
   // 'uuid' is the full UUID of the component that failed.
   void RunErrorNotificationCb(const std::string& uuid) const {
     notify_cb_.Run(uuid);
+  }
+
+  // Runs the error notification callback with the UUID of 'dir'.
+  void RunErrorNotificationCb(const DataDir* dir) const {
+    notify_cb_.Run(dir->instance()->metadata()->path_set().uuid());
   }
 
  private:

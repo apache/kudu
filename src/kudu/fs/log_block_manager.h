@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_FS_LOG_BLOCK_MANAGER_H
-#define KUDU_FS_LOG_BLOCK_MANAGER_H
+#pragma once
 
 #include <deque>
 #include <map>
@@ -188,7 +187,9 @@ class LogBlockManager : public BlockManager {
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
-  DataDirManager* dd_manager() override { return &dd_manager_; };
+  DataDirManager* dd_manager() override { return &dd_manager_; }
+
+  FsErrorManager* error_manager() override { return error_manager_; }
 
  private:
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
@@ -308,15 +309,15 @@ class LogBlockManager : public BlockManager {
                     std::string,
                     std::vector<BlockRecordPB>> low_live_block_containers);
 
-  // Rewrites a container metadata file with name 'metadata_file_name',
-  // appending all entries in 'records'. The new metadata file is created as a
-  // temporary file and renamed over the existing file after it is fully written.
+  // Rewrites a container metadata file, appending all entries in 'records'.
+  // The new metadata file is created as a temporary file and renamed over the
+  // existing file after it is fully written.
   //
   // On success, writes the difference in file sizes to 'file_bytes_delta'. On
   // failure, an effort is made to delete the temporary file.
   //
   // Note: the new file is synced but its parent directory is not.
-  Status RewriteMetadataFile(const std::string& metadata_file_name,
+  Status RewriteMetadataFile(const internal::LogBlockContainer& container,
                              const std::vector<BlockRecordPB>& records,
                              int64_t* file_bytes_delta);
 
@@ -427,4 +428,3 @@ class LogBlockManager : public BlockManager {
 } // namespace fs
 } // namespace kudu
 
-#endif

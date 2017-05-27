@@ -235,6 +235,8 @@ class FileWritableBlock : public WritableBlock {
 
   virtual State state() const OVERRIDE;
 
+  void HandleError(const Status& s) const;
+
  private:
   enum SyncMode {
     SYNC,
@@ -284,6 +286,11 @@ FileWritableBlock::~FileWritableBlock() {
   }
 }
 
+void FileWritableBlock::HandleError(const Status& s) const {
+  HANDLE_DISK_FAILURE(
+      s, block_manager_->error_manager()->RunErrorNotificationCb(location_.data_dir()));
+}
+
 Status FileWritableBlock::Close() {
   return Close(SYNC);
 }
@@ -306,10 +313,9 @@ Status FileWritableBlock::Append(const Slice& data) {
 }
 
 Status FileWritableBlock::AppendV(const vector<Slice>& data) {
-  DCHECK(state_ == CLEAN || state_ == DIRTY)
-  << "Invalid state: " << state_;
-  RETURN_NOT_OK(writer_->AppendV(data));
-  RETURN_NOT_OK(location_.data_dir()->RefreshIsFull(
+  DCHECK(state_ == CLEAN || state_ == DIRTY) << "Invalid state: " << state_;
+  RETURN_NOT_OK_HANDLE_ERROR(writer_->AppendV(data));
+  RETURN_NOT_OK_HANDLE_ERROR(location_.data_dir()->RefreshIsFull(
       DataDir::RefreshMode::ALWAYS));
   state_ = DIRTY;
 
@@ -327,7 +333,7 @@ Status FileWritableBlock::FlushDataAsync() {
       << "Invalid state: " << state_;
   if (state_ == DIRTY) {
     VLOG(3) << "Flushing block " << id();
-    RETURN_NOT_OK(writer_->Flush(WritableFile::FLUSH_ASYNC));
+    RETURN_NOT_OK_HANDLE_ERROR(writer_->Flush(WritableFile::FLUSH_ASYNC));
   }
 
   state_ = FLUSHING;
@@ -370,8 +376,12 @@ Status FileWritableBlock::Close(SyncMode mode) {
     block_manager_->metrics_->total_bytes_written->IncrementBy(BytesAppended());
   }
 
+  // Either Close() or Sync() could have run into an error.
+  HandleError(close);
+  HandleError(sync);
+
   // Prefer the result of Close() to that of Sync().
-  return !close.ok() ? close : sync;
+  return close.ok() ? close : sync;
 }
 
 ////////////////////////////////////////////////////////////
@@ -385,7 +395,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
 // embed a FileBlockLocation, using the simpler BlockId instead.
 class FileReadableBlock : public ReadableBlock {
  public:
-  FileReadableBlock(const FileBlockManager* block_manager, BlockId block_id,
+  FileReadableBlock(FileBlockManager* block_manager, BlockId block_id,
                     shared_ptr<RandomAccessFile> reader);
 
   virtual ~FileReadableBlock();
@@ -402,9 +412,11 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual size_t memory_footprint() const OVERRIDE;
 
+  void HandleError(const Status& s) const;
+
  private:
   // Back pointer to the owning block manager.
-  const FileBlockManager* block_manager_;
+  FileBlockManager* block_manager_;
 
   // The block's identifier.
   const BlockId block_id_;
@@ -419,7 +431,13 @@ class FileReadableBlock : public ReadableBlock {
   DISALLOW_COPY_AND_ASSIGN(FileReadableBlock);
 };
 
-FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
+void FileReadableBlock::HandleError(const Status& s) const {
+  const DataDir* dir = block_manager_->dd_manager()->FindDataDirByUuidIndex(
+      internal::FileBlockLocation::GetDataDirIdx(block_id_));
+  HANDLE_DISK_FAILURE(s, block_manager_->error_manager()->RunErrorNotificationCb(dir));
+}
+
+FileReadableBlock::FileReadableBlock(FileBlockManager* block_manager,
                                      BlockId block_id,
                                      shared_ptr<RandomAccessFile> reader)
     : block_manager_(block_manager),
@@ -455,7 +473,8 @@ const BlockId& FileReadableBlock::id() const {
 Status FileReadableBlock::Size(uint64_t* sz) const {
   DCHECK(!closed_.Load());
 
-  return reader_->Size(sz);
+  RETURN_NOT_OK_HANDLE_ERROR(reader_->Size(sz));
+  return Status::OK();
 }
 
 Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
@@ -466,7 +485,7 @@ Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
 Status FileReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {
   DCHECK(!closed_.Load());
 
-  RETURN_NOT_OK(reader_->ReadV(offset, results));
+  RETURN_NOT_OK_HANDLE_ERROR(reader_->ReadV(offset, results));
 
   if (block_manager_->metrics_) {
     // Calculate the read amount of data
@@ -512,7 +531,8 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
   // Sync them.
   if (FLAGS_enable_data_block_fsync) {
     for (const string& s : to_sync) {
-      RETURN_NOT_OK(env_->SyncDir(s));
+      RETURN_NOT_OK_HANDLE_DISK_FAILURE(env_->SyncDir(s),
+          error_manager_->RunErrorNotificationCb(location.data_dir()));
     }
   }
   return Status::OK();
@@ -619,7 +639,12 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
     location = internal::FileBlockLocation::FromParts(dir, uuid_idx, id);
     path = location.GetFullPath();
-    RETURN_NOT_OK_PREPEND(location.CreateBlockDir(env_, &created_dirs), path);
+    s = location.CreateBlockDir(env_, &created_dirs);
+
+    // We could create a block in a different directory, but there's currently
+    // no point in doing so. On disk failure, the tablet specified by 'opts'
+    // will be shut down, so the returned block would not be used.
+    RETURN_NOT_OK_HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
     WritableFileOptions wr_opts;
     wr_opts.mode = Env::CREATE_NON_EXISTING;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
@@ -637,9 +662,18 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
       dirty_dirs_.insert(DirName(path));
     }
     block->reset(new internal::FileWritableBlock(this, location, writer));
+  } else {
+    HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
+    return s;
   }
-  return s;
+  return Status::OK();
 }
+
+#define RETURN_NOT_OK_FBM_DISK_FAILURE(status_expr) do { \
+  RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
+      error_manager_->RunErrorNotificationCb(dd_manager()->FindDataDirByUuidIndex( \
+      internal::FileBlockLocation::GetDataDirIdx(block_id)))); \
+} while (0);
 
 Status FileBlockManager::OpenBlock(const BlockId& block_id,
                                    unique_ptr<ReadableBlock>* block) {
@@ -652,7 +686,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
   VLOG(1) << "Opening block with id " << block_id.ToString() << " at " << path;
 
   shared_ptr<RandomAccessFile> reader;
-  RETURN_NOT_OK(file_cache_.OpenExistingFile(path, &reader));
+  RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_.OpenExistingFile(path, &reader));
   block->reset(new internal::FileReadableBlock(this, block_id, reader));
   return Status::OK();
 }
@@ -665,7 +699,7 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
     return Status::NotFound(
         Substitute("Block $0 not found", block_id.ToString()));
   }
-  RETURN_NOT_OK(file_cache_.DeleteFile(path));
+  RETURN_NOT_OK_FBM_DISK_FAILURE(file_cache_.DeleteFile(path));
 
   // We don't bother fsyncing the parent directory as there's nothing to be
   // gained by ensuring that the deletion is made durable. Even if we did
