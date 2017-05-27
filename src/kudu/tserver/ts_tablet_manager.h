@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TS_TABLET_MANAGER_H
-#define KUDU_TSERVER_TS_TABLET_MANAGER_H
+
+#pragma once
 
 #include <boost/optional/optional_fwd.hpp>
 #include <gtest/gtest_prod.h>
@@ -184,6 +184,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
       tablet::TabletDataState delete_type,
       const boost::optional<consensus::OpId>& last_logged_opid);
+
+  // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
+  void FailTabletsInDataDir(const std::string& uuid);
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -338,4 +342,3 @@ class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProg
 
 } // namespace tserver
 } // namespace kudu
-#endif /* KUDU_TSERVER_TS_TABLET_MANAGER_H */

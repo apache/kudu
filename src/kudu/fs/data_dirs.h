@@ -271,6 +271,9 @@ class DataDirManager {
   bool FindUuidIndexByDataDir(DataDir* dir,
                               uint16_t* uuid_idx) const;
 
+  // Finds a uuid index by UUID, returning false if it can't be found.
+  bool FindUuidIndexByUuid(const std::string& uuid, uint16_t* uuid_idx) const;
+
   // Returns a list of all data dirs.
   const std::vector<std::unique_ptr<DataDir>>& data_dirs() const {
     return data_dirs_;

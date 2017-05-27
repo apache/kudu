@@ -47,12 +47,14 @@ class Env;
 class MetricEntity;
 class RWFile;
 class ThreadPool;
+class FsManager;
 
 namespace pb_util {
 class WritablePBContainerFile;
 } // namespace pb_util
 
 namespace fs {
+class FsErrorManager;
 struct FsReport;
 
 namespace internal {
@@ -164,7 +166,9 @@ class LogBlockManager : public BlockManager {
   static const char* kContainerMetadataFileSuffix;
   static const char* kContainerDataFileSuffix;
 
-  LogBlockManager(Env* env, const BlockManagerOptions& opts);
+  // Note: 'env' and 'error_manager' should remain alive for the lifetime of
+  // the block manager.
+  LogBlockManager(Env* env, FsErrorManager* error_manager, const BlockManagerOptions& opts);
 
   virtual ~LogBlockManager();
 
@@ -357,6 +361,9 @@ class LogBlockManager : public BlockManager {
 
   // Manages and owns all of the block manager's data directories.
   DataDirManager dd_manager_;
+
+  // Manages callbacks used to handle disk failure.
+  FsErrorManager* error_manager_;
 
   // Maps a data directory to an upper bound on the number of blocks that a
   // container residing in that directory should observe, if one is necessary.

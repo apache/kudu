@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/fs/error_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
@@ -39,10 +40,13 @@ class Message;
 
 namespace kudu {
 
+class BlockId;
+class InstanceMetadataPB;
 class MemTracker;
 class MetricEntity;
 
 namespace fs {
+
 class BlockManager;
 class DataDirManager;
 class ReadableBlock;
@@ -54,10 +58,7 @@ struct CreateBlockOptions;
 
 namespace itest {
 class ExternalMiniClusterFsInspector;
-}
-
-class BlockId;
-class InstanceMetadataPB;
+} // namespace itest
 
 struct FsManagerOpts {
   FsManagerOpts();
@@ -117,6 +118,18 @@ class FsManager {
   // case, CreateInitialFileSystemLayout() may be used to initialize the
   // on-disk structures.
   Status Open(fs::FsReport* report = nullptr);
+
+  // Registers an error-handling callback with the FsErrorManager.
+  //
+  // If a disk failure is detected, this callback will be invoked with the
+  // relevant DataDir's UUID as its input parameter.
+  void SetErrorNotificationCb(fs::ErrorNotificationCb cb);
+
+  // Unregisters the error-handling callback with the FsErrorManager.
+  //
+  // This must be called before the callback's callee is destroyed. Calls to
+  // this are idempotent and are safe even if a callback has not been set.
+  void UnsetErrorNotificationCb();
 
   // Create the initial filesystem layout. If 'uuid' is provided, uses it as
   // uuid of the filesystem. Otherwise generates one at random.
@@ -269,7 +282,7 @@ class FsManager {
   static const char *kTabletSuperBlockMagicNumber;
   static const char *kConsensusMetadataDirName;
 
-  Env *env_;
+  Env* env_;
 
   // If false, operations that mutate on-disk state are prohibited.
   const bool read_only_;
@@ -296,6 +309,7 @@ class FsManager {
   std::unique_ptr<InstanceMetadataPB> metadata_;
 
   std::unique_ptr<fs::BlockManager> block_manager_;
+  std::unique_ptr<fs::FsErrorManager> error_manager_;
 
   bool initted_;
 

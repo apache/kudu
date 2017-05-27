@@ -110,13 +110,12 @@ using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::StartTabletCopyRequestPB;
 using consensus::kMinimumTerm;
+using fs::DataDirManager;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
-using rpc::ResultTracker;
 using std::shared_ptr;
 using std::string;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::Tablet;
@@ -1065,6 +1064,15 @@ Status TSTabletManager::DeleteTabletData(
   }
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
   return meta->DeleteSuperBlock();
+}
+
+void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
+  DataDirManager* dd_manager = fs_manager_->dd_manager();
+  uint16_t uuid_idx;
+  CHECK(dd_manager->FindUuidIndexByUuid(uuid, &uuid_idx))
+      << Substitute("No data directory found with UUID $0", uuid);
+  LOG(FATAL) << Substitute("Data directory $0 failed. Disk failure handling not implemented",
+                           dd_manager->FindDataDirByUuidIndex(uuid_idx)->dir());
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(

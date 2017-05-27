@@ -24,6 +24,7 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -528,10 +529,13 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
   return dir != nullptr;
 }
 
-FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
+FileBlockManager::FileBlockManager(Env* env,
+                                   FsErrorManager* error_manager,
+                                   const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
     dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
+    error_manager_(DCHECK_NOTNULL(error_manager)),
     file_cache_("fbm", env_, GetFileCacheCapacityForBlockManager(env_),
                 opts.metric_entity),
     rand_(GetRandomSeed32()),

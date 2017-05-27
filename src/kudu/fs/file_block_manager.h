@@ -40,6 +40,7 @@ class RandomAccessFile;
 class WritableFile;
 
 namespace fs {
+class FsErrorManager;
 struct FsReport;
 
 namespace internal {
@@ -69,10 +70,9 @@ struct BlockManagerMetrics;
 class FileBlockManager : public BlockManager {
  public:
 
-  // Creates a new in-memory instance of a FileBlockManager.
-  //
-  // 'env' should remain alive for the lifetime of the block manager.
-  FileBlockManager(Env* env, const BlockManagerOptions& opts);
+  // Note: 'env' and 'error_manager' should remain alive for the lifetime of
+  // the block manager.
+  FileBlockManager(Env* env, FsErrorManager* error_manager, const BlockManagerOptions& opts);
 
   virtual ~FileBlockManager();
 
@@ -92,15 +92,15 @@ class FileBlockManager : public BlockManager {
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
-  DataDirManager* dd_manager() override { return &dd_manager_; };
+  DataDirManager* dd_manager() override { return &dd_manager_; }
 
  private:
   friend class internal::FileBlockLocation;
   friend class internal::FileReadableBlock;
   friend class internal::FileWritableBlock;
 
-  // Synchronizes the metadata for a block with the given id.
-  Status SyncMetadata(const internal::FileBlockLocation& block_id);
+  // Synchronizes the metadata for a block with the given location.
+  Status SyncMetadata(const internal::FileBlockLocation& location);
 
   // Looks up the path of the file backing a particular block ID.
   //
@@ -117,6 +117,9 @@ class FileBlockManager : public BlockManager {
 
   // Manages and owns all of the block manager's data directories.
   DataDirManager dd_manager_;
+
+  // Manages callbacks used to handle disk failure.
+  FsErrorManager* error_manager_;
 
   // Manages files opened for reading.
   FileCache<RandomAccessFile> file_cache_;

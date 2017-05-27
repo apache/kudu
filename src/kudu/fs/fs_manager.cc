@@ -29,6 +29,7 @@
 #include <google/protobuf/message.h>
 
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
@@ -82,6 +83,7 @@ using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
+using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
 using kudu::fs::LogBlockManager;
@@ -124,6 +126,7 @@ FsManager::FsManager(Env* env, const string& root_path)
     wal_fs_root_(root_path),
     data_fs_roots_({ root_path }),
     metric_entity_(nullptr),
+    error_manager_(new FsErrorManager()),
     initted_(false) {
 }
 
@@ -135,10 +138,19 @@ FsManager::FsManager(Env* env,
     data_fs_roots_(opts.data_paths),
     metric_entity_(opts.metric_entity),
     parent_mem_tracker_(opts.parent_mem_tracker),
+    error_manager_(new FsErrorManager()),
     initted_(false) {
 }
 
 FsManager::~FsManager() {
+}
+
+void FsManager::SetErrorNotificationCb(fs::ErrorNotificationCb cb) {
+  error_manager_->SetErrorNotificationCb(std::move(cb));
+}
+
+void FsManager::UnsetErrorNotificationCb() {
+  error_manager_->UnsetErrorNotificationCb();
 }
 
 Status FsManager::Init() {
@@ -225,9 +237,9 @@ void FsManager::InitBlockManager() {
   opts.root_paths = GetDataRootDirs();
   opts.read_only = read_only_;
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, opts));
+    block_manager_.reset(new FileBlockManager(env_, error_manager_.get(), opts));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, opts));
+    block_manager_.reset(new LogBlockManager(env_, error_manager_.get(), opts));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }

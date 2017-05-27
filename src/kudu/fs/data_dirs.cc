@@ -619,6 +619,10 @@ bool DataDirManager::FindUuidIndexByDataDir(DataDir* dir, uint16_t* uuid_idx) co
   return FindCopy(uuid_idx_by_data_dir_, dir, uuid_idx);
 }
 
+bool DataDirManager::FindUuidIndexByUuid(const string& uuid, uint16_t* uuid_idx) const {
+  return FindCopy(idx_by_uuid_, uuid, uuid_idx);
+}
+
 set<string> DataDirManager::FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());

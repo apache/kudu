@@ -1388,11 +1388,14 @@ const map<int64_t, int64_t> LogBlockManager::kPerFsBlockSizeBlockLimits({
   { 2048, 1353 },
   { 4096, 2721 }});
 
-LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
+LogBlockManager::LogBlockManager(Env* env,
+                                 FsErrorManager* error_manager,
+                                 const BlockManagerOptions& opts)
   : mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
                                            opts.parent_mem_tracker)),
     dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
+    error_manager_(DCHECK_NOTNULL(error_manager)),
     file_cache_("lbm", env, GetFileCacheCapacityForBlockManager(env),
                 opts.metric_entity),
     blocks_by_block_id_(10,

@@ -22,10 +22,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/fs/log_block_manager.h"
 #include "kudu/fs/log_block_manager-test-util.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -66,6 +67,7 @@ class LogBlockManagerTest : public KuduTest {
   LogBlockManagerTest() :
     test_tablet_name_("test_tablet"),
     test_block_opts_({ test_tablet_name_ }),
+    test_error_manager_(new FsErrorManager()),
     bm_(CreateBlockManager(scoped_refptr<MetricEntity>())) {
   }
 
@@ -84,7 +86,7 @@ class LogBlockManagerTest : public KuduTest {
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.root_paths = { test_dir_ };
-    return new LogBlockManager(env_, opts);
+    return new LogBlockManager(env_, test_error_manager_.get(), opts);
   }
 
   Status ReopenBlockManager(FsReport* report = nullptr) {
@@ -146,6 +148,7 @@ class LogBlockManagerTest : public KuduTest {
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
 
+  unique_ptr<FsErrorManager> test_error_manager_;
   unique_ptr<LogBlockManager> bm_;
 
  private:

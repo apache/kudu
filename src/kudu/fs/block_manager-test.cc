@@ -23,6 +23,7 @@
 #include <google/protobuf/util/message_differencer.h>
 
 #include "kudu/fs/data_dirs.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
@@ -90,6 +91,7 @@ class BlockManagerTest : public KuduTest {
   BlockManagerTest() :
     test_tablet_name_("test_tablet"),
     test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
+    test_error_manager_(new FsErrorManager()),
     bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
                            shared_ptr<MemTracker>(),
                            { test_dir_ })) {
@@ -132,7 +134,7 @@ class BlockManagerTest : public KuduTest {
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
     opts.root_paths = paths;
-    return new T(env_, opts);
+    return new T(env_, test_error_manager_.get(), opts);
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -185,6 +187,7 @@ class BlockManagerTest : public KuduTest {
   DataDirGroupPB test_group_pb_;
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
+  unique_ptr<FsErrorManager> test_error_manager_;
   gscoped_ptr<T> bm_;
 };
 
