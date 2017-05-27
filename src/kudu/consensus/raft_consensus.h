@@ -29,6 +29,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/util/atomic.h"
