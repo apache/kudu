@@ -1319,10 +1319,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status s;
     do {
       s = log_synchronizer.WaitFor(
-      MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
+          MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
       // If just waiting for our log append to finish lets snooze the timer.
       // We don't want to fire leader election because we're waiting on our own log.
       if (s.IsTimedOut()) {
+        ReplicaState::UniqueLock lock;
+        RETURN_NOT_OK(state_->LockForRead(&lock));
         SnoozeFailureDetectorUnlocked();
       }
     } while (s.IsTimedOut());
