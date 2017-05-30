@@ -93,6 +93,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
       bind_mode(kBindMode),
+      num_data_dirs(1),
       enable_kerberos(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(30)) {
@@ -241,14 +242,38 @@ string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
   return JoinPathSegments(daemon_bin_path_, binary);
 }
 
-string ExternalMiniCluster::GetDataPath(const string& daemon_id) const {
-  CHECK(!data_root_.empty());
-  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), "data");
-}
-
 string ExternalMiniCluster::GetLogPath(const string& daemon_id) const {
   CHECK(!data_root_.empty());
   return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), "logs");
+}
+
+string ExternalMiniCluster::GetDataPath(const string& daemon_id,
+                                        boost::optional<uint32_t> dir_index) const {
+  CHECK(!data_root_.empty());
+  string data_path = "data";
+  if (dir_index) {
+    CHECK_LT(*dir_index, opts_.num_data_dirs);
+    data_path = Substitute("$0-$1", data_path, dir_index.get());
+  } else {
+    CHECK_EQ(1, opts_.num_data_dirs);
+  }
+  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), data_path);
+}
+
+vector<string> ExternalMiniCluster::GetDataPaths(const string& daemon_id) const {
+  if (opts_.num_data_dirs == 1) {
+    return { GetDataPath(daemon_id) };
+  }
+  vector<string> paths;
+  for (uint32_t dir_index = 0; dir_index < opts_.num_data_dirs; dir_index++) {
+    paths.emplace_back(GetDataPath(daemon_id, dir_index));
+  }
+  return paths;
+}
+
+string ExternalMiniCluster::GetWalPath(const string& daemon_id) const {
+  CHECK(!data_root_.empty());
+  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), "wal");
 }
 
 namespace {
@@ -270,7 +295,8 @@ Status ExternalMiniCluster::StartSingleMaster() {
   ExternalDaemonOptions opts(opts_.logtostderr);
   opts.messenger = messenger_;
   opts.exe = GetBinaryPath(kMasterBinaryName);
-  opts.data_dir = GetDataPath(daemon_id);
+  opts.wal_dir = GetWalPath(daemon_id);
+  opts.data_dirs = GetDataPaths(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
   if (FLAGS_perf_record) {
     opts.perf_record_filename =
@@ -313,7 +339,8 @@ Status ExternalMiniCluster::StartDistributedMasters() {
     ExternalDaemonOptions opts(opts_.logtostderr);
     opts.messenger = messenger_;
     opts.exe = exe;
-    opts.data_dir = GetDataPath(daemon_id);
+    opts.wal_dir = GetWalPath(daemon_id);
+    opts.data_dirs = GetDataPaths(daemon_id);
     opts.log_dir = GetLogPath(daemon_id);
     if (FLAGS_perf_record) {
       opts.perf_record_filename =
@@ -365,7 +392,8 @@ Status ExternalMiniCluster::AddTabletServer() {
   ExternalDaemonOptions opts(opts_.logtostderr);
   opts.messenger = messenger_;
   opts.exe = GetBinaryPath(kTabletServerBinaryName);
-  opts.data_dir = GetDataPath(daemon_id);
+  opts.wal_dir = GetWalPath(daemon_id);
+  opts.data_dirs = GetDataPaths(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
   if (FLAGS_perf_record) {
     opts.perf_record_filename =
@@ -617,7 +645,8 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
 
 ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
     : messenger_(std::move(opts.messenger)),
-      data_dir_(std::move(opts.data_dir)),
+      wal_dir_(std::move(opts.wal_dir)),
+      data_dirs_(std::move(opts.data_dirs)),
       log_dir_(std::move(opts.log_dir)),
       perf_record_filename_(std::move(opts.perf_record_filename)),
       start_process_timeout_(opts.start_process_timeout),
@@ -689,7 +718,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir_));
 
   // Tell the server to dump its port information so we can pick it up.
-  string info_path = JoinPathSegments(data_dir_, "info.pb");
+  string info_path = JoinPathSegments(data_dirs_[0], "info.pb");
   argv.push_back("--server_dump_info_path=" + info_path);
   argv.push_back("--server_dump_info_format=pb");
 
@@ -907,6 +936,14 @@ void ExternalDaemon::Shutdown() {
   paused_ = false;
   process_.reset();
   perf_record_process_.reset();
+}
+
+Status ExternalDaemon::DeleteFromDisk() const {
+  for (const string& data_dir : data_dirs()) {
+    RETURN_NOT_OK(Env::Default()->DeleteRecursively(data_dir));
+  }
+  RETURN_NOT_OK(Env::Default()->DeleteRecursively(wal_dir()));
+  return Status::OK();
 }
 
 void ExternalDaemon::FlushCoverage() {
@@ -1144,8 +1181,8 @@ Status ExternalMaster::WaitForCatalogManager() {
 
 vector<string> ExternalMaster::GetCommonFlags() const {
   return {
-    "--fs_wal_dir=" + data_dir_,
-    "--fs_data_dirs=" + data_dir_,
+    "--fs_wal_dir=" + wal_dir_,
+    "--fs_data_dirs=" + JoinStrings(data_dirs_, ","),
     "--webserver_interface=localhost",
 
     // See the in-line comment for "--ipki_server_key_size" flag in
@@ -1176,8 +1213,8 @@ ExternalTabletServer::~ExternalTabletServer() {
 
 Status ExternalTabletServer::Start() {
   vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + data_dir_);
-  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back("--fs_wal_dir=" + wal_dir_);
+  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs_, ","));
   flags.push_back(Substitute("--rpc_bind_addresses=$0:0",
                              get_rpc_bind_address()));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
@@ -1196,8 +1233,8 @@ Status ExternalTabletServer::Restart() {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + data_dir_);
-  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back("--fs_wal_dir=" + wal_dir_);
+  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs_, ","));
   flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              get_rpc_bind_address()));

@@ -114,8 +114,8 @@ TEST_F(OpenReadonlyFsITest, TestWriteAndVerify) {
   auto t = std::thread([this, deadline] () {
       FsManagerOpts fs_opts;
       fs_opts.read_only = true;
-      fs_opts.wal_path = cluster_->tablet_server(0)->data_dir();
-      fs_opts.data_paths = { cluster_->tablet_server(0)->data_dir() };
+      fs_opts.wal_path = cluster_->tablet_server(0)->wal_dir();
+      fs_opts.data_paths = cluster_->tablet_server(0)->data_dirs();
       while (MonoTime::Now() < deadline) {
         FsManager fs(Env::Default(), fs_opts);
         CHECK_OK(fs.Open());

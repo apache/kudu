@@ -81,6 +81,7 @@ ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest
   kudu)
 ADD_KUDU_TEST(master_replication-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(master-stress-test RESOURCE_LOCK "master-rpc-ports")
+ADD_KUDU_TEST(multidir_cluster-itest)
 ADD_KUDU_TEST(open-readonly-fs-itest)
 ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)
 ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")

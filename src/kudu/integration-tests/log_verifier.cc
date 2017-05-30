@@ -60,13 +60,13 @@ LogVerifier::~LogVerifier() {
 
 Status LogVerifier::OpenFsManager(ExternalTabletServer* ets,
                                   unique_ptr<FsManager>* fs) {
-  const string& data_dir = ets->data_dir();
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
-  fs_opts.wal_path = data_dir;
+  fs_opts.wal_path = ets->wal_dir();
+  fs_opts.data_paths = ets->data_dirs();
   unique_ptr<FsManager> ret(new FsManager(Env::Default(), fs_opts));
   RETURN_NOT_OK_PREPEND(ret->Open(),
-                        Substitute("Couldn't initialize FS Manager for $0", data_dir));
+                        Substitute("Couldn't initialize FS Manager for $0", ets->wal_dir()));
   fs->swap(ret);
   return Status::OK();
 }

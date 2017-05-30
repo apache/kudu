@@ -14,15 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
-#define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
+#pragma once
+
+#include <sys/types.h>
 
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
-#include <sys/types.h>
 #include <vector>
+
+#include <boost/optional.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -109,6 +111,10 @@ struct ExternalMiniClusterOptions {
   // Default: "", which uses the same path as the currently running executable.
   // This works for unit tests, since they all end up in build/latest/bin.
   std::string daemon_bin_path;
+
+  // Number of data directories to be created for each daemon.
+  // Default: 1
+  int num_data_dirs;
 
   // Extra flags for tablet servers and masters respectively.
   //
@@ -289,7 +295,18 @@ class ExternalMiniCluster : public MiniClusterBase {
   // Returns the path where 'daemon_id' is expected to store its data, based on
   // ExternalMiniClusterOptions.data_root if it was provided, or on the
   // standard Kudu test directory otherwise.
-  std::string GetDataPath(const std::string& daemon_id) const;
+  // 'dir_index' is an optional numeric suffix to be added to the default path.
+  // If it is not specified, the cluster must be configured to use a single data dir.
+  std::string GetDataPath(const std::string& daemon_id,
+                          boost::optional<uint32_t> dir_index = boost::none) const;
+
+  // Returns paths where 'daemon_id' is expected to store its data, each with a
+  // numeric suffix appropriate for 'opts_.num_data_dirs'
+  std::vector<std::string> GetDataPaths(const std::string& daemon_id) const;
+
+  // Returns the path where 'daemon_id' is expected to store its wal, or other
+  // files that reside in the wal dir.
+  std::string GetWalPath(const std::string& daemon_id) const;
 
   // Returns the path where 'daemon_id' is expected to store its logs, or other
   // files that reside in the log dir.
@@ -329,7 +346,8 @@ struct ExternalDaemonOptions {
   bool logtostderr;
   std::shared_ptr<rpc::Messenger> messenger;
   std::string exe;
-  std::string data_dir;
+  std::string wal_dir;
+  std::vector<std::string> data_dirs;
   std::string log_dir;
   std::string perf_record_filename;
   std::vector<std::string> extra_flags;
@@ -402,7 +420,17 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   virtual void Shutdown();
 
-  const std::string& data_dir() const { return data_dir_; }
+  // Delete files specified by 'wal_dir_' and 'data_dirs_'.
+  Status DeleteFromDisk() const WARN_UNUSED_RESULT;
+
+  const std::string& wal_dir() const { return wal_dir_; }
+
+  const std::string& data_dir() const {
+    CHECK_EQ(1, data_dirs_.size());
+    return data_dirs_[0];
+  }
+
+  const std::vector<std::string>& data_dirs() const { return data_dirs_; }
 
   // Returns the log dir of the external daemon.
   const std::string& log_dir() const { return log_dir_; }
@@ -461,7 +489,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   }
 
   const std::shared_ptr<rpc::Messenger> messenger_;
-  const std::string data_dir_;
+  const std::string wal_dir_;
+  std::vector<std::string> data_dirs_;
   const std::string log_dir_;
   const std::string perf_record_filename_;
   const MonoDelta start_process_timeout_;
@@ -547,4 +576,3 @@ class ExternalTabletServer : public ExternalDaemon {
 };
 
 } // namespace kudu
-#endif /* KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H */

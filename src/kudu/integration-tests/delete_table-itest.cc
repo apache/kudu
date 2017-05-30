@@ -1060,7 +1060,7 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   // Delete the master's metadata and start it back up. The tablet created
   // above is now unknown, but should not be deleted!
   cluster_->master()->Shutdown();
-  ASSERT_OK(env_->DeleteRecursively(cluster_->master()->data_dir()));
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
   ASSERT_OK(cluster_->master()->Restart());
 
   // Give the master a chance to finish writing the new master tablet to disk

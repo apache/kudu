@@ -79,8 +79,8 @@ int ExternalMiniClusterFsInspector::CountFilesInDir(const string& path,
 }
 
 int ExternalMiniClusterFsInspector::CountWALFilesOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string ts_wal_dir = JoinPathSegments(cluster_->tablet_server(index)->wal_dir(),
+                                       FsManager::kWalDirName);
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(ts_wal_dir, &tablets));
   int total_segments = 0;
@@ -109,8 +109,8 @@ vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
 }
 
 vector<string> ExternalMiniClusterFsInspector::ListTabletsWithDataOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string wal_dir = JoinPathSegments(cluster_->tablet_server(index)->wal_dir(),
+                                    FsManager::kWalDirName);
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(wal_dir, &tablets));
   return tablets;
@@ -120,8 +120,8 @@ int ExternalMiniClusterFsInspector::CountFilesInWALDirForTS(
     int index,
     const string& tablet_id,
     StringPiece pattern) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string wal_dir = JoinPathSegments(cluster_->tablet_server(index)->wal_dir(),
+                                    FsManager::kWalDirName);
   string tablet_wal_dir = JoinPathSegments(wal_dir, tablet_id);
   if (!env_->FileExists(tablet_wal_dir)) {
     return 0;
@@ -336,8 +336,8 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
   Status s;
   MonoTime deadline = MonoTime::Now() + timeout;
 
-  string data_dir = cluster_->tablet_server(ts_index)->data_dir();
-  string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string ts_wal_dir = JoinPathSegments(cluster_->tablet_server(ts_index)->wal_dir(),
+                                       FsManager::kWalDirName);
   string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet_id);
 
   string error_msg;

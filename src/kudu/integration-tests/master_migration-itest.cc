@@ -110,13 +110,15 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // Format a filesystem tree for each of the new masters and get the uuids.
   for (int i = 1; i < kMasterRpcPorts.size(); i++) {
     string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
+    string wal_dir = cluster_->GetWalPath(Substitute("master-$0", i));
     ASSERT_OK(env_->CreateDir(DirName(data_root)));
+    ASSERT_OK(env_->CreateDir(wal_dir));
     {
       vector<string> args = {
           kBinPath,
           "fs",
           "format",
-          "--fs_wal_dir=" + data_root,
+          "--fs_wal_dir=" + wal_dir,
           "--fs_data_dirs=" + data_root
       };
       ASSERT_OK(Subprocess::Call(args));
@@ -127,7 +129,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
           "fs",
           "dump",
           "uuid",
-          "--fs_wal_dir=" + data_root,
+          "--fs_wal_dir=" + wal_dir,
           "--fs_data_dirs=" + data_root
       };
       string uuid;
@@ -145,7 +147,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
         "local_replica",
         "cmeta",
         "rewrite_raft_config",
-        "--fs_wal_dir=" + data_root,
+        "--fs_wal_dir=" + cluster_->GetWalPath("master-0"),
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId
     };
@@ -168,11 +170,12 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // filesystems.
   for (int i = 1; i < kMasterRpcPorts.size(); i++) {
     string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
+    string wal_dir = cluster_->GetWalPath(Substitute("master-$0", i));
     vector<string> args = {
         kBinPath,
         "local_replica",
         "copy_from_remote",
-        "--fs_wal_dir=" + data_root,
+        "--fs_wal_dir=" + wal_dir,
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId,
         cluster_->master()->bound_rpc_hostport().ToString()

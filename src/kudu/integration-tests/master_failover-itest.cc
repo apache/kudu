@@ -363,8 +363,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
 
     // "Fail" a master and blow away its state completely.
     failed_master->Shutdown();
-    string data_root = failed_master->data_dir();
-    env_->DeleteRecursively(data_root);
+    ASSERT_OK(failed_master->DeleteFromDisk());
 
     // Pick another master at random to serve as a basis for recovery.
     //
@@ -382,7 +381,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
           "local_replica",
           "cmeta",
           "print_replica_uuids",
-          "--fs_wal_dir=" + other_master->data_dir(),
+          "--fs_wal_dir=" + other_master->wal_dir(),
           "--fs_data_dirs=" + other_master->data_dir(),
           master::SysCatalogTable::kSysCatalogTabletId
       };
@@ -408,8 +407,8 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
           kBinPath,
           "fs",
           "format",
-          "--fs_wal_dir=" + data_root,
-          "--fs_data_dirs=" + data_root,
+          "--fs_wal_dir=" + failed_master->wal_dir(),
+          "--fs_data_dirs=" + failed_master->data_dir(),
           "--uuid=" + uuid
       };
       ASSERT_OK(Subprocess::Call(args));
@@ -421,8 +420,8 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
           kBinPath,
           "local_replica",
           "copy_from_remote",
-          "--fs_wal_dir=" + data_root,
-          "--fs_data_dirs=" + data_root,
+          "--fs_wal_dir=" + failed_master->wal_dir(),
+          "--fs_data_dirs=" + failed_master->data_dir(),
           master::SysCatalogTable::kSysCatalogTabletId,
           other_master->bound_rpc_hostport().ToString()
       };

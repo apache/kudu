@@ -86,7 +86,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   void CreateCluster(const std::string& data_root_path,
                      const std::vector<std::string>& non_default_ts_flags,
-                     const std::vector<std::string>& non_default_master_flags) {
+                     const std::vector<std::string>& non_default_master_flags,
+                     uint32_t num_data_dirs = 1) {
 
     LOG(INFO) << "Starting cluster with:";
     LOG(INFO) << "--------------";
@@ -97,6 +98,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath(data_root_path);
+    opts.num_data_dirs = num_data_dirs;
 
     // Enable exactly once semantics for tests.
 
