@@ -54,7 +54,7 @@ DECLARE_uint64(log_container_max_size);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
-DECLARE_uint32(fs_target_data_dirs_per_tablet);
+DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_string(block_manager);
 DECLARE_double(env_inject_eio);
 DECLARE_bool(suicide_on_eio);
@@ -437,12 +437,12 @@ TYPED_TEST(BlockManagerTest, CreateBlocksInDataDirs) {
   Status s = this->bm_->CreateBlock(fake_block_opts, nullptr);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no "
-                                    "DataDirGroup registered for tablet");
+                                    "directory group registered for tablet");
 
   // Ensure the data dir groups can only be created once.
   s = this->bm_->dd_manager()->CreateDataDirGroup(this->test_tablet_name_);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to create DataDirGroup for tablet "
+  ASSERT_STR_CONTAINS(s.ToString(), "Tried to create directory group for tablet "
                                     "but one is already registered");
 
   DataDirGroupPB test_group_pb;
@@ -812,7 +812,8 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
           // The dir was previously observed as full, so CreateBlock() checked
           // fullness again and failed.
           ASSERT_TRUE(s.IsIOError()) << s.ToString();
-          ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
+          ASSERT_STR_CONTAINS(s.ToString(), "No directories available to add to test_tablet's "
+                                            "directory group");
         } else {
           ASSERT_OK(s);
           ASSERT_OK(writer->Append("test data"));

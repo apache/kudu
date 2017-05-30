@@ -38,7 +38,9 @@ using strings::Substitute;
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
-DECLARE_uint32(fs_target_data_dirs_per_tablet);
+DECLARE_int32(fs_target_data_dirs_per_tablet);
+
+METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 
 namespace kudu {
 namespace fs {
@@ -54,8 +56,8 @@ class DataDirGroupTest : public KuduTest {
   DataDirGroupTest() :
       test_tablet_name_("test_tablet"),
       test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
-      dd_manager_(new DataDirManager(env_, scoped_refptr<kudu::MetricEntity>(),
-            "file", GetDirNames(kNumDirs))) {}
+      entity_(METRIC_ENTITY_server.Instantiate(&registry_, "test")),
+      dd_manager_(new DataDirManager(env_, entity_, "file", GetDirNames(kNumDirs))) {}
 
   virtual void SetUp() override {
     KuduTest::SetUp();
@@ -76,6 +78,8 @@ class DataDirGroupTest : public KuduTest {
 
   const string test_tablet_name_;
   const CreateBlockOptions test_block_opts_;
+  MetricRegistry registry_;
+  scoped_refptr<MetricEntity> entity_;
   std::unique_ptr<DataDirManager> dd_manager_;
 };
 
@@ -83,11 +87,10 @@ TEST_F(DataDirGroupTest, TestCreateGroup) {
   // Test that the DataDirManager doesn't know about the tablets we're about
   // to insert.
   DataDir* dd = nullptr;
-  CreateBlockOptions non_existent_tablet_opts({ test_tablet_name_ });
-  Status s = dd_manager_->GetNextDataDir(non_existent_tablet_opts, &dd);
+  Status s = dd_manager_->GetNextDataDir(test_block_opts_, &dd);
   ASSERT_EQ(nullptr, dd);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no DataDirGroup "
+  ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no directory group "
                                     "registered for tablet");
 
   DataDirGroupPB orig_pb;
@@ -98,7 +101,7 @@ TEST_F(DataDirGroupTest, TestCreateGroup) {
   // it already knows about.
   s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to create DataDirGroup for tablet "
+  ASSERT_STR_CONTAINS(s.ToString(), "Tried to create directory group for tablet "
                                     "but one is already registered");
   DataDirGroupPB pb;
   ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
@@ -147,7 +150,7 @@ TEST_F(DataDirGroupTest, TestLoadFromPB) {
   // knows about the tablet.
   Status s = dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, orig_pb);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to load DataDirGroup for tablet but "
+  ASSERT_STR_CONTAINS(s.ToString(), "Tried to load directory group for tablet but "
                                     "one is already registered");
 }
 
@@ -160,7 +163,7 @@ TEST_F(DataDirGroupTest, TestDeleteDataDirGroup) {
   Status s = dd_manager_->GetNextDataDir(test_block_opts_, &dd);
   ASSERT_FALSE(dd->is_full());
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no DataDirGroup "
+  ASSERT_STR_CONTAINS(s.ToString(), "Tried to get directory but no directory group "
                                     "registered for tablet");
 }
 
@@ -171,7 +174,68 @@ TEST_F(DataDirGroupTest, TestFullDisk) {
 
   Status s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "All data directories are full");
+  ASSERT_STR_CONTAINS(s.ToString(), "All healthy data directories are full");
+}
+
+TEST_F(DataDirGroupTest, TestFailedDirNotReturned) {
+  FLAGS_fs_target_data_dirs_per_tablet = 2;
+  ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+  DataDir* dd;
+  DataDir* failed_dd;
+  uint16_t uuid_idx;
+  // Fail one of the directories in the group and verify that it is not used.
+  ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &failed_dd));
+  ASSERT_TRUE(dd_manager_->FindUuidIndexByDataDir(failed_dd, &uuid_idx));
+  // These calls are idempotent.
+  dd_manager_->MarkDataDirFailed(uuid_idx);
+  dd_manager_->MarkDataDirFailed(uuid_idx);
+  dd_manager_->MarkDataDirFailed(uuid_idx);
+  ASSERT_EQ(1, down_cast<AtomicGauge<uint64_t>*>(
+        entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &dd));
+    ASSERT_NE(dd, failed_dd);
+  }
+
+  // Fail the other directory and verify that neither will be used.
+  ASSERT_TRUE(dd_manager_->FindUuidIndexByDataDir(dd, &uuid_idx));
+  dd_manager_->MarkDataDirFailed(uuid_idx);
+  ASSERT_EQ(2, down_cast<AtomicGauge<uint64_t>*>(
+        entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
+  Status s = dd_manager_->GetNextDataDir(test_block_opts_, &dd);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "No healthy directories exist in tablet's directory group");
+}
+
+TEST_F(DataDirGroupTest, TestFailedDirNotAddedToGroup) {
+  // Fail one dir and create a group with all directories. The failed directory
+  // shouldn't be in the group.
+  FLAGS_fs_target_data_dirs_per_tablet = kNumDirs;
+  dd_manager_->MarkDataDirFailed(0);
+  ASSERT_EQ(1, down_cast<AtomicGauge<uint64_t>*>(
+        entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
+  ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+  DataDirGroupPB pb;
+  ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
+  ASSERT_EQ(kNumDirs - 1, pb.uuids_size());
+
+  // Check that all uuid_indices are valid and are not in the failed directory
+  // (uuid_idx 0).
+  for (const string& uuid : pb.uuids()) {
+    uint16_t* uuid_idx = FindOrNull(dd_manager_->idx_by_uuid_, uuid);
+    ASSERT_NE(nullptr, uuid_idx);
+    ASSERT_NE(0, *uuid_idx);
+  }
+  dd_manager_->DeleteDataDirGroup(test_tablet_name_);
+
+  for (uint16_t i = 1; i < kNumDirs; i++) {
+    dd_manager_->MarkDataDirFailed(i);
+  }
+  ASSERT_EQ(kNumDirs, down_cast<AtomicGauge<uint64_t>*>(
+        entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
+  Status s = dd_manager_->CreateDataDirGroup(test_tablet_name_);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "No healthy data directories available");
 }
 
 TEST_F(DataDirGroupTest, TestLoadBalancingDistribution) {
