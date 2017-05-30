@@ -660,8 +660,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
     scoped_refptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
 
-    RaftConsensus::UniqueLock lock;
-    ASSERT_OK(follower0->LockForRead(&lock));
+    RaftConsensus::LockGuard l(follower0->lock_);
 
     // If the locked replica would stop consensus we would hang here
     // as we wait for operations to be replicated to a majority.
@@ -703,13 +702,11 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
     // and never letting them go.
     scoped_refptr<RaftConsensus> follower0;
     CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
-    RaftConsensus::UniqueLock lock0;
-    ASSERT_OK(follower0->LockForRead(&lock0));
+    RaftConsensus::LockGuard l_0(follower0->lock_);
 
     scoped_refptr<RaftConsensus> follower1;
     CHECK_OK(peers_->GetPeerByIdx(kFollower1Idx, &follower1));
-    RaftConsensus::UniqueLock lock1;
-    ASSERT_OK(follower1->LockForRead(&lock1));
+    RaftConsensus::LockGuard l_1(follower1->lock_);
 
     // Append a single message to the queue
     ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));

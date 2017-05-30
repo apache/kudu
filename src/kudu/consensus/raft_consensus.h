@@ -35,9 +35,6 @@
 
 namespace kudu {
 
-typedef std::lock_guard<simple_spinlock> Lock;
-typedef gscoped_ptr<Lock> ScopedLock;
-
 class Counter;
 class FailureDetector;
 class HostPort;
@@ -62,8 +59,6 @@ struct ElectionResult;
 class RaftConsensus : public Consensus,
                       public PeerMessageQueueObserver {
  public:
-  typedef std::unique_lock<simple_spinlock> UniqueLock;
-
   static scoped_refptr<RaftConsensus> Create(
     ConsensusOptions options,
     std::unique_ptr<ConsensusMetadata> cmeta,
@@ -181,6 +176,8 @@ class RaftConsensus : public Consensus,
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
   FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
 
+  // NOTE: When adding / changing values in this enum, add the corresponding
+  // values to State_Name().
   enum State {
     // State after the replica is built.
     kInitialized,
@@ -223,6 +220,12 @@ class RaftConsensus : public Consensus,
 
     std::string OpsRangeString() const;
   };
+
+  using LockGuard = std::lock_guard<simple_spinlock>;
+  using UniqueLock = std::unique_lock<simple_spinlock>;
+
+  // Returns string description for State enum value.
+  static const char* State_Name(State state);
 
   // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
@@ -276,7 +279,8 @@ class RaftConsensus : public Consensus,
   // pending operations, we proactively abort those pending operations after and including
   // the preceding op in 'req' to avoid a pointless cache miss in the leader's log cache.
   Status EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequest& req,
-                                                   ConsensusResponsePB* response);
+                                                   ConsensusResponsePB* response)
+         WARN_UNUSED_RESULT;
 
   // Check a request received from a leader, making sure:
   // - The request is in the right term
@@ -288,7 +292,7 @@ class RaftConsensus : public Consensus,
   // the messages to add to our state machine.
   Status CheckLeaderRequestUnlocked(const ConsensusRequestPB* request,
                                     ConsensusResponsePB* response,
-                                    LeaderRequest* deduped_req);
+                                    LeaderRequest* deduped_req) WARN_UNUSED_RESULT;
 
   // Abort any pending operations after the given op index,
   // and also truncate the LogCache accordingly.
@@ -382,13 +386,13 @@ class RaftConsensus : public Consensus,
   // When this is called a failure is guaranteed not to be detected
   // before 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
   // 'FLAGS_raft_heartbeat_interval_ms' has elapsed.
-  Status SnoozeFailureDetectorUnlocked();
+  Status SnoozeFailureDetectorUnlocked() WARN_UNUSED_RESULT;
 
   // Like the above but adds 'additional_delta' to the default timeout
   // period. If allow_logging is set to ALLOW_LOGGING, then this method
   // will print a log message when called.
   Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta,
-                                       AllowLogging allow_logging);
+                                       AllowLogging allow_logging) WARN_UNUSED_RESULT;
 
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.
@@ -462,45 +466,17 @@ class RaftConsensus : public Consensus,
   // (see Diego Ongaro's thesis section 4.1).
   Status AddPendingOperationUnlocked(const scoped_refptr<ConsensusRound>& round);
 
-  // Locks a replica in preparation for StartUnlocked(). Makes
-  // sure the replica is in kInitialized state.
-  Status LockForStart(UniqueLock* lock) const WARN_UNUSED_RESULT;
+  // Checks that the replica is in the appropriate state and role to replicate
+  // the provided operation and that the replicate message does not yet have an
+  // OpId assigned.
+  Status CheckSafeToReplicateUnlocked(const ReplicateMsg& msg) const WARN_UNUSED_RESULT;
 
-  // Obtains the lock for a state read, does not check state.
-  Status LockForRead(UniqueLock* lock) const WARN_UNUSED_RESULT;
-
-  // Locks a replica down until the critical section of an append completes,
-  // i.e. until the replicate message has been assigned an id and placed in
-  // the log queue.
-  // This also checks that the replica is in the appropriate
-  // state (role) to replicate the provided operation, that the operation
-  // contains a replicate message and is of the appropriate type, and returns
-  // Status::IllegalState if that is not the case.
-  Status LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const WARN_UNUSED_RESULT;
-
-  // Locks a replica down until the critical section of a commit completes.
-  // This succeeds for all states since a replica which has initiated
-  // a Prepare()/Replicate() must eventually commit even if it's state
-  // has changed after the initial Append()/Update().
-  Status LockForCommit(UniqueLock* lock) const WARN_UNUSED_RESULT;
-
-  // Locks a replica down until an the critical section of an update completes.
-  // Further updates from the same or some other leader will be blocked until
-  // this completes. This also checks that the replica is in the appropriate
-  // state (role) to be updated and returns Status::IllegalState if that
-  // is not the case.
-  Status LockForUpdate(UniqueLock* lock) const WARN_UNUSED_RESULT;
-
-  Status LockForConfigChange(UniqueLock* lock) const WARN_UNUSED_RESULT;
-
-  // Changes the role to non-participant and returns a lock that can be
-  // used to make sure no state updates come in until Shutdown() is
-  // completed.
-  Status LockForShutdown(UniqueLock* lock) WARN_UNUSED_RESULT;
+  // Return Status::IllegalState if 'state_' != kRunning, OK otherwise.
+  Status CheckRunningUnlocked() const WARN_UNUSED_RESULT;
 
   // Ensure the local peer is the active leader.
   // Returns OK if leader, IllegalState otherwise.
-  Status CheckActiveLeaderUnlocked() const;
+  Status CheckActiveLeaderUnlocked() const WARN_UNUSED_RESULT;
 
   // Return current consensus state summary.
   ConsensusStatePB ConsensusStateUnlocked() const;
@@ -515,7 +491,7 @@ class RaftConsensus : public Consensus,
   // Inverse of IsConfigChangePendingUnlocked(): returns OK if there is
   // currently *no* configuration change pending, and IllegalState is there *is* a
   // configuration change pending.
-  Status CheckNoConfigChangePendingUnlocked() const;
+  Status CheckNoConfigChangePendingUnlocked() const WARN_UNUSED_RESULT;
 
   // Sets the given configuration as pending commit. Does not persist into the peers
   // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
