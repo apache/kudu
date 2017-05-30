@@ -70,10 +70,10 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
-DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
@@ -4771,29 +4771,31 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
 
   NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
 
-  {
-    // Revert the latency injection flags at the end so the test exits faster.
-    google::FlagSaver saver;
-
-    // Restart, but inject latency so that startup is very slow.
-    FLAGS_log_inject_latency = true;
-    FLAGS_log_inject_latency_ms_mean = 5000;
-    FLAGS_log_inject_latency_ms_stddev = 0;
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-      ts->Shutdown();
-      ASSERT_OK(ts->Restart());
-    }
-
-    // As the tservers are still starting up, the scan will retry until it
-    // times out. The actual error should be embedded in the returned status.
-    KuduScanner scan(client_table_.get());
-    ASSERT_OK(scan.SetTimeoutMillis(1000));
-    Status s = scan.Open();
-    SCOPED_TRACE(s.ToString());
-    ASSERT_TRUE(s.IsTimedOut());
-    ASSERT_STR_CONTAINS(s.ToString(), "Illegal state: Tablet not RUNNING");
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    ts->Shutdown();
   }
+
+  // Revert the latency injection flags at the end so the test exits faster.
+  google::FlagSaver saver;
+
+  // Restart, but inject latency so that startup is very slow.
+  FLAGS_log_inject_latency = true;
+  FLAGS_log_inject_latency_ms_mean = 3000;
+  FLAGS_log_inject_latency_ms_stddev = 0;
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    ASSERT_OK(ts->Restart());
+  }
+
+  // As the tservers are still starting up, the scan will retry until it
+  // times out. The actual error should be embedded in the returned status.
+  KuduScanner scan(client_table_.get());
+  ASSERT_OK(scan.SetTimeoutMillis(1000));
+  Status s = scan.Open();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Illegal state: Tablet not RUNNING");
 }
 
 TEST_F(ClientTest, TestNoDefaultPartitioning) {
