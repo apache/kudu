@@ -239,9 +239,9 @@ class AuthnTokenExpireDuringWorkloadITest : public AuthnTokenExpireITest {
   }
 };
 
-// Run the workload and check that client retries on ERROR_INVALID_AUTH_TOKEN,
-// eventually succeeding with its RPCs.
-TEST_F(AuthnTokenExpireDuringWorkloadITest, TokenExpiration) {
+// Run a mixed write/read test workload and check that client retries the
+// FATAL_INVALID_AUTH_TOKEN error, eventually succeeding with every issued RPC.
+TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
   if (!AllowSlowTests()) {
@@ -272,6 +272,71 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, TokenExpiration) {
   NO_FATALS(v.CheckRowCount(
       w.table_name(), ClusterVerifier::EXACTLY, w.rows_inserted()));
   ASSERT_OK(w.Cleanup());
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Run write-only and scan-only workloads and check that the client retries
+// the FATAL_INVALID_AUTH_TOKEN error, eventually succeeding with its RPCs.
+// There is also a test for the mixed workload (see above), but we are looking
+// at the implementation as a black box: it's impossible to guarantee that the
+// read paths are not affected by the write paths since the mixed workload uses
+// the same shared client instance for both the read and the write paths.
+TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads) {
+  const string table_name = "authn-token-expire-separate-workloads";
+  static const int32_t kTimeoutMs = 10 * 60 * 1000;
+
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  ASSERT_OK(cluster_->Start());
+
+  // Close an already established idle connection to the server and open
+  // a new one upon making another call to the same server. This is to force
+  // authn token verification at every RPC.
+  FLAGS_rpc_reopen_outbound_connections = true;
+
+  // Run the write-only workload first.
+  TestWorkload w(cluster_.get());
+  w.set_table_name(table_name);
+  w.set_num_replicas(num_tablet_servers_);
+  w.set_client_default_admin_operation_timeout_millis(kTimeoutMs);
+  w.set_client_default_rpc_timeout_millis(kTimeoutMs);
+  w.set_num_replicas(num_tablet_servers_);
+  w.set_num_read_threads(0);
+  w.set_num_write_threads(8);
+  w.set_write_batch_size(256);
+  w.set_write_timeout_millis(kTimeoutMs);
+  w.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  w.Setup();
+  w.Start();
+  SleepFor(MonoDelta::FromSeconds(3 * token_validity_seconds_));
+  w.StopAndJoin();
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+  const int64_t rows_inserted = w.rows_inserted();
+  ASSERT_GE(rows_inserted, 0);
+
+  // Run the read-only workload after the test table is populated.
+  TestWorkload r(cluster_.get());
+  r.set_table_name(table_name);
+  r.set_num_replicas(num_tablet_servers_);
+  r.set_client_default_admin_operation_timeout_millis(kTimeoutMs);
+  r.set_client_default_rpc_timeout_millis(kTimeoutMs);
+  r.set_num_read_threads(8);
+  r.set_read_timeout_millis(kTimeoutMs);
+  r.set_num_write_threads(0);
+  r.Setup();
+  r.Start();
+  SleepFor(MonoDelta::FromSeconds(3 * token_validity_seconds_));
+  r.StopAndJoin();
+
+  ClusterVerifier v(cluster_.get());
+  v.SetOperationsTimeout(MonoDelta::FromSeconds(5 * 60));
+  NO_FATALS(v.CheckRowCount(table_name, ClusterVerifier::EXACTLY, rows_inserted));
+  ASSERT_OK(r.Cleanup());
 
   NO_FATALS(cluster_->AssertNoCrashes());
 }
