@@ -244,10 +244,6 @@ class PeerMessageQueue {
   void UpdateFollowerWatermarks(int64_t committed_index,
                                 int64_t all_replicated_index);
 
-  // Update the metric that measures how many ops behind the leader the local
-  // replica believes it is (0 if leader).
-  void UpdateLagMetrics();
-
   // Updates the last op appended to the leader and the corresponding lag metric.
   // This should not be called by a leader.
   void UpdateLastIndexAppendedToLeader(int64_t last_idx_appended_to_leader);
@@ -398,7 +394,11 @@ class PeerMessageQueue {
   void DumpToStringsUnlocked(std::vector<std::string>* lines) const;
 
   // Updates the metrics based on index math.
-  void UpdateMetrics();
+  void UpdateMetricsUnlocked();
+
+  // Update the metric that measures how many ops behind the leader the local
+  // replica believes it is (0 if leader).
+  void UpdateLagMetricsUnlocked();
 
   void ClearUnlocked();
 

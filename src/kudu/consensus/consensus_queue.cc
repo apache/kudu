@@ -193,6 +193,7 @@ void PeerMessageQueue::TrackPeer(const string& uuid) {
 
 void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
+  DCHECK(queue_lock_.is_locked());
   DCHECK_EQ(queue_state_.state, kQueueOpen);
 
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
@@ -223,6 +224,7 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
 }
 
 void PeerMessageQueue::CheckPeersInActiveConfigIfLeaderUnlocked() const {
+  DCHECK(queue_lock_.is_locked());
   if (queue_state_.mode != LEADER) return;
   unordered_set<string> config_peer_uuids;
   for (const RaftPeerPB& peer_pb : queue_state_.active_config->peers()) {
@@ -312,7 +314,7 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                                  log_append_callback)));
   lock.lock();
   queue_state_.last_appended = last_id;
-  UpdateMetrics();
+  UpdateMetricsUnlocked();
 
   return Status::OK();
 }
@@ -594,18 +596,14 @@ void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
   DCHECK_EQ(queue_state_.mode, NON_LEADER);
   queue_state_.committed_index = committed_index;
   queue_state_.all_replicated_index = all_replicated_index;
-  UpdateMetrics();
-}
-
-void PeerMessageQueue::UpdateLagMetrics() {
-  metrics_.num_ops_behind_leader->set_value(queue_state_.mode == LEADER ? 0 :
-      queue_state_.last_idx_appended_to_leader - queue_state_.last_appended.index());
+  UpdateMetricsUnlocked();
 }
 
 void PeerMessageQueue::UpdateLastIndexAppendedToLeader(int64_t last_idx_appended_to_leader) {
+  std::lock_guard<simple_spinlock> l(queue_lock_);
   DCHECK_EQ(queue_state_.mode, NON_LEADER);
   queue_state_.last_idx_appended_to_leader = last_idx_appended_to_leader;
-  UpdateLagMetrics();
+  UpdateLagMetricsUnlocked();
 }
 
 void PeerMessageQueue::NotifyPeerIsResponsive(const std::string& peer_uuid) {
@@ -825,7 +823,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
 
     log_cache_.EvictThroughOp(queue_state_.all_replicated_index);
 
-    UpdateMetrics();
+    UpdateMetricsUnlocked();
   }
 
   if (mode_copy == LEADER && updated_commit_index != boost::none) {
@@ -861,7 +859,8 @@ int64_t PeerMessageQueue::GetMajorityReplicatedIndexForTests() const {
 }
 
 
-void PeerMessageQueue::UpdateMetrics() {
+void PeerMessageQueue::UpdateMetricsUnlocked() {
+  DCHECK(queue_lock_.is_locked());
   // Since operations have consecutive indices we can update the metrics based
   // on simple index math.
   // For non-leaders, majority_done_ops isn't meaningful because followers don't
@@ -872,7 +871,13 @@ void PeerMessageQueue::UpdateMetrics() {
   metrics_.num_in_progress_ops->set_value(
     queue_state_.last_appended.index() - queue_state_.committed_index);
 
-  UpdateLagMetrics();
+  UpdateLagMetricsUnlocked();
+}
+
+void PeerMessageQueue::UpdateLagMetricsUnlocked() {
+  DCHECK(queue_lock_.is_locked());
+  metrics_.num_ops_behind_leader->set_value(queue_state_.mode == LEADER ? 0 :
+      queue_state_.last_idx_appended_to_leader - queue_state_.last_appended.index());
 }
 
 void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
@@ -881,6 +886,7 @@ void PeerMessageQueue::DumpToStrings(vector<string>* lines) const {
 }
 
 void PeerMessageQueue::DumpToStringsUnlocked(vector<string>* lines) const {
+  DCHECK(queue_lock_.is_locked());
   lines->push_back("Watermarks:");
   for (const PeersMap::value_type& entry : peers_map_) {
     lines->push_back(
@@ -908,6 +914,7 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 }
 
 void PeerMessageQueue::ClearUnlocked() {
+  DCHECK(queue_lock_.is_locked());
   STLDeleteValues(&peers_map_);
   queue_state_.state = kQueueClosed;
 }
@@ -930,6 +937,7 @@ string PeerMessageQueue::ToString() const {
 }
 
 string PeerMessageQueue::ToStringUnlocked() const {
+  DCHECK(queue_lock_.is_locked());
   return Substitute("Consensus queue metrics: "
                     "Only Majority Done Ops: $0, In Progress Ops: $1, Cache: $2",
                     metrics_.num_majority_done_ops->value(), metrics_.num_in_progress_ops->value(),
