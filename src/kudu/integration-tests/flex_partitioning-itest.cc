@@ -327,21 +327,21 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
 
 void FlexPartitioningITest::CheckScanWithColumnPredicate(Slice col_name, int lower, int upper) {
   KuduScanner scanner(table_.get());
-  CHECK_OK(scanner.SetTimeoutMillis(60000));
-  CHECK_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
+  ASSERT_OK(scanner.SetTimeoutMillis(60000));
+  ASSERT_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
       col_name, KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(lower))));
-  CHECK_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
+  ASSERT_OK(scanner.AddConjunctPredicate(table_->NewComparisonPredicate(
       col_name, KuduPredicate::LESS_EQUAL, KuduValue::FromInt(upper))));
 
   vector<string> rows;
-  ScanToStrings(&scanner, &rows);
+  ASSERT_OK(ScanToStrings(&scanner, &rows));
   std::sort(rows.begin(), rows.end());
 
   // Manually evaluate the predicate against the data we think we inserted.
   vector<string> expected_rows;
   for (auto& row : inserted_rows_) {
     int32_t val;
-    CHECK_OK(row->GetInt32(col_name, &val));
+    ASSERT_OK(row->GetInt32(col_name, &val));
     if (val >= lower && val <= upper) {
       expected_rows.push_back("(" + row->ToString() + ")");
     }
@@ -357,23 +357,23 @@ void FlexPartitioningITest::CheckScanWithColumnPredicate(Slice col_name, int low
 void FlexPartitioningITest::CheckScanTokensWithColumnPredicate(
     Slice col_name, int lower, int upper, const vector<string>& expected_rows) {
   KuduScanTokenBuilder builder(table_.get());
-  CHECK_OK(builder.SetTimeoutMillis(60000));
+  ASSERT_OK(builder.SetTimeoutMillis(60000));
 
-  CHECK_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
+  ASSERT_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
       col_name, KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(lower))));
-  CHECK_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
+  ASSERT_OK(builder.AddConjunctPredicate(table_->NewComparisonPredicate(
       col_name, KuduPredicate::LESS_EQUAL, KuduValue::FromInt(upper))));
 
   vector<KuduScanToken*> tokens;
   ElementDeleter DeleteTable(&tokens);
-  CHECK_OK(builder.Build(&tokens));
+  ASSERT_OK(builder.Build(&tokens));
 
   vector<string> rows;
   for (auto token : tokens) {
     KuduScanner* scanner_ptr;
-    CHECK_OK(token->IntoKuduScanner(&scanner_ptr));
+    ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
     unique_ptr<KuduScanner> scanner(scanner_ptr);
-    ScanToStrings(scanner.get(), &rows);
+    ASSERT_OK(ScanToStrings(scanner.get(), &rows));
   }
   std::sort(rows.begin(), rows.end());
 
@@ -387,7 +387,7 @@ void FlexPartitioningITest::CheckPKRangeScan(int lower, int upper) {
   ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));
   ASSERT_OK(scanner.AddExclusiveUpperBound(*inserted_rows_[upper]));
   vector<string> rows;
-  ScanToStrings(&scanner, &rows);
+  ASSERT_OK(ScanToStrings(&scanner, &rows));
   std::sort(rows.begin(), rows.end());
 
   vector<string> expected_rows;
@@ -419,7 +419,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
     scanner.SetTimeoutMillis(60000);
     ASSERT_OK(scanner.AddLowerBoundPartitionKeyRaw(partition_key_start));
     ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
   }
   std::sort(rows.begin(), rows.end());
 
@@ -454,7 +454,7 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int
     ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
     ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*inserted_rows_[upper]));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
   }
   std::sort(rows.begin(), rows.end());
 

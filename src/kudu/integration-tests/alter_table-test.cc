@@ -1041,7 +1041,7 @@ TEST_F(AlterTableTest, TestReadHistoryAfterAlter) {
   // Delete then is assigned that timestamp.
   ASSERT_OK(scanner.SetSnapshotRaw(ts1 - 1));
   vector<string> row_strings;
-  client::ScanToStrings(&scanner, &row_strings);
+  ASSERT_OK(client::ScanToStrings(&scanner, &row_strings));
   ASSERT_EQ(1, row_strings.size());
   ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", row_strings[0]);
 }

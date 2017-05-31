@@ -601,7 +601,7 @@ struct MirrorTable {
       ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
       ASSERT_OK(scanner.SetFaultTolerant());
       scanner.SetTimeoutMillis(60000);
-      NO_FATALS(ScanToStrings(&scanner, &rows));
+      ASSERT_OK(ScanToStrings(&scanner, &rows));
     }
 
     // Then get our mock table.

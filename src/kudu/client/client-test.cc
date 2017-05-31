@@ -1346,7 +1346,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     vector<string> rows;
     KuduScanner scanner(table.get());
     ASSERT_OK(scanner.SetFaultTolerant());
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
     ASSERT_EQ(200, rows.size());
     ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello 0",)"
@@ -1361,7 +1361,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ASSERT_OK(scanner.SetFaultTolerant());
     ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
               "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(100))));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
     ASSERT_EQ(100, rows.size());
     ASSERT_EQ(R"((int32 key=200, int32 int_val=400, string string_val="hello 200",)"
@@ -1376,7 +1376,7 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ASSERT_OK(scanner.SetFaultTolerant());
     ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
               "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(199))));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
     ASSERT_EQ(100, rows.size());
     ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello 0",)"
@@ -1391,9 +1391,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ASSERT_OK(scanner.SetFaultTolerant());
     ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
               "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(-1))));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
-    ASSERT_EQ(0, rows.size());
+    ASSERT_TRUE(rows.empty());
   }
 
   { // key >= 120 && key <= 180
@@ -1404,9 +1404,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
               "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(120))));
     ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
               "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(180))));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
-    ASSERT_EQ(0, rows.size());
+    ASSERT_TRUE(rows.empty());
   }
 
   { // key >= 300
@@ -1415,9 +1415,9 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
     ASSERT_OK(scanner.SetFaultTolerant());
     ASSERT_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
               "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(300))));
-    ScanToStrings(&scanner, &rows);
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
 
-    ASSERT_EQ(0, rows.size());
+    ASSERT_TRUE(rows.empty());
   }
 }
 
@@ -1720,7 +1720,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 8));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(8 - 5, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
     EXPECT_EQ(all_rows[7], rows.back());
@@ -1734,7 +1734,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 15));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(15 - 5, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
     EXPECT_EQ(all_rows[14], rows.back());
@@ -1748,7 +1748,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 20));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(20 - 15, rows.size());
     EXPECT_EQ(all_rows[15], rows.front());
     EXPECT_EQ(all_rows[19], rows.back());
@@ -1760,7 +1760,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 5));
     ASSERT_OK(scanner.AddLowerBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(95, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
     EXPECT_EQ(all_rows[99], rows.back());
@@ -1772,7 +1772,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 5));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(5, rows.size());
     EXPECT_EQ(all_rows[0], rows.front());
     EXPECT_EQ(all_rows[4], rows.back());
@@ -1784,7 +1784,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 15));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
-    ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
+    ASSERT_OK(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(15, rows.size());
     EXPECT_EQ(all_rows[0], rows.front());
     EXPECT_EQ(all_rows[14], rows.back());

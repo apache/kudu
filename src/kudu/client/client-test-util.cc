@@ -59,7 +59,7 @@ void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
   // of the retry code below.
   ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
   ASSERT_OK(scanner.SetTimeoutMillis(15000));
-  ScanToStrings(&scanner, row_strings);
+  ASSERT_OK(ScanToStrings(&scanner, row_strings));
 }
 
 int64_t CountTableRows(KuduTable* table) {
@@ -111,15 +111,16 @@ Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count) {
   return Status::OK();
 }
 
-void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
-  ASSERT_OK(scanner->Open());
+Status ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
+  RETURN_NOT_OK(scanner->Open());
   vector<KuduRowResult> rows;
   while (scanner->HasMoreRows()) {
-    ASSERT_OK(scanner->NextBatch(&rows));
+    RETURN_NOT_OK(scanner->NextBatch(&rows));
     for (const KuduRowResult& row : rows) {
       row_strings->push_back(row.ToString());
     }
   }
+  return Status::OK();
 }
 
 KuduSchema KuduSchemaFromSchema(const Schema& schema) {

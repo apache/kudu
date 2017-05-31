@@ -78,7 +78,7 @@ class ClientStressTest : public KuduTest {
     CHECK_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
         "key", client::KuduPredicate::GREATER_EQUAL,
         client::KuduValue::FromInt(start_key))));
-    ScanToStrings(&scanner, &rows);
+    CHECK_OK(ScanToStrings(&scanner, &rows));
   }
 
   virtual bool multi_master() const {
