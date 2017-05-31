@@ -28,9 +28,9 @@ namespace security {
 Status CreateTestHTPasswd(const string& dir,
                           string* passwd_file) {
 
-  // In the format of user:realm:digest. Digest is generated bases on
-  // password 'test'.
-  const char *kHTPasswd = "test:0.0.0.0:e4c02fbc8e89377a942ffc6b1bc3a566";
+  // In the format of user:realm:digest. Digest is generated based on
+  // user/password pair in kTestAuthString
+  const char *kHTPasswd = "test:mydomain.com:8b6f595afb3c037b7bd79b89d9576d06";
   *passwd_file = JoinPathSegments(dir, "test.passwd");
   RETURN_NOT_OK(WriteStringToFile(Env::Default(), kHTPasswd, *passwd_file));
   return Status::OK();

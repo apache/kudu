@@ -89,6 +89,8 @@ Status EasyCurl::DoRequest(const std::string& url,
                                                   post_data->c_str())));
   }
 
+  RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY)));
+
   RETURN_NOT_OK(TranslateError(curl_easy_perform(curl_)));
   long rc; // NOLINT(runtime/int) curl wants a long
   RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &rc)));

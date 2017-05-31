@@ -111,10 +111,16 @@ class PasswdWebserverTest : public WebserverTest {
 
 // Send a HTTP request with no username and password. It should reject
 // the request as the .htpasswd is presented to webserver.
-TEST_F(PasswdWebserverTest, TestPasswd) {
+TEST_F(PasswdWebserverTest, TestPasswdMissing) {
   Status status = curl_.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
                                  &buf_);
   ASSERT_EQ("Remote error: HTTP 401", status.ToString());
+}
+
+TEST_F(PasswdWebserverTest, TestPasswdPresent) {
+  string auth_url = strings::Substitute("http://$0@$1/", security::kTestAuthString,
+                                        addr_.ToString());
+  ASSERT_OK(curl_.FetchURL(auth_url, &buf_));
 }
 
 TEST_F(WebserverTest, TestIndexPage) {
