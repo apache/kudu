@@ -25,6 +25,7 @@
 #include "kudu/consensus/log.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
@@ -54,7 +55,6 @@ class Clock;
 namespace tablet {
 class Tablet;
 class TabletMetadata;
-class TabletStatusListener;
 
 extern const char* kLogRecoveryDir;
 
@@ -69,7 +69,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const std::shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<rpc::ResultTracker>& result_tracker,
                        MetricRegistry* metric_registry,
-                       TabletStatusListener* status_listener,
+                       const scoped_refptr<TabletReplica>& tablet_replica,
                        std::shared_ptr<Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,

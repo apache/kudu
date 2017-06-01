@@ -58,18 +58,7 @@ class LeaderTransactionDriver;
 class ReplicaTransactionDriver;
 class TabletReplica;
 class TabletStatusPB;
-class TabletStatusListener;
 class TransactionDriver;
-
-// Interface by which various tablet-related processes can report back their status
-// to TabletReplica without having to have a circular class dependency, and so that
-// those other classes can be easily tested without constructing a TabletReplica.
-class TabletStatusListener {
- public:
-  virtual ~TabletStatusListener() {}
-
-  virtual void StatusMessage(const std::string& status) = 0;
-};
 
 // A replica in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
@@ -77,8 +66,7 @@ class TabletStatusListener {
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
 class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
-                      public consensus::ReplicaTransactionFactory,
-                      public TabletStatusListener {
+                      public consensus::ReplicaTransactionFactory {
  public:
   TabletReplica(const scoped_refptr<TabletMetadata>& meta,
                 const consensus::RaftPeerPB& local_peer_pb, ThreadPool* apply_pool,
@@ -178,8 +166,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     state_ = BOOTSTRAPPING;
   }
 
-  // Implementation of TabletStatusListener::StatusMessage().
-  void StatusMessage(const std::string& status) override;
+  // Set a user-readable status message about the tablet. This may appear on
+  // the Web UI, for example.
+  void SetStatusMessage(const std::string& status);
 
   // Retrieve the last human-readable status of this tablet replica.
   std::string last_status() const;

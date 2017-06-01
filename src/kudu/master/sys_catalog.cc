@@ -73,7 +73,6 @@ using kudu::log::Log;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
-using kudu::tablet::TabletStatusListener;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using std::function;
@@ -321,7 +320,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                 master_->mem_tracker(),
                                 scoped_refptr<rpc::ResultTracker>(),
                                 metric_registry_,
-                                implicit_cast<TabletStatusListener*>(tablet_replica_.get()),
+                                tablet_replica_,
                                 &tablet,
                                 &log,
                                 tablet_replica_->log_anchor_registry(),

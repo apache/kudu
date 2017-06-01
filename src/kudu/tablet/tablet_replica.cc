@@ -28,9 +28,9 @@
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/mathlimits.h"
@@ -41,13 +41,13 @@
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/rpc_service.h"
 #include "kudu/rpc/service_pool.h"
-#include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
+#include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
@@ -321,7 +321,7 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
       return Status::TimedOut(Substitute("Consensus is not running after waiting for $0. State; $1",
                                          elapsed.ToString(), TabletStatePB_Name(cached_state)));
     }
-    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    SleepFor(MonoDelta::FromMilliseconds(1L << backoff_exp));
     backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
   }
   return Status::OK();
@@ -377,7 +377,7 @@ Status TabletReplica::RunLogGC() {
   return Status::OK();
 }
 
-void TabletReplica::StatusMessage(const std::string& status) {
+void TabletReplica::SetStatusMessage(const std::string& status) {
   std::lock_guard<simple_spinlock> lock(lock_);
   last_status_ = status;
 }

@@ -35,7 +35,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -48,7 +47,6 @@
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
@@ -169,9 +167,9 @@ class TabletBootstrap {
   TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
                   shared_ptr<MemTracker> mem_tracker,
-                  const scoped_refptr<ResultTracker> result_tracker,
+                  const scoped_refptr<ResultTracker>& result_tracker,
                   MetricRegistry* metric_registry,
-                  TabletStatusListener* listener,
+                  const scoped_refptr<TabletReplica>& tablet_replica,
                   const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
 
   // Plays the log segments, rebuilding the portion of the Tablet's soft
@@ -334,16 +332,15 @@ class TabletBootstrap {
   // Return a log prefix string in the standard "T xxx P yyy" format.
   string LogPrefix() const;
 
-  // Report a status message in the WAL as well as update the TabletReplica's
-  // status.
-  void StatusMessage(const string& status);
+  // Log a status message and set the TabletReplica's status as well.
+  void SetStatusMessage(const string& status);
 
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
-  TabletStatusListener* listener_;
+  scoped_refptr<TabletReplica> tablet_replica_;
   gscoped_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<log::Log> log_;
@@ -402,10 +399,10 @@ class TabletBootstrap {
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
 
-void TabletBootstrap::StatusMessage(const string& status) {
+void TabletBootstrap::SetStatusMessage(const string& status) {
   LOG(INFO) << "T " << meta_->tablet_id() << " P " << meta_->fs_manager()->uuid() << ": "
             << status;
-  if (listener_) listener_->StatusMessage(status);
+  if (tablet_replica_) tablet_replica_->SetStatusMessage(status);
 }
 
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
@@ -413,7 +410,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<ResultTracker>& result_tracker,
                        MetricRegistry* metric_registry,
-                       TabletStatusListener* listener,
+                       const scoped_refptr<TabletReplica>& tablet_replica,
                        shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
@@ -421,7 +418,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", meta->tablet_id());
   TabletBootstrap bootstrap(meta, clock, mem_tracker, result_tracker,
-                            metric_registry, listener, log_anchor_registry);
+                            metric_registry, tablet_replica, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -449,15 +446,16 @@ static string DebugInfo(const string& tablet_id,
 TabletBootstrap::TabletBootstrap(
     const scoped_refptr<TabletMetadata>& meta,
     const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
-    const scoped_refptr<ResultTracker> result_tracker,
-    MetricRegistry* metric_registry, TabletStatusListener* listener,
+    const scoped_refptr<ResultTracker>& result_tracker,
+    MetricRegistry* metric_registry,
+    const scoped_refptr<TabletReplica>& tablet_replica,
     const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : meta_(meta),
       clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
       result_tracker_(result_tracker),
       metric_registry_(metric_registry),
-      listener_(listener),
+      tablet_replica_(tablet_replica),
       log_anchor_registry_(log_anchor_registry) {}
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
@@ -519,7 +517,7 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                               TabletDataState_Name(tablet_data_state));
   }
 
-  StatusMessage("Bootstrap starting.");
+  SetStatusMessage("Bootstrap starting.");
 
   if (VLOG_IS_ON(1)) {
     TabletSuperBlockPB super_block;
@@ -572,7 +570,7 @@ void TabletBootstrap::FinishBootstrap(const string& message,
                                       scoped_refptr<log::Log>* rebuilt_log,
                                       shared_ptr<Tablet>* rebuilt_tablet) {
   tablet_->MarkFinishedBootstrapping();
-  StatusMessage(message);
+  SetStatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->swap(log_);
 }
@@ -1159,21 +1157,21 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
 
       auto now = MonoTime::Now();
       if (now - last_status_update > kStatusUpdateInterval) {
-        StatusMessage(Substitute("Bootstrap replaying log segment $0/$1 "
-                                 "($2/$3 this segment, stats: $4)",
-                                 segment_count + 1, log_reader_->num_segments(),
-                                 HumanReadableNumBytes::ToString(reader.offset()),
-                                 HumanReadableNumBytes::ToString(reader.read_up_to_offset()),
-                                 stats_.ToString()));
+        SetStatusMessage(Substitute("Bootstrap replaying log segment $0/$1 "
+                                    "($2/$3 this segment, stats: $4)",
+                                    segment_count + 1, log_reader_->num_segments(),
+                                    HumanReadableNumBytes::ToString(reader.offset()),
+                                    HumanReadableNumBytes::ToString(reader.read_up_to_offset()),
+                                    stats_.ToString()));
         last_status_update = now;
       }
     }
 
-    StatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
-                             "Stats: $2. Pending: $3 replicates",
-                             segment_count + 1, log_reader_->num_segments(),
-                             stats_.ToString(),
-                             state.pending_replicates.size()));
+    SetStatusMessage(Substitute("Bootstrap replayed $0/$1 log segments. "
+                                "Stats: $2. Pending: $3 replicates",
+                                segment_count + 1, log_reader_->num_segments(),
+                                stats_.ToString(),
+                                state.pending_replicates.size()));
     segment_count++;
   }
 

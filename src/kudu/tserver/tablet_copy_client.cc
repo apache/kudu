@@ -92,7 +92,7 @@ using tablet::RowSetDataPB;
 using tablet::TabletDataState;
 using tablet::TabletDataState_Name;
 using tablet::TabletMetadata;
-using tablet::TabletStatusListener;
+using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
 
 TabletCopyClient::TabletCopyClient(std::string tablet_id,
@@ -103,7 +103,7 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       messenger_(std::move(messenger)),
       state_(kInitialized),
       replace_tombstoned_tablet_(false),
-      status_listener_(nullptr),
+      tablet_replica_(nullptr),
       session_idle_timeout_millis_(0),
       start_time_micros_(0) {}
 
@@ -267,10 +267,10 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   return Status::OK();
 }
 
-Status TabletCopyClient::FetchAll(TabletStatusListener* status_listener) {
+Status TabletCopyClient::FetchAll(const scoped_refptr<TabletReplica>& tablet_replica) {
   CHECK_EQ(kStarted, state_);
 
-  status_listener_ = status_listener;
+  tablet_replica_ = tablet_replica;
 
   // Download all the files (serially, for now, but in parallel in the future).
   RETURN_NOT_OK(DownloadBlocks());
@@ -290,7 +290,7 @@ Status TabletCopyClient::Finish() {
   // to TABLET_DATA_READY, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
   LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
-  UpdateStatusMessage("Replacing tablet superblock");
+  SetStatusMessage("Replacing tablet superblock");
   superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
   RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
 
@@ -322,7 +322,7 @@ Status TabletCopyClient::Abort() {
       TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_TOMBSTONED, boost::none),
       LogPrefix() + "Failed to tombstone tablet after aborting tablet copy");
 
-  UpdateStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));
+  SetStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));
   return Status::OK();
 }
 
@@ -343,9 +343,9 @@ Status TabletCopyClient::UnwindRemoteError(const Status& status,
                           StatusFromPB(error.status()).ToString()));
 }
 
-void TabletCopyClient::UpdateStatusMessage(const string& message) {
-  if (status_listener_ != nullptr) {
-    status_listener_->StatusMessage(Substitute("Tablet Copy: $0", message));
+void TabletCopyClient::SetStatusMessage(const string& message) {
+  if (tablet_replica_ != nullptr) {
+    tablet_replica_->SetStatusMessage(Substitute("Tablet Copy: $0", message));
   }
 }
 
@@ -385,8 +385,8 @@ Status TabletCopyClient::DownloadWALs() {
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_segments << " WAL segments...";
   uint64_t counter = 0;
   for (uint64_t seg_seqno : wal_seqnos_) {
-    UpdateStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
-                                   seg_seqno, counter + 1, num_segments));
+    SetStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
+                                seg_seqno, counter + 1, num_segments));
     RETURN_NOT_OK(DownloadWAL(seg_seqno));
     ++counter;
   }
@@ -527,9 +527,9 @@ Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                                  int* block_count,
                                                  BlockIdPB* dest_block_id) {
   BlockId old_block_id(BlockId::FromPB(src_block_id));
-  UpdateStatusMessage(Substitute("Downloading block $0 ($1/$2)",
-                                 old_block_id.ToString(),
-                                 *block_count + 1, num_blocks));
+  SetStatusMessage(Substitute("Downloading block $0 ($1/$2)",
+                              old_block_id.ToString(),
+                              *block_count + 1, num_blocks));
   BlockId new_block_id;
   RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id),
       "Unable to download block with id " + old_block_id.ToString());

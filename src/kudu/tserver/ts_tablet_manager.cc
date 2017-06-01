@@ -148,8 +148,6 @@ using tablet::TABLET_DATA_TOMBSTONED;
 using tablet::TabletDataState;
 using tablet::TabletMetadata;
 using tablet::TabletReplica;
-using tablet::TabletStatusListener;
-using tablet::TabletStatusPB;
 using tserver::TabletCopyClient;
 
 TSTabletManager::TSTabletManager(FsManager* fs_manager,
@@ -564,7 +562,7 @@ void TSTabletManager::RunTabletCopy(
   // From this point onward, we do not notify the caller about progress or success.
 
   // Download all of the remote files.
-  Status s = tc_client.FetchAll(implicit_cast<TabletStatusListener*>(replica.get()));
+  Status s = tc_client.FetchAll(replica);
   if (!s.ok()) {
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
                                          << kSrcPeerInfo << ": " << s.ToString();
@@ -680,7 +678,7 @@ Status TSTabletManager::DeleteTablet(
     return s;
   }
 
-  replica->StatusMessage("Deleted tablet blocks from disk");
+  replica->SetStatusMessage("Deleted tablet blocks from disk");
 
   // We only remove DELETED tablets from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
@@ -782,7 +780,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
                         server_->mem_tracker(),
                         server_->result_tracker(),
                         metric_registry_,
-                        implicit_cast<TabletStatusListener*>(replica.get()),
+                        replica,
                         &tablet,
                         &log,
                         replica->log_anchor_registry(),

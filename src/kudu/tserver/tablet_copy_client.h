@@ -50,7 +50,6 @@ class RpcController;
 namespace tablet {
 class TabletMetadata;
 class TabletReplica;
-class TabletStatusListener;
 class TabletSuperBlockPB;
 } // namespace tablet
 
@@ -98,7 +97,7 @@ class TabletCopyClient {
 
   // Runs a "full" tablet copy, copying the physical layout of a tablet
   // from the leader of the specified consensus configuration.
-  Status FetchAll(tablet::TabletStatusListener* status_listener);
+  Status FetchAll(const scoped_refptr<tablet::TabletReplica>& tablet_replica);
 
   // After downloading all files successfully, write out the completed
   // replacement superblock. Must be called after Start() and FetchAll().
@@ -126,9 +125,9 @@ class TabletCopyClient {
 
   static Status UnwindRemoteError(const Status& status, const rpc::RpcController& controller);
 
-  // Update the bootstrap StatusListener with a message.
+  // Set a new status message on the TabletReplica.
   // The string "TabletCopy: " will be prepended to each message.
-  void UpdateStatusMessage(const std::string& message);
+  void SetStatusMessage(const std::string& message);
 
   // End the tablet copy session.
   Status EndRemoteSession();
@@ -205,7 +204,7 @@ class TabletCopyClient {
   // bootstrapping a new replica (rather than replacing an old one).
   std::unique_ptr<consensus::ConsensusMetadata> cmeta_;
 
-  tablet::TabletStatusListener* status_listener_;
+  scoped_refptr<tablet::TabletReplica> tablet_replica_;
   std::shared_ptr<TabletCopyServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;

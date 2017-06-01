@@ -60,7 +60,6 @@ namespace tablet {
 class TabletMetadata;
 class TabletReplica;
 class TabletStatusPB;
-class TabletStatusListener;
 }
 
 namespace tserver {
