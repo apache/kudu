@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action.h"
 
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,6 +39,7 @@
 
 DECLARE_string(columns);
 
+using std::cout;
 using std::string;
 using std::unique_ptr;
 
@@ -136,7 +138,7 @@ Status ListTServers(const RunnerContext& context) {
     columns.emplace_back(std::move(values));
   }
 
-  RETURN_NOT_OK(PrintTable(headers, columns));
+  RETURN_NOT_OK(PrintTable(headers, columns, cout));
   return Status::OK();
 }
 

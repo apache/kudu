@@ -18,6 +18,7 @@
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -107,7 +108,8 @@ Status SetServerFlag(const std::string& address, uint16_t default_port,
 
 // Prints a table.
 Status PrintTable(const std::vector<std::string>& headers,
-                  const std::vector<std::vector<std::string>>& columns);
+                  const std::vector<std::vector<std::string>>& columns,
+                  std::ostream& out);
 
 // Wrapper around a Kudu client which allows calling proxy methods on the leader
 // master.

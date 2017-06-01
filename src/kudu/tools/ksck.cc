@@ -23,6 +23,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <sstream>
 
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
@@ -32,6 +33,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tools/color.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
@@ -66,6 +68,7 @@ using std::right;
 using std::setw;
 using std::shared_ptr;
 using std::string;
+using std::stringstream;
 using std::unordered_map;
 using strings::Substitute;
 
@@ -600,7 +603,7 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
 
 namespace {
 
-// A struct in which to consolidate the state of each replica for easier analysis.
+// A struct consolidating the state of each replica, for easier analysis.
 struct ReplicaInfo {
   KsckTabletReplica* replica;
   KsckTabletServer* ts = nullptr;
@@ -609,103 +612,22 @@ struct ReplicaInfo {
   boost::optional<KsckConsensusState> consensus_state;
 };
 
-// Formatting constants.
-const char col_pad[] = "  ";
-const int peer_width = 4;
-
-// Print a cell of the consensus matrix.
-void PrintCell(const string& val, size_t width) {
-  Out() << setw(width) << left << val;
-}
-
-// Print a row (one config) of the consensus matrix.
-void PrintConfig(const map<string, char>& peer_uuid_mapping,
-                 const string& name,
-                 const boost::optional<KsckConsensusState>& config,
-                 const vector<size_t>& column_widths) {
-  Out() << col_pad << setw(column_widths[0]) << right << Substitute("$0:", name);
-  Out() << col_pad;
-  if (!config) {
-    Out() << "[no config retrieved]" << endl;
-    return;
-  }
-  for (const auto& entry : peer_uuid_mapping) {
-    if (!ContainsKey(config->peer_uuids, entry.first)) {
-      PrintCell("", peer_width);
+// Formats the peers known and unknown to 'config' using labels from 'peer_uuid_mapping'.
+string format_peers(const map<string, char>& peer_uuid_mapping, const KsckConsensusState& config) {
+  stringstream voters;
+  int peer_width = 4;
+  for (const auto &entry : peer_uuid_mapping) {
+    if (!ContainsKey(config.peer_uuids, entry.first)) {
+      voters << setw(peer_width) << left << "";
       continue;
     }
-    if (config->leader_uuid && config->leader_uuid == entry.first) {
-      PrintCell(Substitute("$0*", entry.second), peer_width);
+    if (config.leader_uuid && config.leader_uuid == entry.first) {
+      voters << setw(peer_width) << left << Substitute("$0*", entry.second);
     } else {
-      PrintCell(Substitute("$0", entry.second), peer_width);
+      voters << setw(peer_width) << left << Substitute("$0", entry.second);
     }
   }
-
-  string term_str = "";
-  if (config->term) {
-    term_str = Substitute("$0", config->term.get());
-  }
-  Out() << col_pad << setw(column_widths[2]) << left << term_str;
-
-  string opid_str = "";
-  if (config->opid_index) {
-    opid_str = Substitute("$0", config->opid_index.get());
-  }
-  Out() << col_pad << setw(column_widths[3]) << left << opid_str;
-
-  string committed_str = "";
-  switch (config->type) {
-    case KsckConsensusConfigType::PENDING:
-      committed_str = "No"; break;
-    default:
-      committed_str = "Yes"; break;
-  }
-  Out() << col_pad << setw(column_widths[4]) << left << committed_str;
-  Out() << endl;
-}
-
-void PrintConsensusMatrix(const map<string, char>& peer_uuid_mapping,
-                          const KsckConsensusState& master_config,
-                          const vector<ReplicaInfo>& replica_infos) {
-  const vector<string> columns{"Host", "Voters", "Current term", "Config index", "Committed?"};
-  const string master_label = "config from master";
-
-  // Compute the column widths.
-  vector<size_t> column_widths{master_label.size() + 1, // + 1 for the :
-                               peer_width * peer_uuid_mapping.size(),
-                               columns[2].size(),
-                               columns[3].size(),
-                               columns[4].size(),
-  };
-
-  // Print the header rows.
-  const string col_pad = "  ";
-  Out() << col_pad;
-  for (int i = 0; i < columns.size(); i++) {
-    Out() << left << setw(column_widths[i]) << columns[i];
-    if (i < columns.size() - 1) {
-      Out() << col_pad;
-    }
-  }
-  Out() << endl;
-  Out() << col_pad;
-  for (int i = 0; i < column_widths.size(); i++) {
-    Out() << string(column_widths[i], '-');
-    if (i < column_widths.size() - 1) {
-      Out() << col_pad;
-    }
-  }
-  Out() << endl;
-
-  // Print the master row, then the tserver rows.
-  PrintConfig(peer_uuid_mapping, master_label, master_config, column_widths);
-  for (const auto& replica : replica_infos) {
-    char label = FindOrDie(peer_uuid_mapping, replica.ts->uuid());
-    PrintConfig(peer_uuid_mapping,
-                string(1, label),
-                replica.consensus_state,
-                column_widths);
-  }
+  return voters.str();
 }
 
 } // anonymous namespace
@@ -907,8 +829,40 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
       Out() << "  " << entry.second << " = " << entry.first << endl;
     }
     Out() << endl;
-    Out() << "  The consensus matrix is:" << endl;
-    PrintConsensusMatrix(peer_uuid_mapping, master_config, replica_infos);
+    Out() << "The consensus matrix is:" << endl;
+
+    // Prepare the header and columns for PrintTable.
+    const vector<string> headers{ "Config source", "Voters", "Current term",
+                                  "Config index", "Committed?" };
+
+    // Seed the columns with the master info.
+    vector<string> sources{"master"};
+    vector<string> voters{format_peers(peer_uuid_mapping, master_config)};
+    vector<string> terms{""};
+    vector<string> indexes{""};
+    vector<string> committed{"Yes"};
+
+    // Fill out the columns with info from the replicas.
+    for (const auto& replica : replica_infos) {
+      char label = FindOrDie(peer_uuid_mapping, replica.ts->uuid());
+      sources.push_back(string(1, label));
+      if (!replica.consensus_state) {
+        voters.push_back("[config not available]");
+        terms.push_back("");
+        indexes.push_back("");
+        committed.push_back("");
+        continue;
+      }
+      voters.push_back(format_peers(peer_uuid_mapping, replica.consensus_state.get()));
+      terms.push_back(replica.consensus_state->term ?
+                      std::to_string(replica.consensus_state->term.get()) : "");
+      indexes.push_back(replica.consensus_state->opid_index ?
+                        std::to_string(replica.consensus_state->opid_index.get()) : "");
+      committed.push_back(replica.consensus_state->type == KsckConsensusConfigType::PENDING ?
+                          "No" : "Yes");
+    }
+    vector<vector<string>> columns{ sources, voters, terms, indexes, committed };
+    PrintTable(headers, columns, Out());
   }
 
   return result;
