@@ -110,6 +110,7 @@ using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;
 using std::cout;
 using std::endl;
+using std::ostream;
 using std::setfill;
 using std::setw;
 using std::shared_ptr;
@@ -381,7 +382,9 @@ namespace {
 //  dd23284d3a334f1a8306c19d89c1161f | 130.rack1.dc1.example.com:7050 | 1492596704536543
 //  d8009e07d82b4e66a7ab50f85e60bc30 | 136.rack1.dc1.example.com:7050 | 1492596696557549
 //  c108a85a68504c2bb9f49e4ee683d981 | 128.rack1.dc1.example.com:7050 | 1492596646623301
-void PrettyPrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+void PrettyPrintTable(const vector<string>& headers,
+                      const vector<vector<string>>& columns,
+                      ostream& out) {
   CHECK_EQ(headers.size(), columns.size());
   if (headers.empty()) return;
   size_t num_columns = headers.size();
@@ -398,32 +401,32 @@ void PrettyPrintTable(const vector<string>& headers, const vector<vector<string>
   // Print the header row.
   for (int col = 0; col < num_columns; col++) {
     int padding = widths[col] - headers[col].size();
-    cout << setw(padding / 2) << "" << " " << headers[col];
-    if (col != num_columns - 1) cout << setw((padding + 1) / 2) << "" << " |";
+    out << setw(padding / 2) << "" << " " << headers[col];
+    if (col != num_columns - 1) out << setw((padding + 1) / 2) << "" << " |";
   }
-  cout << endl;
+  out << endl;
 
   // Print the separator row.
-  cout << setfill('-');
+  out << setfill('-');
   for (int col = 0; col < num_columns; col++) {
-    cout << setw(widths[col] + 2) << "";
-    if (col != num_columns - 1) cout << "+";
+    out << setw(widths[col] + 2) << "";
+    if (col != num_columns - 1) out << "+";
   }
-  cout << endl;
+  out << endl;
 
   // Print the data rows.
-  cout << setfill(' ');
+  out << setfill(' ');
   int num_rows = columns.empty() ? 0 : columns[0].size();
   for (int row = 0; row < num_rows; row++) {
     for (int col = 0; col < num_columns; col++) {
       const auto& value = columns[col][row];
-      cout << " " << value;
+      out << " " << value;
       if (col != num_columns - 1) {
         size_t padding = widths[col] - value.size();
-        cout << setw(padding) << "" << " |";
+        out << setw(padding) << "" << " |";
       }
     }
-    cout << endl;
+    out << endl;
   }
 }
 
@@ -431,7 +434,9 @@ void PrettyPrintTable(const vector<string>& headers, const vector<vector<string>
 //
 // The table is formatted as an array of objects. Each object corresponds
 // to a row whose fields are the column values.
-void JsonPrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+void JsonPrintTable(const vector<string>& headers,
+                    const vector<vector<string>>& columns,
+                    ostream& out) {
   std::ostringstream stream;
   JsonWriter writer(&stream, JsonWriter::COMPACT);
 
@@ -449,7 +454,7 @@ void JsonPrintTable(const vector<string>& headers, const vector<vector<string>>&
   }
   writer.EndArray();
 
-  cout << stream.str() << endl;
+  out << stream.str() << endl;
 }
 
 // Print the table using the provided separator. For example, with a comma
@@ -460,32 +465,34 @@ void JsonPrintTable(const vector<string>& headers, const vector<vector<string>>&
 // dd23284d3a334f1a8306c19d89c1161f,130.rack1.dc1.example.com:7050,1492596704536543
 // d8009e07d82b4e66a7ab50f85e60bc30,136.rack1.dc1.example.com:7050,1492596696557549
 // c108a85a68504c2bb9f49e4ee683d981,128.rack1.dc1.example.com:7050,1492596646623301
-void PrintTable(const vector<vector<string>>& columns, const string& separator) {
+void PrintTable(const vector<vector<string>>& columns, const string& separator, ostream& out) {
   // TODO(dan): proper escaping of string values.
   int num_columns = columns.size();
   int num_rows = columns.empty() ? 0 : columns[0].size();
   for (int row = 0; row < num_rows; row++) {
       for (int col = 0; col < num_columns; col++) {
-        cout << columns[col][row];
-        if (col != num_columns - 1) cout << separator;
+        out << columns[col][row];
+        if (col != num_columns - 1) out << separator;
       }
-      cout << endl;
+      out << endl;
   }
 }
 
 } // anonymous namespace
 
-Status PrintTable(const vector<string>& headers, const vector<vector<string>>& columns) {
+Status PrintTable(const vector<string>& headers,
+                  const vector<vector<string>>& columns,
+                  ostream& out) {
   if (boost::iequals(FLAGS_format, "pretty")) {
-    PrettyPrintTable(headers, columns);
+    PrettyPrintTable(headers, columns, out);
   } else if (boost::iequals(FLAGS_format, "space")) {
-    PrintTable(columns, " ");
+    PrintTable(columns, " ", out);
   } else if (boost::iequals(FLAGS_format, "tsv")) {
-    PrintTable(columns, "	");
+    PrintTable(columns, "	", out);
   } else if (boost::iequals(FLAGS_format, "csv")) {
-    PrintTable(columns, ",");
+    PrintTable(columns, ",", out);
   } else if (boost::iequals(FLAGS_format, "json")) {
-    JsonPrintTable(headers, columns);
+    JsonPrintTable(headers, columns, out);
   } else {
     return Status::InvalidArgument("unknown format (--format)", FLAGS_format);
   }

@@ -17,6 +17,7 @@
 
 #include "kudu/tools/tool_action.h"
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -42,6 +43,7 @@ namespace kudu {
 using master::ListMastersRequestPB;
 using master::ListMastersResponsePB;
 using master::MasterServiceProxy;
+using std::cout;
 using std::string;
 using std::unique_ptr;
 
@@ -138,7 +140,7 @@ Status ListMasters(const RunnerContext& context) {
     columns.emplace_back(std::move(values));
   }
 
-  RETURN_NOT_OK(PrintTable(headers, columns));
+  RETURN_NOT_OK(PrintTable(headers, columns, cout));
   return Status::OK();
 }
 

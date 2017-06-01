@@ -406,12 +406,12 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
   ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      "  Host                 Voters            Current term  Config index  Committed?\n"
-      "  -------------------  ----------------  ------------  ------------  ----------\n"
-      "  config from master:  A*  B   C                                     Yes       \n"
-      "                   A:  A*  B   C   D     0                           Yes       \n"
-      "                   B:  A*  B   C         0                           Yes       \n"
-      "                   C:  A*  B   C         0                           Yes");
+      " Config source |      Voters      | Current term | Config index | Committed?\n"
+      "---------------+------------------+--------------+--------------+------------\n"
+      " master        | A*  B   C        |              |              | Yes\n"
+      " A             | A*  B   C   D    | 0            |              | Yes\n"
+      " B             | A*  B   C        | 0            |              | Yes\n"
+      " C             | A*  B   C        | 0            |              | Yes");
 }
 
 TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
@@ -427,12 +427,12 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
   ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      "  Host                 Voters        Current term  Config index  Committed?\n"
-      "  -------------------  ------------  ------------  ------------  ----------\n"
-      "  config from master:  A*  B   C                                 Yes       \n"
-      "                   A:  A*  B         0                           Yes       \n"
-      "                   B:  A*  B   C     0                           Yes       \n"
-      "                   C:  A*  B   C     0                           Yes");
+      " Config source |    Voters    | Current term | Config index | Committed?\n"
+      "---------------+--------------+--------------+--------------+------------\n"
+      " master        | A*  B   C    |              |              | Yes\n"
+      " A             | A*  B        | 0            |              | Yes\n"
+      " B             | A*  B   C    | 0            |              | Yes\n"
+      " C             | A*  B   C    | 0            |              | Yes");
 }
 
 TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
@@ -448,12 +448,12 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
   ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      "  Host                 Voters        Current term  Config index  Committed?\n"
-      "  -------------------  ------------  ------------  ------------  ----------\n"
-      "  config from master:  A*  B   C                                 Yes       \n"
-      "                   A:  A   B*  C     0                           Yes       \n"
-      "                   B:  A*  B   C     0                           Yes       \n"
-      "                   C:  A*  B   C     0                           Yes");
+      " Config source |    Voters    | Current term | Config index | Committed?\n"
+      "---------------+--------------+--------------+--------------+------------\n"
+      " master        | A*  B   C    |              |              | Yes\n"
+      " A             | A   B*  C    | 0            |              | Yes\n"
+      " B             | A*  B   C    | 0            |              | Yes\n"
+      " C             | A*  B   C    | 0            |              | Yes");
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
