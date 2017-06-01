@@ -129,6 +129,8 @@ namespace {
 const char* const kSeparatorLine =
     "----------------------------------------------------------------------\n";
 
+const char* const kTermArg = "term";
+
 string Indent(int indent) {
   return string(indent, ' ');
 }
@@ -224,6 +226,19 @@ Status PrintReplicaUuids(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status BackupConsensusMetadata(FsManager* fs_manager,
+                               const string& tablet_id) {
+  Env* env = fs_manager->env();
+  string cmeta_filename = fs_manager->GetConsensusMetadataPath(tablet_id);
+  string backup_filename = Substitute("$0.pre_rewrite.$1", cmeta_filename, env->NowMicros());
+  WritableFileOptions opts;
+  opts.mode = Env::CREATE_NON_EXISTING;
+  opts.sync_on_close = true;
+  RETURN_NOT_OK(env_util::CopyFile(env, cmeta_filename, backup_filename, opts));
+  LOG(INFO) << "Backed up old consensus metadata to " << backup_filename;
+  return Status::OK();
+}
+
 Status RewriteRaftConfig(const RunnerContext& context) {
   // Parse tablet ID argument.
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
@@ -246,15 +261,7 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   Env* env = Env::Default();
   FsManager fs_manager(env, FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
-  string cmeta_filename = fs_manager.GetConsensusMetadataPath(tablet_id);
-  string backup_filename = Substitute("$0.pre_rewrite.$1",
-                                      cmeta_filename, env->NowMicros());
-  WritableFileOptions opts;
-  opts.mode = Env::CREATE_NON_EXISTING;
-  opts.sync_on_close = true;
-  RETURN_NOT_OK(env_util::CopyFile(env, cmeta_filename,
-                                   backup_filename, opts));
-  LOG(INFO) << "Backed up current config to " << backup_filename;
+  RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
 
   // Load the cmeta file and rewrite the raft config.
   unique_ptr<ConsensusMetadata> cmeta;
@@ -273,6 +280,41 @@ Status RewriteRaftConfig(const RunnerContext& context) {
     new_config.add_peers()->CopyFrom(new_peer);
   }
   cmeta->set_committed_config(new_config);
+  return cmeta->Flush();
+}
+
+Status SetRaftTerm(const RunnerContext& context) {
+  // Parse tablet ID argument.
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& new_term_str = FindOrDie(context.required_args, kTermArg);
+  int64_t new_term;
+  if (!safe_strto64(new_term_str, &new_term) || new_term <= 0) {
+    return Status::InvalidArgument("invalid term");
+  }
+
+  // Load the current metadata from disk and verify that the intended operation is safe.
+  Env* env = Env::Default();
+  FsManager fs_manager(env, FsManagerOpts());
+  RETURN_NOT_OK(fs_manager.Open());
+  // Load the cmeta file and rewrite the raft config.
+  unique_ptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
+                                        fs_manager.uuid(), &cmeta));
+  if (new_term <= cmeta->current_term()) {
+    return Status::InvalidArgument(Substitute(
+        "specified term $0 must be higher than current term $1",
+        new_term, cmeta->current_term()));
+  }
+
+  // Make a copy of the old file before rewriting it.
+  RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
+
+  // Update and flush.
+  cmeta->set_current_term(new_term);
+  // The 'voted_for' field is relative to the term stored in 'current_term'. So, if we
+  // have changed to a new term, we need to also clear any previous vote record that was
+  // associated with the old term.
+  cmeta->clear_voted_for();
   return cmeta->Flush();
 }
 
@@ -758,12 +800,23 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("fs_data_dirs")
       .Build();
 
+  unique_ptr<Action> set_term =
+      ActionBuilder("set_term", &SetRaftTerm)
+      .Description("Bump the current term stored in consensus metadata")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredParameter({ kTermArg, "the new raft term (must be greater "
+        "than the current term)" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
+
   unique_ptr<Mode> cmeta =
       ModeBuilder("cmeta")
       .Description("Operate on a local tablet replica's consensus "
         "metadata file")
       .AddAction(std::move(print_replica_uuids))
       .AddAction(std::move(rewrite_raft_config))
+      .AddAction(std::move(set_term))
       .Build();
 
   unique_ptr<Action> copy_from_remote =
@@ -806,4 +859,3 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
 
 } // namespace tools
 } // namespace kudu
-
