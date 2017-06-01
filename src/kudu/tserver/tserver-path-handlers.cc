@@ -253,7 +253,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                                  .PartitionDebugString(replica->tablet_metadata()->partition(),
                                                        replica->tablet_metadata()->schema());
 
-      scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
+      scoped_refptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
       (*output) << Substitute(
           // Table name, tablet id, partition
           "<tr><td>$0</td><td>$1</td><td>$2</td>"
@@ -456,7 +456,7 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
   string id;
   scoped_refptr<TabletReplica> replica;
   if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
-  scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
+  scoped_refptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (!consensus) {
     *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
     return;

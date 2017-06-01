@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/pending_rounds.h"
 
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -222,10 +222,10 @@ namespace master {
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
 using cfile::TypeEncodingInfo;
-using consensus::Consensus;
 using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
+using consensus::RaftConsensus;
 using consensus::RaftPeerPB;
 using consensus::StartTabletCopyRequestPB;
 using consensus::kMinimumTerm;
@@ -747,7 +747,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   const string& uuid = master_->fs_manager()->uuid();
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
-        Substitute("Node $0 not leader. Consensus state: $1",
+        Substitute("Node $0 not leader. Raft Consensus state: $1",
                     uuid, SecureShortDebugString(cstate)));
   }
 
@@ -925,7 +925,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     // Hack to block this function until InitSysCatalogAsync() is finished.
     shared_lock<LockType> l(lock_);
   }
-  const Consensus* consensus = sys_catalog_->tablet_replica()->consensus();
+  const RaftConsensus* consensus = sys_catalog_->tablet_replica()->consensus();
   const int64_t term_before_wait = consensus->ConsensusState().current_term();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
@@ -967,7 +967,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     // task. If the error is considered fatal, LOG(FATAL) is called.
     const auto check = [this](
         std::function<Status()> func,
-        const Consensus& consensus,
+        const RaftConsensus& consensus,
         int64_t start_term,
         const char* op_description) {
 
@@ -1101,7 +1101,7 @@ bool CatalogManager::IsInitialized() const {
 }
 
 RaftPeerPB::Role CatalogManager::Role() const {
-  scoped_refptr<consensus::Consensus> consensus;
+  scoped_refptr<consensus::RaftConsensus> consensus;
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     if (state_ == kRunning) {
@@ -4164,7 +4164,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   const string& uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     leader_status_ = Status::IllegalState(
-        Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
+        Substitute("Not the leader. Local UUID: $0, Raft Consensus state: $1",
                    uuid, SecureShortDebugString(cstate)));
     return;
   }

@@ -96,7 +96,6 @@ target_link_libraries(log
   consensus_metadata_proto)
 
 set(CONSENSUS_SRCS
-  consensus.cc
   consensus_meta.cc
   consensus_peers.cc
   consensus_queue.cc

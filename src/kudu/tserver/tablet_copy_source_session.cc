@@ -120,12 +120,12 @@ Status TabletCopySourceSession::Init() {
   // We do this after snapshotting the log to avoid a scenario where the latest
   // entry in the log has a term higher than the term stored in the consensus
   // metadata, which will results in a CHECK failure on RaftConsensus init.
-  scoped_refptr<consensus::Consensus> consensus = tablet_replica_->shared_consensus();
+  scoped_refptr<consensus::RaftConsensus> consensus = tablet_replica_->shared_consensus();
   if (!consensus) {
     tablet::TabletStatePB tablet_state = tablet_replica_->state();
     return Status::IllegalState(Substitute(
         "Unable to initialize tablet copy session for tablet $0. "
-        "Consensus is not available. Tablet state: $1 ($2)",
+        "Raft Consensus is not available. Tablet state: $1 ($2)",
         tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
   }
   initial_cstate_ = consensus->ConsensusState();

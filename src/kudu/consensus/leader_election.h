@@ -23,8 +23,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"

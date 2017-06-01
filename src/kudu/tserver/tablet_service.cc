@@ -28,7 +28,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
@@ -103,7 +103,6 @@ DECLARE_int32(tablet_history_max_age_sec);
 using google::protobuf::RepeatedPtrField;
 using kudu::consensus::ChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigResponsePB;
-using kudu::consensus::Consensus;
 using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::GetLastOpIdRequestPB;
@@ -113,6 +112,7 @@ using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::UnsafeChangeConfigRequestPB;
 using kudu::consensus::UnsafeChangeConfigResponsePB;
+using kudu::consensus::RaftConsensus;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::StartTabletCopyRequestPB;
@@ -214,10 +214,10 @@ template<class RespClass>
 bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
                            RespClass* resp,
                            rpc::RpcContext* context,
-                           scoped_refptr<Consensus>* consensus) {
+                           scoped_refptr<RaftConsensus>* consensus) {
   *consensus = replica->shared_consensus();
   if (!*consensus) {
-    Status s = Status::ServiceUnavailable("Consensus unavailable. Tablet not running");
+    Status s = Status::ServiceUnavailable("Raft Consensus unavailable. Tablet not running");
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return false;
@@ -855,8 +855,8 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
 
   replica->permanent_uuid();
 
-  // Submit the update directly to the TabletReplica's Consensus instance.
-  scoped_refptr<Consensus> consensus;
+  // Submit the update directly to the TabletReplica's RaftConsensus instance.
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->Update(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -886,7 +886,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   }
 
   // Submit the vote request directly to the consensus instance.
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->RequestVote(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -911,7 +911,7 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
 
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   boost::optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
@@ -935,7 +935,7 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
     return;
   }
 
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   TabletServerErrorPB::Code error_code;
   Status s = consensus->UnsafeChangeConfig(*req, &error_code);
@@ -966,11 +966,11 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
     return;
   }
 
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->StartElection(
-      consensus::Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
-      consensus::Consensus::EXTERNAL_REQUEST);
+      consensus::RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
+      consensus::RaftConsensus::EXTERNAL_REQUEST);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -992,7 +992,7 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
     return;
   }
 
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->StepDown(resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -1022,7 +1022,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }
-  scoped_refptr<Consensus> consensus;
+  scoped_refptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   if (PREDICT_FALSE(req->opid_type() == consensus::UNKNOWN_OPID_TYPE)) {
     HandleUnknownError(Status::InvalidArgument("Invalid opid_type specified to GetLastOpId()"),
@@ -1057,7 +1057,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
       continue;
     }
 
-    scoped_refptr<Consensus> consensus(replica->shared_consensus());
+    scoped_refptr<RaftConsensus> consensus(replica->shared_consensus());
     if (!consensus) {
       continue;
     }

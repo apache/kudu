@@ -36,10 +36,6 @@ struct DecodedRowOperation;
 class ConstContiguousRow;
 class RowwiseRowBlockPB;
 
-namespace consensus {
-class Consensus;
-}
-
 namespace tserver {
 class WriteRequestPB;
 class WriteResponsePB;

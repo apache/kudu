@@ -19,7 +19,6 @@
 
 #include <mutex>
 
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/rpc/result_tracker.h"
@@ -36,11 +35,9 @@ namespace kudu {
 namespace tablet {
 
 using consensus::CommitMsg;
-using consensus::Consensus;
-using consensus::ConsensusRound;
-using consensus::ReplicateMsg;
-using consensus::CommitMsg;
 using consensus::DriverType;
+using consensus::RaftConsensus;
+using consensus::ReplicateMsg;
 using log::Log;
 using rpc::RequestIdPB;
 using rpc::ResultTracker;
@@ -83,7 +80,7 @@ class FollowerTransactionCompletionCallback : public TransactionCompletionCallba
 ////////////////////////////////////////////////////////////
 
 TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
-                                     Consensus* consensus,
+                                     RaftConsensus* consensus,
                                      Log* log,
                                      ThreadPool* prepare_pool,
                                      ThreadPool* apply_pool,

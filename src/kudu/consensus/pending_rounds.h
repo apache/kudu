@@ -20,14 +20,16 @@
 #include <map>
 #include <string>
 
-#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/status.h"
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
-namespace consensus {
+class Status;
 
+namespace consensus {
+class ConsensusRound;
 class TimeManager;
 
 // Tracks the pending consensus rounds being managed by a Raft replica (either leader

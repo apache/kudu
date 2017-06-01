@@ -24,11 +24,11 @@
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/status.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 

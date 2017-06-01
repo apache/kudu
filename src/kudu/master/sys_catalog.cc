@@ -276,7 +276,7 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
 
 void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const string& reason) {
   CHECK_EQ(tablet_id, tablet_replica_->tablet_id());
-  scoped_refptr<consensus::Consensus> consensus  = tablet_replica_->shared_consensus();
+  scoped_refptr<consensus::RaftConsensus> consensus  = tablet_replica_->shared_consensus();
   if (!consensus) {
     LOG_WITH_PREFIX(WARNING) << "Received notification of tablet state change "
                              << "but tablet no longer running. Tablet ID: "

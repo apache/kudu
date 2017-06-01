@@ -303,7 +303,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     "Couldn't create tablet metadata");
 
   // We must persist the consensus metadata to disk before starting a new
-  // tablet's TabletReplica and Consensus implementation.
+  // tablet's TabletReplica and RaftConsensus implementation.
   unique_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
@@ -645,10 +645,10 @@ Status TSTabletManager::DeleteTablet(
   // restarting the tablet if the local replica committed a higher config
   // change op during that time, or potentially something else more invasive.
   if (cas_config_opid_index_less_or_equal && !tablet_deleted) {
-    scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
+    scoped_refptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
     if (!consensus) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
-      return Status::IllegalState("Consensus not available. Tablet shutting down");
+      return Status::IllegalState("Raft Consensus not available. Tablet shutting down");
     }
     RaftConfigPB committed_config = consensus->CommittedConfig();
     if (committed_config.opid_index() > *cas_config_opid_index_less_or_equal) {
@@ -987,7 +987,7 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
   reported_tablet->set_schema_version(replica->tablet_metadata()->schema_version());
 
   // We cannot get consensus state information unless the TabletReplica is running.
-  scoped_refptr<consensus::Consensus> consensus = replica->shared_consensus();
+  scoped_refptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (consensus) {
     *reported_tablet->mutable_consensus_state() = consensus->ConsensusState();
   }

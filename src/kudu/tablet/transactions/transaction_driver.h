@@ -21,7 +21,7 @@
 #include <string>
 #include <kudu/rpc/result_tracker.h>
 
-#include "kudu/consensus/consensus.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/server/clock.h"
@@ -69,7 +69,7 @@ class TransactionTracker;
 //      follower and ReplicationFinished() has already been called, then we can move
 //      on to ApplyAsync().
 //
-//  4 - The Consensus implementation calls ReplicationFinished()
+//  4 - RaftConsensus calls ReplicationFinished()
 //
 //      This is triggered by consensus when the commit index moves past our own
 //      OpId. On followers, this can happen before Prepare() finishes, and thus
@@ -220,7 +220,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // Construct TransactionDriver. TransactionDriver does not take ownership
   // of any of the objects pointed to in the constructor's arguments.
   TransactionDriver(TransactionTracker* txn_tracker,
-                    consensus::Consensus* consensus,
+                    consensus::RaftConsensus* consensus,
                     log::Log* log,
                     ThreadPool* prepare_pool,
                     ThreadPool* apply_pool,
@@ -247,7 +247,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // at the next synchronization point.
   void Abort(const Status& status);
 
-  // Callback from Consensus when replication is complete, and thus the operation
+  // Callback from RaftConsensus when replication is complete, and thus the operation
   // is considered "committed" from the consensus perspective (ie it will be
   // applied on every node, and not ever truncated from the state machine history).
   // If status is anything different from OK() we don't proceed with the apply.
@@ -307,7 +307,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // Submits ApplyTask to the apply pool.
   Status ApplyAsync();
 
-  // Calls Transaction::Apply() followed by Consensus::Commit() with the
+  // Calls Transaction::Apply() followed by RaftConsensus::Commit() with the
   // results from the Apply().
   void ApplyTask();
 
@@ -343,7 +343,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   void RegisterFollowerTransactionOnResultTracker();
 
   TransactionTracker* const txn_tracker_;
-  consensus::Consensus* const consensus_;
+  consensus::RaftConsensus* const consensus_;
   log::Log* const log_;
   ThreadPool* const prepare_pool_;
   ThreadPool* const apply_pool_;
@@ -355,7 +355,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   mutable simple_spinlock lock_;
 
   // A copy of the transaction's OpId, set when the transaction first
-  // receives one from Consensus and uninitialized until then.
+  // receives one from RaftConsensus and uninitialized until then.
   // TODO(todd): we have three separate copies of this now -- in TransactionState,
   // CommitMsg, and here... we should be able to consolidate!
   consensus::OpId op_id_copy_;

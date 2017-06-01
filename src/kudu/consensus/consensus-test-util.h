@@ -27,7 +27,6 @@
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
@@ -643,7 +642,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     CHECK_OK(ThreadPoolBuilder("test-txn-factory").set_max_threads(1).Build(&pool_));
   }
 
-  void SetConsensus(Consensus* consensus) {
+  void SetConsensus(RaftConsensus* consensus) {
     consensus_ = consensus;
   }
 
@@ -673,7 +672,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 
  private:
   gscoped_ptr<ThreadPool> pool_;
-  Consensus* consensus_;
+  RaftConsensus* consensus_;
   Log* log_;
 };
 

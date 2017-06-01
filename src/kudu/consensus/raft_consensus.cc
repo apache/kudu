@@ -377,24 +377,24 @@ Status RaftConsensus::EmulateElection() {
 }
 
 namespace {
-const char* ModeString(Consensus::ElectionMode mode) {
+const char* ModeString(RaftConsensus::ElectionMode mode) {
   switch (mode) {
-    case Consensus::NORMAL_ELECTION:
+    case RaftConsensus::NORMAL_ELECTION:
       return "leader election";
-    case Consensus::PRE_ELECTION:
+    case RaftConsensus::PRE_ELECTION:
       return "pre-election";
-    case Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE:
+    case RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE:
       return "forced leader election";
   }
   __builtin_unreachable(); // silence gcc warnings
 }
-string ReasonString(Consensus::ElectionReason reason, StringPiece leader_uuid) {
+string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uuid) {
   switch (reason) {
-    case Consensus::INITIAL_SINGLE_NODE_ELECTION:
+    case RaftConsensus::INITIAL_SINGLE_NODE_ELECTION:
       return "initial election of a single-replica configuration";
-    case Consensus::EXTERNAL_REQUEST:
+    case RaftConsensus::EXTERNAL_REQUEST:
       return "received explicit request";
-    case Consensus::ELECTION_TIMEOUT_EXPIRED:
+    case RaftConsensus::ELECTION_TIMEOUT_EXPIRED:
       if (leader_uuid.empty()) {
         return "no leader contacted us within the election timeout";
       }
@@ -520,6 +520,12 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   }
   RETURN_NOT_OK(BecomeReplicaUnlocked());
   return Status::OK();
+}
+
+scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
+    gscoped_ptr<ReplicateMsg> replicate_msg,
+    const ConsensusReplicatedCallback& replicated_cb) {
+  return make_scoped_refptr(new ConsensusRound(this, std::move(replicate_msg), replicated_cb));
 }
 
 void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& /*msg*/) {
@@ -2674,6 +2680,55 @@ string RaftConsensus::ToStringUnlocked() const {
 
 ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
   return cmeta_.get();
+}
+
+////////////////////////////////////////////////////////////////////////
+// ConsensusBootstrapInfo
+////////////////////////////////////////////////////////////////////////
+
+ConsensusBootstrapInfo::ConsensusBootstrapInfo()
+  : last_id(MinimumOpId()),
+    last_committed_id(MinimumOpId()) {
+}
+
+ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
+  STLDeleteElements(&orphaned_replicates);
+}
+
+////////////////////////////////////////////////////////////////////////
+// ConsensusRound
+////////////////////////////////////////////////////////////////////////
+
+ConsensusRound::ConsensusRound(RaftConsensus* consensus,
+                               gscoped_ptr<ReplicateMsg> replicate_msg,
+                               ConsensusReplicatedCallback replicated_cb)
+    : consensus_(consensus),
+      replicate_msg_(new RefCountedReplicate(replicate_msg.release())),
+      replicated_cb_(std::move(replicated_cb)),
+      bound_term_(-1) {}
+
+ConsensusRound::ConsensusRound(RaftConsensus* consensus,
+                               const ReplicateRefPtr& replicate_msg)
+    : consensus_(consensus),
+      replicate_msg_(replicate_msg),
+      bound_term_(-1) {
+  DCHECK(replicate_msg_);
+}
+
+void ConsensusRound::NotifyReplicationFinished(const Status& status) {
+  if (PREDICT_FALSE(replicated_cb_.is_null())) return;
+  replicated_cb_.Run(status);
+}
+
+Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
+  if (PREDICT_FALSE(bound_term_ != -1 &&
+                    bound_term_ != current_term)) {
+    return Status::Aborted(
+      strings::Substitute(
+        "Transaction submitted in term $0 cannot be replicated in term $1",
+        bound_term_, current_term));
+  }
+  return Status::OK();
 }
 
 }  // namespace consensus

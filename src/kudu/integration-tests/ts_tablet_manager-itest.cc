@@ -134,7 +134,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   ASSERT_OK(CreateTabletServerMap(master_proxy, client_messenger_, &ts_map));
   ValueDeleter deleter(&ts_map);
 
-  // Collect the TabletReplicas so we get direct access to Consensus.
+  // Collect the TabletReplicas so we get direct access to RaftConsensus.
   vector<scoped_refptr<TabletReplica> > tablet_replicas;
   for (int replica = 0; replica < kNumReplicas; replica++) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(replica);
@@ -157,7 +157,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
     SCOPED_TRACE(Substitute("Iter: $0", i));
     int new_leader_idx = rand() % 2;
     LOG(INFO) << "Electing peer " << new_leader_idx << "...";
-    consensus::Consensus* con = CHECK_NOTNULL(tablet_replicas[new_leader_idx]->consensus());
+    consensus::RaftConsensus* con = CHECK_NOTNULL(tablet_replicas[new_leader_idx]->consensus());
     ASSERT_OK(con->EmulateElection());
     LOG(INFO) << "Waiting for servers to agree...";
     ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5),

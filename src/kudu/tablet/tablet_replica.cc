@@ -25,7 +25,6 @@
 #include <utility>
 #include <vector>
 
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -84,7 +83,6 @@ METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time
                         "locks.",
                         10000000, 2);
 
-using consensus::Consensus;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusOptions;
@@ -318,7 +316,7 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
     MonoTime now(MonoTime::Now());
     MonoDelta elapsed(now - start);
     if (elapsed > timeout) {
-      return Status::TimedOut(Substitute("Consensus is not running after waiting for $0. State; $1",
+      return Status::TimedOut(Substitute("Raft Consensus is not running after waiting for $0: $1",
                                          elapsed.ToString(), TabletStatePB_Name(cached_state)));
     }
     SleepFor(MonoDelta::FromMilliseconds(1L << backoff_exp));

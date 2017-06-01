@@ -24,8 +24,8 @@
 #include <string>
 #include <vector>
 
-#include "kudu/consensus/consensus.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/ref_counted.h"
@@ -73,7 +73,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   // Initializes the TabletReplica, namely creating the Log and initializing
-  // Consensus.
+  // RaftConsensus.
   Status Init(const std::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::shared_ptr<rpc::Messenger>& messenger,
@@ -122,12 +122,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   virtual Status StartReplicaTransaction(
       const scoped_refptr<consensus::ConsensusRound>& round) OVERRIDE;
 
-  consensus::Consensus* consensus() {
+  consensus::RaftConsensus* consensus() {
     std::lock_guard<simple_spinlock> lock(lock_);
     return consensus_.get();
   }
 
-  scoped_refptr<consensus::Consensus> shared_consensus() const {
+  scoped_refptr<consensus::RaftConsensus> shared_consensus() const {
     std::lock_guard<simple_spinlock> lock(lock_);
     return consensus_;
   }
@@ -288,7 +288,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   scoped_refptr<log::Log> log_;
   std::shared_ptr<Tablet> tablet_;
   std::shared_ptr<rpc::Messenger> messenger_;
-  scoped_refptr<consensus::Consensus> consensus_;
+  scoped_refptr<consensus::RaftConsensus> consensus_;
   simple_spinlock prepare_replicate_lock_;
 
   // Lock protecting state_, last_status_, as well as smart pointers to collaborating
