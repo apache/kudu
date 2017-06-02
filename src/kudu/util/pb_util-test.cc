@@ -80,7 +80,7 @@ class TestPBUtil : public KuduTest {
   // XORs the data in the specified range of the file at the given path.
   Status BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length);
 
-  void DumpPBCToString(const string& path, bool oneline_output, string* ret);
+  void DumpPBCToString(const string& path, ReadablePBContainerFile::Format format, string* ret);
 
   // Truncate the specified file to the specified length.
   Status TruncateFile(const string& path, uint64_t size);
@@ -509,14 +509,15 @@ TEST_F(TestPBUtil, TestPopulateDescriptorSet) {
   }
 }
 
-void TestPBUtil::DumpPBCToString(const string& path, bool oneline_output,
+void TestPBUtil::DumpPBCToString(const string& path,
+                                 ReadablePBContainerFile::Format format,
                                  string* ret) {
   unique_ptr<RandomAccessFile> reader;
   ASSERT_OK(env_->NewRandomAccessFile(path, &reader));
   ReadablePBContainerFile pb_reader(std::move(reader));
   ASSERT_OK(pb_reader.Open());
   ostringstream oss;
-  ASSERT_OK(pb_reader.Dump(&oss, oneline_output));
+  ASSERT_OK(pb_reader.Dump(&oss, format));
   ASSERT_OK(pb_reader.Close());
   *ret = oss.str();
 }
@@ -553,6 +554,10 @@ TEST_P(TestPBContainerVersions, TestDumpPBContainer) {
     "0\trecord_one { name: \"foo\" value: 0 } record_two { record { name: \"foo\" value: 0 } }\n"
     "1\trecord_one { name: \"foo\" value: 1 } record_two { record { name: \"foo\" value: 2 } }\n";
 
+  const char* kExpectedOutputJson =
+      "{\"recordOne\":{\"name\":\"foo\",\"value\":0},\"recordTwo\":{\"record\":{\"name\":\"foo\",\"value\":0}}}\n" // NOLINT
+      "{\"recordOne\":{\"name\":\"foo\",\"value\":1},\"recordTwo\":{\"record\":{\"name\":\"foo\",\"value\":2}}}\n"; // NOLINT
+
   ProtoContainerTest3PB pb;
   pb.mutable_record_one()->set_name("foo");
   pb.mutable_record_two()->mutable_record()->set_name("foo");
@@ -569,11 +574,14 @@ TEST_P(TestPBContainerVersions, TestDumpPBContainer) {
   ASSERT_OK(pb_writer->Close());
 
   string output;
-  NO_FATALS(DumpPBCToString(path_, false, &output));
+  NO_FATALS(DumpPBCToString(path_, ReadablePBContainerFile::Format::DEFAULT, &output));
   ASSERT_STREQ(kExpectedOutput, output.c_str());
 
-  NO_FATALS(DumpPBCToString(path_, true, &output));
+  NO_FATALS(DumpPBCToString(path_, ReadablePBContainerFile::Format::ONELINE, &output));
   ASSERT_STREQ(kExpectedOutputShort, output.c_str());
+
+  NO_FATALS(DumpPBCToString(path_, ReadablePBContainerFile::Format::JSON, &output));
+  ASSERT_STREQ(kExpectedOutputJson, output.c_str());
 }
 
 TEST_F(TestPBUtil, TestOverwriteExistingPB) {

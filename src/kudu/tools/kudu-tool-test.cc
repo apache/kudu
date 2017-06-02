@@ -76,6 +76,7 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/url-coding.h"
 
 DECLARE_string(block_manager);
 
@@ -649,7 +650,7 @@ TEST_F(ToolTest, TestFsDumpUuid) {
   ASSERT_EQ(uuid, stdout);
 }
 
-TEST_F(ToolTest, TestPbcDump) {
+TEST_F(ToolTest, TestPbcTools) {
   const string kTestDir = GetTestPath("test");
   string uuid;
   string instance_path;
@@ -672,6 +673,7 @@ TEST_F(ToolTest, TestPbcDump) {
     ASSERT_EQ(Substitute("uuid: \"$0\"", uuid), stdout[2]);
     ASSERT_STR_MATCHES(stdout[3], "^format_stamp: \"Formatted at .*\"$");
   }
+  // Test dump --oneline
   {
     string stdout;
     NO_FATALS(RunActionStdoutString(Substitute(
@@ -679,6 +681,84 @@ TEST_F(ToolTest, TestPbcDump) {
     SCOPED_TRACE(stdout);
     ASSERT_STR_MATCHES(stdout, Substitute(
         "^0\tuuid: \"$0\" format_stamp: \"Formatted at .*\"$$", uuid));
+  }
+  // Test dump --json
+  {
+    // Since the UUID is listed as 'bytes' rather than 'string' in the PB, it dumps
+    // base64-encoded.
+    string uuid_b64;
+    Base64Encode(uuid, &uuid_b64);
+
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute(
+        "pbc dump $0/instance --json", kTestDir), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        "^\\{\"uuid\":\"$0\",\"formatStamp\":\"Formatted at .*\"\\}$$", uuid_b64));
+  }
+
+  // Utility to set the editor up based on the given shell command.
+  auto DoEdit = [&](const string& editor_shell, string* stdout, string* stderr = nullptr) {
+    const string editor_path = GetTestPath("editor");
+    CHECK_OK(WriteStringToFile(Env::Default(),
+                               StrCat("#!/usr/bin/env bash\n", editor_shell),
+                               editor_path));
+    chmod(editor_path.c_str(), 0755);
+    setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
+    return RunTool(Substitute("pbc edit $0/instance", kTestDir),
+                   stdout, stderr, nullptr, nullptr);
+  };
+
+  // Test 'edit' by setting up EDITOR to be a sed script which performs a substitution.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/Formatted/Edited/ \"$@\"\n", &stdout));
+    ASSERT_EQ("", stdout);
+
+    // Dump to make sure the edit took place.
+    NO_FATALS(RunActionStdoutString(Substitute(
+        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        "^0\tuuid: \"$0\" format_stamp: \"Edited at .*\"$$", uuid));
+  }
+
+  // Test 'edit' with an unsuccessful edit.
+  {
+    string stdout, stderr;
+    Status s = DoEdit("/bin/false", &stdout, &stderr);
+    ASSERT_FALSE(s.ok());
+    ASSERT_EQ("", stdout);
+    ASSERT_EQ("Aborted: editor returned non-zero exit code", stderr);
+  }
+
+  // Test 'edit' with an edit which tries to write some invalid JSON (missing required fields).
+  {
+    string stdout, stderr;
+    Status s = DoEdit("echo {} > $@\n", &stdout, &stderr);
+    ASSERT_EQ("", stdout);
+    ASSERT_STR_MATCHES(stderr,
+                       "Invalid argument: Unable to parse JSON line: \\{\\}: "
+                       ": missing field .*");
+    // NOTE: the above extra ':' is due to an apparent bug in protobuf.
+  }
+
+  // Test 'edit' with an edit that writes some invalid JSON (bad syntax)
+  {
+    string stdout, stderr;
+    Status s = DoEdit("echo not-a-json-string > $@\n", &stdout, &stderr);
+    ASSERT_EQ("", stdout);
+    ASSERT_EQ("Invalid argument: Unable to parse JSON line: not-a-json-string: Unexpected token.\n"
+              "not-a-json-string\n"
+              "^", stderr);
+  }
+
+  // The file should be unchanged by the unsuccessful edits above.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute(
+        "pbc dump $0/instance --oneline", kTestDir), &stdout));
+    ASSERT_STR_MATCHES(stdout, Substitute(
+        "^0\tuuid: \"$0\" format_stamp: \"Edited at .*\"$$", uuid));
   }
 }
 

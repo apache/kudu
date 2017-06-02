@@ -32,12 +32,15 @@
 
 namespace google {
 namespace protobuf {
+class DescriptorPool;
 class FileDescriptor;
 class FileDescriptorSet;
-class MessageLite;
 class Message;
-}
-}
+class MessageFactory;
+class MessageLite;
+class SimpleDescriptorDatabase;
+} // namespace protobuf
+} // namespace google
 
 namespace kudu {
 
@@ -394,9 +397,15 @@ class ReadablePBContainerFile {
   // Dumps any unread protobuf messages in the container to 'os'. Each
   // message's DebugString() method is invoked to produce its textual form.
   // File must be open.
-  //
-  // If 'oneline' is true, prints each message on a single line.
-  Status Dump(std::ostream* os, bool oneline);
+  enum class Format {
+    // Print each message on multiple lines, with intervening headers.
+    DEFAULT,
+    // Print each message on its own line.
+    ONELINE,
+    // Dump in JSON.
+    JSON
+  };
+  Status Dump(std::ostream* os, Format format);
 
   // Closes the container.
   Status Close();
@@ -408,6 +417,10 @@ class ReadablePBContainerFile {
   const google::protobuf::FileDescriptorSet* protos() const {
     return protos_.get();
   }
+
+  // Get the prototype instance for the type of messages stored in this
+  // file. The returned Message is owned by this ReadablePBContainerFile instance.
+  Status GetPrototype(const google::protobuf::Message** prototype);
 
   // Return the protobuf container file format version.
   // File must be open.
@@ -427,6 +440,12 @@ class ReadablePBContainerFile {
 
   // Wrapped in a unique_ptr so that clients need not include PB headers.
   std::unique_ptr<google::protobuf::FileDescriptorSet> protos_;
+
+  // Protobuf infrastructure which owns the message prototype 'prototype_'.
+  std::unique_ptr<google::protobuf::SimpleDescriptorDatabase> db_;
+  std::unique_ptr<google::protobuf::DescriptorPool> descriptor_pool_;
+  std::unique_ptr<google::protobuf::MessageFactory> message_factory_;
+  const google::protobuf::Message* prototype_ = nullptr;
 
   std::shared_ptr<RandomAccessFile> reader_;
 };

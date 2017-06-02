@@ -44,6 +44,7 @@
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/text_format.h>
+#include <google/protobuf/util/json_util.h>
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
@@ -822,53 +823,88 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   return ReadFullPB(reader_.get(), version_, &offset_, msg);
 }
 
-Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
+Status ReadablePBContainerFile::GetPrototype(const Message** prototype) {
+  if (!prototype_) {
+    // Loading the schemas into a DescriptorDatabase (and not directly into
+    // a DescriptorPool) defers resolution until FindMessageTypeByName()
+    // below, allowing for schemas to be loaded in any order.
+    unique_ptr<SimpleDescriptorDatabase> db(new SimpleDescriptorDatabase());
+    for (int i = 0; i < protos()->file_size(); i++) {
+      if (!db->Add(protos()->file(i))) {
+        return Status::Corruption("Descriptor not loaded", Substitute(
+            "Could not load descriptor for PB type $0 referenced in container file",
+            pb_type()));
+      }
+    }
+    unique_ptr<DescriptorPool> pool(new DescriptorPool(db.get()));
+    const Descriptor* desc = pool->FindMessageTypeByName(pb_type());
+    if (!desc) {
+      return Status::NotFound("Descriptor not found", Substitute(
+          "Could not find descriptor for PB type $0 referenced in container file",
+          pb_type()));
+    }
+
+    unique_ptr<DynamicMessageFactory> factory(new DynamicMessageFactory());
+    const Message* p = factory->GetPrototype(desc);
+    if (!p) {
+      return Status::NotSupported("Descriptor not supported", Substitute(
+          "Descriptor $0 referenced in container file not supported",
+          pb_type()));
+    }
+
+    db_ = std::move(db);
+    descriptor_pool_ = std::move(pool);
+    message_factory_ = std::move(factory);
+    prototype_ = p;
+  }
+  *prototype = prototype_;
+  return Status::OK();
+}
+
+Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Format format) {
   DCHECK_EQ(FileState::OPEN, state_);
+
+  // Since we use the protobuf library support for dumping JSON, there isn't any easy
+  // way to hook in our redaction support. Since this is only used by CLI tools,
+  // just refuse to dump JSON if redaction is enabled.
+  if (format == Format::JSON && KUDU_SHOULD_REDACT()) {
+    return Status::NotSupported("cannot dump PBC file in JSON format if redaction is enabled");
+  }
 
   // Use the embedded protobuf information from the container file to
   // create the appropriate kind of protobuf Message.
-  //
-  // Loading the schemas into a DescriptorDatabase (and not directly into
-  // a DescriptorPool) defers resolution until FindMessageTypeByName()
-  // below, allowing for schemas to be loaded in any order.
-  SimpleDescriptorDatabase db;
-  for (int i = 0; i < protos()->file_size(); i++) {
-    if (!db.Add(protos()->file(i))) {
-      return Status::Corruption("Descriptor not loaded", Substitute(
-          "Could not load descriptor for PB type $0 referenced in container file",
-          pb_type()));
-    }
-  }
-  DescriptorPool pool(&db);
-  const Descriptor* desc = pool.FindMessageTypeByName(pb_type());
-  if (!desc) {
-    return Status::NotFound("Descriptor not found", Substitute(
-        "Could not find descriptor for PB type $0 referenced in container file",
-        pb_type()));
-  }
-  DynamicMessageFactory factory;
-  const Message* prototype = factory.GetPrototype(desc);
-  if (!prototype) {
-    return Status::NotSupported("Descriptor not supported", Substitute(
-        "Descriptor $0 referenced in container file not supported",
-        pb_type()));
-  }
-  unique_ptr<Message> msg(prototype->New());
+  const Message* prototype;
+  RETURN_NOT_OK(GetPrototype(&prototype));
+  unique_ptr<Message> msg(prototype_->New());
 
   // Dump each message in the container file.
   int count = 0;
   Status s;
+  string buf;
   for (s = ReadNextPB(msg.get());
       s.ok();
       s = ReadNextPB(msg.get())) {
-    if (oneline) {
-      *os << count++ << "\t" << SecureShortDebugString(*msg) << endl;
-    } else {
-      *os << "Message " << count << endl;
-      *os << "-------" << endl;
-      *os << SecureDebugString(*msg) << endl;
-      count++;
+    switch (format) {
+      case Format::ONELINE:
+        *os << count << "\t" << SecureShortDebugString(*msg) << endl;
+        break;
+      case Format::DEFAULT:
+        *os << "Message " << count << endl;
+        *os << "-------" << endl;
+        *os << SecureDebugString(*msg) << endl;
+        break;
+      case Format::JSON:
+        buf.clear();
+        const auto& google_status = google::protobuf::util::MessageToJsonString(
+            *msg, &buf, google::protobuf::util::JsonPrintOptions());
+        if (!google_status.ok()) {
+          return Status::RuntimeError("could not convert PB to JSON", google_status.ToString());
+        }
+        *os << buf << endl;
+        break;
     }
+    count++;
+
   }
   return s.IsEndOfFile() ? s.OK() : s;
 }
