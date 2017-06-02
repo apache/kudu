@@ -124,7 +124,21 @@ void GenericServiceImpl::CheckLeaks(const CheckLeaksRequestPB* /*req*/,
 #else
   LOG(INFO) << "Checking for leaks (request via RPC)";
   resp->set_success(true);
-  resp->set_found_leaks(__lsan_do_recoverable_leak_check());
+
+  // Workaround for LSAN issue 757 (leak check can give false positives when
+  // run concurrently with other work). If LSAN reports a leak, we'll retry
+  // a few times and see if it goes away on its own. Any real leak would,
+  // by definition, not resolve itself over time.
+  //
+  // See https://github.com/google/sanitizers/issues/757
+  bool has_leaks = true;
+  for (int i = 0; i < 5; i++) {
+    has_leaks = __lsan_do_recoverable_leak_check();
+    if (!has_leaks) break;
+    SleepFor(MonoDelta::FromMilliseconds(5));
+  }
+
+  resp->set_found_leaks(has_leaks);
 #endif
 #undef LSAN_ENABLED
   rpc->RespondSuccess();
