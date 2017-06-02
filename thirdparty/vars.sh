@@ -125,22 +125,8 @@ LIBUNWIND_VERSION=1.1a
 LIBUNWIND_NAME=libunwind-$LIBUNWIND_VERSION
 LIBUNWIND_SOURCE=$TP_SOURCE_DIR/$LIBUNWIND_NAME
 
-# Our llvm tarball includes clang, extra clang tools, lld, and compiler-rt.
-#
-# See http://clang.llvm.org/get_started.html and http://lld.llvm.org/ for
-# details on how they're laid out in the llvm tarball.
-#
-# Summary:
-# 1. Unpack the llvm tarball
-# 2. Unpack the clang tarball as tools/clang (rename from cfe-<version> to clang)
-# 3. Unpack the extra clang tools tarball as tools/clang/tools/extra
-# 4. Unpack the lld tarball as tools/lld
-# 5. Unpack the compiler-rt tarball as projects/compiler-rt
-# 6. Unpack the libc++ tarball as projects/libcxx
-# 7. Unpack the libc++abi tarball as projects/libcxxabi
-# 8. Create new tarball from the resulting source tree
-#
-LLVM_VERSION=3.9.1
+# See package-llvm.sh for details on the LLVM tarball.
+LLVM_VERSION=4.0.0
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 
