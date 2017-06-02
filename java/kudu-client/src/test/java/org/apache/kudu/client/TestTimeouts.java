@@ -29,6 +29,7 @@ public class TestTimeouts extends BaseKuduTest {
   /**
    * This test case tries different methods that should all timeout, while relying on the client to
    * pass down the timeouts to the session and scanner.
+   * TODO(aserbin) this test is flaky; add delays on the server side to make it stable
    */
   @Test(timeout = 100000)
   public void testLowTimeouts() throws Exception {

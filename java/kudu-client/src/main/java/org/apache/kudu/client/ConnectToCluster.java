@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
@@ -80,7 +81,8 @@ final class ConnectToCluster {
 
   private static Deferred<ConnectToMasterResponsePB> connectToMaster(
       final KuduTable masterTable,
-      final TabletClient masterClient, KuduRpc<?> parentRpc,
+      final RpcProxy masterProxy,
+      KuduRpc<?> parentRpc,
       long defaultTimeoutMs) {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
@@ -93,7 +95,7 @@ final class ConnectToCluster {
     }
     Deferred<ConnectToMasterResponsePB> d = rpc.getDeferred();
     rpc.attempt++;
-    masterClient.sendRpc(rpc);
+    masterProxy.sendRpc(rpc);
 
     // If we are connecting to an older version of Kudu, we'll get an invalid request
     // error. In that case, we resend using the older version of the RPC.
@@ -107,10 +109,10 @@ final class ConnectToCluster {
               rre.getErrPB().getUnsupportedFeatureFlagsCount() > 0) {
             AsyncKuduClient.LOG.debug("Falling back to GetMasterRegistration() RPC to connect " +
                 "to server running Kudu < 1.3.");
-            Deferred<ConnectToMasterResponsePB> newAttempt = rpc.getDeferred();
-            assert newAttempt != null;
+            final Deferred<ConnectToMasterResponsePB> newAttempt =
+                Preconditions.checkNotNull(rpc.getDeferred());
             rpc.setUseOldMethod();
-            masterClient.sendRpc(rpc);
+            masterProxy.sendRpc(rpc);
             return newAttempt;
           }
         }
@@ -128,8 +130,6 @@ final class ConnectToCluster {
    * @param masterTable the "placeholder" table used by AsyncKuduClient
    * @param masterAddresses the addresses of masters to fetch from
    * @param parentRpc RPC that prompted a master lookup, can be null
-   * @param connCache the client's connection cache, used for creating connections
-   *                  to masters
    * @param defaultTimeoutMs timeout to use for RPCs if the parentRpc has no timeout
    * @return a Deferred object for the cluster connection status
    */
@@ -137,7 +137,6 @@ final class ConnectToCluster {
       KuduTable masterTable,
       List<HostAndPort> masterAddresses,
       KuduRpc<?> parentRpc,
-      ConnectionCache connCache,
       long defaultTimeoutMs) {
     ConnectToCluster connector = new ConnectToCluster(masterAddresses);
 
@@ -146,14 +145,14 @@ final class ConnectToCluster {
     // deferred.
     for (HostAndPort hostAndPort : masterAddresses) {
       Deferred<ConnectToMasterResponsePB> d;
-      TabletClient client = connCache.newMasterClient(hostAndPort);
-      if (client == null) {
+      RpcProxy proxy = masterTable.getAsyncClient().newMasterRpcProxy(hostAndPort);
+      if (proxy != null) {
+        d = connectToMaster(masterTable, proxy, parentRpc, defaultTimeoutMs);
+      } else {
         String message = "Couldn't resolve this master's address " + hostAndPort.toString();
         LOG.warn(message);
         Status statusIOE = Status.IOError(message);
         d = Deferred.fromError(new NonRecoverableException(statusIOE));
-      } else {
-        d = connectToMaster(masterTable, client, parentRpc, defaultTimeoutMs);
       }
       d.addCallbacks(connector.callbackForNode(hostAndPort),
           connector.errbackForNode(hostAndPort));
@@ -192,56 +191,50 @@ final class ConnectToCluster {
    * to responseD.
    */
   private void incrementCountAndCheckExhausted() {
-    if (countResponsesReceived.incrementAndGet() == numMasters) {
-      if (responseDCalled.compareAndSet(false, true)) {
-
-        // We want `allUnrecoverable` to only be true if all the masters came back with
-        // NonRecoverableException so that we know for sure we can't retry anymore. Just one master
-        // that replies with RecoverableException or with an ok response but is a FOLLOWER is
-        // enough to keep us retrying.
-        boolean allUnrecoverable = true;
-        if (exceptionsReceived.size() == countResponsesReceived.get()) {
-          for (Exception ex : exceptionsReceived) {
-            if (!(ex instanceof NonRecoverableException)) {
-              allUnrecoverable = false;
-              break;
-            }
+    if (countResponsesReceived.incrementAndGet() == numMasters &&
+        responseDCalled.compareAndSet(false, true)) {
+      // We want `allUnrecoverable` to only be true if all the masters came back with
+      // NonRecoverableException so that we know for sure we can't retry anymore. Just one master
+      // that replies with RecoverableException or with an ok response but is a FOLLOWER is
+      // enough to keep us retrying.
+      boolean allUnrecoverable = true;
+      if (exceptionsReceived.size() == countResponsesReceived.get()) {
+        for (Exception ex : exceptionsReceived) {
+          if (!(ex instanceof NonRecoverableException)) {
+            allUnrecoverable = false;
+            break;
           }
-        } else {
-          allUnrecoverable = false;
         }
+      } else {
+        allUnrecoverable = false;
+      }
 
-        String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
-        if (allUnrecoverable) {
-          // This will stop retries.
-          String msg = String.format("Couldn't find a valid master in (%s). " +
-              "Exceptions received: %s", allHosts,
+      String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
+      if (allUnrecoverable) {
+        // This will stop retries.
+        String msg = String.format("Couldn't find a valid master in (%s). " +
+            "Exceptions received: %s", allHosts,
+            Joiner.on(",").join(Lists.transform(
+                exceptionsReceived, Functions.toStringFunction())));
+        Status s = Status.ServiceUnavailable(msg);
+        responseD.callback(new NonRecoverableException(s));
+      } else {
+        String message = String.format("Master config (%s) has no leader.",
+            allHosts);
+        Exception ex;
+        if (exceptionsReceived.isEmpty()) {
+          LOG.warn("None of the provided masters {} is a leader; will retry", allHosts);
+          ex = new NoLeaderFoundException(Status.ServiceUnavailable(message));
+        } else {
+          LOG.warn("Unable to find the leader master {}; will retry", allHosts);
+          String joinedMsg = message + " Exceptions received: " +
               Joiner.on(",").join(Lists.transform(
-                  exceptionsReceived, Functions.toStringFunction())));
-          Status s = Status.ServiceUnavailable(msg);
-          responseD.callback(new NonRecoverableException(s));
-        } else {
-          String message = String.format("Master config (%s) has no leader.",
-              allHosts);
-          Exception ex;
-          if (exceptionsReceived.isEmpty()) {
-            LOG.warn(String.format(
-                "None of the provided masters (%s) is a leader, will retry.",
-                allHosts));
-            ex = new NoLeaderFoundException(Status.ServiceUnavailable(message));
-          } else {
-            LOG.warn(String.format(
-                "Unable to find the leader master (%s), will retry",
-                allHosts));
-            String joinedMsg = message + " Exceptions received: " +
-                Joiner.on(",").join(Lists.transform(
-                    exceptionsReceived, Functions.toStringFunction()));
-            Status s = Status.ServiceUnavailable(joinedMsg);
-            ex = new NoLeaderFoundException(s,
-                exceptionsReceived.get(exceptionsReceived.size() - 1));
-          }
-          responseD.callback(ex);
+                  exceptionsReceived, Functions.toStringFunction()));
+          Status s = Status.ServiceUnavailable(joinedMsg);
+          ex = new NoLeaderFoundException(s,
+              exceptionsReceived.get(exceptionsReceived.size() - 1));
         }
+        responseD.callback(ex);
       }
     }
   }
@@ -273,8 +266,7 @@ final class ConnectToCluster {
         // Someone else already found a leader. This is somewhat unexpected
         // because this means two nodes think they're the leader, but it's
         // not impossible. We'll just ignore it.
-        LOG.debug("Callback already invoked, discarding response(" + r.toString() + ") from " +
-            hostAndPort.toString());
+        LOG.debug("Callback already invoked, discarding response({}) from {}", r, hostAndPort);
         return null;
       }
 
@@ -304,7 +296,7 @@ final class ConnectToCluster {
 
     @Override
     public Void call(Exception e) throws Exception {
-      LOG.warn("Error receiving a response from: " + hostAndPort, e);
+      LOG.warn("Error receiving response from {}", hostAndPort, e);
       exceptionsReceived.add(e);
       incrementCountAndCheckExhausted();
       return null;

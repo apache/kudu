@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.net.InetAddress;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.common.base.Preconditions;
 import com.google.common.net.HostAndPort;
 import org.apache.yetus.audience.InterfaceAudience;
 
@@ -35,7 +36,7 @@ public class ServerInfo {
   private final InetAddress resolvedAddr;
   private final boolean local;
   private static final ConcurrentHashMap<InetAddress, Boolean> isLocalAddressCache =
-          new ConcurrentHashMap<>();
+      new ConcurrentHashMap<>();
 
   /**
    * Constructor for all the fields. The intent is that there should only be one ServerInfo
@@ -45,6 +46,7 @@ public class ServerInfo {
    * @param resolvedAddr resolved address used to check if the server is local
    */
   public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr) {
+    Preconditions.checkNotNull(uuid);
     this.uuid = uuid;
     this.hostPort = hostPort;
     this.resolvedAddr = resolvedAddr;

@@ -131,13 +131,13 @@ public abstract class KuduRpc<R> {
    * that access this attribute will have a happens-before relationship with
    * the rest of the code, due to other existing synchronization.
    */
-  byte attempt;  // package-private for TabletClient and AsyncKuduClient only.
+  int attempt;  // package-private for RpcProxy and AsyncKuduClient only.
 
   /**
-   * Set by TabletClient when isRequestTracked returns true to identify this RPC in the sequence of
+   * Set by RpcProxy when isRequestTracked returns true to identify this RPC in the sequence of
    * RPCs sent by this client. Once it is set it should never change unless the RPC is reused.
    */
-  long sequenceId = RequestTracker.NO_SEQ_NO;
+  private long sequenceId = RequestTracker.NO_SEQ_NO;
 
   KuduRpc(KuduTable table) {
     this.table = table;

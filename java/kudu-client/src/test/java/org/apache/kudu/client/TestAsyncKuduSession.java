@@ -143,7 +143,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     RemoteTablet rt =
         client.getTableLocationEntry(table.getTableId(), insert.partitionKey()).getTablet();
     String tabletId = rt.getTabletId();
-    TabletClient tc = client.getTabletClient(rt.getLeaderUUID());
+    RpcProxy proxy = client.newRpcProxy(rt.getLeaderServerInfo());
     try {
       // Delete table so we get table not found error.
       client.deleteTable(TABLE_NAME).join();
@@ -151,7 +151,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       while (true) {
         ListTabletsRequest req = new ListTabletsRequest();
         Deferred<ListTabletsResponse> d = req.getDeferred();
-        tc.sendRpc(req);
+        proxy.sendRpc(req);
         ListTabletsResponse resp = d.join();
         if (!resp.getTabletsList().contains(tabletId)) {
           break;
@@ -191,7 +191,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
 
   /**
    * Regression test for a bug in which, when a tablet client is disconnected
-   * and we reconnect, we were previously leaking the old TabletClient
+   * and we reconnect, we were previously leaking the old RpcProxy
    * object in the client2tablets map.
    */
   @Test(timeout = 100000)
@@ -212,7 +212,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
       session.apply(createBasicSchemaInsert(nonReplicatedTable, 1)).join();
 
-      int numClientsBefore = client.getTabletClients().size();
+      int numClientsBefore = client.getConnectionListCopy().size();
 
       // Restart all the tablet servers.
       killTabletServers();
@@ -223,7 +223,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       session.apply(createBasicSchemaInsert(nonReplicatedTable, 2)).join();
 
       // We should not have leaked an entry in the client2tablets map.
-      int numClientsAfter = client.getTabletClients().size();
+      int numClientsAfter = client.getConnectionListCopy().size();
       assertEquals(numClientsBefore, numClientsAfter);
     } finally {
       restartTabletServers();
@@ -395,7 +395,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(20, countRowsInScan(scanner));
 
     // Test removing the connection and then do a rapid set of inserts
-    client.getTabletClients().get(0).shutdown().join(DEFAULT_SLEEP);
+    client.getConnectionListCopy().get(0).disconnect()
+        .awaitUninterruptibly(DEFAULT_SLEEP);
     session.setMutationBufferSpace(1);
     for (int i = 91; i < 101; i++) {
       try {

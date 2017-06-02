@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.net.InetAddress;
@@ -40,28 +41,28 @@ public class TestRemoteTablet {
     RemoteTablet tablet = getTablet(2);
 
     // Demote the wrong leader, no-op.
-    assertEquals("2", tablet.getLeaderUUID());
+    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
     tablet.demoteLeader("1");
-    assertEquals("2", tablet.getLeaderUUID());
+    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
 
     // Tablet at server 1 was deleted.
     assertTrue(tablet.removeTabletClient("1"));
-    assertEquals("2", tablet.getLeaderUUID());
+    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
 
     // Simulate another thread trying to remove 1.
     assertFalse(tablet.removeTabletClient("1"));
 
     // Tablet at server 0 was deleted.
     assertTrue(tablet.removeTabletClient("0"));
-    assertEquals("2", tablet.getLeaderUUID());
+    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
 
     // Leader was demoted.
     tablet.demoteLeader("2");
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
 
     // Simulate another thread doing the same.
     tablet.demoteLeader("2");
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
   }
 
   @Test
@@ -70,11 +71,11 @@ public class TestRemoteTablet {
 
     // Test we can remove it.
     assertTrue(tablet.removeTabletClient("2"));
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
 
     // Test demoting it doesn't break anything.
     tablet.demoteLeader("2");
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
   }
 
   @Test
@@ -83,11 +84,11 @@ public class TestRemoteTablet {
 
     // Test we can remove it.
     assertTrue(tablet.removeTabletClient("0"));
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
 
     // Test demoting it doesn't break anything.
     tablet.demoteLeader("0");
-    assertEquals(null, tablet.getLeaderUUID());
+    assertNull(tablet.getLeaderServerInfo());
 
     // Test removing a server with no leader doesn't break.
     assertTrue(tablet.removeTabletClient("2"));
@@ -97,7 +98,7 @@ public class TestRemoteTablet {
   public void testLocalReplica() {
     RemoteTablet tablet = getTablet(0, 0);
 
-    assertEquals("0", tablet.getClosestUUID());
+    assertEquals("0", tablet.getClosestServerInfo().getUuid());
   }
 
   @Test
@@ -105,15 +106,17 @@ public class TestRemoteTablet {
     RemoteTablet tablet = getTablet(0, -1);
 
     // We just care about getting one back.
-    assertNotNull(tablet.getClosestUUID());
+    assertNotNull(tablet.getClosestServerInfo().getUuid());
   }
 
   @Test
   public void testReplicaSelection() {
     RemoteTablet tablet = getTablet(0, 1);
 
-    assertEquals("0", tablet.getReplicaSelectedUUID(ReplicaSelection.LEADER_ONLY));
-    assertEquals("1", tablet.getReplicaSelectedUUID(ReplicaSelection.CLOSEST_REPLICA));
+    assertEquals("0",
+        tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY).getUuid());
+    assertEquals("1",
+        tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid());
   }
 
   private RemoteTablet getTablet(int leaderIndex) {

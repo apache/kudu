@@ -26,20 +26,11 @@ import org.junit.Test;
 public class ITFaultTolerantScanner extends ITScannerMultiTablet {
   /**
    * Verifies for fault tolerant scanner, it can proceed
-   * properly even if shuts down client connection.
-   */
-  @Test(timeout = 100000)
-  public void testFaultTolerantShutDown() throws KuduException {
-    clientFaultInjection(true, true);
-  }
-
-  /**
-   * Verifies for fault tolerant scanner, it can proceed
    * properly even if disconnects client connection.
    */
   @Test(timeout = 100000)
   public void testFaultTolerantDisconnect() throws KuduException {
-    clientFaultInjection(false, true);
+    clientFaultInjection(true);
   }
 
   /**

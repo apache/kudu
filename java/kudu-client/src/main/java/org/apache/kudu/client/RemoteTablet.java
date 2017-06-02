@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Objects;
@@ -38,7 +39,7 @@ import org.apache.kudu.master.Master;
  * This class encapsulates the information regarding a tablet and its locations.
  * <p>
  * RemoteTablet's main function is to keep track of where the leader for this
- * tablet is. For example, an RPC might call {@link #getLeaderUUID()}, contact that TS, find
+ * tablet is. For example, an RPC might call {@link #getLeaderServerInfo()}, contact that TS, find
  * it's not the leader anymore, and then call {@link #demoteLeader(String)}.
  * <p>
  * A RemoteTablet's life is expected to be long in a cluster where roles aren't changing often,
@@ -138,53 +139,61 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   }
 
   /**
-   * Gets the UUID of the tablet server that we think holds the leader replica for this tablet.
-   * @return a UUID of a tablet server that we think has the leader, else null
+   * Get the information on the tablet server that we think holds the leader replica for this
+   * tablet.
+   *
+   * @return information on a tablet server that we think has the leader, else null
    */
-  String getLeaderUUID() {
+  @Nullable
+  ServerInfo getLeaderServerInfo() {
     synchronized (tabletServers) {
-      return leaderUuid;
+      return tabletServers.get(leaderUuid);
     }
   }
 
   /**
-   * Gets the UUID of the closest server. If none is closer than the others, returns a random
-   * server UUID.
-   * @return the UUID of the closest server, which might be any if none is closer, or null if this
-   *         cache doesn't know of any servers
+   * Get the information on the closest server. If none is closer than the others,
+   * return the information on a randomly picked server.
+   *
+   * @return the information on the closest server, which might be any if none is closer, or null
+   *   if this cache doesn't know any servers.
    */
-  String getClosestUUID() {
+  @Nullable
+  ServerInfo getClosestServerInfo() {
     synchronized (tabletServers) {
-      String lastUuid = null;
-      for (ServerInfo serverInfo : tabletServers.values()) {
-        lastUuid = serverInfo.getUuid();
-        if (serverInfo.isLocal()) {
-          return serverInfo.getUuid();
+      ServerInfo last = null;
+      for (ServerInfo e : tabletServers.values()) {
+        last = e;
+        if (e.isLocal()) {
+          return e;
         }
       }
-      return lastUuid;
+      return last;
     }
   }
 
   /**
    * Helper function to centralize the calling of methods based on the passed replica selection
    * mechanism.
+   *
    * @param replicaSelection replica selection mechanism to use
-   * @return a UUID for the server that matches the selection, can be null
+   * @return information on the server that matches the selection, can be null
    */
-  String getReplicaSelectedUUID(ReplicaSelection replicaSelection) {
+  @Nullable
+  ServerInfo getReplicaSelectedServerInfo(ReplicaSelection replicaSelection) {
     switch (replicaSelection) {
       case LEADER_ONLY:
-        return getLeaderUUID();
+        return getLeaderServerInfo();
       case CLOSEST_REPLICA:
-        return getClosestUUID();
+        return getClosestServerInfo();
       default:
-        throw new RuntimeException("Unknown replica selection mechanism " + replicaSelection);
+        throw new RuntimeException("unknown replica selection mechanism " + replicaSelection);
     }
   }
 
   /**
-   * Gets the replicas of this tablet. The returned list may not be mutated.
+   * Get replicas of this tablet. The returned list may not be mutated.
+   *
    * @return the replicas of the tablet
    */
   List<LocatedTablet.Replica> getReplicas() {

@@ -147,9 +147,6 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    */
   private DecoderEmbedder<ChannelBuffer> sslEmbedder;
 
-  /** True if we have negotiated TLS with the server */
-  private boolean negotiatedTls;
-
   /**
    * The nonce sent from the server to the client, or null if negotiation has
    * not yet taken place, or the server does not send a nonce.
@@ -290,7 +287,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // Store the supported features advertised by the server.
     serverFeatures = getFeatureFlags(response);
     // If the server supports TLS, we will always speak TLS to it.
-    negotiatedTls = serverFeatures.contains(RpcFeatureFlag.TLS);
+    final boolean negotiatedTls = serverFeatures.contains(RpcFeatureFlag.TLS);
 
     // Check the negotiated authentication type sent by the server.
     chosenAuthnType = chooseAuthenticationType(response);

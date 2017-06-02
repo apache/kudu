@@ -315,13 +315,15 @@ public class BaseKuduTest {
   static final Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
     @Override
     public Object call(Object arg) throws Exception {
-      if (arg == null) return null;
+      if (arg == null) {
+        return null;
+      }
       if (arg instanceof Exception) {
         LOG.warn("Got exception", (Exception) arg);
       } else {
         LOG.warn("Got an error response back {}", arg);
       }
-      return new Exception("Can't recover from error, see previous WARN");
+      return new Exception("cannot recover from error: " + arg);
     }
   };
 

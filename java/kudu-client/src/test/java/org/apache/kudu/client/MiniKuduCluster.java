@@ -22,7 +22,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -56,7 +55,7 @@ public class MiniKuduCluster implements AutoCloseable {
   private static final int PORT_START = 64030;
 
   // List of threads that print
-  private final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<>();
+  private final List<Thread> processInputPrinters = new ArrayList<>();
 
   // Map of ports to master servers.
   private final Map<Integer, Process> masterProcesses = new ConcurrentHashMap<>();
@@ -337,7 +336,7 @@ public class MiniKuduCluster implements AutoCloseable {
     Thread thread = new Thread(printer);
     thread.setDaemon(true);
     thread.setName(Iterables.getLast(Splitter.on(File.separatorChar).split(command.get(0))) + ":" + port);
-    PROCESS_INPUT_PRINTERS.add(thread);
+    processInputPrinters.add(thread);
     thread.start();
 
     Thread.sleep(300);
@@ -409,7 +408,7 @@ public class MiniKuduCluster implements AutoCloseable {
       return;
     }
     LOG.info("Killing server at port " + port);
-    destroyAndWaitForProcess(ts);
+    terminateAndWait(ts);
   }
 
   /**
@@ -418,7 +417,7 @@ public class MiniKuduCluster implements AutoCloseable {
    */
   public void killTabletServers() throws InterruptedException {
     for (Process tserver : tserverProcesses.values()) {
-      destroyAndWaitForProcess(tserver);
+      terminateAndWait(tserver);
     }
     tserverProcesses.clear();
   }
@@ -446,7 +445,7 @@ public class MiniKuduCluster implements AutoCloseable {
       return;
     }
     LOG.info("Killing master at port " + port);
-    destroyAndWaitForProcess(master);
+    terminateAndWait(master);
   }
 
   /** {@override} */
@@ -456,36 +455,25 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Stops all the processes and deletes the folders used to store data and the flagfile.
+   * Stops all the test processes; deletes the folders used to store data; deletes the flag file.
    */
   public void shutdown() {
-    for (Iterator<Process> masterIter = masterProcesses.values().iterator(); masterIter.hasNext(); ) {
-      try {
-        destroyAndWaitForProcess(masterIter.next());
-      } catch (InterruptedException e) {
-        // Need to continue cleaning up.
-      }
-      masterIter.remove();
-    }
-
-    for (Iterator<Process> tsIter = tserverProcesses.values().iterator(); tsIter.hasNext(); ) {
-      try {
-        destroyAndWaitForProcess(tsIter.next());
-      } catch (InterruptedException e) {
-        // Need to continue cleaning up.
-      }
-      tsIter.remove();
-    }
+    boolean wasInterrupted = false;
+    wasInterrupted |= terminateAndWait(masterProcesses);
+    wasInterrupted |= terminateAndWait(tserverProcesses);
 
     // Whether we were interrupted or not above we still destroyed all the processes, so the input
     // printers will hit EOFs and stop.
-    for (Thread thread : PROCESS_INPUT_PRINTERS) {
+    for (Thread thread : processInputPrinters) {
       try {
         thread.join();
       } catch (InterruptedException e) {
+        wasInterrupted = true;
         // Need to continue cleaning up.
+        LOG.info("ignoring request to interrupt; waiting for input printer {} to exit", thread);
       }
     }
+    processInputPrinters.clear();
 
     for (String path : pathsToDelete) {
       try {
@@ -507,11 +495,41 @@ public class MiniKuduCluster implements AutoCloseable {
         LOG.warn("Unable to close MiniKdc", e);
       }
     }
+
+    if (wasInterrupted) {
+      Thread.currentThread().interrupt();
+    }
   }
 
-  private void destroyAndWaitForProcess(Process process) throws InterruptedException {
+  private static void terminateAndWait(Process process) throws InterruptedException {
     process.destroy();
     process.waitFor();
+  }
+
+  /**
+   * Terminate and wait for exit of every process in the specified container.
+   *
+   * @param processes map of processes to terminate
+   * @return true if {@link InterruptedException} was received while waiting for processes'
+   *         termination, false otherwise
+   */
+  private static boolean terminateAndWait(Map<Integer, Process> processes) {
+    boolean wasInterrupted = false;
+    for (Process p : processes.values()) {
+      while (true) {
+        try {
+          terminateAndWait(p);
+          break;
+        } catch (InterruptedException e) {
+          wasInterrupted = true;
+          // Not being polite here: ignore the request to interrupt and continue cleaning up.
+          LOG.info("ignoring request to interrupt; waiting process {} to exit", p);
+        }
+      }
+    }
+    processes.clear();
+
+    return wasInterrupted;
   }
 
   /**
@@ -568,8 +586,7 @@ public class MiniKuduCluster implements AutoCloseable {
           LOG.info(line);
         }
         in.close();
-      }
-      catch (Exception e) {
+      } catch (Exception e) {
         if (!e.getMessage().contains("Stream closed")) {
           LOG.error("Caught error while reading a process' output", e);
         }

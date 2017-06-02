@@ -54,8 +54,8 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    * properly even if shuts down client connection.
    */
   @Test(timeout = 100000)
-  public void testNonFaultTolerantShutDown() throws KuduException {
-    clientFaultInjection(true, false);
+  public void testNonFaultTolerantDisconnect() throws KuduException {
+    clientFaultInjection(false);
   }
 
   /**

@@ -93,16 +93,16 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   }
 
   private void disconnectAndWait() throws InterruptedException {
-    for (TabletClient tabletClient : client.getTabletClients()) {
-      tabletClient.disconnect();
+    for (Connection c : client.getConnectionListCopy()) {
+      c.disconnect();
     }
     Stopwatch sw = Stopwatch.createStarted();
-    boolean allDead = false;
+    boolean disconnected = false;
     while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       boolean sleep = false;
-      if (!client.getTabletClients().isEmpty()) {
-        for (TabletClient tserver : client.getTabletClients()) {
-          if (tserver.isAlive()) {
+      if (!client.getConnectionListCopy().isEmpty()) {
+        for (Connection c : client.getConnectionListCopy()) {
+          if (!c.isDisconnected()) {
             sleep = true;
             break;
           }
@@ -112,11 +112,11 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       if (sleep) {
         Thread.sleep(50);
       } else {
-        allDead = true;
+        disconnected = true;
         break;
       }
     }
-    assertTrue(allDead);
+    assertTrue(disconnected);
   }
 
   @Test

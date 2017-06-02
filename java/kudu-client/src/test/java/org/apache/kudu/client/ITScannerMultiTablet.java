@@ -155,15 +155,13 @@ public class ITScannerMultiTablet extends BaseKuduTest {
   }
 
   /**
-   * Injecting failures (disconnect or shutdown client connection) while scanning, to verify:
+   * Injecting failures (i.e. drop client connection) while scanning, to verify:
    * both non-fault tolerant scanner and fault tolerant scanner will continue scan as expected.
    *
-   * @param shutDown if true shutdown client connection, otherwise disconnect
-   * @param isFaultTolerant if true uses fault tolerant scanner, otherwise
-   *                        uses non fault-tolerant one
+   * @param isFaultTolerant if true use fault-tolerant scanner, otherwise use non-fault-tolerant one
    * @throws Exception
    */
-  void clientFaultInjection(boolean shutDown, boolean isFaultTolerant) throws KuduException {
+  void clientFaultInjection(boolean isFaultTolerant) throws KuduException {
     KuduScanner scanner = syncClient.newScannerBuilder(table)
         .setFaultTolerant(isFaultTolerant)
         .batchSizeBytes(1)
@@ -178,15 +176,10 @@ public class ITScannerMultiTablet extends BaseKuduTest {
         rowCount += rri.getNumRows();
       }
 
-      // Forcefully shutdowns/disconnects the current connection and
-      // fails all outstanding RPCs in the middle of scanning.
-      if (shutDown) {
-        client.shutdownConnection(scanner.currentTablet(),
-                scanner.getReplicaSelection());
-      } else {
-        client.disconnect(scanner.currentTablet(),
-                scanner.getReplicaSelection());
-      }
+      // Forcefully disconnects the current connection and fails all outstanding RPCs
+      // in the middle of scanning.
+      client.newRpcProxy(scanner.currentTablet().getReplicaSelectedServerInfo(
+          scanner.getReplicaSelection())).getConnection().disconnect();
 
       while (scanner.hasMoreRows()) {
         loopCount++;
