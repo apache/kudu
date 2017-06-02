@@ -96,7 +96,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
-  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(30)));
+  ASSERT_OK(cluster_->tablet_server(0)->WaitForInjectedCrash(MonoDelta::FromSeconds(120)));
 
   // Stop the writers.
   work.StopAndJoin();
@@ -117,7 +117,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
                                        ClusterVerifier::AT_LEAST,
                                        work.rows_inserted(),
-                                       MonoDelta::FromSeconds(20)));
+                                       MonoDelta::FromSeconds(40)));
 }
 
 // Regression test for KUDU-1477: a pending commit message would cause
