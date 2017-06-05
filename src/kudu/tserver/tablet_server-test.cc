@@ -19,6 +19,7 @@
 #include <memory>
 #include <sstream>
 
+#include <google/protobuf/util/message_differencer.h>
 #include <zlib.h>
 
 #include "kudu/consensus/log-test-base.h"
@@ -36,8 +37,7 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/zlib.h"
 
-using kudu::consensus::RaftConfigPB;
-using kudu::consensus::RaftPeerPB;
+using google::protobuf::util::MessageDifferencer;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -45,6 +45,7 @@ using kudu::server::Clock;
 using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
+using kudu::tablet::TabletSuperBlockPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -2452,6 +2453,34 @@ TEST_F(TabletServerTest, TestFailedDnsResolution) {
   mini_server_->server()->heartbeater()->TriggerASAP();
   // Wait to make sure the heartbeater thread attempts the DNS lookup.
   usleep(100 * 1000);
+}
+
+TEST_F(TabletServerTest, TestDataDirGroupsCreated) {
+  // Get the original superblock.
+  TabletSuperBlockPB superblock;
+  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock);
+  DataDirGroupPB orig_group = superblock.data_dir_group();
+
+  // Remove the DataDirGroupPB on-disk.
+  superblock.clear_data_dir_group();
+  ASSERT_FALSE(superblock.has_data_dir_group());
+  string tablet_meta_path = JoinPathSegments(GetTestPath("TabletServerTest-fsroot"), "tablet-meta");
+  string pb_path = JoinPathSegments(tablet_meta_path, tablet_replica_->tablet_id());
+  ASSERT_OK(pb_util::WritePBContainerToPath(Env::Default(),
+      pb_path, superblock, pb_util::OVERWRITE, pb_util::SYNC));
+
+  // Verify that the on-disk copy has its DataDirGroup missing.
+  ASSERT_OK(tablet_replica_->tablet()->metadata()->ReadSuperBlockFromDisk(&superblock));
+  ASSERT_FALSE(superblock.has_data_dir_group());
+
+  // Restart the server and check that a new group is created. By default, the
+  // group will be created with all data directories and should be identical to
+  // the original one.
+  ASSERT_OK(ShutdownAndRebuildTablet());
+  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock);
+  DataDirGroupPB new_group = superblock.data_dir_group();
+  MessageDifferencer md;
+  ASSERT_TRUE(md.Compare(orig_group, new_group));
 }
 
 } // namespace tserver
