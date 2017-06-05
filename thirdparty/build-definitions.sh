@@ -327,15 +327,11 @@ build_gmock() {
       -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
       -DBUILD_SHARED_LIBS=$SHARED \
-      $GMOCK_SOURCE
-    make -j$PARALLEL $EXTRA_MAKEFLAGS
+      -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      $GMOCK_SOURCE/googlemock
+    make -j$PARALLEL $EXTRA_MAKEFLAGS install
     popd
   done
-  echo Installing gmock...
-  cp -a $GMOCK_SHARED_BDIR/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
-  cp -a $GMOCK_STATIC_BDIR/libgmock.a $PREFIX/lib/
-  rsync -av $GMOCK_SOURCE/include/ $PREFIX/include/
-  rsync -av $GMOCK_SOURCE/gtest/include/ $PREFIX/include/
 }
 
 build_protobuf() {

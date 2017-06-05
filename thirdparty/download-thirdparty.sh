@@ -117,7 +117,7 @@ if [ ! -d $GLOG_SOURCE ]; then
 fi
 
 if [ ! -d $GMOCK_SOURCE ]; then
-  fetch_and_expand gmock-${GMOCK_VERSION}.zip
+  fetch_and_expand googletest-release-${GMOCK_VERSION}.tar.gz
 fi
 
 if [ ! -d $GFLAGS_SOURCE ]; then
