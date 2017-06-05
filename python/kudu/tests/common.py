@@ -30,6 +30,11 @@ import socket
 import kudu
 from kudu.client import Partitioning
 
+# There's no built-in timeout error in Python 2.
+# See https://stackoverflow.com/questions/2281850.
+class TimeoutError(Exception):
+    pass
+
 class KuduTestBase(object):
 
     """

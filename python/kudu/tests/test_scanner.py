@@ -20,7 +20,7 @@ from __future__ import division
 
 from kudu.compat import unittest
 from kudu.tests.util import TestScanBase
-from kudu.tests.common import KuduTestBase
+from kudu.tests.common import KuduTestBase, TimeoutError
 import kudu
 import datetime
 import time
