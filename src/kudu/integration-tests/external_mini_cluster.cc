@@ -19,11 +19,12 @@
 
 #include <algorithm>
 #include <functional>
-#include <gtest/gtest.h>
 #include <memory>
-#include <rapidjson/document.h>
 #include <string>
 #include <unordered_set>
+
+#include <gtest/gtest.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
@@ -33,10 +34,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
@@ -48,6 +49,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
@@ -741,7 +743,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   ignore_result(Env::Default()->DeleteFile(info_path));
 
   // Start the daemon.
-  gscoped_ptr<Subprocess> p(new Subprocess(argv));
+  unique_ptr<Subprocess> p(new Subprocess(argv));
   p->ShareParentStdout(false);
   p->SetEnvVars(extra_env_);
   string env_str;
@@ -822,21 +824,31 @@ void ExternalDaemon::SetExePath(string exe) {
 }
 
 Status ExternalDaemon::Pause() {
-  if (!process_) return Status::OK();
+  if (!process_) {
+    return Status::IllegalState(Substitute(
+        "Request to pause '$0' but the process is not there", exe_));
+  }
   VLOG(1) << "Pausing " << exe_ << " with pid " << process_->pid();
+  const Status s = process_->Kill(SIGSTOP);
+  RETURN_NOT_OK(s);
   paused_ = true;
-  return process_->Kill(SIGSTOP);
+  return s;
 }
 
 Status ExternalDaemon::Resume() {
-  if (!process_) return Status::OK();
+  if (!process_) {
+    return Status::IllegalState(Substitute(
+        "Request to resume '$0' but the process is not there", exe_));
+  }
   VLOG(1) << "Resuming " << exe_ << " with pid " << process_->pid();
+  const Status s = process_->Kill(SIGCONT);
+  RETURN_NOT_OK(s);
   paused_ = false;
-  return process_->Kill(SIGCONT);
+  return s;
 }
 
 bool ExternalDaemon::IsShutdown() const {
-  return process_.get() == nullptr;
+  return !process_;
 }
 
 bool ExternalDaemon::IsProcessAlive() const {
@@ -1094,7 +1106,7 @@ ScopedResumeExternalDaemon::ScopedResumeExternalDaemon(ExternalDaemon* daemon)
 }
 
 ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
-  daemon_->Resume();
+  WARN_NOT_OK(daemon_->Resume(), "Could not resume external daemon");
 }
 
 //------------------------------------------------------------

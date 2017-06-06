@@ -1639,7 +1639,7 @@ TEST_F(RaftConsensusITest, TestStepDownWithSlowFollower) {
 
   // Stop both followers.
   for (int i = 1; i < 3; i++) {
-    cluster_->tablet_server_by_uuid(tservers[i]->uuid())->Pause();
+    ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[i]->uuid())->Pause());
   }
 
   // Sleep a little bit of time to make sure that the leader has outstanding heartbeats
@@ -1838,7 +1838,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   ASSERT_TRUE(s.IsTimedOut());
 
   // Pause the leader, and restart the other servers.
-  cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Pause();
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Pause());
   ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Restart());
   ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Restart());
 
@@ -1852,7 +1852,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // Resume the original leader. Its change-config operation will now be aborted
   // since it was never replicated to the majority, and the new leader will have
   // replaced the operation.
-  cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Resume();
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Resume());
 
   // Insert some data and verify that it propagates to all servers.
   NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1, vector<CountDownLatch*>()));
@@ -2632,7 +2632,7 @@ TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
 
   // Pause the initial leader and wait for the replica to elect itself. The third TS participates
   // here by voting.
-  first_leader_ts->Pause();
+  ASSERT_OK(first_leader_ts->Pause());
   ASSERT_OK(WaitUntilLeader(tablet_servers_[second_leader_ts->uuid()], tablet_id_, kTimeout));
 
   // The voter TS has done its duty. Shut it down to avoid log spam where it tries to run
@@ -2659,7 +2659,7 @@ TEST_F(RaftConsensusITest, TestCommitIndexFarBehindAfterLeaderElection) {
 
   // Now, when we resume the original leader, we expect them to recover properly.
   // Previously this triggered KUDU-1469.
-  first_leader_ts->Resume();
+  ASSERT_OK(first_leader_ts->Resume());
 
   TabletServerMap active_tservers = tablet_servers_;
   active_tservers.erase(only_vote_ts->uuid());

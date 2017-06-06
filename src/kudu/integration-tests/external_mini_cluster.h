@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #pragma once
 
 #include <sys/types.h>
@@ -27,7 +28,6 @@
 #include <boost/optional.hpp>
 
 #include "kudu/client/client.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/mini_cluster_base.h"
@@ -392,10 +392,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   Status EnableKerberos(MiniKdc* kdc, const std::string& bind_host);
 
   // Sends a SIGSTOP signal to the daemon.
-  Status Pause();
+  Status Pause() WARN_UNUSED_RESULT;
 
   // Sends a SIGCONT signal to the daemon.
-  Status Resume();
+  Status Resume() WARN_UNUSED_RESULT;
 
   // Return true if we have explicitly shut down the process.
   bool IsShutdown() const;
@@ -499,12 +499,12 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   std::vector<std::string> extra_flags_;
   std::map<std::string, std::string> extra_env_;
 
-  gscoped_ptr<Subprocess> process_;
+  std::unique_ptr<Subprocess> process_;
   bool paused_ = false;
 
   std::unique_ptr<Subprocess> perf_record_process_;
 
-  gscoped_ptr<server::ServerStatusPB> status_;
+  std::unique_ptr<server::ServerStatusPB> status_;
   std::string rpc_bind_address_;
 
   // These capture the daemons parameters and running ports and

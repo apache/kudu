@@ -208,7 +208,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // Only in slow mode.
   if (AllowSlowTests()) {
     for (int i = 0; i < migrated_cluster.num_masters(); i++) {
-      migrated_cluster.master(i)->Pause();
+      ASSERT_OK(migrated_cluster.master(i)->Pause());
       ScopedResumeExternalDaemon resume_daemon(migrated_cluster.master(i));
       ASSERT_OK(client->OpenTable(kTableName, &table));
       ASSERT_EQ(0, CountTableRows(table.get()));

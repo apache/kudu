@@ -154,7 +154,7 @@ TEST_F(MasterFailoverTest, TestCreateTableSync) {
   LOG(INFO) << "Pausing leader master";
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-  cluster_->master(leader_idx)->Pause();
+  ASSERT_OK(cluster_->master(leader_idx)->Pause());
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   // As Pause() is asynchronous, the following sequence of events is possible:
@@ -189,7 +189,7 @@ TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   LOG(INFO) << "Pausing leader master";
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-  cluster_->master(leader_idx)->Pause();
+  ASSERT_OK(cluster_->master(leader_idx)->Pause());
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(90);
@@ -215,7 +215,7 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
   LOG(INFO) << "Pausing leader master";
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-  cluster_->master(leader_idx)->Pause();
+  ASSERT_OK(cluster_->master(leader_idx)->Pause());
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   // It's possible for DeleteTable() to delete the table and still return
@@ -249,7 +249,7 @@ TEST_F(MasterFailoverTest, TestRenameTableSync) {
   LOG(INFO) << "Pausing leader master";
   int leader_idx;
   ASSERT_OK(cluster_->GetLeaderMasterIndex(&leader_idx));
-  cluster_->master(leader_idx)->Pause();
+  ASSERT_OK(cluster_->master(leader_idx)->Pause());
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   // It's possible for AlterTable() to rename the table and still return
@@ -449,7 +449,7 @@ TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
     // Only in slow mode.
     if (AllowSlowTests()) {
       for (int j = 0; j < cluster_->num_masters(); j++) {
-        cluster_->master(j)->Pause();
+        ASSERT_OK(cluster_->master(j)->Pause());
         ScopedResumeExternalDaemon resume_daemon(cluster_->master(j));
         string table_name = Substitute("table-$0-$1", i, j);
 

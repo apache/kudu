@@ -181,19 +181,19 @@ TEST_F(ClientStressTest_MultiMaster, TestLeaderResolutionTimeout) {
 
   work.Start();
 
-  cluster_->tablet_server(0)->Pause();
-  cluster_->tablet_server(1)->Pause();
-  cluster_->tablet_server(2)->Pause();
-  cluster_->master(0)->Pause();
-  cluster_->master(1)->Pause();
-  cluster_->master(2)->Pause();
+  ASSERT_OK(cluster_->tablet_server(0)->Pause());
+  ASSERT_OK(cluster_->tablet_server(1)->Pause());
+  ASSERT_OK(cluster_->tablet_server(2)->Pause());
+  ASSERT_OK(cluster_->master(0)->Pause());
+  ASSERT_OK(cluster_->master(1)->Pause());
+  ASSERT_OK(cluster_->master(2)->Pause());
   SleepFor(MonoDelta::FromMilliseconds(300));
-  cluster_->tablet_server(0)->Resume();
-  cluster_->tablet_server(1)->Resume();
-  cluster_->tablet_server(2)->Resume();
-  cluster_->master(0)->Resume();
-  cluster_->master(1)->Resume();
-  cluster_->master(2)->Resume();
+  ASSERT_OK(cluster_->tablet_server(0)->Resume());
+  ASSERT_OK(cluster_->tablet_server(1)->Resume());
+  ASSERT_OK(cluster_->tablet_server(2)->Resume());
+  ASSERT_OK(cluster_->master(0)->Resume());
+  ASSERT_OK(cluster_->master(1)->Resume());
+  ASSERT_OK(cluster_->master(2)->Resume());
   SleepFor(MonoDelta::FromMilliseconds(100));
 
   // Set an explicit timeout. This test has caused deadlocks in the past.
