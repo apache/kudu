@@ -258,6 +258,14 @@ TEST_F(CodegenTest, ObservablesTest) {
   ASSERT_EQ(iwith->is_identity(), iwithout.is_identity());
   ASSERT_TRUE(iwith->is_identity());
 }
+
+// Test empty projection
+TEST_F(CodegenTest, TestEmpty) {
+  Schema empty;
+  TestProjection<true>(&empty);
+  TestProjection<false>(&empty);
+}
+
 // Test key projection
 TEST_F(CodegenTest, TestKey) {
   Schema key = base_.CreateKeyProjection();

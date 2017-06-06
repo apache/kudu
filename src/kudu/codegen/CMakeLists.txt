@@ -117,6 +117,15 @@ list(REMOVE_ITEM IR_FLAGS "-fsanitize=thread" "-DTHREAD_SANITIZER")
 # again at runtime.
 list(REMOVE_ITEM IR_FLAGS "-O3" "-O2" "-O1" "-Os")
 
+# Disable built-in LLVM passes which would add 'noinline' attributes to all
+# standalone functions.
+#
+# This is per the advice in https://reviews.llvm.org/D28053#629914 which says:
+#
+#   "This will generate a frontend-optimized but backend pristine bitcode file that
+#    can be processed more or less depending on the desire of the user..."
+list(APPEND IR_FLAGS "-O" "-mllvm" "-disable-llvm-optzns")
+
 # We need a library which depends on the IR source, because CMake+Ninja
 # doesn't support IMPLICIT_DEPENDS in ADD_CUSTOM_COMMAND.
 #
