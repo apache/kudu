@@ -108,7 +108,7 @@ public class TestUtils {
    */
   private static File findParentGitDir(File dir) {
     while (dir != null) {
-      if (new File(dir, ".git").isDirectory()) {
+      if (new File(dir, ".git").exists()) {
         return dir;
       }
       dir = dir.getParentFile();
