@@ -33,8 +33,164 @@
 [[rn_1.4.0_new_features]]
 == New features
 
+* The C++ and Java client libraries now support the ability to alter the
+  storage attributes (e.g. encoding and compression) and default value
+  of existing columns. Additionally, it is now possible to rename
+  a column which is part of a table's primary key.
+
+* The C++ client library now includes an experimental `KuduPartitioner` API which may
+  be used to efficiently map rows to their associated partitions and hosts.
+  This may be used to achieve better locality or distribution of writes
+  in client applications.
+
+* The Java client library now supports enabling fault tolerance on scanners.
+  Fault tolerant scanners are able to transparently recover from concurrent
+  server crashes at the cost of some performance overhead. See the Java
+  API documentation for more details on usage.
+
+* The `kudu` command line tool now includes a new advanced administrative
+  command `kudu remote_replica unsafe_change_config`. This command may be used
+  to force a tablet to perform an unsafe change of its Raft replication
+  configuration. This can be used to recover from scenarios such as a loss
+  of a majority of replicas, at the risk of losing edits.
+
+* The `kudu` command line tool now includes the `kudu fs check` command
+  which performs various offline consistency checks on the local on-disk
+  storage of a Kudu Tablet Server or Master. In addition to detecting
+  various inconsistencies or corruptions, it can also detect and remove
+  data blocks that are no longer referenced by any tablet but were not
+  fully removed from disk due to a crash or a bug in prior versions of Kudu.
+
+* The `kudu` command line tool can now be used to list the addresses and
+  identifiers of the servers in the cluster using either `kudu master list`
+  or `kudu tserver list`.
+
+* Kudu 1.4 now includes the optional ability to compute, store, and verify
+  checksums on all pieces of data stored on a server. Prior versions only
+  performed checksums on certain portions of the stored data. This feature
+  is not enabled by default since it makes a backward-incompatible change
+  to the on-disk formats and thus prevent downgrades. Kudu 1.5 will enable
+  the feature by default.
 
 == Optimizations and improvements
+
+* `kudu cluster ksck` now detects and reports new classes of
+  inconsistencies and issues. In particular, it is better able to
+  detect cases where a configuration change such as a replica eviction
+  or addition is pending but is unable to be committed. It also now
+  properly detects and reports cases where a tablet has no elected
+  leader.
+
+* The default size for Write Ahead Log (WAL) segments has been reduced
+  from 64MB to 8MB. Additionally, in the case that all replicas of a
+  tablet are fully up to date and data has been flushed from memory,
+  servers will now retain only a single WAL segment rather than
+  two. These changes are expected to reduce the average consumption of
+  disk space on the configured WAL disk by 16x, as well as improve the
+  startup speed of tablet servers by reducing the number and size of
+  WAL segments that need to be re-read.
+
+* The default on-disk storage system used by Kudu servers (Log Block Manager)
+  has been improved to compact its metadata and remove dead containers.
+  This compaction and garbage collection occurs only at startup. Thus, the
+  first startup after upgrade is expected to be longer than usual, and
+  subsequent restarts should be shorter.
+
+* The usability of the Kudu web interfaces has been improved,
+  particularly for the case where a server hosts many tablets or a
+  table has many partitions. Pages that list tablets now include
+  a top-level summary of tablet status and show the complete list
+  under a toggleable section.
+
+* The Maintenance Manager has been improved to improve utilization of the
+  configured maintenance threads. Previously, maintenance work would
+  only be scheduled a maximum of 4 times per second, but now maintenance
+  work will be scheduled immediately whenever any configured thread is
+  available. This can improve the throughput of write-heavy workloads.
+
+* The Maintenance Manager will now aggressively schedule flushes of
+  in-memory data when memory consumption crosses 60% of the configured
+  process-wide memory limit. The backpressure mechanism which begins
+  to throttle client writes has been accordingly adjusted to not begin
+  throttling until reaching 80% of the configured limit. These two
+  changes together result in improved write throughput, more consistent
+  latency, and fewer timeouts due to memory exhaustion.
+
+* Many performance improvements were made to write performance. Applications
+  which send large batches of writes to Kudu should see substantially
+  improved throughput in Kudu 1.4.
+
+* Several improvements were made to reduce the memory consumption of
+  Kudu Tablet Servers which hold large volumes of data. The specific
+  amount of memory saved varies depending on workload, but the expectation
+  is that approximately 350MB of excess peak memory usage has been eliminated
+  per TB of data stored.
+
+* The number of threads used by the Kudu Tablet Server has been reduced.
+  Previously, each tablet used a dedicated thread to append to its WAL.
+  Those threads now automatically stop running if there is no activity
+  on a given tablet for a short period of time.
+
+[[rn_1.4.0_fixed_issues]]
+== Fixed Issues
+
+* link:https://issues.apache.org/jira/browse/KUDU-2020[KUDU-2020]
+  Fixed an issue where re-replication after a failure would proceed
+  significantly slower than expected. This bug caused many tablets
+  to be unnecessarily copied multiple times before successfully
+  being considered re-replicated, resulting in significantly more
+  network and IO bandwidth usage than expected. Mean time to recovery
+  on clusters with large amounts of data is improved by up to 10x by this
+  fix.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1982[KUDU-1982]
+  Fixed an issue where the Java client would call `NetworkInterface.getByInetAddress`
+  very often, causing performance problems particularly on Windows
+  where this function can be quite slow.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1755[KUDU-1755]
+  Improved the accuracy of the `on_disk_size` replica metrics to
+  include the size consumed by bloom filters, primary key indexes,
+  and superblock metadata, and delta files. Note that, because the size
+  metric is now more accurate, the reported values are expected to
+  increase after upgrading to Kudu 1.4. This does not indicate that
+  replicas are using more space after the upgrade; rather, it is
+  now accurately reporting the amount of space that has always been
+  used.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1192[KUDU-1192]
+  Kudu servers will now periodically flush their log messages to disk
+  even if no `WARNING`-level messages have been logged. This makes it
+  easier to tail the logs to see progress output during normal startup.
+
+* link:https://issues.apache.org/jira/browse/KUDU-1999[KUDU-1999]
+  Fixed the ability to run Spark jobs in "cluster" mode against
+  Kudu clusters secured by Kerberos.
+
+
+[[rn_1.4.0_wire_compatibility]]
+== Wire Protocol compatibility
+
+Kudu 1.4.0 is wire-compatible with previous versions of Kudu:
+
+* Kudu 1.4 clients may connect to servers running Kudu 1.0 or later. If the client uses
+  features that are not available on the target server, an error will be returned.
+* Kudu 1.0 clients may connect to servers running Kudu 1.4 with the exception of the
+  below-mentioned restrictions regarding secure clusters.
+* Rolling upgrade between Kudu 1.3 and Kudu 1.4 servers is believed to be possible
+  though has not been sufficiently tested. Users are encouraged to shut down all nodes
+  in the cluster, upgrade the software, and then restart the daemons on the new version.
+
+The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.4 and versions earlier than 1.3:
+
+* If a Kudu 1.4 cluster is configured with authentication or encryption set to "required",
+  clients older than Kudu 1.3 will be unable to connect.
+* If a Kudu 1.4 cluster is configured with authentication and encryption set to "optional"
+  or "disabled", older clients will still be able to connect.
+
+[[rn_1.4.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.4.0
 
 * Kudu servers, by default, will now only allow unencrypted or unauthenticated connections
   from trusted subnets, which are private networks (127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,
@@ -49,20 +205,35 @@ The trusted subnets can be configured using the `--trusted_subnets` flag, which 
    access. This can be mitigated if authentication and encryption are configured to be
    required.
 
-[[rn_1.4.0_fixed_issues]]
-== Fixed Issues
-
-
-[[rn_1.4.0_wire_compatibility]]
-== Wire Protocol compatibility
-
-
-[[rn_1.4.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.3.0
-
-
 [[rn_1.4.0_client_compatibility]]
+
 === Client Library Compatibility
+* The Kudu 1.4 Java client library is API- and ABI-compatible with Kudu 1.3. Applications
+  written against Kudu 1.3 will compile and run against the Kudu 1.4 client library and
+  vice-versa, unless one of the following newly added APIs is used:
+** `[Async]KuduScannerBuilder.setFaultTolerant(...)`
+** New methods in `AlterTableOptions`: `removeDefault`, `changeDefault`, `changeDesiredBlockSize`,
+   `changeEncoding`, `changeCompressionAlgorithm`
+** `KuduClient.updateLastPropagatedTimestamp`
+** `KuduClient.getLastPropagatedTimestamp`
+** New getters in `PartialRow`: `getBoolean`, `getByte`, `getShort`, `getInt`, `getLong`,
+   `getFloat`, `getDouble`, `getString`, `getBinaryCopy`, `getBinary`, `isNull`,
+   `isSet`.
+
+
+* The Kudu 1.4 {cpp} client is API- and ABI-forward-compatible with Kudu 1.3.
+  Applications written and compiled against the Kudu 1.3 client library will run without
+  modification against the Kudu 1.4 client library. Applications written and compiled
+  against the Kudu 1.4 client library will run without modification against the Kudu 1.3
+  client library unless they use one of the following new APIs:
+** `KuduPartitionerBuilder`
+** `KuduPartitioner
+** `KuduScanner::SetRowFormatFlags` (unstable API)
+** `KuduScanBatch::direct_data`, `KuduScanBatch::indirect_data` (unstable API)
+
+* The Kudu 1.4 Python client is API-compatible with Kudu 1.3. Applications
+  written against Kudu 1.3 will continue to run against the Kudu 1.4 client
+  and vice-versa.
 
 
 [[rn_1.4.0_known_issues]]
