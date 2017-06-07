@@ -65,11 +65,6 @@ class CatalogManagerTskITest : public KuduTest {
     // Add common flags for both masters and tservers.
     const vector<string> common_flags = {
       Substitute("--raft_heartbeat_interval_ms=$0", hb_interval_ms_),
-      // Added a workaround for memory accounting bug, otherwise the assertion
-      // from MemTracker destructor fires in rare cases. Since the memory
-      // accounting code is slated for revamping, let's disable the memory
-      // tracking for this test.
-      "--tablet_transaction_memory_limit_mb=-1",
     };
     copy(common_flags.begin(), common_flags.end(),
         back_inserter(cluster_opts_.extra_master_flags));
