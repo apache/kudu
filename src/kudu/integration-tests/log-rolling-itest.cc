@@ -35,6 +35,8 @@ using strings::Substitute;
 
 namespace kudu {
 
+class LogRollingITest : public KuduTest {};
+
 static int64_t CountInfoLogs(const string& log_dir) {
     vector<string> logfiles;
     string pattern = Substitute("$0/*.$1.*", log_dir, "INFO");
@@ -43,7 +45,7 @@ static int64_t CountInfoLogs(const string& log_dir) {
 }
 
 // Tests that logs roll on startup, and get cleaned up appropriately.
-TEST(LogRollingITest, TestLogCleanupOnStartup) {
+TEST_F(LogRollingITest, TestLogCleanupOnStartup) {
   ExternalMiniClusterOptions opts;
   opts.num_masters = 1;
   opts.num_tablet_servers = 0;
