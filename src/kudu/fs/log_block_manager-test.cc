@@ -44,6 +44,8 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_int64(block_manager_max_open_files);
+DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(log_container_max_blocks);
@@ -1186,6 +1188,60 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
   FsReport report;
   ASSERT_OK(ReopenBlockManager(&report));
   ASSERT_EQ(last_live_aligned_bytes, report.stats.live_block_bytes_aligned);
+}
+
+// Regression test for a bug in which, after a metadata file was compacted,
+// we would not properly handle appending to the new (post-compaction) metadata.
+//
+// The bug was related to a stale file descriptor left in the file_cache, so
+// this test explicitly targets that scenario.
+TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
+  // Compact aggressively.
+  FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
+  // Use a small file cache (smaller than the number of containers).
+  FLAGS_block_manager_max_open_files = 50;
+  // Use a single shard so that we have an accurate max cache capacity
+  // regardless of the number of cores on the machine.
+  FLAGS_cache_force_single_shard = true;
+  // Use very small containers, so that we generate a lot of them (and thus
+  // consume a lot of file descriptors).
+  FLAGS_log_container_max_blocks = 4;
+  // Reopen so the flags take effect.
+  ASSERT_OK(ReopenBlockManager(nullptr));
+
+  // Create many container with a bunch of blocks, half of which are deleted.
+  vector<BlockId> block_ids;
+  for (int i = 0; i < 1000; i++) {
+    unique_ptr<WritableBlock> block;
+    ASSERT_OK(bm_->CreateBlock(&block));
+    ASSERT_OK(block->Close());
+    if (i % 2 == 1) {
+      ASSERT_OK(bm_->DeleteBlock(block->id()));
+    } else {
+      block_ids.emplace_back(block->id());
+    }
+  }
+
+  // Reopen the block manager. This will cause it to compact all of the metadata
+  // files, since we've deleted half the blocks in every container and the
+  // threshold is set high above.
+  FsReport report;
+  ASSERT_OK(ReopenBlockManager(&report));
+
+  // Delete the remaining blocks in a random order. This will append to metadata
+  // files which have just been compacted. Since we have more metadata files than
+  // we have file_cache capacity, this will also generate a mix of cache hits,
+  // misses, and re-insertions.
+  std::random_shuffle(block_ids.begin(), block_ids.end());
+  for (const BlockId& b : block_ids) {
+    ASSERT_OK(bm_->DeleteBlock(b));
+  }
+
+  // Reopen to make sure that the metadata can be properly loaded and
+  // that the resulting block manager is empty.
+  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_EQ(0, report.stats.live_block_count);
+  ASSERT_EQ(0, report.stats.live_block_bytes_aligned);
 }
 
 } // namespace fs

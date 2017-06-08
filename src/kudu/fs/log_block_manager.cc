@@ -2258,9 +2258,8 @@ Status LogBlockManager::Repair(
 
     // Rewrite this metadata file. Failures are non-fatal.
     int64_t file_bytes_delta;
-    Status s = RewriteMetadataFile(StrCat(e.first, kContainerMetadataFileSuffix),
-                                   e.second,
-                                   &file_bytes_delta);
+    const auto& meta_path = StrCat(e.first, kContainerMetadataFileSuffix);
+    Status s = RewriteMetadataFile(meta_path, e.second, &file_bytes_delta);
     if (!s.ok()) {
       WARN_NOT_OK(s, "could not rewrite metadata file");
       continue;
@@ -2272,6 +2271,9 @@ Status LogBlockManager::Repair(
 
     metadata_files_compacted++;
     metadata_bytes_delta += file_bytes_delta;
+    VLOG(1) << "Compacted metadata file " << meta_path
+            << " (saved " << file_bytes_delta << " bytes)";
+
   }
 
   // The data directory can be synchronized once for all of the new metadata files.
@@ -2325,6 +2327,10 @@ Status LogBlockManager::RewriteMetadataFile(const string& metadata_file_name,
                         "could not get file size of temporary metadata file");
   RETURN_NOT_OK_PREPEND(env_->RenameFile(tmp_file_name, metadata_file_name),
                         "could not rename temporary metadata file");
+  // Evict the old path from the file cache, so that when we re-open the new
+  // metadata file for write, we don't accidentally get a cache hit on the
+  // old file descriptor pointing to the now-deleted old version.
+  file_cache_.Invalidate(metadata_file_name);
 
   tmp_deleter.Cancel();
   *file_bytes_delta = (static_cast<int64_t>(old_metadata_size) - new_metadata_size);
