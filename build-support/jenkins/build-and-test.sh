@@ -355,22 +355,19 @@ if [ "$BUILD_JAVA" == "1" ]; then
   set -x
 
   # Run the full Maven build (with Spark 2.x).
-  if ! mvn $MVN_FLAGS \
-      -Dsurefire.rerunFailingTestsCount=3 \
-      -Dfailsafe.rerunFailingTestsCount=3 \
-      clean verify ; then
+  MVN_FLAGS="$MVN_FLAGS -B"
+  MVN_FLAGS="$MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
+  MVN_FLAGS="$MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
+  MVN_FLAGS="$MVN_FLAGS -Dmaven.javadoc.skip"
+  if ! mvn $MVN_FLAGS clean verify ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Java build/test failed\n'
-  else
-    # If there were no failures, remove the Spark output and rerun the build,
-    # this time just to test Spark 1.x with Scala 2.10.
-    #
-    # Note: this won't work if there are ever Spark integration tests!
-    rm -rf kudu-spark/target/
-    if ! mvn $MVN_FLAGS -Pspark_2.10 -Dtest="org.apache.kudu.spark.*.*" test; then
-      EXIT_STATUS=1
-      FAILURES="$FAILURES"$'spark build/test failed\n'
-    fi
+
+  # If there are no failures, rerun the build with Spark 1.x with Scala 2.10.
+  # Note: this won't work if there are ever Spark integration tests!
+  elif ! mvn $MVN_FLAGS -Dtest="org.apache.kudu.spark.*.*" -Pspark_2.10 clean verify ; then
+    EXIT_STATUS=1
+    FAILURES="$FAILURES"$'Spark 1.x build/test failed\n'
   fi
 
   set +x
