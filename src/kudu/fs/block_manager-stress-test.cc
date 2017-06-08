@@ -43,10 +43,13 @@ DECLARE_int64(block_manager_max_open_files);
 DECLARE_uint64(log_container_max_size);
 DECLARE_uint64(log_container_preallocate_bytes);
 
-DEFINE_int32(test_duration_secs, 2, "Number of seconds to run the test");
+DEFINE_double(test_duration_secs, 2, "Number of seconds to run the test");
 DEFINE_int32(num_writer_threads, 4, "Number of writer threads to run");
 DEFINE_int32(num_reader_threads, 8, "Number of reader threads to run");
 DEFINE_int32(num_deleter_threads, 1, "Number of deleter threads to run");
+DEFINE_int32(minimum_live_blocks_for_delete, 1000,
+             "If there are fewer than this number of live blocks, the deleter "
+             "threads will not delete any");
 DEFINE_int32(block_group_size, 8, "Number of blocks to write per block "
              "group. Must be power of 2");
 DEFINE_int32(block_group_bytes, 32 * 1024,
@@ -104,13 +107,13 @@ class BlockManagerStressTest : public KuduTest {
     FLAGS_log_container_preallocate_bytes = 1 * 1024 * 1024;
 
     // Ensure the file cache is under stress too.
-    FLAGS_block_manager_max_open_files = 512;
+    FLAGS_block_manager_max_open_files = 32;
 
     // Maximize the amount of cleanup triggered by the extra space heuristic.
     FLAGS_log_container_excess_space_before_cleanup_fraction = 0.0;
 
     // Compact block manager metadata aggressively.
-    FLAGS_log_container_live_metadata_before_compact_ratio = 0.80;
+    FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
 
     if (FLAGS_block_manager_paths.empty()) {
       data_dirs_.push_back(test_dir_);
@@ -147,7 +150,7 @@ class BlockManagerStressTest : public KuduTest {
     return new T(env_, opts);
   }
 
-  void RunTest(int secs) {
+  void RunTest(double secs) {
     LOG(INFO) << "Starting all threads";
     this->StartThreads();
     SleepFor(MonoDelta::FromSeconds(secs));
@@ -389,8 +392,15 @@ void BlockManagerStressTest<T>::DeleterThread() {
     // Grab a block at random.
     BlockId to_delete;
     {
-      std::lock_guard<simple_spinlock> l(lock_);
-      if (written_blocks_.empty()) {
+      std::unique_lock<simple_spinlock> l(lock_);
+      // If we only have a small number of live blocks, don't delete any.
+      // This ensures that, when we restart, we always have a reasonable
+      // amount of data -- otherwise the deletion threads are likely to
+      // "keep up" with the writer threads and every restart will consist
+      // of a very small number of non-dead containers.
+      if (written_blocks_.size() < FLAGS_minimum_live_blocks_for_delete) {
+        l.unlock();
+        SleepFor(MonoDelta::FromMilliseconds(10));
         continue;
       }
 
@@ -460,6 +470,8 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   OverrideFlagForSlowTests("block_group_size", "16");
   OverrideFlagForSlowTests("num_inconsistencies", "128");
 
+  const int kNumStarts = 3;
+
   if ((FLAGS_block_group_size & (FLAGS_block_group_size - 1)) != 0) {
     LOG(FATAL) << "block_group_size " << FLAGS_block_group_size
                << " is not a power of 2";
@@ -469,16 +481,19 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
 
   LOG(INFO) << "Running on fresh block manager";
   checker.Start();
-  this->RunTest(FLAGS_test_duration_secs / 2);
+  this->RunTest(FLAGS_test_duration_secs / kNumStarts);
   NO_FATALS(this->InjectNonFatalInconsistencies());
-  LOG(INFO) << "Running on populated block manager";
-  this->bm_.reset(this->CreateBlockManager());
-  FsReport report;
-  ASSERT_OK(this->bm_->Open(&report));
-  ASSERT_OK(this->bm_->dd_manager()->LoadDataDirGroupFromPB(this->test_tablet_name_,
-                                                            this->test_group_pb_));
-  ASSERT_OK(report.LogAndCheckForFatalErrors());
-  this->RunTest(FLAGS_test_duration_secs / 2);
+
+  for (int i = 1; i < kNumStarts; i++) {
+    LOG(INFO) << "Running on populated block manager (restart #" << i << ")";
+    this->bm_.reset(this->CreateBlockManager());
+    FsReport report;
+    ASSERT_OK(this->bm_->Open(&report));
+    ASSERT_OK(this->bm_->dd_manager()->LoadDataDirGroupFromPB(this->test_tablet_name_,
+                                                              this->test_group_pb_));
+    ASSERT_OK(report.LogAndCheckForFatalErrors());
+    this->RunTest(FLAGS_test_duration_secs / kNumStarts);
+  }
   checker.Stop();
 
   LOG(INFO) << "Printing test totals";

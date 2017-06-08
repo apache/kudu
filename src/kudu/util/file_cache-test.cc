@@ -223,6 +223,40 @@ TYPED_TEST(FileCacheTest, TestDeletion) {
   ASSERT_EQ(this->initial_open_fds_, CountOpenFds(this->env_));
 }
 
+TYPED_TEST(FileCacheTest, TestInvalidation) {
+  const string kFile1 = this->GetTestPath("foo");
+  const string kData1 = "test data 1";
+  ASSERT_OK(this->WriteTestFile(kFile1, kData1));
+
+  // Open the file.
+  shared_ptr<TypeParam> f;
+  ASSERT_OK(this->cache_->OpenExistingFile(kFile1, &f));
+
+  // Write a new file and rename it in place on top of file1.
+  const string kFile2 = this->GetTestPath("foo2");
+  const string kData2 = "test data 2 (longer than original)";
+  ASSERT_OK(this->WriteTestFile(kFile2, kData2));
+  ASSERT_OK(this->env_->RenameFile(kFile2, kFile1));
+
+  // We should still be able to access the file, since it has a cached fd.
+  uint64_t size;
+  ASSERT_OK(f->Size(&size));
+  ASSERT_EQ(kData1.size(), size);
+
+  // If we invalidate it from the cache and try again, it should crash because
+  // the existing descriptor was invalidated.
+  this->cache_->Invalidate(kFile1);
+  ASSERT_DEATH({ f->Size(&size); }, "invalidated");
+
+  // But if we re-open the path again, the new descriptor should read the
+  // new data.
+  shared_ptr<TypeParam> f2;
+  ASSERT_OK(this->cache_->OpenExistingFile(kFile1, &f2));
+  ASSERT_OK(f2->Size(&size));
+  ASSERT_EQ(kData2.size(), size);
+}
+
+
 TYPED_TEST(FileCacheTest, TestHeavyReads) {
   const int kNumFiles = 20;
   const int kNumIterations = 100;
