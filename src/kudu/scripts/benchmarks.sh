@@ -27,6 +27,9 @@
 # Jenkins job: http://sandbox.jenkins.cloudera.com/job/kudu-benchmarks
 ########################################################################
 
+# Fail the job if any part fails, even when piping through 'tee', etc.
+set -o pipefail
+
 ################################################################
 # Constants
 ################################################################
