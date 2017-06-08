@@ -28,6 +28,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_double(fault_crash_before_cmeta_flush, 0.0,
@@ -41,45 +42,6 @@ namespace consensus {
 using std::lock_guard;
 using std::string;
 using strings::Substitute;
-
-Status ConsensusMetadata::Create(FsManager* fs_manager,
-                                 const string& tablet_id,
-                                 const std::string& peer_uuid,
-                                 const RaftConfigPB& config,
-                                 int64_t current_term,
-                                 scoped_refptr<ConsensusMetadata>* cmeta_out) {
-  scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
-  cmeta->set_committed_config(config);
-  cmeta->set_current_term(current_term);
-  RETURN_NOT_OK(cmeta->Flush(NO_OVERWRITE)); // Create() should not clobber.
-  cmeta_out->swap(cmeta);
-  return Status::OK();
-}
-
-Status ConsensusMetadata::Load(FsManager* fs_manager,
-                               const std::string& tablet_id,
-                               const std::string& peer_uuid,
-                               scoped_refptr<ConsensusMetadata>* cmeta_out) {
-  scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
-                                                 fs_manager->GetConsensusMetadataPath(tablet_id),
-                                                 &cmeta->pb_));
-  cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
-  cmeta_out->swap(cmeta);
-  return Status::OK();
-}
-
-Status ConsensusMetadata::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
-  string cmeta_path = fs_manager->GetConsensusMetadataPath(tablet_id);
-  Env* env = fs_manager->env();
-  if (!env->FileExists(cmeta_path)) {
-    return Status::OK();
-  }
-  LOG(INFO) << "T " << tablet_id << " Deleting consensus metadata";
-  RETURN_NOT_OK_PREPEND(env->DeleteFile(cmeta_path),
-                        "Unable to delete consensus metadata file for tablet " + tablet_id);
-  return Status::OK();
-}
 
 int64_t ConsensusMetadata::current_term() const {
   lock_guard<Mutex> l(lock_);
@@ -331,6 +293,41 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
       peer_uuid_(std::move(peer_uuid)),
       has_pending_config_(false),
       flush_count_for_tests_(0) {
+}
+
+Status ConsensusMetadata::Create(FsManager* fs_manager,
+                                 const string& tablet_id,
+                                 const std::string& peer_uuid,
+                                 const RaftConfigPB& config,
+                                 int64_t current_term,
+                                 scoped_refptr<ConsensusMetadata>* cmeta_out) {
+  scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
+  cmeta->set_committed_config(config);
+  cmeta->set_current_term(current_term);
+  RETURN_NOT_OK(cmeta->Flush(NO_OVERWRITE)); // Create() should not clobber.
+  cmeta_out->swap(cmeta);
+  return Status::OK();
+}
+
+Status ConsensusMetadata::Load(FsManager* fs_manager,
+                               const std::string& tablet_id,
+                               const std::string& peer_uuid,
+                               scoped_refptr<ConsensusMetadata>* cmeta_out) {
+  scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
+                                                 fs_manager->GetConsensusMetadataPath(tablet_id),
+                                                 &cmeta->pb_));
+  cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
+  cmeta_out->swap(cmeta);
+  return Status::OK();
+}
+
+Status ConsensusMetadata::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
+  string cmeta_path = fs_manager->GetConsensusMetadataPath(tablet_id);
+  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteFile(cmeta_path),
+                        Substitute("Unable to delete consensus metadata file for tablet $0",
+                                   tablet_id));
+  return Status::OK();
 }
 
 std::string ConsensusMetadata::LogPrefix() const {

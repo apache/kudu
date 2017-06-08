@@ -28,6 +28,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
@@ -82,7 +83,7 @@ using consensus::ChangeConfigRecordPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
-using consensus::ConsensusRound;
+using consensus::ConsensusMetadataManager;
 using consensus::MinimumOpId;
 using consensus::NO_OP;
 using consensus::OperationType;
@@ -129,7 +130,7 @@ struct ReplayState;
 class FlushedStoresSnapshot {
  public:
   FlushedStoresSnapshot() {}
-  Status InitFrom(const TabletMetadata& meta);
+  Status InitFrom(const TabletMetadata& tablet_meta);
 
   // Return true if the given memory store is still active (i.e. edits that were
   // originally written to this memory store should be replayed during the bootstrap
@@ -164,7 +165,8 @@ class FlushedStoresSnapshot {
 // we need to set it before replay or we won't be able to re-rebuild.
 class TabletBootstrap {
  public:
-  TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
+  TabletBootstrap(const scoped_refptr<TabletMetadata>& tablet_meta,
+                  const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
                   const scoped_refptr<Clock>& clock,
                   shared_ptr<MemTracker> mem_tracker,
                   const scoped_refptr<ResultTracker>& result_tracker,
@@ -335,7 +337,8 @@ class TabletBootstrap {
   // Log a status message and set the TabletReplica's status as well.
   void SetStatusMessage(const string& status);
 
-  scoped_refptr<TabletMetadata> meta_;
+  scoped_refptr<TabletMetadata> tablet_meta_;
+  const scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
   scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
@@ -400,12 +403,14 @@ class TabletBootstrap {
 };
 
 void TabletBootstrap::SetStatusMessage(const string& status) {
-  LOG(INFO) << "T " << meta_->tablet_id() << " P " << meta_->fs_manager()->uuid() << ": "
+  LOG(INFO) << "T " << tablet_meta_->tablet_id()
+            << " P " << tablet_meta_->fs_manager()->uuid() << ": "
             << status;
   if (tablet_replica_) tablet_replica_->SetStatusMessage(status);
 }
 
-Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
+Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
+                       const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
                        const scoped_refptr<Clock>& clock,
                        const shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<ResultTracker>& result_tracker,
@@ -416,8 +421,8 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
-               "tablet_id", meta->tablet_id());
-  TabletBootstrap bootstrap(meta, clock, mem_tracker, result_tracker,
+               "tablet_id", tablet_meta->tablet_id());
+  TabletBootstrap bootstrap(tablet_meta, cmeta_manager, clock, mem_tracker, result_tracker,
                             metric_registry, tablet_replica, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
@@ -444,13 +449,15 @@ static string DebugInfo(const string& tablet_id,
 }
 
 TabletBootstrap::TabletBootstrap(
-    const scoped_refptr<TabletMetadata>& meta,
+    const scoped_refptr<TabletMetadata>& tablet_meta,
+    const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
     const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
     const scoped_refptr<ResultTracker>& result_tracker,
     MetricRegistry* metric_registry,
     const scoped_refptr<TabletReplica>& tablet_replica,
     const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
-    : meta_(meta),
+    : tablet_meta_(tablet_meta),
+      cmeta_manager_(cmeta_manager),
       clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
       result_tracker_(result_tracker),
@@ -463,7 +470,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   ConsensusBootstrapInfo* consensus_info) {
   // We pin (prevent) metadata flush at the beginning of the bootstrap process
   // and always unpin it at the end.
-  meta_->PinFlush();
+  tablet_meta_->PinFlush();
 
   // Now run the actual bootstrap process.
   Status bootstrap_status = RunBootstrap(rebuilt_tablet, rebuilt_log, consensus_info);
@@ -476,14 +483,14 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   CHECK((*rebuilt_tablet && *rebuilt_log) || !bootstrap_status.ok())
       << "Tablet and Log not initialized";
   if (bootstrap_status.ok()) {
-    meta_->SetPreFlushCallback(
+    tablet_meta_->SetPreFlushCallback(
         Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
              make_scoped_refptr(new FlushInflightsToLogCallback(
                  rebuilt_tablet->get(), *rebuilt_log))));
   }
 
   // This will cause any pending TabletMetadata flush to be executed.
-  Status unpin_status = meta_->UnPinFlush();
+  Status unpin_status = tablet_meta_->UnPinFlush();
 
   constexpr char kFailedUnpinMsg[] = "Failed to flush after unpinning";
   if (PREDICT_FALSE(!bootstrap_status.ok() && !unpin_status.ok())) {
@@ -498,19 +505,18 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                      scoped_refptr<Log>* rebuilt_log,
                                      ConsensusBootstrapInfo* consensus_info) {
-  string tablet_id = meta_->tablet_id();
+  string tablet_id = tablet_meta_->tablet_id();
 
   // Replay requires a valid Consensus metadata file to exist in order to
   // compare the committed consensus configuration seqno with the log entries and also to persist
   // committed but unpersisted changes.
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id,
-                                                meta_->fs_manager()->uuid(), &cmeta_),
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta_),
                         "Unable to load Consensus metadata");
 
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
   // of a tablet copy. It's likely that not all files were copied over
   // successfully.
-  TabletDataState tablet_data_state = meta_->tablet_data_state();
+  TabletDataState tablet_data_state = tablet_meta_->tablet_data_state();
   if (tablet_data_state != TABLET_DATA_READY) {
     return Status::Corruption("Unable to locally bootstrap tablet " + tablet_id + ": " +
                               "TabletMetadata bootstrap state is " +
@@ -521,11 +527,11 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   if (VLOG_IS_ON(1)) {
     TabletSuperBlockPB super_block;
-    RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
+    RETURN_NOT_OK(tablet_meta_->ToSuperBlock(&super_block));
     VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << SecureDebugString(super_block);
   }
 
-  RETURN_NOT_OK(flushed_stores_.InitFrom(*meta_.get()));
+  RETURN_NOT_OK(flushed_stores_.InitFrom(*tablet_meta_.get()));
 
   bool has_blocks;
   RETURN_NOT_OK(OpenTablet(&has_blocks));
@@ -576,7 +582,7 @@ void TabletBootstrap::FinishBootstrap(const string& message,
 }
 
 Status TabletBootstrap::OpenTablet(bool* has_blocks) {
-  gscoped_ptr<Tablet> tablet(new Tablet(meta_,
+  gscoped_ptr<Tablet> tablet(new Tablet(tablet_meta_,
                                         clock_,
                                         mem_tracker_,
                                         metric_registry_,
@@ -660,7 +666,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 
 Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
   VLOG_WITH_PREFIX(1) << "Opening log reader in log recovery dir "
-                      << meta_->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
+                      << tablet_meta_->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
   // Open the reader.
   RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
                                                        tablet_->metadata()->tablet_id(),
@@ -970,9 +976,11 @@ TabletBootstrap::ActiveStores TabletBootstrap::AnalyzeActiveStores(const CommitM
 Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& commit) {
   if (AnalyzeActiveStores(commit) == SOME_STORES_ACTIVE) {
     TabletSuperBlockPB super;
-    WARN_NOT_OK(meta_->ToSuperBlock(&super), LogPrefix() + "Couldn't build TabletSuperBlockPB");
+    WARN_NOT_OK(tablet_meta_->ToSuperBlock(&super),
+                Substitute("$0$1", LogPrefix(), "Couldn't build TabletSuperBlockPB"));
     return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
-        "stores which need replay. Commit: $0. TabletMetadata: $1", SecureShortDebugString(commit),
+        "stores which need replay. Commit: $0. TabletMetadata: $1",
+        SecureShortDebugString(commit),
         SecureShortDebugString(super)));
   }
 
@@ -1188,7 +1196,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
           AnalyzeActiveStores(entry.second->commit()) == NO_STORES_ACTIVE) {
         DumpReplayStateToLog(state);
         TabletSuperBlockPB super;
-        WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
+        WARN_NOT_OK(tablet_meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
         return Status::Corruption(Substitute("CommitMsg was pending but it did not refer "
             "to any active memory stores. Commit: $0. TabletMetadata: $1",
             SecureShortDebugString(entry.second->commit()), SecureShortDebugString(super)));
@@ -1584,13 +1592,13 @@ Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
 }
 
 string TabletBootstrap::LogPrefix() const {
-  return Substitute("T $0 P $1: ", meta_->tablet_id(), meta_->fs_manager()->uuid());
+  return Substitute("T $0 P $1: ", tablet_meta_->tablet_id(), tablet_meta_->fs_manager()->uuid());
 }
 
-Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& meta) {
+Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& tablet_meta) {
   CHECK(flushed_dms_by_drs_id_.empty()) << "already initted";
-  last_durable_mrs_id_ = meta.last_durable_mrs_id();
-  for (const shared_ptr<RowSetMetadata>& rsmd : meta.rowsets()) {
+  last_durable_mrs_id_ = tablet_meta.last_durable_mrs_id();
+  for (const shared_ptr<RowSetMetadata>& rsmd : tablet_meta.rowsets()) {
     if (!InsertIfNotPresent(&flushed_dms_by_drs_id_, rsmd->id(),
                             rsmd->last_durable_redo_dms_id())) {
       return Status::Corruption(Substitute(

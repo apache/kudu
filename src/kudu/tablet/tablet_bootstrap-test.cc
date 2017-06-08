@@ -21,8 +21,9 @@
 #include <vector>
 
 #include "kudu/common/iterator.h"
-#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -44,6 +45,7 @@ namespace tablet {
 
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using consensus::kMinimumTerm;
 using consensus::MakeOpId;
 using consensus::OpId;
@@ -63,6 +65,7 @@ class BootstrapTest : public LogTestBase {
 
   void SetUp() OVERRIDE {
     LogTestBase::SetUp();
+    cmeta_manager_.reset(new ConsensusMetadataManager(fs_manager_.get()));
   }
 
   Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
@@ -93,10 +96,9 @@ class BootstrapTest : public LogTestBase {
     peer->set_member_type(consensus::RaftPeerPB::VOTER);
 
     scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
-                                                    meta->fs_manager()->uuid(),
-                                                    config, kMinimumTerm, &cmeta),
+    RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(meta->tablet_id(), config, kMinimumTerm, &cmeta),
                           "Unable to create consensus metadata");
+
     return Status::OK();
   }
 
@@ -115,6 +117,7 @@ class BootstrapTest : public LogTestBase {
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
         meta,
+        cmeta_manager_,
         scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
         shared_ptr<MemTracker>(),
         scoped_refptr<rpc::ResultTracker>(),
@@ -158,6 +161,8 @@ class BootstrapTest : public LogTestBase {
       VLOG(1) << result;
     }
   }
+
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
 };
 
 // Tests a normal bootstrap scenario

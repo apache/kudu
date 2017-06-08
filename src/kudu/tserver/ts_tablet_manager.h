@@ -44,6 +44,7 @@ class Partition;
 class Schema;
 
 namespace consensus {
+class ConsensusMetadataManager;
 class RaftConfigPB;
 } // namespace consensus
 
@@ -178,9 +179,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Delete the tablet using the specified delete_type as the final metadata
   // state. Deletes the on-disk data, metadata, as well as all WAL segments.
-  static Status DeleteTabletData(const scoped_refptr<tablet::TabletMetadata>& meta,
-                                 tablet::TabletDataState delete_type,
-                                 const boost::optional<consensus::OpId>& last_logged_opid);
+  static Status DeleteTabletData(
+      const scoped_refptr<tablet::TabletMetadata>& meta,
+      const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+      tablet::TabletDataState delete_type,
+      const boost::optional<consensus::OpId>& last_logged_opid);
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -279,6 +282,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   void InitLocalRaftPeerPB();
 
   FsManager* const fs_manager_;
+
+  const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
 
   TabletServer* server_;
 

@@ -31,8 +31,9 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -91,6 +92,7 @@ using cfile::CFileReader;
 using cfile::DumpIterator;
 using cfile::ReaderOptions;
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
@@ -219,12 +221,14 @@ Status ParsePeerString(const string& peer_str,
 Status PrintReplicaUuids(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+      new ConsensusMetadataManager(fs_manager.get()));
+
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   // Load the cmeta file and print all peer uuids.
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(ConsensusMetadata::Load(fs_manager.get(), tablet_id,
-                                        fs_manager->uuid(), &cmeta));
+  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
   cout << JoinMapped(cmeta->CommittedConfig().peers(),
                      [](const RaftPeerPB& p){ return p.permanent_uuid(); },
                      " ") << endl;
@@ -269,9 +273,9 @@ Status RewriteRaftConfig(const RunnerContext& context) {
   RETURN_NOT_OK(BackupConsensusMetadata(&fs_manager, tablet_id));
 
   // Load the cmeta file and rewrite the raft config.
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
-                                        fs_manager.uuid(), &cmeta));
+  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
   RaftConfigPB current_config = cmeta->CommittedConfig();
   RaftConfigPB new_config = current_config;
   new_config.clear_peers();
@@ -302,9 +306,9 @@ Status SetRaftTerm(const RunnerContext& context) {
   FsManager fs_manager(env, FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
   // Load the cmeta file and rewrite the raft config.
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(ConsensusMetadata::Load(&fs_manager, tablet_id,
-                                        fs_manager.uuid(), &cmeta));
+  RETURN_NOT_OK(cmeta_manager->Load(tablet_id, &cmeta));
   if (new_term <= cmeta->current_term()) {
     return Status::InvalidArgument(Substitute(
         "specified term $0 must be higher than current term $1",
@@ -334,10 +338,11 @@ Status CopyFromRemote(const RunnerContext& context) {
   // Copy the tablet over.
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   MessengerBuilder builder("tablet_copy_client");
   shared_ptr<Messenger> messenger;
   builder.Build(&messenger);
-  TabletCopyClient client(tablet_id, &fs_manager, messenger);
+  TabletCopyClient client(tablet_id, &fs_manager, cmeta_manager, messenger);
   RETURN_NOT_OK(client.Start(hp, nullptr));
   RETURN_NOT_OK(client.FetchAll(nullptr));
   return client.Finish();
@@ -347,6 +352,7 @@ Status DeleteLocalReplica(const RunnerContext& context) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   FsManager fs_manager(Env::Default(), FsManagerOpts());
   RETURN_NOT_OK(fs_manager.Open());
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(new ConsensusMetadataManager(&fs_manager));
   boost::optional<OpId> last_logged_opid = boost::none;
   TabletDataState state = TabletDataState::TABLET_DATA_DELETED;
   if (!FLAGS_clean_unsafe) {
@@ -372,7 +378,7 @@ Status DeleteLocalReplica(const RunnerContext& context) {
   // Force the specified tablet on this node to be in 'state'.
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
-  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, state, last_logged_opid));
+  RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, cmeta_manager, state, last_logged_opid));
   return Status::OK();
 }
 

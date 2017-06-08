@@ -22,10 +22,11 @@
 #include <glog/stl_logging.h>
 
 #include "kudu/client/client.h"
-#include "kudu/consensus/log-test-base.h"
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -52,6 +53,7 @@ using client::KuduTable;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
 using log::AppendNoOpsToLogSync;
@@ -352,6 +354,8 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     opts.data_paths = ets->data_dirs();
     gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
     ASSERT_OK(fs_manager->Open());
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+        new ConsensusMetadataManager(fs_manager.get()));
     scoped_refptr<Clock> clock(new HybridClock());
     ASSERT_OK(clock->Init());
 
@@ -404,7 +408,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     // We also need to update the ConsensusMetadata to match with the term we
     // want to end up with.
     scoped_refptr<ConsensusMetadata> cmeta;
-    ConsensusMetadata::Load(fs_manager.get(), tablet_id, fs_manager->uuid(), &cmeta);
+    ASSERT_OK(cmeta_manager->Load(tablet_id, &cmeta));
     cmeta->set_current_term(kDesiredIndexValue);
     ASSERT_OK(cmeta->Flush());
   }

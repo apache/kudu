@@ -20,11 +20,13 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_index.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -34,7 +36,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/consensus/log_reader.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/util/auto_release_pool.h"
@@ -104,14 +105,14 @@ class RaftConsensusQuorumTest : public KuduTest {
   // Builds an initial configuration of 'num' elements.
   // All of the peers start as followers.
   void BuildInitialRaftConfigPB(int num) {
-    config_ = BuildRaftConfigPBForTests(num);
+    config_ = BuildRaftConfigPB(num);
     config_.set_opid_index(kInvalidOpIdIndex);
     peers_.reset(new TestPeerMapManager(config_));
   }
 
-  Status BuildFsManagersAndLogs() {
+  Status BuildFsManagersAndLogs(int num) {
     // Build the fsmanagers and logs
-    for (int i = 0; i < config_.peers_size(); i++) {
+    for (int i = 0; i < num; i++) {
       shared_ptr<MemTracker> parent_mem_tracker =
           MemTracker::CreateTracker(-1, Substitute("peer-$0", i));
       parent_mem_trackers_.push_back(parent_mem_tracker);
@@ -123,6 +124,10 @@ class RaftConsensusQuorumTest : public KuduTest {
       gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
       RETURN_NOT_OK(fs_manager->Open());
+
+      scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+          new ConsensusMetadataManager(fs_manager.get()));
+      cmeta_managers_.push_back(cmeta_manager);
 
       scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(LogOptions(),
@@ -138,20 +143,32 @@ class RaftConsensusQuorumTest : public KuduTest {
     return Status::OK();
   }
 
+  // Builds a configuration of 'num' voters.
+  RaftConfigPB BuildRaftConfigPB(int num) {
+    RaftConfigPB raft_config;
+    for (int i = 0; i < num; i++) {
+      RaftPeerPB* peer_pb = raft_config.add_peers();
+      peer_pb->set_member_type(RaftPeerPB::VOTER);
+      peer_pb->set_permanent_uuid(fs_managers_[i]->uuid());
+      HostPortPB* hp = peer_pb->mutable_last_known_addr();
+      hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
+      hp->set_port(0);
+    }
+    return raft_config;
+  }
+
   void BuildPeers() {
     for (int i = 0; i < config_.peers_size(); i++) {
       auto proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
 
       auto txn_factory = new TestTransactionFactory(logs_[i].get());
 
-      string peer_uuid = Substitute("peer-$0", i);
-
       scoped_refptr<ConsensusMetadata> cmeta;
-      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, config_,
-                                         kMinimumTerm, &cmeta));
+      CHECK_OK(cmeta_managers_[i]->Create(kTestTablet, config_,
+                                          kMinimumTerm, &cmeta));
 
       RaftPeerPB local_peer_pb;
-      CHECK_OK(GetRaftConfigMember(config_, peer_uuid, &local_peer_pb));
+      CHECK_OK(GetRaftConfigMember(config_, fs_managers_[i]->uuid(), &local_peer_pb));
 
       scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
       gscoped_ptr<PeerMessageQueue> queue(
@@ -205,8 +222,8 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status BuildConfig(int num) {
+    RETURN_NOT_OK(BuildFsManagersAndLogs(num));
     BuildInitialRaftConfigPB(num);
-    RETURN_NOT_OK(BuildFsManagersAndLogs());
     BuildPeers();
     return Status::OK();
   }
@@ -370,7 +387,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                                    ReplicateWaitMode wait_mode,
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
-                                   vector<scoped_refptr<ConsensusRound> >* rounds,
+                                   vector<scoped_refptr<ConsensusRound>>* rounds,
                                    shared_ptr<Synchronizer>* commit_sync = nullptr) {
     for (int i = 0; i < seq_size; i++) {
       scoped_refptr<ConsensusRound> round;
@@ -522,9 +539,8 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   // Read the ConsensusMetadata for the given peer from disk.
   scoped_refptr<ConsensusMetadata> ReadConsensusMetadataFromDisk(int peer_index) {
-    string peer_uuid = Substitute("peer-$0", peer_index);
     scoped_refptr<ConsensusMetadata> cmeta;
-    CHECK_OK(ConsensusMetadata::Load(fs_managers_[peer_index], kTestTablet, peer_uuid, &cmeta));
+    CHECK_OK(cmeta_managers_[peer_index]->Load(kTestTablet, &cmeta));
     return cmeta;
   }
 
@@ -556,10 +572,11 @@ class RaftConsensusQuorumTest : public KuduTest {
   ConsensusOptions options_;
   RaftConfigPB config_;
   OpId initial_id_;
-  vector<shared_ptr<MemTracker> > parent_mem_trackers_;
+  vector<shared_ptr<MemTracker>> parent_mem_trackers_;
   vector<FsManager*> fs_managers_;
   vector<scoped_refptr<Log> > logs_;
   gscoped_ptr<ThreadPool> raft_pool_;
+  vector<scoped_refptr<ConsensusMetadataManager>> cmeta_managers_;
   gscoped_ptr<TestPeerMapManager> peers_;
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;
@@ -580,7 +597,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   shared_ptr<Synchronizer> commit_sync;
   REPLICATE_SEQUENCE_OF_MESSAGES(1,
                                  kLeaderIdx,
@@ -622,7 +639,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   shared_ptr<Synchronizer> commit_sync;
 
   REPLICATE_SEQUENCE_OF_MESSAGES(seq_size,
@@ -656,7 +673,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_replicate;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   {
     // lock one of the replicas down by obtaining the state lock
     // and never letting it go.
@@ -766,7 +783,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   shared_ptr<Synchronizer> commit_sync;
   for (int i = 0; i < 100; i++) {
     scoped_refptr<ConsensusRound> round;
@@ -861,7 +878,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
 
   // Loop twice, successively shutting down the previous leader.
   for (int current_config_size = kInitialNumPeers;
@@ -931,7 +948,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
                                  2, // The index of the initial leader.
                                  WAIT_FOR_ALL_REPLICAS,
@@ -999,7 +1016,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<scoped_refptr<ConsensusRound> > rounds;
+  vector<scoped_refptr<ConsensusRound>> rounds;
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
                                  2, // The index of the initial leader.
                                  WAIT_FOR_ALL_REPLICAS,
@@ -1031,7 +1048,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // a valid leader.
   int flush_count_before = flush_count();
   VoteResponsePB response;
-  request.set_candidate_uuid("peer-0");
+  request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 1);
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_FALSE(response.vote_granted());
@@ -1048,7 +1065,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
+                                                   fs_managers_[0]->uuid()));
   ASSERT_EQ(1, flush_count() - flush_count_before)
       << "A granted vote should flush only once";
 
@@ -1063,13 +1081,14 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // Ensure we get a "no" for a different candidate UUID for that term.
   flush_count_before = flush_count();
   response.Clear();
-  request.set_candidate_uuid("peer-2");
+  request.set_candidate_uuid(fs_managers_[2]->uuid());
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::ALREADY_VOTED, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1, "peer-0"));
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
+                                                   fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Rejected votes for same term should not flush";
 
@@ -1080,18 +1099,19 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // Increase the term of our candidate, which will cause the voter replica to
   // increase its own term to match.
   flush_count_before = flush_count();
-  request.set_candidate_uuid("peer-0");
+  request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 2);
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                                   fs_managers_[0]->uuid()));
   ASSERT_EQ(1, flush_count() - flush_count_before)
       << "Accepted votes with increased term should flush once";
 
   // Now try the old term.
-  // Note: Use the peer who "won" the election on the previous term (peer-0),
+  // Note: Use the peer who "won" the election on the previous term (peer 0),
   // although in practice the impl does not store historical vote data.
   flush_count_before = flush_count();
   request.set_candidate_term(last_op_id.term() + 1);
@@ -1101,7 +1121,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, response.consensus_error().code());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                                   fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Rejected votes for old terms should not flush";
 
@@ -1115,7 +1136,8 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_TRUE(response.vote_granted());
   ASSERT_FALSE(response.has_consensus_error());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
+  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
+                                                   fs_managers_[0]->uuid()));
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Pre-elections should not flush";
   request.set_is_pre_election(false);
@@ -1125,7 +1147,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   //
 
   flush_count_before = flush_count();
-  request.set_candidate_uuid("peer-0");
+  request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 3);
   request.mutable_candidate_status()->mutable_last_received()->CopyFrom(MinimumOpId());
   response.Clear();
@@ -1142,7 +1164,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // Send a "heartbeat" to the peer. It should be rejected.
   ConsensusRequestPB req;
   req.set_caller_term(last_op_id.term());
-  req.set_caller_uuid("peer-0");
+  req.set_caller_uuid(fs_managers_[0]->uuid());
   req.set_committed_index(last_op_id.index());
   req.set_all_replicated_index(0);
   ConsensusResponsePB res;

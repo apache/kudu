@@ -97,6 +97,7 @@ target_link_libraries(log
 
 set(CONSENSUS_SRCS
   consensus_meta.cc
+  consensus_meta_manager.cc
   consensus_peers.cc
   consensus_queue.cc
   leader_election.cc
@@ -126,6 +127,8 @@ set(KUDU_TEST_LINK_LIBS
 )
 
 ADD_KUDU_TEST(consensus_meta-test)
+ADD_KUDU_TEST(consensus_meta_manager-stress-test RUN_SERIAL true)
+ADD_KUDU_TEST(consensus_meta_manager-test)
 ADD_KUDU_TEST(consensus_peers-test)
 ADD_KUDU_TEST(consensus_queue-test)
 ADD_KUDU_TEST(leader_election-test)

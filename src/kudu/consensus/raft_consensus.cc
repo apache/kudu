@@ -351,8 +351,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK(BecomeReplicaUnlocked());
   }
 
-  bool single_voter = IsSingleVoterConfig();
-  if (single_voter && FLAGS_enable_leader_failure_detection) {
+  if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
     LOG_WITH_PREFIX(INFO) << "Only one voter in the Raft config. Triggering election immediately";
     RETURN_NOT_OK(StartElection(NORMAL_ELECTION, INITIAL_SINGLE_NODE_ELECTION));
   }
@@ -840,12 +839,8 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
 bool RaftConsensus::IsSingleVoterConfig() const {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
-  const string& uuid = peer_uuid_;
-  if (cmeta_->CountVotersInConfig(COMMITTED_CONFIG) == 1 &&
-      cmeta_->IsVoterInConfig(uuid, COMMITTED_CONFIG)) {
-    return true;
-  }
-  return false;
+  return cmeta_->CountVotersInConfig(COMMITTED_CONFIG) == 1 &&
+         cmeta_->IsVoterInConfig(peer_uuid_, COMMITTED_CONFIG);
 }
 
 std::string RaftConsensus::LeaderRequest::OpsRangeString() const {

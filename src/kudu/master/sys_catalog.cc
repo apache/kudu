@@ -37,6 +37,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
@@ -66,6 +67,7 @@ TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
 using kudu::consensus::COMMITTED_CONFIG;
 using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
@@ -119,6 +121,7 @@ SysCatalogTable::SysCatalogTable(Master* master,
                                  ElectedLeaderCallback leader_cb)
     : metric_registry_(master->metric_registry()),
       master_(master),
+      cmeta_manager_(new ConsensusMetadataManager(master_->fs_manager())),
       leader_cb_(std::move(leader_cb)) {
 }
 
@@ -146,8 +149,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     LOG(INFO) << "Verifying existing consensus state";
     string tablet_id = metadata->tablet_id();
     scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id,
-                                                  fs_manager->uuid(), &cmeta),
+    RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
     ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
     RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config(), COMMITTED_CONFIG));
@@ -218,8 +220,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
 
   string tablet_id = metadata->tablet_id();
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, fs_manager->uuid(),
-                                                  config, consensus::kMinimumTerm, &cmeta),
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, consensus::kMinimumTerm, &cmeta),
                         "Unable to persist consensus metadata for tablet " + tablet_id);
 
   return SetupTablet(metadata);
@@ -306,6 +307,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   // partially created tablet here?
   tablet_replica_.reset(new TabletReplica(
       metadata,
+      cmeta_manager_,
       local_peer_pb_,
       master_->tablet_apply_pool(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
@@ -313,6 +315,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   consensus::ConsensusBootstrapInfo consensus_info;
   tablet_replica_->SetBootstrapping();
   RETURN_NOT_OK(BootstrapTablet(metadata,
+                                cmeta_manager_,
                                 scoped_refptr<server::Clock>(master_->clock()),
                                 master_->mem_tracker(),
                                 scoped_refptr<rpc::ResultTracker>(),

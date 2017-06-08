@@ -28,6 +28,7 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -104,10 +105,11 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RaftConfigPB;
-using consensus::RaftPeerPB;
 using consensus::StartTabletCopyRequestPB;
+using consensus::kMinimumTerm;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
@@ -129,6 +131,7 @@ using tserver::TabletCopyClient;
 
 TSTabletManager::TSTabletManager(TabletServer* server)
   : fs_manager_(server->fs_manager()),
+    cmeta_manager_(new ConsensusMetadataManager(fs_manager_)),
     server_(server),
     metric_registry_(server->metric_registry()),
     state_(MANAGER_INITIALIZING) {
@@ -272,9 +275,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletReplica and RaftConsensus implementation.
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
-                                                  config, consensus::kMinimumTerm, &cmeta),
-                        "Unable to create new ConsensusMeta for tablet " + tablet_id);
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, kMinimumTerm, &cmeta),
+                        "Unable to create new ConsensusMetadata for tablet " + tablet_id);
   scoped_refptr<TabletReplica> new_replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
 
   // We can run this synchronously since there is nothing to bootstrap.
@@ -485,7 +487,7 @@ void TSTabletManager::RunTabletCopy(
         // will simply tablet copy this replica again. We could try to
         // check again after calling Shutdown(), and if the check fails, try to
         // reopen the tablet. For now, we live with the (unlikely) race.
-        Status s = DeleteTabletData(meta, TABLET_DATA_TOMBSTONED, last_logged_opid);
+        Status s = DeleteTabletData(meta, cmeta_manager_, TABLET_DATA_TOMBSTONED, last_logged_opid);
         if (PREDICT_FALSE(!s.ok())) {
           CALLBACK_AND_RETURN(
               s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
@@ -507,7 +509,7 @@ void TSTabletManager::RunTabletCopy(
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
-  TabletCopyClient tc_client(tablet_id, fs_manager_, server_->messenger());
+  TabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_, server_->messenger());
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {
@@ -560,6 +562,7 @@ scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
     const scoped_refptr<TabletMetadata>& meta, RegisterTabletReplicaMode mode) {
   scoped_refptr<TabletReplica> replica(
       new TabletReplica(meta,
+                        cmeta_manager_,
                         local_peer_pb_,
                         server_->tablet_apply_pool(),
                         Bind(&TSTabletManager::MarkTabletDirty,
@@ -640,7 +643,8 @@ Status TSTabletManager::DeleteTablet(
     opt_last_logged_opid = last_logged_opid;
   }
 
-  Status s = DeleteTabletData(replica->tablet_metadata(), delete_type, opt_last_logged_opid);
+  Status s = DeleteTabletData(replica->tablet_metadata(), cmeta_manager_, delete_type,
+                              opt_last_logged_opid);
   if (PREDICT_FALSE(!s.ok())) {
     s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                      tablet_id));
@@ -747,6 +751,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     // partially created tablet here?
     replica->SetBootstrapping();
     s = BootstrapTablet(meta,
+                        cmeta_manager_,
                         scoped_refptr<server::Clock>(server_->clock()),
                         server_->mem_tracker(),
                         server_->result_tracker(),
@@ -1011,7 +1016,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
 
   if (!skip_deletion) {
     // Passing no OpId will retain the last_logged_opid that was previously in the metadata.
-    RETURN_NOT_OK(DeleteTabletData(meta, data_state, boost::none));
+    RETURN_NOT_OK(DeleteTabletData(meta, cmeta_manager_, data_state, boost::none));
   }
 
   // Register TOMBSTONED tablets so that they get reported to the Master, which
@@ -1024,9 +1029,11 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   return Status::OK();
 }
 
-Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& meta,
-                                         TabletDataState delete_type,
-                                         const boost::optional<OpId>& last_logged_opid) {
+Status TSTabletManager::DeleteTabletData(
+    const scoped_refptr<TabletMetadata>& meta,
+    const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+    TabletDataState delete_type,
+    const boost::optional<OpId>& last_logged_opid) {
   const string& tablet_id = meta->tablet_id();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "Deleting tablet data with delete state "
@@ -1057,7 +1064,13 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
 
   // Only TABLET_DATA_DELETED tablets get this far.
   DCHECK_EQ(TABLET_DATA_DELETED, delete_type);
-  RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
+
+  LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager()) << "Deleting consensus metadata";
+  Status s = cmeta_manager->Delete(meta->tablet_id());
+  // NotFound means we already deleted the cmeta in a previous attempt.
+  if (PREDICT_FALSE(!s.ok() && !s.IsNotFound())) {
+    return s;
+  }
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
   return meta->DeleteSuperBlock();
 }

@@ -20,6 +20,7 @@
 
 #include <glog/stl_logging.h>
 
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/fastmem.h"
@@ -32,6 +33,7 @@ using std::shared_ptr;
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusMetadataManager;
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
 using std::tuple;
@@ -47,10 +49,14 @@ class TabletCopyClientTest : public TabletCopyTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+        new ConsensusMetadataManager(fs_manager_.get()));
+
     tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new TabletCopyClient(GetTabletId(),
                                        fs_manager_.get(),
+                                       cmeta_manager,
                                        messenger_));
     ASSERT_OK(GetRaftConfigLeader(tablet_replica_->consensus()->ConsensusState(), &leader_));
 

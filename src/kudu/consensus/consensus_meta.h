@@ -14,24 +14,27 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CONSENSUS_CONSENSUS_META_H_
-#define KUDU_CONSENSUS_CONSENSUS_META_H_
+#pragma once
 
-#include <cstdint>
 #include <string>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/status.h"
 
 namespace kudu {
 
 class FsManager;
+class Status;
 
 namespace consensus {
+
+class ConsensusMetadataManager;
+class ConsensusMetadataTest;
 
 // Provides methods to read, write, and persist consensus-related metadata.
 // This partly corresponds to Raft Figure 2's "Persistent state on all servers".
@@ -64,27 +67,6 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
     OVERWRITE,
     NO_OVERWRITE
   };
-
-  // Create a ConsensusMetadata object with provided initial state.
-  // Encoded PB is flushed to disk before returning.
-  static Status Create(FsManager* fs_manager,
-                       const std::string& tablet_id,
-                       const std::string& peer_uuid,
-                       const RaftConfigPB& config,
-                       int64_t current_term,
-                       scoped_refptr<ConsensusMetadata>* cmeta_out);
-
-  // Load a ConsensusMetadata object from disk.
-  // Returns Status::NotFound if the file could not be found. May return other
-  // Status codes if unable to read the file.
-  static Status Load(FsManager* fs_manager,
-                     const std::string& tablet_id,
-                     const std::string& peer_uuid,
-                     scoped_refptr<ConsensusMetadata>* cmeta_out);
-
-  // Delete the ConsensusMetadata file associated with the given tablet from
-  // disk.
-  static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
   // Accessors for current term.
   int64_t current_term() const;
@@ -169,9 +151,39 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
  private:
   friend class RefCountedThreadSafe<ConsensusMetadata>;
+  friend class ConsensusMetadataManager;
+
+  FRIEND_TEST(ConsensusMetadataTest, TestCreateLoad);
+  FRIEND_TEST(ConsensusMetadataTest, TestCreateNoOverwrite);
+  FRIEND_TEST(ConsensusMetadataTest, TestFailedLoad);
+  FRIEND_TEST(ConsensusMetadataTest, TestFlush);
+  FRIEND_TEST(ConsensusMetadataTest, TestActiveRole);
+  FRIEND_TEST(ConsensusMetadataTest, TestToConsensusStatePB);
+  FRIEND_TEST(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB);
 
   ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
                     std::string peer_uuid);
+
+  // Create a ConsensusMetadata object with provided initial state.
+  // Encoded PB is flushed to disk before returning.
+  static Status Create(FsManager* fs_manager,
+                       const std::string& tablet_id,
+                       const std::string& peer_uuid,
+                       const RaftConfigPB& config,
+                       int64_t current_term,
+                       scoped_refptr<ConsensusMetadata>* cmeta_out);
+
+  // Load a ConsensusMetadata object from disk.
+  // Returns Status::NotFound if the file could not be found. May return other
+  // Status codes if unable to read the file.
+  static Status Load(FsManager* fs_manager,
+                     const std::string& tablet_id,
+                     const std::string& peer_uuid,
+                     scoped_refptr<ConsensusMetadata>* cmeta_out);
+
+  // Delete the ConsensusMetadata file associated with the given tablet from
+  // disk. Returns Status::NotFound if the on-disk data is not found.
+  static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
   // Return the specified config.
   const RaftConfigPB& config_unlocked(RaftConfigState type) const;
@@ -222,5 +234,3 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
 } // namespace consensus
 } // namespace kudu
-
-#endif // KUDU_CONSENSUS_CONSENSUS_META_H_

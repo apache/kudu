@@ -40,6 +40,10 @@ class MaintenanceManager;
 class MaintenanceOp;
 class ThreadPool;
 
+namespace consensus {
+class ConsensusMetadataManager;
+}
+
 namespace log {
 class LogAnchorRegistry;
 } // namespace log
@@ -69,6 +73,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                       public consensus::ReplicaTransactionFactory {
  public:
   TabletReplica(const scoped_refptr<TabletMetadata>& meta,
+                const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
                 consensus::RaftPeerPB local_peer_pb,
                 ThreadPool* apply_pool,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
@@ -279,6 +284,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
 
   const scoped_refptr<TabletMetadata> meta_;
+  const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
 
   const std::string tablet_id_;
 

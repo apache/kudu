@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
@@ -99,13 +100,15 @@ using log::LogAnchorRegistry;
 using rpc::Messenger;
 using rpc::ResultTracker;
 using strings::Substitute;
-using tserver::TabletServerErrorPB;
 
-TabletReplica::TabletReplica(const scoped_refptr<TabletMetadata>& meta,
-                             consensus::RaftPeerPB local_peer_pb,
-                             ThreadPool* apply_pool,
-                             Callback<void(const std::string& reason)> mark_dirty_clbk)
+TabletReplica::TabletReplica(
+    const scoped_refptr<TabletMetadata>& meta,
+    const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+    consensus::RaftPeerPB local_peer_pb,
+    ThreadPool* apply_pool,
+    Callback<void(const std::string& reason)> mark_dirty_clbk)
     : meta_(meta),
+      cmeta_manager_(cmeta_manager),
       tablet_id_(meta->tablet_id()),
       local_peer_pb_(std::move(local_peer_pb)),
       state_(NOT_STARTED),
@@ -157,8 +160,7 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
     TRACE("Creating consensus instance");
 
     scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
-                                          meta_->fs_manager()->uuid(), &cmeta));
+    RETURN_NOT_OK(cmeta_manager_->Load(tablet_id_, &cmeta));
 
     scoped_refptr<TimeManager> time_manager(new TimeManager(
         clock, tablet_->mvcc_manager()->GetCleanTimestamp()));

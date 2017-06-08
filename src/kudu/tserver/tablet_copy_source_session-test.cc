@@ -24,6 +24,7 @@
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -51,6 +52,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using fs::ReadableBlock;
@@ -108,8 +110,12 @@ class TabletCopyTest : public KuduTabletTest {
     config_peer.mutable_last_known_addr()->set_port(0);
     config_peer.set_member_type(RaftPeerPB::VOTER);
 
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+        new ConsensusMetadataManager(fs_manager()));
+
     tablet_replica_.reset(
         new TabletReplica(tablet()->metadata(),
+                          cmeta_manager,
                           config_peer,
                           apply_pool_.get(),
                           Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
@@ -122,9 +128,8 @@ class TabletCopyTest : public KuduTabletTest {
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 
     scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
-                                        tablet()->tablet_id(), fs_manager()->uuid(),
-                                        config, consensus::kMinimumTerm, &cmeta));
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(),
+                                    config, consensus::kMinimumTerm, &cmeta));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());

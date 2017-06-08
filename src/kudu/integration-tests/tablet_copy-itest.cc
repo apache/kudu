@@ -28,6 +28,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -55,6 +56,7 @@ DEFINE_int32(test_delete_leader_num_writer_threads, 1,
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::ConsensusMetadataManager;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForNumTabletServers;
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -336,11 +338,12 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
   gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
   ASSERT_OK(fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(fs_manager->Open());
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+      new ConsensusMetadataManager(fs_manager.get()));
 
   {
     // Start up a TabletCopyClient and open a tablet copy session.
-    TabletCopyClient tc_client(tablet_id, fs_manager.get(),
-                                    cluster_->messenger());
+    TabletCopyClient tc_client(tablet_id, fs_manager.get(), cmeta_manager, cluster_->messenger());
     scoped_refptr<tablet::TabletMetadata> meta;
     ASSERT_OK(tc_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
                               &meta));

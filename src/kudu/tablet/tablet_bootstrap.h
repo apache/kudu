@@ -42,6 +42,7 @@ class LogAnchorRegistry;
 
 namespace consensus {
 struct ConsensusBootstrapInfo;
+class ConsensusMetadataManager;
 } // namespace consensus
 
 namespace rpc {
@@ -64,7 +65,8 @@ extern const char* kLogRecoveryDir;
 //
 // This is a synchronous method, but is typically called within a thread pool by
 // TSTabletManager.
-Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
+Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
+                       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
                        const scoped_refptr<server::Clock>& clock,
                        const std::shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<rpc::ResultTracker>& result_tracker,

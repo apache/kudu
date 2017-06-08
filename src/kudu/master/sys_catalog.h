@@ -251,6 +251,8 @@ class SysCatalogTable {
 
   Master* master_;
 
+  const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
+
   ElectedLeaderCallback leader_cb_;
 
   consensus::RaftPeerPB local_peer_pb_;

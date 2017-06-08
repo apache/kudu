@@ -23,6 +23,7 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -75,6 +76,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataManager;
 using env_util::CopyFile;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
@@ -95,15 +97,18 @@ using tablet::TabletSuperBlockPB;
 
 TabletCopyClient::TabletCopyClient(std::string tablet_id,
                                    FsManager* fs_manager,
+                                   scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                                    shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
+      cmeta_manager_(std::move(cmeta_manager)),
       messenger_(std::move(messenger)),
       state_(kInitialized),
       replace_tombstoned_tablet_(false),
       tablet_replica_(nullptr),
       session_idle_timeout_millis_(0),
-      start_time_micros_(0) {}
+      start_time_micros_(0) {
+}
 
 TabletCopyClient::~TabletCopyClient() {
   // Note: Ending the tablet copy session releases anchors on the remote.
@@ -137,8 +142,7 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
 
   // Load the old consensus metadata, if it exists.
   scoped_refptr<ConsensusMetadata> cmeta;
-  Status s = ConsensusMetadata::Load(fs_manager_, tablet_id_,
-                                     fs_manager_->uuid(), &cmeta);
+  Status s = cmeta_manager_->Load(tablet_id_, &cmeta);
   if (s.IsNotFound()) {
     // The consensus metadata was not written to disk, possibly due to a failed
     // tablet copy.
@@ -242,7 +246,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     // Remove any existing orphaned blocks and WALs from the tablet, and
     // set the data state to 'COPYING'.
     RETURN_NOT_OK_PREPEND(
-        TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_COPYING, boost::none),
+        TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
+                                          tablet::TABLET_DATA_COPYING, boost::none),
         "Could not replace superblock with COPYING data state");
     CHECK_OK(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_));
   } else {
@@ -324,7 +329,8 @@ Status TabletCopyClient::Abort() {
 
   // Delete all of the tablet data, including blocks and WALs.
   RETURN_NOT_OK_PREPEND(
-      TSTabletManager::DeleteTabletData(meta_, tablet::TABLET_DATA_TOMBSTONED, boost::none),
+      TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
+                                        tablet::TABLET_DATA_TOMBSTONED, boost::none),
       LogPrefix() + "Failed to tombstone tablet after aborting tablet copy");
 
   SetStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));
@@ -505,10 +511,10 @@ Status TabletCopyClient::WriteConsensusMetadata() {
   // If we didn't find a previous consensus meta file, create one.
   if (!cmeta_) {
     scoped_refptr<ConsensusMetadata> cmeta;
-    return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
-                                     remote_cstate_->committed_config(),
-                                     remote_cstate_->current_term(),
-                                     &cmeta);
+    return cmeta_manager_->Create(tablet_id_,
+                                  remote_cstate_->committed_config(),
+                                  remote_cstate_->current_term(),
+                                  &cmeta);
   }
 
   // Otherwise, update the consensus metadata to reflect the config and term

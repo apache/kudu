@@ -20,9 +20,10 @@
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
+#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -54,25 +55,17 @@ namespace kudu {
 namespace tablet {
 
 using consensus::CommitMsg;
-using consensus::Consensus;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
-using consensus::MakeOpId;
-using consensus::MinimumOpId;
+using consensus::ConsensusMetadataManager;
 using consensus::OpId;
-using consensus::OpIdEquals;
 using consensus::RaftPeerPB;
-using consensus::WRITE_OP;
 using log::Log;
-using log::LogAnchorRegistry;
 using log::LogOptions;
 using rpc::Messenger;
-using server::Clock;
-using server::LogicalClock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
-using strings::Substitute;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
@@ -106,9 +99,13 @@ class TabletReplicaTest : public KuduTabletTest {
     config_peer.mutable_last_known_addr()->set_port(0);
     config_peer.set_member_type(RaftPeerPB::VOTER);
 
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
+        new ConsensusMetadataManager(tablet()->metadata()->fs_manager()));
+
     // "Bootstrap" and start the TabletReplica.
     tablet_replica_.reset(
       new TabletReplica(make_scoped_refptr(tablet()->metadata()),
+                        cmeta_manager,
                         config_peer,
                         apply_pool_.get(),
                         Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
@@ -116,8 +113,9 @@ class TabletReplicaTest : public KuduTabletTest {
                              tablet()->tablet_id())));
 
     // Make TabletReplica use the same LogAnchorRegistry as the Tablet created by the harness.
-    // TODO: Refactor TabletHarness to allow taking a LogAnchorRegistry, while also providing
-    // TabletMetadata for consumption by TabletReplica before Tablet is instantiated.
+    // TODO(mpercy): Refactor TabletHarness to allow taking a
+    // LogAnchorRegistry, while also providing TabletMetadata for consumption
+    // by TabletReplica before Tablet is instantiated.
     tablet_replica_->log_anchor_registry_ = tablet()->log_anchor_registry_;
 
     RaftConfigPB config;
@@ -125,11 +123,8 @@ class TabletReplicaTest : public KuduTabletTest {
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 
     scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
-                                        tablet()->tablet_id(),
-                                        tablet()->metadata()->fs_manager()->uuid(),
-                                        config,
-                                        consensus::kMinimumTerm, &cmeta));
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm,
+                                    &cmeta));
 
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
