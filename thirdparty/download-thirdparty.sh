@@ -238,13 +238,15 @@ if [ ! -d $PYTHON_SOURCE ]; then
   fetch_and_expand python-${PYTHON_VERSION}.tar.gz
 fi
 
-LLVM_PATCHLEVEL=1
+LLVM_PATCHLEVEL=2
 delete_if_wrong_patchlevel $LLVM_SOURCE $LLVM_PATCHLEVEL
 if [ ! -d $LLVM_SOURCE ]; then
   fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
 
   pushd $LLVM_SOURCE
   patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch
+  patch -p1 -d $LLVM_SOURCE/tools/clang/tools/extra \
+    < $TP_DIR/patches/llvm-fix-readability-redundant-declaration-false-positive.patch
   touch patchlevel-$LLVM_PATCHLEVEL
   popd
   echo

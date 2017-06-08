@@ -1,0 +1,101 @@
+From 5978f7dc14b9d4e36f12ec3bb850b5d80f5a9045 Mon Sep 17 00:00:00 2001
+From: Daniel Marjamaki <daniel.marjamaki@evidente.se>
+Date: Fri, 24 Feb 2017 09:02:44 +0000
+Subject: [PATCH] [clang-tidy] Fix readability-redundant-declaration false
+ positive
+
+Differential Revision: https://reviews.llvm.org/D27048
+
+
+git-svn-id: https://llvm.org/svn/llvm-project/clang-tools-extra/trunk@296100 91177308-0d34-0410-b5e6-96231b3b80d8
+---
+ .../readability/RedundantDeclarationCheck.cpp      | 12 ++++-------
+ .../readability-redundant-declaration.cpp          | 24 ++++++++++++++--------
+ 2 files changed, 19 insertions(+), 17 deletions(-)
+
+diff --git a/clang-tidy/readability/RedundantDeclarationCheck.cpp b/clang-tidy/readability/RedundantDeclarationCheck.cpp
+index 672cda655..1ee65d8d7 100644
+--- a/clang-tidy/readability/RedundantDeclarationCheck.cpp
++++ b/clang-tidy/readability/RedundantDeclarationCheck.cpp
+@@ -19,7 +19,10 @@ namespace tidy {
+ namespace readability {
+ 
+ void RedundantDeclarationCheck::registerMatchers(MatchFinder *Finder) {
+-  Finder->addMatcher(namedDecl(anyOf(varDecl(), functionDecl())).bind("Decl"),
++  auto UnlessDefinition = unless(isDefinition());
++  Finder->addMatcher(namedDecl(anyOf(varDecl(UnlessDefinition),
++                                     functionDecl(UnlessDefinition)))
++                         .bind("Decl"),
+                      this);
+ }
+ 
+@@ -41,9 +44,6 @@ void RedundantDeclarationCheck::check(const MatchFinder::MatchResult &Result) {
+ 
+   bool MultiVar = false;
+   if (const auto *VD = dyn_cast<VarDecl>(D)) {
+-    if (VD->getPreviousDecl()->getStorageClass() == SC_Extern &&
+-        VD->getStorageClass() != SC_Extern)
+-      return;
+     // Is this a multivariable declaration?
+     for (const auto Other : VD->getDeclContext()->decls()) {
+       if (Other != D && Other->getLocStart() == VD->getLocStart()) {
+@@ -51,10 +51,6 @@ void RedundantDeclarationCheck::check(const MatchFinder::MatchResult &Result) {
+         break;
+       }
+     }
+-  } else {
+-    const auto *FD = cast<FunctionDecl>(D);
+-    if (FD->isThisDeclarationADefinition())
+-      return;
+   }
+ 
+   SourceLocation EndLoc = Lexer::getLocForEndOfToken(
+diff --git a/test/clang-tidy/readability-redundant-declaration.cpp b/test/clang-tidy/readability-redundant-declaration.cpp
+index e68b7f657..bedc68c4d 100644
+--- a/test/clang-tidy/readability-redundant-declaration.cpp
++++ b/test/clang-tidy/readability-redundant-declaration.cpp
+@@ -1,9 +1,9 @@
+ // RUN: %check_clang_tidy %s readability-redundant-declaration %t
+ 
+ extern int Xyz;
+-extern int Xyz;
++extern int Xyz; // Xyz
+ // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: redundant 'Xyz' declaration [readability-redundant-declaration]
+-// CHECK-FIXES: {{^}}{{$}}
++// CHECK-FIXES: {{^}}// Xyz{{$}}
+ int Xyz = 123;
+ 
+ extern int A;
+@@ -12,19 +12,25 @@ extern int A, B;
+ // CHECK-FIXES: {{^}}extern int A, B;{{$}}
+ 
+ extern int Buf[10];
+-extern int Buf[10];
++extern int Buf[10]; // Buf[10]
+ // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: redundant 'Buf' declaration
+-// CHECK-FIXES: {{^}}{{$}}
++// CHECK-FIXES: {{^}}// Buf[10]{{$}}
+ 
+ static int f();
+-static int f();
++static int f(); // f
+ // CHECK-MESSAGES: :[[@LINE-1]]:12: warning: redundant 'f' declaration
+-// CHECK-FIXES: {{^}}{{$}}
++// CHECK-FIXES: {{^}}// f{{$}}
+ static int f() {}
+ 
+ // Original check crashed for the code below.
+ namespace std {
+-  typedef decltype(sizeof(0)) size_t;
++typedef decltype(sizeof(0)) size_t;
+ }
+-void* operator new(std::size_t) __attribute__((__externally_visible__));
+-void* operator new[](std::size_t) __attribute__((__externally_visible__));
++void *operator new(std::size_t) __attribute__((__externally_visible__));
++void *operator new[](std::size_t) __attribute__((__externally_visible__));
++
++// Don't warn about static member definition.
++struct C {
++  static int I;
++};
++int C::I;
