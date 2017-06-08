@@ -303,10 +303,10 @@ std::unique_ptr<Mode> BuildFsMode();
 std::unique_ptr<Mode> BuildLocalReplicaMode();
 std::unique_ptr<Mode> BuildMasterMode();
 std::unique_ptr<Mode> BuildPbcMode();
+std::unique_ptr<Mode> BuildPerfMode();
 std::unique_ptr<Mode> BuildRemoteReplicaMode();
 std::unique_ptr<Mode> BuildTableMode();
 std::unique_ptr<Mode> BuildTabletMode();
-std::unique_ptr<Mode> BuildTestMode();
 std::unique_ptr<Mode> BuildTServerMode();
 std::unique_ptr<Mode> BuildWalMode();
 

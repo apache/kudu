@@ -327,10 +327,10 @@ TEST_F(ToolTest, TestHelpXML) {
       "local_replica",
       "master",
       "pbc",
+      "perf",
       "remote_replica",
       "table",
       "tablet",
-      "test",
       "tserver",
       "wal",
       "dump",
@@ -350,10 +350,10 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "local_replica.*tablet replicas",
       "master.*Kudu Master",
       "pbc.*protobuf container",
+      "perf.*performance of a Kudu cluster",
       "remote_replica.*tablet replicas on a Kudu Tablet Server",
       "table.*Kudu tables",
       "tablet.*Kudu tablets",
-      "test.*tests",
       "tserver.*Kudu Tablet Server",
       "wal.*write-ahead log"
   };
@@ -443,6 +443,12 @@ TEST_F(ToolTest, TestModeHelp) {
     NO_FATALS(RunTestHelp("pbc", kPbcModeRegexes));
   }
   {
+    const vector<string> kPerfRegexes = {
+        "loadgen.*Run load generation with optional scan afterwards",
+    };
+    NO_FATALS(RunTestHelp("perf", kPerfRegexes));
+  }
+  {
     const vector<string> kRemoteReplicaModeRegexes = {
         "check.*Check if all tablet replicas",
         "copy.*Copy a tablet replica from one Kudu Tablet Server",
@@ -474,12 +480,6 @@ TEST_F(ToolTest, TestModeHelp) {
         "remove_replica.*Remove an existing replica"
     };
     NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
-  }
-  {
-    const vector<string> kTestRegexes = {
-        "loadgen.*Run load generation test with optional scan afterwards",
-    };
-    NO_FATALS(RunTestHelp("test", kTestRegexes));
   }
   {
     const vector<string> kTServerModeRegexes = {
@@ -1154,7 +1154,7 @@ void ToolTest::RunLoadgen(int num_tservers,
   }
   vector<string> args = {
     GetKuduCtlAbsolutePath(),
-    "test",
+    "perf",
     "loadgen",
     cluster_->master()->bound_rpc_addr().ToString(),
   };

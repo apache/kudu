@@ -593,15 +593,15 @@ Status TestLoadGenerator(const RunnerContext& context) {
 
 } // anonymous namespace
 
-unique_ptr<Mode> BuildTestMode() {
+unique_ptr<Mode> BuildPerfMode() {
   unique_ptr<Action> insert =
       ActionBuilder("loadgen", &TestLoadGenerator)
-      .Description("Run load generation test with optional scan afterwards")
+      .Description("Run load generation with optional scan afterwards")
       .ExtraDescription(
-          "Run load generation tool which inserts auto-generated data "
-          "into already existing or auto-created table as fast as possible. "
-          "If requested, also run scan over the inserted rows to check whether "
-          "the actual count or inserted rows matches the expected one.")
+          "Run load generation tool which inserts auto-generated data into "
+          "an existing or auto-created table as fast as possible. "
+          "If requested, also scan the inserted rows to check whether the "
+          "actual count of inserted rows matches the expected one.")
       .AddRequiredParameter({ kMasterAddressesArg,
           "Comma-separated list of master addresses to run against. "
           "Addresses are in 'hostname:port' form where port may be omitted "
@@ -624,8 +624,8 @@ unique_ptr<Mode> BuildTestMode() {
       .AddOptionalParameter("use_random")
       .Build();
 
-  return ModeBuilder("test")
-      .Description("Run various tests against a Kudu cluster")
+  return ModeBuilder("perf")
+      .Description("Measure the performance of a Kudu cluster")
       .AddAction(std::move(insert))
       .Build();
 }

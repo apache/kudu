@@ -62,10 +62,10 @@ add_executable(kudu
   tool_action_local_replica.cc
   tool_action_master.cc
   tool_action_pbc.cc
+  tool_action_perf.cc
   tool_action_remote_replica.cc
   tool_action_table.cc
   tool_action_tablet.cc
-  tool_action_test.cc
   tool_action_tserver.cc
   tool_action_wal.cc
   tool_main.cc
