@@ -1219,7 +1219,13 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
       LOG_WITH_PREFIX(ERROR) << "Rowset selected for compaction but not available anymore: "
                              << not_found->ToString();
     }
-    LOG_WITH_PREFIX(FATAL) << "Was unable to find all rowsets selected for compaction";
+    // TODO(todd): this should never happen, but KUDU-1959 is a bug which causes us to
+    // sometimes concurrently decide to compact the same rowsets. It should be harmless
+    // to simply abort the compaction when we hit this bug, though long term we should
+    // fix the underlying race.
+    const char* msg = "Was unable to find all rowsets selected for compaction";
+    LOG_WITH_PREFIX(DFATAL) << msg;
+    return Status::RuntimeError(msg);
   }
   return Status::OK();
 }
