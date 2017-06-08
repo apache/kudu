@@ -233,7 +233,8 @@ TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
       "Cannot contact any KDC for realm .*|"
       "Ticket expired.*|"
       "GSSAPI Error:  The context has expire.*|"
-      "GSSAPI Error: The referenced context has expired .*)");
+      "GSSAPI Error: The referenced context has expired .*|"
+      "GSSAPI Error: The referenced credential has expired .*)");
 #endif
 
   ASSERT_OK(cluster_->kdc()->Start());
