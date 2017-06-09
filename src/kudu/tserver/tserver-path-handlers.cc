@@ -194,11 +194,9 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
 
   // For assigning ids to table divs;
   int i = 0;
-  auto generate_table = [this, &i](const string& header,
-                                   const vector<scoped_refptr<TabletReplica>>& replicas,
+  auto generate_table = [this, &i](const vector<scoped_refptr<TabletReplica>>& replicas,
                                    ostream* output) {
     i++;
-    *output << "<h3>" << header << "</h3>\n";
 
     *output << "<h4>Summary</h4>\n";
     map<string, int> tablet_statuses;
@@ -280,12 +278,14 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
   }
 
   if (!live_replicas.empty()) {
-    generate_table("Live Tablets", live_replicas, output);
+    *output << "<h3>Live Tablets</h3>\n";
+    generate_table(live_replicas, output);
   }
   if (!tombstoned_replicas.empty()) {
-    generate_table("Tombstoned Tablets", tombstoned_replicas, output);
+    *output << "<h3>Tombstoned Tablets</h3>\n";
     *output << "<p><small>Tombstoned tablets are tablets that previously "
-           "stored a replica on this server.</small></p>";
+               "stored a replica on this server.</small></p>";
+    generate_table(tombstoned_replicas, output);
   }
 }
 
