@@ -68,8 +68,8 @@ Slice Partition::range_key(const string& partition_key) const {
 
 bool Partition::Equals(const Partition& other) const {
   if (this == &other) return true;
-  if (partition_key_start().compare(other.partition_key_start()) != 0) return false;
-  if (partition_key_end().compare(other.partition_key_end()) != 0) return false;
+  if (partition_key_start() != other.partition_key_start()) return false;
+  if (partition_key_end() != other.partition_key_end()) return false;
   if (hash_buckets_ != other.hash_buckets_) return false;
   return true;
 }

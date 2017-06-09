@@ -266,13 +266,13 @@ CompressionType GetCompressionCodecType(const std::string& name) {
   string uname;
   ToUpperCase(name, &uname);
 
-  if (uname.compare("SNAPPY") == 0)
+  if (uname == "SNAPPY")
     return SNAPPY;
-  if (uname.compare("LZ4") == 0)
+  if (uname == "LZ4")
     return LZ4;
-  if (uname.compare("ZLIB") == 0)
+  if (uname == "ZLIB")
     return ZLIB;
-  if (uname.compare("NONE") == 0)
+  if (uname == "NONE")
     return NO_COMPRESSION;
 
   LOG(WARNING) << "Unable to recognize the compression codec '" << name
