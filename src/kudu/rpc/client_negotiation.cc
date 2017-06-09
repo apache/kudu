@@ -481,8 +481,6 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
   RETURN_NOT_OK(s);
 
   // TLS handshake is finished.
-  DCHECK(token.empty());
-
   if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
       ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
     TRACE("Negotiated auth-only $0 with cipher suite $1",

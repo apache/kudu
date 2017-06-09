@@ -989,15 +989,17 @@ KuduTableAlterer* KuduTableAlterer::RenameTo(const string& new_name) {
 KuduColumnSpec* KuduTableAlterer::AddColumn(const string& name) {
   Data::Step s = { AlterTableRequestPB::ADD_COLUMN,
                    new KuduColumnSpec(name), nullptr, nullptr };
+  auto* spec = s.spec;
   data_->steps_.emplace_back(std::move(s));
-  return s.spec;
+  return spec;
 }
 
 KuduColumnSpec* KuduTableAlterer::AlterColumn(const string& name) {
   Data::Step s = { AlterTableRequestPB::ALTER_COLUMN,
                    new KuduColumnSpec(name), nullptr, nullptr };
+  auto* spec = s.spec;
   data_->steps_.emplace_back(std::move(s));
-  return s.spec;
+  return spec;
 }
 
 KuduTableAlterer* KuduTableAlterer::DropColumn(const string& name) {

@@ -101,7 +101,7 @@ TEST_F(LockManagerTest, TestMoveLock) {
   // Move it to a new instance.
   ScopedRowLock moved_lock(std::move(row_lock));
   ASSERT_TRUE(moved_lock.acquired());
-  ASSERT_FALSE(row_lock.acquired());
+  ASSERT_FALSE(row_lock.acquired()); // NOLINT(misc-use-after-move)
 }
 
 class LmTestResource {

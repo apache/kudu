@@ -112,7 +112,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   opts.num_masters = opts.master_rpc_ports.size();
   opts.num_tablet_servers = 3;
 
-  ExternalMiniCluster cluster(std::move(opts));
+  ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 
   // Verify each of the masters.

@@ -351,12 +351,13 @@ class TskEntryLoader : public TskEntryVisitor {
     CHECK(tsk.has_expire_unix_epoch_seconds());
     CHECK(tsk.has_rsa_key_der());
 
-    // Expired entries are useful as well: they are needed for correct tracking
-    // of TSK sequence numbers.
-    entries_.emplace_back(std::move(tsk));
     if (tsk.expire_unix_epoch_seconds() <= entry_expiration_seconds_) {
       expired_entry_ids_.insert(entry_id);
     }
+
+    // Expired entries are useful as well: they are needed for correct tracking
+    // of TSK sequence numbers.
+    entries_.emplace_back(std::move(tsk));
     return Status::OK();
   }
 

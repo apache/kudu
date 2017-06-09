@@ -589,7 +589,7 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
   AppendCommit(std::move(mutate_commit));
 
   // ...and WRITE_OP...
-  mutate_commit.reset(new consensus::CommitMsg);
+  mutate_commit = gscoped_ptr<consensus::CommitMsg>(new consensus::CommitMsg);
   mutate_commit->set_op_type(consensus::WRITE_OP);
   *mutate_commit->mutable_commited_op_id() = write_replicate->get()->id();
   TxResultPB* result = mutate_commit->mutable_result();

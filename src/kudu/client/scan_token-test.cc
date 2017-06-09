@@ -191,7 +191,7 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     ASSERT_OK(builder.Build(&tokens));
 
     ASSERT_EQ(1, tokens.size());
-    ASSERT_EQ(1, CountRows(std::move(tokens)));
+    ASSERT_EQ(1, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
   }
 
