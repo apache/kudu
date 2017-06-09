@@ -86,7 +86,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_num_write_threads(4);
-  work.set_write_timeout_millis(100);
+  work.set_write_timeout_millis(1000);
   work.set_timeout_allowed(true);
   work.Setup();
 
