@@ -99,6 +99,19 @@ TEST_F(ConsensusMetadataTest, TestCreateLoad) {
   ASSERT_VALUES_EQUAL(*cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
 }
 
+// Ensure that Create() will not overwrite an existing file.
+TEST_F(ConsensusMetadataTest, TestCreateNoOverwrite) {
+  unique_ptr<ConsensusMetadata> cmeta;
+  // Create the consensus metadata file.
+  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+                                      config_, kInitialTerm, &cmeta));
+  // Try to create it again.
+  Status s = ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
+                                       config_, kInitialTerm, &cmeta);
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "Unable to write consensus meta file.*already exists");
+}
+
 // Ensure that we get an error when loading a file that doesn't exist.
 TEST_F(ConsensusMetadataTest, TestFailedLoad) {
   unique_ptr<ConsensusMetadata> cmeta;

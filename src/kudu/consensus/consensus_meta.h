@@ -56,6 +56,13 @@ namespace consensus {
 // This class is not thread-safe and requires external synchronization.
 class ConsensusMetadata {
  public:
+
+  // Specify whether we are allowed to overwrite an existing file when flushing.
+  enum FlushMode {
+    OVERWRITE,
+    NO_OVERWRITE
+  };
+
   // Create a ConsensusMetadata object with provided initial state.
   // Encoded PB is flushed to disk before returning.
   static Status Create(FsManager* fs_manager,
@@ -136,7 +143,7 @@ class ConsensusMetadata {
   void MergeCommittedConsensusStatePB(const ConsensusStatePB& cstate);
 
   // Persist current state of the protobuf to disk.
-  Status Flush();
+  Status Flush(FlushMode mode = OVERWRITE);
 
   int flush_count_for_tests() const {
     return flush_count_for_tests_;

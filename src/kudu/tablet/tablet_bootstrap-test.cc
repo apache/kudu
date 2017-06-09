@@ -85,6 +85,21 @@ class BootstrapTest : public LogTestBase {
     return (*meta)->Flush();
   }
 
+  Status CreateConsensusMetadata(const scoped_refptr<TabletMetadata>& meta) {
+    consensus::RaftConfigPB config;
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
+    consensus::RaftPeerPB* peer = config.add_peers();
+    peer->set_permanent_uuid(meta->fs_manager()->uuid());
+    peer->set_member_type(consensus::RaftPeerPB::VOTER);
+
+    unique_ptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
+                                                    meta->fs_manager()->uuid(),
+                                                    config, kMinimumTerm, &cmeta),
+                          "Unable to create consensus metadata");
+    return Status::OK();
+  }
+
   Status PersistTestTabletMetadataState(TabletDataState state) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK(LoadTestTabletMetadata(-1, -1, &meta));
@@ -121,17 +136,7 @@ class BootstrapTest : public LogTestBase {
     RETURN_NOT_OK_PREPEND(LoadTestTabletMetadata(mrs_id, delta_id, &meta),
                           "Unable to load test tablet metadata");
 
-    consensus::RaftConfigPB config;
-    config.set_opid_index(consensus::kInvalidOpIdIndex);
-    consensus::RaftPeerPB* peer = config.add_peers();
-    peer->set_permanent_uuid(meta->fs_manager()->uuid());
-    peer->set_member_type(consensus::RaftPeerPB::VOTER);
-
-    unique_ptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
-                                                    meta->fs_manager()->uuid(),
-                                                    config, kMinimumTerm, &cmeta),
-                          "Unable to create consensus metadata");
+    RETURN_NOT_OK(CreateConsensusMetadata(meta));
 
     RETURN_NOT_OK_PREPEND(RunBootstrapOnTestTablet(meta, tablet, boot_info),
                           "Unable to bootstrap test tablet");
@@ -244,19 +249,23 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Step 2) Write the corresponding COMMIT in the second segment.
   AppendCommit(opid);
 
+  scoped_refptr<TabletMetadata> meta;
+  ASSERT_OK(LoadTestTabletMetadata(/*mrs_id=*/ -1, /*delta_id=*/ -1, &meta));
+  ASSERT_OK(CreateConsensusMetadata(meta));
+
   {
     shared_ptr<Tablet> tablet;
     ConsensusBootstrapInfo boot_info;
 
     // Step 3) Apply the operations in the log to the tablet and flush
     // the tablet to disk.
-    ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+    ASSERT_OK(RunBootstrapOnTestTablet(meta, &tablet, &boot_info));
     ASSERT_OK(tablet->Flush());
 
     // Create a new log segment.
     ASSERT_OK(RollLog());
 
-    // Step 4) Create an orphanned commit by first adding a commit to
+    // Step 4) Create an orphaned commit by first adding a commit to
     // the newly rolled logfile, and then by removing the previous
     // commits.
     AppendCommit(opid);
@@ -274,7 +283,8 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 
     // Note: when GLOG_v=1, the test logs should include 'Ignoring
     // orphan commit: op_type: WRITE_OP...' line.
-    ASSERT_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
+    ASSERT_OK(LoadTestTabletMetadata(/*mrs_id=*/ 2, /*delta_id=*/ 1, &meta));
+    ASSERT_OK(RunBootstrapOnTestTablet(meta, &tablet, &boot_info));
 
     // Confirm that the legitimate data (from Step 3) is still there.
     vector<string> results;

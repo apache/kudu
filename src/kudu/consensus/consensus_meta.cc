@@ -51,7 +51,7 @@ Status ConsensusMetadata::Create(FsManager* fs_manager,
   unique_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   cmeta->set_committed_config(config);
   cmeta->set_current_term(current_term);
-  RETURN_NOT_OK(cmeta->Flush());
+  RETURN_NOT_OK(cmeta->Flush(NO_OVERWRITE)); // Create() should not clobber.
   cmeta_out->swap(cmeta);
   return Status::OK();
 }
@@ -184,7 +184,7 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
   clear_pending_config();
 }
 
-Status ConsensusMetadata::Flush() {
+Status ConsensusMetadata::Flush(FlushMode mode) {
   MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
 
@@ -208,7 +208,7 @@ Status ConsensusMetadata::Flush() {
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
       fs_manager_->env(), meta_file_path, pb_,
-      pb_util::OVERWRITE,
+      mode == OVERWRITE ? pb_util::OVERWRITE : pb_util::NO_OVERWRITE,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL
