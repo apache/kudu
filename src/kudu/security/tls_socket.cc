@@ -77,6 +77,9 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritt
     int32_t frame_size = iov[i].iov_len;
     // Don't return before unsetting TCP_CORK.
     write_status = Write(static_cast<uint8_t*>(iov[i].iov_base), frame_size, nwritten);
+    if (!write_status.ok()) break;
+
+    // nwritten should have the correct amount written.
     total_written += *nwritten;
     if (*nwritten < frame_size) break;
   }

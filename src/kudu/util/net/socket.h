@@ -120,8 +120,15 @@ class Socket {
   // get the error status using getsockopt(2)
   Status GetSockError() const;
 
+  // Write up to 'amt' bytes from 'buf' to the socket. The number of bytes
+  // actually written will be stored in 'nwritten'. If an error is returned,
+  // the value of 'nwritten' is undefined.
   virtual Status Write(const uint8_t *buf, int32_t amt, int32_t *nwritten);
 
+  // Vectorized Write.
+  // If there is an error, that error needs to be resolved before calling again.
+  // If there was no error, but not all the bytes were written, the unwritten
+  // bytes must be retried. See writev(2) for more information.
   virtual Status Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten);
 
   // Blocking Write call, returns IOError unless full buffer is sent.
