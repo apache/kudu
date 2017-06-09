@@ -220,7 +220,7 @@ class PredicateTest : public KuduTest {
   // Returns a vector of string values.
   vector<string> CreateStringValues() {
     return {
-      string("", 0),
+      string(),
       string("\0", 1),
       string("\0\0", 2),
       string("a", 1),

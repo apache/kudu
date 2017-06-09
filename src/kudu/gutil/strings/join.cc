@@ -188,7 +188,7 @@ void JoinCSVLineWithDelimiter(const vector<string>& cols, char delimiter,
       CHECK_GE(size, escaped_size + 3)
         << "Buffer should have one space at the beginning for a "
         << "double-quote, one at the end for a double-quote, and "
-        << "one at the end for a closing '\0'";
+        << "one at the end for a closing '\\0'";
       *buf.get() = '"';
       *((buf.get() + 1) + escaped_size) = '"';
       *((buf.get() + 1) + escaped_size + 1) = '\0';
