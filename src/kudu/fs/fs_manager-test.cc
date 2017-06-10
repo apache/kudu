@@ -256,6 +256,12 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[0], "data1.kudutmp.file");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
 
+  tmp_path = JoinPathSegments(fs_manager()->GetConsensusMetadataDir(), "12345.kudutmp.asdfg");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
+  tmp_path = JoinPathSegments(fs_manager()->GetTabletMetadataDir(), "12345.kudutmp.asdfg");
+  ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
+
   // Not a misprint here: checking for just ".kudutmp" as well
   tmp_path = JoinPathSegments(fs_manager()->GetDataRootDirs()[1], "data2.kudutmp");
   ASSERT_OK(env_util::OpenFileForWrite(fs_manager()->env(), tmp_path, &tmp_writer));
@@ -272,11 +278,13 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   ASSERT_EQ(0, symlink_error);
 
   vector<string> lookup_dirs = fs_manager()->GetDataRootDirs();
-  lookup_dirs.push_back(fs_manager()->GetWalsRootDir());
+  lookup_dirs.emplace_back(fs_manager()->GetWalsRootDir());
+  lookup_dirs.emplace_back(fs_manager()->GetConsensusMetadataDir());
+  lookup_dirs.emplace_back(fs_manager()->GetTabletMetadataDir());
 
   size_t n_tmp_files = 0;
   ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
-  ASSERT_EQ(4, n_tmp_files);
+  ASSERT_EQ(6, n_tmp_files);
 
   // Opening fs_manager should remove tmp files
   ASSERT_OK(fs_manager()->Open());

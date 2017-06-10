@@ -250,10 +250,11 @@ class FsManager {
                           const std::string& path,
                           const std::vector<std::string>& objects);
 
-  // Deletes leftover temporary files in canonicalized_wal_fs_root_.
+  // Deletes leftover temporary files in all "special" top-level directories
+  // (e.g. WAL root directory).
   //
   // Logs warnings in case of errors.
-  void CleanTmpFilesInWalRoot();
+  void CleanTmpFiles();
 
   // Checks that the permissions of the root data directories conform to the
   // configured umask, and tightens them as necessary if they do not.

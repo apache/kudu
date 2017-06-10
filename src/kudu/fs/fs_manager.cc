@@ -258,7 +258,7 @@ Status FsManager::Open(FsReport* report) {
   // Temporary files in the data directory roots will be removed by the block
   // manager.
   if (!read_only_) {
-    CleanTmpFilesInWalRoot();
+    CleanTmpFiles();
     CheckAndFixPermissions();
   }
 
@@ -479,10 +479,14 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
                                               StringPrintf("%09" PRIu64, sequence_number)));
 }
 
-void FsManager::CleanTmpFilesInWalRoot() {
+void FsManager::CleanTmpFiles() {
   DCHECK(!read_only_);
-  WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env_, canonicalized_wal_fs_root_),
-              "Error while deleting tmp files");
+  for (const auto& s : { GetWalsRootDir(),
+                         GetTabletMetadataDir(),
+                         GetConsensusMetadataDir() }) {
+    WARN_NOT_OK(env_util::DeleteTmpFilesRecursively(env_, s),
+                Substitute("Error deleting tmp files in $0", s));
+  }
 }
 
 void FsManager::CheckAndFixPermissions() {
