@@ -26,6 +26,7 @@ import java.util.ListIterator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import org.jboss.netty.util.CharsetUtil;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -33,7 +34,6 @@ import org.apache.kudu.Type;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.util.StringUtil;
-import org.jboss.netty.util.CharsetUtil;
 
 /**
  * Class used to represent parts of a row along with its schema.<p>
@@ -691,6 +691,14 @@ public class PartialRow {
     // We don't set anything in row alloc, it will be managed at encoding time.
   }
 
+  /**
+   * Get the list variable length data cells that were added to this row.
+   * @return a list of binary data, may be empty
+   */
+  List<ByteBuffer> getVarLengthData() {
+    return varLengthData;
+  }
+
   private ByteBuffer getVarLengthData(int columnIndex) {
     return varLengthData.get(columnIndex).duplicate();
   }
@@ -1332,14 +1340,6 @@ public class PartialRow {
    */
   Schema getSchema() {
     return schema;
-  }
-
-  /**
-   * Get the list variable length data cells that were added to this row.
-   * @return a list of binary data, may be empty
-   */
-  List<ByteBuffer> getVarLengthData() {
-    return varLengthData;
   }
 
   /**

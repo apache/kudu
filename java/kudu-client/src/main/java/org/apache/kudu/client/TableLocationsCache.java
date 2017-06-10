@@ -220,7 +220,9 @@ class TableLocationsCache {
     try {
       Iterator<Map.Entry<byte[], Entry>> it = entries.entrySet().iterator();
       while (it.hasNext()) {
-        if (it.next().getValue().isNonCoveredRange()) it.remove();
+        if (it.next().getValue().isNonCoveredRange()) {
+          it.remove();
+        }
       }
     } finally {
       rwl.writeLock().unlock();

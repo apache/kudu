@@ -74,7 +74,7 @@ public abstract class AbstractKuduScannerBuilder
     return (S) this;
   }
 
- /**
+  /**
    * Make scans resumable at another tablet server if current server fails if
    * isFaultTolerant is true.
    * <p>

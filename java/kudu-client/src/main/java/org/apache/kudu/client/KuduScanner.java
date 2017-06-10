@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import com.google.common.annotations.VisibleForTesting;
+
 import org.apache.kudu.Schema;
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;

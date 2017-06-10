@@ -15,6 +15,23 @@
 
 package org.apache.kudu.mapreduce.tools;
 
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_CLIENT;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_KEY_ONE;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_KEY_TWO;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_PREV_ONE;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_PREV_TWO;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_ROW_ID;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.COLUMN_UPDATE_COUNT;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.Counts;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.DEFAULT_HEADS_TABLE_NAME;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.DEFAULT_TABLE_NAME;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.HEADS_TABLE_NAME_KEY;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.TABLE_NAME_KEY;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.Xoroshiro128PlusRandom;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.getCreateTableOptions;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.getHeadsTableSchema;
+import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.getTableSchema;
+
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -81,8 +98,6 @@ import org.apache.kudu.client.Update;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 import org.apache.kudu.util.Pair;
-
-import static org.apache.kudu.mapreduce.tools.BigLinkedListCommon.*;
 
 /**
  * <p>

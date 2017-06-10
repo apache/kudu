@@ -862,9 +862,10 @@ public final class AsyncKuduScanner {
               Status status = Status.fromTabletServerErrorPB(error);
               throw new ScannerExpiredException(status);
             }
+            // fall through
           default:
             break;
-          }
+        }
       }
       RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
           deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(),
