@@ -74,13 +74,17 @@ Status KuduServer::Init() {
                 .set_metrics(std::move(metrics))
                 .Build(&tablet_apply_pool_));
 
-  // This pool is shared by all replicas hosted by this server.
+  // These pools are shared by all replicas hosted by this server.
   //
-  // Some submitted tasks use blocking IO, so we configure no upper bound on
-  // the maximum number of threads in each pool (otherwise the default value of
-  // "number of CPUs" may cause blocking tasks to starve other "fast" tasks).
-  // However, the effective upper bound is the number of replicas as each will
-  // submit its own tasks via a dedicated token.
+  // Submitted tasks use blocking IO (raft_pool_) or acquire long-held locks
+  // (tablet_prepare_pool_) so we configure no upper bound on the maximum
+  // number of threads in each pool (otherwise the default value of "number of
+  // CPUs" may cause blocking tasks to starve other "fast" tasks). However, the
+  // effective upper bound is the number of replicas as each will submit its
+  // own tasks via a dedicated token.
+  RETURN_NOT_OK(ThreadPoolBuilder("prepare")
+                .set_max_threads(std::numeric_limits<int>::max())
+                .Build(&tablet_prepare_pool_));
   RETURN_NOT_OK(ThreadPoolBuilder("raft")
                 .set_trace_metric_prefix("raft")
                 .set_max_threads(std::numeric_limits<int>::max())
@@ -113,6 +117,9 @@ void KuduServer::Shutdown() {
   }
   if (tablet_apply_pool_) {
     tablet_apply_pool_->Shutdown();
+  }
+  if (tablet_prepare_pool_) {
+    tablet_prepare_pool_->Shutdown();
   }
   ServerBase::Shutdown();
 }

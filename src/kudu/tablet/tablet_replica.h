@@ -69,7 +69,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                       public consensus::ReplicaTransactionFactory {
  public:
   TabletReplica(const scoped_refptr<TabletMetadata>& meta,
-                consensus::RaftPeerPB local_peer_pb, ThreadPool* apply_pool,
+                consensus::RaftPeerPB local_peer_pb,
+                ThreadPool* apply_pool,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   // Initializes the TabletReplica, namely creating the Log and initializing
@@ -80,7 +81,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
               const scoped_refptr<rpc::ResultTracker>& result_tracker,
               const scoped_refptr<log::Log>& log,
               const scoped_refptr<MetricEntity>& metric_entity,
-              ThreadPool* raft_pool);
+              ThreadPool* raft_pool,
+              ThreadPool* prepare_pool);
 
   // Starts the TabletReplica, making it available for Write()s. If this
   // TabletReplica is part of a consensus configuration this will connect it to other replicas
@@ -308,12 +310,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // during them in order to reject RPCs, etc.
   mutable simple_spinlock state_change_lock_;
 
-  // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_pool_'
-  // is single-threaded, moving to a multi-tablet setup where multiple TabletReplicas
-  // use the same 'prepare_pool_' needs to enforce that, for a single
-  // TabletReplica, PrepareTasks are executed *serially*.
-  // TODO move the prepare pool to TabletServer.
-  gscoped_ptr<ThreadPool> prepare_pool_;
+  // Token for serial task submission to the server-wide transaction prepare pool.
+  std::unique_ptr<ThreadPoolToken> prepare_pool_token_;
 
   // Pool that executes apply tasks for transactions. This is a multi-threaded
   // pool, constructor-injected by either the Master (for system tables) or

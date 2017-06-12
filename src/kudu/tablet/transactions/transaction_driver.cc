@@ -82,13 +82,13 @@ class FollowerTransactionCompletionCallback : public TransactionCompletionCallba
 TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
                                      RaftConsensus* consensus,
                                      Log* log,
-                                     ThreadPool* prepare_pool,
+                                     ThreadPoolToken* prepare_pool_token,
                                      ThreadPool* apply_pool,
                                      TransactionOrderVerifier* order_verifier)
     : txn_tracker_(txn_tracker),
       consensus_(consensus),
       log_(log),
-      prepare_pool_(prepare_pool),
+      prepare_pool_token_(prepare_pool_token),
       apply_pool_(apply_pool),
       order_verifier_(order_verifier),
       trace_(new Trace()),
@@ -190,7 +190,7 @@ Status TransactionDriver::ExecuteAsync() {
   }
 
   if (s.ok()) {
-    s = prepare_pool_->SubmitClosure(
+    s = prepare_pool_token_->SubmitClosure(
       Bind(&TransactionDriver::PrepareTask, Unretained(this)));
   }
 

@@ -56,10 +56,14 @@ class KuduServer : public server::ServerBase {
   // Shuts down a KuduServer instance.
   virtual void Shutdown() override;
 
+  ThreadPool* tablet_prepare_pool() const { return tablet_prepare_pool_.get(); }
   ThreadPool* tablet_apply_pool() const { return tablet_apply_pool_.get(); }
   ThreadPool* raft_pool() const { return raft_pool_.get(); }
 
  private:
+
+  // Thread pool for preparing transactions, shared between all tablets.
+  gscoped_ptr<ThreadPool> tablet_prepare_pool_;
 
   // Thread pool for applying transactions, shared between all tablets.
   gscoped_ptr<ThreadPool> tablet_apply_pool_;

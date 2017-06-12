@@ -91,6 +91,7 @@ class TabletReplicaTest : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
+    ASSERT_OK(ThreadPoolBuilder("prepare").Build(&prepare_pool_));
     ASSERT_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
     ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
 
@@ -142,7 +143,8 @@ class TabletReplicaTest : public KuduTabletTest {
                                     scoped_refptr<rpc::ResultTracker>(),
                                     log,
                                     metric_entity_,
-                                    raft_pool_.get()));
+                                    raft_pool_.get(),
+                                    prepare_pool_.get()));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
@@ -158,6 +160,7 @@ class TabletReplicaTest : public KuduTabletTest {
 
   virtual void TearDown() OVERRIDE {
     tablet_replica_->Shutdown();
+    prepare_pool_->Shutdown();
     apply_pool_->Shutdown();
     KuduTabletTest::TearDown();
   }
@@ -265,9 +268,12 @@ class TabletReplicaTest : public KuduTabletTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;
-  scoped_refptr<TabletReplica> tablet_replica_;
+  gscoped_ptr<ThreadPool> prepare_pool_;
   gscoped_ptr<ThreadPool> apply_pool_;
   gscoped_ptr<ThreadPool> raft_pool_;
+
+  // Must be destroyed before thread pools.
+  scoped_refptr<TabletReplica> tablet_replica_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().

@@ -332,7 +332,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                               scoped_refptr<rpc::ResultTracker>(),
                                               log,
                                               tablet->GetMetricEntity(),
-                                              master_->raft_pool()),
+                                              master_->raft_pool(),
+                                              master_->tablet_prepare_pool()),
                         "Failed to Init() TabletReplica");
 
   RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info),

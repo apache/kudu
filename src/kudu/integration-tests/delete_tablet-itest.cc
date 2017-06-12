@@ -76,6 +76,7 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
 
   // Shut down the TS and restart it after changing flags to ensure no data can
   // be written during tablet bootstrap.
+  tablet_replica.reset();
   mts->Shutdown();
   FLAGS_fs_wal_dir_reserved_bytes = INT64_MAX;
   ASSERT_OK(mts->Restart());

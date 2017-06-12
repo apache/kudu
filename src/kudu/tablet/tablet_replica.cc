@@ -129,21 +129,19 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
                            const scoped_refptr<ResultTracker>& result_tracker,
                            const scoped_refptr<Log>& log,
                            const scoped_refptr<MetricEntity>& metric_entity,
-                           ThreadPool* raft_pool) {
+                           ThreadPool* raft_pool,
+                           ThreadPool* prepare_pool) {
 
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
-  ThreadPoolMetrics metrics = {
-      METRIC_op_prepare_queue_length.Instantiate(metric_entity),
-      METRIC_op_prepare_queue_time.Instantiate(metric_entity),
-      METRIC_op_prepare_run_time.Instantiate(metric_entity)
-  };
-  RETURN_NOT_OK(ThreadPoolBuilder("prepare")
-                .set_max_threads(1)
-                .set_metrics(std::move(metrics))
-                .Build(&prepare_pool_));
-
+  prepare_pool_token_ = prepare_pool->NewTokenWithMetrics(
+      ThreadPool::ExecutionMode::SERIAL,
+      {
+          METRIC_op_prepare_queue_length.Instantiate(metric_entity),
+          METRIC_op_prepare_queue_time.Instantiate(metric_entity),
+          METRIC_op_prepare_run_time.Instantiate(metric_entity)
+      });
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(BOOTSTRAPPING, state_);
@@ -245,8 +243,8 @@ void TabletReplica::Shutdown() {
     txn_tracker_.WaitForAllToFinish();
   }
 
-  if (prepare_pool_) {
-    prepare_pool_->Shutdown();
+  if (prepare_pool_token_) {
+    prepare_pool_token_->Shutdown();
   }
 
   if (log_) {
@@ -554,7 +552,7 @@ Status TabletReplica::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transa
     &txn_tracker_,
     consensus_.get(),
     log_.get(),
-    prepare_pool_.get(),
+    prepare_pool_token_.get(),
     apply_pool_,
     &txn_order_verifier_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::LEADER));
@@ -569,7 +567,7 @@ Status TabletReplica::NewReplicaTransactionDriver(gscoped_ptr<Transaction> trans
     &txn_tracker_,
     consensus_.get(),
     log_.get(),
-    prepare_pool_.get(),
+    prepare_pool_token_.get(),
     apply_pool_,
     &txn_order_verifier_);
   RETURN_NOT_OK(tx_driver->Init(std::move(transaction), consensus::REPLICA));

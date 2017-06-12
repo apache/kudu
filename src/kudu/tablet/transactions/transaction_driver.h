@@ -222,7 +222,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   TransactionDriver(TransactionTracker* txn_tracker,
                     consensus::RaftConsensus* consensus,
                     log::Log* log,
-                    ThreadPool* prepare_pool,
+                    ThreadPoolToken* prepare_pool_token,
                     ThreadPool* apply_pool,
                     TransactionOrderVerifier* order_verifier);
 
@@ -345,7 +345,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   TransactionTracker* const txn_tracker_;
   consensus::RaftConsensus* const consensus_;
   log::Log* const log_;
-  ThreadPool* const prepare_pool_;
+  ThreadPoolToken* const prepare_pool_token_;
   ThreadPool* const apply_pool_;
   TransactionOrderVerifier* const order_verifier_;
 
