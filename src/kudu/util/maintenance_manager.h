@@ -282,7 +282,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
     memory_pressure_func_ = std::move(f);
   }
 
-  static const Options DEFAULT_OPTIONS;
+  static const Options kDefaultOptions;
 
  private:
   FRIEND_TEST(MaintenanceManagerTest, TestLogRetentionPrioritization);

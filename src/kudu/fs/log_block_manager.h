@@ -338,7 +338,7 @@ class LogBlockManager : public BlockManager {
   // Returns whether the given kernel release is vulnerable to KUDU-1508.
   static bool IsBuggyEl6Kernel(const std::string& kernel_release);
 
-  // Finds an appropriate block limit from 'per_fs_block_size_block_limits'
+  // Finds an appropriate block limit from 'kPerFsBlockSizeBlockLimits'
   // using the given filesystem block size.
   static int64_t LookupBlockLimit(int64_t fs_block_size);
 
@@ -346,7 +346,7 @@ class LogBlockManager : public BlockManager {
 
   // For kernels affected by KUDU-1508, tracks a known good upper bound on the
   // number of blocks per container, given a particular filesystem block size.
-  static const std::map<int64_t, int64_t> per_fs_block_size_block_limits;
+  static const std::map<int64_t, int64_t> kPerFsBlockSizeBlockLimits;
 
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting (e.g. LogBlocks).

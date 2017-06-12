@@ -51,18 +51,18 @@ namespace kudu {
 #define _SC_CLK_TCK 2
 #endif
 
-static const int64_t TICKS_PER_SEC = sysconf(_SC_CLK_TCK);
+static const int64_t kTicksPerSec = sysconf(_SC_CLK_TCK);
 
 // Offsets into the ../stat file array of per-thread statistics.
 //
 // They are themselves offset by two because the pid and comm fields of the
 // file are parsed separately.
-static const int64_t USER_TICKS = 13 - 2;
-static const int64_t KERNEL_TICKS = 14 - 2;
-static const int64_t IO_WAIT = 41 - 2;
+static const int64_t kUserTicks = 13 - 2;
+static const int64_t kKernelTicks = 14 - 2;
+static const int64_t kIoWait = 41 - 2;
 
 // Largest offset we are interested in, to check we get a well formed stat file.
-static const int64_t MAX_OFFSET = IO_WAIT;
+static const int64_t kMaxOffset = kIoWait;
 
 Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stats) {
   DCHECK(stats != nullptr);
@@ -80,19 +80,19 @@ Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stat
   string extracted_name = buffer.substr(open_paren + 1, close_paren - (open_paren + 1));
   string rest = buffer.substr(close_paren + 2);
   vector<string> splits = Split(rest, " ", strings::SkipEmpty());
-  if (splits.size() < MAX_OFFSET) {
+  if (splits.size() < kMaxOffset) {
     return Status::IOError("Unrecognised /proc format");
   }
 
   int64 tmp;
-  if (safe_strto64(splits[USER_TICKS], &tmp)) {
-    stats->user_ns = tmp * (1e9 / TICKS_PER_SEC);
+  if (safe_strto64(splits[kUserTicks], &tmp)) {
+    stats->user_ns = tmp * (1e9 / kTicksPerSec);
   }
-  if (safe_strto64(splits[KERNEL_TICKS], &tmp)) {
-    stats->kernel_ns = tmp * (1e9 / TICKS_PER_SEC);
+  if (safe_strto64(splits[kKernelTicks], &tmp)) {
+    stats->kernel_ns = tmp * (1e9 / kTicksPerSec);
   }
-  if (safe_strto64(splits[IO_WAIT], &tmp)) {
-    stats->iowait_ns = tmp * (1e9 / TICKS_PER_SEC);
+  if (safe_strto64(splits[kIoWait], &tmp)) {
+    stats->iowait_ns = tmp * (1e9 / kTicksPerSec);
   }
   if (name != nullptr) {
     *name = extracted_name;
@@ -103,7 +103,7 @@ Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stat
 
 Status GetThreadStats(int64_t tid, ThreadStats* stats) {
   DCHECK(stats != nullptr);
-  if (TICKS_PER_SEC <= 0) {
+  if (kTicksPerSec <= 0) {
     return Status::NotSupported("ThreadStats not supported");
   }
 

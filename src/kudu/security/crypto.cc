@@ -64,25 +64,25 @@ int DerWritePublicKey(BIO* bio, EVP_PKEY* key) {
 } // anonymous namespace
 
 template<> struct SslTypeTraits<BIGNUM> {
-  static constexpr auto free = &BN_free;
+  static constexpr auto kFreeFunc = &BN_free;
 };
 struct RsaPrivateKeyTraits : public SslTypeTraits<EVP_PKEY> {
-  static constexpr auto read_pem = &PEM_read_bio_PrivateKey;
-  static constexpr auto read_der = &d2i_PrivateKey_bio;
-  static constexpr auto write_pem = &PemWritePrivateKey;
-  static constexpr auto write_der = &i2d_PrivateKey_bio;
+  static constexpr auto kReadPemFunc = &PEM_read_bio_PrivateKey;
+  static constexpr auto kReadDerFunc = &d2i_PrivateKey_bio;
+  static constexpr auto kWritePemFunc = &PemWritePrivateKey;
+  static constexpr auto kWriteDerFunc = &i2d_PrivateKey_bio;
 };
 struct RsaPublicKeyTraits : public SslTypeTraits<EVP_PKEY> {
-  static constexpr auto read_pem = &PEM_read_bio_PUBKEY;
-  static constexpr auto read_der = &d2i_PUBKEY_bio;
-  static constexpr auto write_pem = &PemWritePublicKey;
-  static constexpr auto write_der = &DerWritePublicKey;
+  static constexpr auto kReadPemFunc = &PEM_read_bio_PUBKEY;
+  static constexpr auto kReadDerFunc = &d2i_PUBKEY_bio;
+  static constexpr auto kWritePemFunc = &PemWritePublicKey;
+  static constexpr auto kWriteDerFunc = &DerWritePublicKey;
 };
 template<> struct SslTypeTraits<RSA> {
-  static constexpr auto free = &RSA_free;
+  static constexpr auto kFreeFunc = &RSA_free;
 };
 template<> struct SslTypeTraits<EVP_MD_CTX> {
-  static constexpr auto free = &EVP_MD_CTX_destroy;
+  static constexpr auto kFreeFunc = &EVP_MD_CTX_destroy;
 };
 
 namespace {

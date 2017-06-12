@@ -71,7 +71,7 @@ namespace client {
 namespace internal {
 
 namespace {
-const int MAX_RETURNED_TABLE_LOCATIONS = 10;
+const int kMaxReturnedTableLocations = 10;
 } // anonymous namespace
 
 ////////////////////////////////////////////////////////////
@@ -651,7 +651,7 @@ void LookupRpc::SendRpc() {
   // Fill out the request.
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
-  req_.set_max_returned_locations(MAX_RETURNED_TABLE_LOCATIONS);
+  req_.set_max_returned_locations(kMaxReturnedTableLocations);
 
   // The end partition key is left unset intentionally so that we'll prefetch
   // some additional tablets.
@@ -910,7 +910,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       InsertOrDie(&tablets_by_key, tablet_lower_bound, std::move(entry));
     }
 
-    if (!last_upper_bound.empty() && tablet_locations.size() < MAX_RETURNED_TABLE_LOCATIONS) {
+    if (!last_upper_bound.empty() && tablet_locations.size() < kMaxReturnedTableLocations) {
       // There is a non-covered range between the last tablet and the end of the
       // partition key space, such as F.
 

@@ -66,7 +66,7 @@ struct RowOpsBase {
 
 template<typename KeyTypeWrapper>
 struct SliceTypeRowOps : public RowOpsBase {
-  SliceTypeRowOps() : RowOpsBase(KeyTypeWrapper::type, KeyTypeWrapper::encoding),
+  SliceTypeRowOps() : RowOpsBase(KeyTypeWrapper::kType, KeyTypeWrapper::kEncoding),
     strs_(kNumAllocatedElements), slices_(kNumAllocatedElements), cur(0) {}
 
   // Assumes the string representation of n is under strlen characters.
@@ -88,10 +88,10 @@ struct SliceTypeRowOps : public RowOpsBase {
       Slice slice_a(string_a);
       Slice slice_b(string_b);
       Slice slice_c(string_c);
-      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type>>(kColA, slice_a));
-      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type>>(kColB, slice_b));
+      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::kType>>(kColA, slice_a));
+      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::kType>>(kColB, slice_b));
       if (altered) {
-        CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type>>(kColC, slice_c));
+        CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::kType>>(kColC, slice_c));
       }
     }
   }
@@ -122,10 +122,10 @@ struct SliceTypeRowOps : public RowOpsBase {
 
 template<typename KeyTypeWrapper>
 struct NumTypeRowOps : public RowOpsBase {
-  NumTypeRowOps() : RowOpsBase(KeyTypeWrapper::type, KeyTypeWrapper::encoding),
+  NumTypeRowOps() : RowOpsBase(KeyTypeWrapper::kType, KeyTypeWrapper::kEncoding),
     nums_(kNumAllocatedElements), cur(0) {}
 
-  typedef typename TypeTraits<KeyTypeWrapper::type>::cpp_type CppType;
+  typedef typename TypeTraits<KeyTypeWrapper::kType>::cpp_type CppType;
 
   void GenerateRow(int value, bool altered, KuduPartialRow* row) {
     if (value < 0) {
@@ -135,10 +135,10 @@ struct NumTypeRowOps : public RowOpsBase {
         CHECK_OK(row->SetNull(kColC));
       }
     } else {
-      row->Set<TypeTraits<KeyTypeWrapper::type>>(kColA, value);
-      row->Set<TypeTraits<KeyTypeWrapper::type>>(kColB, value);
+      row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColA, value);
+      row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColB, value);
       if (altered) {
-        row->Set<TypeTraits<KeyTypeWrapper::type>>(kColC, value);
+        row->Set<TypeTraits<KeyTypeWrapper::kType>>(kColC, value);
       }
     }
   }
@@ -537,8 +537,8 @@ protected:
 
 template<DataType KeyType, EncodingType Encoding>
 struct KeyTypeWrapper {
-  static const DataType type = KeyType;
-  static const EncodingType encoding = Encoding;
+  static const DataType kType = KeyType;
+  static const EncodingType kEncoding = Encoding;
 };
 
 typedef ::testing::Types<NumTypeRowOps<KeyTypeWrapper<INT8, BIT_SHUFFLE>>,

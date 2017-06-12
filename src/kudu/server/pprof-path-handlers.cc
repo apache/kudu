@@ -61,7 +61,7 @@ bool Symbolize(void *pc, char *out, int out_size);
 
 namespace kudu {
 
-const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in seconds.
+const int kPprofDefaultSampleSecs = 30; // pprof default sample time in seconds.
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by sending the executable path.
@@ -86,7 +86,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, ostringstream* ou
   }
 
   auto it = req.parsed_args.find("seconds");
-  int seconds = PPROF_DEFAULT_SAMPLE_SECS;
+  int seconds = kPprofDefaultSampleSecs;
   if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
   }
@@ -109,7 +109,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, ostringstre
   (*output) << "CPU profiling is not available without tcmalloc.";
 #else
   auto it = req.parsed_args.find("seconds");
-  int seconds = PPROF_DEFAULT_SAMPLE_SECS;
+  int seconds = kPprofDefaultSampleSecs;
   if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
   }
@@ -144,7 +144,7 @@ static void PprofGrowthHandler(const Webserver::WebRequest& req, ostringstream* 
 // Lock contention profiling
 static void PprofContentionHandler(const Webserver::WebRequest& req, ostringstream* output) {
   string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
-  int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), PPROF_DEFAULT_SAMPLE_SECS);
+  int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), kPprofDefaultSampleSecs);
   int64_t discarded_samples = 0;
 
   *output << "--- contention" << endl;

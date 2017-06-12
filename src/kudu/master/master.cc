@@ -89,7 +89,7 @@ Master::Master(const MasterOptions& opts)
     path_handlers_(new MasterPathHandlers(this)),
     opts_(opts),
     registration_initialized_(false),
-    maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
+    maintenance_manager_(new MaintenanceManager(MaintenanceManager::kDefaultOptions)) {
 }
 
 Master::~Master() {

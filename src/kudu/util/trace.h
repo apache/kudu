@@ -135,25 +135,25 @@ class Trace : public RefCountedThreadSafe<Trace> {
   void SubstituteAndTrace(const char* filepath, int line_number,
                           StringPiece format,
                           const strings::internal::SubstituteArg& arg0 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg1 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg2 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg3 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg4 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg5 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg6 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg7 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg8 =
-                            strings::internal::SubstituteArg::NoArg,
+                            strings::internal::SubstituteArg::kNoArg,
                           const strings::internal::SubstituteArg& arg9 =
-                            strings::internal::SubstituteArg::NoArg);
+                            strings::internal::SubstituteArg::kNoArg);
 
   // Dump the trace buffer to the given output stream.
   //

@@ -112,11 +112,11 @@ TEST(MemTrackerTest, TrackerHierarchy) {
 
 class GcFunctionHelper {
  public:
-  static const int NUM_RELEASE_BYTES = 1;
+  static const int kNumReleaseBytes = 1;
 
   explicit GcFunctionHelper(MemTracker* tracker) : tracker_(tracker) { }
 
-  void GcFunc() { tracker_->Release(NUM_RELEASE_BYTES); }
+  void GcFunc() { tracker_->Release(kNumReleaseBytes); }
 
  private:
   MemTracker* tracker_;

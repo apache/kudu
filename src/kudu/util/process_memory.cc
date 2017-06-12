@@ -84,7 +84,7 @@ Atomic64 g_released_memory_since_gc;
 // A higher value will make us call into tcmalloc less often (and therefore more
 // efficient). A lower value will mean our memory overhead is lower.
 // TODO(todd): this is a stopgap.
-const int64_t GC_RELEASE_SIZE = 128 * 1024L * 1024L;
+const int64_t kGcReleaseSize = 128 * 1024L * 1024L;
 
 #endif // TCMALLOC_ENABLED
 
@@ -264,7 +264,7 @@ void MaybeGCAfterRelease(int64_t released_bytes) {
 #ifdef TCMALLOC_ENABLED
   int64_t now_released = base::subtle::NoBarrier_AtomicIncrement(
       &g_released_memory_since_gc, -released_bytes);
-  if (PREDICT_FALSE(now_released > GC_RELEASE_SIZE)) {
+  if (PREDICT_FALSE(now_released > kGcReleaseSize)) {
     base::subtle::NoBarrier_Store(&g_released_memory_since_gc, 0);
     GcTcmalloc();
   }

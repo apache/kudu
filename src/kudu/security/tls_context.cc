@@ -82,10 +82,10 @@ namespace security {
 using ca::CertRequestGenerator;
 
 template<> struct SslTypeTraits<SSL> {
-  static constexpr auto free = &SSL_free;
+  static constexpr auto kFreeFunc = &SSL_free;
 };
 template<> struct SslTypeTraits<X509_STORE_CTX> {
-  static constexpr auto free = &X509_STORE_CTX_free;
+  static constexpr auto kFreeFunc = &X509_STORE_CTX_free;
 };
 
 TlsContext::TlsContext()

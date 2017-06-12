@@ -1639,7 +1639,7 @@ void TenHexDigitsToEightBase32Digits(const char *in, char *out) {
 // ----------------------------------------------------------------------
 // EscapeFileName / UnescapeFileName
 // ----------------------------------------------------------------------
-static const Charmap escape_file_name_exceptions(
+static const Charmap kEscapeFileNameExceptions(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"  // letters
     "0123456789"  // digits
     "-_.");
@@ -1651,7 +1651,7 @@ void EscapeFileName(const StringPiece& src, string* dst) {
   for (char c : src) {
     // We do not use "isalpha" because we want the behavior to be
     // independent of the current locale settings.
-    if (escape_file_name_exceptions.contains(c)) {
+    if (kEscapeFileNameExceptions.contains(c)) {
       dst->push_back(c);
 
     } else if (c == '/') {

@@ -49,7 +49,7 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
     tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_registry())),
     scanner_manager_(new ScannerManager(metric_entity())),
     path_handlers_(new TabletServerPathHandlers(this)),
-    maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
+    maintenance_manager_(new MaintenanceManager(MaintenanceManager::kDefaultOptions)) {
 }
 
 TabletServer::~TabletServer() {

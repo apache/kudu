@@ -13,13 +13,13 @@ namespace strings {
 
 using internal::SubstituteArg;
 
-const SubstituteArg SubstituteArg::NoArg;
+const SubstituteArg SubstituteArg::kNoArg;
 
 // Returns the number of args in arg_array which were passed explicitly
 // to Substitute().
 static int CountSubstituteArgs(const SubstituteArg* const* args_array) {
   int count = 0;
-  while (args_array[count] != &SubstituteArg::NoArg) {
+  while (args_array[count] != &SubstituteArg::kNoArg) {
     ++count;
   }
   return count;

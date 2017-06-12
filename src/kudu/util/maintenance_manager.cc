@@ -111,7 +111,7 @@ void MaintenanceOp::Unregister() {
   manager_->UnregisterOp(this);
 }
 
-const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
+const MaintenanceManager::Options MaintenanceManager::kDefaultOptions = {
   .num_threads = 0,
   .polling_interval_ms = 0,
   .history_size = 0,

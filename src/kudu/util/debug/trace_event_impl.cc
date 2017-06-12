@@ -80,12 +80,12 @@ const char* g_category_groups[MAX_CATEGORY_GROUPS] = {
 // The enabled flag is char instead of bool so that the API can be used from C.
 unsigned char g_category_group_enabled[MAX_CATEGORY_GROUPS] = { 0 };
 // Indexes here have to match the g_category_groups array indexes above.
-const int g_category_already_shutdown = 1;
-const int g_category_categories_exhausted = 2;
-const int g_category_metadata = 3;
-const int g_num_builtin_categories = 4;
+const int kCategoryAlreadyShutdown = 1;
+const int kCategoryCategoriesExhausted = 2;
+const int kCategoryMetadata = 3;
+const int kNumBuiltinCategories = 4;
 // Skip default categories.
-AtomicWord g_category_index = g_num_builtin_categories;
+AtomicWord g_category_index = kNumBuiltinCategories;
 
 // The name of the current thread. This is used to decide if the current
 // thread name has changed. We combine all the seen thread names into the
@@ -366,7 +366,7 @@ void InitializeMetadataEvent(TraceEvent* trace_event,
   ::trace_event_internal::SetTraceValue(value, &arg_type, &arg_value);
   trace_event->Initialize(thread_id,
                           MicrosecondsInt64(0), MicrosecondsInt64(0), TRACE_EVENT_PHASE_METADATA,
-                          &g_category_group_enabled[g_category_metadata],
+                          &g_category_group_enabled[kCategoryMetadata],
                           metadata_name, ::trace_event_internal::kNoEventId,
                           num_args, &arg_name, &arg_type, &arg_value, nullptr,
                           TRACE_EVENT_FLAG_NONE);
@@ -1147,8 +1147,8 @@ const unsigned char* TraceLog::GetCategoryGroupEnabled(
     const char* category_group) {
   TraceLog* tracelog = GetInstance();
   if (!tracelog) {
-    DCHECK(!g_category_group_enabled[g_category_already_shutdown]);
-    return &g_category_group_enabled[g_category_already_shutdown];
+    DCHECK(!g_category_group_enabled[kCategoryAlreadyShutdown]);
+    return &g_category_group_enabled[kCategoryAlreadyShutdown];
   }
   return tracelog->GetCategoryGroupEnabledInternal(category_group);
 }
@@ -1267,7 +1267,7 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
     base::subtle::Release_Store(&g_category_index, category_index + 1);
   } else {
     category_group_enabled =
-        &g_category_group_enabled[g_category_categories_exhausted];
+        &g_category_group_enabled[kCategoryCategoriesExhausted];
   }
   return category_group_enabled;
 }
@@ -1276,7 +1276,7 @@ void TraceLog::GetKnownCategoryGroups(
     std::vector<std::string>* category_groups) {
   SpinLockHolder lock(&lock_);
   int category_index = base::subtle::NoBarrier_Load(&g_category_index);
-  for (int i = g_num_builtin_categories; i < category_index; i++)
+  for (int i = kNumBuiltinCategories; i < category_index; i++)
     category_groups->push_back(g_category_groups[i]);
 }
 

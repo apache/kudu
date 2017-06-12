@@ -85,10 +85,10 @@ TEST_F(TestCBTree, TestNodeSizes) {
   ThreadSafeArena arena(1024, 1024);
 
   LeafNode<BTreeTraits> lnode(false);
-  ASSERT_LE(sizeof(lnode), BTreeTraits::leaf_node_size);
+  ASSERT_LE(sizeof(lnode), BTreeTraits::kLeafNodeSize);
 
   InternalNode<BTreeTraits> inode(Slice("split"), &lnode, &lnode, &arena);
-  ASSERT_LE(sizeof(inode), BTreeTraits::internal_node_size);
+  ASSERT_LE(sizeof(inode), BTreeTraits::kInternalNodeSize);
 
 }
 
@@ -157,15 +157,15 @@ TEST_F(TestCBTree, TestLeafNodeBigKVs) {
 // splitting, etc.
 struct SmallFanoutTraits : public BTreeTraits {
 
-  static const size_t internal_node_size = 84;
-  static const size_t leaf_node_size = 92;
+  static const size_t kInternalNodeSize = 84;
+  static const size_t kLeafNodeSize = 92;
 };
 
 // Enables yield() calls at interesting points of the btree
 // implementation to ensure that we are still correct even
 // with adversarial scheduling.
 struct RacyTraits : public SmallFanoutTraits {
-  static const size_t debug_raciness = 100;
+  static const size_t kDebugRaciness = 100;
 };
 
 void MakeKey(char *kbuf, size_t len, int i) {

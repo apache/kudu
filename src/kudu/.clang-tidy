@@ -29,3 +29,7 @@ CheckOptions:
     value:           lower_case
   - key:             readability-identifier-naming.InlineNamespaceCase
     value:           lower_case
+  - key:             readability-identifier-naming.GlobalConstantCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.GlobalConstantPrefix
+    value:           'k'

@@ -131,7 +131,7 @@ class SubstituteArg {
   inline int size() const { return size_; }
 
   // Indicates that no argument was given.
-  static const SubstituteArg NoArg;
+  static const SubstituteArg kNoArg;
 
  private:
   inline SubstituteArg() : text_(NULL), size_(-1) {}
@@ -158,29 +158,29 @@ char* SubstituteToBuffer(StringPiece format,
 
 void SubstituteAndAppend(
   string* output, StringPiece format,
-  const internal::SubstituteArg& arg0 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg1 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg2 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg3 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg4 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg5 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg6 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg7 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg8 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg9 = internal::SubstituteArg::NoArg);
+  const internal::SubstituteArg& arg0 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg1 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg2 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg3 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg4 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg5 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg6 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg7 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg8 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg9 = internal::SubstituteArg::kNoArg);
 
 inline string Substitute(
   StringPiece format,
-  const internal::SubstituteArg& arg0 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg1 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg2 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg3 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg4 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg5 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg6 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg7 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg8 = internal::SubstituteArg::NoArg,
-  const internal::SubstituteArg& arg9 = internal::SubstituteArg::NoArg) {
+  const internal::SubstituteArg& arg0 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg1 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg2 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg3 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg4 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg5 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg6 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg7 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg8 = internal::SubstituteArg::kNoArg,
+  const internal::SubstituteArg& arg9 = internal::SubstituteArg::kNoArg) {
   string result;
   SubstituteAndAppend(&result, format, arg0, arg1, arg2, arg3, arg4,
                                        arg5, arg6, arg7, arg8, arg9);

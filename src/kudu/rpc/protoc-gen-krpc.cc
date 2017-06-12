@@ -91,7 +91,7 @@ class Substituter {
 // NameInfo contains information about the output names.
 class FileSubstitutions : public Substituter {
  public:
-  static const std::string PROTO_EXTENSION;
+  static const std::string kProtoExtension;
 
   Status Init(const FileDescriptor *file) {
     string path = file->name();
@@ -99,9 +99,9 @@ class FileSubstitutions : public Substituter {
 
     // Initialize path_
     // If path = /foo/bar/baz_stuff.proto, path_ = /foo/bar/baz_stuff
-    if (!TryStripSuffixString(path, PROTO_EXTENSION, &path_no_extension_)) {
+    if (!TryStripSuffixString(path, kProtoExtension, &path_no_extension_)) {
       return Status::InvalidArgument("file name " + path +
-                                     " did not end in " + PROTO_EXTENSION);
+                                     " did not end in " + kProtoExtension);
     }
     map_["path_no_extension"] = path_no_extension_;
 
@@ -183,7 +183,7 @@ class FileSubstitutions : public Substituter {
   map<string, string> map_;
 };
 
-const std::string FileSubstitutions::PROTO_EXTENSION(".proto");
+const std::string FileSubstitutions::kProtoExtension(".proto");
 
 class MethodSubstitutions : public Substituter {
  public:

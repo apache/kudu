@@ -32,7 +32,7 @@ namespace kudu {
 namespace security {
 
 template<> struct SslTypeTraits<BIO> {
-  static constexpr auto free = &BIO_free;
+  static constexpr auto kFreeFunc = &BIO_free;
 };
 
 template<typename TYPE, typename Traits = SslTypeTraits<TYPE>>
@@ -41,11 +41,11 @@ Status ToBIO(BIO* bio, DataFormat format, TYPE* obj) {
   CHECK(obj);
   switch (format) {
     case DataFormat::DER:
-      OPENSSL_RET_NOT_OK(Traits::write_der(bio, obj),
+      OPENSSL_RET_NOT_OK(Traits::kWriteDerFunc(bio, obj),
           "error exporting data in DER format");
       break;
     case DataFormat::PEM:
-      OPENSSL_RET_NOT_OK(Traits::write_pem(bio, obj),
+      OPENSSL_RET_NOT_OK(Traits::kWritePemFunc(bio, obj),
           "error exporting data in PEM format");
       break;
   }
@@ -58,10 +58,10 @@ Status FromBIO(BIO* bio, DataFormat format, c_unique_ptr<TYPE>* ret) {
   CHECK(bio);
   switch (format) {
     case DataFormat::DER:
-      *ret = ssl_make_unique(Traits::read_der(bio, nullptr));
+      *ret = ssl_make_unique(Traits::kReadDerFunc(bio, nullptr));
       break;
     case DataFormat::PEM:
-      *ret = ssl_make_unique(Traits::read_pem(bio, nullptr, nullptr, nullptr));
+      *ret = ssl_make_unique(Traits::kReadPemFunc(bio, nullptr, nullptr, nullptr));
       break;
   }
   if (PREDICT_FALSE(!*ret)) {

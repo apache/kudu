@@ -52,10 +52,10 @@ namespace kudu {
 namespace security {
 
 template<> struct SslTypeTraits<ASN1_INTEGER> {
-  static constexpr auto free = &ASN1_INTEGER_free;
+  static constexpr auto kFreeFunc = &ASN1_INTEGER_free;
 };
 template<> struct SslTypeTraits<BIGNUM> {
-  static constexpr auto free = &BN_free;
+  static constexpr auto kFreeFunc = &BN_free;
 };
 
 namespace ca {

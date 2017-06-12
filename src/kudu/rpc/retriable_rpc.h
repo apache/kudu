@@ -56,11 +56,11 @@ class RetriableRpc : public Rpc {
       : Rpc(deadline, std::move(messenger)),
         server_picker_(server_picker),
         request_tracker_(request_tracker),
-        sequence_number_(RequestTracker::NO_SEQ_NO),
+        sequence_number_(RequestTracker::kNoSeqNo),
         num_attempts_(0) {}
 
   virtual ~RetriableRpc() {
-    DCHECK_EQ(sequence_number_, RequestTracker::NO_SEQ_NO);
+    DCHECK_EQ(sequence_number_, RequestTracker::kNoSeqNo);
   }
 
   // Performs server lookup/initialization.
@@ -138,7 +138,7 @@ class RetriableRpc : public Rpc {
 
 template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
-  if (sequence_number_ == RequestTracker::NO_SEQ_NO) {
+  if (sequence_number_ == RequestTracker::kNoSeqNo) {
     CHECK_OK(request_tracker_->NewSeqNo(&sequence_number_));
   }
   server_picker_->PickLeader(Bind(&RetriableRpc::ReplicaFoundCb,
@@ -237,10 +237,10 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(
 
 template <class Server, class RequestPB, class ResponsePB>
 void RetriableRpc<Server, RequestPB, ResponsePB>::FinishInternal() {
-  // Mark the RPC as completed and set the sequence number to NO_SEQ_NO to make
+  // Mark the RPC as completed and set the sequence number to kNoSeqNo to make
   // sure we're in the appropriate state before destruction.
   request_tracker_->RpcCompleted(sequence_number_);
-  sequence_number_ = RequestTracker::NO_SEQ_NO;
+  sequence_number_ = RequestTracker::kNoSeqNo;
 }
 
 template <class Server, class RequestPB, class ResponsePB>

@@ -77,15 +77,15 @@ namespace btree {
 struct BTreeTraits {
   enum TraitConstants {
     // Number of bytes used per internal node.
-    internal_node_size = 4 * CACHELINE_SIZE,
+    kInternalNodeSize = 4 * CACHELINE_SIZE,
 
     // Number of bytes used by a leaf node.
-    leaf_node_size = 4 * CACHELINE_SIZE,
+    kLeafNodeSize = 4 * CACHELINE_SIZE,
 
     // Tests can set this trait to a non-zero value, which inserts
     // some pause-loops in key parts of the code to try to simulate
     // races.
-    debug_raciness = 0
+    kDebugRaciness = 0
   };
   typedef ThreadSafeArena ArenaType;
 };
@@ -106,8 +106,8 @@ inline void PrefetchMemory(const T *addr) {
 // will compile away in production code.
 template<class Traits>
 void DebugRacyPoint() {
-  if (Traits::debug_raciness > 0) {
-    boost::detail::yield(Traits::debug_raciness);
+  if (Traits::kDebugRaciness > 0) {
+    boost::detail::yield(Traits::kDebugRaciness);
   }
 }
 
@@ -656,7 +656,7 @@ class PACKED InternalNode : public NodeBase<Traits> {
   enum SpaceConstants {
     constant_overhead = sizeof(NodeBase<Traits>) // base class
                       + sizeof(uint32_t), // num_children_
-    keyptr_space = Traits::internal_node_size - constant_overhead,
+    keyptr_space = Traits::kInternalNodeSize - constant_overhead,
     kFanout = keyptr_space / (sizeof(KeyInlineSlice) + sizeof(NodePtr<Traits>))
   };
 
@@ -809,7 +809,7 @@ class LeafNode : public NodeBase<Traits> {
     constant_overhead = sizeof(NodeBase<Traits>) // base class
                         + sizeof(LeafNode<Traits>*) // next_
                         + sizeof(uint8_t), // num_entries_
-    kv_space = Traits::leaf_node_size - constant_overhead,
+    kv_space = Traits::kLeafNodeSize - constant_overhead,
     kMaxEntries = kv_space / (sizeof(KeyInlineSlice) + sizeof(ValueSlice))
   };
 

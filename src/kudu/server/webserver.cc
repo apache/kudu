@@ -459,7 +459,7 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
   it->second->AddCallback(callback);
 }
 
-const char* const PAGE_HEADER = "<!DOCTYPE html>"
+const char* const kPageHeader = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Kudu</title>"
 " <meta charset='utf-8'/>"
@@ -470,7 +470,7 @@ const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " </head>"
 " <body>";
 
-static const char* const NAVIGATION_BAR_PREFIX =
+static const char* const kNavigationBarPrefix =
 "<div class='navbar navbar-inverse navbar-fixed-top'>"
 "      <div class='navbar-inner'>"
 "        <div class='container-fluid'>"
@@ -480,7 +480,7 @@ static const char* const NAVIGATION_BAR_PREFIX =
 "          <div class='nav-collapse collapse'>"
 "            <ul class='nav'>";
 
-static const char* const NAVIGATION_BAR_SUFFIX =
+static const char* const kNavigationBarSuffix =
 "            </ul>"
 "          </div>"
 "        </div>"
@@ -489,15 +489,15 @@ static const char* const NAVIGATION_BAR_SUFFIX =
 "    <div class='container-fluid'>";
 
 void Webserver::BootstrapPageHeader(ostringstream* output) {
-  (*output) << PAGE_HEADER;
-  (*output) << NAVIGATION_BAR_PREFIX;
+  (*output) << kPageHeader;
+  (*output) << kNavigationBarPrefix;
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
       (*output) << "<li><a href=\"" << handler.first << "\">" << handler.second->alias()
                 << "</a></li>";
     }
   }
-  (*output) << NAVIGATION_BAR_SUFFIX;
+  (*output) << kNavigationBarSuffix;
 
   if (!static_pages_available()) {
     (*output) << "<div style=\"color: red\"><strong>"

@@ -39,7 +39,7 @@ namespace kudu {
 namespace security {
 
 template<> struct SslTypeTraits<GENERAL_NAMES> {
-  static constexpr auto free = &GENERAL_NAMES_free;
+  static constexpr auto kFreeFunc = &GENERAL_NAMES_free;
 };
 
 // This OID is generated via the UUID method.

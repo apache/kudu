@@ -37,7 +37,7 @@ using sp::shared_ptr;
 
 static const int kNumTabletServers = 3;
 static const int kNumTablets = 3;
-static const int KMaxBatchSize = 8 * 1024 * 1024;
+static const int kMaxBatchSize = 8 * 1024 * 1024;
 
 template<typename KeyTypeWrapper>
 struct SliceKeysTestSetup {
@@ -50,7 +50,7 @@ struct SliceKeysTestSetup {
 
   void AddKeyColumnsToSchema(KuduSchemaBuilder* builder) const {
     builder->AddColumn("key")->Type(
-        client::FromInternalDataType(KeyTypeWrapper::type))->NotNull()->PrimaryKey();
+        client::FromInternalDataType(KeyTypeWrapper::kType))->NotNull()->PrimaryKey();
   }
 
   // Split points are calculated by equally partitioning the int64_t key space and then
@@ -67,7 +67,7 @@ struct SliceKeysTestSetup {
     for (string val : splits) {
       Slice slice(val);
       KuduPartialRow* row = schema.NewRow();
-      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type> >(0, slice));
+      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::kType> >(0, slice));
       rows.push_back(row);
     }
     return rows;
@@ -77,7 +77,7 @@ struct SliceKeysTestSetup {
     int row_key_num = (split_idx * increment_) + row_idx;
     string row_key = StringPrintf("%08x", row_key_num);
     Slice row_key_slice(row_key);
-    return insert->mutable_row()->SetSliceCopy<TypeTraits<KeyTypeWrapper::type> >(0,
+    return insert->mutable_row()->SetSliceCopy<TypeTraits<KeyTypeWrapper::kType> >(0,
                                                                                   row_key_slice);
   }
 
@@ -95,7 +95,7 @@ struct SliceKeysTestSetup {
 
   Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
     Slice row_key;
-    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type>>(0, &row_key));
+    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::kType>>(0, &row_key));
     return VerifyRowKeySlice(row_key, split_idx, row_idx);
   }
 
@@ -125,7 +125,7 @@ struct SliceKeysTestSetup {
 
 template<typename KeyTypeWrapper>
 struct IntKeysTestSetup {
-  typedef typename TypeTraits<KeyTypeWrapper::type>::cpp_type CppType;
+  typedef typename TypeTraits<KeyTypeWrapper::kType>::cpp_type CppType;
 
   IntKeysTestSetup()
      // If CppType is actually bigger than int (e.g. int64_t) casting the max to int
@@ -139,7 +139,7 @@ struct IntKeysTestSetup {
 
   void AddKeyColumnsToSchema(KuduSchemaBuilder* builder) const {
     builder->AddColumn("key")->Type(
-        client::FromInternalDataType(KeyTypeWrapper::type))->NotNull()->PrimaryKey();
+        client::FromInternalDataType(KeyTypeWrapper::kType))->NotNull()->PrimaryKey();
   }
 
   vector<const KuduPartialRow*> GenerateSplitRows(const KuduSchema& schema) const {
@@ -151,7 +151,7 @@ struct IntKeysTestSetup {
     vector<const KuduPartialRow*> rows;
     for (CppType val : splits) {
       KuduPartialRow* row = schema.NewRow();
-      CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::type> >(0, val));
+      CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::kType> >(0, val));
       rows.push_back(row);
     }
     return rows;
@@ -159,7 +159,7 @@ struct IntKeysTestSetup {
 
   Status GenerateRowKey(KuduInsert* insert, int split_idx, int row_idx) const {
     CppType val = (split_idx * increment_) + row_idx;
-    return insert->mutable_row()->Set<TypeTraits<KeyTypeWrapper::type> >(0, val);
+    return insert->mutable_row()->Set<TypeTraits<KeyTypeWrapper::kType> >(0, val);
   }
 
   Status VerifyIntRowKey(CppType val, int split_idx, int row_idx) const {
@@ -173,7 +173,7 @@ struct IntKeysTestSetup {
 
   Status VerifyRowKey(const KuduRowResult& result, int split_idx, int row_idx) const {
     CppType val;
-    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::type>>(0, &val));
+    RETURN_NOT_OK(result.Get<TypeTraits<KeyTypeWrapper::kType>>(0, &val));
     return VerifyIntRowKey(val, split_idx, row_idx);
   }
 
@@ -426,7 +426,7 @@ class AllTypesItest : public KuduTest {
       }
 
       RETURN_NOT_OK(scanner_setup(&scanner));
-      RETURN_NOT_OK(scanner.SetBatchSizeBytes(KMaxBatchSize));
+      RETURN_NOT_OK(scanner.SetBatchSizeBytes(kMaxBatchSize));
       RETURN_NOT_OK(scanner.SetFaultTolerant());
       RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
 
@@ -476,7 +476,7 @@ class AllTypesItest : public KuduTest {
 // without leaking DataType.
 template<DataType KeyType>
 struct KeyTypeWrapper {
-  static const DataType type = KeyType;
+  static const DataType kType = KeyType;
 };
 
 typedef ::testing::Types<IntKeysTestSetup<KeyTypeWrapper<INT8> >,

@@ -106,32 +106,32 @@ template<typename SSL_TYPE>
 struct SslTypeTraits {};
 
 template<> struct SslTypeTraits<X509> {
-  static constexpr auto free = &X509_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509;
-  static constexpr auto read_der = &d2i_X509_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509;
-  static constexpr auto write_der = &i2d_X509_bio;
+  static constexpr auto kFreeFunc = &X509_free;
+  static constexpr auto kReadPemFunc = &PEM_read_bio_X509;
+  static constexpr auto kReadDerFunc = &d2i_X509_bio;
+  static constexpr auto kWritePemFunc = &PEM_write_bio_X509;
+  static constexpr auto kWriteDerFunc = &i2d_X509_bio;
 };
 template<> struct SslTypeTraits<X509_EXTENSION> {
-  static constexpr auto free = &X509_EXTENSION_free;
+  static constexpr auto kFreeFunc = &X509_EXTENSION_free;
 };
 template<> struct SslTypeTraits<X509_REQ> {
-  static constexpr auto free = &X509_REQ_free;
-  static constexpr auto read_pem = &PEM_read_bio_X509_REQ;
-  static constexpr auto read_der = &d2i_X509_REQ_bio;
-  static constexpr auto write_pem = &PEM_write_bio_X509_REQ;
-  static constexpr auto write_der = &i2d_X509_REQ_bio;
+  static constexpr auto kFreeFunc = &X509_REQ_free;
+  static constexpr auto kReadPemFunc = &PEM_read_bio_X509_REQ;
+  static constexpr auto kReadDerFunc = &d2i_X509_REQ_bio;
+  static constexpr auto kWritePemFunc = &PEM_write_bio_X509_REQ;
+  static constexpr auto kWriteDerFunc = &i2d_X509_REQ_bio;
 };
 template<> struct SslTypeTraits<EVP_PKEY> {
-  static constexpr auto free = &EVP_PKEY_free;
+  static constexpr auto kFreeFunc = &EVP_PKEY_free;
 };
 template<> struct SslTypeTraits<SSL_CTX> {
-  static constexpr auto free = &SSL_CTX_free;
+  static constexpr auto kFreeFunc = &SSL_CTX_free;
 };
 
 template<typename SSL_TYPE, typename Traits = SslTypeTraits<SSL_TYPE>>
 c_unique_ptr<SSL_TYPE> ssl_make_unique(SSL_TYPE* d) {
-  return {d, Traits::free};
+  return {d, Traits::kFreeFunc};
 }
 
 // Acceptable formats for keys, X509 certificates and X509 CSRs.
