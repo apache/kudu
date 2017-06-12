@@ -255,10 +255,10 @@ Status Socket::SetReuseAddr(bool flag) {
 }
 
 Status Socket::BindAndListen(const Sockaddr &sockaddr,
-                             int listenQueueSize) {
+                             int listen_queue_size) {
   RETURN_NOT_OK(SetReuseAddr(true));
   RETURN_NOT_OK(Bind(sockaddr));
-  RETURN_NOT_OK(Listen(listenQueueSize));
+  RETURN_NOT_OK(Listen(listen_queue_size));
   return Status::OK();
 }
 

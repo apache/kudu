@@ -105,7 +105,7 @@ class FullStackInsertScanTest : public KuduTest {
     kNumInsertClients(DefaultFlag(FLAGS_concurrent_inserts, 3, 10)),
     kNumInsertsPerClient(DefaultFlag(FLAGS_inserts_per_client, 500, 50000)),
     kNumRows(kNumInsertClients * kNumInsertsPerClient),
-    kFlushEveryN(DefaultFlag(FLAGS_rows_per_batch, 125, 5000)),
+    flush_every_n_(DefaultFlag(FLAGS_rows_per_batch, 125, 5000)),
     random_(SeedRandom()),
     sessions_(kNumInsertClients),
     tables_(kNumInsertClients) {
@@ -204,7 +204,7 @@ class FullStackInsertScanTest : public KuduTest {
     kInt32ColBase,
     kInt64ColBase = kInt32ColBase + kNumIntCols
   };
-  const int kFlushEveryN;
+  const int flush_every_n_;
 
   Random random_;
 
@@ -365,7 +365,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
 
     // Report updates or flush every so often, using the synchronizer to always
     // start filling up the next batch while previous one is sent out.
-    if (key % kFlushEveryN == 0) {
+    if (key % flush_every_n_ == 0) {
       Status s = sync.Wait();
       if (!s.ok()) {
         LogSessionErrorsAndDie(session, s);

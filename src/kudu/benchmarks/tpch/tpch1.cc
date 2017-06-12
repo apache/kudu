@@ -129,7 +129,7 @@ struct SliceMapKey {
   }
 };
 
-struct hash {
+struct Hash {
   size_t operator()(const SliceMapKey &key) const {
     return util_hash::CityHash64(
       reinterpret_cast<const char *>(key.slice.data()), key.slice.size());
@@ -154,8 +154,8 @@ void WarmupScanCache(RpcLineItemDAO* dao) {
 }
 
 void Tpch1(RpcLineItemDAO *dao) {
-  typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
-  typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
+  typedef unordered_map<SliceMapKey, Result*, Hash> slice_map;
+  typedef unordered_map<SliceMapKey, slice_map*, Hash> slice_map_map;
 
   gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
   dao->OpenTpch1Scanner(&scanner);

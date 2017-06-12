@@ -3911,16 +3911,16 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 namespace {
 class DLSCallback : public KuduStatusCallback {
  public:
-  explicit DLSCallback(Atomic32* i) : i(i) {
+  explicit DLSCallback(Atomic32* i) : i_(i) {
   }
 
   virtual void Run(const Status& s) OVERRIDE {
     CHECK_OK(s);
-    NoBarrier_AtomicIncrement(i, 1);
+    NoBarrier_AtomicIncrement(i_, 1);
     delete this;
   }
  private:
-  Atomic32* const i;
+  Atomic32* const i_;
 };
 
 // Returns col1 value of first row.

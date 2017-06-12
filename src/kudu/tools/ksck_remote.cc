@@ -135,7 +135,7 @@ class ChecksumStepper;
 class ChecksumCallbackHandler {
  public:
   explicit ChecksumCallbackHandler(ChecksumStepper* const stepper)
-      : stepper(DCHECK_NOTNULL(stepper)) {
+      : stepper_(DCHECK_NOTNULL(stepper)) {
   }
 
   // Invoked by an RPC completion callback. Simply calls back into the stepper.
@@ -143,7 +143,7 @@ class ChecksumCallbackHandler {
   void Run();
 
  private:
-  ChecksumStepper* const stepper;
+  ChecksumStepper* const stepper_;
 };
 
 // Simple class to have a "conversation" over multiple requests to a server
@@ -267,7 +267,7 @@ class ChecksumStepper {
 };
 
 void ChecksumCallbackHandler::Run() {
-  stepper->HandleResponse();
+  stepper_->HandleResponse();
   delete this;
 }
 

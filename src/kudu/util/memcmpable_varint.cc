@@ -193,45 +193,45 @@ static size_t sqlite4PutVarint64(uint8_t *z, uint64_t x) {
 static int sqlite4GetVarint64(
   const uint8_t *z,
   int n,
-  uint64_t *pResult) {
+  uint64_t *p_result) {
   unsigned int x;
   if ( n < 1) return 0;
   if (z[0] <= 240) {
-    *pResult = z[0];
+    *p_result = z[0];
     return 1;
   }
   if (z[0] <= 248) {
     if ( n < 2) return 0;
-    *pResult = (z[0]-241)*256 + z[1] + 240;
+    *p_result = (z[0]-241)*256 + z[1] + 240;
     return 2;
   }
   if (n < z[0]-246 ) return 0;
   if (z[0] == 249) {
-    *pResult = 2288 + 256*z[1] + z[2];
+    *p_result = 2288 + 256*z[1] + z[2];
     return 3;
   }
   if (z[0] == 250) {
-    *pResult = (z[1]<<16) + (z[2]<<8) + z[3];
+    *p_result = (z[1]<<16) + (z[2]<<8) + z[3];
     return 4;
   }
   x = (z[1]<<24) + (z[2]<<16) + (z[3]<<8) + z[4];
   if (z[0] == 251) {
-    *pResult = x;
+    *p_result = x;
     return 5;
   }
   if (z[0] == 252) {
-    *pResult = (((uint64_t)x)<<8) + z[5];
+    *p_result = (((uint64_t)x)<<8) + z[5];
     return 6;
   }
   if (z[0] == 253) {
-    *pResult = (((uint64_t)x)<<16) + (z[5]<<8) + z[6];
+    *p_result = (((uint64_t)x)<<16) + (z[5]<<8) + z[6];
     return 7;
   }
   if (z[0] == 254) {
-    *pResult = (((uint64_t)x)<<24) + (z[5]<<16) + (z[6]<<8) + z[7];
+    *p_result = (((uint64_t)x)<<24) + (z[5]<<16) + (z[6]<<8) + z[7];
     return 8;
   }
-  *pResult = (((uint64_t)x)<<32) +
+  *p_result = (((uint64_t)x)<<32) +
                (0xffffffff & ((z[5]<<24) + (z[6]<<16) + (z[7]<<8) + z[8]));
   return 9;
 }

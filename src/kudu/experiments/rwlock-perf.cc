@@ -46,19 +46,19 @@ class my_spinlock : public boost::detail::spinlock {
   DISALLOW_COPY_AND_ASSIGN(my_spinlock);
 };
 
-struct per_cpu_lock {
-  struct padded_lock {
+struct PerCpuLock {
+  struct PaddedLock {
     my_spinlock lock;
     char padding[CACHELINE_SIZE - sizeof(my_spinlock)];
   };
 
-  per_cpu_lock() {
+  PerCpuLock() {
     n_cpus_ = base::NumCPUs();
     CHECK_GT(n_cpus_, 0);
-    locks_ = new padded_lock[n_cpus_];
+    locks_ = new PaddedLock[n_cpus_];
   }
 
-  ~per_cpu_lock() {
+  ~PerCpuLock() {
     delete [] locks_;
   }
 
@@ -69,11 +69,11 @@ struct per_cpu_lock {
   }
 
   int n_cpus_;
-  padded_lock *locks_;
+  PaddedLock *locks_;
 
 };
 
-struct shared_data {
+struct SharedData {
   kudu::rw_spinlock rw_spinlock;
   kudu::RWMutex rwlock;
   std::mutex lock;
@@ -81,7 +81,7 @@ struct shared_data {
 };
 
 
-class noop_lock {
+class NoopLock {
  public:
   void lock() {}
   void unlock() {}
@@ -106,7 +106,7 @@ static void depend_on(float val) {
   }
 }
 
-void shared_rwlock_entry(shared_data *shared) {
+void shared_rwlock_entry(SharedData *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
     shared->rwlock.lock_shared();
@@ -116,7 +116,7 @@ void shared_rwlock_entry(shared_data *shared) {
   depend_on(result);
 }
 
-void shared_rw_spinlock_entry(shared_data *shared) {
+void shared_rw_spinlock_entry(SharedData *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
     shared->rw_spinlock.lock_shared();
@@ -126,7 +126,7 @@ void shared_rw_spinlock_entry(shared_data *shared) {
   depend_on(result);
 }
 
-void shared_mutex_entry(shared_data *shared) {
+void shared_mutex_entry(SharedData *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
     shared->lock.lock();
@@ -149,7 +149,7 @@ void own_mutex_entry() {
   depend_on(result);
 }
 
-void percpu_rwlock_entry(shared_data *shared) {
+void percpu_rwlock_entry(SharedData *shared) {
   float result = 1;
   for (int i = 0; i < 1000000; i++) {
     kudu::rw_spinlock &l = shared->per_cpu.get_lock();
@@ -174,7 +174,7 @@ enum TestMethod {
 
 void test_shared_lock(int num_threads, TestMethod method, const char *name) {
   vector<thread> threads;
-  shared_data shared;
+  SharedData shared;
 
   for (int i = 0; i < num_threads; i++) {
     switch (method) {
@@ -191,7 +191,7 @@ void test_shared_lock(int num_threads, TestMethod method, const char *name) {
         threads.emplace_back(own_mutex_entry<my_spinlock>);
         break;
       case NO_LOCK:
-        threads.emplace_back(own_mutex_entry<noop_lock>);
+        threads.emplace_back(own_mutex_entry<NoopLock>);
         break;
       case PERCPU_RWLOCK:
         threads.emplace_back(percpu_rwlock_entry, &shared);

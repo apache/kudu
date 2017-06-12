@@ -130,11 +130,11 @@ void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
   tls_hashcode_ = h;
 }
 
-void Striped64::InternalReset(int64_t initialValue) {
+void Striped64::InternalReset(int64_t initial_value) {
   const int32_t n = base::subtle::Acquire_Load(&num_cells_);
-  base_.value_.Store(initialValue);
+  base_.value_.Store(initial_value);
   for (int i = 0; i < n; i++) {
-    cells_[i].value_.Store(initialValue);
+    cells_[i].value_.Store(initial_value);
   }
 }
 

@@ -147,23 +147,23 @@ void* HeapBufferAllocator::Malloc(size_t size) {
   }
 }
 
-void* HeapBufferAllocator::Realloc(void* previousData, size_t previousSize,
-                                   size_t newSize) {
+void* HeapBufferAllocator::Realloc(void* previous_data, size_t previous_size,
+                                   size_t new_size) {
   if (aligned_mode_) {
-    void* data = Malloc(newSize);
+    void* data = Malloc(new_size);
     if (data) {
 // NOTE(ptab): We should use realloc here to avoid memmory coping,
 // but it doesn't work on memory allocated by posix_memalign(...).
 // realloc reallocates the memory but doesn't preserve the content.
 // TODO(ptab): reiterate after some time to check if it is fixed (tcmalloc ?)
-      memcpy(data, previousData, min(previousSize, newSize));
-      free(previousData);
+      memcpy(data, previous_data, min(previous_size, new_size));
+      free(previous_data);
       return data;
     } else {
       return nullptr;
     }
   } else {
-    return realloc(previousData, newSize);
+    return realloc(previous_data, new_size);
   }
 }
 

@@ -81,16 +81,16 @@ void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
   }
 }
 
-void ScanSpec::SetLowerBoundPartitionKey(const Slice& partitionKey) {
-  if (partitionKey.compare(lower_bound_partition_key_) > 0) {
-    lower_bound_partition_key_ = partitionKey.ToString();
+void ScanSpec::SetLowerBoundPartitionKey(const Slice& partition_key) {
+  if (partition_key.compare(lower_bound_partition_key_) > 0) {
+    lower_bound_partition_key_ = partition_key.ToString();
   }
 }
 
-void ScanSpec::SetExclusiveUpperBoundPartitionKey(const Slice& partitionKey) {
+void ScanSpec::SetExclusiveUpperBoundPartitionKey(const Slice& partition_key) {
   if (exclusive_upper_bound_partition_key_.empty() ||
-      (!partitionKey.empty() && partitionKey.compare(exclusive_upper_bound_partition_key_) < 0)) {
-    exclusive_upper_bound_partition_key_ = partitionKey.ToString();
+      (!partition_key.empty() && partition_key.compare(exclusive_upper_bound_partition_key_) < 0)) {
+    exclusive_upper_bound_partition_key_ = partition_key.ToString();
   }
 }
 
