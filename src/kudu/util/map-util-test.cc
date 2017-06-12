@@ -91,7 +91,7 @@ TEST(EraseKeyReturnValuePtrTest, TestRawAndSmartSmartPointers) {
   map<string, shared_ptr<string>> my_map2;
   shared_ptr<string> value2 = EraseKeyReturnValuePtr(&my_map2, "key");
   ASSERT_TRUE(value2.get() == nullptr);
-  my_map2.emplace("key", shared_ptr<string>(new string("hello_world")));
+  my_map2.emplace("key", std::make_shared<string>("hello_world"));
   value2 = EraseKeyReturnValuePtr(&my_map2, "key");
   ASSERT_EQ(*value2, "hello_world");
   map<string, string*> my_map_raw;

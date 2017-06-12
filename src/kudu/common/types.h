@@ -28,6 +28,7 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -68,6 +69,7 @@ class TypeInfo {
   }
 
  private:
+  ALLOW_MAKE_SHARED(TypeInfo);
   friend class TypeInfoResolver;
   template<typename Type> TypeInfo(Type t);
 

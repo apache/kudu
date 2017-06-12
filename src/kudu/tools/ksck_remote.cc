@@ -350,8 +350,8 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
         new KsckTablet(table.get(), t->tablet().id()));
     vector<shared_ptr<KsckTabletReplica>> replicas;
     for (const auto* r : t->tablet().replicas()) {
-      replicas.push_back(shared_ptr<KsckTabletReplica>(
-          new KsckTabletReplica(r->ts().uuid(), r->is_leader())));
+      replicas.push_back(std::make_shared<KsckTabletReplica>(
+          r->ts().uuid(), r->is_leader()));
     }
     tablet->set_replicas(replicas);
     tablets.push_back(tablet);

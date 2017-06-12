@@ -86,7 +86,7 @@ class TypeInfoResolver {
 
   template<DataType type> void AddMapping() {
     TypeTraits<type> traits;
-    mapping_.insert(make_pair(type, shared_ptr<TypeInfo>(new TypeInfo(traits))));
+    mapping_.insert(make_pair(type, std::make_shared<TypeInfo>(traits)));
   }
 
   unordered_map<DataType,

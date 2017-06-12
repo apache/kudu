@@ -280,7 +280,7 @@ class TypeEncodingResolver {
     }
     mapping_.insert(
         make_pair(make_pair(type, encoding),
-                  shared_ptr<TypeEncodingInfo>(new TypeEncodingInfo(traits))));
+                  std::make_shared<TypeEncodingInfo>(traits)));
   }
 
   unordered_map<pair<DataType, EncodingType>,

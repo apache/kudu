@@ -601,8 +601,8 @@ std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() const {
 
 std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) const {
   CHECK_LT(idx, masters_.size());
-  return std::shared_ptr<MasterServiceProxy>(
-      new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));
+  return std::make_shared<MasterServiceProxy>(
+      messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr());
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
