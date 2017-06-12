@@ -48,7 +48,7 @@ MiniMaster::MiniMaster(Env* env, string fs_root, uint16_t rpc_port)
 }
 
 MiniMaster::~MiniMaster() {
-  CHECK(!running_);
+  Shutdown();
 }
 
 Status MiniMaster::Start() {
