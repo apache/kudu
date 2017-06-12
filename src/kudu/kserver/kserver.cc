@@ -65,14 +65,14 @@ KuduServer::KuduServer(string name,
 Status KuduServer::Init() {
   RETURN_NOT_OK(ServerBase::Init());
 
+  ThreadPoolMetrics metrics = {
+      METRIC_op_apply_queue_length.Instantiate(metric_entity_),
+      METRIC_op_apply_queue_time.Instantiate(metric_entity_),
+      METRIC_op_apply_run_time.Instantiate(metric_entity_)
+  };
   RETURN_NOT_OK(ThreadPoolBuilder("apply")
+                .set_metrics(std::move(metrics))
                 .Build(&tablet_apply_pool_));
-  tablet_apply_pool_->SetQueueLengthHistogram(
-      METRIC_op_apply_queue_length.Instantiate(metric_entity_));
-  tablet_apply_pool_->SetQueueTimeMicrosHistogram(
-      METRIC_op_apply_queue_time.Instantiate(metric_entity_));
-  tablet_apply_pool_->SetRunTimeMicrosHistogram(
-      METRIC_op_apply_run_time.Instantiate(metric_entity_));
 
   // This pool is shared by all replicas hosted by this server.
   //

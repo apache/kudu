@@ -134,13 +134,15 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
-  RETURN_NOT_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
-  prepare_pool_->SetQueueLengthHistogram(
-      METRIC_op_prepare_queue_length.Instantiate(metric_entity));
-  prepare_pool_->SetQueueTimeMicrosHistogram(
-      METRIC_op_prepare_queue_time.Instantiate(metric_entity));
-  prepare_pool_->SetRunTimeMicrosHistogram(
-      METRIC_op_prepare_run_time.Instantiate(metric_entity));
+  ThreadPoolMetrics metrics = {
+      METRIC_op_prepare_queue_length.Instantiate(metric_entity),
+      METRIC_op_prepare_queue_time.Instantiate(metric_entity),
+      METRIC_op_prepare_run_time.Instantiate(metric_entity)
+  };
+  RETURN_NOT_OK(ThreadPoolBuilder("prepare")
+                .set_max_threads(1)
+                .set_metrics(std::move(metrics))
+                .Build(&prepare_pool_));
 
   {
     std::lock_guard<simple_spinlock> lock(lock_);

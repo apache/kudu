@@ -115,6 +115,11 @@ ThreadPoolBuilder& ThreadPoolBuilder::set_idle_timeout(const MonoDelta& idle_tim
   return *this;
 }
 
+ThreadPoolBuilder& ThreadPoolBuilder::set_metrics(ThreadPoolMetrics metrics) {
+  metrics_ = std::move(metrics);
+  return *this;
+}
+
 Status ThreadPoolBuilder::Build(gscoped_ptr<ThreadPool>* pool) const {
   pool->reset(new ThreadPool(*this));
   RETURN_NOT_OK((*pool)->Init());
@@ -126,8 +131,10 @@ Status ThreadPoolBuilder::Build(gscoped_ptr<ThreadPool>* pool) const {
 ////////////////////////////////////////////////////////
 
 ThreadPoolToken::ThreadPoolToken(ThreadPool* pool,
-                                 ThreadPool::ExecutionMode mode)
+                                 ThreadPool::ExecutionMode mode,
+                                 ThreadPoolMetrics metrics)
     : mode_(mode),
+      metrics_(std::move(metrics)),
       pool_(pool),
       state_(State::IDLE),
       not_running_cond_(&pool->lock_),
@@ -310,8 +317,8 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     num_threads_(0),
     active_threads_(0),
     total_queued_tasks_(0),
-    tokenless_(NewToken(ExecutionMode::CONCURRENT)) {
-
+    tokenless_(NewToken(ExecutionMode::CONCURRENT)),
+    metrics_(builder.metrics_) {
   string prefix = !builder.trace_metric_prefix_.empty() ?
       builder.trace_metric_prefix_ : builder.name_;
 
@@ -413,8 +420,15 @@ void ThreadPool::Shutdown() {
 }
 
 unique_ptr<ThreadPoolToken> ThreadPool::NewToken(ExecutionMode mode) {
+  return NewTokenWithMetrics(mode, {});
+}
+
+unique_ptr<ThreadPoolToken> ThreadPool::NewTokenWithMetrics(
+    ExecutionMode mode, ThreadPoolMetrics metrics) {
   MutexLock guard(lock_);
-  unique_ptr<ThreadPoolToken> t(new ThreadPoolToken(this, mode));
+  unique_ptr<ThreadPoolToken> t(new ThreadPoolToken(this,
+                                                    mode,
+                                                    std::move(metrics)));
   InsertOrDie(&tokens_, t.get());
   return t;
 }
@@ -514,8 +528,11 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   guard.Unlock();
   not_empty_.Signal();
 
-  if (queue_length_histogram_) {
-    queue_length_histogram_->Increment(length_at_submit);
+  if (metrics_.queue_length_histogram) {
+    metrics_.queue_length_histogram->Increment(length_at_submit);
+  }
+  if (token->metrics_.queue_length_histogram) {
+    token->metrics_.queue_length_histogram->Increment(length_at_submit);
   }
 
   return Status::OK();
@@ -542,18 +559,6 @@ bool ThreadPool::WaitFor(const MonoDelta& delta) {
     }
   }
   return true;
-}
-
-void ThreadPool::SetQueueLengthHistogram(const scoped_refptr<Histogram>& hist) {
-  queue_length_histogram_ = hist;
-}
-
-void ThreadPool::SetQueueTimeMicrosHistogram(const scoped_refptr<Histogram>& hist) {
-  queue_time_us_histogram_ = hist;
-}
-
-void ThreadPool::SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist) {
-  run_time_us_histogram_ = hist;
 }
 
 void ThreadPool::DispatchThread(bool permanent) {
@@ -609,8 +614,11 @@ void ThreadPool::DispatchThread(bool permanent) {
     MonoTime now(MonoTime::Now());
     int64_t queue_time_us = (now - task.submit_time).ToMicroseconds();
     TRACE_COUNTER_INCREMENT(queue_time_trace_metric_name_, queue_time_us);
-    if (queue_time_us_histogram_) {
-      queue_time_us_histogram_->Increment(queue_time_us);
+    if (metrics_.queue_time_us_histogram) {
+      metrics_.queue_time_us_histogram->Increment(queue_time_us);
+    }
+    if (token->metrics_.queue_time_us_histogram) {
+      token->metrics_.queue_time_us_histogram->Increment(queue_time_us);
     }
 
     // Execute the task
@@ -623,8 +631,11 @@ void ThreadPool::DispatchThread(bool permanent) {
       int64_t wall_us = GetMonoTimeMicros() - start_wall_us;
       int64_t cpu_us = GetThreadCpuTimeMicros() - start_cpu_us;
 
-      if (run_time_us_histogram_) {
-        run_time_us_histogram_->Increment(wall_us);
+      if (metrics_.run_time_us_histogram) {
+        metrics_.run_time_us_histogram->Increment(wall_us);
+      }
+      if (token->metrics_.run_time_us_histogram) {
+        token->metrics_.run_time_us_histogram->Increment(wall_us);
       }
       TRACE_COUNTER_INCREMENT(run_wall_time_trace_metric_name_, wall_us);
       TRACE_COUNTER_INCREMENT(run_cpu_time_trace_metric_name_, cpu_us);

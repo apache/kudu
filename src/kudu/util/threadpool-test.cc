@@ -351,29 +351,49 @@ METRIC_DEFINE_histogram(test_entity, run_time, "run time",
 
 TEST_F(ThreadPoolTest, TestMetrics) {
   MetricRegistry registry;
-  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_test_entity.Instantiate(
-      &registry, "test entity");
-  ASSERT_OK(RebuildPoolWithMinMax(1, 1));
-
-  // Enable metrics for the thread pool.
-  scoped_refptr<Histogram> queue_length = METRIC_queue_length.Instantiate(entity);
-  scoped_refptr<Histogram> queue_time = METRIC_queue_time.Instantiate(entity);
-  scoped_refptr<Histogram> run_time = METRIC_run_time.Instantiate(entity);
-  pool_->SetQueueLengthHistogram(queue_length);
-  pool_->SetQueueTimeMicrosHistogram(queue_time);
-  pool_->SetRunTimeMicrosHistogram(run_time);
-
-  int kNumItems = 500;
-  for (int i = 0; i < kNumItems; i++) {
-    ASSERT_OK(pool_->SubmitFunc(boost::bind(&usleep, i)));
+  vector<ThreadPoolMetrics> all_metrics;
+  for (int i = 0; i < 3; i++) {
+    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_test_entity.Instantiate(
+        &registry, Substitute("test $0", i));
+    all_metrics.emplace_back(ThreadPoolMetrics{
+      METRIC_queue_length.Instantiate(entity),
+      METRIC_queue_time.Instantiate(entity),
+      METRIC_run_time.Instantiate(entity)
+    });
   }
 
+  // Enable metrics for the thread pool.
+  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
+                                   .set_min_threads(1)
+                                   .set_max_threads(1)
+                                   .set_metrics(all_metrics[0])));
+
+  unique_ptr<ThreadPoolToken> t1 = pool_->NewTokenWithMetrics(
+      ThreadPool::ExecutionMode::SERIAL, all_metrics[1]);
+  unique_ptr<ThreadPoolToken> t2 = pool_->NewTokenWithMetrics(
+      ThreadPool::ExecutionMode::SERIAL, all_metrics[2]);
+
+  // Submit once to t1, twice to t2, and three times without a token.
+  ASSERT_OK(t1->SubmitFunc([](){}));
+  ASSERT_OK(t2->SubmitFunc([](){}));
+  ASSERT_OK(t2->SubmitFunc([](){}));
+  ASSERT_OK(pool_->SubmitFunc([](){}));
+  ASSERT_OK(pool_->SubmitFunc([](){}));
+  ASSERT_OK(pool_->SubmitFunc([](){}));
   pool_->Wait();
 
-  // Check that all histograms were incremented once per submitted item.
-  ASSERT_EQ(kNumItems, queue_length->TotalCount());
-  ASSERT_EQ(kNumItems, queue_time->TotalCount());
-  ASSERT_EQ(kNumItems, run_time->TotalCount());
+  // The total counts should reflect the number of submissions to each token.
+  ASSERT_EQ(1, all_metrics[1].queue_length_histogram->TotalCount());
+  ASSERT_EQ(1, all_metrics[1].queue_time_us_histogram->TotalCount());
+  ASSERT_EQ(1, all_metrics[1].run_time_us_histogram->TotalCount());
+  ASSERT_EQ(2, all_metrics[2].queue_length_histogram->TotalCount());
+  ASSERT_EQ(2, all_metrics[2].queue_time_us_histogram->TotalCount());
+  ASSERT_EQ(2, all_metrics[2].run_time_us_histogram->TotalCount());
+
+  // And the counts on the pool-wide metrics should reflect all submissions.
+  ASSERT_EQ(6, all_metrics[0].queue_length_histogram->TotalCount());
+  ASSERT_EQ(6, all_metrics[0].queue_time_us_histogram->TotalCount());
+  ASSERT_EQ(6, all_metrics[0].run_time_us_histogram->TotalCount());
 }
 
 // Test that a thread pool will crash if asked to run its own blocking

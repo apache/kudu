@@ -32,13 +32,13 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
-class Histogram;
 class Thread;
 class ThreadPool;
 class ThreadPoolToken;
@@ -48,6 +48,19 @@ class Runnable {
  public:
   virtual void Run() = 0;
   virtual ~Runnable() {}
+};
+
+// Interesting thread pool metrics. Can be applied to the entire pool (see
+// ThreadPoolBuilder) or to individual tokens.
+struct ThreadPoolMetrics {
+  // Measures the queue length seen by tasks when they enter the queue.
+  scoped_refptr<Histogram> queue_length_histogram;
+
+  // Measures the amount of time that tasks spend waiting in a queue.
+  scoped_refptr<Histogram> queue_time_us_histogram;
+
+  // Measures the amount of time that tasks spend running.
+  scoped_refptr<Histogram> run_time_us_histogram;
 };
 
 // ThreadPool takes a lot of arguments. We provide sane defaults with a builder.
@@ -92,6 +105,9 @@ class Runnable {
 //    We always keep at least min_threads.
 //    Default: 500 milliseconds.
 //
+// metrics: Histograms, counters, etc. to update on various threadpool events.
+//    Default: not set.
+//
 class ThreadPoolBuilder {
  public:
   explicit ThreadPoolBuilder(std::string name);
@@ -103,12 +119,7 @@ class ThreadPoolBuilder {
   ThreadPoolBuilder& set_max_threads(int max_threads);
   ThreadPoolBuilder& set_max_queue_size(int max_queue_size);
   ThreadPoolBuilder& set_idle_timeout(const MonoDelta& idle_timeout);
-
-  const std::string& name() const { return name_; }
-  int min_threads() const { return min_threads_; }
-  int max_threads() const { return max_threads_; }
-  int max_queue_size() const { return max_queue_size_; }
-  const MonoDelta& idle_timeout() const { return idle_timeout_; }
+  ThreadPoolBuilder& set_metrics(ThreadPoolMetrics metrics);
 
   // Instantiate a new ThreadPool with the existing builder arguments.
   Status Build(gscoped_ptr<ThreadPool>* pool) const;
@@ -121,6 +132,7 @@ class ThreadPoolBuilder {
   int max_threads_;
   int max_queue_size_;
   MonoDelta idle_timeout_;
+  ThreadPoolMetrics metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPoolBuilder);
 };
@@ -205,16 +217,11 @@ class ThreadPool {
   };
   std::unique_ptr<ThreadPoolToken> NewToken(ExecutionMode mode);
 
-  // Attaches a histogram which measures the queue length seen by tasks when they enter
-  // the thread pool's queue.
-  void SetQueueLengthHistogram(const scoped_refptr<Histogram>& hist);
-
-  // Attaches a histogram which measures the amount of time that tasks spend waiting in
-  // the queue.
-  void SetQueueTimeMicrosHistogram(const scoped_refptr<Histogram>& hist);
-
-  // Attaches a histogram which measures the amount of time that tasks spend running.
-  void SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist);
+  // Like NewToken(), but lets the caller provide metrics for the token. These
+  // metrics are incremented/decremented in addition to the configured
+  // pool-wide metrics (if any).
+  std::unique_ptr<ThreadPoolToken> NewTokenWithMetrics(ExecutionMode mode,
+                                                       ThreadPoolMetrics metrics);
 
  private:
   FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMaxThreads);
@@ -317,9 +324,8 @@ class ThreadPool {
   // ExecutionMode::CONCURRENT token used by the pool for tokenless submission.
   std::unique_ptr<ThreadPoolToken> tokenless_;
 
-  scoped_refptr<Histogram> queue_length_histogram_;
-  scoped_refptr<Histogram> queue_time_us_histogram_;
-  scoped_refptr<Histogram> run_time_us_histogram_;
+  // Metrics for the entire thread pool.
+  const ThreadPoolMetrics metrics_;
 
   const char* queue_time_trace_metric_name_;
   const char* run_wall_time_trace_metric_name_;
@@ -408,7 +414,9 @@ class ThreadPoolToken {
   // Constructs a new token.
   //
   // The token may not outlive its thread pool ('pool').
-  ThreadPoolToken(ThreadPool* pool, ThreadPool::ExecutionMode mode);
+  ThreadPoolToken(ThreadPool* pool,
+                  ThreadPool::ExecutionMode mode,
+                  ThreadPoolMetrics metrics);
 
   // Changes this token's state to 'new_state' taking actions as needed.
   void Transition(State new_state);
@@ -431,6 +439,9 @@ class ThreadPoolToken {
 
   // Token's configured execution mode.
   const ThreadPool::ExecutionMode mode_;
+
+  // Metrics for just this token.
+  const ThreadPoolMetrics metrics_;
 
   // Pointer to the token's thread pool.
   ThreadPool* pool_;
