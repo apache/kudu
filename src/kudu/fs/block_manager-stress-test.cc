@@ -37,6 +37,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_bool(cache_force_single_shard);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(block_manager_max_open_files);
@@ -114,6 +115,10 @@ class BlockManagerStressTest : public KuduTest {
 
     // Compact block manager metadata aggressively.
     FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
+
+    // Use a single cache shard. Otherwise, the cache can be a little bit "sloppy"
+    // depending on the number of CPUs on the system.
+    FLAGS_cache_force_single_shard = true;
 
     if (FLAGS_block_manager_paths.empty()) {
       data_dirs_.push_back(test_dir_);

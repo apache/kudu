@@ -54,7 +54,7 @@
     const Status& _s = (to_call);                                         \
     if (!_s.ok()) {                                                       \
       LOG(INFO) << "Dumping cache contents";                              \
-      vector<string> lines = strings::Split(cache_.ToDebugString(), "\n", \
+      vector<string> lines = strings::Split(cache_->ToDebugString(), "\n", \
                                             strings::SkipEmpty());        \
       for (const auto& l : lines) {                                       \
         LOG(INFO) << l;                                                   \
@@ -63,14 +63,11 @@
     CHECK(_s.ok()) << "Bad status: " << _s.ToString();                    \
   } while (0);
 
-// This default value is friendly to many n-CPU configurations.
-DEFINE_int32(test_max_open_files, 192, "Maximum number of open files enforced "
-             "by the cache. Should be a multiple of the number of CPUs on the "
-             "system.");
-
 DEFINE_int32(test_num_producer_threads, 1, "Number of producer threads");
 DEFINE_int32(test_num_consumer_threads, 4, "Number of consumer threads");
 DEFINE_int32(test_duration_secs, 2, "Number of seconds to run the test");
+
+DECLARE_bool(cache_force_single_shard);
 
 using std::deque;
 using std::shared_ptr;
@@ -82,22 +79,28 @@ using strings::Substitute;
 
 namespace kudu {
 
+// FD limit to enforce during the test.
+static const int kTestMaxOpenFiles = 100;
+
 template <class FileType>
 class FileCacheStressTest : public KuduTest {
  public:
   typedef unordered_map<string, unordered_map<string, int>> MetricMap;
 
   FileCacheStressTest()
-      : cache_("test",
-               env_,
-               FLAGS_test_max_open_files,
-               scoped_refptr<MetricEntity>()),
-        rand_(SeedRandom()),
+      : rand_(SeedRandom()),
         running_(1) {
+    // Use a single shard. Otherwise, the cache can be a little bit "sloppy"
+    // depending on the number of CPUs on the system.
+    FLAGS_cache_force_single_shard = true;
+    cache_.reset(new FileCache<FileType>("test",
+                                         env_,
+                                         kTestMaxOpenFiles,
+                                         scoped_refptr<MetricEntity>()));
   }
 
   void SetUp() override {
-    ASSERT_OK(cache_.Init());
+    ASSERT_OK(cache_->Init());
   }
 
   void ProducerThread() {
@@ -153,7 +156,7 @@ class FileCacheStressTest : public KuduTest {
           continue;
         }
         shared_ptr<FileType> new_file;
-        TEST_CHECK_OK(cache_.OpenExistingFile(to_open, &new_file));
+        TEST_CHECK_OK(cache_->OpenExistingFile(to_open, &new_file));
         FinishedOpen(to_open);
         metrics[BaseName(to_open)]["open"]++;
         files.emplace_back(new_file);
@@ -177,7 +180,7 @@ class FileCacheStressTest : public KuduTest {
         if (!GetRandomFile(DELETE, &rand, &to_delete)) {
           continue;
         }
-        TEST_CHECK_OK(cache_.DeleteFile(to_delete));
+        TEST_CHECK_OK(cache_->DeleteFile(to_delete));
         metrics[BaseName(to_delete)]["delete"]++;
       }
     } while (!running_.WaitFor(MonoDelta::FromMilliseconds(1)));
@@ -281,7 +284,7 @@ class FileCacheStressTest : public KuduTest {
     }
   }
 
-  FileCache<FileType> cache_;
+  unique_ptr<FileCache<FileType>> cache_;
 
   // Used to seed per-thread PRNGs.
   ThreadSafeRandom rand_;
@@ -343,7 +346,7 @@ TYPED_TEST(FileCacheStressTest, TestStress) {
   // Start the threads.
   PeriodicOpenFdChecker checker(
       this->env_,
-      FLAGS_test_max_open_files +       // cache capacity
+      kTestMaxOpenFiles +               // cache capacity
       FLAGS_test_num_producer_threads + // files being written
       FLAGS_test_num_consumer_threads); // files being opened
   checker.Start();
