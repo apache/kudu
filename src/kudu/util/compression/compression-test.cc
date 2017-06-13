@@ -59,9 +59,9 @@ static void TestCompressionCodec(CompressionType compression) {
 
   // Compress slices and uncompress
   vector<Slice> v;
-  v.push_back(Slice(ibuffer, 1));
+  v.emplace_back(ibuffer, 1);
   for (int i = 1; i <= kInputSize; i += 7)
-    v.push_back(Slice(ibuffer + i, 7));
+    v.emplace_back(ibuffer + i, 7);
   ASSERT_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
   ASSERT_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));

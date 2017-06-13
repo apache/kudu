@@ -187,16 +187,16 @@ static vector<IntInterval> CreateRandomIntervals(int n = 100) {
   for (int i = 0; i < n; i++) {
     int l = rand() % 100; // NOLINT(runtime/threadsafe_fn)
     int r = l + rand() % 20; // NOLINT(runtime/threadsafe_fn)
-    intervals.push_back(IntInterval(l, r, i));
+    intervals.emplace_back(l, r, i);
   }
   return intervals;
 }
 
 TEST_F(TestIntervalTree, TestBasic) {
   vector<IntInterval> intervals;
-  intervals.push_back(IntInterval(1, 2, 1));
-  intervals.push_back(IntInterval(3, 4, 2));
-  intervals.push_back(IntInterval(1, 4, 3));
+  intervals.emplace_back(1, 2, 1);
+  intervals.emplace_back(3, 4, 2);
+  intervals.emplace_back(1, 4, 3);
   IntervalTree<IntTraits> t(intervals);
 
   for (int i = 0; i <= 5; i++) {

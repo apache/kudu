@@ -81,10 +81,10 @@ TEST_F(TestKnapsack, Basics) {
   KnapsackSolver<TestItemTraits> solver;
 
   vector<TestItem> in;
-  in.push_back(TestItem(500, 3));
-  in.push_back(TestItem(110, 1));
-  in.push_back(TestItem(125, 1));
-  in.push_back(TestItem(100, 1));
+  in.emplace_back(500, 3);
+  in.emplace_back(110, 1);
+  in.emplace_back(125, 1);
+  in.emplace_back(100, 1);
 
   vector<int> out;
   double max_val;

@@ -214,8 +214,7 @@ class ClientStressTest_LowMemory : public ClientStressTest {
     ExternalMiniClusterOptions opts;
     opts.extra_tserver_flags.push_back(Substitute(
         "--memory_limit_hard_bytes=$0", kMemLimitBytes));
-    opts.extra_tserver_flags.push_back(
-        "--memory_limit_soft_percentage=0");
+    opts.extra_tserver_flags.emplace_back("--memory_limit_soft_percentage=0");
     return opts;
   }
 };

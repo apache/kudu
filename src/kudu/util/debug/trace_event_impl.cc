@@ -982,7 +982,7 @@ void TraceSamplingThread::RegisterSampleBucket(
   // that uses the sample_buckets_, because it is guaranteed that
   // RegisterSampleBucket is called before the sampling thread is created.
   DCHECK(!thread_running_);
-  sample_buckets_.push_back(TraceBucketData(bucket, name, callback));
+  sample_buckets_.emplace_back(bucket, name, callback);
 }
 
 // static

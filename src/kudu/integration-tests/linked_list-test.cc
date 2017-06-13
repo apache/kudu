@@ -87,27 +87,27 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
   void BuildAndStart() {
     vector<string> common_flags;
 
-    common_flags.push_back("--skip_remove_old_recovery_dir");
+    common_flags.emplace_back("--skip_remove_old_recovery_dir");
 
     // Set history retention to one day, so that we don't GC history in this test.
     // We rely on verifying "back in time" with snapshot scans.
-    common_flags.push_back("--tablet_history_max_age_sec=86400");
+    common_flags.emplace_back("--tablet_history_max_age_sec=86400");
 
     vector<string> ts_flags(common_flags);
     if (FLAGS_stress_flush_compact) {
       // Set the flush threshold low so that we have a mix of flushed and unflushed
       // operations in the WAL, when we bootstrap.
-      ts_flags.push_back("--flush_threshold_mb=1");
+      ts_flags.emplace_back("--flush_threshold_mb=1");
       // Set the compaction budget to be low so that we get multiple passes of compaction
       // instead of selecting all of the rowsets in a single compaction of the whole
       // tablet.
-      ts_flags.push_back("--tablet_compaction_budget_mb=4");
+      ts_flags.emplace_back("--tablet_compaction_budget_mb=4");
       // Set the major delta compaction ratio low enough that we trigger a lot of them.
-      ts_flags.push_back("--tablet_delta_store_major_compact_min_ratio=0.001");
+      ts_flags.emplace_back("--tablet_delta_store_major_compact_min_ratio=0.001");
     }
     if (FLAGS_stress_wal_gc) {
       // Set the size of the WAL segments low so that some can be GC'd.
-      ts_flags.push_back("--log_segment_size_mb=1");
+      ts_flags.emplace_back("--log_segment_size_mb=1");
     }
 
     CreateCluster("linked-list-cluster", ts_flags, common_flags);

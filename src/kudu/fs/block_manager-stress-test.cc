@@ -271,7 +271,7 @@ void BlockManagerStressTest<T>::WriterThread() {
       CHECK_OK(block->Append(seed_slice));
 
       dirty_blocks.push_back(block.release());
-      dirty_block_rands.push_back(Random(seed));
+      dirty_block_rands.emplace_back(seed);
     }
 
     // Write a large amount of data to the group of blocks.

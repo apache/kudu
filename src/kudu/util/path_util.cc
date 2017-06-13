@@ -56,7 +56,7 @@ std::string JoinPathSegments(const std::string &a,
 vector<string> SplitPath(const string& path) {
   if (path.empty()) return {};
   vector<string> segments;
-  if (path[0] == '/') segments.push_back("/");
+  if (path[0] == '/') segments.emplace_back("/");
   vector<StringPiece> pieces = Split(path, "/", SkipEmpty());
   for (const StringPiece& piece : pieces) {
     segments.emplace_back(piece.data(), piece.size());

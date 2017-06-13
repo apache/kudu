@@ -197,7 +197,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
   {
     std::lock_guard<simple_spinlock> l(lock_);
     for (const HostPortPB& addr : registration_->rpc_addresses()) {
-      hostports.push_back(HostPort(addr.host(), addr.port()));
+      hostports.emplace_back(addr.host(), addr.port());
     }
   }
 

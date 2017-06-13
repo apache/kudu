@@ -263,7 +263,7 @@ TEST_F(LockManagerTest, TestUncontended) {
   }
   vector<Slice> slices;
   for (int i = 0; i < FLAGS_num_test_threads; i++) {
-    slices.push_back(Slice(slice_strings[i]));
+    slices.emplace_back(slice_strings[i]);
   }
   vector<shared_ptr<LmTestResource> > resources;
   for (int i = 0; i < FLAGS_num_test_threads; i++) {

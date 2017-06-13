@@ -105,7 +105,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     // If the caller passed no flags use the default ones, where we stress consensus by setting
     // low timeouts and frequent cache misses.
     if (non_default_ts_flags.empty()) {
-      opts.extra_tserver_flags.push_back("--log_cache_size_limit_mb=10");
+      opts.extra_tserver_flags.emplace_back("--log_cache_size_limit_mb=10");
       opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
                                                              FLAGS_consensus_rpc_timeout_ms));
     } else {

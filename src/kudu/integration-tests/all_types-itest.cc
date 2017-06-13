@@ -114,7 +114,7 @@ struct SliceKeysTestSetup {
 
   vector<string> GetKeyColumns() const {
     vector<string> key_col;
-    key_col.push_back("key");
+    key_col.emplace_back("key");
     return key_col;
   }
 
@@ -192,7 +192,7 @@ struct IntKeysTestSetup {
 
   vector<string> GetKeyColumns() const {
     vector<string> key_col;
-    key_col.push_back("key");
+    key_col.emplace_back("key");
     return key_col;
   }
 

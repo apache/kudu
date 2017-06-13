@@ -80,7 +80,7 @@ class LocalTabletWriter {
   Status Write(RowOperationsPB::Type type,
                const KuduPartialRow& row) {
     vector<Op> ops;
-    ops.push_back(Op(type, &row));
+    ops.emplace_back(type, &row);
     return WriteBatch(ops);
   }
 

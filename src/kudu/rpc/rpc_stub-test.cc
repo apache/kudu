@@ -340,8 +340,8 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     string executable_path;
     CHECK_OK(env_->GetExecutablePath(&executable_path));
     argv.push_back(executable_path);
-    argv.push_back("--is_panic_test_child");
-    argv.push_back("--gtest_filter=RpcStubTest.TestRpcPanic");
+    argv.emplace_back("--is_panic_test_child");
+    argv.emplace_back("--gtest_filter=RpcStubTest.TestRpcPanic");
     Subprocess subp(argv);
     subp.ShareParentStderr(false);
     CHECK_OK(subp.Start());

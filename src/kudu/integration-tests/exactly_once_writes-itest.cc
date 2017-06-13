@@ -246,17 +246,17 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
   // Crash 2.5% of the time right after sending an RPC. This makes sure we stress the path
   // where there are duplicate handlers for a transaction as a leader crashes right
   // after sending requests to followers.
-  ts_flags.push_back("--fault_crash_after_leader_request_fraction=0.025");
+  ts_flags.emplace_back("--fault_crash_after_leader_request_fraction=0.025");
 
   // Make leader elections faster so we get through more cycles of leaders.
-  ts_flags.push_back("--raft_heartbeat_interval_ms=200");
-  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=100");
-  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=50");
+  ts_flags.emplace_back("--raft_heartbeat_interval_ms=200");
+  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=100");
+  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=50");
 
   // Avoid preallocating segments since bootstrap is a little bit
   // faster if it doesn't have to scan forward through the preallocated
   // log area.
-  ts_flags.push_back("--log_preallocate_segments=false");
+  ts_flags.emplace_back("--log_preallocate_segments=false");
 
   int num_batches = 10;
   if (AllowSlowTests()) {
@@ -280,10 +280,10 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
   // any progress at all.
   ts_flags.push_back("--raft_heartbeat_interval_ms=5");
 #else
-  ts_flags.push_back("--raft_heartbeat_interval_ms=2");
+  ts_flags.emplace_back("--raft_heartbeat_interval_ms=2");
 #endif
-  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=2");
-  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
+  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=2");
+  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=1");
 
   int num_batches = 200;
   if (AllowSlowTests()) {

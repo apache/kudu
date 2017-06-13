@@ -126,29 +126,29 @@ Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
 Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
   // Command: gdb -quiet -batch -nx -ex cmd1 -ex cmd2 /proc/$PID/exe $PID
   vector<string> argv;
-  argv.push_back("gdb");
+  argv.emplace_back("gdb");
   // Don't print introductory version/copyright messages.
-  argv.push_back("-quiet");
+  argv.emplace_back("-quiet");
   // Exit after processing all of the commands below.
-  argv.push_back("-batch");
+  argv.emplace_back("-batch");
   // Don't run commands from .gdbinit
-  argv.push_back("-nx");
+  argv.emplace_back("-nx");
   // On RHEL6 and older Ubuntu, we occasionally would see gdb spin forever
   // trying to collect backtraces. Setting a backtrace limit is a reasonable
   // workaround, since we don't really expect >100-deep stacks anyway.
   //
   // See https://bugs.launchpad.net/ubuntu/+source/gdb/+bug/434168
-  argv.push_back("-ex");
-  argv.push_back("set backtrace limit 100");
-  argv.push_back("-ex");
-  argv.push_back("set print pretty on");
-  argv.push_back("-ex");
-  argv.push_back("info threads");
-  argv.push_back("-ex");
-  argv.push_back("thread apply all bt");
+  argv.emplace_back("-ex");
+  argv.emplace_back("set backtrace limit 100");
+  argv.emplace_back("-ex");
+  argv.emplace_back("set print pretty on");
+  argv.emplace_back("-ex");
+  argv.emplace_back("info threads");
+  argv.emplace_back("-ex");
+  argv.emplace_back("thread apply all bt");
   if (flags & DUMP_FULL) {
-    argv.push_back("-ex");
-    argv.push_back("thread apply all bt full");
+    argv.emplace_back("-ex");
+    argv.emplace_back("thread apply all bt full");
   }
   string executable;
   Env* env = Env::Default();

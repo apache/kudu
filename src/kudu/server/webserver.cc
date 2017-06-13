@@ -144,10 +144,10 @@ Status Webserver::Start() {
 
   if (static_pages_available()) {
     LOG(INFO) << "Document root: " << opts_.doc_root;
-    options.push_back("document_root");
+    options.emplace_back("document_root");
     options.push_back(opts_.doc_root);
-    options.push_back("enable_directory_listing");
-    options.push_back("no");
+    options.emplace_back("enable_directory_listing");
+    options.emplace_back("no");
   } else {
     LOG(INFO)<< "Document root disabled";
   }
@@ -158,14 +158,14 @@ Status Webserver::Start() {
     // Initialize OpenSSL, and prevent Squeasel from also performing global OpenSSL
     // initialization.
     security::InitializeOpenSSL();
-    options.push_back("ssl_global_init");
-    options.push_back("false");
+    options.emplace_back("ssl_global_init");
+    options.emplace_back("false");
 
-    options.push_back("ssl_certificate");
+    options.emplace_back("ssl_certificate");
     options.push_back(opts_.certificate_file);
 
     if (!opts_.private_key_file.empty()) {
-      options.push_back("ssl_private_key");
+      options.emplace_back("ssl_private_key");
       options.push_back(opts_.private_key_file);
 
       string key_password;
@@ -182,13 +182,13 @@ Status Webserver::Start() {
         }
         StripTrailingWhitespace(&key_password);
       }
-      options.push_back("ssl_private_key_password");
+      options.emplace_back("ssl_private_key_password");
       options.push_back(key_password); // maybe empty if not configured.
     }
   }
 
   if (!opts_.authentication_domain.empty()) {
-    options.push_back("authentication_domain");
+    options.emplace_back("authentication_domain");
     options.push_back(opts_.authentication_domain);
   }
 
@@ -201,11 +201,11 @@ Status Webserver::Start() {
       return Status::InvalidArgument(ss.str());
     }
     LOG(INFO) << "Webserver: Password file is " << opts_.password_file;
-    options.push_back("global_auth_file");
+    options.emplace_back("global_auth_file");
     options.push_back(opts_.password_file);
   }
 
-  options.push_back("listening_ports");
+  options.emplace_back("listening_ports");
   string listening_str;
   RETURN_NOT_OK(BuildListenSpec(&listening_str));
   options.push_back(listening_str);
@@ -224,7 +224,7 @@ Status Webserver::Start() {
   }
 
   // Num threads
-  options.push_back("num_threads");
+  options.emplace_back("num_threads");
   options.push_back(std::to_string(opts_.num_worker_threads));
 
   // mongoose ignores SIGCHLD and we need it to run kinit. This means that since

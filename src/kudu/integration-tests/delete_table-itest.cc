@@ -692,8 +692,8 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
 TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
   // Enable manual leader selection.
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0;
@@ -812,10 +812,10 @@ TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingTransaction) {
 
   const int kNumTabletServers = 5;
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--flush_threshold_mb=0"); // Always be flushing.
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  ts_flags.emplace_back("--flush_threshold_mb=0"); // Always be flushing.
+  ts_flags.emplace_back("--maintenance_manager_polling_interval_ms=100");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags, kNumTabletServers));
 
   const int kTsIndex = 0; // We'll test with the first TS.
@@ -872,11 +872,14 @@ TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingTransaction) {
 // tombstoned.
 TEST_F(DeleteTableITest, TestOrphanedBlocksClearedOnDelete) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--flush_threshold_mb=0"); // Flush quickly since we wait for a flush to occur.
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  vector<string> ts_flags = {
+    "--enable_leader_failure_detection=false",
+    "--flush_threshold_mb=0", // Flush quickly since we wait for a flush to occur.
+    "--maintenance_manager_polling_interval_ms=100"
+  };
+  vector<string> master_flags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"
+  };
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const int kFollowerIndex = 0;
@@ -1173,10 +1176,10 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   vector<string> flags;
   // We want fast log rolls and deterministic preallocation, since we wait for
   // a certain number of logs at the beginning of the test.
-  flags.push_back("--log_segment_size_mb=1");
-  flags.push_back("--log_async_preallocate_segments=false");
-  flags.push_back("--log_min_segments_to_retain=3");
-  flags.push_back("--log_compression_codec=NO_COMPRESSION");
+  flags.emplace_back("--log_segment_size_mb=1");
+  flags.emplace_back("--log_async_preallocate_segments=false");
+  flags.emplace_back("--log_min_segments_to_retain=3");
+  flags.emplace_back("--log_compression_codec=NO_COMPRESSION");
   NO_FATALS(StartCluster(flags));
   const string fault_flag = GetParam();
   LOG(INFO) << "Running with fault flag: " << fault_flag;

@@ -278,7 +278,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
           // just overwrite that one.
           if (updates_by_col_[col_idx].empty() ||
               updates_by_col_[col_idx].back().row_id != key.row_idx()) {
-            updates_by_col_[col_idx].push_back(ColumnUpdate());
+            updates_by_col_[col_idx].emplace_back();
           }
 
           ColumnUpdate& cu = updates_by_col_[col_idx].back();

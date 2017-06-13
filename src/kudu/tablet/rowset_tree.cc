@@ -135,8 +135,8 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
     rsit->max_key = std::move(max_key);
 
     // Load into key endpoints.
-    endpoints.push_back(RSEndpoint(rsit->rowset, START, rsit->min_key));
-    endpoints.push_back(RSEndpoint(rsit->rowset, STOP, rsit->max_key));
+    endpoints.emplace_back(rsit->rowset, START, rsit->min_key);
+    endpoints.emplace_back(rsit->rowset, STOP, rsit->max_key);
 
     entries.push_back(rsit.release());
   }

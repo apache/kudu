@@ -144,9 +144,9 @@ TEST_F(TestTabletSchema, TestWrite) {
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
-  keys.push_back(std::pair<string, string>(Substitute("key=$0", s2Key),
-                                           Substitute("c2=$0", c2_write_default)));
-  keys.push_back(std::pair<string, string>("", Substitute("c2=$0", c2_read_default)));
+  keys.emplace_back(Substitute("key=$0", s2Key),
+                                           Substitute("c2=$0", c2_write_default));
+  keys.emplace_back("", Substitute("c2=$0", c2_read_default));
   VerifyTabletRows(s2, keys);
 
   // Delete the row
@@ -187,10 +187,10 @@ TEST_F(TestTabletSchema, TestReInsert) {
 
   // Verify the default value
   std::vector<std::pair<string, string> > keys;
-  keys.push_back(std::pair<string, string>(Substitute("key=$0", s1Key),
-                                           Substitute("c2=$0", c2_read_default)));
-  keys.push_back(std::pair<string, string>(Substitute("key=$0", s2Key),
-                                           Substitute("c2=$0", c2_write_default)));
+  keys.emplace_back(Substitute("key=$0", s1Key),
+                                           Substitute("c2=$0", c2_read_default));
+  keys.emplace_back(Substitute("key=$0", s2Key),
+                                           Substitute("c2=$0", c2_write_default));
   VerifyTabletRows(s2, keys);
 
   // Try compact all (different schemas)
@@ -217,8 +217,8 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
   // Read and verify using the s2 schema
   keys.clear();
   for (int i = 1; i <= 4; ++i) {
-    keys.push_back(std::pair<string, string>(Substitute("key=$0", i),
-                                             Substitute("c1_renamed=$0", i)));
+    keys.emplace_back(Substitute("key=$0", i),
+                                             Substitute("c1_renamed=$0", i));
   }
   VerifyTabletRows(s2, keys);
 
@@ -230,7 +230,7 @@ TEST_F(TestTabletSchema, TestRenameProjection) {
 
   // Read and verify using the s2 schema
   keys.clear();
-  keys.push_back(std::pair<string, string>("key=2", "c1_renamed=6"));
+  keys.emplace_back("key=2", "c1_renamed=6");
   VerifyTabletRows(s2, keys);
 }
 
@@ -243,7 +243,7 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   MutateRow(client_schema_, /* key= */ 1, /* col_idx= */ 1, /* new_val= */ 2);
 
   keys.clear();
-  keys.push_back(std::pair<string, string>("key=1", "c1=2"));
+  keys.emplace_back("key=1", "c1=2");
   VerifyTabletRows(client_schema_, keys);
 
   // Switch schema to s2
@@ -257,7 +257,7 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
 
   // Verify that the new 'c1' have the default value
   keys.clear();
-  keys.push_back(std::pair<string, string>("key=1", "c1=NULL"));
+  keys.emplace_back("key=1", "c1=NULL");
   VerifyTabletRows(s2, keys);
 }
 

@@ -59,9 +59,9 @@ class OpenReadonlyFsITest : public KuduTest {
     // threads to encourage frequent compactions. The net effect of both of
     // these changes: more blocks are written to disk. Turning off container
     // file preallocation forces every append to increase the file size.
-    opts.extra_tserver_flags.push_back("--log_container_preallocate_bytes=0");
-    opts.extra_tserver_flags.push_back("--maintenance_manager_num_threads=16");
-    opts.extra_tserver_flags.push_back("--flush_threshold_mb=1");
+    opts.extra_tserver_flags.emplace_back("--log_container_preallocate_bytes=0");
+    opts.extra_tserver_flags.emplace_back("--maintenance_manager_num_threads=16");
+    opts.extra_tserver_flags.emplace_back("--flush_threshold_mb=1");
 
     cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());

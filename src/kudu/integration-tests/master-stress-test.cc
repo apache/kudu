@@ -95,24 +95,24 @@ class MasterStressTest : public KuduTest {
     // Don't preallocate log segments, since we're creating many tablets here.
     // If each preallocates 64M or so, we use a ton of disk space in this
     // test, and it fails on normal sized /tmp dirs.
-    opts.extra_master_flags.push_back("--log_preallocate_segments=false");
-    opts.extra_tserver_flags.push_back("--log_preallocate_segments=false");
+    opts.extra_master_flags.emplace_back("--log_preallocate_segments=false");
+    opts.extra_tserver_flags.emplace_back("--log_preallocate_segments=false");
 
     // Reduce various timeouts below as to make the detection of leader master
     // failures (specifically, failures as result of long pauses) more rapid.
 
     // Set max missed heartbeats periods to 1.0 (down from 3.0).
-    opts.extra_master_flags.push_back("--leader_failure_max_missed_heartbeat_periods=1.0");
+    opts.extra_master_flags.emplace_back("--leader_failure_max_missed_heartbeat_periods=1.0");
 
     // Set the TS->master heartbeat timeout to 1 second (down from 15 seconds).
-    opts.extra_tserver_flags.push_back("--heartbeat_rpc_timeout_ms=1000");
+    opts.extra_tserver_flags.emplace_back("--heartbeat_rpc_timeout_ms=1000");
 
     // Allow one TS heartbeat failure before retrying with back-off (down from 3).
-    opts.extra_tserver_flags.push_back("--heartbeat_max_failures_before_backoff=1");
+    opts.extra_tserver_flags.emplace_back("--heartbeat_max_failures_before_backoff=1");
 
     // Wait for 500 ms after 'max_consecutive_failed_heartbeats' before trying
     // again (down from 1 second).
-    opts.extra_tserver_flags.push_back("--heartbeat_interval_ms=500");
+    opts.extra_tserver_flags.emplace_back("--heartbeat_interval_ms=500");
 
     cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());

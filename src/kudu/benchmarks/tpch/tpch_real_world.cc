@@ -224,15 +224,15 @@ Status TpchRealWorld::StartDbgens() {
     setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1);
     vector<string> argv;
     argv.push_back(Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir));
-    argv.push_back("-q");
-    argv.push_back("-T");
-    argv.push_back("L");
-    argv.push_back("-s");
+    argv.emplace_back("-q");
+    argv.emplace_back("-T");
+    argv.emplace_back("L");
+    argv.emplace_back("-s");
     argv.push_back(Substitute("$0", FLAGS_tpch_scaling_factor));
     if (FLAGS_tpch_num_inserters > 1) {
-      argv.push_back("-C");
+      argv.emplace_back("-C");
       argv.push_back(Substitute("$0", FLAGS_tpch_num_inserters));
-      argv.push_back("-S");
+      argv.emplace_back("-S");
       argv.push_back(Substitute("$0", i));
     }
     gscoped_ptr<Subprocess> dbgen_proc(new Subprocess(argv));

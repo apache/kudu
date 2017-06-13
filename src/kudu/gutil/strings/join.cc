@@ -192,7 +192,7 @@ void JoinCSVLineWithDelimiter(const vector<string>& cols, char delimiter,
       *buf.get() = '"';
       *((buf.get() + 1) + escaped_size) = '"';
       *((buf.get() + 1) + escaped_size + 1) = '\0';
-      quoted_cols.push_back(string(buf.get(), buf.get() + escaped_size + 2));
+      quoted_cols.emplace_back(buf.get(), buf.get() + escaped_size + 2);
     } else {
       quoted_cols.push_back(col);
     }

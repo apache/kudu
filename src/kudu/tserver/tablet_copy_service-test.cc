@@ -245,7 +245,7 @@ TEST_F(TabletCopyServiceTest, TestBeginConcurrently) {
 // Test bad session id error condition.
 TEST_F(TabletCopyServiceTest, TestInvalidSessionId) {
   vector<string> bad_session_ids;
-  bad_session_ids.push_back("hodor");
+  bad_session_ids.emplace_back("hodor");
   bad_session_ids.push_back(GetLocalUUID());
 
   // Fetch a block for a non-existent session.

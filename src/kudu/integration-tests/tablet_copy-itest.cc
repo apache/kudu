@@ -96,8 +96,8 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   }
 
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
@@ -448,14 +448,14 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   }
 
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--log_cache_size_limit_mb=1");
-  ts_flags.push_back("--log_segment_size_mb=1");
-  ts_flags.push_back("--log_async_preallocate_segments=false");
-  ts_flags.push_back("--log_min_segments_to_retain=100");
-  ts_flags.push_back("--flush_threshold_mb=0"); // Constantly flush.
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=10");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  ts_flags.emplace_back("--log_cache_size_limit_mb=1");
+  ts_flags.emplace_back("--log_segment_size_mb=1");
+  ts_flags.emplace_back("--log_async_preallocate_segments=false");
+  ts_flags.emplace_back("--log_min_segments_to_retain=100");
+  ts_flags.emplace_back("--flush_threshold_mb=0"); // Constantly flush.
+  ts_flags.emplace_back("--maintenance_manager_polling_interval_ms=10");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const MonoDelta timeout = MonoDelta::FromSeconds(60);
@@ -692,9 +692,9 @@ int64_t CountLogMessages(ExternalTabletServer* ets) {
 TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   MonoDelta timeout = MonoDelta::FromSeconds(10);
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--enable_tablet_copy=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  ts_flags.emplace_back("--enable_tablet_copy=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
@@ -755,10 +755,10 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
 TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  ts_flags.push_back("--tablet_copy_dowload_file_inject_latency_ms=5000");
-  ts_flags.push_back("--follower_unavailable_considered_failed_sec=2");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  ts_flags.emplace_back("--tablet_copy_dowload_file_inject_latency_ms=5000");
+  ts_flags.emplace_back("--follower_unavailable_considered_failed_sec=2");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());

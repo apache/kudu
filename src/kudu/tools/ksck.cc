@@ -845,12 +845,12 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     // Fill out the columns with info from the replicas.
     for (const auto& replica : replica_infos) {
       char label = FindOrDie(peer_uuid_mapping, replica.ts->uuid());
-      sources.push_back(string(1, label));
+      sources.emplace_back(1, label);
       if (!replica.consensus_state) {
-        voters.push_back("[config not available]");
-        terms.push_back("");
-        indexes.push_back("");
-        committed.push_back("");
+        voters.emplace_back("[config not available]");
+        terms.emplace_back("");
+        indexes.emplace_back("");
+        committed.emplace_back("");
         continue;
       }
       voters.push_back(format_peers(peer_uuid_mapping, replica.consensus_state.get()));
@@ -858,7 +858,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
                       std::to_string(replica.consensus_state->term.get()) : "");
       indexes.push_back(replica.consensus_state->opid_index ?
                         std::to_string(replica.consensus_state->opid_index.get()) : "");
-      committed.push_back(replica.consensus_state->type == KsckConsensusConfigType::PENDING ?
+      committed.emplace_back(replica.consensus_state->type == KsckConsensusConfigType::PENDING ?
                           "No" : "Yes");
     }
     vector<vector<string>> columns{ sources, voters, terms, indexes, committed };

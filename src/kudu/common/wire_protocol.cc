@@ -324,7 +324,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
       is_handling_key = false;
     }
     if (pb.has_id()) {
-      column_ids.push_back(ColumnId(pb.id()));
+      column_ids.emplace_back(pb.id());
     }
   }
 

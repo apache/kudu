@@ -181,14 +181,14 @@ Status CFileWriter::Start() {
   pb_util::AppendToString(header, &header_str);
 
   vector<Slice> header_slices;
-  header_slices.push_back(Slice(header_str));
+  header_slices.emplace_back(header_str);
 
   // Append header checksum.
   uint8_t checksum_buf[kChecksumSize];
   if (FLAGS_cfile_write_checksums) {
     uint32_t header_checksum = crc::Crc32c(header_str.data(), header_str.size());
     InlineEncodeFixed32(checksum_buf, header_checksum);
-    header_slices.push_back(Slice(checksum_buf, kChecksumSize));
+    header_slices.emplace_back(checksum_buf, kChecksumSize);
   }
 
   RETURN_NOT_OK_PREPEND(WriteRawData(header_slices), "Couldn't write header");
@@ -272,10 +272,10 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   if (FLAGS_cfile_write_checksums) {
     uint32_t footer_checksum = crc::Crc32c(footer_str.data(), footer_str.size());
     InlineEncodeFixed32(checksum_buf, footer_checksum);
-    footer_slices.push_back(Slice(checksum_buf, kChecksumSize));
+    footer_slices.emplace_back(checksum_buf, kChecksumSize);
   }
 
-  footer_slices.push_back(Slice(footer_str));
+  footer_slices.emplace_back(footer_str);
   RETURN_NOT_OK_PREPEND(WriteRawData(footer_slices), "Couldn't write footer");
 
   // Done with this block.
@@ -414,7 +414,7 @@ Status CFileWriter::FinishCurDataBlock() {
     Slice null_bitmap = null_bitmap_builder_->Finish();
     PutVarint32(&null_headers, num_elems_in_block);
     PutVarint32(&null_headers, null_bitmap.size());
-    v.push_back(Slice(null_headers.data(), null_headers.size()));
+    v.emplace_back(null_headers.data(), null_headers.size());
     v.push_back(null_bitmap);
   }
   v.push_back(data);
@@ -504,7 +504,7 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
       checksum = crc::Crc32c(data.data(), data.size(), checksum);
     }
     InlineEncodeFixed32(checksum_buf, checksum);
-    out_slices.push_back(Slice(checksum_buf, kChecksumSize));
+    out_slices.emplace_back(checksum_buf, kChecksumSize);
   }
 
   RETURN_NOT_OK(WriteRawData(out_slices));

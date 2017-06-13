@@ -474,7 +474,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
     }
 
     // Transaction is committed. Save the snapshot after this commit.
-    snapshots.push_back(MvccSnapshot(mvcc_));
+    snapshots.emplace_back(mvcc_);
   }
   LOG(INFO) << "MemRowSet after inserts:";
   ASSERT_OK(mrs->DebugDump());
@@ -503,7 +503,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
 
   vector<MvccSnapshot> snapshots;
   // First snapshot is after insertion
-  snapshots.push_back(MvccSnapshot(mvcc_));
+  snapshots.emplace_back(mvcc_);
 
   // Update the row 5 times (setting its int column to increasing ints 1-5)
   for (uint32_t i = 1; i <= 5; i++) {
@@ -513,7 +513,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
     ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
     // Transaction is committed. Save the snapshot after this commit.
-    snapshots.push_back(MvccSnapshot(mvcc_));
+    snapshots.emplace_back(mvcc_);
   }
 
   LOG(INFO) << "MemRowSet after updates:";

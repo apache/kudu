@@ -439,9 +439,9 @@ class TraceEventCallbackTest : public KuduTest {
                        const uint64_t arg_values[],
                        unsigned char flags) {
     s_instance->collected_events_phases_.push_back(phase);
-    s_instance->collected_events_categories_.push_back(
+    s_instance->collected_events_categories_.emplace_back(
         TraceLog::GetCategoryGroupName(category_group_enabled));
-    s_instance->collected_events_names_.push_back(name);
+    s_instance->collected_events_names_.emplace_back(name);
     s_instance->collected_events_timestamps_.push_back(timestamp);
   }
 };

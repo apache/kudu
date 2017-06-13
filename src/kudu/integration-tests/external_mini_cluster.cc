@@ -667,9 +667,9 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   extra_env_ = kdc->GetEnvVars();
   extra_flags_.push_back(Substitute("--keytab_file=$0", ktpath));
   extra_flags_.push_back(Substitute("--principal=$0", spn));
-  extra_flags_.push_back("--rpc_authentication=required");
-  extra_flags_.push_back("--superuser_acl=test-admin");
-  extra_flags_.push_back("--user_acl=test-user");
+  extra_flags_.emplace_back("--rpc_authentication=required");
+  extra_flags_.emplace_back("--superuser_acl=test-admin");
+  extra_flags_.emplace_back("--user_acl=test-user");
   return Status::OK();
 }
 
@@ -686,7 +686,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   // Disable fsync to dramatically speed up runtime. This is safe as no tests
   // rely on forcefully cutting power to a machine or equivalent.
-  argv.push_back("--never_fsync");
+  argv.emplace_back("--never_fsync");
 
   // Generate smaller RSA keys -- generating a 1024-bit key is faster
   // than generating the default 2048-bit key, and we don't care about
@@ -697,21 +697,21 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // the ECDHE-RSA-AES256-GCM-SHA384 suite). However, to work with Java
   // client it's necessary to have at least 1024 bits for certificate RSA key
   // due to Java security policies.
-  argv.push_back("--ipki_server_key_size=1024");
+  argv.emplace_back("--ipki_server_key_size=1024");
 
   // Disable minidumps by default since many tests purposely inject faults.
-  argv.push_back("--enable_minidumps=false");
+  argv.emplace_back("--enable_minidumps=false");
 
   // Disable log redaction.
-  argv.push_back("--redact=flag");
+  argv.emplace_back("--redact=flag");
 
   // Enable metrics logging.
-  argv.push_back("--metrics_log_interval_ms=1000");
+  argv.emplace_back("--metrics_log_interval_ms=1000");
 
   if (logtostderr_) {
     // Ensure that logging goes to the test output and doesn't get buffered.
-    argv.push_back("--logtostderr");
-    argv.push_back("--logbuflevel=-1");
+    argv.emplace_back("--logtostderr");
+    argv.emplace_back("--logbuflevel=-1");
   }
 
   // Even if we are logging to stderr, metrics logs and minidumps end up being
@@ -722,16 +722,16 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Tell the server to dump its port information so we can pick it up.
   string info_path = JoinPathSegments(data_dirs_[0], "info.pb");
   argv.push_back("--server_dump_info_path=" + info_path);
-  argv.push_back("--server_dump_info_format=pb");
+  argv.emplace_back("--server_dump_info_format=pb");
 
   // We use ephemeral ports in many tests. They don't work for production, but are OK
   // in unit tests.
-  argv.push_back("--rpc_server_allow_ephemeral_ports");
+  argv.emplace_back("--rpc_server_allow_ephemeral_ports");
 
   // Allow unsafe and experimental flags from tests, since we often use
   // fault injection, etc.
-  argv.push_back("--unlock_experimental_flags");
-  argv.push_back("--unlock_unsafe_flags");
+  argv.emplace_back("--unlock_experimental_flags");
+  argv.emplace_back("--unlock_unsafe_flags");
 
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
@@ -1129,7 +1129,7 @@ ExternalMaster::~ExternalMaster() {
 
 Status ExternalMaster::Start() {
   vector<string> flags(GetCommonFlags());
-  flags.push_back("--webserver_port=0");
+  flags.emplace_back("--webserver_port=0");
   flags.push_back("--rpc_bind_addresses=" + get_rpc_bind_address());
   return StartProcess(flags);
 }
@@ -1233,7 +1233,7 @@ Status ExternalTabletServer::Start() {
                              get_rpc_bind_address()));
   flags.push_back(Substitute("--webserver_interface=$0",
                              get_rpc_bind_address()));
-  flags.push_back("--webserver_port=0");
+  flags.emplace_back("--webserver_port=0");
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();

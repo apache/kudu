@@ -57,7 +57,7 @@ void TabletCopyClientSessionITest::PrepareClusterForTabletCopy(
   const int kNumTabletServers = 2;
   // We don't want the master to interfere when we manually make copies of
   // tablets onto servers it doesn't know about.
-  extra_master_flags.push_back("--master_tombstone_evicted_tablet_replicas=false");
+  extra_master_flags.emplace_back("--master_tombstone_evicted_tablet_replicas=false");
   NO_FATALS(StartCluster(extra_tserver_flags, extra_master_flags, kNumTabletServers));
   // Shut down the 2nd tablet server; we'll create tablets on the first one.
   cluster_->tablet_server(1)->Shutdown();

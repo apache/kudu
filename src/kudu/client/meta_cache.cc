@@ -142,7 +142,7 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
 
   rpc_hostports_.clear();
   for (const HostPortPB& hostport_pb : pb.rpc_addresses()) {
-    rpc_hostports_.push_back(HostPort(hostport_pb.host(), hostport_pb.port()));
+    rpc_hostports_.emplace_back(hostport_pb.host(), hostport_pb.port());
   }
 }
 

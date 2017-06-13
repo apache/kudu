@@ -55,7 +55,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   const int kNumReplicas = 3;
   vector<string> ts_flags;
   vector<string> master_flags;
-  master_flags.push_back("--tablet_creation_timeout_ms=1000");
+  master_flags.emplace_back("--tablet_creation_timeout_ms=1000");
   NO_FATALS(StartCluster(ts_flags, master_flags, kNumReplicas));
 
   // Shut down 2/3 of the tablet servers.

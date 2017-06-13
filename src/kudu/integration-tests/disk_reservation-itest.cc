@@ -51,14 +51,14 @@ class DiskReservationITest : public ExternalMiniClusterITestBase {
 TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   vector<string> ts_flags;
   // Don't preallocate very many bytes so we run the "full disk" check often.
-  ts_flags.push_back("--log_container_preallocate_bytes=100000");
+  ts_flags.emplace_back("--log_container_preallocate_bytes=100000");
   // Set up the tablet so that flushes are constantly occurring.
-  ts_flags.push_back("--flush_threshold_mb=0");
-  ts_flags.push_back("--maintenance_manager_polling_interval_ms=50");
-  ts_flags.push_back("--disable_core_dumps");
+  ts_flags.emplace_back("--flush_threshold_mb=0");
+  ts_flags.emplace_back("--maintenance_manager_polling_interval_ms=50");
+  ts_flags.emplace_back("--disable_core_dumps");
   // Reserve one byte so that when we simulate 0 bytes free below, we'll start
   // failing requests.
-  ts_flags.push_back("--fs_data_dirs_reserved_bytes=1");
+  ts_flags.emplace_back("--fs_data_dirs_reserved_bytes=1");
 
   NO_FATALS(StartCluster(ts_flags, {}, /* num_tablet_servers= */ 1, /* num_data_dirs= */ 2));
 

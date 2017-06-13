@@ -42,8 +42,8 @@ class SecurityITest : public KuduTest {
   SecurityITest() {
     cluster_opts_.enable_kerberos = true;
     cluster_opts_.num_tablet_servers = 3;
-    cluster_opts_.extra_master_flags.push_back("--rpc_trace_negotiation");
-    cluster_opts_.extra_tserver_flags.push_back("--rpc_trace_negotiation");
+    cluster_opts_.extra_master_flags.emplace_back("--rpc_trace_negotiation");
+    cluster_opts_.extra_tserver_flags.emplace_back("--rpc_trace_negotiation");
   }
   Status StartCluster() {
     cluster_.reset(new ExternalMiniCluster(cluster_opts_));
@@ -202,18 +202,18 @@ TEST_F(SecurityITest, TestAuthorizedSuperuser) {
 // Test that the web UIs can be entirely disabled, for users who feel they
 // are a security risk.
 TEST_F(SecurityITest, TestDisableWebUI) {
-  cluster_opts_.extra_master_flags.push_back("--webserver_enabled=0");
-  cluster_opts_.extra_tserver_flags.push_back("--webserver_enabled=0");
+  cluster_opts_.extra_master_flags.emplace_back("--webserver_enabled=0");
+  cluster_opts_.extra_tserver_flags.emplace_back("--webserver_enabled=0");
   ASSERT_OK(StartCluster());
   NO_FATALS(SmokeTestCluster());
 }
 
 // Test disabling authentication and encryption.
 TEST_F(SecurityITest, TestDisableAuthenticationEncryption) {
-  cluster_opts_.extra_master_flags.push_back("--rpc_authentication=disabled");
-  cluster_opts_.extra_tserver_flags.push_back("--rpc_authentication=disabled");
-  cluster_opts_.extra_master_flags.push_back("--rpc_encryption=disabled");
-  cluster_opts_.extra_tserver_flags.push_back("--rpc_encryption=disabled");
+  cluster_opts_.extra_master_flags.emplace_back("--rpc_authentication=disabled");
+  cluster_opts_.extra_tserver_flags.emplace_back("--rpc_authentication=disabled");
+  cluster_opts_.extra_master_flags.emplace_back("--rpc_encryption=disabled");
+  cluster_opts_.extra_tserver_flags.emplace_back("--rpc_encryption=disabled");
   cluster_opts_.enable_kerberos = false;
   ASSERT_OK(StartCluster());
   NO_FATALS(SmokeTestCluster());

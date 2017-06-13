@@ -227,7 +227,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     SplitStringUsing(*requested_metrics_param, ",", &requested_metrics);
   } else {
     // Default to including all metrics.
-    requested_metrics.push_back("*");
+    requested_metrics.emplace_back("*");
   }
 
   WARN_NOT_OK(metrics->WriteAsJson(&writer, requested_metrics, opts),

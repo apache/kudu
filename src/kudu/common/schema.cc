@@ -265,7 +265,7 @@ Schema Schema::CopyWithColumnIds() const {
   CHECK(!has_column_ids());
   vector<ColumnId> ids;
   for (int32_t i = 0; i < num_columns(); i++) {
-    ids.push_back(ColumnId(kFirstColumnId + i));
+    ids.emplace_back(kFirstColumnId + i);
   }
   return Schema(cols_, ids, num_key_columns_);
 }
@@ -430,7 +430,7 @@ void SchemaBuilder::Reset(const Schema& schema) {
 
   if (col_ids_.empty()) {
     for (int32_t i = 0; i < cols_.size(); ++i) {
-      col_ids_.push_back(ColumnId(kFirstColumnId + i));
+      col_ids_.emplace_back(kFirstColumnId + i);
     }
   }
   if (col_ids_.empty()) {

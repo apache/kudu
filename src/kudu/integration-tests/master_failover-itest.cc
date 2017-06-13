@@ -71,15 +71,15 @@ class MasterFailoverTest : public KuduTest {
     // long pauses) more rapid.
 
     // Set max missed heartbeats periods to 1.0 (down from 3.0).
-    opts_.extra_master_flags.push_back("--leader_failure_max_missed_heartbeat_periods=1.0");
+    opts_.extra_master_flags.emplace_back("--leader_failure_max_missed_heartbeat_periods=1.0");
 
     // Set the TS->master heartbeat timeout to 1 second (down from 15 seconds).
-    opts_.extra_tserver_flags.push_back("--heartbeat_rpc_timeout_ms=1000");
+    opts_.extra_tserver_flags.emplace_back("--heartbeat_rpc_timeout_ms=1000");
     // Allow one TS heartbeat failure before retrying with back-off (down from 3).
-    opts_.extra_tserver_flags.push_back("--heartbeat_max_failures_before_backoff=1");
+    opts_.extra_tserver_flags.emplace_back("--heartbeat_max_failures_before_backoff=1");
     // Wait for 500 ms after 'max_consecutive_failed_heartbeats'
     // before trying again (down from 1 second).
-    opts_.extra_tserver_flags.push_back("--heartbeat_interval_ms=500");
+    opts_.extra_tserver_flags.emplace_back("--heartbeat_interval_ms=500");
   }
 
   virtual void SetUp() OVERRIDE {

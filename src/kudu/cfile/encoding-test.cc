@@ -80,7 +80,7 @@ class TestEncoding : public KuduTest {
     std::vector<Slice> slices;
     for (uint i = 0; i < num_items; i++) {
       to_insert.emplace_back(new string(StringPrintf(fmt_str, i)));
-      slices.push_back(Slice(to_insert.back()->data()));
+      slices.emplace_back(to_insert.back()->data());
     }
 
     int rem = slices.size();

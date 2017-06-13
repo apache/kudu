@@ -56,8 +56,8 @@ class MetadataTest : public KuduTest {
 // Swap out some deltas from the middle of the list
 TEST_F(MetadataTest, RSMD_TestReplaceDeltas_1) {
   vector<BlockId> to_replace;
-  to_replace.push_back(BlockId(2));
-  to_replace.push_back(BlockId(3));
+  to_replace.emplace_back(2);
+  to_replace.emplace_back(3);
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
@@ -69,8 +69,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_1) {
 // Swap out some deltas from the beginning of the list
 TEST_F(MetadataTest, RSMD_TestReplaceDeltas_2) {
   vector<BlockId> to_replace;
-  to_replace.push_back(BlockId(1));
-  to_replace.push_back(BlockId(2));
+  to_replace.emplace_back(1);
+  to_replace.emplace_back(2);
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
@@ -82,8 +82,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_2) {
 // Swap out some deltas from the end of the list
 TEST_F(MetadataTest, RSMD_TestReplaceDeltas_3) {
   vector<BlockId> to_replace;
-  to_replace.push_back(BlockId(3));
-  to_replace.push_back(BlockId(4));
+  to_replace.emplace_back(3);
+  to_replace.emplace_back(4);
 
   ASSERT_OK(meta_->CommitUpdate(
               RowSetMetadataUpdate()
@@ -95,8 +95,8 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_3) {
 // Swap out a non-contiguous list, check error.
 TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_NonContiguous) {
   vector<BlockId> to_replace;
-  to_replace.push_back(BlockId(2));
-  to_replace.push_back(BlockId(4));
+  to_replace.emplace_back(2);
+  to_replace.emplace_back(4);
 
   Status s = meta_->CommitUpdate(
     RowSetMetadataUpdate()
@@ -113,7 +113,7 @@ TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_NonContiguous) {
 // Swap out a list which contains an invalid element, check error.
 TEST_F(MetadataTest, RSMD_TestReplaceDeltas_Bad_DoesntExist) {
   vector<BlockId> to_replace;
-  to_replace.push_back(BlockId(555));
+  to_replace.emplace_back(555);
 
   Status s = meta_->CommitUpdate(
     RowSetMetadataUpdate()

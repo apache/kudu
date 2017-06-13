@@ -199,7 +199,7 @@ class RowProjector {
   friend class Schema;
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
-    base_cols_mapping_.push_back(ProjectionIdxMapping(proj_col_idx, base_col_idx));
+    base_cols_mapping_.emplace_back(proj_col_idx, base_col_idx);
     return Status::OK();
   }
 

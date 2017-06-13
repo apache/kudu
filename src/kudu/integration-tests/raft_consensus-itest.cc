@@ -836,23 +836,23 @@ void RaftConsensusITest::CreateClusterForCrashyNodesTests() {
   // Crash 5% of the time just before sending an RPC. With 7 servers,
   // this means we crash about 30% of the time before we've fully
   // replicated the NO_OP at the start of the term.
-  ts_flags.push_back("--fault_crash_on_leader_request_fraction=0.05");
+  ts_flags.emplace_back("--fault_crash_on_leader_request_fraction=0.05");
 
   // Inject latency to encourage the replicas to fall out of sync
   // with each other.
-  ts_flags.push_back("--log_inject_latency");
-  ts_flags.push_back("--log_inject_latency_ms_mean=30");
-  ts_flags.push_back("--log_inject_latency_ms_stddev=60");
+  ts_flags.emplace_back("--log_inject_latency");
+  ts_flags.emplace_back("--log_inject_latency_ms_mean=30");
+  ts_flags.emplace_back("--log_inject_latency_ms_stddev=60");
 
   // Make leader elections faster so we get through more cycles of leaders.
-  ts_flags.push_back("--raft_heartbeat_interval_ms=100");
-  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=50");
-  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=25");
+  ts_flags.emplace_back("--raft_heartbeat_interval_ms=100");
+  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=50");
+  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=25");
 
   // Avoid preallocating segments since bootstrap is a little bit
   // faster if it doesn't have to scan forward through the preallocated
   // log area.
-  ts_flags.push_back("--log_preallocate_segments=false");
+  ts_flags.emplace_back("--log_preallocate_segments=false");
 
   CreateCluster("raft_consensus-itest-crashy-nodes-cluster", ts_flags, {});
 }
@@ -950,10 +950,10 @@ void RaftConsensusITest::CreateClusterForChurnyElectionsTests(
   // any progress at all.
   ts_flags.push_back("--raft_heartbeat_interval_ms=5");
 #else
-  ts_flags.push_back("--raft_heartbeat_interval_ms=1");
+  ts_flags.emplace_back("--raft_heartbeat_interval_ms=1");
 #endif
-  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
-  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
+  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=1");
+  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=1");
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 
@@ -1244,9 +1244,9 @@ void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
   FLAGS_num_tablet_servers = 3;
   vector<string> ts_flags, master_flags;
   // Don't use the hybrid clock as we set logical timestamps on ops.
-  ts_flags.push_back("--use_hybrid_clock=false");
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--use_hybrid_clock=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
 
   // Kill all the servers but one.
@@ -1585,8 +1585,8 @@ TEST_F(RaftConsensusITest, TestLeaderStepDown) {
   FLAGS_num_tablet_servers = 3;
 
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
 
   vector<TServerDetails*> tservers;
@@ -1726,7 +1726,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   FLAGS_num_replicas = 3;
   vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
   vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
@@ -1807,7 +1807,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   FLAGS_num_replicas = 3;
   vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
   vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
@@ -1873,7 +1873,7 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   FLAGS_num_replicas = 3;
   vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
   vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
@@ -1957,8 +1957,8 @@ TEST_F(RaftConsensusITest, TestElectPendingVoter) {
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 5;
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
 
   vector<TServerDetails*> tservers;
@@ -2070,7 +2070,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   FLAGS_num_replicas = 3;
   vector<string> ts_flags = { "--enable_leader_failure_detection=false" };
   vector<string> master_flags = { "--master_add_server_when_underreplicated=false" };
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
 
   vector<TServerDetails*> tservers;
@@ -2242,20 +2242,20 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
 
   // If failure detection were on, a follower could be elected as leader after
   // we kill the leader below.
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
 
   // Very low memory limit to ease testing.
   // When using tcmalloc, we set it to 30MB, since we can get accurate process memory
   // usage statistics. Otherwise, set to only 4MB, since we'll only be throttling based
   // on our tracked memory.
 #ifdef TCMALLOC_ENABLED
-  ts_flags.push_back("--memory_limit_hard_bytes=30000000");
+  ts_flags.emplace_back("--memory_limit_hard_bytes=30000000");
 #else
   ts_flags.push_back("--memory_limit_hard_bytes=4194304");
 #endif
   // Don't let transaction memory tracking get in the way.
-  ts_flags.push_back("--tablet_transaction_memory_limit_mb=-1");
+  ts_flags.emplace_back("--tablet_transaction_memory_limit_mb=-1");
 
   BuildAndStart(ts_flags, master_flags);
 
@@ -2421,7 +2421,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   // Start the cluster with a low per-tablet transaction memory limit, so that
   // the test can complete faster.
   vector<string> flags;
-  flags.push_back("--tablet_transaction_memory_limit_mb=2");
+  flags.emplace_back("--tablet_transaction_memory_limit_mb=2");
   BuildAndStart(flags);
 
   // Kill both followers.
@@ -2868,8 +2868,8 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   const int kNumOps = 10;
 
   vector<string> ts_flags, master_flags;
-  ts_flags.push_back("--enable_leader_failure_detection=false");
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  ts_flags.emplace_back("--enable_leader_failure_detection=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   BuildAndStart(ts_flags, master_flags);
 
   vector<TServerDetails*> tservers;
@@ -2958,7 +2958,7 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
               // Disable core dumps since we will inject FATAL errors, and dumping
               // core can take a long time.
               "--disable_core_dumps"};
-  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;

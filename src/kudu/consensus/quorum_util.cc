@@ -351,7 +351,7 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
 
     vector<string> pending_change_strs;
     if (DiffPeers(pending_peer_infos, &pending_change_strs)) {
-      change_strs.push_back("pending config changed");
+      change_strs.emplace_back("pending config changed");
       change_strs.insert(change_strs.end(), pending_change_strs.cbegin(),
                          pending_change_strs.cend());
     }

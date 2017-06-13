@@ -308,21 +308,21 @@ class PeriodicWebUIChecker {
     // List of master and ts web pages to fetch
     vector<std::string> master_pages, ts_pages;
 
-    master_pages.push_back("/metrics");
-    master_pages.push_back("/masters");
-    master_pages.push_back("/tables");
-    master_pages.push_back("/dump-entities");
-    master_pages.push_back("/tablet-servers");
-    master_pages.push_back("/mem-trackers");
+    master_pages.emplace_back("/metrics");
+    master_pages.emplace_back("/masters");
+    master_pages.emplace_back("/tables");
+    master_pages.emplace_back("/dump-entities");
+    master_pages.emplace_back("/tablet-servers");
+    master_pages.emplace_back("/mem-trackers");
 
-    ts_pages.push_back("/metrics");
-    ts_pages.push_back("/tablets");
+    ts_pages.emplace_back("/metrics");
+    ts_pages.emplace_back("/tablets");
     if (!tablet_id.empty()) {
       ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0",
                                              tablet_id));
     }
-    ts_pages.push_back("/maintenance-manager");
-    ts_pages.push_back("/mem-trackers");
+    ts_pages.emplace_back("/maintenance-manager");
+    ts_pages.emplace_back("/mem-trackers");
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
@@ -495,8 +495,7 @@ Status LinkedListTester::LoadLinkedList(
     MonoTime now = MonoTime::Now();
     if (next_sample < now) {
       Timestamp now(client_->GetLatestObservedTimestamp());
-      sampled_timestamps_and_counts_.push_back(
-          pair<uint64_t,int64_t>(now.ToUint64() + 1, *written_count));
+      sampled_timestamps_and_counts_.emplace_back(now.ToUint64() + 1, *written_count);
       next_sample += sample_interval;
       LOG(INFO) << "Sample at HT timestamp: " << now.ToString()
                 << " Inserted count: " << *written_count;

@@ -79,9 +79,9 @@ void VersionMigrationTest::StartCluster(const vector<string>& extra_ts_flags,
   if (!bin_path.empty()) opts.daemon_bin_path = bin_path;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_master_flags = extra_master_flags;
-  opts.extra_master_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
+  opts.extra_master_flags.emplace_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
   opts.extra_tserver_flags = extra_ts_flags;
-  opts.extra_tserver_flags.push_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
+  opts.extra_tserver_flags.emplace_back("--undefok=unlock_experimental_flags,unlock_unsafe_flags");
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   verifier_.reset(new LogVerifier(cluster_.get()));
   ASSERT_OK(cluster_->Start());

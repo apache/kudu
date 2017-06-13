@@ -190,7 +190,7 @@ int RunTool(int argc, char** argv, bool show_help) {
         // Invoke the action with whatever arguments remain, skipping this one.
         deque<string> remaining_args;
         for (int j = i + 1; j < argc; j++) {
-          remaining_args.push_back(argv[j]);
+          remaining_args.emplace_back(argv[j]);
         }
         return DispatchCommand(chain, next_action, remaining_args);
       }

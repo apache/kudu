@@ -152,7 +152,7 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
   // The data is the concatenation of the header and the bloom itself.
   vector<Slice> slices;
-  slices.push_back(Slice(hdr_str));
+  slices.emplace_back(hdr_str);
   slices.push_back(bloom_builder_.slice());
 
   // Append to the file.

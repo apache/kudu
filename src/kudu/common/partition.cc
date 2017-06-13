@@ -751,7 +751,7 @@ string PartitionSchema::RangeKeyDebugString(const ConstContiguousRow& key) const
     string column;
     int32_t column_idx = key.schema()->find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
-      components.push_back("<unknown-column>");
+      components.emplace_back("<unknown-column>");
       break;
     }
     key.schema()->column(column_idx).DebugCellAppend(key.cell(column_idx), &column);

@@ -391,7 +391,7 @@ void ServerBase::MetricsLoggingThread() {
 
     // Collect the metrics JSON string.
     vector<string> metrics;
-    metrics.push_back("*");
+    metrics.emplace_back("*");
     MetricJsonOptions opts;
     opts.include_raw_histograms = true;
 

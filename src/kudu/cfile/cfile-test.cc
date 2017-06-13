@@ -226,10 +226,10 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
-      slices.push_back(Slice("Head"));
-      slices.push_back(Slice("Body"));
-      slices.push_back(Slice("Tail"));
-      slices.push_back(Slice(reinterpret_cast<uint8_t *>(&i), 4));
+      slices.emplace_back("Head");
+      slices.emplace_back("Body");
+      slices.emplace_back("Tail");
+      slices.emplace_back(reinterpret_cast<uint8_t *>(&i), 4);
       ASSERT_OK(w.AppendRawBlock(slices, i, nullptr, Slice(), "raw-data"));
     }
     ASSERT_OK(w.Finish());
@@ -834,7 +834,7 @@ TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
   w.AddMetadataPair("header_key", "header_value");
   ASSERT_OK(w.Start());
   vector<Slice> slices;
-  slices.push_back(Slice("HelloWorld"));
+  slices.emplace_back("HelloWorld");
   ASSERT_OK(w.AppendRawBlock(slices, 1, nullptr, Slice(), "raw-data"));
   ASSERT_OK(w.Finish());
 

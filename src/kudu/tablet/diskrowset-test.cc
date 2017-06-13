@@ -318,7 +318,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Take a snapshot of the pre-update state.
   vector<MvccSnapshot> snaps;
-  snaps.push_back(MvccSnapshot(mvcc_));
+  snaps.emplace_back(mvcc_);
 
 
   // Update the single row multiple times, taking an MVCC snapshot
@@ -347,7 +347,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
       tx.Commit();
     }
-    snaps.push_back(MvccSnapshot(mvcc_));
+    snaps.emplace_back(mvcc_);
   }
 
   // Ensure that MVCC is respected by reading the value at each of the stored
