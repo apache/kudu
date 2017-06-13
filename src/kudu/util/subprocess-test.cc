@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
@@ -134,6 +135,25 @@ TEST_F(SubprocessTest, TestEnvVars) {
   ASSERT_EQ(buf, fgets(buf, sizeof(buf), in));
   ASSERT_STREQ("bar\n", &buf[0]);
   ASSERT_OK(p.Wait());
+}
+
+// Test that the the subprocesses CWD can be set.
+TEST_F(SubprocessTest, TestCurrentDir) {
+  string dir_path = GetTestPath("d");
+  string file_path = JoinPathSegments(dir_path, "f");
+  ASSERT_OK(Env::Default()->CreateDir(dir_path));
+  std::unique_ptr<WritableFile> file;
+  ASSERT_OK(Env::Default()->NewWritableFile(file_path, &file));
+
+  Subprocess p({ "/bin/ls", "f" });
+  p.SetCurrentDir(dir_path);
+  p.ShareParentStdout(false);
+  ASSERT_OK(p.Start());
+  ASSERT_OK(p.Wait());
+
+  int rc;
+  ASSERT_OK(p.GetExitStatus(&rc, nullptr));
+  EXPECT_EQ(0, rc);
 }
 
 // Tests writing to the subprocess stdin.

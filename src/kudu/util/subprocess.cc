@@ -50,9 +50,10 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"
-#include "kudu/util/stopwatch.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 
+using std::map;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -418,6 +419,11 @@ Status Subprocess::Start() {
     // don't explicitly ignore any other signals in Kudu.
     ResetSigPipeHandlerToDefault();
 
+    // Set the current working directory of the subprocess.
+    if (!cwd_.empty()) {
+      PCHECK(chdir(cwd_.c_str()) == 0);
+    }
+
     // Set the environment for the subprocess. This is more portable than
     // using execvpe(), which doesn't exist on OS X. We rely on the 'p'
     // variant of exec to do $PATH searching if the executable specified
@@ -680,8 +686,14 @@ Status Subprocess::DoWait(int* wait_status, WaitMode mode) {
   return Status::OK();
 }
 
-void Subprocess::SetEnvVars(std::map<std::string, std::string> env) {
+void Subprocess::SetEnvVars(map<string, string> env) {
+  CHECK_EQ(state_, kNotStarted);
   env_ = std::move(env);
+}
+
+void Subprocess::SetCurrentDir(string cwd) {
+  CHECK_EQ(state_, kNotStarted);
+  cwd_ = std::move(cwd);
 }
 
 void Subprocess::SetFdShared(int stdfd, bool share) {

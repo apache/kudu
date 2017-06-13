@@ -76,6 +76,11 @@ class Subprocess {
   // Repeated calls to this function replace earlier calls.
   void SetEnvVars(std::map<std::string, std::string> env);
 
+  // Set the initial current working directory of the subprocess.
+  //
+  // Must be set before starting the subprocess.
+  void SetCurrentDir(std::string cwd);
+
   // Start the subprocess. Can only be called once.
   //
   // This returns a bad Status if the fork() fails. However,
@@ -175,6 +180,7 @@ class Subprocess {
   int child_pid_;
   enum StreamMode fd_state_[3];
   int child_fds_[3];
+  std::string cwd_;
 
   // The cached wait status if Wait()/WaitNoBlock() has been called.
   // Only valid if state_ == kExited.
