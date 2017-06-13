@@ -17,12 +17,14 @@
 
 #pragma once
 
-#include <boost/optional/optional_fwd.hpp>
+#include <iosfwd>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <boost/optional/optional_fwd.hpp>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -118,35 +120,26 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
     EXTERNAL_REQUEST
   };
 
-  static scoped_refptr<RaftConsensus> Create(
-    ConsensusOptions options,
-    scoped_refptr<ConsensusMetadata> cmeta,
-    const RaftPeerPB& local_peer_pb,
-    const scoped_refptr<MetricEntity>& metric_entity,
-    scoped_refptr<TimeManager> time_manager,
-    ReplicaTransactionFactory* txn_factory,
-    const std::shared_ptr<rpc::Messenger>& messenger,
-    const scoped_refptr<log::Log>& log,
-    const std::shared_ptr<MemTracker>& parent_mem_tracker,
-    const Callback<void(const std::string& reason)>& mark_dirty_clbk,
-    ThreadPool* raft_pool);
-
   RaftConsensus(ConsensusOptions options,
-                scoped_refptr<ConsensusMetadata> cmeta,
-                gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
-                gscoped_ptr<PeerMessageQueue> queue,
-                gscoped_ptr<PeerManager> peer_manager,
-                std::unique_ptr<ThreadPoolToken> raft_pool_token,
-                const scoped_refptr<MetricEntity>& metric_entity,
-                std::string peer_uuid,
-                scoped_refptr<TimeManager> time_manager,
-                ReplicaTransactionFactory* txn_factory,
-                const scoped_refptr<log::Log>& log,
-                std::shared_ptr<MemTracker> parent_mem_tracker,
-                Callback<void(const std::string& reason)> mark_dirty_clbk);
+                RaftPeerPB local_peer_pb,
+                scoped_refptr<ConsensusMetadataManager> cmeta_manager,
+                ThreadPool* raft_pool);
+
+  // Initializes the RaftConsensus object. This should be called before
+  // publishing this object to any thread other than the thread that invoked
+  // the constructor.
+  Status Init();
 
   // Starts running the Raft consensus algorithm.
-  Status Start(const ConsensusBootstrapInfo& info);
+  // Start() is not thread-safe. Calls to Start() should be externally
+  // synchronized with calls accessing non-const members of this class.
+  Status Start(const ConsensusBootstrapInfo& info,
+               gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
+               scoped_refptr<log::Log> log,
+               scoped_refptr<TimeManager> time_manager,
+               ReplicaTransactionFactory* txn_factory,
+               scoped_refptr<MetricEntity> metric_entity,
+               Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   // Returns true if RaftConsensus is running.
   bool IsRunning() const;
@@ -332,7 +325,10 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // NOTE: When adding / changing values in this enum, add the corresponding
   // values to State_Name().
   enum State {
-    // State after the replica is built.
+    // RaftConsensus has been freshly constructed.
+    kNew,
+
+    // RaftConsensus has been initialized.
     kInitialized,
 
     // State signaling the replica accepts requests (from clients
@@ -690,8 +686,13 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
 
   const ConsensusOptions options_;
 
-  // The UUID of the local peer.
-  const std::string peer_uuid_;
+  // Information about the local peer, including the local UUID.
+  const RaftPeerPB local_peer_pb_;
+
+  // Consensus metadata service.
+  const scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
+
+  ThreadPool* const raft_pool_;
 
   // TODO(dralves) hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.
@@ -727,12 +728,12 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // The currently pending rounds that have not yet been committed by
   // consensus. Protected by 'lock_'.
   // TODO(todd) these locks will become more fine-grained.
-  PendingRounds pending_;
+  std::unique_ptr<PendingRounds> pending_;
 
   Random rng_;
 
   // TODO(mpercy): Plumb this from ServerBase.
-  RandomizedFailureMonitor failure_monitor_;
+  std::unique_ptr<RandomizedFailureMonitor> failure_monitor_;
 
   scoped_refptr<FailureDetector> failure_detector_;
 
@@ -751,7 +752,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // This is used to calculate back-off of the election timeout.
   int failed_elections_since_stable_leader_;
 
-  const Callback<void(const std::string& reason)> mark_dirty_clbk_;
+  Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
   AtomicBool shutdown_;
 
@@ -760,8 +761,6 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
 
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
   scoped_refptr<AtomicGauge<int64_t> > term_metric_;
-
-  std::shared_ptr<MemTracker> parent_mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

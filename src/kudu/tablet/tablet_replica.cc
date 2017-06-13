@@ -18,15 +18,16 @@
 #include "kudu/tablet/tablet_replica.h"
 
 #include <algorithm>
-#include <gflags/gflags.h>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/consensus/consensus_meta.h"
+#include <gflags/gflags.h>
+
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
@@ -55,10 +56,6 @@
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 
-using std::map;
-using std::shared_ptr;
-using std::unique_ptr;
-
 namespace kudu {
 namespace tablet {
 
@@ -85,13 +82,14 @@ METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time
                         10000000, 2);
 
 using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusMetadata;
 using consensus::ConsensusOptions;
 using consensus::ConsensusRound;
 using consensus::OpId;
+using consensus::PeerProxyFactory;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using consensus::RaftConsensus;
+using consensus::RpcPeerProxyFactory;
 using consensus::TimeManager;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::WRITE_OP;
@@ -99,6 +97,9 @@ using log::Log;
 using log::LogAnchorRegistry;
 using rpc::Messenger;
 using rpc::ResultTracker;
+using std::map;
+using std::shared_ptr;
+using std::unique_ptr;
 using strings::Substitute;
 
 TabletReplica::TabletReplica(
@@ -154,28 +155,11 @@ Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
     log_ = log;
     result_tracker_ = result_tracker;
 
+    TRACE("Creating consensus instance");
     ConsensusOptions options;
     options.tablet_id = meta_->tablet_id();
-
-    TRACE("Creating consensus instance");
-
-    scoped_refptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK(cmeta_manager_->Load(tablet_id_, &cmeta));
-
-    scoped_refptr<TimeManager> time_manager(new TimeManager(
-        clock, tablet_->mvcc_manager()->GetCleanTimestamp()));
-
-    consensus_ = RaftConsensus::Create(options,
-                                       cmeta,
-                                       local_peer_pb_,
-                                       metric_entity,
-                                       time_manager,
-                                       this,
-                                       messenger_,
-                                       log_.get(),
-                                       tablet_->mem_tracker(),
-                                       mark_dirty_clbk_,
-                                       raft_pool);
+    consensus_.reset(new RaftConsensus(options, local_peer_pb_, cmeta_manager_, raft_pool));
+    RETURN_NOT_OK(consensus_->Init());
   }
 
   if (tablet_->metrics() != nullptr) {
@@ -197,7 +181,19 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
 
-  RETURN_NOT_OK(consensus_->Start(bootstrap_info));
+  gscoped_ptr<PeerProxyFactory> peer_proxy_factory(new RpcPeerProxyFactory(messenger_));
+  scoped_refptr<TimeManager> time_manager(new TimeManager(
+      clock_, tablet_->mvcc_manager()->GetCleanTimestamp()));
+
+  RETURN_NOT_OK(consensus_->Start(
+      bootstrap_info,
+      std::move(peer_proxy_factory),
+      log_,
+      std::move(time_manager),
+      this,
+      tablet_->GetMetricEntity(),
+      mark_dirty_clbk_));
+
   {
     std::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, BOOTSTRAPPING);

@@ -157,66 +157,50 @@ class RaftConsensusQuorumTest : public KuduTest {
     return raft_config;
   }
 
-  void BuildPeers() {
+  Status BuildPeers() {
+    CHECK_EQ(config_.peers_size(), cmeta_managers_.size());
+    CHECK_EQ(config_.peers_size(), fs_managers_.size());
     for (int i = 0; i < config_.peers_size(); i++) {
-      auto proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
-
-      auto txn_factory = new TestTransactionFactory(logs_[i].get());
-
       scoped_refptr<ConsensusMetadata> cmeta;
-      CHECK_OK(cmeta_managers_[i]->Create(kTestTablet, config_,
-                                          kMinimumTerm, &cmeta));
+      RETURN_NOT_OK(cmeta_managers_[i]->Create(kTestTablet, config_, kMinimumTerm, &cmeta));
 
       RaftPeerPB local_peer_pb;
-      CHECK_OK(GetRaftConfigMember(config_, fs_managers_[i]->uuid(), &local_peer_pb));
-
-      scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
-      gscoped_ptr<PeerMessageQueue> queue(
-          new PeerMessageQueue(metric_entity_,
-                               logs_[i],
-                               time_manager,
-                               local_peer_pb,
-                               kTestTablet,
-                               raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
-
-      unique_ptr<ThreadPoolToken> pool_token(
-          raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT));
-
-      gscoped_ptr<PeerManager> peer_manager(
-          new PeerManager(options_.tablet_id,
-                          config_.peers(i).permanent_uuid(),
-                          proxy_factory,
-                          queue.get(),
-                          pool_token.get(),
-                          logs_[i]));
+      RETURN_NOT_OK(GetRaftConfigMember(config_, fs_managers_[i]->uuid(), &local_peer_pb));
 
       scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
-                            std::move(cmeta),
-                            gscoped_ptr<PeerProxyFactory>(proxy_factory),
-                            std::move(queue),
-                            std::move(peer_manager),
-                            std::move(pool_token),
-                            metric_entity_,
-                            config_.peers(i).permanent_uuid(),
-                            time_manager,
-                            txn_factory,
-                            logs_[i],
-                            parent_mem_trackers_[i],
-                            Bind(&DoNothing)));
+                            config_.peers(i),
+                            cmeta_managers_[i],
+                            raft_pool_.get()));
+      RETURN_NOT_OK(peer->Init());
 
-      txn_factory->SetConsensus(peer.get());
-      txn_factories_.push_back(txn_factory);
       peers_->AddPeer(config_.peers(i).permanent_uuid(), peer);
     }
+    return Status::OK();
   }
 
   Status StartPeers() {
     ConsensusBootstrapInfo boot_info;
 
     TestPeerMap all_peers = peers_->GetPeerMapCopy();
-    for (const TestPeerMap::value_type& entry : all_peers) {
-      RETURN_NOT_OK(entry.second->Start(boot_info));
+    for (int i = 0; i < config_.peers_size(); i++) {
+      scoped_refptr<RaftConsensus> peer;
+      RETURN_NOT_OK(peers_->GetPeerByIdx(i, &peer));
+
+      gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(peers_.get()));
+      scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
+      auto txn_factory = new TestTransactionFactory(logs_[i].get());
+      txn_factory->SetConsensus(peer.get());
+      txn_factories_.push_back(txn_factory);
+
+      RETURN_NOT_OK(peer->Start(
+          boot_info,
+          std::move(proxy_factory),
+          logs_[i],
+          time_manager,
+          txn_factory,
+          metric_entity_,
+          Bind(&DoNothing)));
     }
     return Status::OK();
   }
@@ -224,7 +208,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   Status BuildConfig(int num) {
     RETURN_NOT_OK(BuildFsManagersAndLogs(num));
     BuildInitialRaftConfigPB(num);
-    BuildPeers();
+    RETURN_NOT_OK(BuildPeers());
     return Status::OK();
   }
 
