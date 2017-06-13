@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include <boost/optional.hpp>
@@ -488,11 +489,11 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 
 DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
                        LogAnchorRegistry* log_anchor_registry,
-                       const TabletMemTrackers& mem_trackers)
+                       TabletMemTrackers mem_trackers)
     : rowset_metadata_(std::move(rowset_metadata)),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      mem_trackers_(mem_trackers) {}
+      mem_trackers_(std::move(mem_trackers)) {}
 
 Status DiskRowSet::Open() {
   TRACE_EVENT0("tablet", "DiskRowSet::Open");

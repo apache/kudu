@@ -49,7 +49,7 @@ class RequestTracker : public RefCountedThreadSafe<RequestTracker> {
  public:
   typedef int64_t SequenceNumber;
   static const RequestTracker::SequenceNumber kNoSeqNo;
-  explicit RequestTracker(const std::string& client_id);
+  explicit RequestTracker(std::string client_id);
 
   // Creates a new, unique, sequence number.
   // Sequence numbers are assigned in increasing integer order.

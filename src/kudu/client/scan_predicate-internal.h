@@ -17,6 +17,7 @@
 #ifndef KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 #define KUDU_CLIENT_SCAN_PREDICATE_INTERNAL_H
 
+#include <utility>
 #include <vector>
 
 #include "kudu/client/scan_predicate.h"
@@ -47,8 +48,8 @@ class KuduPredicate::Data {
 // the error is returned.
 class ErrorPredicateData : public KuduPredicate::Data {
  public:
-  explicit ErrorPredicateData(const Status& s)
-      : status_(s) {
+  explicit ErrorPredicateData(Status s)
+      : status_(std::move(s)) {
   }
 
   virtual ~ErrorPredicateData() {

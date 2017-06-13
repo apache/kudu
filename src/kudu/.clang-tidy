@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-Checks:          'clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-alpha*,-*,readability-*,-readability-braces-around-statements,llvm-include-order,misc-*,-modernize-*,performance-*,-readability-implicit-bool-cast,google-*,-google-readability-braces-around-statements,-readability-redundant-string-init,modernize-make-shared,modernize-shrink-to-fit,modernize-use-emplace'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-alpha*,-*,readability-*,-readability-braces-around-statements,llvm-include-order,misc-*,-modernize-*,performance-*,-readability-implicit-bool-cast,google-*,-google-readability-braces-around-statements,-readability-redundant-string-init,modernize-make-shared,modernize-shrink-to-fit,modernize-use-emplace,modernize-pass-by-value'
 HeaderFilterRegex: '.*,-*.pb.h'
 CheckOptions:
   - key:             readability-identifier-naming.ClassCase

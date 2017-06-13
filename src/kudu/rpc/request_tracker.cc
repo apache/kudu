@@ -18,6 +18,7 @@
 #include "kudu/rpc/request_tracker.h"
 
 #include <mutex>
+#include <utility>
 
 #include "kudu/gutil/map-util.h"
 
@@ -26,8 +27,8 @@ namespace rpc {
 
 const RequestTracker::SequenceNumber RequestTracker::kNoSeqNo = -1;
 
-RequestTracker::RequestTracker(const string& client_id)
-    : client_id_(client_id),
+RequestTracker::RequestTracker(string client_id)
+    : client_id_(std::move(client_id)),
       next_(0) {}
 
 Status RequestTracker::NewSeqNo(SequenceNumber* seq_no) {

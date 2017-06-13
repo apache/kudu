@@ -112,8 +112,8 @@ string SpacePad(StringPiece s, int len) {
 
 } // anonymous namespace
 
-ModeBuilder::ModeBuilder(const string& name)
-    : name_(name) {
+ModeBuilder::ModeBuilder(string name)
+    : name_(std::move(name)) {
 }
 
 ModeBuilder& ModeBuilder::Description(const string& description) {
@@ -190,9 +190,9 @@ string Mode::BuildHelpXML(const vector<Mode*>& chain) const {
   return xml;
 }
 
-ActionBuilder::ActionBuilder(const string& name, const ActionRunner& runner)
-    : name_(name),
-      runner_(runner) {
+ActionBuilder::ActionBuilder(string name, ActionRunner runner)
+    : name_(std::move(name)),
+      runner_(std::move(runner)) {
 }
 
 ActionBuilder& ActionBuilder::Description(const string& description) {

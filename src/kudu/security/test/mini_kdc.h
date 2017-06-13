@@ -62,7 +62,7 @@ class MiniKdc {
   MiniKdc();
 
   // Creates a new MiniKdc with the provided options.
-  explicit MiniKdc(const MiniKdcOptions& options);
+  explicit MiniKdc(MiniKdcOptions options);
 
   ~MiniKdc();
 

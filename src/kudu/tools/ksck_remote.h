@@ -20,6 +20,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -94,9 +95,9 @@ class RemoteKsckMaster : public KsckMaster {
 
  private:
 
-  RemoteKsckMaster(const std::vector<std::string>& master_addresses,
+  RemoteKsckMaster(std::vector<std::string> master_addresses,
                    std::shared_ptr<rpc::Messenger> messenger)
-      : master_addresses_(master_addresses),
+      : master_addresses_(std::move(master_addresses)),
         messenger_(std::move(messenger)) {
   }
 

@@ -70,7 +70,7 @@ class ModeBuilder {
  public:
   // Creates a new ModeBuilder with a specific name (e.g. "fs"). The name
   // uniquely identifies the mode amongst its siblings in the tree.
-  explicit ModeBuilder(const std::string& name);
+  explicit ModeBuilder(std::string name);
 
   // Sets the description of this mode (e.g. "Operate on a local Kudu
   // filesystem"), to be used when printing help.
@@ -191,7 +191,7 @@ class ActionBuilder {
   // Creates a new ActionBuilder with a specific name (e.g. "format") and
   // action runner. The name uniquely identifies the action amongst its
   // siblings in the tree.
-  ActionBuilder(const std::string& name, const ActionRunner& runner);
+  ActionBuilder(std::string name, ActionRunner runner);
 
   // Sets the description of this action (e.g. "Format a new Kudu filesystem"),
   // to be used when printing the parent mode's help and the action's help.

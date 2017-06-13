@@ -102,12 +102,12 @@ using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
 TabletReplica::TabletReplica(const scoped_refptr<TabletMetadata>& meta,
-                             const consensus::RaftPeerPB& local_peer_pb,
+                             consensus::RaftPeerPB local_peer_pb,
                              ThreadPool* apply_pool,
                              Callback<void(const std::string& reason)> mark_dirty_clbk)
     : meta_(meta),
       tablet_id_(meta->tablet_id()),
-      local_peer_pb_(local_peer_pb),
+      local_peer_pb_(std::move(local_peer_pb)),
       state_(NOT_STARTED),
       last_status_("Tablet initializing..."),
       apply_pool_(apply_pool),

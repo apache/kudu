@@ -17,6 +17,8 @@
 
 #include "kudu/tablet/multi_column_writer.h"
 
+#include <utility>
+
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
@@ -34,11 +36,11 @@ using std::unique_ptr;
 
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
                                      const Schema* schema,
-                                     const string& tablet_id)
+                                     string tablet_id)
   : fs_(fs),
     schema_(schema),
     finished_(false),
-    tablet_id_(tablet_id) {
+    tablet_id_(std::move(tablet_id)) {
 }
 
 MultiColumnWriter::~MultiColumnWriter() {

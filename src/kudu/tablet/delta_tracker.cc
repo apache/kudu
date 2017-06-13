@@ -21,6 +21,7 @@
 #include <glog/stl_logging.h>
 #include <mutex>
 #include <set>
+#include <utility>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
@@ -64,12 +65,12 @@ Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
                            rowid_t num_rows,
                            LogAnchorRegistry* log_anchor_registry,
-                           const TabletMemTrackers& mem_trackers)
+                           TabletMemTrackers mem_trackers)
     : rowset_metadata_(std::move(rowset_metadata)),
       num_rows_(num_rows),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      mem_trackers_(mem_trackers),
+      mem_trackers_(std::move(mem_trackers)),
       dms_empty_(true) {}
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,

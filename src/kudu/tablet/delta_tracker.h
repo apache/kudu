@@ -241,7 +241,7 @@ class DeltaTracker {
 
   DeltaTracker(std::shared_ptr<RowSetMetadata> rowset_metadata,
                rowid_t num_rows, log::LogAnchorRegistry* log_anchor_registry,
-               const TabletMemTrackers& mem_trackers);
+               TabletMemTrackers mem_trackers);
 
   Status DoOpen();
 

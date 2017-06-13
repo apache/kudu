@@ -24,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
@@ -54,8 +55,8 @@ MiniKdc::MiniKdc()
     : MiniKdc(MiniKdcOptions()) {
 }
 
-MiniKdc::MiniKdc(const MiniKdcOptions& options)
-    : options_(options) {
+MiniKdc::MiniKdc(MiniKdcOptions options)
+    : options_(std::move(options)) {
   if (options_.realm.empty()) {
     options_.realm = "KRBTEST.COM";
   }

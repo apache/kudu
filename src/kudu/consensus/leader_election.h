@@ -100,7 +100,7 @@ class VoteCounter {
 // The result of a leader election.
 struct ElectionResult {
  public:
-  ElectionResult(const VoteRequestPB& vote_request, ElectionVote decision,
+  ElectionResult(VoteRequestPB vote_request, ElectionVote decision,
                  ConsensusTerm highest_term, const std::string& message);
 
   // The vote request that was sent to the voters for this election.

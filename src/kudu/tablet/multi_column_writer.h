@@ -48,7 +48,7 @@ class MultiColumnWriter {
  public:
   MultiColumnWriter(FsManager* fs,
                     const Schema* schema,
-                    const std::string& tablet_id);
+                    std::string tablet_id);
 
   virtual ~MultiColumnWriter();
 

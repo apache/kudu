@@ -23,6 +23,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -108,14 +109,14 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
-                                     const boost::optional<security::SignedTokenPB>& authn_token,
+                                     boost::optional<security::SignedTokenPB> authn_token,
                                      RpcEncryption encryption)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
       tls_context_(tls_context),
       encryption_(encryption),
       tls_negotiated_(false),
-      authn_token_(authn_token),
+      authn_token_(std::move(authn_token)),
       psecret_(nullptr, std::free),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),

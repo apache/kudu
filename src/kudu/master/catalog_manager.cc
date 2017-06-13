@@ -3343,13 +3343,13 @@ class AsyncAddServerTask : public RetryingTSRpcTask {
  public:
   AsyncAddServerTask(Master *master,
                      const scoped_refptr<TabletInfo>& tablet,
-                     const ConsensusStatePB& cstate,
+                     ConsensusStatePB cstate,
                      ThreadSafeRandom* rng)
     : RetryingTSRpcTask(master,
                         gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
                         tablet->table()),
       tablet_(tablet),
-      cstate_(cstate),
+      cstate_(std::move(cstate)),
       rng_(rng) {
     deadline_ = MonoTime::Max(); // Never time out.
   }

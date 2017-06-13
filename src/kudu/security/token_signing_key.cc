@@ -33,8 +33,8 @@ using std::string;
 namespace kudu {
 namespace security {
 
-TokenSigningPublicKey::TokenSigningPublicKey(const TokenSigningPublicKeyPB& pb)
-    : pb_(pb) {
+TokenSigningPublicKey::TokenSigningPublicKey(TokenSigningPublicKeyPB pb)
+    : pb_(std::move(pb)) {
 }
 
 TokenSigningPublicKey::~TokenSigningPublicKey() {

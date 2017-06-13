@@ -289,8 +289,8 @@ class MockedPeerProxy : public TestPeerProxy {
 class NoOpTestPeerProxy : public TestPeerProxy {
  public:
 
-  explicit NoOpTestPeerProxy(ThreadPool* pool, const consensus::RaftPeerPB& peer_pb)
-    : TestPeerProxy(pool), peer_pb_(peer_pb) {
+  explicit NoOpTestPeerProxy(ThreadPool* pool, consensus::RaftPeerPB peer_pb)
+    : TestPeerProxy(pool), peer_pb_(std::move(peer_pb)) {
     last_received_.CopyFrom(MinimumOpId());
   }
 
@@ -366,7 +366,7 @@ typedef std::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerM
 // Thread-safe manager for list of peers being used in tests.
 class TestPeerMapManager {
  public:
-  explicit TestPeerMapManager(const RaftConfigPB& config) : config_(config) {}
+  explicit TestPeerMapManager(RaftConfigPB config) : config_(std::move(config)) {}
 
   void AddPeer(const std::string& peer_uuid, const scoped_refptr<RaftConsensus>& peer) {
     std::lock_guard<simple_spinlock> lock(lock_);

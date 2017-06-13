@@ -32,6 +32,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <ev++.h>
@@ -161,8 +162,8 @@ void RedirectToDevNull(int fd) {
 // Stateful libev watcher to help ReadFdsFully().
 class ReadFdsFullyHelper {
  public:
-  ReadFdsFullyHelper(const string& progname, ev::dynamic_loop* loop, int fd)
-      : progname_(progname) {
+  ReadFdsFullyHelper(string progname, ev::dynamic_loop* loop, int fd)
+      : progname_(std::move(progname)) {
     // Bind the watcher to the provided loop, to this functor, and to the
     // readable fd.
     watcher_.set(*loop);

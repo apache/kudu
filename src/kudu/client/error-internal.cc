@@ -17,14 +17,16 @@
 
 #include "kudu/client/error-internal.h"
 
+#include <utility>
+
 namespace kudu {
 
 namespace client {
 
 KuduError::Data::Data(gscoped_ptr<KuduWriteOperation> failed_op,
-                      const Status& status) :
+                      Status status) :
   failed_op_(std::move(failed_op)),
-  status_(status) {
+  status_(std::move(status)) {
 }
 
 } // namespace client

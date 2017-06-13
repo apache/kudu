@@ -20,6 +20,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional.hpp>
@@ -93,7 +94,7 @@ Status MasterServiceProxyForHostPort(const HostPort& hostport,
 // This is basically the "PIMPL" pattern.
 class Heartbeater::Thread {
  public:
-  Thread(const HostPort& master_address, TabletServer* server);
+  Thread(HostPort master_address, TabletServer* server);
 
   Status Start();
   Status Stop();
@@ -266,8 +267,8 @@ void Heartbeater::MarkTabletReportsAcknowledgedForTests(
 // Heartbeater::Thread
 ////////////////////////////////////////////////////////////
 
-Heartbeater::Thread::Thread(const HostPort& master_address, TabletServer* server)
-  : master_address_(master_address),
+Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
+  : master_address_(std::move(master_address)),
     server_(server),
     consecutive_failed_heartbeats_(0),
     next_report_seq_(0),

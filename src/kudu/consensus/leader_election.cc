@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <mutex>
+#include <utility>
 
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -130,9 +131,9 @@ bool VoteCounter::AreAllVotesIn() const {
 // ElectionResult
 ///////////////////////////////////////////////////
 
-ElectionResult::ElectionResult(const VoteRequestPB& vote_request, ElectionVote decision,
+ElectionResult::ElectionResult(VoteRequestPB vote_request, ElectionVote decision,
                                ConsensusTerm highest_voter_term, const std::string& message)
-  : vote_request(vote_request),
+  : vote_request(std::move(vote_request)),
     decision(decision),
     highest_voter_term(highest_voter_term),
     message(message) {

@@ -806,10 +806,10 @@ TEST_F(MasterTest, TestGetTableSchemaIsAtomicWithCreateTable) {
 class MasterMetadataVerifier : public TableVisitor,
                                public TabletVisitor {
  public:
-  MasterMetadataVerifier(const unordered_set<string>& live_table_names,
-                         const multiset<string>& dead_table_names)
-    : live_table_names_(live_table_names),
-      dead_table_names_(dead_table_names) {
+  MasterMetadataVerifier(unordered_set<string>  live_table_names,
+                         multiset<string>  dead_table_names)
+    : live_table_names_(std::move(live_table_names)),
+      dead_table_names_(std::move(dead_table_names)) {
   }
 
   virtual Status VisitTable(const std::string& table_id,

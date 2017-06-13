@@ -69,7 +69,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                       public consensus::ReplicaTransactionFactory {
  public:
   TabletReplica(const scoped_refptr<TabletMetadata>& meta,
-                const consensus::RaftPeerPB& local_peer_pb, ThreadPool* apply_pool,
+                consensus::RaftPeerPB local_peer_pb, ThreadPool* apply_pool,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   // Initializes the TabletReplica, namely creating the Log and initializing

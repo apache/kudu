@@ -60,7 +60,7 @@ class ClientNegotiation {
   // The provided TlsContext must outlive this negotiation instance.
   ClientNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
-                    const boost::optional<security::SignedTokenPB>& authn_token,
+                    boost::optional<security::SignedTokenPB> authn_token,
                     RpcEncryption encryption);
 
   // Enable PLAIN authentication.

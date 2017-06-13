@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -86,9 +87,9 @@ template <class FileType>
 class BaseDescriptor {
  public:
   BaseDescriptor(FileCache<FileType>* file_cache,
-                 const string& filename)
+                 string filename)
       : file_cache_(file_cache),
-        file_name_(filename) {}
+        file_name_(std::move(filename)) {}
 
   ~BaseDescriptor() {
     VLOG(2) << "Out of scope descriptor with file name: " << filename();

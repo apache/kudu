@@ -10,6 +10,8 @@
 #ifndef KUDU_GUTIL_BIND_INTERNAL_H_
 #define KUDU_GUTIL_BIND_INTERNAL_H_
 
+#include <utility>
+
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback_internal.h"
 #include "kudu/gutil/raw_scoped_refptr_mismatch_checker.h"
@@ -2542,11 +2544,11 @@ struct BindState<Runnable, RunType, void(P1, P2, P3,
   typedef UnwrapTraits<P3> Bound3UnwrapTraits;
   typedef UnwrapTraits<P4> Bound4UnwrapTraits;
 
-  BindState(Runnable runnable, P1 p1, P2 p2, const P3& p3, P4 p4)
+  BindState(Runnable runnable, P1 p1, P2 p2, P3 p3, P4 p4)
       : runnable_(std::move(runnable)),
         p1_(std::move(p1)),
         p2_(std::move(p2)),
-        p3_(p3),
+        p3_(std::move(p3)),
         p4_(std::move(p4)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }

@@ -36,7 +36,7 @@ namespace security {
 // This represents a standalone public key useful for token verification.
 class TokenSigningPublicKey {
  public:
-  explicit TokenSigningPublicKey(const TokenSigningPublicKeyPB& pb);
+  explicit TokenSigningPublicKey(TokenSigningPublicKeyPB pb);
   ~TokenSigningPublicKey();
 
   const TokenSigningPublicKeyPB& pb() const {

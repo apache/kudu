@@ -402,7 +402,7 @@ class DiskRowSet : public RowSet {
 
   DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
              log::LogAnchorRegistry* log_anchor_registry,
-             const TabletMemTrackers& mem_trackers);
+             TabletMemTrackers mem_trackers);
 
   Status Open();
 
