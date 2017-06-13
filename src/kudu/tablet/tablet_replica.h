@@ -72,27 +72,23 @@ class TransactionDriver;
 class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                       public consensus::ReplicaTransactionFactory {
  public:
-  TabletReplica(const scoped_refptr<TabletMetadata>& meta,
-                const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+  TabletReplica(scoped_refptr<TabletMetadata> meta,
+                scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
                 consensus::RaftPeerPB local_peer_pb,
                 ThreadPool* apply_pool,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
 
-  // Initializes the TabletReplica, namely creating the Log and initializing
-  // RaftConsensus.
-  Status Init(const std::shared_ptr<tablet::Tablet>& tablet,
-              const scoped_refptr<server::Clock>& clock,
-              const std::shared_ptr<rpc::Messenger>& messenger,
-              const scoped_refptr<rpc::ResultTracker>& result_tracker,
-              const scoped_refptr<log::Log>& log,
-              const scoped_refptr<MetricEntity>& metric_entity,
-              ThreadPool* raft_pool,
-              ThreadPool* prepare_pool);
-
   // Starts the TabletReplica, making it available for Write()s. If this
   // TabletReplica is part of a consensus configuration this will connect it to other replicas
   // in the consensus configuration.
-  Status Start(const consensus::ConsensusBootstrapInfo& info);
+  Status Start(const consensus::ConsensusBootstrapInfo& bootstrap_info,
+               std::shared_ptr<tablet::Tablet> tablet,
+               scoped_refptr<server::Clock> clock,
+               std::shared_ptr<rpc::Messenger> messenger,
+               scoped_refptr<rpc::ResultTracker> result_tracker,
+               scoped_refptr<log::Log> log,
+               ThreadPool* raft_pool,
+               ThreadPool* prepare_pool);
 
   // Shutdown this tablet replica.
   // If a shutdown is already in progress, blocks until that shutdown is complete.
@@ -287,8 +283,19 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;
 
   const std::string tablet_id_;
-
   const consensus::RaftPeerPB local_peer_pb_;
+  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_; // Assigned in tablet_replica-test
+
+  // Pool that executes apply tasks for transactions. This is a multi-threaded
+  // pool, constructor-injected by either the Master (for system tables) or
+  // the Tablet server.
+  ThreadPool* const apply_pool_;
+
+  // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
+  //
+  // Must be called whenever cluster membership or leadership changes, or when
+  // the tablet's schema changes.
+  const Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
   TabletStatePB state_;
   Status error_;
@@ -319,20 +326,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Token for serial task submission to the server-wide transaction prepare pool.
   std::unique_ptr<ThreadPoolToken> prepare_pool_token_;
 
-  // Pool that executes apply tasks for transactions. This is a multi-threaded
-  // pool, constructor-injected by either the Master (for system tables) or
-  // the Tablet server.
-  ThreadPool* apply_pool_;
-
   scoped_refptr<server::Clock> clock_;
-
-  scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
-
-  // Function to mark this TabletReplica's tablet as dirty in the TSTabletManager.
-  //
-  // Must be called whenever cluster membership or leadership changes, or when
-  // the tablet's schema changes.
-  Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
   // List of maintenance operations for the tablet that need information that only the peer
   // can provide.

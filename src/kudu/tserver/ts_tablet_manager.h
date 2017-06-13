@@ -229,7 +229,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // method. A TransitionInProgressDeleter must be passed as 'deleter' into
   // this method in order to remove that transition-in-progress entry when
   // opening the tablet is complete (in either a success or a failure case).
-  void OpenTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
+  void OpenTablet(const scoped_refptr<tablet::TabletReplica>& replica,
                   const scoped_refptr<TransitionInProgressDeleter>& deleter);
 
   // Open a tablet whose metadata has already been loaded.
@@ -252,7 +252,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // the TablerPeer object. See RegisterTablet() for details about the
   // semantics of 'mode' and the locking requirements.
   scoped_refptr<tablet::TabletReplica> CreateAndRegisterTabletReplica(
-      const scoped_refptr<tablet::TabletMetadata>& meta,
+      scoped_refptr<tablet::TabletMetadata> meta,
       RegisterTabletReplicaMode mode);
 
   // Helper to generate the report for a single tablet.

@@ -200,7 +200,7 @@ Status TSTabletManager::Init() {
 
     scoped_refptr<TabletReplica> replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                                this, meta, deleter)));
+                                                            this, replica, deleter)));
   }
 
   {
@@ -281,7 +281,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                              this, meta, deleter)));
+                                                          this, new_replica, deleter)));
 
   if (replica) {
     *replica = new_replica;
@@ -554,21 +554,23 @@ void TSTabletManager::RunTabletCopy(
   }
 
   // startup it's still in a valid, fully-copied state.
-  OpenTablet(meta, deleter);
+  OpenTablet(replica, deleter);
 }
 
 // Create and register a new TabletReplica, given tablet metadata.
 scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
-    const scoped_refptr<TabletMetadata>& meta, RegisterTabletReplicaMode mode) {
+    scoped_refptr<TabletMetadata> meta,
+    RegisterTabletReplicaMode mode) {
+  const string& tablet_id = meta->tablet_id();
   scoped_refptr<TabletReplica> replica(
-      new TabletReplica(meta,
+      new TabletReplica(std::move(meta),
                         cmeta_manager_,
                         local_peer_pb_,
                         server_->tablet_apply_pool(),
                         Bind(&TSTabletManager::MarkTabletDirty,
                              Unretained(this),
-                             meta->tablet_id())));
-  RegisterTablet(meta->tablet_id(), replica, mode);
+                             tablet_id)));
+  RegisterTablet(tablet_id, replica, mode);
   return replica;
 }
 
@@ -724,15 +726,14 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
   return Status::OK();
 }
 
-void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
-                                 const scoped_refptr<TransitionInProgressDeleter>& deleter) {
-  string tablet_id = meta->tablet_id();
+// Note: 'deleter' is not used in the body of OpenTablet(), but is required
+// anyway because its destructor performs cleanup that should only happen when
+// OpenTablet() completes.
+void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
+                                 const scoped_refptr<TransitionInProgressDeleter>& /*deleter*/) {
+  const string& tablet_id = replica->tablet_id();
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
-
-  scoped_refptr<TabletReplica> replica;
-  CHECK(LookupTablet(tablet_id, &replica))
-      << "Tablet not registered prior to OpenTabletAsync call: " << tablet_id;
 
   shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
@@ -747,10 +748,11 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     // potentially millions of transaction traces being attached to the
     // TabletCopy trace.
     ADOPT_TRACE(nullptr);
-    // TODO: handle crash mid-creation of tablet? do we ever end up with a
-    // partially created tablet here?
+
+    // TODO(mpercy): Handle crash mid-creation of tablet? Do we ever end up
+    // with a partially created tablet here?
     replica->SetBootstrapping();
-    s = BootstrapTablet(meta,
+    s = BootstrapTablet(replica->tablet_metadata(),
                         cmeta_manager_,
                         scoped_refptr<server::Clock>(server_->clock()),
                         server_->mem_tracker(),
@@ -771,25 +773,15 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
 
   MonoTime start(MonoTime::Now());
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "starting tablet") {
-    TRACE("Initializing tablet replica");
-    s =  replica->Init(tablet,
+    TRACE("Starting tablet replica");
+    s = replica->Start(bootstrap_info,
+                       tablet,
                        scoped_refptr<server::Clock>(server_->clock()),
                        server_->messenger(),
                        server_->result_tracker(),
                        log,
-                       tablet->GetMetricEntity(),
                        server_->raft_pool(),
                        server_->tablet_prepare_pool());
-
-    if (!s.ok()) {
-      LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to init: "
-                 << s.ToString();
-      replica->SetFailed(s);
-      return;
-    }
-
-    TRACE("Starting tablet replica");
-    s = replica->Start(bootstrap_info);
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
                  << s.ToString();

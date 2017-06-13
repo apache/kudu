@@ -331,6 +331,7 @@ class Tablet {
 
   const TabletMetadata *metadata() const { return metadata_.get(); }
   TabletMetadata *metadata() { return metadata_.get(); }
+  scoped_refptr<TabletMetadata> shared_metadata() const { return metadata_; }
 
   void SetCompactionHooksForTests(const std::shared_ptr<CompactionFaultHooks> &hooks);
   void SetFlushHooksForTests(const std::shared_ptr<FlushFaultHooks> &hooks);

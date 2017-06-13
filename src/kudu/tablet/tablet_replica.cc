@@ -103,23 +103,23 @@ using std::unique_ptr;
 using strings::Substitute;
 
 TabletReplica::TabletReplica(
-    const scoped_refptr<TabletMetadata>& meta,
-    const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+    scoped_refptr<TabletMetadata> meta,
+    scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
     consensus::RaftPeerPB local_peer_pb,
     ThreadPool* apply_pool,
     Callback<void(const std::string& reason)> mark_dirty_clbk)
-    : meta_(meta),
-      cmeta_manager_(cmeta_manager),
-      tablet_id_(meta->tablet_id()),
+    : meta_(DCHECK_NOTNULL(std::move(meta))),
+      cmeta_manager_(DCHECK_NOTNULL(std::move(cmeta_manager))),
+      tablet_id_(meta_->tablet_id()),
       local_peer_pb_(std::move(local_peer_pb)),
-      state_(NOT_STARTED),
-      last_status_("Tablet initializing..."),
-      apply_pool_(apply_pool),
       log_anchor_registry_(new LogAnchorRegistry()),
-      mark_dirty_clbk_(std::move(mark_dirty_clbk)) {}
+      apply_pool_(apply_pool),
+      mark_dirty_clbk_(std::move(mark_dirty_clbk)),
+      state_(NOT_STARTED),
+      last_status_("Tablet initializing...") {
+}
 
 TabletReplica::~TabletReplica() {
-  std::lock_guard<simple_spinlock> lock(lock_);
   // We should either have called Shutdown(), or we should have never called
   // Init().
   CHECK(!tablet_)
@@ -127,76 +127,85 @@ TabletReplica::~TabletReplica() {
       << TabletStatePB_Name(state_);
 }
 
-Status TabletReplica::Init(const shared_ptr<Tablet>& tablet,
-                           const scoped_refptr<server::Clock>& clock,
-                           const shared_ptr<Messenger>& messenger,
-                           const scoped_refptr<ResultTracker>& result_tracker,
-                           const scoped_refptr<Log>& log,
-                           const scoped_refptr<MetricEntity>& metric_entity,
-                           ThreadPool* raft_pool,
-                           ThreadPool* prepare_pool) {
-
+Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
+                            shared_ptr<Tablet> tablet,
+                            scoped_refptr<server::Clock> clock,
+                            shared_ptr<Messenger> messenger,
+                            scoped_refptr<ResultTracker> result_tracker,
+                            scoped_refptr<Log> log,
+                            ThreadPool* raft_pool,
+                            ThreadPool* prepare_pool) {
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
-  prepare_pool_token_ = prepare_pool->NewTokenWithMetrics(
-      ThreadPool::ExecutionMode::SERIAL,
-      {
-          METRIC_op_prepare_queue_length.Instantiate(metric_entity),
-          METRIC_op_prepare_queue_time.Instantiate(metric_entity),
-          METRIC_op_prepare_run_time.Instantiate(metric_entity)
-      });
   {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(BOOTSTRAPPING, state_);
-    tablet_ = tablet;
-    clock_ = clock;
-    messenger_ = messenger;
-    log_ = log;
-    result_tracker_ = result_tracker;
+    std::lock_guard<simple_spinlock> state_change_guard(state_change_lock_);
 
+    {
+      std::lock_guard<simple_spinlock> l(lock_);
+
+      CHECK_EQ(BOOTSTRAPPING, state_);
+
+      tablet_ = DCHECK_NOTNULL(std::move(tablet));
+      clock_ = DCHECK_NOTNULL(std::move(clock));
+      messenger_ = DCHECK_NOTNULL(std::move(messenger));
+      result_tracker_ = std::move(result_tracker); // Passed null in tablet_replica-test
+      log_ = DCHECK_NOTNULL(log); // Not moved because it's passed to RaftConsensus::Start() below.
+    }
+
+    // Unlock while we initialize RaftConsensus, which involves I/O.
     TRACE("Creating consensus instance");
     ConsensusOptions options;
     options.tablet_id = meta_->tablet_id();
-    consensus_.reset(new RaftConsensus(options, local_peer_pb_, cmeta_manager_, raft_pool));
-    RETURN_NOT_OK(consensus_->Init());
-  }
+    scoped_refptr<RaftConsensus> consensus(new RaftConsensus(std::move(options), local_peer_pb_,
+                                                             cmeta_manager_, raft_pool));
+    RETURN_NOT_OK(consensus->Init());
 
-  if (tablet_->metrics() != nullptr) {
-    TRACE("Starting instrumentation");
-    txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
-  }
-  txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
+    scoped_refptr<MetricEntity> metric_entity;
+    gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
+    scoped_refptr<TimeManager> time_manager;
+    {
+      std::lock_guard<simple_spinlock> l(lock_);
+      consensus_ = consensus;
+      metric_entity = tablet_->GetMetricEntity();
+      prepare_pool_token_ = prepare_pool->NewTokenWithMetrics(
+          ThreadPool::ExecutionMode::SERIAL,
+          {
+              METRIC_op_prepare_queue_length.Instantiate(metric_entity),
+              METRIC_op_prepare_queue_time.Instantiate(metric_entity),
+              METRIC_op_prepare_run_time.Instantiate(metric_entity)
+          });
 
-  TRACE("TabletReplica::Init() finished");
-  VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer Initted";
-  return Status::OK();
-}
+      if (tablet_->metrics()) {
+        TRACE("Starting instrumentation");
+        txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
+      }
+      txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
-Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info) {
-  std::lock_guard<simple_spinlock> l(state_change_lock_);
-  TRACE("Starting consensus");
+      TRACE("Starting consensus");
+      VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
+      VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
 
-  VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
+      peer_proxy_factory.reset(new RpcPeerProxyFactory(messenger_));
+      time_manager.reset(new TimeManager(clock_, tablet_->mvcc_manager()->GetCleanTimestamp()));
+    }
 
-  VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
+    // We cannot hold 'lock_' while we call RaftConsensus::Start() because it
+    // may invoke TabletReplica::StartReplicaTransaction() during startup, causing
+    // a self-deadlock. We take a ref to members protected by 'lock_' before
+    // unlocking.
+    RETURN_NOT_OK(consensus->Start(
+        bootstrap_info,
+        std::move(peer_proxy_factory),
+        log,
+        std::move(time_manager),
+        this,
+        metric_entity,
+        mark_dirty_clbk_));
 
-  gscoped_ptr<PeerProxyFactory> peer_proxy_factory(new RpcPeerProxyFactory(messenger_));
-  scoped_refptr<TimeManager> time_manager(new TimeManager(
-      clock_, tablet_->mvcc_manager()->GetCleanTimestamp()));
-
-  RETURN_NOT_OK(consensus_->Start(
-      bootstrap_info,
-      std::move(peer_proxy_factory),
-      log_,
-      std::move(time_manager),
-      this,
-      tablet_->GetMetricEntity(),
-      mark_dirty_clbk_));
-
-  {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(state_, BOOTSTRAPPING);
+    // Re-acquire 'lock_' to update our state variable.
+    std::lock_guard<simple_spinlock> l(lock_);
+    CHECK_EQ(BOOTSTRAPPING, state_); // We are still protected by 'state_change_lock_'.
     state_ = RUNNING;
   }
 

@@ -121,7 +121,6 @@ class TabletCopyTest : public KuduTabletTest {
                           Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
                                Unretained(this),
                                tablet()->tablet_id())));
-
     // TODO(dralves) similar to code in tablet_replica-test, consider refactor.
     RaftConfigPB config;
     config.add_peers()->CopyFrom(config_peer);
@@ -137,16 +136,15 @@ class TabletCopyTest : public KuduTabletTest {
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
     tablet_replica_->SetBootstrapping();
-    ASSERT_OK(tablet_replica_->Init(tablet(),
-                                    clock(),
-                                    messenger,
-                                    scoped_refptr<rpc::ResultTracker>(),
-                                    log,
-                                    metric_entity,
-                                    raft_pool_.get(),
-                                    prepare_pool_.get()));
     consensus::ConsensusBootstrapInfo boot_info;
-    ASSERT_OK(tablet_replica_->Start(boot_info));
+    ASSERT_OK(tablet_replica_->Start(boot_info,
+                                     tablet(),
+                                     clock(),
+                                     messenger,
+                                     scoped_refptr<rpc::ResultTracker>(),
+                                     log,
+                                     raft_pool_.get(),
+                                     prepare_pool_.get()));
     ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
     ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   }

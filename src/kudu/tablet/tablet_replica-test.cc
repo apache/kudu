@@ -104,7 +104,7 @@ class TabletReplicaTest : public KuduTabletTest {
 
     // "Bootstrap" and start the TabletReplica.
     tablet_replica_.reset(
-      new TabletReplica(make_scoped_refptr(tablet()->metadata()),
+      new TabletReplica(tablet()->shared_metadata(),
                         cmeta_manager,
                         config_peer,
                         apply_pool_.get(),
@@ -125,28 +125,28 @@ class TabletReplicaTest : public KuduTabletTest {
     scoped_refptr<ConsensusMetadata> cmeta;
     ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm,
                                     &cmeta));
-
-    scoped_refptr<Log> log;
-    ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
-                               *tablet()->schema(), tablet()->metadata()->schema_version(),
-                               metric_entity_.get(), &log));
-
-    tablet_replica_->SetBootstrapping();
-    ASSERT_OK(tablet_replica_->Init(tablet(),
-                                    clock(),
-                                    messenger_,
-                                    scoped_refptr<rpc::ResultTracker>(),
-                                    log,
-                                    metric_entity_,
-                                    raft_pool_.get(),
-                                    prepare_pool_.get()));
   }
 
-  Status StartPeer(const ConsensusBootstrapInfo& info) {
+  Status StartReplica(const ConsensusBootstrapInfo& info) {
+    scoped_refptr<Log> log;
+    RETURN_NOT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
+                            *tablet()->schema(), tablet()->metadata()->schema_version(),
+                            metric_entity_.get(), &log));
+    tablet_replica_->SetBootstrapping();
+    return tablet_replica_->Start(info,
+                                  tablet(),
+                                  clock(),
+                                  messenger_,
+                                  scoped_refptr<rpc::ResultTracker>(),
+                                  log,
+                                  raft_pool_.get(),
+                                  prepare_pool_.get());
+  }
+
+  Status StartReplicaAndWaitUntilLeader(const ConsensusBootstrapInfo& info) {
+    RETURN_NOT_OK(StartReplica(info));
     const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
-    RETURN_NOT_OK(tablet_replica_->Start(info));
-    RETURN_NOT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(kTimeout));
-    return Status::OK();
+    return tablet_replica_->consensus()->WaitUntilLeaderForTests(kTimeout);
   }
 
   void TabletReplicaStateChangedCallback(const string& tablet_id, const string& reason) {
@@ -299,7 +299,7 @@ class DelayedApplyTransaction : public WriteTransaction {
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_OK(StartPeer(info));
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
   Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
@@ -339,7 +339,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
 TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_OK(StartPeer(info));
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
   Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
@@ -419,7 +419,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
 TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_OK(StartPeer(info));
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
   Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
@@ -529,7 +529,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
 
 TEST_F(TabletReplicaTest, TestGCEmptyLog) {
   ConsensusBootstrapInfo info;
-  tablet_replica_->Start(info);
+  ASSERT_OK(StartReplica(info));
   // We don't wait on consensus on purpose.
   ASSERT_OK(tablet_replica_->RunLogGC());
 }

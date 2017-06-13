@@ -303,8 +303,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 
   InitLocalRaftPeerPB();
 
-  // TODO: handle crash mid-creation of tablet? do we ever end up with a
-  // partially created tablet here?
+  // TODO(matteo): handle crash mid-creation of tablet? do we ever end up with
+  // a partially created tablet here?
   tablet_replica_.reset(new TabletReplica(
       metadata,
       cmeta_manager_,
@@ -326,20 +326,17 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                 tablet_replica_->log_anchor_registry(),
                                 &consensus_info));
 
-  // TODO: Do we have a setSplittable(false) or something from the outside is
-  // handling split in the TS?
+  // TODO(matteo): Do we have a setSplittable(false) or something from the
+  // outside is handling split in the TS?
 
-  RETURN_NOT_OK_PREPEND(tablet_replica_->Init(tablet,
-                                              scoped_refptr<server::Clock>(master_->clock()),
-                                              master_->messenger(),
-                                              scoped_refptr<rpc::ResultTracker>(),
-                                              log,
-                                              tablet->GetMetricEntity(),
-                                              master_->raft_pool(),
-                                              master_->tablet_prepare_pool()),
-                        "Failed to Init() TabletReplica");
-
-  RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info),
+  RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info,
+                                               tablet,
+                                               scoped_refptr<server::Clock>(master_->clock()),
+                                               master_->messenger(),
+                                               scoped_refptr<rpc::ResultTracker>(),
+                                               log,
+                                               master_->raft_pool(),
+                                               master_->tablet_prepare_pool()),
                         "Failed to Start() TabletReplica");
 
   tablet_replica_->RegisterMaintenanceOps(master_->maintenance_manager());
