@@ -32,7 +32,7 @@ See the [Kudu 0.9.1 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 0.9.1 are available in the following formats:
 
-* [Kudu 0.9.1 source tarball](http://www.apache.org/closer.cgi?filename=incubator/kudu/0.9.1/apache-kudu-incubating-0.9.1.tar.gz&action=download)
+* [Kudu 0.9.1 source tarball](https://archive.apache.org/dist/incubator/kudu/0.9.1/apache-kudu-incubating-0.9.1.tar.gz)
   ([SHA1](https://archive.apache.org/dist/incubator/kudu/0.9.1/apache-kudu-incubating-0.9.1.tar.gz.sha),
   [MD5](https://archive.apache.org/dist/incubator/kudu/0.9.1/apache-kudu-incubating-0.9.1.tar.gz.md5),
   [Signature](https://archive.apache.org/dist/incubator/kudu/0.9.1/apache-kudu-incubating-0.9.1.tar.gz.asc))

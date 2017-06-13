@@ -32,7 +32,7 @@ See the [Kudu 0.8.0 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 0.8.0 are available in the following formats:
 
-* [Kudu 0.8.0 source tarball](http://www.apache.org/closer.cgi?filename=incubator/kudu/0.8.0/apache-kudu-incubating-0.8.0.tar.gz&action=download)
+* [Kudu 0.8.0 source tarball](https://archive.apache.org/dist/incubator/kudu/0.8.0/apache-kudu-incubating-0.8.0.tar.gz),
   ([SHA1](https://archive.apache.org/dist/incubator/kudu/0.8.0/apache-kudu-incubating-0.8.0.tar.gz.sha),
   [MD5](https://archive.apache.org/dist/incubator/kudu/0.8.0/apache-kudu-incubating-0.8.0.tar.gz.md5),
   [Signature](https://archive.apache.org/dist/incubator/kudu/0.8.0/apache-kudu-incubating-0.8.0.tar.gz.asc))
