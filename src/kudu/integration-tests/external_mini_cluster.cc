@@ -101,9 +101,6 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       start_process_timeout(MonoDelta::FromSeconds(30)) {
 }
 
-ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
-}
-
 ExternalMiniCluster::ExternalMiniCluster()
   : opts_(ExternalMiniClusterOptions()) {
 }

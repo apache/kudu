@@ -55,7 +55,6 @@ class ServerStatusPB;
 
 struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
-  ~ExternalMiniClusterOptions();
 
   // Number of masters to start.
   // Default: 1
