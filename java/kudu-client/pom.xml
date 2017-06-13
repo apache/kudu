@@ -23,7 +23,7 @@
     <parent>
         <groupId>org.apache.kudu</groupId>
         <artifactId>kudu-parent</artifactId>
-        <version>1.4.0</version>
+        <version>1.4.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>kudu-client</artifactId>
