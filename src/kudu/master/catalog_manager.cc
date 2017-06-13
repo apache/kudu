@@ -1494,7 +1494,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     table_ids_map_[table->id()] = table;
     table_names_map_[req.name()] = table;
     for (const auto& tablet : tablet_refs) {
-      InsertOrDie(&tablet_map_, tablet->tablet_id(), std::move(tablet));
+      InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
   TRACE("Inserted table and tablets into CatalogManager maps");
@@ -2150,7 +2150,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     // Insert new tablets into the global tablet map. After this, the tablets
     // will be visible in GetTabletLocations RPCs.
     for (const auto& tablet : tablets_to_add) {
-      InsertOrDie(&tablet_map_, tablet->tablet_id(), std::move(tablet));
+      InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
 

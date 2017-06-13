@@ -814,7 +814,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
     tablets_by_key.clear();
     MetaCacheEntry entry(expiration_time, "", "");
     VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
-    InsertOrDie(&tablets_by_key, "", std::move(entry));
+    InsertOrDie(&tablets_by_key, "", entry);
   } else {
 
     // The comments below will reference the following diagram:
@@ -841,7 +841,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       tablets_by_key.erase(tablets_by_key.begin(), tablets_by_key.lower_bound(first_lower_bound));
       MetaCacheEntry entry(expiration_time, "", first_lower_bound);
       VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
-      InsertOrDie(&tablets_by_key, "", std::move(entry));
+      InsertOrDie(&tablets_by_key, "", entry);
     }
 
     // last_upper_bound tracks the upper bound of the previously processed
@@ -861,7 +861,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
 
         MetaCacheEntry entry(expiration_time, last_upper_bound, tablet_lower_bound);
         VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
-        InsertOrDie(&tablets_by_key, last_upper_bound, std::move(entry));
+        InsertOrDie(&tablets_by_key, last_upper_bound, entry);
       }
       last_upper_bound = tablet_upper_bound;
 
@@ -907,7 +907,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
 
       InsertOrDie(&tablets_by_id_, tablet_id, remote);
-      InsertOrDie(&tablets_by_key, tablet_lower_bound, std::move(entry));
+      InsertOrDie(&tablets_by_key, tablet_lower_bound, entry);
     }
 
     if (!last_upper_bound.empty() && tablet_locations.size() < kMaxReturnedTableLocations) {
@@ -920,7 +920,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
 
       MetaCacheEntry entry(expiration_time, last_upper_bound, "");
       VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
-      InsertOrDie(&tablets_by_key, last_upper_bound, std::move(entry));
+      InsertOrDie(&tablets_by_key, last_upper_bound, entry);
     }
   }
 

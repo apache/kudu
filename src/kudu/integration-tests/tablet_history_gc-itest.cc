@@ -308,10 +308,10 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
                        int verify_round) {
     CHECK_GE(verify_round, cur_round_);
     if (verify_round == cur_round_) {
-      NO_FATALS(VerifySnapshotScan(std::move(scanner), std::move(snap_ts), verify_round));
+      NO_FATALS(VerifySnapshotScan(std::move(scanner), snap_ts, verify_round));
       return;
     }
-    ScannerTSPair pair(std::move(scanner), std::move(snap_ts));
+    ScannerTSPair pair(std::move(scanner), snap_ts);
     ScannerMap::value_type entry(verify_round, std::move(pair));
     scanners_.insert(std::move(entry));
   }
@@ -810,7 +810,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
         ASSERT_OK(scanner->SetSnapshotRaw(snapshot_ts.ToUint64()));
         ASSERT_OK(scanner->Open());
 
-        NO_FATALS(RegisterScanner(std::move(scanner), std::move(snapshot_ts), read_round));
+        NO_FATALS(RegisterScanner(std::move(scanner), snapshot_ts, read_round));
         break;
       }
       default: {

@@ -64,7 +64,7 @@ class RpczStore;
 struct AcceptorPoolInfo {
  public:
   explicit AcceptorPoolInfo(Sockaddr bind_address)
-      : bind_address_(std::move(bind_address)) {}
+      : bind_address_(bind_address) {}
 
   Sockaddr bind_address() const {
     return bind_address_;

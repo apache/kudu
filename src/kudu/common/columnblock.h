@@ -127,7 +127,7 @@ class ColumnBlock {
 class ColumnBlockCell {
  public:
   ColumnBlockCell(ColumnBlock block, size_t row_idx)
-      : block_(std::move(block)), row_idx_(row_idx) {}
+      : block_(block), row_idx_(row_idx) {}
 
   const TypeInfo* typeinfo() const { return block_.type_info(); }
   size_t size() const { return block_.type_info()->size(); }

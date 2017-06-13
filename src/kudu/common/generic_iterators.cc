@@ -460,7 +460,7 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
         return Status::InvalidArgument("No such column", col_pred.first);
       }
       VLOG(1) << "Pushing down predicate " << pred.ToString();
-      col_idx_predicates_.emplace_back(col_idx, move(col_pred.second));
+      col_idx_predicates_.emplace_back(col_idx, col_pred.second);
     }
 
     for (int32_t col_idx = 0; col_idx < schema().num_columns(); col_idx++) {
@@ -587,7 +587,7 @@ Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
   col_idx_predicates_.clear();
   col_idx_predicates_.reserve(spec->predicates().size());
   for (auto& predicate : spec->predicates()) {
-    col_idx_predicates_.emplace_back(move(predicate.second));
+    col_idx_predicates_.emplace_back(predicate.second);
   }
   spec->RemovePredicates();
 

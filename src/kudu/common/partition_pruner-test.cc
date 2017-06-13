@@ -781,7 +781,7 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   ASSERT_OK(split.SetUnixTimeMicros("time", 10));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ move(split) },
+  ASSERT_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>{ split },
                                               {}, schema, &partitions));
   ASSERT_EQ(4, partitions.size());
 

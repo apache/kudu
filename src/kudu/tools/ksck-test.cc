@@ -256,7 +256,7 @@ class KsckTest : public KuduTest {
     pb.set_tablet_id(tablet_id);
     pb.set_table_name("fake-table");
     pb.set_state(is_running ? tablet::RUNNING : tablet::FAILED);
-    InsertOrDie(&ts->tablet_status_map_, tablet_id, std::move(pb));
+    InsertOrDie(&ts->tablet_status_map_, tablet_id, pb);
   }
 
   Status RunKsck() {

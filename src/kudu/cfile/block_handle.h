@@ -69,7 +69,7 @@ class BlockHandle {
   bool is_data_owner_;
 
   explicit BlockHandle(Slice data)
-      : data_(std::move(data)),
+      : data_(data),
         is_data_owner_(true) {
   }
 

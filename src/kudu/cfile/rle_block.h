@@ -110,7 +110,7 @@ class RleBitMapBlockBuilder final : public BlockBuilder {
 class RleBitMapBlockDecoder final : public BlockDecoder {
  public:
   explicit RleBitMapBlockDecoder(Slice slice)
-      : data_(std::move(slice)),
+      : data_(slice),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),
@@ -299,7 +299,7 @@ template <DataType IntType>
 class RleIntBlockDecoder final : public BlockDecoder {
  public:
   explicit RleIntBlockDecoder(Slice slice)
-      : data_(std::move(slice)),
+      : data_(slice),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),

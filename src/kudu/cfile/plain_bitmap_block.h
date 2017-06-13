@@ -109,7 +109,7 @@ class PlainBitMapBlockBuilder final : public BlockBuilder {
 class PlainBitMapBlockDecoder final : public BlockDecoder {
  public:
   explicit PlainBitMapBlockDecoder(Slice slice)
-      : data_(std::move(slice)),
+      : data_(slice),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),

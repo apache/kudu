@@ -158,7 +158,7 @@ class ChecksumStepper {
       : schema_(schema),
         tablet_id_(std::move(tablet_id)),
         server_uuid_(std::move(server_uuid)),
-        options_(std::move(options)),
+        options_(options),
         callbacks_(callbacks),
         proxy_(std::move(proxy)),
         call_seq_id_(0),

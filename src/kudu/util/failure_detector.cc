@@ -37,7 +37,7 @@ using strings::Substitute;
 const int64_t RandomizedFailureMonitor::kMinWakeUpTimeMillis = 10;
 
 TimedFailureDetector::TimedFailureDetector(MonoDelta failure_period)
-    : failure_period_(std::move(failure_period)) {}
+    : failure_period_(failure_period) {}
 
 TimedFailureDetector::~TimedFailureDetector() {
   STLDeleteValues(&nodes_);

@@ -229,7 +229,7 @@ class RowSetKeyProbe {
   // NOTE: row_key is not copied and must be valid for the lifetime
   // of this object.
   explicit RowSetKeyProbe(ConstContiguousRow row_key)
-      : row_key_(std::move(row_key)) {
+      : row_key_(row_key) {
     encoded_key_ = EncodedKey::FromContiguousRow(row_key_);
     bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }

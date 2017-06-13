@@ -266,7 +266,7 @@ FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
                                      FileBlockLocation location,
                                      shared_ptr<WritableFile> writer)
     : block_manager_(block_manager),
-      location_(std::move(location)),
+      location_(location),
       writer_(std::move(writer)),
       state_(CLEAN),
       bytes_appended_(0) {

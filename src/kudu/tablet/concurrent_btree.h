@@ -836,7 +836,7 @@ class PreparedMutation {
   // The data referred to by the 'key' Slice passed in themust remain
   // valid for the lifetime of the PreparedMutation object.
   explicit PreparedMutation(Slice key)
-      : key_(std::move(key)), tree_(NULL), leaf_(NULL), needs_unlock_(false) {}
+      : key_(key), tree_(NULL), leaf_(NULL), needs_unlock_(false) {}
 
   ~PreparedMutation() {
     UnPrepare();

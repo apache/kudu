@@ -112,7 +112,7 @@ template<DataType Type>
 class PlainBlockDecoder final : public BlockDecoder {
  public:
   explicit PlainBlockDecoder(Slice slice)
-      : data_(std::move(slice)),
+      : data_(slice),
         parsed_(false),
         num_elems_(0),
         ordinal_pos_base_(0),

@@ -359,7 +359,7 @@ class TabletServerChecksumCallbacks : public ChecksumProgressCallbacks {
       reporter_(std::move(reporter)),
       tablet_server_(std::move(tablet_server)),
       queue_(std::move(queue)),
-      options_(std::move(options)),
+      options_(options),
       tablet_id_(std::move(tablet_id)) {
   }
 

@@ -587,7 +587,7 @@ void Heartbeater::Thread::MarkTabletDirty(const string& tablet_id, const string&
     state->change_seq = seqno;
   } else {
     TabletReportState state = { seqno };
-    InsertOrDie(&dirty_tablets_, tablet_id, std::move(state));
+    InsertOrDie(&dirty_tablets_, tablet_id, state);
   }
 }
 

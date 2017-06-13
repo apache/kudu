@@ -428,7 +428,7 @@ void MetricPrototypeRegistry::WriteAsJsonAndExit() const {
 //
 // MetricPrototype
 //
-MetricPrototype::MetricPrototype(CtorArgs args) : args_(std::move(args)) {
+MetricPrototype::MetricPrototype(CtorArgs args) : args_(args) {
   MetricPrototypeRegistry::get()->AddMetric(this);
 }
 

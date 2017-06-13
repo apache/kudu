@@ -81,7 +81,7 @@ DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata* rowset_metadata,
                                    BloomFilterSizing bloom_sizing)
     : rowset_metadata_(rowset_metadata),
       schema_(schema),
-      bloom_sizing_(std::move(bloom_sizing)),
+      bloom_sizing_(bloom_sizing),
       finished_(false),
       written_count_(0) {
   CHECK(schema->has_column_ids());
@@ -293,7 +293,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(
     : state_(kInitialized),
       tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
       schema_(schema),
-      bloom_sizing_(std::move(bloom_sizing)),
+      bloom_sizing_(bloom_sizing),
       target_rowset_size_(target_rowset_size),
       row_idx_in_cur_drs_(0),
       can_roll_(false),

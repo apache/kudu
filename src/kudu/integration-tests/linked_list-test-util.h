@@ -304,7 +304,7 @@ class PeriodicWebUIChecker {
  public:
   PeriodicWebUIChecker(const ExternalMiniCluster& cluster,
                        const std::string& tablet_id, MonoDelta period)
-      : period_(std::move(period)), is_running_(true) {
+      : period_(period), is_running_(true) {
     // List of master and ts web pages to fetch
     vector<std::string> master_pages, ts_pages;
 

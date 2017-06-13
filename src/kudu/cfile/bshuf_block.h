@@ -218,7 +218,7 @@ template<DataType Type>
 class BShufBlockDecoder final : public BlockDecoder {
  public:
   explicit BShufBlockDecoder(Slice slice)
-      : data_(std::move(slice)),
+      : data_(slice),
         parsed_(false),
         ordinal_pos_base_(0),
         num_elems_(0),

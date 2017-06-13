@@ -53,7 +53,7 @@ class DeltaKey {
   {}
 
   DeltaKey(rowid_t id, Timestamp timestamp)
-      : row_idx_(id), timestamp_(std::move(timestamp)) {}
+      : row_idx_(id), timestamp_(timestamp) {}
 
   // Encode this key into the given buffer.
   //

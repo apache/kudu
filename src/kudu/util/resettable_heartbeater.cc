@@ -90,7 +90,7 @@ ResettableHeartbeater::~ResettableHeartbeater() {
 ResettableHeartbeaterThread::ResettableHeartbeaterThread(
     std::string name, MonoDelta period, HeartbeatFunction function)
     : name_(std::move(name)),
-      period_(std::move(period)),
+      period_(period),
       function_(std::move(function)),
       run_latch_(0),
       shutdown_(false) {}

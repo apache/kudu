@@ -330,7 +330,7 @@ Status PartitionSchema::SplitRangeBounds(const Schema& schema,
       lower = std::move(*split);
     }
 
-    new_bounds.emplace_back(std::move(lower), std::move(upper));
+    new_bounds.emplace_back(std::move(lower), upper);
   }
 
   if (split != splits.end()) {

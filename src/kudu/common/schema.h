@@ -166,7 +166,7 @@ class ColumnSchema {
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
         read_default_(read_default ? new Variant(type, read_default) : NULL),
-        attributes_(std::move(attributes)) {
+        attributes_(attributes) {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != NULL) {

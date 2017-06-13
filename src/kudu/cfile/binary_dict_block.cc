@@ -191,7 +191,7 @@ Status BinaryDictBlockBuilder::GetLastKey(void* key_void) const {
 ////////////////////////////////////////////////////////////
 
 BinaryDictBlockDecoder::BinaryDictBlockDecoder(Slice slice, CFileIterator* iter)
-    : data_(std::move(slice)),
+    : data_(slice),
       parsed_(false),
       dict_decoder_(iter->GetDictDecoder()),
       parent_cfile_iter_(iter) {
