@@ -209,6 +209,10 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
   op->manager_.reset();
 }
 
+bool MaintenanceManager::disabled_for_tests() const {
+  return !ANNOTATE_UNPROTECTED_READ(FLAGS_enable_maintenance_manager);
+}
+
 void MaintenanceManager::RunSchedulerThread() {
   if (!FLAGS_enable_maintenance_manager) {
     LOG(INFO) << "Maintenance manager is disabled. Stopping thread.";
@@ -227,7 +231,8 @@ void MaintenanceManager::RunSchedulerThread() {
     //    1) there are no free threads available to perform a maintenance op.
     // or 2) we just tried to schedule an op but found nothing to run.
     // However, if it's time to shut down, we want to do so immediately.
-    while ((running_ops_ >= num_threads_ || prev_iter_found_no_work) && !shutdown_) {
+    while ((running_ops_ >= num_threads_ || prev_iter_found_no_work || disabled_for_tests()) &&
+           !shutdown_) {
       cond_.TimedWait(polling_interval);
       prev_iter_found_no_work = false;
     }

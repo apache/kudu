@@ -289,6 +289,10 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapTy;
 
+  // Return true if tests have currently disabled the maintenance
+  // manager by way of changing the gflags at runtime.
+  bool disabled_for_tests() const;
+
   void RunSchedulerThread();
 
   // find the best op, or null if there is nothing we want to run
