@@ -2618,7 +2618,7 @@ bool RaftConsensus::HasLeaderUnlocked() const {
 
 void RaftConsensus::ClearLeaderUnlocked() {
   DCHECK(lock_.is_locked());
-  SetLeaderUuidUnlocked("");
+  cmeta_->set_leader_uuid("");
 }
 
 const bool RaftConsensus::HasVotedCurrentTermUnlocked() const {
