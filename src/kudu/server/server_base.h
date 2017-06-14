@@ -120,10 +120,38 @@ class ServerBase {
   virtual ~ServerBase();
 
   virtual Status Init();
+
+  // Starts the server, including activating its RPC and HTTP endpoints such
+  // that incoming requests get processed.
   virtual Status Start();
+
+  // Shuts down the server.
   virtual void Shutdown();
 
+  // Registers a new RPC service. Once Start() is called, the server will
+  // process and dispatch incoming RPCs belonging to this service.
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
+
+  // Unregisters all RPC services. After this function returns, any subsequent
+  // incoming RPCs will be rejected.
+  //
+  // When shutting down, this function should be called before shutting down
+  // higher-level subsystems. For example:
+  // 1. ServerBase::UnregisterAllServices()
+  // 2. <shut down other subsystems>
+  // 3. ServerBase::Shutdown()
+  //
+  // TODO(adar): this should also wait on all outstanding RPCs to finish via
+  // Messenger::Shutdown, but doing that causes too many other shutdown-related
+  // issues. Here are a few that I observed:
+  // - tserver heartbeater threads access acceptor pool socket state.
+  // - Shutting down TabletReplicas invokes RPC callbacks for aborted
+  //   transactions, but Messenger::Shutdown has already destroyed too much
+  //   necessary RPC state.
+  //
+  // TODO(adar): this should also shutdown the webserver, but it isn't safe to
+  // do that before before shutting down the tserver heartbeater.
+  void UnregisterAllServices();
 
   void LogUnauthorizedAccess(rpc::RpcContext* rpc) const;
 

@@ -322,7 +322,13 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
 
 // See comment on Messenger::retain_self_ member.
 void Messenger::AllExternalReferencesDropped() {
-  Shutdown();
+  // The last external ref may have been dropped in the context of a task
+  // running on a reactor thread. If that's the case, a SYNC shutdown here
+  // would deadlock.
+  //
+  // If a SYNC shutdown is desired, Shutdown() should be called explicitly.
+  ShutdownInternal(ShutdownMode::ASYNC);
+
   CHECK(retain_self_.get());
   // If we have no more external references, then we no longer
   // need to retain ourself. We'll destruct as soon as all our
@@ -332,23 +338,41 @@ void Messenger::AllExternalReferencesDropped() {
 }
 
 void Messenger::Shutdown() {
+  ShutdownInternal(ShutdownMode::SYNC);
+}
+
+void Messenger::ShutdownInternal(ShutdownMode mode) {
+  if (mode == ShutdownMode::SYNC) {
+    ThreadRestrictions::AssertWaitAllowed();
+  }
+
   // Since we're shutting down, it's OK to block.
+  //
+  // TODO(adar): this ought to be removed (i.e. if ASYNC, waiting should be
+  // forbidden, and if SYNC, we already asserted above), but that's not
+  // possible while shutting down thread and acceptor pools still involves
+  // joining threads.
   ThreadRestrictions::ScopedAllowWait allow_wait;
 
-  std::lock_guard<percpu_rwlock> guard(lock_);
-  if (closing_) {
-    return;
-  }
-  VLOG(1) << "shutting down messenger " << name_;
-  closing_ = true;
+  acceptor_vec_t pools_to_shutdown;
+  RpcServicesMap services_to_release;
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    if (closing_) {
+      return;
+    }
+    VLOG(1) << "shutting down messenger " << name_;
+    closing_ = true;
 
-  DCHECK(rpc_services_.empty()) << "Unregister RPC services before shutting down Messenger";
-  rpc_services_.clear();
-
-  for (const shared_ptr<AcceptorPool>& acceptor_pool : acceptor_pools_) {
-    acceptor_pool->Shutdown();
+    services_to_release = std::move(rpc_services_);
+    pools_to_shutdown = std::move(acceptor_pools_);
   }
-  acceptor_pools_.clear();
+
+  // Destroy state outside of the lock.
+  services_to_release.clear();
+  for (const auto& p : pools_to_shutdown) {
+    p->Shutdown();
+  }
 
   // Need to shut down negotiation pool before the reactors, since the
   // reactors close the Connection sockets, and may race against the negotiation
@@ -357,9 +381,8 @@ void Messenger::Shutdown() {
   server_negotiation_pool_->Shutdown();
 
   for (Reactor* reactor : reactors_) {
-    reactor->Shutdown();
+    reactor->Shutdown(mode);
   }
-  tls_context_.reset();
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
@@ -398,21 +421,27 @@ Status Messenger::RegisterService(const string& service_name,
   }
 }
 
-Status Messenger::UnregisterAllServices() {
-  std::lock_guard<percpu_rwlock> guard(lock_);
-  rpc_services_.clear();
-  return Status::OK();
+void Messenger::UnregisterAllServices() {
+  RpcServicesMap to_release;
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    to_release = std::move(rpc_services_);
+  }
+  // Release the map outside of the lock.
 }
 
-// Unregister an RpcService.
 Status Messenger::UnregisterService(const string& service_name) {
-  std::lock_guard<percpu_rwlock> guard(lock_);
-  if (rpc_services_.erase(service_name)) {
-    return Status::OK();
-  } else {
-    return Status::ServiceUnavailable(Substitute("service $0 not registered on $1",
-                 service_name, name_));
+  scoped_refptr<RpcService> to_release;
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    to_release = EraseKeyReturnValuePtr(&rpc_services_, service_name);
+    if (!to_release) {
+      return Status::ServiceUnavailable(Substitute(
+          "service $0 not registered on $1", service_name, name_));
+    }
   }
+  // Release the service outside of the lock.
+  return Status::OK();
 }
 
 void Messenger::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
@@ -519,13 +548,14 @@ void Messenger::ScheduleOnReactor(const boost::function<void(const Status&)>& fu
 }
 
 const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_name) const {
-  std::lock_guard<percpu_rwlock> guard(lock_);
   scoped_refptr<RpcService> service;
-  if (FindCopy(rpc_services_, service_name, &service)) {
-    return service;
-  } else {
-    return scoped_refptr<RpcService>(nullptr);
+  {
+    std::lock_guard<percpu_rwlock> guard(lock_);
+    if (!FindCopy(rpc_services_, service_name, &service)) {
+      return scoped_refptr<RpcService>(nullptr);
+    }
   }
+  return service;
 }
 
 ThreadPool* Messenger::negotiation_pool(Connection::Direction dir) {

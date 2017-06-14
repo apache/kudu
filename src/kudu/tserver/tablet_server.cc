@@ -128,12 +128,20 @@ Status TabletServer::Start() {
 
 void TabletServer::Shutdown() {
   if (initted_) {
-    LOG(INFO) << "TabletServer shutting down...";
+    string name = ToString();
+    LOG(INFO) << name << " shutting down...";
+
+    // 1. Stop accepting new RPCs.
+    UnregisterAllServices();
+
+    // 2. Shut down the tserver's subsystems.
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    KuduServer::Shutdown();
     tablet_manager_->Shutdown();
-    LOG(INFO) << "TabletServer shut down complete. Bye!";
+
+    // 3. Shut down generic subsystems.
+    KuduServer::Shutdown();
+    LOG(INFO) << name << " shutdown complete.";
   }
 }
 

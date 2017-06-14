@@ -195,7 +195,7 @@ void RpcServer::Shutdown() {
   acceptor_pools_.clear();
 
   if (messenger_) {
-    WARN_NOT_OK(messenger_->UnregisterAllServices(), "Unable to unregister our services");
+    messenger_->UnregisterAllServices();
   }
 }
 

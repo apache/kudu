@@ -129,11 +129,17 @@ Status ReactorThread::Init() {
   return kudu::Thread::Create("reactor", "rpc reactor", &ReactorThread::RunThread, this, &thread_);
 }
 
-void ReactorThread::Shutdown() {
+void ReactorThread::Shutdown(Messenger::ShutdownMode mode) {
   CHECK(reactor_->closing()) << "Should be called after setting closing_ flag";
 
   VLOG(1) << name() << ": shutting down Reactor thread.";
   WakeThread();
+
+  if (mode == Messenger::ShutdownMode::SYNC) {
+    // Join() will return a bad status if asked to join on the currently
+    // running thread.
+    CHECK_OK(ThreadJoiner(thread_.get()).Join());
+  }
 }
 
 void ReactorThread::ShutdownInternal() {
@@ -588,7 +594,7 @@ Status Reactor::Init() {
   return thread_.Init();
 }
 
-void Reactor::Shutdown() {
+void Reactor::Shutdown(Messenger::ShutdownMode mode) {
   {
     std::lock_guard<LockType> l(lock_);
     if (closing_) {
@@ -597,7 +603,7 @@ void Reactor::Shutdown() {
     closing_ = true;
   }
 
-  thread_.Shutdown();
+  thread_.Shutdown(mode);
 
   // Abort all pending tasks. No new tasks can get scheduled after this
   // because ScheduleReactorTask() tests the closing_ flag set above.
@@ -610,7 +616,7 @@ void Reactor::Shutdown() {
 }
 
 Reactor::~Reactor() {
-  Shutdown();
+  Shutdown(Messenger::ShutdownMode::ASYNC);
 }
 
 const std::string& Reactor::name() const {

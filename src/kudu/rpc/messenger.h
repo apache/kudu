@@ -149,6 +149,7 @@ class Messenger {
   friend class MessengerBuilder;
   friend class Proxy;
   friend class Reactor;
+  friend class ReactorThread;
   typedef std::vector<std::shared_ptr<AcceptorPool> > acceptor_vec_t;
   typedef std::unordered_map<std::string, scoped_refptr<RpcService> > RpcServicesMap;
 
@@ -156,7 +157,10 @@ class Messenger {
 
   ~Messenger();
 
-  // Stop all communication and prevent further use.
+  // Stops all communication and prevents further use. If called explicitly,
+  // also waits for outstanding tasks running on reactor threads to finish,
+  // which means it may  not be called from a reactor task.
+  //
   // It's not required to call this -- dropping the shared_ptr provided
   // from MessengerBuilder::Build will automatically call this method.
   void Shutdown();
@@ -178,13 +182,18 @@ class Messenger {
                          std::shared_ptr<AcceptorPool>* pool);
 
   // Register a new RpcService to handle inbound requests.
+  //
+  // Returns an error if a service with the same name is already registered.
   Status RegisterService(const std::string& service_name,
                          const scoped_refptr<RpcService>& service);
 
-  // Unregister currently-registered RpcService.
+  // Unregister an RpcService by name.
+  //
+  // Returns an error if no service with this name can be found.
   Status UnregisterService(const std::string& service_name);
 
-  Status UnregisterAllServices();
+  // Unregisters all RPC services.
+  void UnregisterAllServices();
 
   // Queue a call for transmission. This will pick the appropriate reactor,
   // and enqueue a task on that reactor to assign and send the call.
@@ -259,6 +268,15 @@ class Messenger {
   void RunTimeoutThread();
   void UpdateCurTime();
 
+  // Shuts down the messenger.
+  //
+  // Depending on 'mode', may or may not wait on any outstanding reactor tasks.
+  enum class ShutdownMode {
+    SYNC,
+    ASYNC,
+  };
+  void ShutdownInternal(ShutdownMode mode);
+
   // Called by external-facing shared_ptr when the user no longer holds
   // any references. See 'retain_self_' for more info.
   void AllExternalReferencesDropped();
@@ -315,7 +333,7 @@ class Messenger {
   //         |                   |
   //         v
   //      Messenger    <------------ shared_ptr[2] --- Reactor
-  //       ^    |       ----------- bare pointer --> Reactor
+  //       ^    |      ------------- bare pointer  --> Reactor
   //        \__/
   //     shared_ptr[2]
   //     (retain_self_)
@@ -327,10 +345,11 @@ class Messenger {
   //
   // The teardown sequence is as follows:
   // Option 1): User calls "Shutdown()" explicitly:
-  //  - Messenger::Shutdown tells Reactors to shut down
-  //  - When each reactor thread finishes, it drops its shared_ptr[2]
+  //  - Messenger::Shutdown tells Reactors to shut down.
+  //  - When each reactor thread finishes, it drops its shared_ptr[2].
   //  - the Messenger::retain_self instance remains, keeping the Messenger
   //    alive.
+  //  - Before returning, Messenger::Shutdown waits for Reactors to shut down.
   //  - The user eventually drops its shared_ptr[1], which calls
   //    Messenger::AllExternalReferencesDropped. This drops retain_self_
   //    and results in object destruction.
@@ -342,11 +361,12 @@ class Messenger {
   //  - When the last Reactor thread dies, there will be no more shared_ptr[1] references
   //    and the Messenger will be destroyed.
   //
-  // The main goal of all of this confusion is that the reactor threads need to be able
-  // to shut down asynchronously, and we need to keep the Messenger alive until they
-  // do so. So, handing out a normal shared_ptr to users would force the Messenger
-  // destructor to Join() the reactor threads, which causes a problem if the user
-  // tries to destruct the Messenger from within a Reactor thread itself.
+  // The main goal of all of this confusion is that when using option 2, the
+  // reactor threads need to be able to shut down asynchronously, and we need
+  // to keep the Messenger alive until they do so. If normal shared_ptrs were
+  // handed out to users, the Messenger destructor may be forced to Join() the
+  // reactor threads, which deadlocks if the user destructs the Messenger from
+  // within a Reactor thread itself.
   std::shared_ptr<Messenger> retain_self_;
 
   DISALLOW_COPY_AND_ASSIGN(Messenger);

@@ -211,9 +211,16 @@ void Master::Shutdown() {
   if (state_ == kRunning) {
     string name = ToString();
     LOG(INFO) << name << " shutting down...";
+
+    // 1. Stop accepting new RPCs.
+    UnregisterAllServices();
+
+    // 2. Shut down the master's subsystems.
     maintenance_manager_->Shutdown();
-    KuduServer::Shutdown();
     catalog_manager_->Shutdown();
+
+    // 3. Shut down generic subsystems.
+    KuduServer::Shutdown();
     LOG(INFO) << name << " shutdown complete.";
   }
   state_ = kStopped;

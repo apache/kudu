@@ -17,8 +17,7 @@
 #ifndef KUDU_RPC_REACTOR_H
 #define KUDU_RPC_REACTOR_H
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <list>
 #include <map>
 #include <memory>
@@ -32,12 +31,13 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/util/thread.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 namespace kudu {
 
@@ -49,8 +49,6 @@ typedef std::list<scoped_refptr<Connection>> conn_list_t;
 
 class DumpRunningRpcsRequestPB;
 class DumpRunningRpcsResponsePB;
-class Messenger;
-class MessengerBuilder;
 class Reactor;
 enum class CredentialsPolicy;
 
@@ -148,10 +146,11 @@ class ReactorThread {
   Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                          DumpRunningRpcsResponsePB* resp);
 
-  // Block until the Reactor thread is shut down
+  // Shuts down a reactor thread, optionally waiting for it to exit.
+  // Reactor::Shutdown() must have been called already.
   //
-  // This must be called from another thread.
-  void Shutdown();
+  // If mode == SYNC, may not be called from the reactor thread itself.
+  void Shutdown(Messenger::ShutdownMode mode);
 
   // This method is thread-safe.
   void WakeThread();
@@ -290,8 +289,9 @@ class Reactor {
           const MessengerBuilder &bld);
   Status Init();
 
-  // Block until the Reactor is shut down
-  void Shutdown();
+  // Shuts down the reactor and its corresponding thread, optionally waiting
+  // until the thread has exited.
+  void Shutdown(Messenger::ShutdownMode mode);
 
   ~Reactor();
 

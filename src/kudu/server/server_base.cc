@@ -472,6 +472,18 @@ Status ServerBase::Start() {
 }
 
 void ServerBase::Shutdown() {
+  // First, stop accepting incoming requests and wait for any outstanding
+  // requests to finish processing.
+  //
+  // Note: prior to Messenger::Shutdown, it is assumed that any incoming RPCs
+  // deferred from reactor threads have already been cleaned up.
+  if (web_server_) {
+    web_server_->Stop();
+  }
+  rpc_server_->Shutdown();
+  messenger_->Shutdown();
+
+  // Next, shut down remaining server components.
   stop_background_threads_latch_.CountDown();
   if (metrics_logging_thread_) {
     metrics_logging_thread_->Join();
@@ -479,10 +491,10 @@ void ServerBase::Shutdown() {
   if (excess_log_deleter_thread_) {
     excess_log_deleter_thread_->Join();
   }
-  if (web_server_) {
-    web_server_->Stop();
-  }
-  rpc_server_->Shutdown();
+}
+
+void ServerBase::UnregisterAllServices() {
+  messenger_->UnregisterAllServices();
 }
 
 } // namespace server
