@@ -235,7 +235,7 @@ def publish(args):
   subprocess.check_call(["git", "commit", "-a", "-m", commit_msg])
 
   print "Success!"
-  subprocess.check_call(["git", "show", "--stat"])
+  subprocess.call(["git", "show", "--stat"])
   print
   print "To push:"
   print "  cd %s && git push" % PUBLISH_DIR
