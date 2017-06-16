@@ -134,6 +134,7 @@ unique_ptr<Mode> BuildClusterMode() {
       .AddOptionalParameter("checksum_scan")
       .AddOptionalParameter("checksum_scan_concurrency")
       .AddOptionalParameter("checksum_snapshot")
+      .AddOptionalParameter("checksum_timeout_sec")
       .AddOptionalParameter("color")
       .AddOptionalParameter("consensus")
       .AddOptionalParameter("tables")
