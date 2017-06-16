@@ -32,6 +32,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/spinlock_profiling.h"
 
 DEFINE_string(test_leave_files, "on_failure",
@@ -224,28 +225,38 @@ string GetTestDataDirectory() {
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout) {
   const MonoTime deadline = MonoTime::Now() + timeout;
+  {
+    // Disable --gtest_break_on_failure, or else the assertion failures
+    // inside our attempts will cause the test to SEGV even though we
+    // would like to retry.
+    bool old_break_on_failure = testing::FLAGS_gtest_break_on_failure;
+    auto c = MakeScopedCleanup([old_break_on_failure]() {
+      testing::FLAGS_gtest_break_on_failure = old_break_on_failure;
+    });
+    testing::FLAGS_gtest_break_on_failure = false;
 
-  for (int attempts = 0; MonoTime::Now() < deadline; attempts++) {
-    // Capture any assertion failures within this scope (i.e. from their function)
-    // into 'results'
-    testing::TestPartResultArray results;
-    testing::ScopedFakeTestPartResultReporter reporter(
-        testing::ScopedFakeTestPartResultReporter::INTERCEPT_ONLY_CURRENT_THREAD,
-        &results);
-    f();
+    for (int attempts = 0; MonoTime::Now() < deadline; attempts++) {
+      // Capture any assertion failures within this scope (i.e. from their function)
+      // into 'results'
+      testing::TestPartResultArray results;
+      testing::ScopedFakeTestPartResultReporter reporter(
+          testing::ScopedFakeTestPartResultReporter::INTERCEPT_ONLY_CURRENT_THREAD,
+          &results);
+      f();
 
-    // Determine whether their function produced any new test failure results.
-    bool has_failures = false;
-    for (int i = 0; i < results.size(); i++) {
-      has_failures |= results.GetTestPartResult(i).failed();
+      // Determine whether their function produced any new test failure results.
+      bool has_failures = false;
+      for (int i = 0; i < results.size(); i++) {
+        has_failures |= results.GetTestPartResult(i).failed();
+      }
+      if (!has_failures) {
+        return;
+      }
+
+      // If they had failures, sleep and try again.
+      int sleep_ms = (attempts < 10) ? (1 << attempts) : 1000;
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
     }
-    if (!has_failures) {
-      return;
-    }
-
-    // If they had failures, sleep and try again.
-    int sleep_ms = (attempts < 10) ? (1 << attempts) : 1000;
-    SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
   }
 
   // If we ran out of time looping, run their function one more time
