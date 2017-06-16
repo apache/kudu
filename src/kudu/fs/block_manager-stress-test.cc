@@ -185,11 +185,11 @@ class BlockManagerStressTest : public KuduTest {
     }
     if (!dd_manager_) {
       // Create a new directory manager if necessary.
-      CHECK_OK(DataDirManager::CreateNew(env_, data_dirs,
+      CHECK_OK(DataDirManager::CreateNewForTests(env_, data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     } else {
       // Open a existing directory manager, wiping away in-memory maps.
-      CHECK_OK(DataDirManager::OpenExisting(env_, data_dirs,
+      CHECK_OK(DataDirManager::OpenExistingForTests(env_, data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
     BlockManagerOptions opts;

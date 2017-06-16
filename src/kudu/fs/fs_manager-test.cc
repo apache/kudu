@@ -54,6 +54,9 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
+DECLARE_bool(suicide_on_eio);
+DECLARE_double(env_inject_eio);
+DECLARE_string(env_inject_eio_globs);
 DECLARE_string(umask);
 
 namespace kudu {
@@ -249,6 +252,54 @@ Status CountTmpFiles(Env* env, const vector<string>& roots, size_t* count) {
     RETURN_NOT_OK(CountTmpFiles(env, root, children, &checked_dirs, count));
   }
   return Status::OK();
+}
+
+TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
+  string wal_path = GetTestPath("wals");
+  // Create some top-level paths to place roots in.
+  vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
+  for (const string& path : data_paths) {
+    env_->CreateDir(path);
+  }
+  // Initialize the FS layout with roots in subdirectories of data_paths. When
+  // we canonicalize paths, we canonicalize the dirname of each path (e.g.
+  // data1) to ensure it exists. With this, we can inject failures in
+  // canonicalization by failing the dirname.
+  vector<string> data_roots = JoinPathSegmentsV(data_paths, "root");
+
+  FLAGS_suicide_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+
+  // Fail a directory, avoiding the metadata directory.
+  FLAGS_env_inject_eio_globs = data_paths[1];
+  ReinitFsManager(wal_path, data_roots);
+  Status s = fs_manager()->CreateInitialFileSystemLayout();
+  ASSERT_STR_MATCHES(s.ToString(), "Cannot create FS layout; at least one directory "
+                                   "failed to canonicalize");
+  FLAGS_env_inject_eio = 0;
+}
+
+TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
+  // Successfully create an FS layout.
+  string wal_path = GetTestPath("wals");
+  vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
+  for (const string& path : data_paths) {
+    env_->CreateDir(path);
+  }
+  vector<string> data_roots = { GetTestPath("data1/roots"), GetTestPath("data2/roots"),
+                                GetTestPath("data3/roots") };
+  ReinitFsManager(wal_path, data_roots);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+
+  // Now fail one of the directories.
+  FLAGS_suicide_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+  FLAGS_env_inject_eio_globs = JoinPathSegments(Substitute("$0,$0", data_paths[1]), "**");
+  ReinitFsManager(wal_path, data_roots);
+  ASSERT_OK(fs_manager()->Open(nullptr));
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+
+  FLAGS_env_inject_eio = 0;
 }
 
 TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {

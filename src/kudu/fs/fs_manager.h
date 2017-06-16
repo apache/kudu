@@ -169,7 +169,7 @@ class FsManager {
 
   std::string GetWalsRootDir() const {
     DCHECK(initted_);
-    return JoinPathSegments(canonicalized_wal_fs_root_, kWalDirName);
+    return JoinPathSegments(canonicalized_wal_fs_root_.path, kWalDirName);
   }
 
   std::string GetTabletWalDir(const std::string& tablet_id) const {
@@ -196,7 +196,7 @@ class FsManager {
   // Return the directory where the consensus metadata is stored.
   std::string GetConsensusMetadataDir() const {
     DCHECK(initted_);
-    return JoinPathSegments(canonicalized_metadata_fs_root_, kConsensusMetadataDirName);
+    return JoinPathSegments(canonicalized_metadata_fs_root_.path, kConsensusMetadataDirName);
   }
 
   // Return the path where ConsensusMetadataPB is stored.
@@ -299,15 +299,15 @@ class FsManager {
 
   std::shared_ptr<MemTracker> parent_mem_tracker_;
 
-  // Canonicalized forms of 'wal_fs_root_ and 'data_fs_roots_'. Constructed
-  // during Init().
+  // Canonicalized forms of the root directories. Constructed during Init()
+  // with ordering maintained.
   //
   // - The first data root is used as the metadata root.
   // - Common roots in the collections have been deduplicated.
-  std::string canonicalized_wal_fs_root_;
-  std::string canonicalized_metadata_fs_root_;
-  std::set<std::string> canonicalized_data_fs_roots_;
-  std::set<std::string> canonicalized_all_fs_roots_;
+  CanonicalizedRootAndStatus canonicalized_wal_fs_root_;
+  CanonicalizedRootAndStatus canonicalized_metadata_fs_root_;
+  CanonicalizedRootsList canonicalized_data_fs_roots_;
+  CanonicalizedRootsList canonicalized_all_fs_roots_;
 
   std::unique_ptr<InstanceMetadataPB> metadata_;
 

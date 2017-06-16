@@ -34,17 +34,38 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/test_util_prod.h"
 
 DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
 namespace fs {
 
+using pb_util::CreateMode;
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
+
+// Evaluates 'status_expr' and if it results in a disk failure, logs a message
+// and fails the instance, returning with no error.
+//
+// Note: if a non-disk-failure error is produced, the instance will remain
+// healthy. These errors should be handled externally.
+#define RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(status_expr, msg) do { \
+  const Status& _s = (status_expr); \
+  if (PREDICT_FALSE(!_s.ok())) { \
+    const Status _s_prepended = _s.CloneAndPrepend(msg); \
+    if (_s_prepended.IsDiskFailure()) { \
+      health_status_ = _s_prepended; \
+      LOG(ERROR) << "Instance failed: " << _s_prepended.ToString(); \
+      return Status::OK(); \
+    } \
+    return _s_prepended; \
+  } \
+} while (0)
 
 PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
                                                    string block_manager_type,
@@ -91,8 +112,9 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
   DCHECK(!lock_) <<
       "Opening a metadata file that's already locked would release the lock";
 
-  gscoped_ptr<PathInstanceMetadataPB> pb(new PathInstanceMetadataPB());
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()));
+  unique_ptr<PathInstanceMetadataPB> pb(new PathInstanceMetadataPB());
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()),
+      Substitute("Failed to read metadata file from $0", filename_));
 
   if (pb->block_manager_type() != block_manager_type_) {
     return Status::IOError(Substitute(
@@ -102,7 +124,8 @@ Status PathInstanceMetadataFile::LoadFromDisk() {
   }
 
   uint64_t block_size;
-  RETURN_NOT_OK(env_->GetBlockSize(filename_, &block_size));
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->GetBlockSize(filename_, &block_size),
+      Substitute("Failed to load metadata file. Could not get block size of $0", filename_));
   if (pb->filesystem_block_size_bytes() != block_size) {
     return Status::IOError("Wrong filesystem block size", Substitute(
         "Expected $0 but was $1", pb->filesystem_block_size_bytes(), block_size));
@@ -116,8 +139,8 @@ Status PathInstanceMetadataFile::Lock() {
   DCHECK(!lock_);
 
   FileLock* lock;
-  RETURN_NOT_OK_PREPEND(env_->LockFile(filename_, &lock),
-                        Substitute("Could not lock $0", filename_));
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->LockFile(filename_, &lock),
+                                      Substitute("Could not lock $0", filename_));
   lock_.reset(lock);
   return Status::OK();
 }
@@ -125,13 +148,14 @@ Status PathInstanceMetadataFile::Lock() {
 Status PathInstanceMetadataFile::Unlock() {
   DCHECK(lock_);
 
-  RETURN_NOT_OK_PREPEND(env_->UnlockFile(lock_.release()),
-                        Substitute("Could not unlock $0", filename_));
+  RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->UnlockFile(lock_.release()),
+                                      Substitute("Could not unlock $0", filename_));
   return Status::OK();
 }
 
 void PathInstanceMetadataFile::SetMetadataForTests(
-    gscoped_ptr<PathInstanceMetadataPB> metadata) {
+    unique_ptr<PathInstanceMetadataPB> metadata) {
+  DCHECK(IsGTest());
   metadata_ = std::move(metadata);
 }
 
@@ -148,6 +172,9 @@ Status PathInstanceMetadataFile::CheckIntegrity(
 
   // Set of UUIDs specified in the path set of the first instance. All instances
   // will be compared against this one to make sure all path sets match.
+  //
+  // Note that the first instance must be healthy, as it is the instance within
+  // the metadata root.
   set<string> all_uuids(instances[0]->metadata()->path_set().all_uuids().begin(),
                         instances[0]->metadata()->path_set().all_uuids().end());
 
@@ -158,6 +185,12 @@ Status PathInstanceMetadataFile::CheckIntegrity(
   }
 
   for (PathInstanceMetadataFile* instance : instances) {
+    // If the instance has failed (e.g. due to disk failure), there's no
+    // telling what its metadata looks like. Ignore it, and continue checking
+    // integrity across the healthy instances.
+    if (!instance->healthy()) {
+      continue;
+    }
     const PathSetPB& path_set = instance->metadata()->path_set();
 
     // Check that the instance's UUID has not been claimed by another instance.

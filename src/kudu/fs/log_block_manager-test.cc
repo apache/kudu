@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -28,6 +29,7 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager-test-util.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -40,6 +42,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::pb_util::ReadablePBContainerFile;
+using std::set;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -47,11 +50,14 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_int64(block_manager_max_open_files);
 DECLARE_bool(cache_force_single_shard);
+DECLARE_bool(suicide_on_eio);
+DECLARE_double(env_inject_eio);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
+DECLARE_int64(block_manager_max_open_files);
 DECLARE_int64(log_container_max_blocks);
+DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
@@ -85,7 +91,7 @@ class LogBlockManagerTest : public KuduTest {
   LogBlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity) {
     if (!dd_manager_) {
       // Ensure the directory manager is initialized.
-      CHECK_OK(DataDirManager::CreateNew(env_, { test_dir_ },
+      CHECK_OK(DataDirManager::CreateNewForTests(env_, { test_dir_ },
           DataDirManagerOptions(), &dd_manager_));
     }
     BlockManagerOptions opts;
@@ -100,7 +106,7 @@ class LogBlockManagerTest : public KuduTest {
     bm_.reset();
 
     // Re-open the directory manager first to clear any in-memory maps.
-    RETURN_NOT_OK(DataDirManager::OpenExisting(env_, { test_dir_ },
+    RETURN_NOT_OK(DataDirManager::OpenExistingForTests(env_, { test_dir_ },
         DataDirManagerOptions(), &dd_manager_));
 
     bm_.reset(CreateBlockManager(metric_entity));
@@ -1268,6 +1274,53 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_EQ(0, report.stats.live_block_count);
   ASSERT_EQ(0, report.stats.live_block_bytes_aligned);
+}
+
+// Test to ensure that if a directory cannot be read from, its startup process
+// will run smoothly. The directory manager will note the failed directories
+// and only healthy ones are reported.
+TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
+  // Initialize a new directory manager with multiple directories.
+  bm_.reset();
+  vector<string> test_dirs;
+  const int kNumDirs = 5;
+  for (int i = 0; i < kNumDirs; i++) {
+    string dir = GetTestPath(Substitute("test_dir_$0", i));
+    ASSERT_OK(env_->CreateDir(dir));
+    test_dirs.emplace_back(std::move(dir));
+  }
+  ASSERT_OK(DataDirManager::CreateNewForTests(env_, test_dirs,
+      DataDirManagerOptions(), &dd_manager_));
+
+  // Open the directory manager successfully.
+  ASSERT_OK(DataDirManager::OpenExistingForTests(env_, test_dirs,
+      DataDirManagerOptions(), &dd_manager_));
+
+  // Wire in a callback to fail data directories.
+  test_error_manager_->SetErrorNotificationCb(Bind(&DataDirManager::MarkDataDirFailedByUuid,
+                                                   Unretained(dd_manager_.get())));
+  bm_.reset(CreateBlockManager(nullptr));
+
+  // Fail one of the directories, chosen randomly.
+  FLAGS_suicide_on_eio = false;
+  FLAGS_env_inject_eio = 1;
+  int failed_idx = Random(SeedRandom()).Next() % kNumDirs;
+  FLAGS_env_inject_eio_globs = JoinPathSegments(test_dirs[failed_idx], "**");
+
+  // Check the report, ensuring the correct directory has failed.
+  FsReport report;
+  ASSERT_OK(bm_->Open(&report));
+  ASSERT_EQ(kNumDirs - 1, report.data_dirs.size());
+  for (const string& data_dir : report.data_dirs) {
+    ASSERT_NE(data_dir, test_dirs[failed_idx]);
+  }
+  const set<uint16_t>& failed_dirs = dd_manager_->GetFailedDataDirs();
+  ASSERT_EQ(1, failed_dirs.size());
+
+  uint16_t uuid_idx;
+  dd_manager_->FindUuidIndexByRoot(test_dirs[failed_idx], &uuid_idx);
+  ASSERT_TRUE(ContainsKey(failed_dirs, uuid_idx));
+  FLAGS_env_inject_eio = 0;
 }
 
 } // namespace fs

@@ -1584,8 +1584,17 @@ Status LogBlockManager::Open(FsReport* report) {
 
   vector<FsReport> reports(dd_manager_->data_dirs().size());
   vector<Status> statuses(dd_manager_->data_dirs().size());
-  int i = 0;
+  int i = -1;
   for (const auto& dd : dd_manager_->data_dirs()) {
+    i++;
+    uint16_t uuid_idx;
+    CHECK(dd_manager_->FindUuidIndexByDataDir(dd.get(), &uuid_idx));
+    // TODO(awong): store Statuses for each directory in the directory manager
+    // so we can avoid these artificial Statuses.
+    if (dd_manager_->IsDataDirFailed(uuid_idx)) {
+      statuses[i] = Status::IOError("Data directory failed", "", EIO);
+      continue;
+    }
     // Open the data dir asynchronously.
     dd->ExecClosure(
         Bind(&LogBlockManager::OpenDataDir,
@@ -1593,7 +1602,6 @@ Status LogBlockManager::Open(FsReport* report) {
              dd.get(),
              &reports[i],
              &statuses[i]));
-    i++;
   }
 
   // Wait for the opens to complete.

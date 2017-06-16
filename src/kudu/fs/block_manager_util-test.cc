@@ -28,7 +28,6 @@
 
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -43,6 +42,7 @@ namespace fs {
 
 using google::protobuf::RepeatedPtrField;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -117,9 +117,9 @@ static void RunCheckIntegrityTest(Env* env,
 
   int i = 0;
   for (const PathSetPB& ps : path_sets) {
-    gscoped_ptr<PathInstanceMetadataFile> instance(
+    unique_ptr<PathInstanceMetadataFile> instance(
         new PathInstanceMetadataFile(env, "asdf", Substitute("/tmp/$0/instance", i)));
-    gscoped_ptr<PathInstanceMetadataPB> metadata(new PathInstanceMetadataPB());
+    unique_ptr<PathInstanceMetadataPB> metadata(new PathInstanceMetadataPB());
     metadata->set_block_manager_type("asdf");
     metadata->set_filesystem_block_size_bytes(1);
     metadata->mutable_path_set()->CopyFrom(ps);

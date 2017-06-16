@@ -23,7 +23,6 @@
 #include <deque>
 #include <iostream>
 #include <map>
-#include <stack>
 #include <unordered_set>
 
 #include <boost/optional/optional.hpp>
@@ -33,10 +32,12 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -103,7 +104,6 @@ using kudu::pb_util::SecureDebugString;
 using std::map;
 using std::ostream;
 using std::set;
-using std::stack;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
@@ -177,63 +177,84 @@ Status FsManager::Init() {
   }
 
   // Deduplicate all of the roots.
-  set<string> all_roots;
-  all_roots.insert(wal_fs_root_);
-  for (const string& data_fs_root : data_fs_roots_) {
-    all_roots.insert(data_fs_root);
-  }
+  set<string> all_roots = { wal_fs_root_ };
+  all_roots.insert(data_fs_roots_.begin(), data_fs_roots_.end());
 
   // Build a map of original root --> canonicalized root, sanitizing each
-  // root a bit as we go.
-  typedef map<string, string> RootMap;
+  // root as we go and storing the canonicalization status.
+  typedef map<string, CanonicalizedRootAndStatus> RootMap;
   RootMap canonicalized_roots;
   for (const string& root : all_roots) {
     if (root.empty()) {
-      return Status::IOError("Empty string provided for filesystem root");
+      return Status::IOError("Empty string provided for path");
     }
     if (root[0] != '/') {
       return Status::IOError(
-          Substitute("Relative path $0 provided for filesystem root", root));
+          Substitute("Relative path $0 provided", root));
     }
-    {
-      string root_copy = root;
-      StripWhiteSpace(&root_copy);
-      if (root != root_copy) {
-        return Status::IOError(
-                  Substitute("Filesystem root $0 contains illegal whitespace", root));
-      }
+    string root_copy = root;
+    StripWhiteSpace(&root_copy);
+    if (root != root_copy) {
+      return Status::IOError(
+          Substitute("Path $0 contains illegal whitespace", root));
     }
 
     // Strip the basename when canonicalizing, as it may not exist. The
     // dirname, however, must exist.
     string canonicalized;
-    RETURN_NOT_OK(env_->Canonicalize(DirName(root), &canonicalized));
+    Status s = env_->Canonicalize(DirName(root), &canonicalized);
+    if (PREDICT_FALSE(!s.ok())) {
+      if (s.IsDiskFailure()) {
+        // If the directory fails to canonicalize due to disk failure, store
+        // the non-canonicalized form and the returned error.
+        canonicalized = DirName(root);
+      } else {
+        return s.CloneAndPrepend(Substitute("Failed to canonicalize $0", root));
+      }
+    }
     canonicalized = JoinPathSegments(canonicalized, BaseName(root));
-    InsertOrDie(&canonicalized_roots, root, canonicalized);
+    InsertOrDie(&canonicalized_roots, root, { canonicalized, s });
   }
 
   // All done, use the map to set the canonicalized state.
   canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, wal_fs_root_);
   if (!data_fs_roots_.empty()) {
-    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
+    set<string> unique_roots;
     for (const string& data_fs_root : data_fs_roots_) {
-      canonicalized_data_fs_roots_.insert(FindOrDie(canonicalized_roots, data_fs_root));
+      const auto& root = FindOrDie(canonicalized_roots, data_fs_root);
+      if (InsertIfNotPresent(&unique_roots, root.path)) {
+        canonicalized_data_fs_roots_.emplace_back(root);
+        canonicalized_all_fs_roots_.emplace_back(root);
+      }
+    }
+    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
+    if (!ContainsKey(unique_roots, canonicalized_wal_fs_root_.path)) {
+      canonicalized_all_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
     }
   } else {
     LOG(INFO) << "Data directories (fs_data_dirs) not provided";
     LOG(INFO) << "Using write-ahead log directory (fs_wal_dir) as data directory";
     canonicalized_metadata_fs_root_ = canonicalized_wal_fs_root_;
-    canonicalized_data_fs_roots_.insert(canonicalized_wal_fs_root_);
-  }
-  for (const RootMap::value_type& e : canonicalized_roots) {
-    canonicalized_all_fs_roots_.insert(e.second);
+    canonicalized_data_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
+    canonicalized_all_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
   }
 
+  // The server cannot start if the WAL root or metadata root failed to
+  // canonicalize.
+  const string& wal_root = canonicalized_wal_fs_root_.path;
+  RETURN_NOT_OK_PREPEND(canonicalized_wal_fs_root_.status,
+      Substitute("Write-ahead log directory $0 failed to canonicalize", wal_root));
+  const string& meta_root = canonicalized_metadata_fs_root_.path;
+  RETURN_NOT_OK_PREPEND(canonicalized_metadata_fs_root_.status,
+      Substitute("Metadata directory $0 failed to canonicalize", meta_root));
+
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "WAL root: " << canonicalized_wal_fs_root_;
-    VLOG(1) << "Metadata root: " << canonicalized_metadata_fs_root_;
-    VLOG(1) << "Data roots: " << canonicalized_data_fs_roots_;
-    VLOG(1) << "All roots: " << canonicalized_all_fs_roots_;
+    VLOG(1) << "WAL root: " << canonicalized_wal_fs_root_.path;
+    VLOG(1) << "Metadata root: " << canonicalized_metadata_fs_root_.path;
+    VLOG(1) << "Data roots: " <<
+      JoinStrings(DataDirManager::GetRootNames(canonicalized_data_fs_roots_), ",");
+    VLOG(1) << "All roots: " <<
+      JoinStrings(DataDirManager::GetRootNames(canonicalized_all_fs_roots_), ",");
   }
 
   initted_ = true;
@@ -259,10 +280,21 @@ Status FsManager::Open(FsReport* report) {
   //
   // Done first to minimize side effects in the case that the configured roots
   // are not yet initialized on disk.
-  for (const string& root : canonicalized_all_fs_roots_) {
+  for (auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      continue;
+    }
     gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
-    RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root),
-                                                   pb.get()));
+    Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
+                                                pb.get());
+    if (PREDICT_FALSE(!s.ok())) {
+      if (s.IsDiskFailure()) {
+        root.status = s.CloneAndPrepend("Failed to open instance file");
+        continue;
+      }
+      return s;
+    }
+
     if (!metadata_) {
       metadata_.reset(pb.release());
     } else if (pb->uuid() != metadata_->uuid()) {
@@ -286,13 +318,15 @@ Status FsManager::Open(FsReport* report) {
     DataDirManagerOptions dm_opts;
     dm_opts.metric_entity = metric_entity_;
     dm_opts.read_only = read_only_;
-    vector<string> canonicalized_data_roots(canonicalized_data_fs_roots_.begin(),
-                                            canonicalized_data_fs_roots_.end());
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
-          canonicalized_data_roots, dm_opts, &dd_manager_));
+          canonicalized_data_fs_roots_, dm_opts, &dd_manager_));
     }
   }
+
+  // Set an initial error handler to mark data directories as failed.
+  error_manager_->SetErrorNotificationCb(Bind(&DataDirManager::MarkDataDirFailedByUuid,
+                                              Unretained(dd_manager_.get())));
 
   // Finally, initialize and open the block manager.
   InitBlockManager();
@@ -300,7 +334,17 @@ Status FsManager::Open(FsReport* report) {
     RETURN_NOT_OK(block_manager_->Open(report));
   }
 
-  LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
+  // Before returning, ensure the metadata directory has not failed.
+  // TODO(awong): avoid this single point of failure by spreading metadata
+  // across directories.
+  uint16_t metadata_idx;
+  CHECK(dd_manager_->FindUuidIndexByRoot(canonicalized_metadata_fs_root_.path, &metadata_idx));
+  if (ContainsKey(dd_manager_->GetFailedDataDirs(), metadata_idx)) {
+    return Status::IOError("Cannot open the FS layout; metadata directory failed");
+  }
+
+  LOG(INFO) << "Opened local filesystem: " <<
+    JoinStrings(DataDirManager::GetRootNames(canonicalized_all_fs_roots_), ",")
             << std::endl << SecureDebugString(*metadata_);
   return Status::OK();
 }
@@ -311,16 +355,20 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   RETURN_NOT_OK(Init());
 
   // It's OK if a root already exists as long as there's nothing in it.
-  for (const string& root : canonicalized_all_fs_roots_) {
-    if (!env_->FileExists(root)) {
+  for (const auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      return Status::IOError("Cannot create FS layout; at least one directory "
+                             "failed to canonicalize", root.path);
+    }
+    if (!env_->FileExists(root.path)) {
       // We'll create the directory below.
       continue;
     }
     bool is_empty;
-    RETURN_NOT_OK_PREPEND(IsDirectoryEmpty(root, &is_empty),
+    RETURN_NOT_OK_PREPEND(IsDirectoryEmpty(root.path, &is_empty),
                           "Unable to check if FSManager root is empty");
     if (!is_empty) {
-      return Status::AlreadyPresent("FSManager root is not empty", root);
+      return Status::AlreadyPresent("FSManager root is not empty", root.path);
     }
   }
 
@@ -334,18 +382,22 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   InstanceMetadataPB metadata;
   RETURN_NOT_OK(CreateInstanceMetadata(std::move(uuid), &metadata));
   unordered_set<string> to_sync;
-  for (const string& root : canonicalized_all_fs_roots_) {
+  for (const auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      continue;
+    }
+    string root_name = root.path;
     bool created;
-    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root, &created),
+    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root_name, &created),
                           "Unable to create FSManager root");
     if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, root));
-      to_sync.insert(DirName(root));
+      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_name));
+      to_sync.insert(DirName(root_name));
     }
-    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root),
+    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root_name),
                           "Unable to write instance metadata");
     delete_on_failure.push_front(new ScopedFileDeleter(
-        env_, GetInstanceMetadataPath(root)));
+        env_, GetInstanceMetadataPath(root_name)));
   }
 
   // Initialize ancillary directories.
@@ -374,11 +426,9 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   DataDirManagerOptions opts;
   opts.metric_entity = metric_entity_;
   opts.read_only = read_only_;
-  vector<string> canonicalized_data_roots(canonicalized_data_fs_roots_.begin(),
-                                          canonicalized_data_fs_roots_.end());
   LOG_TIMING(INFO, "creating directory manager") {
     RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(env_,
-        canonicalized_data_roots, opts, &dd_manager_), "Unable to create directory manager");
+        canonicalized_data_fs_roots_, opts, &dd_manager_), "Unable to create directory manager");
   }
 
   // Success: don't delete any files.
@@ -454,7 +504,7 @@ vector<string> FsManager::GetDataRootDirs() const {
 
 string FsManager::GetTabletMetadataDir() const {
   DCHECK(initted_);
-  return JoinPathSegments(canonicalized_metadata_fs_root_, kTabletMetadataDirName);
+  return JoinPathSegments(canonicalized_metadata_fs_root_.path, kTabletMetadataDirName);
 }
 
 string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
@@ -525,10 +575,13 @@ void FsManager::CleanTmpFiles() {
 }
 
 void FsManager::CheckAndFixPermissions() {
-  for (const string& root : canonicalized_all_fs_roots_) {
-    WARN_NOT_OK(env_->EnsureFileModeAdheresToUmask(root),
+  for (const auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      continue;
+    }
+    WARN_NOT_OK(env_->EnsureFileModeAdheresToUmask(root.path),
                 Substitute("could not check and fix permissions for path: $0",
-                           root));
+                           root.path));
   }
 }
 
@@ -539,17 +592,20 @@ void FsManager::CheckAndFixPermissions() {
 void FsManager::DumpFileSystemTree(ostream& out) {
   DCHECK(initted_);
 
-  for (const string& root : canonicalized_all_fs_roots_) {
-    out << "File-System Root: " << root << std::endl;
+  for (const auto& root : canonicalized_all_fs_roots_) {
+    if (!root.status.ok()) {
+      continue;
+    }
+    out << "File-System Root: " << root.path << std::endl;
 
     vector<string> objects;
-    Status s = env_->GetChildren(root, &objects);
+    Status s = env_->GetChildren(root.path, &objects);
     if (!s.ok()) {
       LOG(ERROR) << "Unable to list the fs-tree: " << s.ToString();
       return;
     }
 
-    DumpFileSystemTree(out, "|-", root, objects);
+    DumpFileSystemTree(out, "|-", root.path, objects);
   }
 }
 

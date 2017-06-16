@@ -145,7 +145,7 @@ class BlockManagerTest : public KuduTest {
                         const shared_ptr<MemTracker>& parent_mem_tracker) {
     if (!dd_manager_) {
       // Create a new directory manager if necessary.
-      CHECK_OK(DataDirManager::CreateNew(env_, { test_dir_ },
+      CHECK_OK(DataDirManager::CreateNewForTests(env_, { test_dir_ },
           DataDirManagerOptions(), &dd_manager_));
     }
     BlockManagerOptions opts;
@@ -165,9 +165,9 @@ class BlockManagerTest : public KuduTest {
     DataDirManagerOptions opts;
     opts.metric_entity = metric_entity;
     if (create) {
-      RETURN_NOT_OK(DataDirManager::CreateNew(env_, paths, opts, &dd_manager_));
+      RETURN_NOT_OK(DataDirManager::CreateNewForTests(env_, paths, opts, &dd_manager_));
     } else {
-      RETURN_NOT_OK(DataDirManager::OpenExisting(env_, paths, opts, &dd_manager_));
+      RETURN_NOT_OK(DataDirManager::OpenExistingForTests(env_, paths, opts, &dd_manager_));
     }
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
     RETURN_NOT_OK(bm_->Open(nullptr));

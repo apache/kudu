@@ -21,9 +21,10 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
-#include <set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -43,6 +44,17 @@
 namespace kudu {
 class Env;
 class ThreadPool;
+
+// We pass around the results of canonicalization to indicate to the
+// DataDirManager which, if any, failed to canonicalize.
+//
+// TODO(awong): move the canonicalization of directories into the
+// DataDirManager so we can avoid this extra plumbing.
+struct CanonicalizedRootAndStatus {
+  std::string path;
+  Status status;
+};
+typedef std::vector<CanonicalizedRootAndStatus> CanonicalizedRootsList;
 
 namespace fs {
 
@@ -216,10 +228,19 @@ class DataDirManager {
     USE_FLAG_SPEC,
   };
 
+  // Public static initializers for use in tests. When used, data_fs_roots is
+  // expected to be the successfully canonicalized directories.
+  static Status CreateNewForTests(Env* env, std::vector<std::string> data_fs_roots,
+                                  DataDirManagerOptions opts,
+                                  std::unique_ptr<DataDirManager>* dd_manager);
+  static Status OpenExistingForTests(Env* env, std::vector<std::string> data_fs_roots,
+                                     DataDirManagerOptions opts,
+                                     std::unique_ptr<DataDirManager>* dd_manager);
+
   // Constructs a directory manager and creates its necessary files on-disk.
   //
   // Returns an error if any of the directories already exist.
-  static Status CreateNew(Env* env, std::vector<std::string> data_fs_roots,
+  static Status CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
                           DataDirManagerOptions opts,
                           std::unique_ptr<DataDirManager>* dd_manager);
 
@@ -227,9 +248,12 @@ class DataDirManager {
   //
   // Returns an error if the number of on-disk directories found exceeds the
   // max allowed, or if locks need to be acquired and cannot be.
-  static Status OpenExisting(Env* env, std::vector<std::string> data_fs_roots,
+  static Status OpenExisting(Env* env, CanonicalizedRootsList data_fs_roots,
                              DataDirManagerOptions opts,
                              std::unique_ptr<DataDirManager>* dd_manager);
+
+  // Returns the root names from the input 'root_list'.
+  static std::vector<std::string> GetRootNames(const CanonicalizedRootsList& root_list);
 
   ~DataDirManager();
 
@@ -293,7 +317,13 @@ class DataDirManager {
   // Adds 'uuid_idx' to the set of failed data directories. This directory will
   // no longer be used. Logs an error message prefixed with 'error_message'
   // describing what directories are affected.
-  void MarkDataDirFailed(uint16_t uuid_idx, const std::string& error_message = "");
+  //
+  // Returns an error if all directories have failed.
+  Status MarkDataDirFailed(uint16_t uuid_idx, const std::string& error_message = "");
+
+  // Fails the directory specified by 'uuid' and logs a warning if all
+  // directories have failed.
+  void MarkDataDirFailedByUuid(const std::string& uuid);
 
   // Returns whether or not the 'uuid_idx' refers to a failed directory.
   bool IsDataDirFailed(uint16_t uuid_idx) const;
@@ -327,15 +357,21 @@ class DataDirManager {
   // Finds a uuid index by data directory, returning false if it can't be found.
   bool FindUuidIndexByDataDir(DataDir* dir, uint16_t* uuid_idx) const;
 
+  // Finds a uuid index by root path, returning false if it can't be found.
+  bool FindUuidIndexByRoot(const std::string& root, uint16_t* uuid_idx) const;
+
   // Finds a uuid index by UUID, returning false if it can't be found.
   bool FindUuidIndexByUuid(const std::string& uuid, uint16_t* uuid_idx) const;
 
+  // Finds a UUID by canonicalized root name, returning false if it can't be found.
+  bool FindUuidByRoot(const std::string& root, std::string* uuid) const;
+
  private:
-  FRIEND_TEST(DataDirGroupTest, TestCreateGroup);
-  FRIEND_TEST(DataDirGroupTest, TestLoadFromPB);
-  FRIEND_TEST(DataDirGroupTest, TestLoadBalancingBias);
-  FRIEND_TEST(DataDirGroupTest, TestLoadBalancingDistribution);
-  FRIEND_TEST(DataDirGroupTest, TestFailedDirNotAddedToGroup);
+  FRIEND_TEST(DataDirsTest, TestCreateGroup);
+  FRIEND_TEST(DataDirsTest, TestLoadFromPB);
+  FRIEND_TEST(DataDirsTest, TestLoadBalancingBias);
+  FRIEND_TEST(DataDirsTest, TestLoadBalancingDistribution);
+  FRIEND_TEST(DataDirsTest, TestFailedDirNotAddedToGroup);
 
   // The base name of a data directory.
   static const char* kDataDirName;
@@ -343,17 +379,19 @@ class DataDirManager {
   // Constructs a directory manager.
   DataDirManager(Env* env,
                  DataDirManagerOptions opts,
-                 std::vector<std::string> canonicalized_data_roots);
+                 CanonicalizedRootsList canonicalized_data_roots);
 
   // Initializes the data directories on disk.
   //
-  // Returns an error if initialized directories already exist.
+  // Returns an error if initialized directories already exist, or if any of
+  // the directories experience a disk failure.
   Status Create();
 
   // Opens existing data roots from disk and indexes the files found.
   //
   // Returns an error if the number of on-disk directories found exceeds the
-  // max allowed, or if locks need to be acquired and cannot be.
+  // max allowed, if locks need to be acquired and cannot be, or if the
+  // metadata directory (i.e. the first one) fails to load.
   Status Open();
 
   // Repeatedly selects directories from those available to put into a new
@@ -383,11 +421,14 @@ class DataDirManager {
   //
   // - The first data root is used as the metadata root.
   // - Common roots in the collections have been deduplicated.
-  const std::vector<std::string> canonicalized_data_fs_roots_;
+  const CanonicalizedRootsList canonicalized_data_fs_roots_;
 
   std::unique_ptr<DataDirMetrics> metrics_;
 
   std::vector<std::unique_ptr<DataDir>> data_dirs_;
+
+  typedef std::unordered_map<std::string, std::string> UuidByRootMap;
+  UuidByRootMap uuid_by_root_;
 
   typedef std::unordered_map<uint16_t, DataDir*> UuidIndexMap;
   UuidIndexMap data_dir_by_uuid_idx_;
