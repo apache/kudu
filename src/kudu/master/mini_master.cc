@@ -1,3 +1,4 @@
+// Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -23,12 +24,12 @@
 #include <glog/logging.h>
 
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
 using std::string;
@@ -42,35 +43,64 @@ DECLARE_bool(rpc_server_allow_ephemeral_ports);
 namespace kudu {
 namespace master {
 
-MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr)
-    : rpc_bind_addr_(std::move(rpc_bind_addr)),
-      fs_root_(std::move(fs_root)) {
+MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr, int num_data_dirs)
+    : fs_root_(std::move(fs_root)),
+      rpc_bind_addr_(std::move(rpc_bind_addr)) {
   // Disable minidump handler (we allow only one per process).
   FLAGS_enable_minidumps = false;
+  HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
+  opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr_.ToString();
+  opts_.webserver_opts.bind_interface = web_bind_addr.host();
+  opts_.webserver_opts.port = web_bind_addr.port();
+  if (num_data_dirs == 1) {
+    opts_.fs_opts.wal_path = fs_root_;
+    opts_.fs_opts.data_paths = { fs_root_ };
+  } else {
+    vector<string> fs_data_dirs;
+    for (int dir = 0; dir < num_data_dirs; dir++) {
+      fs_data_dirs.emplace_back(JoinPathSegments(fs_root_, Substitute("data-$0", dir)));
+    }
+    opts_.fs_opts.wal_path = JoinPathSegments(fs_root_, "wal");
+    opts_.fs_opts.data_paths = fs_data_dirs;
+  }
 }
 
 MiniMaster::~MiniMaster() {
   Shutdown();
 }
 
-Status MiniMaster::Start() {
-  FLAGS_rpc_server_allow_ephemeral_ports = true;
-  MasterOptions opts;
-  HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
-  RETURN_NOT_OK(StartOnAddrs(rpc_bind_addr_, web_bind_addr, &opts));
-  return master_->WaitForCatalogManagerInit();
+void MiniMaster::SetMasterAddresses(vector<HostPort> master_addrs) {
+  CHECK(!master_);
+  opts_.master_addresses = std::move(master_addrs);
 }
 
-Status MiniMaster::StartDistributedMaster(vector<HostPort> peer_addrs) {
-  HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
-  return StartDistributedMasterOnAddrs(rpc_bind_addr_, web_bind_addr,
-                                       std::move(peer_addrs));
+Status MiniMaster::Start() {
+  CHECK(!master_);
+  if (opts_.master_addresses.empty()) {
+    FLAGS_rpc_server_allow_ephemeral_ports = true;
+  }
+  // In case the wal dir and data dirs are subdirectories of the root directory,
+  // ensure the root directory exists.
+  RETURN_NOT_OK(env_util::CreateDirIfMissing(Env::Default(), fs_root_));
+  unique_ptr<Master> master(new Master(opts_));
+  RETURN_NOT_OK(master->Init());
+  RETURN_NOT_OK(master->StartAsync());
+  master_.swap(master);
+
+  // Wait for the catalog manager to be ready if we only have a single master.
+  if (opts_.master_addresses.empty()) {
+    return master_->WaitForCatalogManagerInit();
+  }
+  return Status::OK();
 }
 
 Status MiniMaster::Restart() {
-  MasterOptions opts;
-  RETURN_NOT_OK(StartOnAddrs(HostPort(bound_rpc_), HostPort(bound_http_), &opts));
-  return WaitForCatalogManagerInit();
+  CHECK(!master_);
+  opts_.rpc_opts.rpc_bind_addresses = bound_rpc_.ToString();
+  opts_.webserver_opts.bind_interface = bound_http_.host();
+  opts_.webserver_opts.port = bound_http_.port();
+  Shutdown();
+  return Start();
 }
 
 void MiniMaster::Shutdown() {
@@ -100,33 +130,6 @@ std::string MiniMaster::permanent_uuid() const {
 
 std::string MiniMaster::bound_rpc_addr_str() const {
   return bound_rpc_addr().ToString();
-}
-
-Status MiniMaster::StartOnAddrs(const HostPort& rpc_bind_addr,
-                                const HostPort& web_bind_addr,
-                                MasterOptions* opts) {
-  CHECK(!master_);
-
-  opts->rpc_opts.rpc_bind_addresses = rpc_bind_addr.ToString();
-  opts->webserver_opts.bind_interface = web_bind_addr.host();
-  opts->webserver_opts.port = web_bind_addr.port();
-  opts->fs_opts.wal_path = fs_root_;
-  opts->fs_opts.data_paths = { fs_root_ };
-
-  unique_ptr<Master> server(new Master(*opts));
-  RETURN_NOT_OK(server->Init());
-  RETURN_NOT_OK(server->StartAsync());
-  master_.swap(server);
-
-  return Status::OK();
-}
-
-Status MiniMaster::StartDistributedMasterOnAddrs(const HostPort& rpc_bind_addr,
-                                                 const HostPort& web_bind_addr,
-                                                 std::vector<HostPort> peer_addrs) {
-  MasterOptions opts;
-  opts.master_addresses = std::move(peer_addrs);
-  return StartOnAddrs(rpc_bind_addr, web_bind_addr, &opts);
 }
 
 } // namespace master

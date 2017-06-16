@@ -261,7 +261,8 @@ TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {
   cluster_->mini_master(0)->Shutdown();
   vector<HostPort> master_rpc_addrs = cluster_->master_rpc_addrs();
   master_rpc_addrs.emplace_back("127.0.0.1", 55555);
-  ASSERT_OK(cluster_->mini_master(0)->StartDistributedMaster(master_rpc_addrs));
+  cluster_->mini_master(0)->SetMasterAddresses(master_rpc_addrs);
+  ASSERT_OK(cluster_->mini_master(0)->Start());
   Status s = cluster_->mini_master(0)->WaitForCatalogManagerInit();
   SCOPED_TRACE(s.ToString());
   ASSERT_TRUE(s.IsInvalidArgument());

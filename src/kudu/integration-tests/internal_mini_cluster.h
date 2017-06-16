@@ -54,6 +54,10 @@ struct InternalMiniClusterOptions {
   // Default: 1
   int num_tablet_servers;
 
+  // Number of data dirs for each daemon.
+  // Default: 1 (this will place the wals in the same dir)
+  int num_data_dirs;
+
   // Directory in which to store data.
   // Default: "", which auto-generates a unique path for this cluster.
   // The default may only be used from a gtest unit test.
@@ -79,7 +83,7 @@ struct InternalMiniClusterOptions {
 // number of MiniTabletServers for use in tests.
 class InternalMiniCluster : public MiniCluster {
  public:
-  InternalMiniCluster(Env* env, const InternalMiniClusterOptions& options);
+  InternalMiniCluster(Env* env, InternalMiniClusterOptions options);
   virtual ~InternalMiniCluster();
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
@@ -134,7 +138,7 @@ class InternalMiniCluster : public MiniCluster {
   }
 
   std::vector<uint16_t> master_rpc_ports() const override {
-    return master_rpc_ports_;
+    return opts_.master_rpc_ports;
   }
 
   std::vector<HostPort> master_rpc_addrs() const override;
@@ -188,15 +192,9 @@ class InternalMiniCluster : public MiniCluster {
     kMasterStartupWaitTimeSeconds = 30,
   };
 
-  const InternalMiniClusterOptions opts_;
-
   Env* const env_;
-  const std::string fs_root_;
-  const int num_masters_initial_;
-  const int num_ts_initial_;
 
-  const std::vector<uint16_t> master_rpc_ports_;
-  const std::vector<uint16_t> tserver_rpc_ports_;
+  InternalMiniClusterOptions opts_;
 
   bool running_;
 

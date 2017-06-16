@@ -72,6 +72,7 @@ set(KUDU_TEST_LINK_LIBS
 
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
+ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 
 # Actual master executable

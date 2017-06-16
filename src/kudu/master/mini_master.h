@@ -21,9 +21,9 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/master/master.h"
 #include "kudu/util/env.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -33,16 +33,10 @@ namespace kudu {
 
 namespace master {
 
-class Master;
-struct MasterOptions;
-
 // An in-process Master meant for use in test cases.
-//
-// TODO: Store the distributed cluster configuration in the object, to avoid
-// having multiple Start methods.
 class MiniMaster {
  public:
-  MiniMaster(std::string fs_root, HostPort rpc_bind_addr);
+  MiniMaster(std::string fs_root, HostPort rpc_bind_addr, int num_data_dirs = 1);
   ~MiniMaster();
 
   // Start a master running on the address specified to the constructor.
@@ -50,11 +44,12 @@ class MiniMaster {
   // MiniMaster::bound_addr()
   Status Start();
 
-  Status StartDistributedMaster(std::vector<HostPort> peer_addrs);
-
   // Restart the master on the same ports as it was previously bound.
-  // Requires that the master is currently started.
+  // Requires that Shutdown() has already been called.
   Status Restart();
+
+  // Set the the addresses for distributed masters.
+  void SetMasterAddresses(std::vector<HostPort> master_addrs);
 
   void Shutdown();
 
@@ -74,18 +69,11 @@ class MiniMaster {
   std::string bound_rpc_addr_str() const;
 
  private:
-  Status StartOnAddrs(const HostPort& rpc_bind_addr,
-                      const HostPort& web_bind_addr,
-                      MasterOptions* opts);
-
-  Status StartDistributedMasterOnAddrs(const HostPort& rpc_bind_addr,
-                                       const HostPort& web_bind_addr,
-                                       std::vector<HostPort> peer_addrs);
-
-  const HostPort rpc_bind_addr_;
   const std::string fs_root_;
+  const HostPort rpc_bind_addr_;
   Sockaddr bound_rpc_;
   Sockaddr bound_http_;
+  MasterOptions opts_;
   std::unique_ptr<Master> master_;
 };
 

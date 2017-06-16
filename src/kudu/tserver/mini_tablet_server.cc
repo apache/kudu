@@ -19,6 +19,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 
@@ -27,7 +28,9 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
 DECLARE_bool(enable_minidumps);
@@ -38,13 +41,16 @@ using kudu::consensus::RaftPeerPB;
 using std::pair;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 namespace tserver {
 
-MiniTabletServer::MiniTabletServer(const string& fs_root,
-                                   const HostPort& rpc_bind_addr) {
+MiniTabletServer::MiniTabletServer(string fs_root,
+                                   const HostPort& rpc_bind_addr,
+                                   int num_data_dirs)
+    : fs_root_(std::move(fs_root)) {
   // Disable minidump handler (we allow only one per process).
   FLAGS_enable_minidumps = false;
   // Start RPC server on loopback.
@@ -52,8 +58,17 @@ MiniTabletServer::MiniTabletServer(const string& fs_root,
   opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr.ToString();
   opts_.webserver_opts.bind_interface = rpc_bind_addr.host();
   opts_.webserver_opts.port = 0;
-  opts_.fs_opts.wal_path = fs_root;
-  opts_.fs_opts.data_paths = { fs_root };
+  if (num_data_dirs == 1) {
+    opts_.fs_opts.wal_path = fs_root_;
+    opts_.fs_opts.data_paths = { fs_root_ };
+  } else {
+    vector<string> fs_data_dirs;
+    for (int dir = 0; dir < num_data_dirs; dir++) {
+      fs_data_dirs.emplace_back(JoinPathSegments(fs_root_, Substitute("data-$0", dir)));
+    }
+    opts_.fs_opts.wal_path = JoinPathSegments(fs_root_, "wal");
+    opts_.fs_opts.data_paths = fs_data_dirs;
+  }
 }
 
 MiniTabletServer::~MiniTabletServer() {
@@ -62,7 +77,9 @@ MiniTabletServer::~MiniTabletServer() {
 
 Status MiniTabletServer::Start() {
   CHECK(!server_);
-
+  // In case the wal dir and data dirs are subdirectories of the root directory,
+  // ensure the root directory exists.
+  RETURN_NOT_OK(env_util::CreateDirIfMissing(Env::Default(), fs_root_));
   unique_ptr<TabletServer> server(new TabletServer(opts_));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());

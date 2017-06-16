@@ -167,6 +167,7 @@ set(KUDU_TEST_LINK_LIBS
   tserver
   tserver_test_util
   ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(mini_tablet_server-test)
 ADD_KUDU_TEST(tablet_copy_client-test)
 ADD_KUDU_TEST(tablet_copy_source_session-test)
 ADD_KUDU_TEST(tablet_copy_service-test)

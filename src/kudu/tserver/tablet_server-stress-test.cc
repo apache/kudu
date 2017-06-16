@@ -61,7 +61,7 @@ class TSStressTest : public TabletServerTestBase {
 
   virtual void SetUp() OVERRIDE {
     TabletServerTestBase::SetUp();
-    NO_FATALS(StartTabletServer());
+    NO_FATALS(StartTabletServer(/* num_data_dirs */ 1));
 
     histogram_ = METRIC_insert_latency.Instantiate(ts_test_metric_entity_);
   }

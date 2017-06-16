@@ -40,6 +40,7 @@
 #include "kudu/security/token_verifier.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
