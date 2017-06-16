@@ -674,19 +674,21 @@ void AlterTableTest::ScanToStrings(vector<string>* rows) {
 // key (InsertRows swaps endianness so that we random-write instead of sequential-write)
 void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern pattern) {
   shared_ptr<KuduTable> table;
-  CHECK_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
-  CHECK_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-  CHECK_OK(scanner.Open());
+  // TODO(KUDU-791): we should probably be able to use a snapshot read here,
+  // but alter-table isn't all the way tied into the consistency-related code.
+  ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+  ASSERT_OK(scanner.Open());
 
   int verified = 0;
   vector<KuduRowResult> results;
   while (scanner.HasMoreRows()) {
-    CHECK_OK(scanner.NextBatch(&results));
+    ASSERT_OK(scanner.NextBatch(&results));
 
     for (const KuduRowResult& row : results) {
       int32_t key = 0;
-      CHECK_OK(row.GetInt32(0, &key));
+      ASSERT_OK(row.GetInt32(0, &key));
       int32_t row_idx = bswap_32(key);
       if (row_idx < start_row || row_idx >= start_row + num_rows) {
         // Outside the range we're verifying
@@ -699,21 +701,21 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
       }
 
       int32_t c1 = 0;
-      CHECK_OK(row.GetInt32(1, &c1));
+      ASSERT_OK(row.GetInt32(1, &c1));
 
       switch (pattern) {
         case C1_MATCHES_INDEX:
-          CHECK_EQ(row_idx, c1);
+          ASSERT_EQ(row_idx, c1);
           break;
         case C1_IS_DEADBEEF:
-          CHECK_EQ(0xdeadbeef, c1);
+          ASSERT_EQ(0xdeadbeef, c1);
           break;
         default:
           LOG(FATAL);
       }
     }
   }
-  CHECK_EQ(verified, num_rows);
+  ASSERT_EQ(verified, num_rows);
 }
 
 Status AlterTableTest::CreateTable(const string& table_name,
@@ -753,7 +755,7 @@ TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   InsertRows(0, kNumRows);
 
   LOG(INFO) << "Verifying initial pattern";
-  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+  NO_FATALS(VerifyRows(0, kNumRows, C1_MATCHES_INDEX));
 
   LOG(INFO) << "Dropping and adding back c1";
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
@@ -763,7 +765,7 @@ TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
 
   LOG(INFO) << "Verifying that the new default shows up";
-  VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
+  NO_FATALS(VerifyRows(0, kNumRows, C1_IS_DEADBEEF));
 }
 
 // Tests that a renamed table can still be altered. This is a regression test, we used to not carry
@@ -2023,7 +2025,7 @@ TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
   InsertRows(0, kNumRows);
 
   LOG(INFO) << "Verifying initial pattern";
-  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+  NO_FATALS(VerifyRows(0, kNumRows, C1_MATCHES_INDEX));
 
   LOG(INFO) << "Dropping and adding back c1";
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
@@ -2036,7 +2038,11 @@ TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
   ASSERT_FALSE(alter_in_progress);
 
   LOG(INFO) << "Verifying that the new default shows up";
-  VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
+  // TODO(KUDU-791): we should be able to assert right away, but alter-table doesn't
+  // currently obey the expected consistency semantics.
+  ASSERT_EVENTUALLY([&]() {
+    NO_FATALS(VerifyRows(0, kNumRows, C1_IS_DEADBEEF));
+  });
 }
 
 } // namespace kudu
