@@ -15,10 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -51,11 +54,11 @@ DECLARE_int32(heartbeat_interval_ms);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 
-namespace kudu {
-
-using std::vector;
 using std::shared_ptr;
 using std::string;
+using std::vector;
+
+namespace kudu {
 
 using master::CatalogManager;
 using master::CreateTableRequestPB;
@@ -73,7 +76,7 @@ using tserver::MiniTabletServer;
 void CreateTableForTesting(MiniMaster* mini_master,
                            const string& table_name,
                            const Schema& schema,
-                           string *tablet_id) {
+                           string* tablet_id) {
   {
     CreateTableRequestPB req;
     CreateTableResponsePB resp;
@@ -84,7 +87,7 @@ void CreateTableForTesting(MiniMaster* mini_master,
     CatalogManager* catalog = mini_master->master()->catalog_manager();
     CatalogManager::ScopedLeaderSharedLock l(catalog);
     ASSERT_OK(l.first_failed_status());
-    ASSERT_OK(catalog->CreateTable(&req, &resp, NULL));
+    ASSERT_OK(catalog->CreateTable(&req, &resp, nullptr));
   }
 
   int wait_time = 1000;
@@ -135,20 +138,20 @@ void CreateTableForTesting(MiniMaster* mini_master,
 class RegistrationTest : public KuduTest {
  public:
   RegistrationTest()
-    : schema_({ ColumnSchema("c1", UINT32) }, 1) {
+      : schema_({ ColumnSchema("c1", UINT32) }, 1) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
 
     KuduTest::SetUp();
 
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new MiniCluster(env_, {}));
     ASSERT_OK(cluster_->Start());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cluster_->Shutdown();
   }
 
@@ -175,26 +178,32 @@ class RegistrationTest : public KuduTest {
 
   Status WaitForReplicaCount(const string& tablet_id,
                              int expected_count,
-                             TabletLocationsPB* locations) {
+                             TabletLocationsPB* locations = nullptr) {
     while (true) {
       master::CatalogManager* catalog =
           cluster_->mini_master()->master()->catalog_manager();
       Status s;
+      TabletLocationsPB loc;
       do {
         master::CatalogManager::ScopedLeaderSharedLock l(catalog);
         const Status& ls = l.first_failed_status();
-        if (ls.IsServiceUnavailable()) {
+        if (ls.IsServiceUnavailable() || ls.IsIllegalState()) {
           // ServiceUnavailable means catalog manager is not yet ready
-          // to serve requests -- try again later.
+          // to serve requests; IllegalState means the catalog is not the
+          // leader yet. That's an indication of a transient state where it's
+          // it's necessary to try again later.
           break;  // exiting out of the 'do {...} while (false)' scope
         }
         RETURN_NOT_OK(ls);
-        s = catalog->GetTabletLocations(tablet_id, locations);
+        s = catalog->GetTabletLocations(tablet_id, &loc);
       } while (false);
-      if (s.ok() && locations->replicas_size() == expected_count) {
+      if (s.ok() && loc.replicas_size() == expected_count) {
+        if (locations) {
+          *locations = std::move(loc);
+        }
         return Status::OK();
       }
-      SleepFor(MonoDelta::FromMilliseconds(1));
+      SleepFor(MonoDelta::FromMilliseconds(10));
     }
   }
 
@@ -215,14 +224,14 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   descs[0]->GetRegistration(&reg);
   {
     SCOPED_TRACE(SecureShortDebugString(reg));
-    ASSERT_EQ(SecureShortDebugString(reg).find("0.0.0.0"), string::npos)
-      << "Should not include wildcards in registration";
+    ASSERT_EQ(string::npos, SecureShortDebugString(reg).find("0.0.0.0"))
+        << "Should not include wildcards in registration";
   }
 
   ASSERT_NO_FATAL_FAILURE(CheckTabletServersPage());
 
   // Restart the master, so it loses the descriptor, and ensure that the
-  // hearbeater thread handles re-registering.
+  // heartbeater thread handles re-registering.
   cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
 
@@ -255,62 +264,61 @@ TEST_F(RegistrationTest, TestMultipleTS) {
 // to something more appropriate - doesn't seem worth having separate
 // whole test suites for registration, tablet reports, etc.
 TEST_F(RegistrationTest, TestTabletReports) {
-  string tablet_id_1;
-  string tablet_id_2;
-
-  MiniTabletServer* ts = cluster_->mini_tablet_server(0);
-  string ts_root = cluster_->GetTabletServerFsRoot(0);
-
   auto GetCatalogMetric = [&](CounterPrototype& prototype) {
-    auto metrics = cluster_->mini_master()->master()->catalog_manager()->sys_catalog()
-        ->tablet_replica()->tablet()->GetMetricEntity();
+    auto metrics = cluster_->mini_master()->master()->catalog_manager()->
+        sys_catalog()->tablet_replica()->tablet()->GetMetricEntity();
     return prototype.Instantiate(metrics)->value();
   };
-  int startup_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
+  const int startup_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
 
   // Add a table, make sure it reports itself.
-  CreateTableForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
-
-  TabletLocationsPB locs;
-  ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
-  ASSERT_EQ(1, locs.replicas_size());
-  LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
+  string tablet_id_1;
+  NO_FATALS(CreateTableForTesting(
+      cluster_->mini_master(), "tablet-reports-1", schema_, &tablet_id_1));
+  TabletLocationsPB locs_1;
+  ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs_1));
+  ASSERT_EQ(1, locs_1.replicas_size());
 
   // Check that we inserted the right number of rows for the new single-tablet table
   // (one for the table, one for the tablet).
-  int post_create_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
+  const int post_create_rows_inserted = GetCatalogMetric(METRIC_rows_inserted);
   EXPECT_EQ(2, post_create_rows_inserted - startup_rows_inserted)
       << "Should have inserted one row each for the table and tablet";
 
   // Add another table, make sure it is reported via incremental.
-  CreateTableForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
-  ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
+  string tablet_id_2;
+  NO_FATALS(CreateTableForTesting(
+      cluster_->mini_master(), "tablet-reports-2", schema_, &tablet_id_2));
+  ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1));
 
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
-  ts->Shutdown();
-  cluster_->mini_master()->Shutdown();
-  ASSERT_OK(cluster_->mini_master()->Restart());
-  ASSERT_OK(ts->Start());
-
-  ASSERT_OK(WaitForReplicaCount(tablet_id_1, 1, &locs));
-  ASSERT_OK(WaitForReplicaCount(tablet_id_2, 1, &locs));
-
-  SleepFor(MonoDelta::FromSeconds(1));
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Start());
 
   // After restart, check that the tablet reports produced the expected number of
   // writes to the catalog table:
   // - No inserts, because there are no new tablets.
-  // - Two updates, since both replicas should have increased their term on restart.
-  EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_inserted));
-  EXPECT_EQ(2, GetCatalogMetric(METRIC_rows_updated));
+  // - Two updates, since both replicas increase their term on restart.
+  //
+  // It can take some time for the TS to re-heartbeat. To avoid flakiness, here
+  // it's easier to wait for the target non-zero metric value instead of
+  // hard-coding an extra delay.
+  AssertEventually([&]() {
+    ASSERT_EQ(0, GetCatalogMetric(METRIC_rows_inserted));
+    ASSERT_EQ(2, GetCatalogMetric(METRIC_rows_updated));
+    });
 
   // If we restart just the master, it should not write any data to the catalog, since the
   // tablets themselves are not changing term, etc.
   cluster_->mini_master()->Shutdown();
   ASSERT_OK(cluster_->mini_master()->Restart());
+
   // Sleep for a second to make sure the TS has plenty of time to re-heartbeat.
+  // The metrics are updated after processing TS heartbeats, and we want to
+  // capture updated metric readings.
   SleepFor(MonoDelta::FromSeconds(1));
+
   EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_inserted));
   EXPECT_EQ(0, GetCatalogMetric(METRIC_rows_updated));
 }
