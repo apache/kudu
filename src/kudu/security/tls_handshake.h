@@ -129,6 +129,10 @@ class TlsHandshake {
   // handshake is complete and before 'Finish()'.
   std::string GetProtocol() const;
 
+  // Retrive the description of the negotiated cipher.
+  // Only valid to call after the handshake is complete and before 'Finish()'.
+  std::string GetCipherDescription() const;
+
  private:
   friend class TlsContext;
 

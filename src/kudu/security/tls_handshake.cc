@@ -253,5 +253,20 @@ string TlsHandshake::GetProtocol() const {
   return SSL_get_version(ssl_.get());
 }
 
+string TlsHandshake::GetCipherDescription() const {
+  SCOPED_OPENSSL_NO_PENDING_ERRORS;
+  CHECK(has_started_);
+  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl_.get());
+  if (cipher == nullptr) {
+    return "NONE";
+  }
+  char buf[512];
+  const char* ret = SSL_CIPHER_description(cipher, buf, sizeof(buf));
+  if (ret == nullptr) {
+    return "NONE";
+  }
+  return ret;
+}
+
 } // namespace security
 } // namespace kudu

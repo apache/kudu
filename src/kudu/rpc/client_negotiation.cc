@@ -484,13 +484,13 @@ Status ClientNegotiation::HandleTlsHandshake(const NegotiatePB& response) {
   // TLS handshake is finished.
   if (ContainsKey(server_features_, TLS_AUTHENTICATION_ONLY) &&
       ContainsKey(client_features_, TLS_AUTHENTICATION_ONLY)) {
-    TRACE("Negotiated auth-only $0 with cipher suite $1",
-          tls_handshake_.GetProtocol(), tls_handshake_.GetCipherSuite());
+    TRACE("Negotiated auth-only $0 with cipher $1",
+          tls_handshake_.GetProtocol(), tls_handshake_.GetCipherDescription());
     return tls_handshake_.FinishNoWrap(*socket_);
   }
 
-  TRACE("Negotiated $0 with cipher suite $1",
-        tls_handshake_.GetProtocol(), tls_handshake_.GetCipherSuite());
+  TRACE("Negotiated $0 with cipher $1",
+        tls_handshake_.GetProtocol(), tls_handshake_.GetCipherDescription());
   return tls_handshake_.Finish(&socket_);
 }
 
