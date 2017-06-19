@@ -15,16 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_INTEGRATION_TESTS_MINI_CLUSTER_ITEST_BASE_H_
-#define KUDU_INTEGRATION_TESTS_MINI_CLUSTER_ITEST_BASE_H_
+#pragma once
 
-#include <gtest/gtest.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "kudu/client/client.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -41,20 +41,16 @@ class MiniClusterITestBase : public KuduTest {
   }
 
  protected:
-  void StartCluster(int num_tablet_servers = 3);
+  void StartCluster(int num_tablet_servers = 3) {
+    MiniClusterOptions opts;
+    opts.num_tablet_servers = num_tablet_servers;
+    cluster_.reset(new InternalMiniCluster(env_, opts));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  }
 
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   client::sp::shared_ptr<client::KuduClient> client_;
 };
 
-void MiniClusterITestBase::StartCluster(int num_tablet_servers) {
-  MiniClusterOptions opts;
-  opts.num_tablet_servers = num_tablet_servers;
-  cluster_.reset(new MiniCluster(env_, opts));
-  ASSERT_OK(cluster_->Start());
-  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
-}
-
 } // namespace kudu
-
-#endif // KUDU_INTEGRATION_TESTS_MINI_CLUSTER_ITEST_BASE_H_

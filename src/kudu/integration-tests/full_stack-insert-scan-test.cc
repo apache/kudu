@@ -37,7 +37,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -163,7 +163,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver, config client options
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder builder;
     builder.add_master_server_addr(
@@ -209,7 +209,7 @@ class FullStackInsertScanTest : public KuduTest {
   Random random_;
 
   KuduSchema schema_;
-  std::shared_ptr<MiniCluster> cluster_;
+  std::shared_ptr<InternalMiniCluster> cluster_;
   client::sp::shared_ptr<KuduClient> client_;
   client::sp::shared_ptr<KuduTable> reader_table_;
   // Concurrent client insertion test variables

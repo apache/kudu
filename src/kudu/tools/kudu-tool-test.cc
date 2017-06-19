@@ -53,7 +53,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-harness.h"
@@ -282,7 +282,7 @@ class ToolTest : public KuduTest {
   unique_ptr<ExternalMiniCluster> cluster_;
   unique_ptr<ExternalMiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
-  unique_ptr<MiniCluster> mini_cluster_;
+  unique_ptr<InternalMiniCluster> mini_cluster_;
   ExternalMiniClusterOptions cluster_opts_;
   string tool_path_;
 };
@@ -305,7 +305,7 @@ void ToolTest::StartMiniCluster(int num_masters,
   MiniClusterOptions opts;
   opts.num_masters = num_masters;
   opts.num_tablet_servers = num_tablet_servers;
-  mini_cluster_.reset(new MiniCluster(env_, opts));
+  mini_cluster_.reset(new InternalMiniCluster(env_, opts));
   ASSERT_OK(mini_cluster_->Start());
 }
 

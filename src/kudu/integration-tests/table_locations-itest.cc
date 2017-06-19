@@ -26,7 +26,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
@@ -60,7 +60,7 @@ class TableLocationsTest : public KuduTest {
     MiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
 
-    cluster_.reset(new MiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     // Create a client proxy to the master.
@@ -84,7 +84,7 @@ class TableLocationsTest : public KuduTest {
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds);
 
   shared_ptr<Messenger> client_messenger_;
-  unique_ptr<MiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   unique_ptr<MasterServiceProxy> proxy_;
 };
 

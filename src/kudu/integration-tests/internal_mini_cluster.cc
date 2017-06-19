@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 
 
 #include "kudu/client/client.h"
@@ -54,7 +54,7 @@ MiniClusterOptions::MiniClusterOptions()
     num_tablet_servers(1) {
 }
 
-MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
+InternalMiniCluster::InternalMiniCluster(Env* env, const MiniClusterOptions& options)
   : running_(false),
     env_(env),
     fs_root_(!options.data_root.empty() ? options.data_root :
@@ -65,11 +65,11 @@ MiniCluster::MiniCluster(Env* env, const MiniClusterOptions& options)
     tserver_rpc_ports_(options.tserver_rpc_ports) {
 }
 
-MiniCluster::~MiniCluster() {
+InternalMiniCluster::~InternalMiniCluster() {
   Shutdown();
 }
 
-Status MiniCluster::Start() {
+Status InternalMiniCluster::Start() {
   CHECK(!fs_root_.empty()) << "No Fs root was provided";
   CHECK(!running_);
 
@@ -107,7 +107,7 @@ Status MiniCluster::Start() {
   return Status::OK();
 }
 
-Status MiniCluster::StartDistributedMasters() {
+Status InternalMiniCluster::StartDistributedMasters() {
   CHECK_GE(master_rpc_ports_.size(), num_masters_initial_);
   CHECK_GT(master_rpc_ports_.size(), 1);
 
@@ -132,7 +132,7 @@ Status MiniCluster::StartDistributedMasters() {
   return Status::OK();
 }
 
-Status MiniCluster::StartSync() {
+Status InternalMiniCluster::StartSync() {
   RETURN_NOT_OK(Start());
   int count = 0;
   for (const shared_ptr<MiniTabletServer>& tablet_server : mini_tablet_servers_) {
@@ -143,7 +143,7 @@ Status MiniCluster::StartSync() {
   return Status::OK();
 }
 
-Status MiniCluster::StartSingleMaster() {
+Status InternalMiniCluster::StartSingleMaster() {
   CHECK_EQ(1, num_masters_initial_);
   CHECK_LE(master_rpc_ports_.size(), 1);
   uint16_t master_rpc_port = 0;
@@ -161,7 +161,7 @@ Status MiniCluster::StartSingleMaster() {
   return Status::OK();
 }
 
-Status MiniCluster::AddTabletServer() {
+Status InternalMiniCluster::AddTabletServer() {
   if (mini_masters_.empty()) {
     return Status::IllegalState("Master not yet initialized");
   }
@@ -184,7 +184,7 @@ Status MiniCluster::AddTabletServer() {
   return Status::OK();
 }
 
-void MiniCluster::ShutdownNodes(ClusterNodes nodes) {
+void InternalMiniCluster::ShutdownNodes(ClusterNodes nodes) {
   if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::TS_ONLY) {
     for (const shared_ptr<MiniTabletServer>& tablet_server : mini_tablet_servers_) {
       tablet_server->Shutdown();
@@ -200,32 +200,32 @@ void MiniCluster::ShutdownNodes(ClusterNodes nodes) {
   running_ = false;
 }
 
-MiniMaster* MiniCluster::mini_master(int idx) const {
+MiniMaster* InternalMiniCluster::mini_master(int idx) const {
   CHECK_GE(idx, 0) << "Master idx must be >= 0";
   CHECK_LT(idx, mini_masters_.size()) << "Master idx must be < num masters started";
   return mini_masters_[idx].get();
 }
 
-MiniTabletServer* MiniCluster::mini_tablet_server(int idx) const {
+MiniTabletServer* InternalMiniCluster::mini_tablet_server(int idx) const {
   CHECK_GE(idx, 0) << "TabletServer idx must be >= 0";
   CHECK_LT(idx, mini_tablet_servers_.size()) << "TabletServer idx must be < 'num_ts_started_'";
   return mini_tablet_servers_[idx].get();
 }
 
-string MiniCluster::GetMasterFsRoot(int idx) const {
+string InternalMiniCluster::GetMasterFsRoot(int idx) const {
   return JoinPathSegments(fs_root_, Substitute("master-$0-root", idx));
 }
 
-string MiniCluster::GetTabletServerFsRoot(int idx) const {
+string InternalMiniCluster::GetTabletServerFsRoot(int idx) const {
   return JoinPathSegments(fs_root_, Substitute("ts-$0-root", idx));
 }
 
-Status MiniCluster::WaitForTabletServerCount(int count) const {
+Status InternalMiniCluster::WaitForTabletServerCount(int count) const {
   vector<shared_ptr<master::TSDescriptor>> descs;
   return WaitForTabletServerCount(count, MatchMode::MATCH_TSERVERS, &descs);
 }
 
-Status MiniCluster::WaitForTabletServerCount(int count,
+Status InternalMiniCluster::WaitForTabletServerCount(int count,
                                              MatchMode mode,
                                              vector<shared_ptr<TSDescriptor>>* descs) const {
   unordered_set<int> masters_to_search;
@@ -247,8 +247,8 @@ Status MiniCluster::WaitForTabletServerCount(int count,
           // Do a second step of verification to verify that the descs that we got
           // are aligned (same uuid/seqno) with the TSs that we have in the cluster.
           for (const shared_ptr<TSDescriptor>& desc : *descs) {
-            for (auto mini_tablet_server : mini_tablet_servers_) {
-              auto ts = mini_tablet_server->server();
+            for (const auto& mini_tablet_server : mini_tablet_servers_) {
+              const TabletServer* ts = mini_tablet_server->server();
               if (ts->instance_pb().permanent_uuid() == desc->permanent_uuid() &&
                   ts->instance_pb().instance_seqno() == desc->latest_seqno()) {
                 match_count++;
@@ -283,7 +283,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
       "Timed out waiting for $0 TS(s) to register with all masters", count));
 }
 
-Status MiniCluster::CreateClient(KuduClientBuilder* builder,
+Status InternalMiniCluster::CreateClient(KuduClientBuilder* builder,
                                  client::sp::shared_ptr<KuduClient>* client) const {
   client::KuduClientBuilder defaults;
   if (builder == nullptr) {
@@ -298,7 +298,7 @@ Status MiniCluster::CreateClient(KuduClientBuilder* builder,
   return builder->Build(client);
 }
 
-Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
+Status InternalMiniCluster::GetLeaderMasterIndex(int* idx) const {
   const MonoTime deadline = MonoTime::Now() +
       MonoDelta::FromSeconds(kMasterStartupWaitTimeSeconds);
 
@@ -331,16 +331,16 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
   return Status::OK();
 }
 
-std::shared_ptr<rpc::Messenger> MiniCluster::messenger() const {
+std::shared_ptr<rpc::Messenger> InternalMiniCluster::messenger() const {
   return messenger_;
 }
 
-std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy() const {
+std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy() const {
   CHECK_EQ(1, mini_masters_.size());
   return master_proxy(0);
 }
 
-std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy(int idx) const {
+std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy(int idx) const {
   return std::make_shared<MasterServiceProxy>(
       messenger_, CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr());
 }

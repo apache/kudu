@@ -21,7 +21,7 @@
 // primarily through RPC-based APIs or through KuduClient.
 // However, it's also OK to include common operations against a particular
 // cluster type if it's general enough to use from multiple tests while not
-// belonging in the MiniCluster / ExternalMiniCluster classes themselves. But
+// belonging in the InternalMiniCluster / ExternalMiniCluster classes themselves. But
 // consider just putting stuff like that in those classes.
 
 #ifndef KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_

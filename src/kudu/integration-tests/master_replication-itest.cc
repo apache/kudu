@@ -23,7 +23,7 @@
 #include "kudu/client/client.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -67,7 +67,7 @@ class MasterReplicationTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    cluster_.reset(new MiniCluster(env_, opts_));
+    cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
   }
 
@@ -120,7 +120,7 @@ class MasterReplicationTest : public KuduTest {
  protected:
   int num_masters_;
   MiniClusterOptions opts_;
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
 };
 
 // Basic test. Verify that:
@@ -252,7 +252,7 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
   vector<std::shared_ptr<TSDescriptor>> descs;
   ASSERT_OK(cluster_->WaitForTabletServerCount(
       kNumTabletServerReplicas + 1,
-      MiniCluster::MatchMode::DO_NOT_MATCH_TSERVERS, &descs));
+      InternalMiniCluster::MatchMode::DO_NOT_MATCH_TSERVERS, &descs));
 }
 
 TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {

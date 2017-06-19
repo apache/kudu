@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_INTEGRATION_TESTS_MINI_CLUSTER_H
-#define KUDU_INTEGRATION_TESTS_MINI_CLUSTER_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -71,10 +70,10 @@ struct MiniClusterOptions {
 
 // An in-process cluster with a MiniMaster and a configurable
 // number of MiniTabletServers for use in tests.
-class MiniCluster : public MiniClusterBase {
+class InternalMiniCluster : public MiniClusterBase {
  public:
-  MiniCluster(Env* env, const MiniClusterOptions& options);
-  virtual ~MiniCluster();
+  InternalMiniCluster(Env* env, const MiniClusterOptions& options);
+  virtual ~InternalMiniCluster();
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
   // All servers run on the loopback interface with ephemeral ports.
@@ -107,7 +106,7 @@ class MiniCluster : public MiniClusterBase {
     return mini_master(0);
   }
 
-  // Returns the Master at index 'idx' for this MiniCluster.
+  // Returns the Master at index 'idx' for this InternalMiniCluster.
   master::MiniMaster* mini_master(int idx) const;
 
   // Return number of mini masters.
@@ -115,7 +114,7 @@ class MiniCluster : public MiniClusterBase {
     return mini_masters_.size();
   }
 
-  // Returns the TabletServer at index 'idx' of this MiniCluster.
+  // Returns the TabletServer at index 'idx' of this InternalMiniCluster.
   // 'idx' must be between 0 and 'num_tablet_servers' -1.
   tserver::MiniTabletServer* mini_tablet_server(int idx) const;
 
@@ -123,7 +122,7 @@ class MiniCluster : public MiniClusterBase {
     return mini_tablet_servers_.size();
   }
 
-  std::string GetMasterFsRoot(int indx) const;
+  std::string GetMasterFsRoot(int idx) const;
 
   std::string GetTabletServerFsRoot(int idx) const;
 
@@ -187,9 +186,7 @@ class MiniCluster : public MiniClusterBase {
 
   std::shared_ptr<rpc::Messenger> messenger_;
 
-  DISALLOW_COPY_AND_ASSIGN(MiniCluster);
+  DISALLOW_COPY_AND_ASSIGN(InternalMiniCluster);
 };
 
 } // namespace kudu
-
-#endif /* KUDU_INTEGRATION_TESTS_MINI_CLUSTER_H */

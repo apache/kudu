@@ -28,7 +28,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -147,7 +147,7 @@ class RegistrationTest : public KuduTest {
 
     KuduTest::SetUp();
 
-    cluster_.reset(new MiniCluster(env_, {}));
+    cluster_.reset(new InternalMiniCluster(env_, {}));
     ASSERT_OK(cluster_->Start());
   }
 
@@ -208,7 +208,7 @@ class RegistrationTest : public KuduTest {
   }
 
  protected:
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   Schema schema_;
 };
 
@@ -216,7 +216,7 @@ TEST_F(RegistrationTest, TestTSRegisters) {
   // Wait for the TS to register.
   vector<shared_ptr<TSDescriptor> > descs;
   ASSERT_OK(cluster_->WaitForTabletServerCount(
-      1, MiniCluster::MatchMode::MATCH_TSERVERS, &descs));
+      1, InternalMiniCluster::MatchMode::MATCH_TSERVERS, &descs));
   ASSERT_EQ(1, descs.size());
 
   // Verify that the registration is sane.

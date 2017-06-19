@@ -33,7 +33,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
@@ -94,7 +94,7 @@ class SecurityUnknownTskTest : public KuduTest {
     // idle connection to the server and open a new one upon making another call
     // to the same server. This is to force authn token verification at each RPC
     // call: the authn token is verified by the server side during connection
-    // negotiation. This test uses the in-process MiniCluster, this affects Kudu
+    // negotiation. This test uses the in-process InternalMiniCluster, this affects Kudu
     // clients and the server components. In the context of this test, that's
     // crucial only for the Kudu clients used in the tests.
     FLAGS_rpc_reopen_outbound_connections = true;
@@ -105,7 +105,7 @@ class SecurityUnknownTskTest : public KuduTest {
 
     MiniClusterOptions opts;
     opts.num_tablet_servers = num_tablet_servers_;
-    cluster_.reset(new MiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
   }
 
@@ -175,7 +175,7 @@ class SecurityUnknownTskTest : public KuduTest {
   const int num_tablet_servers_;
   const int32_t heartbeat_interval_ms_;
   const KuduSchema schema_;
-  unique_ptr<MiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
 };
 
 

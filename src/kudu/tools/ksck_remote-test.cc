@@ -22,7 +22,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tools/data_gen_util.h"
 #include "kudu/tools/ksck_remote.h"
@@ -84,7 +84,7 @@ class RemoteKsckTest : public KuduTest {
 
     opts.num_masters = opts.master_rpc_ports.size();
     opts.num_tablet_servers = 3;
-    mini_cluster_.reset(new MiniCluster(env_, opts));
+    mini_cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(mini_cluster_->Start());
 
     // Connect to the cluster.
@@ -190,8 +190,8 @@ class RemoteKsckTest : public KuduTest {
     return Status::OK();
   }
 
-  std::shared_ptr<MiniCluster> mini_cluster_;
-  std::shared_ptr<Ksck> ksck_;
+  unique_ptr<InternalMiniCluster> mini_cluster_;
+  unique_ptr<Ksck> ksck_;
   shared_ptr<client::KuduClient> client_;
 
   // Captures logged messages from ksck.

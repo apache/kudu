@@ -26,10 +26,10 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/master/master-test-util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/master/master-test-util.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -88,7 +88,7 @@ class CreateTableStressTest : public KuduTest {
     KuduTest::SetUp();
     MiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    cluster_.reset(new MiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(KuduClientBuilder()
@@ -113,7 +113,7 @@ class CreateTableStressTest : public KuduTest {
 
  protected:
   client::sp::shared_ptr<KuduClient> client_;
-  unique_ptr<MiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   KuduSchema schema_;
   std::shared_ptr<Messenger> messenger_;
   shared_ptr<MasterServiceProxy> master_proxy_;

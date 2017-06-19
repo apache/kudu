@@ -25,7 +25,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/test_util.h"
@@ -48,7 +48,7 @@ class ScanTokenTest : public KuduTest {
 
   void SetUp() override {
     // Set up the mini cluster
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
@@ -115,7 +115,7 @@ class ScanTokenTest : public KuduTest {
   }
 
   shared_ptr<KuduClient> client_;
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
 };
 
 TEST_F(ScanTokenTest, TestScanTokens) {

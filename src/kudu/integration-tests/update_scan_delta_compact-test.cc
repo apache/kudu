@@ -23,7 +23,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/countdown_latch.h"
@@ -114,7 +114,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver.
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     KuduClientBuilder client_builder;
     client_builder.add_master_server_addr(
@@ -150,7 +150,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
                                   shared_ptr<KuduSession> session);
 
   KuduSchema schema_;
-  std::shared_ptr<MiniCluster> cluster_;
+  std::shared_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduTable> table_;
   shared_ptr<KuduClient> client_;
 };

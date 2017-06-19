@@ -27,7 +27,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
@@ -84,7 +84,7 @@ class TsTabletManagerITest : public KuduTest {
  protected:
   const KuduSchema schema_;
 
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   client::sp::shared_ptr<KuduClient> client_;
   std::shared_ptr<Messenger> client_messenger_;
 };
@@ -97,7 +97,7 @@ void TsTabletManagerITest::SetUp() {
 
   MiniClusterOptions opts;
   opts.num_tablet_servers = kNumReplicas;
-  cluster_.reset(new MiniCluster(env_, opts));
+  cluster_.reset(new InternalMiniCluster(env_, opts));
   ASSERT_OK(cluster_->Start());
   ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
 }

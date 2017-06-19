@@ -26,8 +26,8 @@ set(INTEGRATION_TESTS_SRCS
   external_mini_cluster-itest-base.cc
   external_mini_cluster.cc
   external_mini_cluster_fs_inspector.cc
+  internal_mini_cluster.cc
   log_verifier.cc
-  mini_cluster.cc
   test_workload.cc
 )
 

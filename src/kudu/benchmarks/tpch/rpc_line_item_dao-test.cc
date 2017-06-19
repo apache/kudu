@@ -26,7 +26,7 @@
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -47,7 +47,7 @@ class RpcLineItemDAOTest : public KuduTest {
     KuduTest::SetUp();
 
     // Start minicluster
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
 
     const char *kTableName = "tpch1";
@@ -68,7 +68,7 @@ class RpcLineItemDAOTest : public KuduTest {
   }
 
  protected:
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;
 
   // Builds a test row to be inserted into the lineitem table.

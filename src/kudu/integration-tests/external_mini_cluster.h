@@ -131,7 +131,7 @@ struct ExternalMiniClusterOptions {
   // Only used when 'enable_kerberos' is 'true'.
   MiniKdcOptions mini_kdc_options;
 
-  // If true, set up a KDC as part of this MiniCluster, generate keytabs for
+  // If true, set up a KDC as part of this ExternalMiniCluster, generate keytabs for
   // the servers, and require Kerberos authentication from clients.
   //
   // Additionally, when the cluster is started, the environment of the
@@ -151,7 +151,7 @@ struct ExternalMiniClusterOptions {
 // A mini-cluster made up of subprocesses running each of the daemons
 // separately. This is useful for black-box or grey-box failure testing
 // purposes -- it provides the ability to forcibly kill or stop particular
-// cluster participants, which isn't feasible in the normal MiniCluster.
+// cluster participants, which isn't feasible in the normal InternalMiniCluster.
 // On the other hand, there is little access to inspect the internal state
 // of the daemons.
 class ExternalMiniCluster : public MiniClusterBase {

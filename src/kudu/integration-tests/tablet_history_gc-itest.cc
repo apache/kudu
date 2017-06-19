@@ -25,7 +25,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster-itest-base.h"
+#include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -488,7 +488,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   // time before reading from them.
   FLAGS_scanner_ttl_ms = 1000 * 60 * 60 * 24;
 
-  StartCluster(1); // Start MiniCluster with a single tablet server.
+  StartCluster(1); // Start InternalMiniCluster with a single tablet server.
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup(); // Convenient way to create a table.

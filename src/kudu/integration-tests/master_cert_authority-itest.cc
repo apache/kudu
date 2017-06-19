@@ -21,7 +21,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -62,7 +62,7 @@ class MasterCertAuthorityTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    cluster_.reset(new MiniCluster(env_, opts_));
+    cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
 
     rpc::MessengerBuilder bld("Client");
@@ -179,7 +179,7 @@ class MasterCertAuthorityTest : public KuduTest {
 
   int num_masters_;
   MiniClusterOptions opts_;
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
 
   shared_ptr<rpc::Messenger> messenger_;
 };

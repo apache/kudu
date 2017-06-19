@@ -47,7 +47,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.proxy.h"
@@ -140,7 +140,7 @@ class ClientTest : public KuduTest {
     FLAGS_scanner_gc_check_interval_us = 50 * 1000; // 50 milliseconds.
 
     // Start minicluster and wait for tablet servers to connect to master.
-    cluster_.reset(new MiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
 
     // Connect to the cluster.
@@ -675,7 +675,7 @@ class ClientTest : public KuduTest {
 
   KuduSchema schema_;
 
-  unique_ptr<MiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> client_table_;
 };

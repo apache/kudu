@@ -34,7 +34,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master-test-util.h"
@@ -108,7 +108,7 @@ class AlterTableTest : public KuduTest {
 
     MiniClusterOptions opts;
     opts.num_tablet_servers = num_replicas();
-    cluster_.reset(new MiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
 
     CHECK_OK(KuduClientBuilder()
@@ -250,7 +250,7 @@ class AlterTableTest : public KuduTest {
 
   static const char *kTableName;
 
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
 
   KuduSchema schema_;

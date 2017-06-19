@@ -25,7 +25,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -75,7 +75,7 @@ class TokenSignerITest : public KuduTest {
 
   void SetUp() override {
     KuduTest::SetUp();
-    cluster_.reset(new MiniCluster(env_, opts_));
+    cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
   }
 
@@ -130,7 +130,7 @@ class TokenSignerITest : public KuduTest {
   int num_masters_;
   const int num_tablet_servers_ = 3;
   MiniClusterOptions opts_;
-  unique_ptr<MiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
 };
 
 // Check that once cluster has started, the TSK for signing is available at the

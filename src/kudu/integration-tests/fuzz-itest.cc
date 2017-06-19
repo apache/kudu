@@ -33,7 +33,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/tablet.h"
@@ -178,7 +178,7 @@ class FuzzTest : public KuduTest {
     KuduTest::SetUp();
 
     MiniClusterOptions opts;
-    cluster_.reset(new MiniCluster(env_, opts));
+    cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
@@ -425,7 +425,7 @@ class FuzzTest : public KuduTest {
                    int update_multiplier);
 
   KuduSchema schema_;
-  gscoped_ptr<MiniCluster> cluster_;
+  gscoped_ptr<InternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
   shared_ptr<KuduSession> session_;
   shared_ptr<KuduTable> table_;
