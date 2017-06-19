@@ -15,13 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
@@ -57,6 +60,12 @@ METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 METRIC_DECLARE_gauge_int64(raft_term);
 
+using std::string;
+using std::unordered_map;
+using std::unordered_set;
+using std::vector;
+using strings::Substitute;
+
 namespace kudu {
 namespace tserver {
 
@@ -82,10 +91,6 @@ using master::TabletLocationsPB;
 using rpc::RpcController;
 using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;
-using std::unordered_map;
-using std::unordered_set;
-using std::vector;
-using strings::Substitute;
 
 static const int kConsensusRpcTimeoutForTests = 50;
 
@@ -279,16 +284,12 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
   void StopOrKillLeaderAndElectNewOne() {
-    bool kill = rand() % 2 == 0;
-
-    TServerDetails* old_leader;
-    CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &old_leader));
-    ExternalTabletServer* old_leader_ets = cluster_->tablet_server_by_uuid(old_leader->uuid());
-
+    TServerDetails* leader;
     vector<TServerDetails*> followers;
-    GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
+    CHECK_OK(GetTabletLeaderAndFollowers(tablet_id_, &leader, &followers));
+    ExternalTabletServer* leader_ets = cluster_->tablet_server_by_uuid(leader->uuid());
 
-    for (TServerDetails* ts : followers) {
+    for (const auto* ts : followers) {
       ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
       CHECK_OK(ets->Pause());
       SleepFor(MonoDelta::FromMilliseconds(100));
@@ -296,14 +297,15 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     // When all are paused also pause or kill the current leader. Since we've waited a bit
     // the old leader is likely to have operations that must be aborted.
-    if (kill) {
-      old_leader_ets->Shutdown();
+    const bool do_kill = rand() % 2 == 0;
+    if (do_kill) {
+      leader_ets->Shutdown();
     } else {
-      CHECK_OK(old_leader_ets->Pause());
+      CHECK_OK(leader_ets->Pause());
     }
 
     // Resume the replicas.
-    for (TServerDetails* ts : followers) {
+    for (const auto* ts : followers) {
       ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
       CHECK_OK(ets->Resume());
     }
@@ -313,15 +315,15 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &new_leader));
 
     // Bring the old leader back.
-    if (kill) {
-      CHECK_OK(old_leader_ets->Restart());
+    if (do_kill) {
+      CHECK_OK(leader_ets->Restart());
       // Wait until we have the same number of followers.
-      int initial_followers = followers.size();
+      const auto initial_followers = followers.size();
       do {
         GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
       } while (followers.size() < initial_followers);
     } else {
-      CHECK_OK(old_leader_ets->Resume());
+      CHECK_OK(leader_ets->Resume());
     }
   }
 
@@ -1078,14 +1080,14 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
     threads_.push_back(new_thread);
   }
 
-  for (CountDownLatch* latch : latches) {
+  for (const auto* latch : latches) {
     NO_FATALS(cluster_->AssertNoCrashes());
     latch->Wait();
     StopOrKillLeaderAndElectNewOne();
   }
 
-  for (scoped_refptr<kudu::Thread> thr : threads_) {
-   CHECK_OK(ThreadJoiner(thr.get()).Join());
+  for (const auto& thr : threads_) {
+    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);

@@ -14,13 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
-#define KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 
-#include <glog/stl_logging.h>
+#pragma once
+
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <glog/stl_logging.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/schema-internal.h"
@@ -247,6 +248,50 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       }
     }
     return NULL;
+  }
+
+  // For the last committed consensus configuration, return the last committed
+  // leader of the consensus configuration and its followers.
+  Status GetTabletLeaderAndFollowers(const std::string& tablet_id,
+                                     TServerDetails** leader,
+                                     vector<TServerDetails*>* followers) {
+    pair<TabletReplicaMap::iterator, TabletReplicaMap::iterator> range =
+        tablet_replicas_.equal_range(tablet_id);
+    std::vector<TServerDetails*> replicas;
+    for (; range.first != range.second; ++range.first) {
+      replicas.push_back((*range.first).second);
+    }
+
+    TServerDetails* leader_replica = nullptr;
+    auto it = replicas.begin();
+    for (; it != replicas.end(); ++it) {
+      TServerDetails* replica = *it;
+      bool found_leader_replica = false;
+      for (auto i = 0; i < kMaxRetries; ++i) {
+        if (GetReplicaStatusAndCheckIfLeader(
+              replica, tablet_id, MonoDelta::FromMilliseconds(100)).ok()) {
+          leader_replica = replica;
+          found_leader_replica = true;
+          break;
+        }
+      }
+      if (found_leader_replica) {
+        break;
+      }
+    }
+    if (!leader_replica) {
+      return Status::NotFound("leader replica not found");
+    }
+
+    if (leader) {
+      *leader = leader_replica;
+    }
+    if (followers) {
+      CHECK(replicas.end() != it);
+      replicas.erase(it);
+      followers->swap(replicas);
+    }
+    return Status::OK();
   }
 
   Status GetLeaderReplicaWithRetries(const std::string& tablet_id,
@@ -522,5 +567,3 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
 }  // namespace tserver
 }  // namespace kudu
-
-#endif /* SRC_KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_ */
