@@ -69,20 +69,43 @@ int IntToKey(int i) {
 }
 } // anonymous namespace
 
-class TsRecoveryITest : public ExternalMiniClusterITestBase {
+class TsRecoveryITest : public ExternalMiniClusterITestBase,
+                        public ::testing::WithParamInterface<const char*> {
+ public:
+  TsRecoveryITest() { extra_tserver_flags_.emplace_back(GetParam()); }
+
  protected:
   void StartClusterOneTs(const vector<string>& extra_tserver_flags = {});
+
+  vector<string> extra_tserver_flags_ = {};
 };
 
 void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flags) {
   StartCluster(extra_tserver_flags, {}, 1 /* replicas */);
 }
 
+#if defined(__APPLE__)
+static const char* kBlockManagerFlags[] = {"--block_manager=file"};
+#else
+static const char* kBlockManagerFlags[] = {"--block_manager=log",
+                                           "--block_manager=file"};
+#endif
+
+// Passes block manager types to the recovery test so we get some extra
+// testing to cover non-default block manager types.
+// Note that this could actually be any other flags you want to pass to
+// the cluster startup, as long as they don't conflict with any test
+// specific flags.
+INSTANTIATE_TEST_CASE_P(BlockManagerType,
+                        TsRecoveryITest,
+                        ::testing::ValuesIn(kBlockManagerFlags));
+
 // Test crashing a server just before appending a COMMIT message.
 // We then restart the server and ensure that all rows successfully
 // inserted before the crash are recovered.
-TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
-  NO_FATALS(StartClusterOneTs());
+TEST_P(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
+  // Add the block manager type.
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -108,7 +131,6 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   // Restart the server and check to make sure that the change is eventually applied.
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-
   // TODO(KUDU-796): after a restart, we may have to replay some
   // orphaned replicates from the log. However, we currently
   // allow reading while those are being replayed, which means we
@@ -124,8 +146,8 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 // Regression test for KUDU-1477: a pending commit message would cause
 // bootstrap to fail if that message only included errors and no
 // successful operations.
-TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
-  NO_FATALS(StartClusterOneTs());
+TEST_P(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
                               "fault_crash_before_append_commit", "0.01"));
 
@@ -163,8 +185,10 @@ TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
 }
 
 // Test that we replay from the recovery directory, if it exists.
-TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
-  NO_FATALS(StartClusterOneTs({"--fault_crash_during_log_replay=0.05"}));
+TEST_P(TsRecoveryITest, TestCrashDuringLogReplay) {
+  vector<string> extra_tserver_flags_with_crash = extra_tserver_flags_;
+  extra_tserver_flags_with_crash.emplace_back("--fault_crash_during_log_replay=0.05");
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_with_crash));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -197,7 +221,7 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
   // Now remove the crash flag, so the next replay will complete, and restart
   // the server once more.
   cluster_->tablet_server(0)->Shutdown();
-  cluster_->tablet_server(0)->mutable_flags()->clear();
+  cluster_->tablet_server(0)->mutable_flags()->pop_back();
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
   ClusterVerifier v(cluster_.get());
@@ -210,10 +234,10 @@ TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
 // Regression test for KUDU-1551: if the tserver crashes after preallocating a segment
 // but before writing its header, the TS would previously crash on restart.
 // Instead, it should ignore the uninitialized segment.
-TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
-  NO_FATALS(StartClusterOneTs({"--log_segment_size_mb=1",
-                               "--log_compression_codec=NO_COMPRESSION"}));
-
+TEST_P(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
+  extra_tserver_flags_.emplace_back("--log_segment_size_mb=1");
+  extra_tserver_flags_.emplace_back("--log_compression_codec=NO_COMPRESSION");
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_write_timeout_millis(100);
@@ -248,8 +272,8 @@ TEST_F(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
 // - the server is restarted with cell size limiting enabled (or lowered)
 // - the bootstrap should fail (but not crash) because it cannot apply the cell size
 // - if we manually increase the cell size limit again, it should replay correctly.
-TEST_F(TsRecoveryITest, TestChangeMaxCellSize) {
-  NO_FATALS(StartClusterOneTs());
+TEST_P(TsRecoveryITest, TestChangeMaxCellSize) {
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_payload_bytes(10000);
@@ -294,7 +318,7 @@ class TsRecoveryITestDeathTest : public TsRecoveryITest {};
 // overflowed OpId index written to the log caused by KUDU-1933.
 // Also serves as a regression itest for KUDU-1933 by writing ops with a high
 // term and index.
-TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
+TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 #if defined(THREAD_SANITIZER)
   // TSAN cannot handle spawning threads after fork().
   return;
@@ -302,7 +326,7 @@ TEST_F(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
-  NO_FATALS(StartClusterOneTs());
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup();
@@ -515,8 +539,7 @@ class UpdaterThreads {
 // these updates would be mistakenly considered as "already flushed", despite
 // the fact that they were only written to the input rowset's memory stores, and
 // never hit disk.
-class Kudu969Test : public TsRecoveryITest,
-                    public ::testing::WithParamInterface<const char*> {
+class Kudu969Test : public TsRecoveryITest {
 };
 INSTANTIATE_TEST_CASE_P(DifferentFaultPoints,
                         Kudu969Test,
