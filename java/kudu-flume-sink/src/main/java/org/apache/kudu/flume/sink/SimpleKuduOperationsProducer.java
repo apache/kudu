@@ -39,7 +39,7 @@ import org.apache.kudu.client.PartialRow;
  *
  * <p><strong>Simple Kudu Event Producer configuration parameters</strong>
  *
- * <table cellpadding=3 cellspacing=0 border=1>
+ * <table cellpadding=3 cellspacing=0 border=1 summary="Simple Kudu Event Producer configuration parameters">
  * <tr>
  *   <th>Property Name</th>
  *   <th>Default</th>

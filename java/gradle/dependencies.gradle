@@ -1,0 +1,105 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This file contains all of the dependencies required for the build.
+// Centrally locating all of the dependencies ensures each subproject
+// uses the same dependency version for all dependencies used.
+
+ext {
+  versions = [:]
+  libs = [:]
+  // All supported scala versions.
+  scalaVersions = propertyWithDefault("scalaVersions", "2.11.8,2.10.6").split(",")
+}
+
+versions += [
+    async          : "1.4.1",
+    avro           : "1.8.1",
+    clojure        : "1.8.0",
+    clojureToolsCli: "0.3.5",
+    commonsIo      : "2.5",
+    findbugs       : "3.0.1",
+    flume          : "1.6.0",
+    gradle         : "4.0.2",
+    guava          : "20.0",
+    hadoop         : "2.8.1",
+    hamcrest       : "1.3",
+    jepsen         : "0.1.3",
+    jsr305         : "3.0.2",
+    junit          : "4.12",
+    log4j          : "1.2.17",
+    mockito        : "2.8.47",
+    murmur         : "1.0.0",
+    netty          : "3.10.6.Final",
+    pmd            : "5.8.1",
+    protobuf       : "3.3.0",
+    scalatest      : "3.0.3",
+    slf4j          : "1.7.25",
+    yetus          : "0.5.0"
+]
+
+// Log the Gradle version used vs defined.
+if (gradle.gradleVersion != versions.gradle) {
+  println "Using gradle version $gradle.gradleVersion (Build defines $versions.gradle)"
+}
+
+// Set the Scala version.
+// The first Scala version in the scalaVersions list is the default.
+versions["scala"] = scalaVersions.first()
+// Add base Scala version
+versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("."))
+
+// Set the Spark version based on the Scala version.
+def spark1Version = "1.6.3"
+def spark2Version = "2.1.1"
+if ("$versions.scalaBase" == "2.10") {
+  versions["spark"] = spark1Version
+} else {
+  versions["spark"] = spark2Version
+}
+versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
+// Log for debugging
+logger.info("Configuring Scala version: $versions.scala with Spark version: $versions.spark")
+
+libs += [
+    async             : "com.stumbleupon:async:$versions.async",
+    avro              : "org.apache.avro:avro:$versions.avro",
+    clojure           : "org.clojure:clojure:$versions.clojure",
+    clojureToolsCli   : "org.clojure:tools.cli:$versions.clojureToolsCli",
+    commonsIo         : "commons-io:commons-io:$versions.commonsIo",
+    flumeConfiguration: "org.apache.flume:flume-ng-configuration:$versions.flume",
+    flumeCore         : "org.apache.flume:flume-ng-core:$versions.flume",
+    guava             : "com.google.guava:guava:$versions.guava",
+    hadoopClient      : "org.apache.hadoop:hadoop-client:$versions.hadoop",
+    hamcrestCore      : "org.hamcrest:hamcrest-core:$versions.hamcrest",
+    jepsen            : "jepsen:jepsen:$versions.jepsen",
+    jsr305            : "com.google.code.findbugs:jsr305:$versions.jsr305",
+    junit             : "junit:junit:$versions.junit",
+    log4j             : "log4j:log4j:$versions.log4j",
+    mockitoCore       : "org.mockito:mockito-core:$versions.mockito",
+    murmur            : "com.sangupta:murmur:$versions.murmur",
+    netty             : "io.netty:netty:$versions.netty",
+    protobufJava      : "com.google.protobuf:protobuf-java:$versions.protobuf",
+    protoc            : "com.google.protobuf:protoc:$versions.protobuf",
+    scalaLibrary      : "org.scala-lang:scala-library:$versions.scala",
+    scalatest         : "org.scalatest:scalatest_$versions.scalaBase:$versions.scalatest",
+    slf4jApi          : "org.slf4j:slf4j-api:$versions.slf4j",
+    slf4jLog4j12      : "org.slf4j:slf4j-log4j12:$versions.slf4j",
+    sparkCore         : "org.apache.spark:spark-core_$versions.scalaBase:$versions.spark",
+    sparkSql          : "org.apache.spark:spark-sql_$versions.scalaBase:$versions.spark",
+    yetusAnnotations  : "org.apache.yetus:audience-annotations:$versions.yetus"
+]

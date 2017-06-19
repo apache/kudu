@@ -28,7 +28,7 @@ import org.scalatest.{FunSuite, Matchers}
 import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
-class IntegrationTestBigLinkedListTest extends FunSuite with TestContext with Matchers {
+class ITBigLinkedListTest extends FunSuite with TestContext with Matchers {
 
   test("Spark ITBLL") {
     Generator.testMain(Array("--tasks=2",

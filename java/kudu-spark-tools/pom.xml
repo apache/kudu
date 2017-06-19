@@ -132,6 +132,12 @@
                 <configuration>
                     <charset>${project.build.sourceEncoding}</charset>
                     <scalaVersion>${scala-2.11.version}</scalaVersion>
+                    <args>
+                        <!-- Emit warning and location for usages of features that should be imported explicitly. -->
+                        <arg>-feature</arg>
+                        <!-- Emit various static analysis warnings. -->
+                        <arg>-Xlint</arg>
+                    </args>
                 </configuration>
                 <executions>
                     <execution>

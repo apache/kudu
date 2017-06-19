@@ -1,0 +1,85 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This file contains common tasks and configuration for checking the quality of the code.
+
+apply plugin: "checkstyle" // Ensures Java code follows the defined coding style.
+apply plugin: "findbugs"   // Performs static code analysis to look for bugs in Java code.
+apply plugin: "pmd"        // Performs static code analysis to look for common code smells in Java code.
+apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
+
+checkstyle {
+  configFile = file("$rootDir/kudu_style.xml")
+  configProperties = [
+      "checkstyle.suppressions.file" : "$rootDir/checkstyle_suppressions.xml"
+  ]
+  ignoreFailures = true
+  showViolations = true
+}
+
+// Create an aggregate checkstyle task.
+// This simplifies running checkstyle on all the code by only needing one task instead of multiple in your command.
+task checkstyle(dependsOn: [checkstyleMain, checkstyleTest, checkstyleIntegrationTest], group: "Verification") {
+  description = "Run Checkstyle analysis."
+}
+
+findbugs {
+  toolVersion = versions.findbugs
+  ignoreFailures = true
+  effort = "max"
+}
+
+tasks.withType(FindBugs) {
+  reports {
+    xml.enabled false
+    html.enabled true
+  }
+}
+
+// Create an aggregate findbugs task.
+// This simplifies running findbugs on all the code by only needing one task instead of multiple in your command.
+task findbugs(dependsOn: [findbugsMain, findbugsTest, findbugsIntegrationTest], group: "Verification") {
+  description = "Run FindBugs analysis."
+}
+
+pmd {
+  toolVersion = versions.pmd
+  ignoreFailures = true
+}
+
+// Create an aggregate pmd task.
+// This simplifies running pmd on all the code by only needing one task instead of multiple in your command.
+task pmd(dependsOn: [pmdMain, pmdTest, pmdIntegrationTest], group: "Verification") {
+  description = "Run PMD analysis."
+}
+
+// Configure the versions plugin to only show dependency updates for released versions.
+dependencyUpdates {
+  revision = "release"
+  resolutionStrategy = {
+    componentSelection { rules ->
+      rules.all { ComponentSelection selection ->
+        boolean rejected = ["snap", "alpha", "beta", "rc", "cr", "m"].any { qualifier ->
+          selection.candidate.version ==~ /(?i).*[.-]${qualifier}[.\d-]*/
+        }
+        if (rejected) {
+          selection.reject("Release candidate")
+        }
+      }
+    }
+  }
+}

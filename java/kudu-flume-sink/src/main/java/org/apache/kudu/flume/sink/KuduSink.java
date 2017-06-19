@@ -57,7 +57,7 @@ import org.apache.kudu.client.SessionConfiguration;
  *
  * <p><strong>Flume Kudu Sink configuration parameters</strong>
  *
- * <table cellpadding=3 cellspacing=0 border=1>
+ * <table cellpadding=3 cellspacing=0 border=1 summary="Flume Kudu Sink configuration parameters">
  * <tr><th>Property Name</th><th>Default</th><th>Required?</th><th>Description</th></tr>
  * <tr><td>channel</td><td></td><td>Yes</td><td>The name of the Flume channel to read.</td></tr>
  * <tr><td>type</td><td></td><td>Yes</td>

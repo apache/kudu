@@ -1,0 +1,53 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// This file contains methods to be used in the build to load and
+// set build properties consistently.
+
+// ext makes these methods callable project wide
+ext {
+  // A common method to handle loading gradle properties with a default when
+  // no definition is found. The property value is determined by the following
+  // priority order (top is highest priority):
+  //    - gradle property (-Pproperty=value)
+  //    - system property (-Dproperty=value)
+  //    - default value
+  // See more details on gradle property handling here:
+  //    https://docs.gradle.org/current/userguide/build_environment.html#sec:gradle_properties_and_system_properties
+  propertyWithDefault = { property, defaultValue ->
+    def value = defaultValue
+    def systemValue = System.getProperty(property)
+    if (systemValue != null) {
+      value = systemValue
+    }
+    def projectValue = project.hasProperty(property) ? project.getProperty(property) : null
+    if (projectValue != null) {
+      value = projectValue
+    }
+    logger.info("Resolved property $property with final value $value " +
+        "[defaultValue=$defaultValue, systemValue=$systemValue, projectValue=$projectValue]")
+    return value
+  }
+
+  // Returns true if the property has been set, otherwise false.
+  propertyExists = { property ->
+    if (System.getProperty(property) != null || project.hasProperty(property)) {
+      return true
+    }
+    return false
+  }
+}

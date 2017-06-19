@@ -43,7 +43,7 @@ import org.apache.kudu.client.Upsert;
  *
  * <p><strong>Simple Keyed Kudu Operations Producer configuration parameters</strong>
  *
- * <table cellpadding=3 cellspacing=0 border=1>
+ * <table cellpadding=3 cellspacing=0 border=1 summary="Simple Keyed Kudu Operations Producer configuration parameters">
  * <tr>
  *   <th>Property Name</th>
  *   <th>Default</th>

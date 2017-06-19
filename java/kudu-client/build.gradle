@@ -1,0 +1,70 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+apply from: "$rootDir/gradle/protobuf.gradle"
+apply from: "$rootDir/gradle/shadow.gradle"
+
+dependencies {
+  // Not shaded in the client JAR because it's part of the public API.
+  compileUnshaded(libs.async) {
+    // async uses versions ranges for slf4j making builds non-deterministic.
+    // Remove this once the following is merged: https://github.com/OpenTSDB/async/pull/8
+    exclude group: "org.slf4j", module: "slf4j-api"
+  }
+  compileUnshaded libs.slf4jApi
+  compileUnshaded libs.yetusAnnotations
+
+  compile libs.guava
+  compile libs.murmur
+  compile libs.netty
+  compile libs.protobufJava
+
+  optional libs.jsr305
+
+  testCompile libs.commonsIo
+  testCompile libs.hamcrestCore
+  testCompile libs.junit
+  testCompile libs.log4j
+  testCompile libs.mockitoCore
+  testCompile libs.slf4jLog4j12
+}
+
+// Add protobuf files to the proto source set.
+sourceSets {
+  main {
+    proto {
+      srcDir "${project.rootDir}/../src"
+      // Excluded any test proto files
+      exclude "**/*test*.proto"
+    }
+  }
+}
+
+// Configure a shaded test jar for use in the other modules.
+// We only do this for kudu-client because it has common test utilities.
+task shadowTestJar(type: ShadowJar) {
+  classifier = "tests-shaded"
+  from sourceSets.test.output
+  configurations = [project.configurations.testRuntime]
+}
+// Create a configuration so that the shaded test jar can be referenced in other modules.
+configurations.create("shadowTest")
+artifacts {
+  shadowTest shadowTestJar
+}

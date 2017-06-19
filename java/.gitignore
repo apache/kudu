@@ -16,6 +16,7 @@
 # under the License.
 
 # Eclipse files
+.metadata/
 .classpath
 .project
 .settings/
@@ -24,8 +25,13 @@
 target/
 dependency-reduced-pom.xml
 
+# Gradle build artifacts
+.gradle
+build
+
 # IntelliJ
 *.ipr
 *.iws
 *.iml
 .idea/
+classes
