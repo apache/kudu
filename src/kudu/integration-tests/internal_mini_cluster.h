@@ -23,7 +23,7 @@
 
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/integration-tests/mini_cluster_base.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/util/env.h"
 
 namespace kudu {
@@ -70,7 +70,7 @@ struct MiniClusterOptions {
 
 // An in-process cluster with a MiniMaster and a configurable
 // number of MiniTabletServers for use in tests.
-class InternalMiniCluster : public MiniClusterBase {
+class InternalMiniCluster : public MiniCluster {
  public:
   InternalMiniCluster(Env* env, const MiniClusterOptions& options);
   virtual ~InternalMiniCluster();

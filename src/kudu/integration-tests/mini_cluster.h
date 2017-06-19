@@ -41,13 +41,13 @@ enum class ClusterNodes {
   TS_ONLY
 };
 
-// Base class for InternalMiniCluster implementations. Provides some commonly-used
+// Base class for MiniCluster implementations. Provides some commonly-used
 // virtual methods that allow for abstracting the details of whether the
 // mini-cluster implementation is in-process or out-of-process.
-class MiniClusterBase {
+class MiniCluster {
  public:
-  MiniClusterBase() {}
-  virtual ~MiniClusterBase() {}
+  MiniCluster() {}
+  virtual ~MiniCluster() {}
 
   // Start the cluster.
   virtual Status Start() = 0;

@@ -47,7 +47,7 @@ using client::sp::shared_ptr;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
-TestWorkload::TestWorkload(MiniClusterBase* cluster)
+TestWorkload::TestWorkload(MiniCluster* cluster)
   : cluster_(cluster),
     rng_(SeedRandom()),
     num_write_threads_(4),

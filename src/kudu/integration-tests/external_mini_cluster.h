@@ -30,7 +30,7 @@
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/integration-tests/mini_cluster_base.h"
+#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -154,7 +154,7 @@ struct ExternalMiniClusterOptions {
 // cluster participants, which isn't feasible in the normal InternalMiniCluster.
 // On the other hand, there is little access to inspect the internal state
 // of the daemons.
-class ExternalMiniCluster : public MiniClusterBase {
+class ExternalMiniCluster : public MiniCluster {
  public:
   // Constructs a cluster with the default options.
   ExternalMiniCluster();
