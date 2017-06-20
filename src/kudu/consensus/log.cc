@@ -96,23 +96,32 @@ DEFINE_bool(log_inject_latency, false,
             "If true, injects artificial latency in log sync operations. "
             "Advanced option. Use at your own risk -- has a negative effect "
             "on performance for obvious reasons!");
+TAG_FLAG(log_inject_latency, unsafe);
+TAG_FLAG(log_inject_latency, runtime);
+
 DEFINE_int32(log_inject_latency_ms_mean, 100,
              "The number of milliseconds of latency to inject, on average. "
              "Only takes effect if --log_inject_latency is true");
+TAG_FLAG(log_inject_latency_ms_mean, unsafe);
+TAG_FLAG(log_inject_latency_ms_mean, runtime);
+
 DEFINE_int32(log_inject_latency_ms_stddev, 100,
              "The standard deviation of latency to inject in the log. "
              "Only takes effect if --log_inject_latency is true");
+TAG_FLAG(log_inject_latency_ms_stddev, unsafe);
+TAG_FLAG(log_inject_latency_ms_stddev, runtime);
+
 DEFINE_int32(log_inject_thread_lifecycle_latency_ms, 0,
              "Injection point for random latency during key thread lifecycle transition "
              "points.");
+TAG_FLAG(log_inject_thread_lifecycle_latency_ms, unsafe);
+TAG_FLAG(log_inject_thread_lifecycle_latency_ms, runtime);
+
 DEFINE_double(fault_crash_before_append_commit, 0.0,
               "Fraction of the time when the server will crash just before appending a "
               "COMMIT message to the log. (For testing only!)");
-TAG_FLAG(log_inject_latency, unsafe);
-TAG_FLAG(log_inject_latency_ms_mean, unsafe);
-TAG_FLAG(log_inject_latency_ms_stddev, unsafe);
-TAG_FLAG(log_inject_thread_lifecycle_latency_ms, unsafe);
 TAG_FLAG(fault_crash_before_append_commit, unsafe);
+TAG_FLAG(fault_crash_before_append_commit, runtime);
 
 DEFINE_double(log_inject_io_error_on_append_fraction, 0.0,
               "Fraction of the time when the log will fail to append and return an IOError. "
