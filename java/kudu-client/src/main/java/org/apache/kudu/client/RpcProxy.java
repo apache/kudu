@@ -27,6 +27,7 @@
 package org.apache.kudu.client;
 
 import java.util.Set;
+import javax.annotation.Nonnull;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -56,14 +57,16 @@ import org.apache.kudu.util.Pair;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class RpcProxy {
+class RpcProxy {
 
   private static final Logger LOG = LoggerFactory.getLogger(RpcProxy.class);
 
   /** The reference to the top-level Kudu client object. */
+  @Nonnull
   private final AsyncKuduClient client;
 
   /** The reference to the object representing connection to the target server. */
+  @Nonnull
   private final Connection connection;
 
   /**
@@ -73,10 +76,8 @@ public class RpcProxy {
    * @param connection the connection associated with the target Kudu server
    */
   RpcProxy(AsyncKuduClient client, Connection connection) {
-    Preconditions.checkNotNull(client);
-    Preconditions.checkNotNull(connection);
-    this.client = client;
-    this.connection = connection;
+    this.client = Preconditions.checkNotNull(client);
+    this.connection = Preconditions.checkNotNull(connection);
   }
 
   /**
@@ -138,7 +139,7 @@ public class RpcProxy {
           });
     } catch (RecoverableException e) {
       // This is to handle RecoverableException(Status.IllegalState()) from
-      // Connection.enqueueMessage() if the connection turned into the DISCONNECTED state.
+      // Connection.enqueueMessage() if the connection turned into the TERMINATED state.
       client.handleRetryableError(rpc, e);
     } catch (Exception e) {
       rpc.errback(e);
@@ -190,8 +191,6 @@ public class RpcProxy {
                                            final KuduRpc<R> rpc,
                                            CallResponse response,
                                            KuduException ex) {
-    Preconditions.checkNotNull(rpc);
-
     final long start = System.nanoTime();
     if (LOG.isTraceEnabled()) {
       if (response == null) {
@@ -199,7 +198,6 @@ public class RpcProxy {
             connection.getLogPrefix(), rpc);
       } else {
         RpcHeader.ResponseHeader header = response.getHeader();
-        Preconditions.checkNotNull(header);
         LOG.trace("{} received response with rpcId {}, size {} for RPC {}",
             connection.getLogPrefix(), header.getCallId(),
             response.getTotalResponseSize(), rpc);
@@ -210,6 +208,10 @@ public class RpcProxy {
         rpc.method(), RpcTraceFrame.Action.RECEIVE_FROM_SERVER).serverInfo(
             connection.getServerInfo());
     if (ex != null) {
+      if (ex instanceof InvalidAuthnTokenException) {
+        client.handleInvalidToken(rpc);
+        return;
+      }
       if (ex instanceof RecoverableException) {
         // This check is specifically for the ERROR_SERVER_TOO_BUSY, ERROR_UNAVAILABLE and alike.
         failOrRetryRpc(client, connection, rpc, (RecoverableException) ex);
@@ -280,8 +282,8 @@ public class RpcProxy {
           connection.getLogPrefix(), e, header.getCallId(), rpc);
     }
     if (LOG.isTraceEnabled()) {
-      LOG.trace("------------------<< LEAVING  DECODE <<------------------" +
-          " time elapsed: " + ((System.nanoTime() - start) / 1000) + "us");
+      LOG.trace("------------------<< LEAVING  DECODE <<------------------ time elapsed: {} us",
+          ((System.nanoTime() - start) / 1000));
     }
   }
 

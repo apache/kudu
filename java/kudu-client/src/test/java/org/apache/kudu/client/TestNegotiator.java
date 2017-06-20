@@ -48,7 +48,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.client.Negotiator.Result;
+import org.apache.kudu.client.Negotiator.Success;
 import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
 import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
@@ -102,7 +102,7 @@ public class TestNegotiator {
   }
 
   private void startNegotiation(boolean fakeLoopback) {
-    Negotiator negotiator = new Negotiator("127.0.0.1", secContext);
+    Negotiator negotiator = new Negotiator("127.0.0.1", secContext, false);
     negotiator.overrideLoopbackForTests = fakeLoopback;
     embedder = new DecoderEmbedder<Object>(negotiator);
     negotiator.sendHello(embedder.getPipeline().getChannel());
@@ -135,19 +135,19 @@ public class TestNegotiator {
 
   /**
    * Checks that the client sends a connection context and then yields
-   * a Negotiation.Result to the pipeline.
+   * a Negotiation.Success to the pipeline.
    * @return the result
    */
-  private Result assertComplete() {
+  private Success assertComplete() {
     RpcOutboundMessage msg = (RpcOutboundMessage)embedder.poll();
     ConnectionContextPB connCtx = (ConnectionContextPB)msg.getBody();
     assertEquals(Negotiator.CONNECTION_CTX_CALL_ID, msg.getHeaderBuilder().getCallId());
     assertEquals(System.getProperty("user.name"), connCtx.getDEPRECATEDUserInfo().getRealUser());
 
-    // Expect the client to also emit a negotiation Result.
-    Result result = (Result)embedder.poll();
-    assertNotNull(result);
-    return result;
+    // Expect the client to also emit a negotiation Success.
+    Success success = (Success)embedder.poll();
+    assertNotNull(success);
+    return success;
   }
 
   @Test

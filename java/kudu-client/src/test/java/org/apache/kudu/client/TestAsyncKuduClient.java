@@ -102,7 +102,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       boolean sleep = false;
       if (!client.getConnectionListCopy().isEmpty()) {
         for (Connection c : client.getConnectionListCopy()) {
-          if (!c.isDisconnected()) {
+          if (!c.isTerminated()) {
             sleep = true;
             break;
           }

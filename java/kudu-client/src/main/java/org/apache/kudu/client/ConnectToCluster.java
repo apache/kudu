@@ -131,13 +131,15 @@ final class ConnectToCluster {
    * @param masterAddresses the addresses of masters to fetch from
    * @param parentRpc RPC that prompted a master lookup, can be null
    * @param defaultTimeoutMs timeout to use for RPCs if the parentRpc has no timeout
+   * @param credentialsPolicy credentials policy to use for connection negotiation
    * @return a Deferred object for the cluster connection status
    */
   public static Deferred<ConnectToClusterResponse> run(
       KuduTable masterTable,
       List<HostAndPort> masterAddresses,
       KuduRpc<?> parentRpc,
-      long defaultTimeoutMs) {
+      long defaultTimeoutMs,
+      Connection.CredentialsPolicy credentialsPolicy) {
     ConnectToCluster connector = new ConnectToCluster(masterAddresses);
 
     // Try to connect to each master. The ConnectToCluster instance
@@ -145,7 +147,8 @@ final class ConnectToCluster {
     // deferred.
     for (HostAndPort hostAndPort : masterAddresses) {
       Deferred<ConnectToMasterResponsePB> d;
-      RpcProxy proxy = masterTable.getAsyncClient().newMasterRpcProxy(hostAndPort);
+      RpcProxy proxy = masterTable.getAsyncClient().newMasterRpcProxy(
+          hostAndPort, credentialsPolicy);
       if (proxy != null) {
         d = connectToMaster(masterTable, proxy, parentRpc, defaultTimeoutMs);
       } else {

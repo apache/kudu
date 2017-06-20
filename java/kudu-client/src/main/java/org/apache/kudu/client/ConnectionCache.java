@@ -18,12 +18,13 @@
 package org.apache.kudu.client;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.Set;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -37,16 +38,20 @@ import org.jboss.netty.util.HashedWheelTimer;
  * There should only be one instance of ConnectionCache per Kudu client, and it should not be
  * shared between clients.
  * <p>
- * Disconnected instances of the {@link Connection} class are replaced in the cache with instances
- * when {@link #getConnection(ServerInfo)) method is called with the same destination. Since the map
- * is keyed by UUID of the server, it would require an ever-growing set of unique Kudu servers
- * to encounter memory issues.
+ * Disconnected instances of the {@link Connection} class are replaced in the cache with new ones
+ * when {@link #getConnection(ServerInfo, Connection.CredentialsPolicy)} method is called with the
+ * same destination and matching credentials policy. Since the map is keyed by the UUID of the
+ * target server, the theoretical maximum number of elements in the cache is twice the number of
+ * all servers in the cluster (i.e. both masters and tablet servers). However, in practice it's
+ * 2 * number of masters + number of tablet servers since tablet servers do not require connections
+ * negotiated with primary credentials.
  *
  * This class is thread-safe.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 class ConnectionCache {
+
   /** Security context to use for connection negotiation. */
   private final SecurityContext securityContext;
 
@@ -59,15 +64,15 @@ class ConnectionCache {
   /** Netty's channel factory to use by connections. */
   private final ClientSocketChannelFactory channelFactory;
 
-  /** Synchronization primitive to guard access to the fields below. */
-  private final ReentrantLock lock = new ReentrantLock();
-
-  @GuardedBy("lock")
-  private final HashMap<String, Connection> uuid2connection = new HashMap<>();
-
   /**
-   * Create a new empty ConnectionCache given the specified parameters.
+   * Container mapping server UUID into the established connection from the client to the server.
+   * It may be up to two connections per server: one established with secondary credentials
+   * (e.g. authn token), another with primary ones (e.g. Kerberos credentials).
    */
+  @GuardedBy("uuid2connection")
+  private final HashMultimap<String, Connection> uuid2connection = HashMultimap.create();
+
+  /** Create a new empty ConnectionCache given the specified parameters. */
   ConnectionCache(SecurityContext securityContext,
                   long socketReadTimeoutMs,
                   HashedWheelTimer timer,
@@ -84,59 +89,81 @@ class ConnectionCache {
    * created connection is not negotiated until enqueuing the first RPC to the target server.
    *
    * @param serverInfo the server end-point to connect to
+   * @param credentialsPolicy authentication credentials policy for the connection negotiation
    * @return instance of this object with the specified destination
    */
-  public Connection getConnection(final ServerInfo serverInfo) {
-    Connection connection;
-
-    lock.lock();
-    try {
-      // First try to find an existing connection.
-      connection = uuid2connection.get(serverInfo.getUuid());
-      if (connection == null || connection.isDisconnected()) {
-        // If no valid connection is found, create a new one.
-        connection = new Connection(serverInfo, securityContext,
-            socketReadTimeoutMs, timer, channelFactory);
-        uuid2connection.put(serverInfo.getUuid(), connection);
+  public Connection getConnection(final ServerInfo serverInfo,
+                                  Connection.CredentialsPolicy credentialsPolicy) {
+    Connection result = null;
+    synchronized (uuid2connection) {
+      // Create and register a new connection object into the cache if one of the following is true:
+      //
+      //  * There isn't a registered connection to the specified destination.
+      //
+      //  * There is a connection to the specified destination, but it's in TERMINATED state.
+      //    Such connections cannot be used again and should be recycled. The connection cache
+      //    lazily removes such entries.
+      //
+      //  * A connection negotiated with primary credentials is requested but the only registered
+      //    one does not have such property. In this case, the already existing connection
+      //    (negotiated with secondary credentials, i.e. authn token) is kept in the cache and
+      //    a new one is created to be open and negotiated with primary credentials. The newly
+      //    created connection is put into the cache along with old one. We don't do anything
+      //    special to the old connection to shut it down since it may be still in use. We rely
+      //    on the server to close inactive connections in accordance with their TTL settings.
+      //
+      final Set<Connection> connections = uuid2connection.get(serverInfo.getUuid());
+      Iterator<Connection> it = connections.iterator();
+      while (it.hasNext()) {
+        Connection c = it.next();
+        if (c.isTerminated()) {
+          // Lazy recycling of the terminated connections: removing them from the cache upon
+          // an attempt to connect to the same destination again.
+          it.remove();
+          continue;
+        }
+        if (credentialsPolicy == Connection.CredentialsPolicy.ANY_CREDENTIALS ||
+            credentialsPolicy == c.getCredentialsPolicy()) {
+          // If the connection policy allows for using any credentials or the connection is
+          // negotiated using the given credentials type, this is the connection we are looking for.
+          result = c;
+        }
       }
-    } finally {
-      lock.unlock();
+      if (result == null) {
+        result = new Connection(serverInfo, securityContext,
+            socketReadTimeoutMs, timer, channelFactory, credentialsPolicy);
+        connections.add(result);
+        // There can be at most 2 connections to the same destination: one with primary and another
+        // with secondary credentials.
+        assert connections.size() <= 2;
+      }
     }
 
-    return connection;
+    return result;
   }
 
-  /**
-   * Asynchronously terminate every connection. This also cancels all the pending and in-flight
-   * RPCs.
-   */
+  /** Asynchronously terminate every connection. This cancels all the pending and in-flight RPCs. */
   Deferred<ArrayList<Void>> disconnectEverything() {
-    lock.lock();
-    try {
-      ArrayList<Deferred<Void>> deferreds = new ArrayList<>(uuid2connection.size());
+    synchronized (uuid2connection) {
+      List<Deferred<Void>> deferreds = new ArrayList<>(uuid2connection.size());
       for (Connection c : uuid2connection.values()) {
         deferreds.add(c.shutdown());
       }
       return Deferred.group(deferreds);
-    } finally {
-      lock.unlock();
     }
   }
 
   /**
    * Return a copy of the all-connections-list. This method is exposed only to allow
-   * {@ref AsyncKuduClient} to forward it, so tests could get access to the underlying elements
+   * {@link AsyncKuduClient} to forward it, so tests could get access to the underlying elements
    * of the cache.
    *
    * @return a copy of the list of all connections in the connection cache
    */
   @VisibleForTesting
   List<Connection> getConnectionListCopy() {
-    lock.lock();
-    try {
+    synchronized (uuid2connection) {
       return ImmutableList.copyOf(uuid2connection.values());
-    } finally {
-      lock.unlock();
     }
   }
 }

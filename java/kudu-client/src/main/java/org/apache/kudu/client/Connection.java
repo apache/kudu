@@ -60,7 +60,6 @@ import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.client.Negotiator.Result;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 
@@ -77,22 +76,45 @@ import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
  * Acquiring the monitor on an object of this class will prevent it from
  * accepting write requests as well as buffering requests if the underlying
  * channel isn't connected.
+ *
  * TODO(aserbin) clarify on the socketReadTimeoutMs and using per-RPC timeout settings.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 class Connection extends SimpleChannelUpstreamHandler {
+  /**
+   * Authentication credentials policy for negotiating outbound connections. Some requests
+   * (e.g. {@link ConnectToMasterRequest}) behave differently depending on the type of credentials
+   * used for authentication when negotiating on the underlying connection. If some particular
+   * behavior is required, it's necessary to specify appropriate credentials policy while creating
+   * an instance of this object.
+   */
+  public enum CredentialsPolicy {
+    /** It's acceptable to use authentication credentials of any type, primary or secondary ones. */
+    ANY_CREDENTIALS,
+
+    /**
+     * Only primary credentials are acceptable. Primary credentials are Kerberos tickets,
+     * TLS certificate. Secondary credentials are authentication tokens: they are 'derived'
+     * in the sense that it's possible to acquire them using 'primary' credentials.
+     */
+    PRIMARY_CREDENTIALS,
+  }
+
   /** Information on the target server. */
   private final ServerInfo serverInfo;
 
   /** Security context to use for connection negotiation. */
   private final SecurityContext securityContext;
 
-  /** Read timeout for the connection (used by Netty's ReadTimeoutHandler) */
+  /** Read timeout for the connection (used by Netty's ReadTimeoutHandler). */
   private final long socketReadTimeoutMs;
 
-  /** Timer to monitor read timeouts for the connection (used by Netty's ReadTimeoutHandler) */
+  /** Timer to monitor read timeouts for the connection (used by Netty's ReadTimeoutHandler). */
   private final HashedWheelTimer timer;
+
+  /** Credentials policy to use when authenticating. */
+  private final CredentialsPolicy credentialsPolicy;
 
   /** The underlying Netty's socket channel. */
   private final SocketChannel channel;
@@ -118,7 +140,7 @@ class Connection extends SimpleChannelUpstreamHandler {
   /** Lock to guard access to some of the fields below. */
   private final ReentrantLock lock = new ReentrantLock();
 
-  /** A state of this object. */
+  /** The current state of this Connection object. */
   @GuardedBy("lock")
   private State state;
 
@@ -135,24 +157,43 @@ class Connection extends SimpleChannelUpstreamHandler {
   @GuardedBy("lock")
   private ArrayList<QueuedMessage> queuedMessages = Lists.newArrayList();
 
-  /** The result of the connection negotiation. */
+  /** The result of the successful connection negotiation. */
   @GuardedBy("lock")
-  private Result negotiationResult = null;
+  private Negotiator.Success negotiationResult = null;
+
+  /** The result of failed connection negotiation. */
+  @GuardedBy("lock")
+  private Negotiator.Failure negotiationFailure = null;
 
   /** A monotonically increasing counter for RPC IDs. */
   @GuardedBy("lock")
   private int nextCallId = 0;
 
+  /**
+   * Create a new Connection object to the specified destination.
+   *
+   * @param serverInfo the destination server
+   * @param securityContext security context to use for connection negotiation
+   * @param socketReadTimeoutMs timeout for the read operations on the socket
+   * @param timer timer to set up read timeout on the corresponding Netty channel
+   * @param channelFactory Netty factory to create corresponding Netty channel
+   * @param credentialsPolicy policy controlling which credentials to use while negotiating on the
+   *                          connection to the target server:
+   *                          if {@link CredentialsPolicy#PRIMARY_CREDENTIALS}, the authentication
+   *                          token from the security context is ignored
+   */
   Connection(ServerInfo serverInfo,
              SecurityContext securityContext,
              long socketReadTimeoutMs,
              HashedWheelTimer timer,
-             ClientSocketChannelFactory channelFactory) {
+             ClientSocketChannelFactory channelFactory,
+             CredentialsPolicy credentialsPolicy) {
     this.serverInfo = serverInfo;
     this.securityContext = securityContext;
     this.state = State.NEW;
     this.socketReadTimeoutMs = socketReadTimeoutMs;
     this.timer = timer;
+    this.credentialsPolicy = credentialsPolicy;
 
     final ConnectionPipeline pipeline = new ConnectionPipeline();
     pipeline.init();
@@ -179,7 +220,8 @@ class Connection extends SimpleChannelUpstreamHandler {
       lock.unlock();
     }
     Channels.write(channel, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
-    Negotiator negotiator = new Negotiator(serverInfo.getHostname(), securityContext);
+    Negotiator negotiator = new Negotiator(serverInfo.getHostname(), securityContext,
+        (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS));
     ctx.getPipeline().addBefore(ctx.getName(), "negotiation", negotiator);
     negotiator.sendHello(channel);
   }
@@ -198,7 +240,7 @@ class Connection extends SimpleChannelUpstreamHandler {
   @Override
   public void channelDisconnected(final ChannelHandlerContext ctx,
                                   final ChannelStateEvent e) throws Exception {
-    // No need to call super.channelClosed(ctx, e) -- there should be nobody in the upstream
+    // No need to call super.channelDisconnected(ctx, e) -- there should be nobody in the upstream
     // pipeline after Connection itself. So, just handle the disconnection event ourselves.
     cleanup("connection disconnected");
   }
@@ -216,15 +258,17 @@ class Connection extends SimpleChannelUpstreamHandler {
   @Override
   public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws Exception {
     Object m = evt.getMessage();
-    if (m instanceof Negotiator.Result) {
+
+    // Process the results of a successful negotiation.
+    if (m instanceof Negotiator.Success) {
       lock.lock();
       try {
         Preconditions.checkState(state == State.NEGOTIATING);
-        Preconditions.checkNotNull(queuedMessages);
+        Preconditions.checkState(inflightMessages.isEmpty());
 
         state = State.READY;
-        negotiationResult = (Negotiator.Result) m;
-        List<QueuedMessage> queued = queuedMessages;
+        negotiationResult = (Negotiator.Success) m;
+        List<QueuedMessage> queued = Preconditions.checkNotNull(queuedMessages);
         // The queuedMessages should not be used anymore once the connection is negotiated.
         queuedMessages = null;
         // Send out all the enqueued messages. This is done while holding the lock to preserve
@@ -236,6 +280,24 @@ class Connection extends SimpleChannelUpstreamHandler {
       } finally {
         lock.unlock();
       }
+      return;
+    }
+
+    // Process the results of a failed negotiation.
+    if (m instanceof Negotiator.Failure) {
+      lock.lock();
+      try {
+        Preconditions.checkState(state == State.NEGOTIATING);
+        Preconditions.checkState(inflightMessages.isEmpty());
+
+        state = State.NEGOTIATION_FAILED;
+        negotiationFailure = (Negotiator.Failure) m;
+      } finally {
+        lock.unlock();
+      }
+      // Calling Channels.close() triggers the cleanup() which will handle the negotiation
+      // failure appropriately.
+      Channels.close(evt.getChannel());
       return;
     }
 
@@ -320,10 +382,13 @@ class Connection extends SimpleChannelUpstreamHandler {
     } else {
       LOG.error("{} unexpected exception from downstream on {}: {}", getLogPrefix(), c, e);
     }
+
     if (c.isOpen()) {
-      Channels.close(c);        // Will trigger channelClosed(), which will cleanup()
-    } else {                    // else: presumably a connection timeout.
-      cleanup(e.getMessage());  // => need to cleanup() from here directly.
+      // Calling Channels.close() will trigger channelClosed(), which will call cleanup().
+      Channels.close(c);
+    } else {
+      // Presumably a connection timeout: initiating the clean-up directly from here.
+      cleanup(e.getMessage());
     }
   }
 
@@ -332,13 +397,16 @@ class Connection extends SimpleChannelUpstreamHandler {
     return serverInfo;
   }
 
-  /**
-   * @return true iff the connection is in the DISCONNECTED state
-   */
-  boolean isDisconnected() {
+  /** The credentials policy used for the connection negotiation. */
+  CredentialsPolicy getCredentialsPolicy() {
+    return credentialsPolicy;
+  }
+
+  /** @return true iff the connection is in the TERMINATED state */
+  boolean isTerminated() {
     lock.lock();
     try {
-      return state == State.DISCONNECTED;
+      return state == State.TERMINATED;
     } finally {
       lock.unlock();
     }
@@ -363,9 +431,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     return features;
   }
 
-  /**
-   * @return string representation of the peer (i.e. the server) information suitable for logging
-   */
+  /** @return string representation of the peer information suitable for logging */
   String getLogPrefix() {
     return "[peer " + serverInfo.getUuid() + "]";
   }
@@ -380,10 +446,9 @@ class Connection extends SimpleChannelUpstreamHandler {
       throws RecoverableException {
     lock.lock();
     try {
-      if (state == State.DISCONNECTED) {
+      if (state == State.TERMINATED) {
         // The upper-level caller should handle the exception and retry using a new connection.
-        throw new RecoverableException(Status.IllegalState(
-            "connection in DISCONNECTED state; cannot enqueue a message"));
+        throw new RecoverableException(Status.IllegalState("connection is terminated"));
       }
 
       if (state == State.NEW) {
@@ -457,9 +522,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     return d;
   }
 
-  /**
-   * @return string representation of this object (suitable for printing into the logs, etc.)
-   */
+  /** @return string representation of this object (suitable for printing into the logs, etc.) */
   public String toString() {
     final StringBuilder buf = new StringBuilder();
     buf.append("Connection@")
@@ -503,14 +566,13 @@ class Connection extends SimpleChannelUpstreamHandler {
   private void sendCallToWire(final RpcOutboundMessage msg, Callback<Void, CallResponseInfo> cb) {
     Preconditions.checkState(lock.isHeldByCurrentThread());
     Preconditions.checkState(state == State.READY);
-    Preconditions.checkNotNull(inflightMessages);
 
     if (LOG.isTraceEnabled()) {
       LOG.trace("{} sending {}", getLogPrefix(), msg);
     }
     final int callId = msg.getHeaderBuilder().getCallId();
     final Callback<Void, CallResponseInfo> empty = inflightMessages.put(callId, cb);
-    Preconditions.checkArgument(empty == null);
+    Preconditions.checkState(empty == null);
     Channels.write(channel, msg);
   }
 
@@ -526,13 +588,22 @@ class Connection extends SimpleChannelUpstreamHandler {
     List<QueuedMessage> queued;
     Map<Integer, Callback<Void, CallResponseInfo>> inflight;
 
+    boolean needNewAuthnToken = false;
     lock.lock();
     try {
-      if (state == State.DISCONNECTED) {
+      if (state == State.TERMINATED) {
+        // The cleanup has already run.
         Preconditions.checkState(queuedMessages == null);
         Preconditions.checkState(inflightMessages == null);
         return;
       }
+      if (state == State.NEGOTIATION_FAILED) {
+        Preconditions.checkState(negotiationFailure != null);
+        Preconditions.checkState(inflightMessages.isEmpty());
+        needNewAuthnToken = negotiationFailure.status.getCode().equals(
+            RpcHeader.ErrorStatusPB.RpcErrorCodePB.FATAL_INVALID_AUTHENTICATION_TOKEN);
+      }
+      LOG.debug("{} cleaning up while in state {} due to: {}", getLogPrefix(), state, errorMessage);
 
       queued = queuedMessages;
       queuedMessages = null;
@@ -540,13 +611,14 @@ class Connection extends SimpleChannelUpstreamHandler {
       inflight = inflightMessages;
       inflightMessages = null;
 
-      state = State.DISCONNECTED;
+      state = State.TERMINATED;
     } finally {
       lock.unlock();
     }
     final Status error = Status.NetworkError(getLogPrefix() + " " +
         (errorMessage == null ? "connection reset" : errorMessage));
-    final RecoverableException exception = new RecoverableException(error);
+    final RecoverableException exception =
+        needNewAuthnToken ? new InvalidAuthnTokenException(error) : new RecoverableException(error);
 
     for (Callback<Void, CallResponseInfo> cb : inflight.values()) {
       try {
@@ -575,13 +647,36 @@ class Connection extends SimpleChannelUpstreamHandler {
     channel.connect(new InetSocketAddress(serverInfo.getResolvedAddress(), serverInfo.getPort()));
   }
 
-  /** State of the Connection object. */
+  /** Enumeration to represent the internal state of the Connection object. */
   private enum State {
-    NEW,          // The object has just been created.
-    CONNECTING,   // The establishment of TCP connection to the server has started.
-    NEGOTIATING,  // The connection negotiation has started.
-    READY,        // The connection to the server has been opened, negotiated, and ready to use.
-    DISCONNECTED, // The TCP connection has been dropped off.
+    /** The object has just been created. */
+    NEW,
+
+    /** The establishment of TCP connection to the server has started. */
+    CONNECTING,
+
+    /** The connection negotiation has started. */
+    NEGOTIATING,
+
+    /**
+     * The underlying TCP connection has been dropped off due to negotiation error and there are
+     * enqueued messages to handle. Once connection negotiation fails, the Connection object
+     * handles the affected queued RPCs appropriately. If the negotiation failed due to invalid
+     * authn token error, the upper-level code may attempt to acquire a new authentication token
+     * in that case. The connection transitions into the TERMINATED state upon notifying the
+     * affected RPCs on the connection negotiation failure.
+     */
+    NEGOTIATION_FAILED,
+
+    /** The connection to the server is opened, negotiated, and ready to use. */
+    READY,
+
+    /**
+     * The TCP connection has been dropped off, the proper clean-up procedure has run and no queued
+     * nor in-flight messages are left. In this state, the object does not accept new messages,
+     * throwing RecoverableException upon call of the enqueueMessage() method.
+     */
+    TERMINATED,
   }
 
   /**

@@ -52,6 +52,12 @@ class RpcTraceFrame {
         sb.append(trace.getStatus());
       }
     },
+    // Waiting for a new authn token to re-send the request.
+    GET_NEW_AUTHENTICATION_TOKEN_THEN_RETRY {
+      void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
+        sb.append("waiting for new authn token");
+      }
+    },
     // After having figured out that we don't know where the RPC is going,
     // before querying the master.
     QUERY_MASTER {

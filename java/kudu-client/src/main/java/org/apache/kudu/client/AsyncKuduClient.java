@@ -204,11 +204,13 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final SecurityContext securityContext;
 
+  /** A helper to facilitate re-acquiring of authentication token if current one expires. */
+  private final AuthnTokenReacquirer tokenReacquirer;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
     this.channelFactory = b.createChannelFactory();
-    this.securityContext = new SecurityContext(b.subject);
     this.masterAddresses = b.masterAddresses;
     this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
         MASTER_TABLE_NAME_PLACEHOLDER, null, null);
@@ -216,34 +218,57 @@ public class AsyncKuduClient implements AutoCloseable {
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
     this.statisticsDisabled = b.statisticsDisabled;
-    statistics = statisticsDisabled ? null : new Statistics();
+    this.statistics = statisticsDisabled ? null : new Statistics();
     this.timer = b.timer;
-    String clientId = UUID.randomUUID().toString().replace("-", "");
-    this.requestTracker = new RequestTracker(clientId);
+    this.requestTracker = new RequestTracker(UUID.randomUUID().toString().replace("-", ""));
+
+    this.securityContext = new SecurityContext(b.subject);
     this.connectionCache = new ConnectionCache(
         securityContext, defaultSocketReadTimeoutMs, timer, channelFactory);
+    this.tokenReacquirer = new AuthnTokenReacquirer(this);
   }
 
   /**
-   * Get a proxy to send RPC calls to the specified server.
+   * Get a proxy to send RPC calls to the specified server. The result proxy object does not
+   * restrict the type of credentials that may be used to connect to the server: it will use the
+   * secondary credentials if available, otherwise SASL credentials are used to authenticate
+   * the client when negotiating the connection to the server.
    *
    * @param serverInfo server's information
    * @return the proxy object bound to the target server
    */
   @Nonnull
   RpcProxy newRpcProxy(final ServerInfo serverInfo) {
-    Preconditions.checkNotNull(serverInfo);
-    return new RpcProxy(this, connectionCache.getConnection(serverInfo));
+    return newRpcProxy(serverInfo, Connection.CredentialsPolicy.ANY_CREDENTIALS);
+  }
+
+  /**
+   * Get a proxy to send RPC calls to the specified server. The result proxy object should use
+   * a connection to the server negotiated with the specified credentials policy.
+   *
+   * @param serverInfo target server information
+   * @param credentialsPolicy authentication credentials policy to use for the connection
+   *                          negotiation
+   * @return the proxy object bound to the target server
+   */
+  @Nonnull
+  private RpcProxy newRpcProxy(final ServerInfo serverInfo,
+                               Connection.CredentialsPolicy credentialsPolicy) {
+    final Connection connection = connectionCache.getConnection(serverInfo, credentialsPolicy);
+    return new RpcProxy(this, connection);
   }
 
   /**
    * Get a proxy to send RPC calls to Kudu master at the specified end-point.
    *
    * @param hostPort master end-point
+   * @param credentialsPolicy credentials policy to use for the connection negotiation to the target
+   *                          master server
    * @return the proxy object bound to the target master
    */
   @Nullable
-  RpcProxy newMasterRpcProxy(HostAndPort hostPort) {
+  RpcProxy newMasterRpcProxy(HostAndPort hostPort,
+                             Connection.CredentialsPolicy credentialsPolicy) {
     // We should have a UUID to construct ServerInfo for the master, but we have a chicken
     // and egg problem, we first need to communicate with the masters to find out about them,
     // and that's what we're trying to do. The UUID is just used for logging and cache key,
@@ -253,7 +278,43 @@ public class AsyncKuduClient implements AutoCloseable {
       // TODO(todd): should we log the resolution failure? throw an exception?
       return null;
     }
-    return newRpcProxy(new ServerInfo("master-" + hostPort.toString(), hostPort, inetAddress));
+    return newRpcProxy(
+        new ServerInfo("master-" + hostPort.toString(), hostPort, inetAddress), credentialsPolicy);
+  }
+
+  void reconnectToCluster(Callback<Void, Boolean> cb,
+                          Callback<Void, Exception> eb) {
+
+    final class ReconnectToClusterCB implements Callback<Void, ConnectToClusterResponse> {
+      private final Callback<Void, Boolean> cb;
+
+      ReconnectToClusterCB(Callback<Void, Boolean> cb) {
+        this.cb = Preconditions.checkNotNull(cb);
+      }
+
+      /**
+       * Report on the token re-acqusition results. The result authn token might be null: in that
+       * case the SASL credentials will be used to negotiate future connections.
+       */
+      @Override
+      public Void call(ConnectToClusterResponse resp) throws Exception {
+        final Master.ConnectToMasterResponsePB masterResponsePB = resp.getConnectResponse();
+        if (masterResponsePB.hasAuthnToken()) {
+          LOG.info("connect to master: received a new authn token");
+          securityContext.setAuthenticationToken(masterResponsePB.getAuthnToken());
+          cb.call(true);
+        } else {
+          LOG.warn("connect to master: received no authn token");
+          securityContext.setAuthenticationToken(null);
+          cb.call(false);
+        }
+        return null;
+      }
+    }
+
+    ConnectToCluster.run(masterTable, masterAddresses, null, defaultAdminOperationTimeoutMs,
+        Connection.CredentialsPolicy.PRIMARY_CREDENTIALS).addCallbacks(
+            new ReconnectToClusterCB(cb), eb);
   }
 
   /**
@@ -719,8 +780,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return A deferred row.
    */
   Deferred<AsyncKuduScanner.Response> scanNextRows(final AsyncKuduScanner scanner) {
-    RemoteTablet tablet = scanner.currentTablet();
-    Preconditions.checkNotNull(tablet);
+    RemoteTablet tablet = Preconditions.checkNotNull(scanner.currentTablet());
     KuduRpc<AsyncKuduScanner.Response> nextRequest = scanner.getNextRowsRequest();
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
@@ -733,7 +793,8 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     Deferred<AsyncKuduScanner.Response> d = nextRequest.getDeferred();
-    RpcProxy.sendRpc(this, connectionCache.getConnection(info), nextRequest);
+    RpcProxy.sendRpc(this, connectionCache.getConnection(
+        info, Connection.CredentialsPolicy.ANY_CREDENTIALS), nextRequest);
     return d;
   }
 
@@ -757,7 +818,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
     final Deferred<AsyncKuduScanner.Response> d = closeRequest.getDeferred();
     closeRequest.attempt++;
-    RpcProxy.sendRpc(this, connectionCache.getConnection(info), closeRequest);
+    RpcProxy.sendRpc(this, connectionCache.getConnection(
+        info, Connection.CredentialsPolicy.ANY_CREDENTIALS), closeRequest);
     return d;
   }
 
@@ -806,7 +868,8 @@ public class AsyncKuduClient implements AutoCloseable {
       if (info != null) {
         Deferred<R> d = request.getDeferred();
         request.setTablet(tablet);
-        RpcProxy.sendRpc(this, connectionCache.getConnection(info), request);
+        RpcProxy.sendRpc(this, connectionCache.getConnection(
+            info, Connection.CredentialsPolicy.ANY_CREDENTIALS), request);
         return d;
       }
     }
@@ -1066,15 +1129,14 @@ public class AsyncKuduClient implements AutoCloseable {
                                                           final KuduException cause) {
     String message;
     if (request.attempt > MAX_RPC_ATTEMPTS) {
-      message = "Too many attempts: ";
+      message = "too many attempts: ";
     } else {
-      message = "RPC can not complete before timeout: ";
+      message = "can not complete before timeout: ";
     }
     Status statusTimedOut = Status.TimedOut(message + request);
-    final Exception e = new NonRecoverableException(statusTimedOut, cause);
-    LOG.debug("Cannot continue with this RPC: {} because of: {}", request, message, e);
+    LOG.debug("Cannot continue with RPC because of: {}", statusTimedOut);
     Deferred<R> d = request.getDeferred();
-    request.errback(e);
+    request.errback(new NonRecoverableException(statusTimedOut, cause));
     return d;
   }
 
@@ -1136,14 +1198,13 @@ public class AsyncKuduClient implements AutoCloseable {
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
     // TODO(todd): stop using this 'masterTable' hack.
     return ConnectToCluster.run(masterTable, masterAddresses, parentRpc,
-        defaultAdminOperationTimeoutMs).addCallback(
+        defaultAdminOperationTimeoutMs, Connection.CredentialsPolicy.ANY_CREDENTIALS).addCallback(
             new Callback<Master.GetTableLocationsResponsePB, ConnectToClusterResponse>() {
               @Override
               public Master.GetTableLocationsResponsePB call(ConnectToClusterResponse resp) {
-                // If the response has security info, adopt it.
                 if (resp.getConnectResponse().hasAuthnToken()) {
-                  securityContext.setAuthenticationToken(
-                      resp.getConnectResponse().getAuthnToken());
+                  // If the response has security info, adopt it.
+                  securityContext.setAuthenticationToken(resp.getConnectResponse().getAuthnToken());
                 }
                 List<ByteString> caCerts = resp.getConnectResponse().getCaCertDerList();
                 if (!caCerts.isEmpty()) {
@@ -1295,6 +1356,32 @@ public class AsyncKuduClient implements AutoCloseable {
     // We don't care about the returned Deferred in this case, since we're not in a context where
     // we're eventually returning a Deferred.
     delayedSendRpcToTablet(rpc, ex);
+  }
+
+  /**
+   * Same as {@link #handleRetryableError(KuduRpc, KuduException)}, but without the delay before
+   * retrying the RPC.
+   *
+   * @param rpc the RPC to retry
+   * @param ex the exception which lead to the attempt of RPC retry
+   */
+  <R> void handleRetryableErrorNoDelay(final KuduRpc<R> rpc, KuduException ex) {
+    if (cannotRetryRequest(rpc)) {
+      tooManyAttemptsOrTimeout(rpc, ex);
+      return;
+    }
+    sendRpcToTablet(rpc);
+  }
+
+  /**
+   * Handle a RPC failed due to invalid authn token error. In short, connect to the Kudu cluster
+   * to acquire a new authentication token and retry the RPC once a new authentication token
+   * is put into the {@link #securityContext}.
+   *
+   * @param rpc the RPC which failed do to invalid authn token
+   */
+  <R> void handleInvalidToken(KuduRpc<R> rpc) {
+    tokenReacquirer.handleAuthnTokenExpiration(rpc);
   }
 
   /**
@@ -1560,7 +1647,7 @@ public class AsyncKuduClient implements AutoCloseable {
           public Deferred<LocatedTablet> call(List<LocatedTablet> tablets) {
             Preconditions.checkArgument(tablets.size() <= 1,
                                         "found more than one tablet for a single partition key");
-            if (tablets.size() == 0) {
+            if (tablets.isEmpty()) {
               // Most likely this indicates a non-covered range, but since this
               // could race with an alter table partitioning operation (which
               // clears the local table locations cache), we check again.

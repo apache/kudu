@@ -84,11 +84,11 @@ import org.apache.kudu.util.SecurityUtil;
 /**
  * Netty Pipeline handler which runs connection negotiation with
  * the server. When negotiation is complete, this removes itself
- * from the pipeline and fires a Negotiator.Result upstream.
+ * from the pipeline and fires a Negotiator.Success or Negotiator.Failure upstream.
  */
 @InterfaceAudience.Private
 public class Negotiator extends SimpleChannelUpstreamHandler {
-  static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
+  private static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
   private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
@@ -164,10 +164,16 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   @VisibleForTesting
   boolean overrideLoopbackForTests;
 
-  public Negotiator(String remoteHostname, SecurityContext securityContext) {
+  public Negotiator(String remoteHostname,
+                    SecurityContext securityContext,
+                    boolean ignoreAuthnToken) {
     this.remoteHostname = remoteHostname;
     this.securityContext = securityContext;
-    this.authnToken = securityContext.getAuthenticationToken();
+    if (ignoreAuthnToken) {
+      this.authnToken = null;
+    } else {
+      this.authnToken = securityContext.getAuthenticationToken();
+    }
   }
 
   public void sendHello(Channel channel) {
@@ -227,9 +233,22 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private void handleResponse(Channel chan, CallResponse callResponse)
       throws IOException {
-    // TODO(todd): this needs to handle error responses, not just success responses.
-    RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
+    final RpcHeader.ResponseHeader header = callResponse.getHeader();
+    if (header.getIsError()) {
+      final RpcHeader.ErrorStatusPB.Builder errBuilder = RpcHeader.ErrorStatusPB.newBuilder();
+      KuduRpc.readProtobuf(callResponse.getPBMessage(), errBuilder);
+      final RpcHeader.ErrorStatusPB error = errBuilder.build();
+      LOG.debug("peer {} sent connection negotiation error: {}",
+          chan.getRemoteAddress(), error.getMessage());
 
+      // The upstream code should handle the negotiation failure.
+      state = State.FINISHED;
+      chan.getPipeline().remove(this);
+      Channels.fireMessageReceived(chan, new Failure(error));
+      return;
+    }
+
+    RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
     // TODO: check that the message type matches the expected one in all
     // of the below implementations.
     switch (state) {
@@ -490,7 +509,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       // TODO(danburkert): is this a correct assumption? would the
       // client ever be "done" but also produce handshake data?
       // if it did, would we want to encrypt the SSL message or no?
-      assert data.size() == 0;
+      assert data.isEmpty();
       return false;
     } else {
       assert data.size() > 0;
@@ -621,7 +640,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     chan.getPipeline().remove(this);
 
     Channels.write(chan, makeConnectionContext());
-    Channels.fireMessageReceived(chan, new Result(serverFeatures));
+    Channels.fireMessageReceived(chan, new Success(serverFeatures));
   }
 
   private RpcOutboundMessage makeConnectionContext() throws SaslException {
@@ -686,11 +705,24 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * The results of a successful negotiation. This is sent to upstream handlers in the
    * Netty pipeline after negotiation completes.
    */
-  static class Result {
+  static class Success {
     final Set<RpcFeatureFlag> serverFeatures;
 
-    public Result(Set<RpcFeatureFlag> serverFeatures) {
+    public Success(Set<RpcFeatureFlag> serverFeatures) {
       this.serverFeatures = serverFeatures;
+    }
+  }
+
+  /**
+   * The results of a failed negotiation. This is sent to upstream handlers in the Netty pipeline
+   * when a negotiation fails.
+   */
+  static class Failure {
+    /** The RPC error received from the server. */
+    final RpcHeader.ErrorStatusPB status;
+
+    public Failure(RpcHeader.ErrorStatusPB status) {
+      this.status = status;
     }
   }
 }

@@ -51,6 +51,7 @@ import org.apache.kudu.security.Token.TokenPB;
  */
 class SecurityContext {
   @GuardedBy("this")
+  @Nullable
   private SignedTokenPB authnToken;
 
   private final DelegatedTrustManager trustManager = new DelegatedTrustManager();
@@ -76,7 +77,12 @@ class SecurityContext {
    */
   private List<ByteString> trustedCertDers = Collections.emptyList();
 
-  public SecurityContext(Subject subject) {
+  /**
+   * Construct SecurityContext object with the specified JAAS subject.
+   *
+   * @param subject JAAS Subject that the client's credentials are stored in
+   */
+  SecurityContext(Subject subject) {
     try {
       this.subject = subject;
 
@@ -85,16 +91,17 @@ class SecurityContext {
 
       this.sslContextTrustAny = SSLContext.getInstance("TLS");
       sslContextTrustAny.init(null, new TrustManager[] { new TrustAnyCert() }, null);
-
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
 
+  @Nullable
   public Subject getSubject() {
     return subject;
   }
 
+  @Nullable
   public synchronized byte[] exportAuthenticationCredentials() {
     if (authnToken == null || !hasTrustedCerts()) {
       return null;
@@ -148,6 +155,7 @@ class SecurityContext {
   /**
    * @return the current authentication token, or null if we have no valid token
    */
+  @Nullable
   public synchronized SignedTokenPB getAuthenticationToken() {
     return authnToken;
   }
@@ -260,7 +268,7 @@ class SecurityContext {
    * can be swapped out atomically.
    */
   private static class DelegatedTrustManager implements X509TrustManager {
-    AtomicReference<X509TrustManager> delegate = new AtomicReference<>();
+    final AtomicReference<X509TrustManager> delegate = new AtomicReference<>();
 
     @Override
     public void checkClientTrusted(X509Certificate[] chain, String authType)
@@ -279,4 +287,5 @@ class SecurityContext {
       return delegate.get().getAcceptedIssuers();
     }
   }
+
 }

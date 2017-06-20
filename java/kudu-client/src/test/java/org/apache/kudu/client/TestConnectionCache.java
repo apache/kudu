@@ -64,18 +64,18 @@ public class TestConnectionCache {
 
       // 1 tserver and 3 masters and 3 connections from the newRpcProxy() in the loop above.
       assertEquals(1 + 3 + 3, client.getConnectionListCopy().size());
-      assertFalse(allConnectionsDisconnected(client));
+      assertFalse(allConnectionsTerminated(client));
 
       final RpcProxy proxy = client.newRpcProxy(serverInfos.get(0));
 
       // Disconnect from the server.
       proxy.getConnection().disconnect().awaitUninterruptibly();
-      waitForConnectionToClose(proxy.getConnection());
-      assertTrue(proxy.getConnection().isDisconnected());
+      waitForConnectionToTerminate(proxy.getConnection());
+      assertTrue(proxy.getConnection().isTerminated());
 
       // Make sure not all the connections in the connection cache are disconnected yet. Actually,
       // only the connection to server '0' should be disconnected.
-      assertFalse(allConnectionsDisconnected(client));
+      assertFalse(allConnectionsTerminated(client));
 
       // For a new RpcProxy instance, a new connection to the same destination is established.
       final RpcProxy newHelper = client.newRpcProxy(serverInfos.get(0));
@@ -96,9 +96,9 @@ public class TestConnectionCache {
       // Test disconnecting and make sure we cleaned up all the connections.
       for (Connection c : client.getConnectionListCopy()) {
         c.disconnect().awaitUninterruptibly();
-        waitForConnectionToClose(c);
+        waitForConnectionToTerminate(c);
       }
-      assertTrue(allConnectionsDisconnected(client));
+      assertTrue(allConnectionsTerminated(client));
     } finally {
       if (cluster != null) {
         cluster.shutdown();
@@ -106,19 +106,19 @@ public class TestConnectionCache {
     }
   }
 
-  private boolean allConnectionsDisconnected(AsyncKuduClient client) {
+  private boolean allConnectionsTerminated(AsyncKuduClient client) {
     for (Connection c : client.getConnectionListCopy()) {
-      if (!c.isDisconnected()) {
+      if (!c.isTerminated()) {
         return false;
       }
     }
     return true;
   }
 
-  private void waitForConnectionToClose(Connection c) throws InterruptedException {
+  private void waitForConnectionToTerminate(Connection c) throws InterruptedException {
     DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(5000);
-    while (!c.isDisconnected() && !deadlineTracker.timedOut()) {
+    while (!c.isTerminated() && !deadlineTracker.timedOut()) {
       Thread.sleep(250);
     }
   }
