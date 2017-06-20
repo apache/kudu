@@ -26,11 +26,11 @@ import javax.annotation.concurrent.GuardedBy;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 

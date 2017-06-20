@@ -22,10 +22,10 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.base.Objects;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A Partition describes the set of rows that a Tablet is responsible for

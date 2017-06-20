@@ -35,8 +35,7 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public final class Slices {

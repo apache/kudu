@@ -16,13 +16,16 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.*;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 import javax.security.auth.Subject;
 
-import org.apache.kudu.util.SecurityUtil;
 import org.junit.Test;
-import static org.hamcrest.CoreMatchers.containsString;
+
+import org.apache.kudu.util.SecurityUtil;
 
 public class TestMiniKdc {
 

@@ -17,10 +17,10 @@
 
 package org.apache.kudu.client;
 
-import org.junit.Test;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
 
 /**
  * Integration test on non fault tolerant scanner that inserts enough data

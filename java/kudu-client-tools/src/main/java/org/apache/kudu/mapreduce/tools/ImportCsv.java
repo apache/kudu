@@ -25,9 +25,9 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.KuduTableMapReduceUtil;
 

@@ -19,7 +19,7 @@ package org.apache.kudu.util;
 
 import java.util.concurrent.TimeUnit;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Set of common utility methods to handle HybridTime and related timestamps.

@@ -23,12 +23,12 @@ import static org.apache.kudu.master.Master.AlterTableRequestPB;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.

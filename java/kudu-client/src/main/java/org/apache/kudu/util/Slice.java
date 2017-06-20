@@ -36,8 +36,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Little Endian slice of a byte array.

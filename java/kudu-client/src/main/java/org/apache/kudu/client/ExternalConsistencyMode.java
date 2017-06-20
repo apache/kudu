@@ -17,9 +17,10 @@
 
 package org.apache.kudu.client;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.Common;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * The possible external consistency modes on which Kudu operates.

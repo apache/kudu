@@ -19,10 +19,11 @@ package org.apache.kudu.client;
 
 import java.util.Iterator;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.Schema;
 import org.apache.kudu.WireProtocol;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.util.Slice;
 
 /**

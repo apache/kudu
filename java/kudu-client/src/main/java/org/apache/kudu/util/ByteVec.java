@@ -25,8 +25,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.io.BaseEncoding;
 import com.google.common.primitives.Bytes;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * A vector of primitive bytes.

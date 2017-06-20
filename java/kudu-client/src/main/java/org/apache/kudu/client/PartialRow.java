@@ -26,13 +26,13 @@ import java.util.ListIterator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.CharsetUtil;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.util.StringUtil;
 
 /**

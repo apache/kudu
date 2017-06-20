@@ -39,10 +39,10 @@ import java.util.BitSet;
 import java.util.Comparator;
 
 import com.google.common.io.BaseEncoding;
+import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Slice;
 
 /**

@@ -17,7 +17,7 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class CreateTableResponse extends KuduRpcResponse {

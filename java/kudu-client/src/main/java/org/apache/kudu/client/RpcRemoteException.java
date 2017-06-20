@@ -17,7 +17,8 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
+
 import org.apache.kudu.rpc.RpcHeader;
 
 @InterfaceAudience.Private

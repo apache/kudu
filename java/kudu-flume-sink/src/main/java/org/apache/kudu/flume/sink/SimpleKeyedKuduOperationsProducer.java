@@ -25,9 +25,9 @@ import java.util.List;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.FlumeException;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;

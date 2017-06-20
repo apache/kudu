@@ -22,8 +22,8 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.tserver.Tserver;
 
 /**

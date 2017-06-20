@@ -27,8 +27,8 @@ import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Message;
+import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
 
 /**

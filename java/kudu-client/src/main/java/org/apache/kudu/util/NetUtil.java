@@ -29,10 +29,9 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
+import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * Networking related methods.

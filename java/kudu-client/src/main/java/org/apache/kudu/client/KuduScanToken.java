@@ -27,11 +27,11 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Client.ScanTokenPB;
 import org.apache.kudu.util.Pair;
 

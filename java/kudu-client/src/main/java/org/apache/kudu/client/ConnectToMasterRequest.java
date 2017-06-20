@@ -24,8 +24,8 @@ import java.util.Collection;
 import java.util.Collections;
 
 import com.google.protobuf.Message;
+import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.master.Master.MasterFeatures;
 import org.apache.kudu.util.Pair;

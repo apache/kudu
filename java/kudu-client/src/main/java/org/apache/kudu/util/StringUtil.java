@@ -17,7 +17,7 @@
 
 package org.apache.kudu.util;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class StringUtil {

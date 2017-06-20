@@ -19,8 +19,7 @@ package org.apache.kudu.util;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Utility methods for various parts of async, such as Deferred.

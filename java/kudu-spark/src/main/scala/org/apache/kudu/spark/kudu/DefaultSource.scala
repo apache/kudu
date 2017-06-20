@@ -26,11 +26,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
-import org.apache.kudu.{Type, ColumnSchema}
+import org.apache.yetus.audience.InterfaceStability
 
-import org.apache.kudu.annotations.InterfaceStability
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
+import org.apache.kudu.{ColumnSchema, Type}
 
 /**
   * Data source for integration with Spark's [[DataFrame]] API.

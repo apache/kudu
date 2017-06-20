@@ -19,12 +19,12 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
+import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.handler.codec.oneone.OneToOneDecoder;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.util.Slice;
 

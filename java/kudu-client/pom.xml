@@ -31,9 +31,9 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.apache.kudu</groupId>
-            <artifactId>interface-annotations</artifactId>
-            <version>${project.version}</version>
+            <groupId>org.apache.yetus</groupId>
+            <artifactId>audience-annotations</artifactId>
+            <version>${yetus.version}</version>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>

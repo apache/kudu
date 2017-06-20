@@ -21,8 +21,8 @@ import java.net.InetAddress;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.net.HostAndPort;
+import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.NetUtil;
 
 /**

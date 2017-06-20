@@ -24,8 +24,7 @@ import java.io.OutputStream;
 
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.Message;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Helper methods for RPCs.

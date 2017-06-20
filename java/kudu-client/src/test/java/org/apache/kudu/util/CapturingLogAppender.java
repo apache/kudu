@@ -19,13 +19,12 @@ package org.apache.kudu.util;
 import java.io.Closeable;
 import java.io.IOException;
 
+import com.google.common.base.Throwables;
 import org.apache.log4j.AppenderSkeleton;
 import org.apache.log4j.Layout;
 import org.apache.log4j.Logger;
 import org.apache.log4j.SimpleLayout;
 import org.apache.log4j.spi.LoggingEvent;
-
-import com.google.common.base.Throwables;
 
 /**
  * Test utility which wraps Log4j and captures all messages logged

@@ -30,10 +30,10 @@ import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.rpc.RpcHeader.ErrorStatusPB.RpcErrorCodePB;

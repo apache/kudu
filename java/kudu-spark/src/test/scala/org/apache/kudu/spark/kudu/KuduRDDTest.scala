@@ -18,8 +18,8 @@
 package org.apache.kudu.spark.kudu
 
 import org.junit.runner.RunWith
-import org.scalatest.{BeforeAndAfter, FunSuite}
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{BeforeAndAfter, FunSuite}
 
 @RunWith(classOf[JUnitRunner])
 class KuduRDDTest extends FunSuite with TestContext with BeforeAndAfter {

@@ -43,7 +43,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-
 import javax.annotation.concurrent.GuardedBy;
 import javax.security.auth.Subject;
 
@@ -57,7 +56,8 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioWorkerPool;
@@ -68,8 +68,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.util.AsyncUtil;

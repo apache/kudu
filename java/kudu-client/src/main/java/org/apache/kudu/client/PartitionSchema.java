@@ -19,9 +19,10 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A partition schema describes how the rows of a table are distributed among

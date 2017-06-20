@@ -25,18 +25,17 @@ import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 
 import com.google.common.collect.ImmutableList
-
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.sql.types.{DataTypes, StructField, StructType};
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.junit.Assert._
 import org.junit.runner.RunWith
-import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
-import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.{Schema, Type}
 
 @RunWith(classOf[JUnitRunner])
 class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter with Matchers {

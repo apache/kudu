@@ -27,9 +27,10 @@ import java.util.List;
 import java.util.Map;
 import javax.annotation.concurrent.NotThreadSafe;
 
+import org.apache.yetus.audience.InterfaceAudience;
+
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.ByteVec;
 import org.apache.kudu.util.Pair;
 

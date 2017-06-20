@@ -17,14 +17,16 @@
 
 package org.apache.kudu.client;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.nio.ByteBuffer;
 import java.security.AccessController;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.util.List;
-
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
@@ -33,30 +35,30 @@ import javax.net.ssl.SSLEngineResult.HandshakeStatus;
 import javax.net.ssl.SSLException;
 import javax.security.auth.Subject;
 
-import org.apache.kudu.client.Negotiator.Result;
-import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
-import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
-import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
-import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
-import org.apache.kudu.util.SecurityUtil;
-import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
-import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
-import org.apache.kudu.security.Token.SignedTokenPB;
-import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
-import org.jboss.netty.handler.ssl.SslHandler;
-import org.junit.Before;
-import org.junit.Test;
-
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
+import org.jboss.netty.handler.ssl.SslHandler;
+import org.junit.Before;
+import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.client.Negotiator.Result;
+import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
+import org.apache.kudu.rpc.RpcHeader.ConnectionContextPB;
+import org.apache.kudu.rpc.RpcHeader.NegotiatePB;
+import org.apache.kudu.rpc.RpcHeader.NegotiatePB.NegotiateStep;
+import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
+import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
+import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
+import org.apache.kudu.security.Token.SignedTokenPB;
+import org.apache.kudu.util.SecurityUtil;
 
 public class TestNegotiator {
   static final Logger LOG = LoggerFactory.getLogger(TestNegotiator.class);

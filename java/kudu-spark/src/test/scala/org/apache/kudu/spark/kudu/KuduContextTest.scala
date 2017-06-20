@@ -16,9 +16,8 @@
  */
 package org.apache.kudu.spark.kudu
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.sql.Timestamp
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream,
-                ObjectInputStream, ObjectOutputStream}
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.decode

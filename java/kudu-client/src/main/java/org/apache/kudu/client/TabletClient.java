@@ -33,7 +33,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.locks.ReentrantLock;
-
 import javax.annotation.concurrent.GuardedBy;
 import javax.net.ssl.SSLException;
 
@@ -42,7 +41,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
-
+import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelEvent;
@@ -59,7 +58,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.WireProtocol;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.Negotiator.Result;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.rpc.RpcHeader;

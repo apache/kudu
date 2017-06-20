@@ -24,7 +24,6 @@ import java.security.cert.X509Certificate;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
-
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.net.ssl.SSLContext;

@@ -20,8 +20,7 @@ package org.apache.kudu.client;
 import java.util.List;
 
 import com.google.common.base.MoreObjects;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Container class for traces. Most of its properties can be null, when they aren't set via the

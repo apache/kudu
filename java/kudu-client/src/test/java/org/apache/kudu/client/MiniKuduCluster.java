@@ -36,10 +36,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
-
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.SecurityUtil;
 

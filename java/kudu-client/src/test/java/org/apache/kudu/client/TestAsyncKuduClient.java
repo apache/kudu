@@ -36,10 +36,10 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
-import org.apache.kudu.consensus.Metadata;
-import org.apache.kudu.master.Master;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.consensus.Metadata;
+import org.apache.kudu.master.Master;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);

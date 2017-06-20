@@ -23,10 +23,10 @@ import java.util.List;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.tserver.Tserver;
 
 /**

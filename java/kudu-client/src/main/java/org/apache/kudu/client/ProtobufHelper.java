@@ -27,12 +27,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class ProtobufHelper {

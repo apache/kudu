@@ -20,8 +20,9 @@ package org.apache.kudu.client;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.tserver.Tserver;
 
 @InterfaceAudience.Public

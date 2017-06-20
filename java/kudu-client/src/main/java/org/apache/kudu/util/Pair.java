@@ -18,8 +18,7 @@
 package org.apache.kudu.util;
 
 import com.google.common.base.Objects;
-
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class Pair<A, B> {

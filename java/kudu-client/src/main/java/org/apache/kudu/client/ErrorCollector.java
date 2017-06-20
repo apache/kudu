@@ -21,9 +21,8 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 
 import com.google.common.base.Preconditions;
-
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * Class that helps tracking row errors. All methods are thread-safe.

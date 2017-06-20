@@ -13,10 +13,10 @@
  */
 package org.apache.kudu.client;
 
+import java.net.InetAddress;
+
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
-
-import java.net.InetAddress;
 
 public class TestServerInfo {
   /**

@@ -23,10 +23,10 @@ import java.util.List;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterators;
 import com.stumbleupon.async.Deferred;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A KuduTable represents a table on a particular cluster. It holds the current

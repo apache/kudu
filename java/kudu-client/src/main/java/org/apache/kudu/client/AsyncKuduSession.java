@@ -38,13 +38,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.Slice;
 

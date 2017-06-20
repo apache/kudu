@@ -30,9 +30,8 @@ import java.io.IOException;
 
 import com.stumbleupon.async.DeferredGroupException;
 import com.stumbleupon.async.TimeoutException;
-
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * The parent class of all exceptions sent by the Kudu client. This is the only exception you will

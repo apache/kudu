@@ -27,11 +27,11 @@ import java.util.List;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedLongs;
 import com.sangupta.murmur.Murmur2;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.util.ByteVec;
 import org.apache.kudu.util.Pair;

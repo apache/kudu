@@ -16,7 +16,8 @@
 // under the License.
 package org.apache.kudu.client;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 
 import java.io.Closeable;
 import java.util.concurrent.SynchronousQueue;
@@ -24,10 +25,10 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.kudu.util.CapturingLogAppender;
+import com.google.common.base.Stopwatch;
 import org.junit.Test;
 
-import com.google.common.base.Stopwatch;
+import org.apache.kudu.util.CapturingLogAppender;
 
 public class ITClientStress extends BaseKuduTest {
 

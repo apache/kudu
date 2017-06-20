@@ -35,7 +35,6 @@ import java.security.cert.Certificate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLPeerUnverifiedException;
@@ -59,7 +58,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.UnsafeByteOperations;
-
+import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -73,7 +72,6 @@ import org.jboss.netty.handler.ssl.SslHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.rpc.RpcHeader;
 import org.apache.kudu.rpc.RpcHeader.AuthenticationTypePB;
 import org.apache.kudu.rpc.RpcHeader.NegotiatePB;

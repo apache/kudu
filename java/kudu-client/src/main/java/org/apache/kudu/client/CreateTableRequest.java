@@ -21,9 +21,9 @@ import java.util.Collection;
 import java.util.List;
 
 import com.google.protobuf.Message;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
 

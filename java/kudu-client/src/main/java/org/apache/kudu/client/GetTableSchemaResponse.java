@@ -17,8 +17,9 @@
 
 package org.apache.kudu.client;
 
+import org.apache.yetus.audience.InterfaceAudience;
+
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class GetTableSchemaResponse extends KuduRpcResponse {

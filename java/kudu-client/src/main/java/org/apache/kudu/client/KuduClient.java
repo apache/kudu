@@ -23,12 +23,12 @@ import java.util.concurrent.Executor;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.stumbleupon.async.Deferred;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * A synchronous and thread-safe client for Kudu.

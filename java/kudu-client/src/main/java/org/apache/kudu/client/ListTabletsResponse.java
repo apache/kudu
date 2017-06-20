@@ -19,7 +19,7 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class ListTabletsResponse extends KuduRpcResponse {

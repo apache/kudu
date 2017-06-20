@@ -21,7 +21,13 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.client.RowResult.timestampToString;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.junit.matchers.JUnitMatchers.containsString;
 
 import java.io.Closeable;
@@ -35,7 +41,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +48,6 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.CapturingLogAppender;
-import org.apache.log4j.AppenderSkeleton;
 
 public class TestKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);

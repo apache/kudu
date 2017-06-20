@@ -19,7 +19,6 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.TextFormat;
-
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.handler.codec.oneone.OneToOneEncoder;

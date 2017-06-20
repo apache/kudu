@@ -25,12 +25,12 @@ import static org.junit.Assert.fail;
 
 import java.nio.ByteBuffer;
 
-import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Type;
 import org.junit.Test;
-
-import org.apache.kudu.Schema;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
+
+import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Schema;
+import org.apache.kudu.Type;
 
 public class TestPartialRow {
 

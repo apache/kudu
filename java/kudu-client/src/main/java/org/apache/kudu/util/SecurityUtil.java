@@ -24,7 +24,6 @@ import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
-
 import javax.security.auth.Subject;
 import javax.security.auth.kerberos.KerberosPrincipal;
 import javax.security.auth.login.AppConfigurationEntry;
@@ -36,11 +35,9 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
-
+import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.kudu.annotations.InterfaceAudience;
 
 @InterfaceAudience.Private
 public abstract class SecurityUtil {

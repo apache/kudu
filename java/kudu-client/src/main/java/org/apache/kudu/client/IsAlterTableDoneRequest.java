@@ -22,8 +22,8 @@ import static org.apache.kudu.master.Master.IsAlterTableDoneResponsePB;
 import static org.apache.kudu.master.Master.TableIdentifierPB;
 
 import com.google.protobuf.Message;
+import org.apache.yetus.audience.InterfaceAudience;
 
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.util.Pair;
 
 /**

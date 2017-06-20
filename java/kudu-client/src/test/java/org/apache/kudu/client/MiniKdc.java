@@ -27,7 +27,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-
 import javax.annotation.concurrent.NotThreadSafe;
 
 import com.google.common.base.Charsets;
@@ -37,11 +36,10 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.CharStreams;
-
 import org.apache.commons.io.FileUtils;
+import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.kudu.annotations.InterfaceAudience;
 
 /**
  * A managed Kerberos Key Distribution Center.

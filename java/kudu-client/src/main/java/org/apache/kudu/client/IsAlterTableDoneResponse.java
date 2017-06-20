@@ -17,8 +17,8 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * Response to a isAlterTableDone command to use to know if an alter table is currently running on

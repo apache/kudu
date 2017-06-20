@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.Bytes;
 import org.apache.kudu.client.PartialRow;
 

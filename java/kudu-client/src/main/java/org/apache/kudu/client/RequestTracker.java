@@ -21,7 +21,7 @@ import java.util.Queue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.kudu.annotations.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * This is the same class as src/kudu/rpc/request_tracker.h.

@@ -20,12 +20,12 @@ import java.util.Collections;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.PartialRow;
 

@@ -25,9 +25,9 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.WireProtocol;
-import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;

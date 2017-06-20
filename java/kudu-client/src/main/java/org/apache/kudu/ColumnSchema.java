@@ -17,10 +17,11 @@
 
 package org.apache.kudu;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import org.apache.kudu.Common.EncodingType;
 import org.apache.kudu.Compression.CompressionType;
-import org.apache.kudu.annotations.InterfaceAudience;
-import org.apache.kudu.annotations.InterfaceStability;
 
 /**
  * Represents a Kudu Table column. Use {@link ColumnSchema.ColumnSchemaBuilder} in order to

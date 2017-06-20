@@ -24,17 +24,19 @@ import javax.security.auth.login.{AppConfigurationEntry, Configuration, LoginCon
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+
 import org.apache.hadoop.util.ShutdownHookManager
-import org.apache.kudu.annotations.InterfaceStability
-import org.apache.kudu.client.SessionConfiguration.FlushMode
-import org.apache.kudu.client._
-import org.apache.kudu.spark.kudu
-import org.apache.kudu.{ColumnSchema, Schema, Type}
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.{Logger, LoggerFactory}
+
+import org.apache.kudu.client.SessionConfiguration.FlushMode
+import org.apache.kudu.client._
+import org.apache.kudu.spark.kudu
+import org.apache.kudu.{ColumnSchema, Schema, Type}
 
 /**
   * KuduContext is a serializable container for Kudu client connections.

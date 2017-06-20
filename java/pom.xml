@@ -71,6 +71,7 @@
         <netty.version>3.10.5.Final</netty.version>
         <protobuf.version>3.3.0</protobuf.version>
         <slf4j.version>1.7.12</slf4j.version>
+        <yetus.version>0.4.0</yetus.version>
 
         <!-- Scala Library dependencies -->
         <spark1.version>1.6.1</spark1.version>
@@ -86,7 +87,6 @@
     </properties>
 
     <modules>
-        <module>interface-annotations</module>
         <module>kudu-client</module>
         <module>kudu-client-tools</module>
         <module>kudu-mapreduce</module>
@@ -222,12 +222,12 @@
                     <maxmemory>2048m</maxmemory>
                     <notimestamp>true</notimestamp>
                     <doclet>
-                        org.apache.kudu.annotations.tools.IncludePublicAnnotationsStandardDoclet
+                        org.apache.yetus.audience.tools.IncludePublicAnnotationsStandardDoclet
                     </doclet>
                     <docletArtifact>
-                        <groupId>org.apache.kudu</groupId>
-                        <artifactId>interface-annotations</artifactId>
-                        <version>${project.version}</version>
+                        <groupId>org.apache.yetus</groupId>
+                        <artifactId>audience-annotations-jdiff</artifactId>
+                        <version>${yetus.version}</version>
                     </docletArtifact>
                     <name>User API</name>
                     <description>The Kudu Application Programmer's API</description>
@@ -235,12 +235,6 @@
                         com.google:org.apache.kudu.cfile:org.apache.kudu.consensus:org.apache.kudu.log:org.apache.kudu.master:org.apache.kudu.rpc:org.apache.kudu.server:org.apache.kudu.tablet:org.apache.kudu.tserver
                     </excludePackageNames>
                     <includeDependencySources>false</includeDependencySources>
-
-                    <dependencySourceIncludes>
-                        <dependencySourceInclude>
-                            org.apache.kudu:interface-annotations
-                        </dependencySourceInclude>
-                    </dependencySourceIncludes>
                 </configuration>
             </plugin>
             <plugin>
