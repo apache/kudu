@@ -17,7 +17,6 @@
 
 #include "kudu/integration-tests/internal_mini_cluster.h"
 
-
 #include "kudu/client/client.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -50,19 +49,20 @@ using tserver::MiniTabletServer;
 using tserver::TabletServer;
 
 MiniClusterOptions::MiniClusterOptions()
- :  num_masters(1),
-    num_tablet_servers(1) {
+  : num_masters(1),
+    num_tablet_servers(1),
+    bind_mode(MiniCluster::kDefaultBindMode) {
 }
 
 InternalMiniCluster::InternalMiniCluster(Env* env, const MiniClusterOptions& options)
-  : running_(false),
-    env_(env),
+  : env_(env),
     fs_root_(!options.data_root.empty() ? options.data_root :
                 JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),
     num_masters_initial_(options.num_masters),
     num_ts_initial_(options.num_tablet_servers),
     master_rpc_ports_(options.master_rpc_ports),
-    tserver_rpc_ports_(options.tserver_rpc_ports) {
+    tserver_rpc_ports_(options.tserver_rpc_ports),
+    running_(false) {
 }
 
 InternalMiniCluster::~InternalMiniCluster() {
@@ -111,17 +111,17 @@ Status InternalMiniCluster::StartDistributedMasters() {
   CHECK_GE(master_rpc_ports_.size(), num_masters_initial_);
   CHECK_GT(master_rpc_ports_.size(), 1);
 
-  LOG(INFO) << "Creating distributed mini masters. Ports: "
-            << JoinInts(master_rpc_ports_, ", ");
+  vector<HostPort> master_rpc_addrs = this->master_rpc_addrs();
+  LOG(INFO) << "Creating distributed mini masters. Addrs: "
+            << HostPort::ToCommaSeparatedString(master_rpc_addrs);
 
   for (int i = 0; i < num_masters_initial_; i++) {
-    gscoped_ptr<MiniMaster> mini_master(
-        new MiniMaster(env_, GetMasterFsRoot(i), master_rpc_ports_[i]));
-    RETURN_NOT_OK_PREPEND(mini_master->StartDistributedMaster(master_rpc_ports_),
+    shared_ptr<MiniMaster> mini_master(new MiniMaster(GetMasterFsRoot(i), master_rpc_addrs[i]));
+    RETURN_NOT_OK_PREPEND(mini_master->StartDistributedMaster(master_rpc_addrs),
                           Substitute("Couldn't start follower $0", i));
     VLOG(1) << "Started MiniMaster with UUID " << mini_master->permanent_uuid()
             << " at index " << i;
-    mini_masters_.push_back(shared_ptr<MiniMaster>(mini_master.release()));
+    mini_masters_.push_back(std::move(mini_master));
   }
   int i = 0;
   for (const shared_ptr<MiniMaster>& master : mini_masters_) {
@@ -152,12 +152,13 @@ Status InternalMiniCluster::StartSingleMaster() {
   }
 
   // start the master (we need the port to set on the servers).
-  gscoped_ptr<MiniMaster> mini_master(
-      new MiniMaster(env_, GetMasterFsRoot(0), master_rpc_port));
+  string bind_ip = GetBindIpForDaemon(MiniCluster::MASTER, /*index=*/ 0, opts_.bind_mode);
+  shared_ptr<MiniMaster> mini_master(
+      new MiniMaster(GetMasterFsRoot(0), HostPort(std::move(bind_ip), master_rpc_port)));
   RETURN_NOT_OK_PREPEND(mini_master->Start(), "Couldn't start master");
   RETURN_NOT_OK(mini_master->master()->WaitUntilCatalogManagerIsLeaderAndReadyForTests(
       MonoDelta::FromSeconds(kMasterStartupWaitTimeSeconds)));
-  mini_masters_.push_back(shared_ptr<MiniMaster>(mini_master.release()));
+  mini_masters_.push_back(std::move(mini_master));
   return Status::OK();
 }
 
@@ -171,8 +172,10 @@ Status InternalMiniCluster::AddTabletServer() {
   if (tserver_rpc_ports_.size() > new_idx) {
     ts_rpc_port = tserver_rpc_ports_[new_idx];
   }
+
+  string bind_ip = GetBindIpForDaemon(MiniCluster::TSERVER, new_idx, opts_.bind_mode);
   gscoped_ptr<MiniTabletServer> tablet_server(
-    new MiniTabletServer(GetTabletServerFsRoot(new_idx), ts_rpc_port));
+      new MiniTabletServer(GetTabletServerFsRoot(new_idx), HostPort(bind_ip, ts_rpc_port)));
 
   // set the master addresses
   tablet_server->options()->master_addresses.clear();
@@ -210,6 +213,16 @@ MiniTabletServer* InternalMiniCluster::mini_tablet_server(int idx) const {
   CHECK_GE(idx, 0) << "TabletServer idx must be >= 0";
   CHECK_LT(idx, mini_tablet_servers_.size()) << "TabletServer idx must be < 'num_ts_started_'";
   return mini_tablet_servers_[idx].get();
+}
+
+vector<HostPort> InternalMiniCluster::master_rpc_addrs() const {
+  vector<HostPort> master_rpc_addrs;
+  for (int i = 0; i < master_rpc_ports_.size(); i++) {
+    master_rpc_addrs.emplace_back(
+        GetBindIpForDaemon(MiniCluster::MASTER, i, opts_.bind_mode),
+        master_rpc_ports_[i]);
+  }
+  return master_rpc_addrs;
 }
 
 string InternalMiniCluster::GetMasterFsRoot(int idx) const {

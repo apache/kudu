@@ -2131,10 +2131,9 @@ TEST_F(ClientTest, TestWriteTimeout) {
     unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
     const Status& status = error->status();
     ASSERT_TRUE(status.IsTimedOut()) << status.ToString();
-    ASSERT_STR_CONTAINS(status.ToString(),
-                        "Failed to write batch of 1 ops to tablet");
-    ASSERT_STR_CONTAINS(status.ToString(), "Write RPC to 127.0.0.1:");
-    ASSERT_STR_CONTAINS(status.ToString(), "after 1 attempt");
+    ASSERT_STR_MATCHES(status.ToString(),
+                       R"(Failed to write batch of 1 ops to tablet.*after 1 attempt.*)"
+                       R"(Write RPC to 127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}:.*timed out)");
   }
 }
 

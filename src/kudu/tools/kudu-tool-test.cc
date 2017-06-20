@@ -1309,7 +1309,7 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   // on the tablet servers in the cluster giving us the test coverage
   // for KUDU-1776. With this, 'kudu remote_replica copy' can be used to
   // connect to tablet servers bound to wildcard ip addresses.
-  cluster_opts_.bind_mode = ExternalMiniClusterOptions::WILDCARD;
+  cluster_opts_.bind_mode = MiniCluster::WILDCARD;
   NO_FATALS(StartExternalMiniCluster(
       {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"},
       {"--enable_leader_failure_detection=false"}, kNumTservers));

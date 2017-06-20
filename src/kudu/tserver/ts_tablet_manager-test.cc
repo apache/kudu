@@ -59,9 +59,8 @@ class TsTabletManagerTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-
-    mini_server_.reset(
-        new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
+    mini_server_.reset(new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"),
+                                            HostPort("127.0.0.1", 0)));
     ASSERT_OK(mini_server_->Start());
     mini_server_->FailHeartbeats();
 
@@ -135,8 +134,8 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   LOG(INFO) << "Shutting down tablet manager";
   mini_server_->Shutdown();
   LOG(INFO) << "Restarting tablet manager";
-  mini_server_.reset(
-      new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
+  mini_server_.reset(new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"),
+                                          HostPort("127.0.0.1", 0)));
   ASSERT_OK(mini_server_->Start());
   ASSERT_OK(mini_server_->WaitStarted());
   tablet_manager_ = mini_server_->server()->tablet_manager();

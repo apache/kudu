@@ -59,12 +59,19 @@ struct MiniClusterOptions {
   // The default may only be used from a gtest unit test.
   std::string data_root;
 
+  MiniCluster::BindMode bind_mode;
+
   // List of RPC ports for the master to run on.
-  // Defaults to a list 0 (ephemeral ports).
+  // Defaults to an empty list.
+  // In single-master mode, an empty list implies port 0 (transient port).
+  // In multi-master mode, an empty list is illegal and will result in a CHECK failure.
   std::vector<uint16_t> master_rpc_ports;
 
   // List of RPC ports for the tservers to run on.
-  // Defaults to a list of 0 (ephemeral ports).
+  // Defaults to an empty list.
+  // When adding a tablet server to the cluster via AddTabletServer(), if the
+  // index of that tablet server in the cluster is greater than the number of
+  // elements in this list, a transient port (port 0) will be used.
   std::vector<uint16_t> tserver_rpc_ports;
 };
 
@@ -122,6 +129,16 @@ class InternalMiniCluster : public MiniCluster {
     return mini_tablet_servers_.size();
   }
 
+  BindMode bind_mode() const override {
+    return opts_.bind_mode;
+  }
+
+  std::vector<uint16_t> master_rpc_ports() const override {
+    return master_rpc_ports_;
+  }
+
+  std::vector<HostPort> master_rpc_addrs() const override;
+
   std::string GetMasterFsRoot(int idx) const;
 
   std::string GetTabletServerFsRoot(int idx) const;
@@ -171,7 +188,7 @@ class InternalMiniCluster : public MiniCluster {
     kMasterStartupWaitTimeSeconds = 30,
   };
 
-  bool running_;
+  const MiniClusterOptions opts_;
 
   Env* const env_;
   const std::string fs_root_;
@@ -180,6 +197,8 @@ class InternalMiniCluster : public MiniCluster {
 
   const std::vector<uint16_t> master_rpc_ports_;
   const std::vector<uint16_t> tserver_rpc_ports_;
+
+  bool running_;
 
   std::vector<std::shared_ptr<master::MiniMaster> > mini_masters_;
   std::vector<std::shared_ptr<tserver::MiniTabletServer> > mini_tablet_servers_;

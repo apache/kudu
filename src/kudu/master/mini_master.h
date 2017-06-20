@@ -25,12 +25,11 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/env.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class HostPort;
 
 namespace master {
 
@@ -43,15 +42,15 @@ struct MasterOptions;
 // having multiple Start methods.
 class MiniMaster {
  public:
-  MiniMaster(Env* env, std::string fs_root, uint16_t rpc_port);
+  MiniMaster(std::string fs_root, HostPort rpc_bind_addr);
   ~MiniMaster();
 
-  // Start a master running on the loopback interface and
-  // an ephemeral port. To determine the address that the server
-  // bound to, call MiniMaster::bound_addr()
+  // Start a master running on the address specified to the constructor.
+  // To determine the address that the server bound to, call
+  // MiniMaster::bound_addr()
   Status Start();
 
-  Status StartDistributedMaster(const std::vector<uint16_t>& peer_ports);
+  Status StartDistributedMaster(std::vector<HostPort> peer_addrs);
 
   // Restart the master on the same ports as it was previously bound.
   // Requires that the master is currently started.
@@ -75,17 +74,16 @@ class MiniMaster {
   std::string bound_rpc_addr_str() const;
 
  private:
-  Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
-
-  Status StartOnPorts(uint16_t rpc_port, uint16_t web_port,
+  Status StartOnAddrs(const HostPort& rpc_bind_addr,
+                      const HostPort& web_bind_addr,
                       MasterOptions* opts);
 
-  Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                       const std::vector<uint16_t>& peer_ports);
+  Status StartDistributedMasterOnAddrs(const HostPort& rpc_bind_addr,
+                                       const HostPort& web_bind_addr,
+                                       std::vector<HostPort> peer_addrs);
 
-  ATTRIBUTE_MEMBER_UNUSED Env* const env_;
+  const HostPort rpc_bind_addr_;
   const std::string fs_root_;
-  const uint16_t rpc_port_;
   Sockaddr bound_rpc_;
   Sockaddr bound_http_;
   std::unique_ptr<Master> master_;

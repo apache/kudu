@@ -41,7 +41,8 @@ class TabletServer;
 // An in-process tablet server meant for use in test cases.
 class MiniTabletServer {
  public:
-  MiniTabletServer(const std::string& fs_root, uint16_t rpc_port);
+  // Note: The host portion of 'rpc_bind_addr' is also used for the http service.
+  MiniTabletServer(const std::string& fs_root, const HostPort& rpc_bind_addr);
   ~MiniTabletServer();
 
   // Return the options which will be used to start the tablet server.

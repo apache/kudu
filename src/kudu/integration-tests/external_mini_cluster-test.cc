@@ -120,10 +120,14 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     SCOPED_TRACE(i);
     ExternalMaster* master = CHECK_NOTNULL(cluster.master(i));
     HostPort master_rpc = master->bound_rpc_hostport();
-    EXPECT_TRUE(HasPrefixString(master_rpc.ToString(), "127.0.0.1:")) << master_rpc.ToString();
+    string expected_prefix = Substitute("$0:", cluster.GetBindIpForMaster(i));
+    if (cluster.bind_mode() == MiniCluster::UNIQUE_LOOPBACK) {
+      EXPECT_NE(expected_prefix, "127.0.0.1:") << "Should bind to unique per-server hosts";
+    }
+    EXPECT_TRUE(HasPrefixString(master_rpc.ToString(), expected_prefix)) << master_rpc.ToString();
 
     HostPort master_http = master->bound_http_hostport();
-    EXPECT_TRUE(HasPrefixString(master_http.ToString(), "127.0.0.1:")) << master_http.ToString();
+    EXPECT_TRUE(HasPrefixString(master_http.ToString(), expected_prefix)) << master_http.ToString();
 
     // Retrieve a thread metric, which should always be present on any master.
     int64_t value;
@@ -141,7 +145,9 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     ExternalTabletServer* ts = CHECK_NOTNULL(cluster.tablet_server(i));
     HostPort ts_rpc = ts->bound_rpc_hostport();
     string expected_prefix = Substitute("$0:", cluster.GetBindIpForTabletServer(i));
-    EXPECT_NE(expected_prefix, "127.0.0.1") << "Should bind to unique per-server hosts";
+    if (cluster.bind_mode() == MiniCluster::UNIQUE_LOOPBACK) {
+      EXPECT_NE(expected_prefix, "127.0.0.1:") << "Should bind to unique per-server hosts";
+    }
     EXPECT_TRUE(HasPrefixString(ts_rpc.ToString(), expected_prefix)) << ts_rpc.ToString();
 
     HostPort ts_http = ts->bound_http_hostport();

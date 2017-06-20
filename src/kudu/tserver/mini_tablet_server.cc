@@ -44,12 +44,13 @@ namespace kudu {
 namespace tserver {
 
 MiniTabletServer::MiniTabletServer(const string& fs_root,
-                                   uint16_t rpc_port) {
+                                   const HostPort& rpc_bind_addr) {
   // Disable minidump handler (we allow only one per process).
   FLAGS_enable_minidumps = false;
   // Start RPC server on loopback.
   FLAGS_rpc_server_allow_ephemeral_ports = true;
-  opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
+  opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr.ToString();
+  opts_.webserver_opts.bind_interface = rpc_bind_addr.host();
   opts_.webserver_opts.port = 0;
   opts_.fs_opts.wal_path = fs_root;
   opts_.fs_opts.data_paths = { fs_root };
@@ -76,11 +77,11 @@ Status MiniTabletServer::WaitStarted() {
 
 void MiniTabletServer::Shutdown() {
   if (server_) {
-    // Save the bound ports back into the options structure so that, if we restart the
+    // Save the bound addrs back into the options structure so that, if we restart the
     // server, it will come back on the same address. This is necessary since we don't
     // currently support tablet servers re-registering on different ports (KUDU-418).
+    opts_.rpc_opts.rpc_bind_addresses = bound_rpc_addr().ToString();
     opts_.webserver_opts.port = bound_http_addr().port();
-    opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", bound_rpc_addr().port());
     server_->Shutdown();
     server_.reset();
   }

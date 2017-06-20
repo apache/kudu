@@ -259,9 +259,9 @@ TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {
   // Restart one master with an additional entry in --master_addresses. The
   // discrepancy with the on-disk list of masters should trigger a failure.
   cluster_->mini_master(0)->Shutdown();
-  vector<uint16_t> master_rpc_ports = opts_.master_rpc_ports;
-  master_rpc_ports.push_back(55555);
-  ASSERT_OK(cluster_->mini_master(0)->StartDistributedMaster(master_rpc_ports));
+  vector<HostPort> master_rpc_addrs = cluster_->master_rpc_addrs();
+  master_rpc_addrs.emplace_back("127.0.0.1", 55555);
+  ASSERT_OK(cluster_->mini_master(0)->StartDistributedMaster(master_rpc_addrs));
   Status s = cluster_->mini_master(0)->WaitForCatalogManagerInit();
   SCOPED_TRACE(s.ToString());
   ASSERT_TRUE(s.IsInvalidArgument());

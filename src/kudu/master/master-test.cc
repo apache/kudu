@@ -70,7 +70,7 @@ class MasterTest : public KuduTest {
     FLAGS_catalog_manager_check_ts_count_for_create_table = false;
 
     // Start master
-    mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
+    mini_master_.reset(new MiniMaster(GetTestPath("Master"), HostPort("127.0.0.1", 0)));
     ASSERT_OK(mini_master_->Start());
     master_ = mini_master_->master();
     ASSERT_OK(master_->WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
@@ -117,7 +117,7 @@ static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
 // Test that shutting down a MiniMaster without starting it does not
 // SEGV.
 TEST_F(MasterTest, TestShutdownWithoutStart) {
-  MiniMaster m(Env::Default(), "/xxxx", 0);
+  MiniMaster m("/xxxx", HostPort("127.0.0.1", 0));
   m.Shutdown();
 }
 

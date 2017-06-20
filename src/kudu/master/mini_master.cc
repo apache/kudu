@@ -1,4 +1,3 @@
-// Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
 // regarding copyright ownership.  The ASF licenses this file
@@ -43,10 +42,9 @@ DECLARE_bool(rpc_server_allow_ephemeral_ports);
 namespace kudu {
 namespace master {
 
-MiniMaster::MiniMaster(Env* env, string fs_root, uint16_t rpc_port)
-    : env_(env),
-      fs_root_(std::move(fs_root)),
-      rpc_port_(rpc_port) {
+MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr)
+    : rpc_bind_addr_(std::move(rpc_bind_addr)),
+      fs_root_(std::move(fs_root)) {
   // Disable minidump handler (we allow only one per process).
   FLAGS_enable_minidumps = false;
 }
@@ -57,16 +55,21 @@ MiniMaster::~MiniMaster() {
 
 Status MiniMaster::Start() {
   FLAGS_rpc_server_allow_ephemeral_ports = true;
-  RETURN_NOT_OK(StartOnPorts(rpc_port_, 0));
+  MasterOptions opts;
+  HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
+  RETURN_NOT_OK(StartOnAddrs(rpc_bind_addr_, web_bind_addr, &opts));
   return master_->WaitForCatalogManagerInit();
 }
 
-Status MiniMaster::StartDistributedMaster(const vector<uint16_t>& peer_ports) {
-  return StartDistributedMasterOnPorts(rpc_port_, 0, peer_ports);
+Status MiniMaster::StartDistributedMaster(vector<HostPort> peer_addrs) {
+  HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
+  return StartDistributedMasterOnAddrs(rpc_bind_addr_, web_bind_addr,
+                                       std::move(peer_addrs));
 }
 
 Status MiniMaster::Restart() {
-  RETURN_NOT_OK(StartOnPorts(bound_rpc_.port(), bound_http_.port()));
+  MasterOptions opts;
+  RETURN_NOT_OK(StartOnAddrs(HostPort(bound_rpc_), HostPort(bound_http_), &opts));
   return WaitForCatalogManagerInit();
 }
 
@@ -99,16 +102,14 @@ std::string MiniMaster::bound_rpc_addr_str() const {
   return bound_rpc_addr().ToString();
 }
 
-Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
-  MasterOptions opts;
-  return StartOnPorts(rpc_port, web_port, &opts);
-}
-
-Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port,
+Status MiniMaster::StartOnAddrs(const HostPort& rpc_bind_addr,
+                                const HostPort& web_bind_addr,
                                 MasterOptions* opts) {
   CHECK(!master_);
-  opts->rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
-  opts->webserver_opts.port = web_port;
+
+  opts->rpc_opts.rpc_bind_addresses = rpc_bind_addr.ToString();
+  opts->webserver_opts.bind_interface = web_bind_addr.host();
+  opts->webserver_opts.port = web_bind_addr.port();
   opts->fs_opts.wal_path = fs_root_;
   opts->fs_opts.data_paths = { fs_root_ };
 
@@ -120,17 +121,12 @@ Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port,
   return Status::OK();
 }
 
-Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                                 const vector<uint16_t>& peer_ports) {
-  vector<HostPort> peer_addresses;
-  for (uint16_t peer_port : peer_ports) {
-    HostPort peer_address("127.0.0.1", peer_port);
-    peer_addresses.push_back(peer_address);
-  }
+Status MiniMaster::StartDistributedMasterOnAddrs(const HostPort& rpc_bind_addr,
+                                                 const HostPort& web_bind_addr,
+                                                 std::vector<HostPort> peer_addrs) {
   MasterOptions opts;
-  opts.master_addresses = peer_addresses;
-
-  return StartOnPorts(rpc_port, web_port, &opts);
+  opts.master_addresses = std::move(peer_addrs);
+  return StartOnAddrs(rpc_bind_addr, web_bind_addr, &opts);
 }
 
 } // namespace master

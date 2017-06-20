@@ -100,7 +100,8 @@ class TabletServerTestBase : public KuduTest {
   virtual void StartTabletServer() {
     // Start server with an invalid master address, so it never successfully
     // heartbeats, even if there happens to be a master running on this machine.
-    mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
+    mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"),
+                                            HostPort("127.0.0.1", 0)));
     mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.emplace_back("255.255.255.255", 1);
     ASSERT_OK(mini_server_->Start());
@@ -343,7 +344,8 @@ class TabletServerTestBase : public KuduTest {
     ShutdownTablet();
 
     // Start server.
-    mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"), 0));
+    mini_server_.reset(new MiniTabletServer(GetTestPath("TabletServerTest-fsroot"),
+                                            HostPort("127.0.0.1", 0)));
     mini_server_->options()->master_addresses.clear();
     mini_server_->options()->master_addresses.emplace_back("255.255.255.255", 1);
     // this should open the tablet created on StartTabletServer()

@@ -186,11 +186,11 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // Bring down the old cluster configuration and bring up the new one.
   cluster_->Shutdown();
   ExternalMiniClusterOptions opts;
+  opts.bind_mode = MiniCluster::LOOPBACK; // Required since we use 127.0.0.1 in the config above.
   opts.master_rpc_ports = kMasterRpcPorts;
   opts.num_masters = kMasterRpcPorts.size();
   ExternalMiniCluster migrated_cluster(std::move(opts));
   ASSERT_OK(migrated_cluster.Start());
-
 
   // Perform an operation that requires an elected leader.
   shared_ptr<KuduClient> client;
