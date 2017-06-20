@@ -25,9 +25,9 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/master/master_options.h"
+#include "kudu/kserver/kserver.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/server/server_base.h"
+#include "kudu/master/master_options.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/status.h"
@@ -56,7 +56,7 @@ class MasterCertAuthority;
 class MasterPathHandlers;
 class TSManager;
 
-class Master : public server::ServerBase {
+class Master : public kserver::KuduServer {
  public:
   static const uint16_t kDefaultPort = 7051;
   static const uint16_t kDefaultWebPort = 8051;
@@ -64,8 +64,9 @@ class Master : public server::ServerBase {
   explicit Master(const MasterOptions& opts);
   ~Master();
 
-  Status Init();
-  Status Start();
+  virtual Status Init() override;
+  virtual Status Start() override;
+  virtual void Shutdown() override;
 
   Status StartAsync();
   Status WaitForCatalogManagerInit() const;
@@ -75,8 +76,6 @@ class Master : public server::ServerBase {
   // If 'timeout' time is exceeded, returns Status::TimedOut.
   Status WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout)
       WARN_UNUSED_RESULT;
-
-  void Shutdown();
 
   std::string ToString() const;
 

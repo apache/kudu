@@ -1128,6 +1128,7 @@ add_subdirectory(src/kudu/fs)
 # Google util libraries borrowed from supersonic, tcmalloc, Chromium, etc.
 add_subdirectory(src/kudu/gutil)
 add_subdirectory(src/kudu/integration-tests)
+add_subdirectory(src/kudu/kserver)
 add_subdirectory(src/kudu/master)
 add_subdirectory(src/kudu/rpc)
 add_subdirectory(src/kudu/security)

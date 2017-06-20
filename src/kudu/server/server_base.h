@@ -119,10 +119,11 @@ class ServerBase {
              const std::string& metric_namespace);
   virtual ~ServerBase();
 
-  Status Init();
+  virtual Status Init();
+  virtual Status Start();
+  virtual void Shutdown();
+
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl);
-  Status Start();
-  void Shutdown();
 
   void LogUnauthorizedAccess(rpc::RpcContext* rpc) const;
 

@@ -82,7 +82,7 @@ namespace kudu {
 namespace master {
 
 Master::Master(const MasterOptions& opts)
-  : ServerBase("Master", opts, "kudu.master"),
+  : KuduServer("Master", opts, "kudu.master"),
     state_(kStopped),
     ts_manager_(new TSManager()),
     catalog_manager_(new CatalogManager(this)),
@@ -110,7 +110,7 @@ Status Master::Init() {
 
   RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
 
-  RETURN_NOT_OK(ServerBase::Init());
+  RETURN_NOT_OK(KuduServer::Init());
 
   if (web_server_) {
     RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
@@ -148,10 +148,10 @@ Status Master::StartAsync() {
   gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
       this, catalog_manager_.get()));
 
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(impl)));
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(tablet_copy_service)));
-  RETURN_NOT_OK(ServerBase::Start());
+  RETURN_NOT_OK(RegisterService(std::move(impl)));
+  RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
+  RETURN_NOT_OK(RegisterService(std::move(tablet_copy_service)));
+  RETURN_NOT_OK(KuduServer::Start());
 
   // Now that we've bound, construct our ServerRegistrationPB.
   RETURN_NOT_OK(InitMasterRegistration());
@@ -212,7 +212,7 @@ void Master::Shutdown() {
     string name = ToString();
     LOG(INFO) << name << " shutting down...";
     maintenance_manager_->Shutdown();
-    ServerBase::Shutdown();
+    KuduServer::Shutdown();
     catalog_manager_->Shutdown();
     LOG(INFO) << name << " shutdown complete.";
   }

@@ -49,6 +49,7 @@ add_library(master ${MASTER_SRCS})
 target_link_libraries(master
   gutil
   krpc
+  kserver
   kudu_common
   kudu_util
   master_proto

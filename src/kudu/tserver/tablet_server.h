@@ -24,8 +24,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/server_base.h"
-#include "kudu/server/webserver_options.h"
+#include "kudu/kserver/kserver.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/net/net_util.h"
@@ -43,10 +42,10 @@ class ScannerManager;
 class TabletServerPathHandlers;
 class TSTabletManager;
 
-class TabletServer : public server::ServerBase {
+class TabletServer : public kserver::KuduServer {
  public:
-  // TODO: move this out of this header, since clients want to use this
-  // constant as well.
+  // TODO(unknown): move this out of this header, since clients want to use
+  // this constant as well.
   static const uint16_t kDefaultPort = 7050;
   static const uint16_t kDefaultWebPort = 8050;
 
@@ -58,13 +57,13 @@ class TabletServer : public server::ServerBase {
   // Some initialization tasks are asynchronous, such as the bootstrapping
   // of tablets. Caller can block, waiting for the initialization to fully
   // complete by calling WaitInited().
-  Status Init();
+  virtual Status Init() override;
 
   // Waits for the tablet server to complete the initialization.
   Status WaitInited();
 
-  Status Start();
-  void Shutdown();
+  virtual Status Start() override;
+  virtual void Shutdown() override;
 
   std::string ToString() const;
 

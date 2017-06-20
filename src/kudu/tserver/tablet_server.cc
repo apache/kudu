@@ -42,7 +42,7 @@ namespace kudu {
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
-  : ServerBase("TabletServer", opts, "kudu.tabletserver"),
+  : KuduServer("TabletServer", opts, "kudu.tabletserver"),
     initted_(false),
     fail_heartbeats_for_tests_(false),
     opts_(opts),
@@ -82,7 +82,7 @@ Status TabletServer::Init() {
   // our heartbeat thread will loop until successfully connecting.
   RETURN_NOT_OK(ValidateMasterAddressResolution());
 
-  RETURN_NOT_OK(ServerBase::Init());
+  RETURN_NOT_OK(KuduServer::Init());
   if (web_server_) {
     RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
   }
@@ -112,11 +112,11 @@ Status TabletServer::Start() {
   gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
       this, tablet_manager_.get()));
 
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(ts_service)));
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(admin_service)));
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(consensus_service)));
-  RETURN_NOT_OK(ServerBase::RegisterService(std::move(tablet_copy_service)));
-  RETURN_NOT_OK(ServerBase::Start());
+  RETURN_NOT_OK(RegisterService(std::move(ts_service)));
+  RETURN_NOT_OK(RegisterService(std::move(admin_service)));
+  RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
+  RETURN_NOT_OK(RegisterService(std::move(tablet_copy_service)));
+  RETURN_NOT_OK(KuduServer::Start());
 
   RETURN_NOT_OK(heartbeater_->Start());
   RETURN_NOT_OK(maintenance_manager_->Init(fs_manager_->uuid()));
@@ -131,7 +131,7 @@ void TabletServer::Shutdown() {
     LOG(INFO) << "TabletServer shutting down...";
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    ServerBase::Shutdown();
+    KuduServer::Shutdown();
     tablet_manager_->Shutdown();
     LOG(INFO) << "TabletServer shut down complete. Bye!";
   }

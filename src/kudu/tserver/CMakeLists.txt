@@ -119,21 +119,22 @@ set(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver
-  protobuf
-  tablet_copy_proto
-  tserver_proto
-  tserver_admin_proto
-  tserver_service_proto
-  master_proto
-  consensus_proto
-  log_proto
-  log
   consensus
+  consensus_proto
   krpc
+  kserver
+  log
+  log_proto
+  master_proto
+  protobuf
   security
   server_common
   server_process
-  tablet)
+  tablet
+  tablet_copy_proto
+  tserver_proto
+  tserver_admin_proto
+  tserver_service_proto)
 
 #########################################
 # kudu-tserver
