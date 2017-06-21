@@ -327,11 +327,19 @@ build_gmock() {
       -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
       -DBUILD_SHARED_LIBS=$SHARED \
-      -DCMAKE_INSTALL_PREFIX=$PREFIX \
       $GMOCK_SOURCE/googlemock
-    make -j$PARALLEL $EXTRA_MAKEFLAGS install
+    make -j$PARALLEL $EXTRA_MAKEFLAGS
     popd
   done
+
+  # Install gmock/gtest libraries and headers manually instead of using make
+  # install. Make install results in libraries with a malformed lib name on
+  # macOS.
+  echo Installing gmock...
+  cp -a $GMOCK_SHARED_BDIR/libgmock.$DYLIB_SUFFIX $PREFIX/lib/
+  cp -a $GMOCK_STATIC_BDIR/libgmock.a $PREFIX/lib/
+  rsync -av $GMOCK_SOURCE/googlemock/include/ $PREFIX/include/
+  rsync -av $GMOCK_SOURCE/googletest/include/ $PREFIX/include/
 }
 
 build_protobuf() {
