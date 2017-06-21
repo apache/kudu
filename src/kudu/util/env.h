@@ -328,6 +328,11 @@ class Env {
   // be changed.
   virtual Status EnsureFileModeAdheresToUmask(const std::string& path) = 0;
 
+  // Checks whether the given path has world-readable permissions.
+  //
+  // On success, 'result' contains the answer. On failure, 'result' is unset.
+  virtual Status IsFileWorldReadable(const std::string& path, bool* result) = 0;
+
   // Special string injected into file-growing operations' random failures
   // (if enabled).
   //

@@ -15,15 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/master/master.proxy.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/util/env.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/subprocess.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduClient;
@@ -34,6 +44,13 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::rpc::Messenger;
 using std::unique_ptr;
+using std::vector;
+using strings::Substitute;
+
+DECLARE_string(keytab_file);
+DECLARE_string(rpc_private_key_file);
+DECLARE_string(rpc_certificate_file);
+DECLARE_string(rpc_ca_certificate_file);
 
 namespace kudu {
 
@@ -217,6 +234,48 @@ TEST_F(SecurityITest, TestDisableAuthenticationEncryption) {
   cluster_opts_.enable_kerberos = false;
   ASSERT_OK(StartCluster());
   NO_FATALS(SmokeTestCluster());
+}
+
+void CreateWorldReadableFile(const string& name) {
+  unique_ptr<RWFile> file;
+  ASSERT_OK(Env::Default()->NewRWFile(name, &file));
+  ASSERT_EQ(chmod(name.c_str(), 0444), 0);
+}
+
+void GetFullBinaryPath(string* binary) {
+  string exe;
+  ASSERT_OK(Env::Default()->GetExecutablePath(&exe));
+  (*binary) = JoinPathSegments(DirName(exe), *binary);
+}
+
+TEST_F(SecurityITest, TestWorldReadableKeytab) {
+  const string credentials_name = GetTestPath("insecure.keytab");
+  NO_FATALS(CreateWorldReadableFile(credentials_name));
+  string binary = "kudu-master";
+  NO_FATALS(GetFullBinaryPath(&binary));
+  const vector<string> argv = { binary, Substitute("--keytab_file=$0", credentials_name) };
+  string stderr;
+  Status s = Subprocess::Call(argv, "", nullptr, &stderr);
+  ASSERT_STR_CONTAINS(stderr, Substitute(
+      "cannot use keytab file with world-readable permissions: $0",
+      credentials_name));
+}
+
+TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
+  const string credentials_name = GetTestPath("insecure.key");
+  NO_FATALS(CreateWorldReadableFile(credentials_name));
+  string binary = "kudu-master";
+  NO_FATALS(GetFullBinaryPath(&binary));
+  const vector<string> argv = { binary,
+                                "--unlock_experimental_flags",
+                                Substitute("--rpc_private_key_file=$0", credentials_name),
+                                "--rpc_certificate_file=fake_file",
+                                "--rpc_ca_certificate_file=fake_file" };
+  string stderr;
+  Status s = Subprocess::Call(argv, "", nullptr, &stderr);
+  ASSERT_STR_CONTAINS(stderr, Substitute(
+      "cannot use private key file with world-readable permissions: $0",
+      credentials_name));
 }
 
 } // namespace kudu

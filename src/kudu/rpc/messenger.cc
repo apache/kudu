@@ -47,6 +47,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
@@ -107,6 +108,7 @@ DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
 DECLARE_string(keytab_file);
+DECLARE_bool(allow_world_readable_credentials);
 
 namespace kudu {
 namespace rpc {
@@ -190,6 +192,23 @@ static bool ValidateExternalPkiFlags() {
     return false;
   }
 
+  if (has_key && !FLAGS_allow_world_readable_credentials) {
+    bool world_readable_private_key;
+    Status s = Env::Default()->IsFileWorldReadable(FLAGS_rpc_private_key_file,
+                                                   &world_readable_private_key);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("$0: could not verify private key file does not have "
+                               "world-readable permissions: $1",
+                               FLAGS_rpc_private_key_file, s.ToString());
+      return false;
+    }
+    if (world_readable_private_key) {
+      LOG(ERROR) << "cannot use private key file with world-readable permissions: "
+                 << FLAGS_rpc_private_key_file;
+      return false;
+    }
+  }
+
   return true;
 }
 GROUP_FLAG_VALIDATOR(external_pki_flags, ValidateExternalPkiFlags);
@@ -265,6 +284,7 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
     if (!FLAGS_rpc_certificate_file.empty()) {
       CHECK(!FLAGS_rpc_private_key_file.empty());
       CHECK(!FLAGS_rpc_ca_certificate_file.empty());
+
       // TODO(KUDU-1920): should we try and enforce that the server
       // is in the subject or alt names of the cert?
       RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ca_certificate_file));

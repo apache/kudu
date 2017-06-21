@@ -25,13 +25,15 @@
 #include <mutex>
 #include <random>
 #include <string>
-#include <vector>
 
 #include <boost/optional.hpp>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/flags.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -53,12 +55,17 @@ TAG_FLAG(principal, experimental);
 // See KUDU-1884.
 TAG_FLAG(principal, unsafe);
 
+DEFINE_bool(allow_world_readable_credentials, false,
+            "Enable the use of keytab files and TLS private keys with "
+            "world-readable permissions.");
+TAG_FLAG(allow_world_readable_credentials, unsafe);
+
 using std::mt19937;
 using std::random_device;
 using std::string;
 using std::uniform_int_distribution;
 using std::uniform_real_distribution;
-using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace security {
@@ -66,6 +73,26 @@ namespace security {
 namespace {
 
 class KinitContext;
+
+bool ValidateKeytabPermissions() {
+  if (!FLAGS_keytab_file.empty() && !FLAGS_allow_world_readable_credentials) {
+    bool world_readable_keytab;
+    Status s = Env::Default()->IsFileWorldReadable(FLAGS_keytab_file, &world_readable_keytab);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("$0: could not verify keytab file does not have world-readable "
+                               "permissions: $1", FLAGS_keytab_file, s.ToString());
+      return false;
+    }
+    if (world_readable_keytab) {
+      LOG(ERROR) << "cannot use keytab file with world-readable permissions: "
+                 << FLAGS_keytab_file;
+      return false;
+    }
+  }
+
+  return true;
+}
+GROUP_FLAG_VALIDATOR(keytab_permissions, &ValidateKeytabPermissions);
 
 // Global context for usage of the Krb5 library.
 krb5_context g_krb5_ctx;
