@@ -136,16 +136,16 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
                                           &tablet_servers_));
   }
 
-  // Waits that all replicas for a all tablets of 'kTableId' table are online
+  // Waits that all replicas for a all tablets of 'table_id' table are online
   // and creates the tablet_replicas_ map.
-  void WaitForReplicasAndUpdateLocations() {
+  void WaitForReplicasAndUpdateLocations(const string& table_id = kTableId) {
     bool replicas_missing = true;
     for (int num_retries = 0; replicas_missing && num_retries < kMaxRetries; num_retries++) {
       std::unordered_multimap<std::string, TServerDetails*> tablet_replicas;
       GetTableLocationsRequestPB req;
       GetTableLocationsResponsePB resp;
       RpcController controller;
-      req.mutable_table()->set_table_name(kTableId);
+      req.mutable_table()->set_table_name(table_id);
       controller.set_timeout(MonoDelta::FromSeconds(1));
       CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
       CHECK_OK(controller.status());
@@ -344,7 +344,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Gets the the locations of the consensus configuration and waits until all replicas
   // are available for all tablets.
-  void WaitForTSAndReplicas() {
+  void WaitForTSAndReplicas(const string& table_id = kTableId) {
     int num_retries = 0;
     // make sure the replicas are up and find the leader
     while (true) {
@@ -361,7 +361,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       }
       break;
     }
-    WaitForReplicasAndUpdateLocations();
+    WaitForReplicasAndUpdateLocations(table_id);
   }
 
   // Removes a set of servers from the replicas_ list.
@@ -491,17 +491,17 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   // Create a table with a single tablet, with 'num_replicas'.
-  void CreateTable() {
+  void CreateTable(const string& table_id = kTableId) {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
     client::KuduSchema client_schema(KuduSchemaFromSchema(schema_));
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableId)
+    ASSERT_OK(table_creator->table_name(table_id)
              .schema(&client_schema)
              .set_range_partition_columns({ "key" })
              .num_replicas(FLAGS_num_replicas)
              .Create());
-    ASSERT_OK(client_->OpenTable(kTableId, &table_));
+    ASSERT_OK(client_->OpenTable(table_id, &table_));
   }
 
   // Starts an external cluster with a single tablet and a number of replicas equal
