@@ -14,16 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_MINI_TABLET_SERVER_H
-#define KUDU_TSERVER_MINI_TABLET_SERVER_H
+
+#pragma once
+
+#include <memory>
+#include <string>
 
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
-
-#include <string>
 
 namespace kudu {
 
@@ -90,19 +91,14 @@ class MiniTabletServer {
   // Return TS uuid.
   const std::string& uuid() const;
 
-  bool is_started() const { return started_; }
+  bool is_started() const { return server_ ? true : false; }
 
   void FailHeartbeats();
 
  private:
-  bool started_;
-
   TabletServerOptions opts_;
-
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<TabletServer> server_;
+  std::unique_ptr<TabletServer> server_;
 };
 
 } // namespace tserver
 } // namespace kudu
-#endif

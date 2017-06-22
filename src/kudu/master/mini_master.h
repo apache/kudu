@@ -14,9 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_MINI_MASTER_H
-#define KUDU_MASTER_MINI_MASTER_H
 
+#pragma once
+
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -60,7 +61,7 @@ class MiniMaster {
 
   Status WaitForCatalogManagerInit() const;
 
-  bool is_running() const { return running_; }
+  bool is_started() const { return master_ ? true : false; }
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;
@@ -77,22 +78,18 @@ class MiniMaster {
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
 
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port,
-                      MasterOptions* options);
+                      MasterOptions* opts);
 
   Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
                                        const std::vector<uint16_t>& peer_ports);
-
-  bool running_;
 
   ATTRIBUTE_MEMBER_UNUSED Env* const env_;
   const std::string fs_root_;
   const uint16_t rpc_port_;
   Sockaddr bound_rpc_;
   Sockaddr bound_http_;
-  gscoped_ptr<Master> master_;
+  std::unique_ptr<Master> master_;
 };
 
 } // namespace master
 } // namespace kudu
-
-#endif /* KUDU_MASTER_MINI_MASTER_H */

@@ -115,7 +115,7 @@ class MasterCertAuthorityTest : public KuduTest {
       req.mutable_registration()->CopyFrom(fake_reg);
 
       MiniMaster* m = cluster_->mini_master(i);
-      if (!m->is_running()) {
+      if (!m->is_started()) {
         continue;
       }
       MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());
@@ -145,7 +145,7 @@ class MasterCertAuthorityTest : public KuduTest {
       req.set_csr_der(csr_str);
 
       MiniMaster* m = cluster_->mini_master(i);
-      if (!m->is_running()) {
+      if (!m->is_started()) {
         continue;
       }
       MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());

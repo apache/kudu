@@ -306,7 +306,7 @@ Status MiniCluster::GetLeaderMasterIndex(int* idx) const {
   while (MonoTime::Now() < deadline) {
     for (int i = 0; i < num_masters(); i++) {
       master::MiniMaster* mm = mini_master(i);
-      if (!mm->is_running() || mm->master()->IsShutdown()) {
+      if (!mm->is_started() || mm->master()->IsShutdown()) {
         continue;
       }
       master::CatalogManager* catalog = mm->master()->catalog_manager();

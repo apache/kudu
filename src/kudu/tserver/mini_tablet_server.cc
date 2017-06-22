@@ -17,7 +17,10 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
+#include <string>
 #include <utility>
+
+#include <gflags/gflags_declare.h>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -27,22 +30,21 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
-using std::pair;
-
-using kudu::consensus::RaftPeerPB;
-using kudu::consensus::RaftConfigPB;
-using strings::Substitute;
-
 DECLARE_bool(enable_minidumps);
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
+
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftPeerPB;
+using std::pair;
+using std::string;
+using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 namespace tserver {
 
 MiniTabletServer::MiniTabletServer(const string& fs_root,
-                                   uint16_t rpc_port)
-  : started_(false) {
-
+                                   uint16_t rpc_port) {
   // Disable minidump handler (we allow only one per process).
   FLAGS_enable_minidumps = false;
   // Start RPC server on loopback.
@@ -58,14 +60,13 @@ MiniTabletServer::~MiniTabletServer() {
 }
 
 Status MiniTabletServer::Start() {
-  CHECK(!started_);
+  CHECK(!server_);
 
-  gscoped_ptr<TabletServer> server(new TabletServer(opts_));
+  unique_ptr<TabletServer> server(new TabletServer(opts_));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->Start());
-
   server_.swap(server);
-  started_ = true;
+
   return Status::OK();
 }
 
@@ -74,7 +75,7 @@ Status MiniTabletServer::WaitStarted() {
 }
 
 void MiniTabletServer::Shutdown() {
-  if (started_) {
+  if (server_) {
     // Save the bound ports back into the options structure so that, if we restart the
     // server, it will come back on the same address. This is necessary since we don't
     // currently support tablet servers re-registering on different ports (KUDU-418).
@@ -83,17 +84,14 @@ void MiniTabletServer::Shutdown() {
     server_->Shutdown();
     server_.reset();
   }
-  started_ = false;
 }
 
 Status MiniTabletServer::Restart() {
-  CHECK(!started_);
-  RETURN_NOT_OK(Start());
-  return Status::OK();
+  return Start();
 }
 
 RaftConfigPB MiniTabletServer::CreateLocalConfig() const {
-  CHECK(started_) << "Must Start()";
+  CHECK(server_) << "must call Start() first";
   RaftConfigPB config;
   RaftPeerPB* peer = config.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
@@ -113,13 +111,12 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
                                        const Schema& schema,
                                        const RaftConfigPB& config) {
-  CHECK(started_) << "Must Start()";
   Schema schema_with_ids = SchemaBuilder(schema).Build();
   pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(schema_with_ids);
 
   return server_->tablet_manager()->CreateNewTablet(
-    table_id, tablet_id, partition.second, table_id,
-    schema_with_ids, partition.first, config, nullptr);
+      table_id, tablet_id, partition.second, table_id,
+      schema_with_ids, partition.first, config, nullptr);
 }
 
 void MiniTabletServer::FailHeartbeats() {
@@ -127,17 +124,14 @@ void MiniTabletServer::FailHeartbeats() {
 }
 
 const Sockaddr MiniTabletServer::bound_rpc_addr() const {
-  CHECK(started_);
   return server_->first_rpc_address();
 }
 
 const Sockaddr MiniTabletServer::bound_http_addr() const {
-  CHECK(started_);
   return server_->first_http_address();
 }
 
 const string& MiniTabletServer::uuid() const {
-  CHECK(started_);
   return server_->fs_manager()->uuid();
 }
 

@@ -17,19 +17,24 @@
 
 #include "kudu/master/mini_master.h"
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
-#include "kudu/master/master.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
+using std::string;
+using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_minidumps);
@@ -39,8 +44,7 @@ namespace kudu {
 namespace master {
 
 MiniMaster::MiniMaster(Env* env, string fs_root, uint16_t rpc_port)
-    : running_(false),
-      env_(env),
+    : env_(env),
       fs_root_(std::move(fs_root)),
       rpc_port_(rpc_port) {
   // Disable minidump handler (we allow only one per process).
@@ -52,32 +56,27 @@ MiniMaster::~MiniMaster() {
 }
 
 Status MiniMaster::Start() {
-  CHECK(!running_);
   FLAGS_rpc_server_allow_ephemeral_ports = true;
   RETURN_NOT_OK(StartOnPorts(rpc_port_, 0));
   return master_->WaitForCatalogManagerInit();
 }
 
 Status MiniMaster::StartDistributedMaster(const vector<uint16_t>& peer_ports) {
-  CHECK(!running_);
   return StartDistributedMasterOnPorts(rpc_port_, 0, peer_ports);
 }
 
 Status MiniMaster::Restart() {
-  CHECK(!running_);
   RETURN_NOT_OK(StartOnPorts(bound_rpc_.port(), bound_http_.port()));
-  CHECK(running_);
   return WaitForCatalogManagerInit();
 }
 
 void MiniMaster::Shutdown() {
-  if (running_) {
+  if (master_) {
     bound_rpc_ = bound_rpc_addr();
     bound_http_ = bound_http_addr();
     master_->Shutdown();
+    master_.reset();
   }
-  running_ = false;
-  master_.reset();
 }
 
 Status MiniMaster::WaitForCatalogManagerInit() const {
@@ -85,17 +84,14 @@ Status MiniMaster::WaitForCatalogManagerInit() const {
 }
 
 const Sockaddr MiniMaster::bound_rpc_addr() const {
-  CHECK(running_);
   return master_->first_rpc_address();
 }
 
 const Sockaddr MiniMaster::bound_http_addr() const {
-  CHECK(running_);
   return master_->first_http_address();
 }
 
 std::string MiniMaster::permanent_uuid() const {
-  CHECK(master_);
   return DCHECK_NOTNULL(master_->fs_manager())->uuid();
 }
 
@@ -104,42 +100,34 @@ std::string MiniMaster::bound_rpc_addr_str() const {
 }
 
 Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port) {
-  CHECK(!running_);
-  CHECK(!master_);
-
   MasterOptions opts;
   return StartOnPorts(rpc_port, web_port, &opts);
 }
 
 Status MiniMaster::StartOnPorts(uint16_t rpc_port, uint16_t web_port,
                                 MasterOptions* opts) {
+  CHECK(!master_);
   opts->rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts->webserver_opts.port = web_port;
   opts->fs_opts.wal_path = fs_root_;
   opts->fs_opts.data_paths = { fs_root_ };
 
-  gscoped_ptr<Master> server(new Master(*opts));
+  unique_ptr<Master> server(new Master(*opts));
   RETURN_NOT_OK(server->Init());
   RETURN_NOT_OK(server->StartAsync());
-
   master_.swap(server);
-  running_ = true;
 
   return Status::OK();
 }
 
 Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
                                                  const vector<uint16_t>& peer_ports) {
-  CHECK(!running_);
-  CHECK(!master_);
-
-  MasterOptions opts;
-
   vector<HostPort> peer_addresses;
   for (uint16_t peer_port : peer_ports) {
     HostPort peer_address("127.0.0.1", peer_port);
     peer_addresses.push_back(peer_address);
   }
+  MasterOptions opts;
   opts.master_addresses = peer_addresses;
 
   return StartOnPorts(rpc_port, web_port, &opts);
