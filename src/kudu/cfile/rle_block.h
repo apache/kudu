@@ -140,6 +140,13 @@ class RleBitMapBlockDecoder final : public BlockDecoder {
 
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
     CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK_LE(pos, num_elems_)
+      << "Tried to seek to " << pos << " which is > number of elements ("
+      << num_elems_ << ") in the block!";
+    // If the block is empty (e.g. the column is filled with nulls), there is no data to seek.
+    if (PREDICT_FALSE(num_elems_ == 0)) {
+      return;
+    }
 
     if (cur_idx_ == pos) {
       // No need to seek.
@@ -330,13 +337,13 @@ class RleIntBlockDecoder final : public BlockDecoder {
 
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE {
     CHECK(parsed_) << "Must call ParseHeader()";
+    DCHECK_LE(pos, num_elems_)
+        << "Tried to seek to " << pos << " which is > number of elements ("
+        << num_elems_ << ") in the block!";
     // If the block is empty (e.g. the column is filled with nulls), there is no data to seek.
     if (PREDICT_FALSE(num_elems_ == 0)) {
       return;
     }
-    CHECK_LT(pos, num_elems_)
-        << "Tried to seek to " << pos << " which is >= number of elements ("
-        << num_elems_ << ") in the block!.";
 
     if (cur_idx_ == pos) {
       // No need to seek.
