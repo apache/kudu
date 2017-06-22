@@ -33,6 +33,8 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
@@ -345,6 +347,52 @@ TEST_F(TestEnv, TestHolePunch) {
   ASSERT_EQ(kOneMb, sz);
   ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &new_size_on_disk));
   ASSERT_EQ(size_on_disk - punch_amount, new_size_on_disk);
+}
+
+TEST_F(TestEnv, TestHolePunchBenchmark) {
+  const int kFileSize = 1 * 1024 * 1024 * 1024;
+  const int kHoleSize = 10 * kOneMb;
+  const int kNumRuns = 1000;
+  if (!fallocate_punch_hole_supported_) {
+    LOG(INFO) << "hole punching not supported, skipping test";
+    return;
+  }
+  Random r(SeedRandom());
+
+  string test_path = GetTestPath("test");
+  unique_ptr<RWFile> file;
+  ASSERT_OK(env_->NewRWFile(test_path, &file));
+
+  // Initialize a scratch buffer with random data.
+  uint8_t scratch[kOneMb];
+  RandomString(&scratch, kOneMb, &r);
+
+  // Fill the file with sequences of the random data.
+  LOG_TIMING(INFO, Substitute("writing $0 bytes to file", kFileSize)) {
+    Slice slice(scratch, kOneMb);
+    for (int i = 0; i < kFileSize; i += kOneMb) {
+      ASSERT_OK(file->Write(i, slice));
+    }
+  }
+  LOG_TIMING(INFO, "syncing file") {
+    ASSERT_OK(file->Sync());
+  }
+
+  // Punch the first hole.
+  LOG_TIMING(INFO, Substitute("punching first hole of size $0", kHoleSize)) {
+    ASSERT_OK(file->PunchHole(0, kHoleSize));
+  }
+  LOG_TIMING(INFO, "syncing file") {
+    ASSERT_OK(file->Sync());
+  }
+
+  // Run the benchmark.
+  LOG_TIMING(INFO, Substitute("repunching $0 holes of size $1",
+                              kNumRuns, kHoleSize)) {
+    for (int i = 0; i < kNumRuns; i++) {
+      ASSERT_OK(file->PunchHole(0, kHoleSize));
+    }
+  }
 }
 
 TEST_F(TestEnv, TestTruncate) {

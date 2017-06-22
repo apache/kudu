@@ -36,6 +36,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
@@ -75,6 +76,21 @@
 #endif
 #ifndef FALLOC_FL_PUNCH_HOLE
 #define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
+#endif
+
+
+#ifndef __APPLE__
+// These struct and ioctl definitions were copied verbatim from xfsprogs.
+typedef struct xfs_flock64 {
+        __s16           l_type;
+        __s16           l_whence;
+        __s64           l_start;
+        __s64           l_len;          /* len == 0 means until end of file */
+        __s32           l_sysid;
+        __u32           l_pid;
+        __s32           l_pad[4];       /* reserve area                     */
+} xfs_flock64_t;
+#define XFS_IOC_UNRESVSP64      _IOW ('X', 43, struct xfs_flock64)
 #endif
 
 // For platforms without fdatasync (like OS X)
@@ -125,6 +141,13 @@ DEFINE_bool(env_use_fsync, false,
             "data to disk.");
 TAG_FLAG(env_use_fsync, advanced);
 TAG_FLAG(env_use_fsync, evolving);
+
+// See KUDU-2052 for details.
+DEFINE_bool(env_use_ioctl_hole_punch_on_xfs, true,
+            "Use the XFS_IOC_UNRESVSP64 ioctl instead of fallocate(2) to "
+            "punch holes on XFS filesystems.");
+TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, advanced);
+TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, experimental);
 
 DEFINE_bool(suicide_on_eio, true,
             "Kill the process if an I/O operation results in EIO. If false, "
@@ -460,6 +483,23 @@ Status DoWriteV(int fd, const string& filename, uint64_t offset,
   return Status::OK();
 }
 
+Status DoIsOnXfsFilesystem(const string& path, bool* result) {
+#ifdef __APPLE__
+  *result = false;
+#else
+  struct statfs buf;
+  int ret;
+  RETRY_ON_EINTR(ret, statfs(path.c_str(), &buf));
+  if (ret == -1) {
+    return IOError(Substitute("statfs: $0", path), errno);
+  }
+  // This magic number isn't defined in any header but is the value of the
+  // US-ASCII string 'XFSB' expressed in hexadecimal.
+  *result = (buf.f_type == 0x58465342);
+#endif
+  return Status::OK();
+}
+
 class PosixSequentialFile: public SequentialFile {
  private:
   std::string filename_;
@@ -691,6 +731,7 @@ class PosixRWFile : public RWFile {
         fd_(fd),
         sync_on_close_(sync_on_close),
         pending_sync_(false),
+        is_on_xfs_(false),
         closed_(false) {}
 
   ~PosixRWFile() {
@@ -759,7 +800,27 @@ class PosixRWFile : public RWFile {
     TRACE_EVENT1("io", "PosixRWFile::PunchHole", "path", filename_);
     MAYBE_RETURN_EIO(filename_, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
-    if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length) < 0) {
+
+    // KUDU-2052: xfs in el6 systems induces an fsync in the kernel whenever it
+    // performs a hole punch through the fallocate() syscall, even if the file
+    // range was already punched out. The older xfs-specific hole punching
+    // ioctl doesn't do this, despite eventually executing the same xfs code.
+    // To keep the code simple, we'll use this ioctl on any xfs system (not
+    // just on el6) and fallocate() on all other filesystems.
+    //
+    // Note: the cast to void* here (and back to PosixRWFile*, in InitIsOnXFS)
+    // is needed to avoid an undefined behavior warning from UBSAN.
+    once_.Init(&InitIsOnXFS, reinterpret_cast<void*>(this));
+    if (is_on_xfs_ && FLAGS_env_use_ioctl_hole_punch_on_xfs) {
+      xfs_flock64_t cmd;
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.l_start = offset;
+      cmd.l_len = length;
+      if (ioctl(fd_, XFS_IOC_UNRESVSP64, &cmd) < 0) {
+        return IOError(filename_, errno);
+      }
+    } else if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
+                         offset, length) < 0) {
       return IOError(filename_, errno);
     }
     return Status::OK();
@@ -902,11 +963,26 @@ class PosixRWFile : public RWFile {
   }
 
  private:
+  static void InitIsOnXFS(void* arg) {
+    PosixRWFile* rwf = reinterpret_cast<PosixRWFile*>(arg);
+    bool result;
+    Status s = DoIsOnXfsFilesystem(rwf->filename_, &result);
+    if (s.ok()) {
+      rwf->is_on_xfs_ = result;
+    } else {
+      KLOG_EVERY_N_SECS(WARNING, 1) <<
+          Substitute("Could not determine whether file is on xfs, assuming not: $0",
+                     s.ToString());
+    }
+  }
+
   const std::string filename_;
   const int fd_;
   const bool sync_on_close_;
 
+  GoogleOnceDynamic once_;
   AtomicBool pending_sync_;
+  bool is_on_xfs_;
   bool closed_;
 };
 
@@ -1535,22 +1611,7 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::IsOnXfsFilesystem", "path", path);
     MAYBE_RETURN_EIO(path, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
-
-#ifdef __APPLE__
-    *result = false;
-#else
-    struct statfs buf;
-    int ret;
-    RETRY_ON_EINTR(ret, statfs(path.c_str(), &buf));
-    if (ret == -1) {
-      return IOError(Substitute("statfs: $0", path), errno);
-    }
-
-    // This magic number isn't defined in any header but is the value of the
-    // US-ASCII string 'XFSB' expressed in hexadecimal.
-    *result = (buf.f_type == 0x58465342);
-#endif
-    return Status::OK();
+    return DoIsOnXfsFilesystem(path, result);
   }
 
   virtual string GetKernelRelease() OVERRIDE {
