@@ -661,8 +661,8 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
 
     // Check for agreement on tablet assignment and state between the master
     // and the tablet server.
-    auto ts = FindPtrOrNull(cluster_->tablet_servers(), replica->ts_uuid());
-    repl_info->ts = ts.get();
+    auto ts = FindPointeeOrNull(cluster_->tablet_servers(), replica->ts_uuid());
+    repl_info->ts = ts;
     if (ts && ts->is_healthy()) {
       repl_info->state = ts->ReplicaState(tablet->id());
       if (ContainsKey(ts->tablet_status_map(), tablet->id())) {
@@ -727,6 +727,8 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
   }
   std::sort(replica_infos.begin(), replica_infos.end(),
             [](const ReplicaInfo& left, const ReplicaInfo& right) -> bool {
+              if (!left.ts) return true;
+              if (!right.ts) return false;
               return left.ts->uuid() < right.ts->uuid();
             });
 
