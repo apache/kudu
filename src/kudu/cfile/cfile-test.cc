@@ -756,11 +756,14 @@ TEST_P(TestCFileBothCacheTypes, TestNullInts) {
   TestNullTypes(&generator, PLAIN_ENCODING, LZ4);
   TestNullTypes(&generator, BIT_SHUFFLE, NO_COMPRESSION);
   TestNullTypes(&generator, BIT_SHUFFLE, LZ4);
+  TestNullTypes(&generator, RLE, NO_COMPRESSION);
+  TestNullTypes(&generator, RLE, LZ4);
 }
 
 TEST_P(TestCFileBothCacheTypes, TestNullFloats) {
   FPDataGenerator<FLOAT, true> generator;
   TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
+  TestNullTypes(&generator, BIT_SHUFFLE, NO_COMPRESSION);
 }
 
 TEST_P(TestCFileBothCacheTypes, TestNullPrefixStrings) {
