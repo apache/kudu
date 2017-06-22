@@ -562,6 +562,7 @@ class ClientTest : public KuduTest {
                             .schema(&schema_)
                             .num_replicas(num_replicas)
                             .set_range_partition_columns({ "key" })
+                            .timeout(MonoDelta::FromSeconds(60))
                             .Create());
 
     ASSERT_OK(client_->OpenTable(table_name, table));
@@ -2726,7 +2727,6 @@ TEST_F(ClientTest, TestAutoFlushBackgroundAndErrorCollector) {
     }
 
     void AddError(unique_ptr<KuduError> error) override {
-      //LOG(INFO) << "Hello from: " << Thread::UniqueThreadId();
       if (0 == error_cnt_++) {
         const bool prev_allowed = ThreadRestrictions::SetWaitAllowed(true);
         SleepFor(MonoDelta::FromSeconds(1));
@@ -2768,7 +2768,15 @@ TEST_F(ClientTest, TestAutoFlushBackgroundAndErrorCollector) {
     bool overflowed;
     session->GetPendingErrors(&errors, &overflowed);
     ASSERT_FALSE(overflowed);
-    ASSERT_EQ(kRowNum, errors.size());
+    // Print out the errors if the expected count differs from the actual one.
+    if (kRowNum != errors.size()) {
+      vector<string> errors_str;
+      for (const auto e : errors) {
+        errors_str.push_back(Substitute("status: $0; operation: $1",
+            e->status().ToString(), e->failed_op().ToString()));
+      }
+      EXPECT_EQ(kRowNum, errors.size()) << errors_str;
+    }
   }
 }
 
@@ -5120,7 +5128,7 @@ static const ServiceUnavailableRetryParams service_unavailable_retry_cases[] = {
   // request for long enough time.
   {
     MonoDelta::FromSeconds(1),        // usurper_sleep
-    MonoDelta::FromSeconds(10),       // client_timeout
+    MonoDelta::FromSeconds(60),       // client_timeout
     &Status::ok,                      // status_check
   },
 };
