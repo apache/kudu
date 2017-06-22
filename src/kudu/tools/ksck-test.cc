@@ -503,5 +503,18 @@ TEST_F(KsckTest, TestTabletNotRunning) {
       "    Last status: \n");
 }
 
+// Test for a bug where we weren't properly handling a tserver not reported by the master.
+TEST_F(KsckTest, TestMissingTserver) {
+  CreateOneSmallReplicatedTable();
+
+  // Delete a tablet server from the master's list. This simulates a situation
+  // where the master is starting and hasn't listed all tablet servers yet, but
+  // tablets from other tablet servers are listing the missing tablet server as a peer.
+  EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
+  Status s = RunKsck();
+  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
+}
+
 } // namespace tools
 } // namespace kudu
