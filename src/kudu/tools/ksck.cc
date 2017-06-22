@@ -834,8 +834,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     Out() << "The consensus matrix is:" << endl;
 
     // Prepare the header and columns for PrintTable.
-    const vector<string> headers{ "Config source", "Voters", "Current term",
-                                  "Config index", "Committed?" };
+    DataTable table({});
 
     // Seed the columns with the master info.
     vector<string> sources{"master"};
@@ -863,8 +862,12 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
       committed.emplace_back(replica.consensus_state->type == KsckConsensusConfigType::PENDING ?
                           "No" : "Yes");
     }
-    vector<vector<string>> columns{ sources, voters, terms, indexes, committed };
-    PrintTable(headers, columns, Out());
+    table.AddColumn("Config source", std::move(sources));
+    table.AddColumn("Voters", std::move(voters));
+    table.AddColumn("Current term", std::move(terms));
+    table.AddColumn("Config index", std::move(indexes));
+    table.AddColumn("Committed?", std::move(committed));
+    CHECK_OK(table.PrintTo(Out()));
   }
 
   return result;

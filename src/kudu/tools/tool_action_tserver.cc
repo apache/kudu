@@ -91,9 +91,7 @@ Status ListTServers(const RunnerContext& context) {
     return StatusFromPB(resp.error().status());
   }
 
-  vector<string> headers;
-  vector<vector<string>> columns;
-
+  DataTable table({});
   const auto& servers = resp.servers();
 
   auto hostport_to_string = [](const HostPortPB& hostport) {
@@ -101,7 +99,6 @@ Status ListTServers(const RunnerContext& context) {
   };
 
   for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
-    headers.emplace_back(column.ToString());
     vector<string> values;
     if (boost::iequals(column, "uuid")) {
       for (const auto& server : servers) {
@@ -134,11 +131,10 @@ Status ListTServers(const RunnerContext& context) {
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }
-
-    columns.emplace_back(std::move(values));
+    table.AddColumn(column.ToString(), std::move(values));
   }
 
-  RETURN_NOT_OK(PrintTable(headers, columns, cout));
+  RETURN_NOT_OK(table.PrintTo(cout));
   return Status::OK();
 }
 

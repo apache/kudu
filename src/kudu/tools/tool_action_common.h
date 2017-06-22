@@ -106,10 +106,41 @@ Status PrintServerTimestamp(const std::string& address, uint16_t default_port);
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
 
-// Prints a table.
-Status PrintTable(const std::vector<std::string>& headers,
-                  const std::vector<std::vector<std::string>>& columns,
-                  std::ostream& out);
+// A table of data to present to the user.
+//
+// Supports formatting based on the --format flag.
+// All data is buffered in memory before being output.
+//
+// Example usage:
+//    DataTable table({"person", "favorite color"});
+//    vector<string> cols(2);
+//    AddTableRow({"joe", "red"}, &cols);
+//    AddTableRow({"bob", "green"}, &cols);
+//    AddTableRow({"alice", "yellow"}, &cols);
+//    PrintTable(headers, cols, cout);
+class DataTable {
+ public:
+  // Construct a table with the given column names.
+  explicit DataTable(std::vector<std::string> col_names);
+
+  // Add a row of data to the table.
+  //
+  // REQUIRES: 'row.size()' matches the number of column names specified
+  // in the constructor.
+  void AddRow(std::vector<std::string> row);
+
+  // Add a column of data to the right side of the table.
+  //
+  // REQUIRES: if any rows have been added already, the length of this column
+  // must match the length of all existing columns.
+  void AddColumn(std::string name, std::vector<std::string> column);
+
+  // Print the table to 'out'.
+  Status PrintTo(std::ostream& out) const WARN_UNUSED_RESULT;
+ private:
+  std::vector<std::string> column_names_;
+  std::vector<std::vector<std::string>> columns_;
+};
 
 // Wrapper around a Kudu client which allows calling proxy methods on the leader
 // master.

@@ -88,8 +88,7 @@ Status ListMasters(const RunnerContext& context) {
     return StatusFromPB(resp.error().status());
   }
 
-  vector<string> headers;
-  vector<vector<string>> columns;
+  DataTable table({});
 
   vector<ServerEntryPB> masters;
   std::copy_if(resp.masters().begin(), resp.masters().end(), std::back_inserter(masters),
@@ -107,7 +106,6 @@ Status ListMasters(const RunnerContext& context) {
   };
 
   for (const auto& column : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
-    headers.push_back(column.ToString());
     vector<string> values;
     if (boost::iequals(column, "uuid")) {
       for (const auto& master : masters) {
@@ -136,11 +134,10 @@ Status ListMasters(const RunnerContext& context) {
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }
-
-    columns.emplace_back(std::move(values));
+    table.AddColumn(column.ToString(), std::move(values));
   }
 
-  RETURN_NOT_OK(PrintTable(headers, columns, cout));
+  RETURN_NOT_OK(table.PrintTo(cout));
   return Status::OK();
 }
 

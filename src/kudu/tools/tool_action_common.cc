@@ -480,19 +480,38 @@ void PrintTable(const vector<vector<string>>& columns, const string& separator, 
 
 } // anonymous namespace
 
-Status PrintTable(const vector<string>& headers,
-                  const vector<vector<string>>& columns,
-                  ostream& out) {
+DataTable::DataTable(std::vector<string> col_names)
+    : column_names_(std::move(col_names)),
+      columns_(column_names_.size()) {
+}
+
+void DataTable::AddRow(std::vector<string> row) {
+  CHECK_EQ(row.size(), columns_.size());
+  int i = 0;
+  for (auto& v : row) {
+    columns_[i++].emplace_back(std::move(v));
+  }
+}
+
+void DataTable::AddColumn(string name, vector<string> column) {
+  if (!columns_.empty()) {
+    CHECK_EQ(column.size(), columns_[0].size());
+  }
+  column_names_.emplace_back(std::move(name));
+  columns_.emplace_back(std::move(column));
+}
+
+Status DataTable::PrintTo(ostream& out) const {
   if (boost::iequals(FLAGS_format, "pretty")) {
-    PrettyPrintTable(headers, columns, out);
+    PrettyPrintTable(column_names_, columns_, out);
   } else if (boost::iequals(FLAGS_format, "space")) {
-    PrintTable(columns, " ", out);
+    PrintTable(columns_, " ", out);
   } else if (boost::iequals(FLAGS_format, "tsv")) {
-    PrintTable(columns, "	", out);
+    PrintTable(columns_, "	", out);
   } else if (boost::iequals(FLAGS_format, "csv")) {
-    PrintTable(columns, ",", out);
+    PrintTable(columns_, ",", out);
   } else if (boost::iequals(FLAGS_format, "json")) {
-    JsonPrintTable(headers, columns, out);
+    JsonPrintTable(column_names_, columns_, out);
   } else {
     return Status::InvalidArgument("unknown format (--format)", FLAGS_format);
   }
