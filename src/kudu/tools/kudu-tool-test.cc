@@ -377,6 +377,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kFsDumpModeRegexes = {
+        "block.*binary contents of a data block",
         "cfile.*contents of a CFile",
         "tree.*tree of a Kudu filesystem",
         "uuid.*UUID of a Kudu filesystem"
@@ -815,6 +816,27 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     ASSERT_GT(stdout.size(), kNumEntries);
     ASSERT_EQ(stdout[0], "Header:");
     ASSERT_EQ(stdout[1], "Footer:");
+  }
+}
+
+TEST_F(ToolTest, TestFsDumpBlock) {
+  const string kTestDir = GetTestPath("test");
+  FsManager fs(env_, kTestDir);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  unique_ptr<WritableBlock> block;
+  ASSERT_OK(fs.CreateNewBlock({}, &block));
+  ASSERT_OK(block->Append("hello world"));
+  ASSERT_OK(block->Close());
+  BlockId block_id = block->id();
+
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(Substitute(
+        "fs dump block --fs_wal_dir=$0 $1",
+        kTestDir, block_id.ToString()), &stdout));
+    ASSERT_EQ("hello world", stdout);
   }
 }
 

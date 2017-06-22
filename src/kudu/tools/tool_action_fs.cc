@@ -173,14 +173,21 @@ Status DumpUuid(const RunnerContext& /*context*/) {
   return Status::OK();
 }
 
-Status DumpCFile(const RunnerContext& context) {
+Status ParseBlockIdArg(const RunnerContext& context,
+                       BlockId* id) {
   const string& block_id_str = FindOrDie(context.required_args, "block_id");
   uint64_t numeric_id;
   if (!safe_strtou64(block_id_str, &numeric_id)) {
     return Status::InvalidArgument(Substitute(
         "Could not parse $0 as numeric block ID", block_id_str));
   }
-  BlockId block_id(numeric_id);
+  *id = BlockId(numeric_id);
+  return Status::OK();
+}
+
+Status DumpCFile(const RunnerContext& context) {
+  BlockId block_id;
+  RETURN_NOT_OK(ParseBlockIdArg(context, &block_id));
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
@@ -209,6 +216,35 @@ Status DumpCFile(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status DumpBlock(const RunnerContext& context) {
+  BlockId block_id;
+  RETURN_NOT_OK(ParseBlockIdArg(context, &block_id));
+
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(Env::Default(), fs_opts);
+  RETURN_NOT_OK(fs_manager.Open());
+
+  unique_ptr<fs::ReadableBlock> block;
+  RETURN_NOT_OK(fs_manager.OpenBlock(block_id, &block));
+
+  uint64_t size = 0;
+  RETURN_NOT_OK_PREPEND(block->Size(&size), "couldn't get block size");
+
+  faststring buf;
+  uint64_t offset = 0;
+  while (offset < size) {
+    int64_t chunk = std::min<int64_t>(size - offset, 64 * 1024);
+    buf.resize(chunk);
+    Slice s(buf);
+    RETURN_NOT_OK(block->Read(offset, &s));
+    offset += s.size();
+    cout << s.ToString();
+  }
+
+  return Status::OK();
+}
+
 Status DumpFsTree(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
@@ -225,11 +261,23 @@ static unique_ptr<Mode> BuildFsDumpMode() {
   unique_ptr<Action> dump_cfile =
       ActionBuilder("cfile", &DumpCFile)
       .Description("Dump the contents of a CFile (column file)")
+      .ExtraDescription("This interprets the contents of a CFile-formatted block "
+                        "and outputs the decoded row data.")
       .AddRequiredParameter({ "block_id", "block identifier" })
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("print_meta")
       .AddOptionalParameter("print_rows")
+      .Build();
+
+  unique_ptr<Action> dump_block =
+      ActionBuilder("block", &DumpBlock)
+      .Description("Dump the binary contents of a data block")
+      .ExtraDescription("This performs no parsing or interpretation of the data stored "
+                        "in the block but rather outputs its binary contents directly.")
+      .AddRequiredParameter({ "block_id", "block identifier" })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
       .Build();
 
   unique_ptr<Action> dump_tree =
@@ -248,6 +296,7 @@ static unique_ptr<Mode> BuildFsDumpMode() {
 
   return ModeBuilder("dump")
       .Description("Dump a Kudu filesystem")
+      .AddAction(std::move(dump_block))
       .AddAction(std::move(dump_cfile))
       .AddAction(std::move(dump_tree))
       .AddAction(std::move(dump_uuid))
