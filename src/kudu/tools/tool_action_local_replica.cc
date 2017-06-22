@@ -131,6 +131,11 @@ const char* const kSeparatorLine =
 
 const char* const kTermArg = "term";
 
+const char* const kTabletIdGlobArg = "tablet_id_pattern";
+const char* const kTabletIdGlobArgDesc = "Tablet identifier pattern. "
+    "This argument supports basic glob syntax: '*' matches 0 or more wildcard "
+    "characters.";
+
 string Indent(int indent) {
   return string(indent, ' ');
 }
@@ -368,6 +373,126 @@ Status DeleteLocalReplica(const RunnerContext& context) {
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &meta));
   RETURN_NOT_OK(TSTabletManager::DeleteTabletData(meta, state, last_logged_opid));
+  return Status::OK();
+}
+
+Status SummarizeSize(FsManager* fs,
+                     const vector<BlockId>& blocks,
+                     StringPiece block_type,
+                     int64_t* running_sum) {
+  int64_t local_sum = 0;
+  for (const auto& b : blocks) {
+    unique_ptr<fs::ReadableBlock> rb;
+    RETURN_NOT_OK_PREPEND(fs->OpenBlock(b, &rb),
+                          Substitute("could not open block $0", b.ToString()));
+    uint64_t size = 0;
+    RETURN_NOT_OK_PREPEND(rb->Size(&size),
+                          Substitute("could not get size for block $0", b.ToString()));
+    local_sum += size;
+    if (VLOG_IS_ON(1)) {
+      cout << Substitute("$0 block $1: $2 bytes $3",
+                         block_type, b.ToString(),
+                         size, HumanReadableNumBytes::ToString(size)) << endl;
+    }
+  }
+  *running_sum += local_sum;
+  return Status::OK();
+}
+
+namespace {
+struct TabletSizeStats {
+  int64_t redo_bytes = 0;
+  int64_t undo_bytes = 0;
+  int64_t bloom_bytes = 0;
+  int64_t pk_index_bytes = 0;
+  map<string, int64_t, autodigit_less> column_bytes;
+
+  void Add(const TabletSizeStats& other) {
+    redo_bytes += other.redo_bytes;
+    undo_bytes += other.undo_bytes;
+    bloom_bytes += other.bloom_bytes;
+    pk_index_bytes += other.pk_index_bytes;
+    for (const auto& p : other.column_bytes) {
+      column_bytes[p.first] += p.second;
+    }
+  }
+
+  void AddToTable(const string& table_id,
+                  const string& tablet_id,
+                  const string& rowset_id,
+                  DataTable* table) const {
+    vector<pair<string, int64_t>> to_print(column_bytes.begin(), column_bytes.end());
+    to_print.emplace_back("REDO", redo_bytes);
+    to_print.emplace_back("UNDO", undo_bytes);
+    to_print.emplace_back("BLOOM", bloom_bytes);
+    to_print.emplace_back("PK", pk_index_bytes);
+
+    int64_t total = 0;
+    for (const auto& e : to_print) {
+      table->AddRow({table_id, tablet_id, rowset_id, e.first,
+              HumanReadableNumBytes::ToString(e.second)});
+      total += e.second;
+    }
+    table->AddRow({table_id, tablet_id, rowset_id, "*", HumanReadableNumBytes::ToString(total)});
+  }
+};
+} // anonymous namespace
+
+Status SummarizeDataSize(const RunnerContext& context) {
+  const string& tablet_id_pattern = FindOrDie(context.required_args, kTabletIdGlobArg);
+  unique_ptr<FsManager> fs;
+  RETURN_NOT_OK(FsInit(&fs));
+
+  vector<string> tablets;
+  RETURN_NOT_OK(fs->ListTabletIds(&tablets));
+
+  unordered_map<string, TabletSizeStats> size_stats_by_table_id;
+
+  DataTable output_table({ "table id", "tablet id", "rowset id", "block type", "size" });
+
+  for (const string& tablet_id : tablets) {
+    TabletSizeStats tablet_stats;
+    if (!MatchPattern(tablet_id, tablet_id_pattern)) continue;
+    scoped_refptr<TabletMetadata> meta;
+    RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs.get(), tablet_id, &meta),
+                          Substitute("could not load tablet metadata for $0", tablet_id));
+    const string& table_id = meta->table_id();
+    for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets()) {
+      TabletSizeStats rowset_stats;
+      RETURN_NOT_OK(SummarizeSize(fs.get(), rs_meta->redo_delta_blocks(),
+                                  "REDO", &rowset_stats.redo_bytes));
+      RETURN_NOT_OK(SummarizeSize(fs.get(), rs_meta->undo_delta_blocks(),
+                                  "UNDO", &rowset_stats.undo_bytes));
+      RETURN_NOT_OK(SummarizeSize(fs.get(), { rs_meta->bloom_block() },
+                                  "Bloom", &rowset_stats.bloom_bytes));
+      if (rs_meta->has_adhoc_index_block()) {
+        RETURN_NOT_OK(SummarizeSize(fs.get(), { rs_meta->adhoc_index_block() },
+                                    "PK index", &rowset_stats.pk_index_bytes));
+      }
+      const auto& column_blocks_by_id = rs_meta->GetColumnBlocksById();
+      for (const auto& e : column_blocks_by_id) {
+        const auto& col_id = e.first;
+        const auto& block = e.second;
+        const auto& col_idx = meta->schema().find_column_by_id(col_id);
+        string col_key = Substitute(
+            "c$0 ($1)", col_id,
+            (col_idx != Schema::kColumnNotFound) ?
+                meta->schema().column(col_idx).name() : "?");
+        RETURN_NOT_OK(SummarizeSize(
+            fs.get(), { block }, col_key, &rowset_stats.column_bytes[col_key]));
+      }
+      rowset_stats.AddToTable(table_id, tablet_id, std::to_string(rs_meta->id()), &output_table);
+      tablet_stats.Add(rowset_stats);
+    }
+    tablet_stats.AddToTable(table_id, tablet_id, "*", &output_table);
+    size_stats_by_table_id[table_id].Add(tablet_stats);
+  }
+  for (const auto& e : size_stats_by_table_id) {
+    const auto& table_id = e.first;
+    const auto& stats = e.second;
+    stats.AddToTable(table_id, "*", "*", &output_table);
+  }
+  RETURN_NOT_OK(output_table.PrintTo(cout));
   return Status::OK();
 }
 
@@ -847,10 +972,20 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddOptionalParameter("clean_unsafe")
       .Build();
 
+  unique_ptr<Action> data_size =
+      ActionBuilder("data_size", &SummarizeDataSize)
+      .Description("Summarize the data size/space usage of the given local replica(s).")
+      .AddRequiredParameter({ kTabletIdGlobArg, kTabletIdGlobArgDesc })
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("format")
+      .Build();
+
   return ModeBuilder("local_replica")
       .Description("Operate on local tablet replicas via the local filesystem")
       .AddMode(std::move(cmeta))
       .AddAction(std::move(copy_from_remote))
+      .AddAction(std::move(data_size))
       .AddAction(std::move(delete_local_replica))
       .AddAction(std::move(list))
       .AddMode(BuildDumpMode())

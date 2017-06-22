@@ -48,6 +48,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
@@ -151,11 +152,11 @@ class ToolTest : public KuduTest {
     Status s = Subprocess::Call(args, "", &out, &err);
     if (stdout) {
       *stdout = out;
-      StripWhiteSpace(stdout);
+      StripTrailingNewline(stdout);
     }
     if (stderr) {
       *stderr = err;
-      StripWhiteSpace(stderr);
+      StripTrailingNewline(stderr);
     }
     if (stdout_lines) {
       *stdout_lines = strings::Split(out, "\n", strings::SkipEmpty());
@@ -386,6 +387,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kLocalReplicaModeRegexes = {
         "cmeta.*Operate on a local tablet replica's consensus",
+        "data_size.*Summarize the data size",
         "dump.*Dump a Kudu filesystem",
         "copy_from_remote.*Copy a tablet replica",
         "delete.*Delete a tablet replica from the local filesystem",
@@ -1107,6 +1109,58 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, "Superblock:");
     ASSERT_STR_CONTAINS(stdout, debug_str);
+  }
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica data_size $0 $1",
+                   kTestTablet, fs_paths), &stdout));
+    SCOPED_TRACE(stdout);
+
+    string expected = R"(
+    table id     |  tablet id  | rowset id |    block type    | size
+-----------------+-------------+-----------+------------------+------
+ KuduTableTestId | test-tablet | 0         | c10 (key)        | 164B
+ KuduTableTestId | test-tablet | 0         | c11 (int_val)    | 113B
+ KuduTableTestId | test-tablet | 0         | c12 (string_val) | 138B
+ KuduTableTestId | test-tablet | 0         | REDO             | 0B
+ KuduTableTestId | test-tablet | 0         | UNDO             | 169B
+ KuduTableTestId | test-tablet | 0         | BLOOM            | 4.1K
+ KuduTableTestId | test-tablet | 0         | PK               | 0B
+ KuduTableTestId | test-tablet | 0         | *                | 4.6K
+ KuduTableTestId | test-tablet | *         | c10 (key)        | 164B
+ KuduTableTestId | test-tablet | *         | c11 (int_val)    | 113B
+ KuduTableTestId | test-tablet | *         | c12 (string_val) | 138B
+ KuduTableTestId | test-tablet | *         | REDO             | 0B
+ KuduTableTestId | test-tablet | *         | UNDO             | 169B
+ KuduTableTestId | test-tablet | *         | BLOOM            | 4.1K
+ KuduTableTestId | test-tablet | *         | PK               | 0B
+ KuduTableTestId | test-tablet | *         | *                | 4.6K
+ KuduTableTestId | *           | *         | c10 (key)        | 164B
+ KuduTableTestId | *           | *         | c11 (int_val)    | 113B
+ KuduTableTestId | *           | *         | c12 (string_val) | 138B
+ KuduTableTestId | *           | *         | REDO             | 0B
+ KuduTableTestId | *           | *         | UNDO             | 169B
+ KuduTableTestId | *           | *         | BLOOM            | 4.1K
+ KuduTableTestId | *           | *         | PK               | 0B
+ KuduTableTestId | *           | *         | *                | 4.6K
+)";
+    // Preprocess stdout and our expected table so that we are less
+    // sensitive to small variations in encodings, id assignment, etc.
+    for (string* p : {&stdout, &expected}) {
+      // Replace any string of digits with a single '#'.
+      StripString(p, "0123456789.", '#');
+      StripDupCharacters(p, '#', 0);
+      // Collapse whitespace to a single space.
+      StripDupCharacters(p, ' ', 0);
+      // Strip the leading and trailing whitespace.
+      StripWhiteSpace(p);
+      // Collapse '-'s to a single '-' so that different width columns
+      // don't change the width of the header line.
+      StripDupCharacters(p, '-', 0);
+    }
+
+    EXPECT_EQ(stdout, expected);
   }
   {
     string stdout;
