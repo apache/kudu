@@ -735,12 +735,10 @@ The examples above have only explored a fraction of what you can do with Impala 
   to work around this issue.
 - When creating a Kudu table, the `CREATE TABLE` statement must include the
   primary key columns before other columns, in primary key order.
-- Kudu tables containing `UNIXTIME_MICROS`-typed columns may not be used as an
-  external table in Impala.
-- Impala can not create Kudu tables with `TIMESTAMP`, `DECIMAL`, `VARCHAR`,
+- Impala can not create Kudu tables with `DECIMAL`, `VARCHAR`,
   or nested-typed columns.
-- Impala can not update values in primary key columns.
-- `NULL`, `NOT NULL`, `!=`, and `LIKE` predicates are not pushed to Kudu, and
+- Impala cannot update values in primary key columns.
+- `!=` and `LIKE` predicates are not pushed to Kudu, and
   instead will be evaluated by the Impala scan node. This may decrease performance
   relative to other types of predicates.
 - Updates, inserts, and deletes via Impala are non-transactional. If a query
