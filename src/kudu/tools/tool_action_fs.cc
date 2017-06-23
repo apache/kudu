@@ -72,6 +72,12 @@ using tablet::TabletMetadata;
 namespace {
 
 Status Check(const RunnerContext& /*context*/) {
+  // The symptom of KUDU-2052 is pathological slowness; we can tolerate that
+  // when checking the filesystem from the CLI.
+  CHECK_NE("", google::SetCommandLineOptionWithMode(
+      "log_block_manager_disable_hole_repunching_on_xfs", "false",
+      google::FlagSettingMode::SET_FLAGS_DEFAULT));
+
   FsManagerOpts opts;
   opts.read_only = !FLAGS_repair;
   FsManager fs_manager(Env::Default(), opts);

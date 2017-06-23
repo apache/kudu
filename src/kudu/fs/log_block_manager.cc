@@ -96,6 +96,13 @@ DEFINE_bool(log_block_manager_test_hole_punching, true,
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
 TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
 
+DEFINE_bool(log_block_manager_disable_hole_repunching_on_xfs, true,
+            "Whether to disable hole repunching at startup of full containers "
+            "on XFS filesystems that consume excess space. This is a "
+            "workaround for KUDU-2052.");
+TAG_FLAG(log_block_manager_disable_hole_repunching_on_xfs, advanced);
+TAG_FLAG(log_block_manager_disable_hole_repunching_on_xfs, unsafe);
+
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
@@ -1998,7 +2005,12 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
         // If the container is to be deleted outright, don't bother repunching
         // its blocks. The report entry remains, however, so it's clear that
         // there was a space discrepancy.
-        if (container->live_blocks()) {
+        //
+        // KUDU-2052: hole punching is generally skipped on XFS due to
+        // pathologically slow fallocate() behavior.
+        if (container->live_blocks() &&
+            (dir->fs_type() != DataDirFsType::XFS ||
+             !FLAGS_log_block_manager_disable_hole_repunching_on_xfs)) {
           need_repunching.insert(need_repunching.end(),
                                  dead_blocks.begin(), dead_blocks.end());
         }
