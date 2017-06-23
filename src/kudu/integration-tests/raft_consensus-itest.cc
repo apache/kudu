@@ -2483,6 +2483,8 @@ static void EnableLogLatency(server::GenericServiceProxy* proxy) {
     req.set_flag(e.first);
     req.set_value(e.second);
     ASSERT_OK(proxy->SetFlag(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_EQ(SetFlagResponsePB::SUCCESS, resp.result());
   }
 }
 
@@ -2699,7 +2701,7 @@ TEST_F(RaftConsensusITest, TestSlowFollower) {
 
 // Run a special workload that constantly updates a single row on a cluster
 // where every replica is writing to its WAL slowly.
-TEST_F(RaftConsensusITest, TestHammerOneRow) {
+TEST_F(RaftConsensusITest, DISABLED_TestHammerOneRow) {
   if (!AllowSlowTests()) return;
   BuildAndStart(vector<string>());
 
