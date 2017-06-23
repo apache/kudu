@@ -26,7 +26,6 @@ import static org.junit.Assert.fail;
 import java.nio.ByteBuffer;
 
 import org.junit.Test;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -272,7 +271,7 @@ public class TestPartialRow {
       case DOUBLE: return partialRow.getDouble(columnName);
       case BOOL: return partialRow.getBoolean(columnName);
       default:
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
   }
 
@@ -289,7 +288,7 @@ public class TestPartialRow {
       case DOUBLE: return partialRow.getDouble(columnIndex);
       case BOOL: return partialRow.getBoolean(columnIndex);
       default:
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
   }
 
@@ -306,7 +305,7 @@ public class TestPartialRow {
       case DOUBLE: partialRow.addDouble(columnName, 53.35); break;
       case BOOL: partialRow.addBoolean(columnName, true); break;
       default:
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
   }
 
@@ -323,7 +322,7 @@ public class TestPartialRow {
       case DOUBLE: partialRow.addDouble(columnIndex, 53.35); break;
       case BOOL: partialRow.addBoolean(columnIndex, true); break;
       default:
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
   }
 
