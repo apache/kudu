@@ -46,7 +46,6 @@ using strings::Substitute;
 
 DECLARE_int64(block_manager_max_open_files);
 DECLARE_bool(cache_force_single_shard);
-DECLARE_bool(log_block_manager_disable_hole_repunching_on_xfs);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(log_container_max_blocks);
@@ -938,9 +937,6 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   // Force the test to measure extra space in unpunched holes, not in the
   // preallocation buffer.
   FLAGS_log_container_preallocate_bytes = 0;
-
-  // Disable the KUDU-2052 workaround for the test.
-  FLAGS_log_block_manager_disable_hole_repunching_on_xfs = false;
 
   // Create one container.
   unique_ptr<WritableBlock> block;
