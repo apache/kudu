@@ -30,6 +30,15 @@
 
 [[rn_1.4.0]]
 
+[[rn_1.4.0_upgrade_notes]]
+== Upgrade Notes
+
+* The Maintenance Manager now fully uses the threads it's given (see the improvements
+  described further below), so it's now able to generate a lot more IO by flushing and
+  compacting more often. Generally, the recommended ratio of MM threads to data
+  directories is 1:3; operators of clusters above that ratio should be mindful of
+  this when upgrading.
+
 [[rn_1.4.0_new_features]]
 == New features
 
