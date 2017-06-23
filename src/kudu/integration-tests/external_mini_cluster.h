@@ -279,7 +279,7 @@ class ExternalMiniCluster : public MiniClusterBase {
   // is considered unsafe to change at runtime, it is changed.
   Status SetFlag(ExternalDaemon* daemon,
                  const std::string& flag,
-                 const std::string& value);
+                 const std::string& value) WARN_UNUSED_RESULT;
 
   // Set the path where daemon binaries can be found.
   // Overrides 'daemon_bin_path' set by ExternalMiniClusterOptions.

@@ -115,7 +115,7 @@ TEST_F(ClientStressTest, TestLookupTimeouts) {
 // scan starting at random points in the key space.
 TEST_F(ClientStressTest, TestStartScans) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    cluster_->SetFlag(cluster_->tablet_server(i), "log_preallocate_segments", "0");
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i), "log_preallocate_segments", "0"));
   }
   TestWorkload work(cluster_.get());
   work.set_num_tablets(40);

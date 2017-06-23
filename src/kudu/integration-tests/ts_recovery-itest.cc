@@ -92,8 +92,8 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   work.Setup();
 
   // Crash when the WAL contains a replicate message but no corresponding commit.
-  cluster_->SetFlag(cluster_->tablet_server(0),
-                    "fault_crash_before_append_commit", "0.05");
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "fault_crash_before_append_commit", "0.05"));
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
@@ -126,8 +126,8 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 // successful operations.
 TEST_F(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
   NO_FATALS(StartClusterOneTs());
-  cluster_->SetFlag(cluster_->tablet_server(0),
-                    "fault_crash_before_append_commit", "0.01");
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "fault_crash_before_append_commit", "0.01"));
 
   // Set up the workload to write many duplicate rows, and with only
   // one operation per batch. This means that by the time we crash
@@ -540,7 +540,7 @@ TEST_P(Kudu969Test, Test) {
 
   // Set a small flush threshold so that we flush a lot (causing more compactions
   // as well).
-  cluster_->SetFlag(cluster_->tablet_server(0), "flush_threshold_mb", "1");
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0), "flush_threshold_mb", "1"));
 
   // Use TestWorkload to create a table
   TestWorkload work(cluster_.get());
@@ -562,7 +562,7 @@ TEST_P(Kudu969Test, Test) {
 
   // Enable the fault point to crash after a few flushes or compactions.
   auto ts = cluster_->tablet_server(0);
-  cluster_->SetFlag(ts, GetParam(), "0.3");
+  ASSERT_OK(cluster_->SetFlag(ts, GetParam(), "0.3"));
 
   // Insert some data.
   shared_ptr<KuduSession> session = client->NewSession();
