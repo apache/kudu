@@ -1471,9 +1471,7 @@ Status LogBlockManager::Open(FsReport* report) {
       // The log block manager requires hole punching and, of the ext
       // filesystems, only ext4 supports it. Thus, if this is an ext
       // filesystem, it's ext4 by definition.
-      bool is_on_ext4;
-      RETURN_NOT_OK(env_->IsOnExtFilesystem(dd->dir(), &is_on_ext4));
-      if (buggy_el6_kernel_ && is_on_ext4) {
+      if (buggy_el6_kernel_ && dd->fs_type() == DataDirFsType::EXT) {
         uint64_t fs_block_size =
             dd->instance()->metadata()->filesystem_block_size_bytes();
         bool untested_block_size =

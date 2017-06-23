@@ -1513,7 +1513,7 @@ class PosixEnv : public Env {
   }
 
   virtual Status IsOnExtFilesystem(const string& path, bool* result) OVERRIDE {
-    TRACE_EVENT0("io", "PosixEnv::IsOnExtFilesystem");
+    TRACE_EVENT1("io", "PosixEnv::IsOnExtFilesystem", "path", path);
     MAYBE_RETURN_EIO(path, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
 
@@ -1527,6 +1527,28 @@ class PosixEnv : public Env {
       return IOError(Substitute("statfs: $0", path), errno);
     }
     *result = (buf.f_type == EXT4_SUPER_MAGIC);
+#endif
+    return Status::OK();
+  }
+
+  virtual Status IsOnXfsFilesystem(const string& path, bool* result) OVERRIDE {
+    TRACE_EVENT1("io", "PosixEnv::IsOnXfsFilesystem", "path", path);
+    MAYBE_RETURN_EIO(path, IOError(Env::kInjectedFailureStatusMsg, EIO));
+    ThreadRestrictions::AssertIOAllowed();
+
+#ifdef __APPLE__
+    *result = false;
+#else
+    struct statfs buf;
+    int ret;
+    RETRY_ON_EINTR(ret, statfs(path.c_str(), &buf));
+    if (ret == -1) {
+      return IOError(Substitute("statfs: $0", path), errno);
+    }
+
+    // This magic number isn't defined in any header but is the value of the
+    // US-ASCII string 'XFSB' expressed in hexadecimal.
+    *result = (buf.f_type == 0x58465342);
 #endif
     return Status::OK();
   }

@@ -316,6 +316,11 @@ class Env {
   // On success, 'result' contains the answer. On failure, 'result' is unset.
   virtual Status IsOnExtFilesystem(const std::string& path, bool* result) = 0;
 
+  // Checks whether the given path resides on an xfs filesystem.
+  //
+  // On success, 'result' contains the answer. On failure, 'result' is unset.
+  virtual Status IsOnXfsFilesystem(const std::string& path, bool* result) = 0;
+
   // Gets the kernel release string for this machine.
   virtual std::string GetKernelRelease() = 0;
 

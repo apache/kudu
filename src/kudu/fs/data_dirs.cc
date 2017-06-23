@@ -169,11 +169,13 @@ DataDirMetrics::DataDirMetrics(const scoped_refptr<MetricEntity>& entity)
 
 DataDir::DataDir(Env* env,
                  DataDirMetrics* metrics,
+                 DataDirFsType fs_type,
                  string dir,
                  unique_ptr<PathInstanceMetadataFile> metadata_file,
                  unique_ptr<ThreadPool> pool)
     : env_(env),
       metrics_(metrics),
+      fs_type_(fs_type),
       dir_(std::move(dir)),
       metadata_file_(std::move(metadata_file)),
       pool_(std::move(pool)),
@@ -366,9 +368,22 @@ Status DataDirManager::Open(int max_data_dirs, LockMode mode) {
                   .set_max_threads(1)
                   .Build(&pool));
 
+    // Figure out what filesystem the data directory is on.
+    DataDirFsType fs_type = DataDirFsType::OTHER;
+    bool result;
+    RETURN_NOT_OK(env_->IsOnExtFilesystem(p, &result));
+    if (result) {
+      fs_type = DataDirFsType::EXT;
+    } else {
+      RETURN_NOT_OK(env_->IsOnXfsFilesystem(p, &result));
+      if (result) {
+        fs_type = DataDirFsType::XFS;
+      }
+    }
+
     // Create the data directory in-memory structure itself.
     unique_ptr<DataDir> dd(new DataDir(
-        env_, metrics_.get(), p,
+        env_, metrics_.get(), fs_type, p,
         unique_ptr<PathInstanceMetadataFile>(instance.release()),
         unique_ptr<ThreadPool>(pool.release())));
 
