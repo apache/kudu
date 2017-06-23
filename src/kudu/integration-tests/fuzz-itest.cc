@@ -177,7 +177,7 @@ class FuzzTest : public KuduTest {
     schema_ =  client::KuduSchemaFromSchema(schema);
     KuduTest::SetUp();
 
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
     cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());
     CHECK_OK(KuduClientBuilder()

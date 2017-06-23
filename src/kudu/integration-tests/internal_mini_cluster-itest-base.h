@@ -42,7 +42,7 @@ class MiniClusterITestBase : public KuduTest {
 
  protected:
   void StartCluster(int num_tablet_servers = 3) {
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
     opts.num_tablet_servers = num_tablet_servers;
     cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());

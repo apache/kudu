@@ -75,7 +75,7 @@ class RemoteKsckTest : public KuduTest {
     // Speed up testing, saves about 700ms per TEST_F.
     FLAGS_heartbeat_interval_ms = 10;
 
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
 
     // Hard-coded ports for the masters. This is safe, as these tests run under
     // a resource lock (see CMakeLists.txt in this directory).

@@ -86,7 +86,7 @@ class CreateTableStressTest : public KuduTest {
     FLAGS_log_preallocate_segments = false;
 
     KuduTest::SetUp();
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
     cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());

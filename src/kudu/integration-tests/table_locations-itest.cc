@@ -57,7 +57,7 @@ class TableLocationsTest : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
 
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
 
     cluster_.reset(new InternalMiniCluster(env_, opts));

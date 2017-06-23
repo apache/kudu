@@ -178,7 +178,7 @@ class MasterCertAuthorityTest : public KuduTest {
   static const char kFakeTsUUID[];
 
   int num_masters_;
-  MiniClusterOptions opts_;
+  InternalMiniClusterOptions opts_;
   gscoped_ptr<InternalMiniCluster> cluster_;
 
   shared_ptr<rpc::Messenger> messenger_;

@@ -119,7 +119,7 @@ class MasterReplicationTest : public KuduTest {
 
  protected:
   int num_masters_;
-  MiniClusterOptions opts_;
+  InternalMiniClusterOptions opts_;
   gscoped_ptr<InternalMiniCluster> cluster_;
 };
 

@@ -129,7 +129,7 @@ class TokenSignerITest : public KuduTest {
 
   int num_masters_;
   const int num_tablet_servers_ = 3;
-  MiniClusterOptions opts_;
+  InternalMiniClusterOptions opts_;
   unique_ptr<InternalMiniCluster> cluster_;
 };
 

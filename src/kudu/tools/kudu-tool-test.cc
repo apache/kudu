@@ -302,7 +302,7 @@ void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags
 
 void ToolTest::StartMiniCluster(int num_masters,
                                 int num_tablet_servers) {
-  MiniClusterOptions opts;
+  InternalMiniClusterOptions opts;
   opts.num_masters = num_masters;
   opts.num_tablet_servers = num_tablet_servers;
   mini_cluster_.reset(new InternalMiniCluster(env_, opts));

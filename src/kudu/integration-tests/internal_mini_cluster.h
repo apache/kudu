@@ -43,8 +43,8 @@ namespace tserver {
 class MiniTabletServer;
 }
 
-struct MiniClusterOptions {
-  MiniClusterOptions();
+struct InternalMiniClusterOptions {
+  InternalMiniClusterOptions();
 
   // Number of master servers.
   // Default: 1
@@ -79,7 +79,7 @@ struct MiniClusterOptions {
 // number of MiniTabletServers for use in tests.
 class InternalMiniCluster : public MiniCluster {
  public:
-  InternalMiniCluster(Env* env, const MiniClusterOptions& options);
+  InternalMiniCluster(Env* env, const InternalMiniClusterOptions& options);
   virtual ~InternalMiniCluster();
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
@@ -188,7 +188,7 @@ class InternalMiniCluster : public MiniCluster {
     kMasterStartupWaitTimeSeconds = 30,
   };
 
-  const MiniClusterOptions opts_;
+  const InternalMiniClusterOptions opts_;
 
   Env* const env_;
   const std::string fs_root_;

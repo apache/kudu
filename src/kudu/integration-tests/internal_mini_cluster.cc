@@ -48,13 +48,13 @@ using std::shared_ptr;
 using tserver::MiniTabletServer;
 using tserver::TabletServer;
 
-MiniClusterOptions::MiniClusterOptions()
+InternalMiniClusterOptions::InternalMiniClusterOptions()
   : num_masters(1),
     num_tablet_servers(1),
     bind_mode(MiniCluster::kDefaultBindMode) {
 }
 
-InternalMiniCluster::InternalMiniCluster(Env* env, const MiniClusterOptions& options)
+InternalMiniCluster::InternalMiniCluster(Env* env, const InternalMiniClusterOptions& options)
   : env_(env),
     fs_root_(!options.data_root.empty() ? options.data_root :
                 JoinPathSegments(GetTestDataDirectory(), "minicluster-data")),

@@ -252,7 +252,7 @@ int main(int argc, char **argv) {
     env = kudu::Env::Default();
     kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
     CHECK(s.IsAlreadyPresent() || s.ok()) << s.ToString();
-    kudu::MiniClusterOptions options;
+    kudu::InternalMiniClusterOptions options;
     options.data_root = FLAGS_mini_cluster_base_dir;
     cluster.reset(new kudu::InternalMiniCluster(env, options));
     CHECK_OK(cluster->StartSync());

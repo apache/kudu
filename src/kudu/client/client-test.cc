@@ -140,7 +140,7 @@ class ClientTest : public KuduTest {
     FLAGS_scanner_gc_check_interval_us = 50 * 1000; // 50 milliseconds.
 
     // Start minicluster and wait for tablet servers to connect to master.
-    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
 
     // Connect to the cluster.

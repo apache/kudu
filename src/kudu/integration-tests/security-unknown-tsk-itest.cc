@@ -103,7 +103,7 @@ class SecurityUnknownTskTest : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
 
-    MiniClusterOptions opts;
+    InternalMiniClusterOptions opts;
     opts.num_tablet_servers = num_tablet_servers_;
     cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());

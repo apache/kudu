@@ -95,7 +95,7 @@ void TsTabletManagerITest::SetUp() {
   MessengerBuilder bld("client");
   ASSERT_OK(bld.Build(&client_messenger_));
 
-  MiniClusterOptions opts;
+  InternalMiniClusterOptions opts;
   opts.num_tablet_servers = kNumReplicas;
   cluster_.reset(new InternalMiniCluster(env_, opts));
   ASSERT_OK(cluster_->Start());

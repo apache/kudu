@@ -48,7 +48,7 @@ class ScanTokenTest : public KuduTest {
 
   void SetUp() override {
     // Set up the mini cluster
-    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }

@@ -47,7 +47,7 @@ class RpcLineItemDAOTest : public KuduTest {
     KuduTest::SetUp();
 
     // Start minicluster
-    cluster_.reset(new InternalMiniCluster(env_, MiniClusterOptions()));
+    cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
 
     const char *kTableName = "tpch1";
