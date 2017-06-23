@@ -95,6 +95,17 @@ SQUEASEL_VERSION=c304d3f3481b07bf153979155f02e0aab24d01de
 SQUEASEL_NAME=squeasel-$SQUEASEL_VERSION
 SQUEASEL_SOURCE=$TP_SOURCE_DIR/$SQUEASEL_NAME
 
+# Hash of the mustache git revision to use.
+# (from https://github.com/henryr/cpp-mustache)
+#
+# To re-build this tarball use the following in the mustache repo:
+#  export NAME=mustache-$(git rev-parse HEAD)
+#  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
+#  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
+MUSTACHE_VERSION=87a592e8aa04497764c533acd6e887618ca7b8a8
+MUSTACHE_NAME=mustache-$MUSTACHE_VERSION
+MUSTACHE_SOURCE=$TP_SOURCE_DIR/$MUSTACHE_NAME
+
 # git revision of google style guide:
 # https://github.com/google/styleguide
 # git archive --prefix=google-styleguide-$(git rev-parse HEAD)/ -o /tmp/google-styleguide-$(git rev-parse HEAD).tgz HEAD

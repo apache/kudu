@@ -211,6 +211,10 @@ if [ ! -d $SQUEASEL_SOURCE ]; then
   fetch_and_expand squeasel-${SQUEASEL_VERSION}.tar.gz
 fi
 
+if [ ! -d $MUSTACHE_SOURCE ]; then
+  fetch_and_expand mustache-${MUSTACHE_VERSION}.tar.gz
+fi
+
 if [ ! -d $GSG_SOURCE ]; then
   fetch_and_expand google-styleguide-${GSG_VERSION}.tar.gz
 fi

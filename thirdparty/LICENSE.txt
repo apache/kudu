@@ -240,6 +240,10 @@ changed to a GPL license. squeasel was forked from a revision of mongoose
 obtained prior to the license change.
 
 --------------------------------------------------------------------------------
+thirdparty/mustache-*/: Apache 2.0 license
+Source: https://github.com/henryr/cpp-mustache
+
+--------------------------------------------------------------------------------
 thirdparty/protobuf-*/: BSD 3-clause
 Source: https://github.com/google/protobuf
 

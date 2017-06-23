@@ -28,6 +28,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <gperftools/malloc_extension.h>
+#include <mustache.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -44,6 +45,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 
+using mustache::RenderTemplate;
 using std::ifstream;
 using std::string;
 using std::endl;

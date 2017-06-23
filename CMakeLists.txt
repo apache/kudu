@@ -851,6 +851,12 @@ include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(squeasel
   STATIC_LIB "${SQUEASEL_STATIC_LIB}")
 
+## Mustache
+find_package(Mustache REQUIRED)
+include_directories(SYSTEM ${MUSTACHE_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(mustache
+  STATIC_LIB "${MUSTACHE_STATIC_LIB}")
+
 ## OpenSSL
 ##
 ## Version 1.0.0 or higher is required because we are using the following

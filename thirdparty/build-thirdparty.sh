@@ -82,6 +82,7 @@ else
       "snappy")       F_SNAPPY=1 ;;
       "zlib")         F_ZLIB=1 ;;
       "squeasel")     F_SQUEASEL=1 ;;
+      "mustache")     F_MUSTACHE=1 ;;
       "gsg")          F_GSG=1 ;;
       "gcovr")        F_GCOVR=1 ;;
       "curl")         F_CURL=1 ;;
@@ -315,6 +316,10 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BOOST" ]; then
   build_boost normal
 fi
 
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_MUSTACHE" ]; then
+  build_mustache
+fi
+
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BREAKPAD" ]; then
   build_breakpad
 fi
@@ -480,6 +485,10 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
   build_boost tsan
+fi
+
+if [ -n "$F_TSAN" -o -n "$F_MUSTACHE" ]; then
+  build_mustache
 fi
 
 if [ -n "$F_TSAN" -o -n "$F_BREAKPAD" ]; then

@@ -496,6 +496,18 @@ build_squeasel() {
   popd
 }
 
+build_mustache() {
+  MUSTACHE_BDIR=$TP_BUILD_DIR/$MUSTACHE_NAME$MODE_SUFFIX
+  mkdir -p $MUSTACHE_BDIR
+  pushd $MUSTACHE_BDIR
+  # We add $PREFIX/include for boost and $PREFIX_COMMON/include for rapidjson.
+  ${CXX:-g++} $EXTRA_CXXFLAGS -I$PREFIX/include -I$PREFIX_COMMON/include -O3 -DNDEBUG -fPIC -c "$MUSTACHE_SOURCE/mustache.cc"
+  ar rs libmustache.a mustache.o
+  cp libmustache.a $PREFIX/lib/
+  cp $MUSTACHE_SOURCE/mustache.h $PREFIX/include/
+  popd
+}
+
 build_curl() {
   # Configure for a very minimal install - basically only HTTP(S), since we only
   # use this for testing our own HTTP/HTTPS endpoints at this point in time.
