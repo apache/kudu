@@ -70,7 +70,7 @@ public class ServerInfo {
    * @return a string that contains this server's hostname
    */
   public String getHostname() {
-    return hostPort.getHostText();
+    return hostPort.getHost();
   }
 
   /**

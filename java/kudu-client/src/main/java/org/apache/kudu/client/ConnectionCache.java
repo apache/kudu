@@ -111,7 +111,7 @@ class ConnectionCache {
     // TODO: if the TS advertises multiple host/ports, pick the right one
     // based on some kind of policy. For now just use the first always.
     HostAndPort hostPort = ProtobufHelper.hostAndPortFromPB(addresses.get(0));
-    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHostText());
+    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
     if (inetAddress == null) {
       throw new UnknownHostException(
           "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
@@ -128,7 +128,7 @@ class ConnectionCache {
   }
 
   TabletClient newClient(String uuid, HostAndPort hostPort) {
-    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHostText());
+    InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
     if (inetAddress == null) {
       // TODO(todd): should we log the resolution failure? throw an exception?
       return null;

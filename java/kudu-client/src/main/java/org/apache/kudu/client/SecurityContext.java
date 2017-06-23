@@ -87,7 +87,7 @@ class SecurityContext {
       sslContextTrustAny.init(null, new TrustManager[] { new TrustAnyCert() }, null);
 
     } catch (Exception e) {
-      throw Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
   }
 
@@ -217,8 +217,8 @@ class SecurityContext {
       }
       return (X509TrustManager) managers[0];
     } catch (Exception e) {
-      Throwables.propagateIfInstanceOf(e, CertificateException.class);
-      throw Throwables.propagate(e);
+      Throwables.throwIfInstanceOf(e, CertificateException.class);
+      throw new RuntimeException(e);
     }
   }
 

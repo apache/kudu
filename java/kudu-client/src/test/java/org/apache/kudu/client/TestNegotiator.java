@@ -130,7 +130,7 @@ public class TestNegotiator {
       ctx.init(kmf.getKeyManagers(), null, null);
       return ctx.createSSLEngine();
     } catch (Exception e) {
-      throw Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
   }
 

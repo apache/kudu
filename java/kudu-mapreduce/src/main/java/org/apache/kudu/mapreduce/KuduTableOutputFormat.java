@@ -217,8 +217,8 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       if (!errors.isEmpty()) {
         int rowErrorsCount = errors.size();
         rowsWithErrors.addAndGet(rowErrorsCount);
-        LOG.warn("Got per errors for " + rowErrorsCount + " rows, " +
-            "the first one being " + errors.get(0).getStatus());
+        LOG.warn("Got per errors for {} rows, the first one being {}",
+            rowErrorsCount, errors.get(0).getErrorStatus());
       }
     }
   }

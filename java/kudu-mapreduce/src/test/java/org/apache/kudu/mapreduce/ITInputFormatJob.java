@@ -26,6 +26,7 @@ import java.util.List;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
@@ -70,7 +71,7 @@ public class ITInputFormatJob extends BaseKuduTest {
 
     createFourTabletsTableWithNineRows(TABLE_NAME);
 
-    Configuration conf = new Configuration();
+    JobConf conf = new JobConf();
     HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf).getAbsolutePath();
 
     createAndTestJob(conf, new ArrayList<KuduPredicate>(), 9);
@@ -84,11 +85,12 @@ public class ITInputFormatJob extends BaseKuduTest {
     createAndTestJob(conf, Lists.newArrayList(pred1, pred2), 2);
   }
 
-  private void createAndTestJob(Configuration conf,
+  private void createAndTestJob(JobConf conf,
                                 List<KuduPredicate> predicates, int expectedCount)
       throws Exception {
     String jobName = ITInputFormatJob.class.getName();
-    Job job = new Job(conf, jobName);
+    Job job = new Job(conf);
+    job.setJobName(jobName);
 
     Class<TestMapperTableInput> mapperClass = TestMapperTableInput.class;
     job.setJarByClass(mapperClass);

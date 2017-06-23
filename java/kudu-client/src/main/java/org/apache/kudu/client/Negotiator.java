@@ -26,6 +26,7 @@
 
 package org.apache.kudu.client;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -228,7 +229,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void handleResponse(Channel chan, CallResponse callResponse)
-      throws SaslException, SSLException {
+      throws IOException {
     // TODO(todd): this needs to handle error responses, not just success responses.
     RpcHeader.NegotiatePB response = parseSaslMsgResponse(callResponse);
 
@@ -254,7 +255,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void handleSaslMessage(Channel chan, NegotiatePB response)
-      throws SaslException {
+      throws IOException {
     switch (response.getStep()) {
       case SASL_CHALLENGE:
         handleChallengeResponse(chan, response);
@@ -438,7 +439,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * causes the handshake to complete, triggers the beginning of SASL initiation.
    */
   private void handleTlsMessage(Channel chan, NegotiatePB response)
-      throws SaslException {
+      throws IOException {
     Preconditions.checkState(response.getStep() == NegotiateStep.TLS_HANDSHAKE);
     Preconditions.checkArgument(!response.getTlsHandshake().isEmpty(),
         "empty TLS message from server");
@@ -458,13 +459,9 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // NOTE: this takes effect immediately (i.e. the following SASL initiation
     // sequence is encrypted).
     SslHandler handler = (SslHandler)sslEmbedder.getPipeline().getFirst();
-    try {
-      Certificate[] certs = handler.getEngine().getSession().getPeerCertificates();
-      if (certs.length == 0) {
-        throw new SSLPeerUnverifiedException("no peer cert found");
-      }
-    } catch (SSLPeerUnverifiedException e) {
-      throw Throwables.propagate(e);
+    Certificate[] certs = handler.getEngine().getSession().getPeerCertificates();
+    if (certs.length == 0) {
+      throw new SSLPeerUnverifiedException("no peer cert found");
     }
 
     // Don't wrap the TLS socket if we are using TLS for authentication only.
@@ -581,29 +578,25 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * for GSSAPI-authenticated connections over TLS.
    * @throws RuntimeException on failure to verify
    */
-  private void verifyChannelBindings(NegotiatePB response) {
-    try {
-      byte[] expected = SecurityUtil.getEndpointChannelBindings(peerCert);
-      if (!response.hasChannelBindings()) {
-        throw new RuntimeException("no channel bindings provided by remote peer");
-      }
-      byte[] provided = response.getChannelBindings().toByteArray();
-      // NOTE: the C SASL library's implementation of sasl_encode() actually
-      // includes a length prefix. Java's equivalents do not. So, we have to
-      // chop off the length prefix here before unwrapping.
-      if (provided.length < 4) {
-        throw new RuntimeException("invalid too-short channel bindings");
-      }
-      byte[] unwrapped = saslClient.unwrap(provided, 4, provided.length - 4);
-      if (!Bytes.equals(expected, unwrapped)) {
-        throw new RuntimeException("invalid channel bindings provided by remote peer");
-      }
-    } catch (SaslException se) {
-      throw Throwables.propagate(se);
+  private void verifyChannelBindings(NegotiatePB response) throws IOException {
+    byte[] expected = SecurityUtil.getEndpointChannelBindings(peerCert);
+    if (!response.hasChannelBindings()) {
+      throw new SSLPeerUnverifiedException("no channel bindings provided by remote peer");
+    }
+    byte[] provided = response.getChannelBindings().toByteArray();
+    // NOTE: the C SASL library's implementation of sasl_encode() actually
+    // includes a length prefix. Java's equivalents do not. So, we have to
+    // chop off the length prefix here before unwrapping.
+    if (provided.length < 4) {
+      throw new SSLPeerUnverifiedException("invalid too-short channel bindings");
+    }
+    byte[] unwrapped = saslClient.unwrap(provided, 4, provided.length - 4);
+    if (!Bytes.equals(expected, unwrapped)) {
+      throw new SSLPeerUnverifiedException("invalid channel bindings provided by remote peer");
     }
   }
 
-  private void handleSuccessResponse(Channel chan, NegotiatePB response) throws SaslException {
+  private void handleSuccessResponse(Channel chan, NegotiatePB response) throws IOException {
     Preconditions.checkState(saslClient.isComplete(),
                              "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
     if (chosenMech.equals("GSSAPI")) {
@@ -672,8 +665,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
           }
         });
     } catch (Exception e) {
-      Throwables.propagateIfInstanceOf(e, SaslException.class);
-      throw Throwables.propagate(e);
+      Throwables.throwIfInstanceOf(e, SaslException.class);
+      throw new RuntimeException(e);
     }
   }
 

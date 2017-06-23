@@ -50,7 +50,7 @@ public class TestConnectionCache {
       int i = 0;
       for (HostAndPort hp : addresses) {
         // Ping the process so we go through the whole connection process.
-        InetAddress addr = NetUtil.getInetAddress(hp.getHostText());
+        InetAddress addr = NetUtil.getInetAddress(hp.getHost());
         TabletClient conn =
             cache.newClient(new ServerInfo(i + "", hp, addr));
         pingConnection(conn);

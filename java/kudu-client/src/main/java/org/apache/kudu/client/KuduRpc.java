@@ -398,10 +398,10 @@ public abstract class KuduRpc<R> {
     chanBuf.writeInt(totalSize);
     final CodedOutputStream out = CodedOutputStream.newInstance(buf, 4, totalSize);
     try {
-      out.writeRawVarint32(header.getSerializedSize());
+      out.writeUInt32NoTag(header.getSerializedSize());
       header.writeTo(out);
 
-      out.writeRawVarint32(pb.getSerializedSize());
+      out.writeUInt32NoTag(pb.getSerializedSize());
       pb.writeTo(out);
       out.checkNoSpaceLeft();
     } catch (IOException e) {

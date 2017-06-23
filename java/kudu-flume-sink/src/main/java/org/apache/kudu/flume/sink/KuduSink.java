@@ -214,7 +214,7 @@ public class KuduSink extends AbstractSink implements Configurable {
       operationsProducer.configure(producerContext);
     } catch (Exception e) {
       logger.error("Could not instantiate Kudu operations producer" , e);
-      Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
     sinkCounter = new SinkCounter(this.getName());
   }
@@ -292,7 +292,7 @@ public class KuduSink extends AbstractSink implements Configurable {
       String msg = "Failed to commit transaction. Transaction rolled back.";
       logger.error(msg, e);
       if (e instanceof Error || e instanceof RuntimeException) {
-        Throwables.propagate(e);
+        throw new RuntimeException(e);
       } else {
         logger.error(msg, e);
         throw new EventDeliveryException(msg, e);
@@ -300,7 +300,5 @@ public class KuduSink extends AbstractSink implements Configurable {
     } finally {
       txn.close();
     }
-
-    return Status.BACKOFF;
   }
 }

@@ -178,7 +178,7 @@ public class KuduSinkTest extends BaseKuduTest {
       List<String> rows = scanTableToStrings(table);
       assertEquals("1 row expected", 1, rows.size());
     } catch (Exception e) {
-      Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
 
     LOG.info("Testing duplicate events finished successfully.");
