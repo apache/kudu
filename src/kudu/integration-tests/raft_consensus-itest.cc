@@ -2474,16 +2474,16 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
 }
 
 static void EnableLogLatency(server::GenericServiceProxy* proxy) {
-  typedef unordered_map<string, string> FlagMap;
-  FlagMap flags;
-  InsertOrDie(&flags, "log_inject_latency", "true");
-  InsertOrDie(&flags, "log_inject_latency_ms_mean", "1000");
-  for (const FlagMap::value_type& e : flags) {
+  const unordered_map<string, string> kFlags = {
+    { "log_inject_latency",         "true" },
+    { "log_inject_latency_ms_mean", "1000" },
+  };
+  for (const auto& e : kFlags) {
     SetFlagRequestPB req;
-    SetFlagResponsePB resp;
-    RpcController rpc;
     req.set_flag(e.first);
     req.set_value(e.second);
+    SetFlagResponsePB resp;
+    RpcController rpc;
     ASSERT_OK(proxy->SetFlag(req, &resp, &rpc));
     SCOPED_TRACE(SecureDebugString(resp));
     ASSERT_EQ(SetFlagResponsePB::SUCCESS, resp.result());
@@ -2703,25 +2703,32 @@ TEST_F(RaftConsensusITest, TestSlowFollower) {
 
 // Run a special workload that constantly updates a single row on a cluster
 // where every replica is writing to its WAL slowly.
-TEST_F(RaftConsensusITest, DISABLED_TestHammerOneRow) {
+TEST_F(RaftConsensusITest, TestHammerOneRow) {
   if (!AllowSlowTests()) return;
+
   BuildAndStart(vector<string>());
 
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ExternalTabletServer* ts = cluster_->tablet_server(i);
-    TServerDetails* follower;
-    follower = GetReplicaWithUuidOrNull(tablet_id_, ts->instance_id().permanent_uuid());
-    ASSERT_TRUE(follower);
-    NO_FATALS(EnableLogLatency(follower->generic_proxy.get()));
+    const ExternalTabletServer* ts = cluster_->tablet_server(i);
+    const TServerDetails* replica = GetReplicaWithUuidOrNull(
+        tablet_id_, ts->instance_id().permanent_uuid());
+    ASSERT_NE(nullptr, replica);
+    NO_FATALS(EnableLogLatency(replica->generic_proxy.get()));
   }
 
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
   workload.set_write_pattern(TestWorkload::UPDATE_ONE_ROW);
+  workload.set_write_timeout_millis(60000);
   workload.set_num_write_threads(20);
   workload.Setup();
   workload.Start();
   SleepFor(MonoDelta::FromSeconds(60));
+  workload.StopAndJoin();
+
+  // Ensure that the replicas converge.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
 }
 
 // Test that followers that fall behind the leader's log GC threshold are
