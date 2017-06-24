@@ -149,7 +149,7 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
   const int kBatchSize = 10;
   const int kNumThreadsPerReplica = 2;
 
-  BuildAndStart(ts_flags, master_flags);
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);

@@ -507,13 +507,13 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Starts an external cluster with a single tablet and a number of replicas equal
   // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
   // flags to pass to the tablet servers.
-  void BuildAndStart(const std::vector<std::string>& ts_flags = std::vector<std::string>(),
-                     const std::vector<std::string>& master_flags = std::vector<std::string>()) {
-    CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+  void BuildAndStart(const std::vector<std::string>& ts_flags = {},
+                     const std::vector<std::string>& master_flags = {}) {
+    NO_FATALS(CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags));
     NO_FATALS(CreateClient(&client_));
     NO_FATALS(CreateTable());
     WaitForTSAndReplicas();
-    CHECK_GT(tablet_replicas_.size(), 0);
+    ASSERT_FALSE(tablet_replicas_.empty());
     tablet_id_ = (*tablet_replicas_.begin()).first;
   }
 

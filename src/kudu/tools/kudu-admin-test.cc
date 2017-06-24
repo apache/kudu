@@ -67,9 +67,10 @@ class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
 TEST_F(AdminCliTest, TestChangeConfig) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
-  BuildAndStart({ "--enable_leader_failure_detection=false" },
-                { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
-                  "--allow_unsafe_replication_factor=true"});
+  NO_FATALS(BuildAndStart(
+      { "--enable_leader_failure_detection=false" },
+      { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+        "--allow_unsafe_replication_factor=true"}));
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -185,7 +186,7 @@ Status RunUnsafeChangeConfig(const string& tablet_id,
 // 5. Bring up leader and follower1 and verify replicas are deleted.
 // 6. Verify that new config doesn't contain old leader and follower1.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
   // tserver_unresponsive_timeout_ms is useful so that master considers
@@ -279,10 +280,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
 // 4. Wait until the new config is populated on leader and master.
 // 5. Verify that new config does not contain old followers.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
@@ -363,10 +364,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
 // 4. Wait until the new config is populated on new_leader and master.
 // 5. Verify that new config does not contain old leader.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 4;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
@@ -446,11 +447,12 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
 // 4. Wait until the new config is populated on new_leader and master.
 // 5. Verify that new config does not contain old leader and old followers.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+  // Retire the dead servers early with these settings.
   FLAGS_num_tablet_servers = 8;
   FLAGS_num_replicas = 5;
-  // Retire the dead servers early with these settings.
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   vector<TServerDetails*> tservers;
   vector<ExternalTabletServer*> external_tservers;
@@ -541,10 +543,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
 // 6. Verify that new config does not contain old followers and a standby node
 //    has populated the new config.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
@@ -638,10 +640,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
 // 7. Verify that new config does not contain old followers and a standby node
 //    has populated the new config.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
@@ -744,10 +746,10 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
 // 6. Shutdown and restart the leader and verify that tablet bootstrapped on leader.
 // 7. Verify that a new node has populated the new config with 3 voters.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   // Determine the list of tablet servers currently in the config.
   TabletServerMap active_tablet_servers;
@@ -849,11 +851,11 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
 // 4. Wait until the new config is populated on the master and the new leader.
 // 5. Verify that new config does not contain old followers.
 TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
-  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 9;
   FLAGS_num_replicas = 5;
   // Retire the dead servers early with these settings.
-  NO_FATALS(BuildAndStart({}, {}));
+  NO_FATALS(BuildAndStart());
 
   vector<TServerDetails*> tservers;
   vector<ExternalTabletServer*> external_tservers;
@@ -970,7 +972,7 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
 TEST_F(AdminCliTest, TestLeaderStepDown) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  BuildAndStart({}, {});
+  NO_FATALS(BuildAndStart());
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -1011,9 +1013,9 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
 TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  BuildAndStart(
+  NO_FATALS(BuildAndStart(
       { "--enable_leader_failure_detection=false" },
-      { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" });
+      { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" }));
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
@@ -1042,7 +1044,7 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
 TEST_F(AdminCliTest, TestDeleteTable) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
-  BuildAndStart({}, {});
+  NO_FATALS(BuildAndStart());
 
   string master_address = cluster_->master()->bound_rpc_addr().ToString();
   shared_ptr<KuduClient> client;
@@ -1067,7 +1069,7 @@ TEST_F(AdminCliTest, TestListTables) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
 
-  BuildAndStart({}, {});
+  NO_FATALS(BuildAndStart());
 
   string stdout;
   ASSERT_OK(Subprocess::Call({
@@ -1087,7 +1089,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
 
-  BuildAndStart({}, {});
+  NO_FATALS(BuildAndStart());
 
   // Add another table to test multiple tables output.
   const string kAnotherTableId = "TestAnotherTable";
