@@ -159,10 +159,16 @@ class ToolTest : public KuduTest {
       StripTrailingNewline(stderr);
     }
     if (stdout_lines) {
-      *stdout_lines = strings::Split(out, "\n", strings::SkipEmpty());
+      *stdout_lines = strings::Split(out, "\n");
+      while (!stdout_lines->empty() && stdout_lines->back() == "") {
+        stdout_lines->pop_back();
+      }
     }
     if (stderr_lines) {
-      *stderr_lines = strings::Split(err, "\n", strings::SkipEmpty());
+      *stderr_lines = strings::Split(err, "\n");
+      while (!stderr_lines->empty() && stderr_lines->back() == "") {
+        stderr_lines->pop_back();
+      }
     }
     return s;
   }
@@ -230,11 +236,13 @@ class ToolTest : public KuduTest {
     const string kPositionalArgumentMessage = "must provide positional argument";
     const string kVariadicArgumentMessage = "must provide variadic positional argument";
     const string& message = variadic ? kVariadicArgumentMessage : kPositionalArgumentMessage;
-    string err;
-    RunTool(arg_str, nullptr, &err, nullptr, nullptr);
-
     Status expected_status = Status::InvalidArgument(Substitute("$0 $1", message, required_arg));
-    ASSERT_EQ(expected_status.ToString(), err);
+
+    vector<string> err_lines;
+    RunTool(arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
+    ASSERT_GE(err_lines.size(), 3) << err_lines;
+    ASSERT_EQ(expected_status.ToString(), err_lines[0]);
+    ASSERT_STR_MATCHES(err_lines[2], "Usage: kudu.*");
   }
 
   void RunFsCheck(const string& arg_str,
@@ -800,7 +808,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     SCOPED_TRACE(stdout);
     ASSERT_GE(stdout.size(), 4);
     ASSERT_EQ(stdout[0], "Header:");
-    ASSERT_EQ(stdout[1], "Footer:");
+    ASSERT_EQ(stdout[2], "Footer:");
   }
   {
     NO_FATALS(RunActionStdoutLines(Substitute(
@@ -816,7 +824,7 @@ TEST_F(ToolTest, TestFsDumpCFile) {
     SCOPED_TRACE(stdout);
     ASSERT_GT(stdout.size(), kNumEntries);
     ASSERT_EQ(stdout[0], "Header:");
-    ASSERT_EQ(stdout[1], "Footer:");
+    ASSERT_EQ(stdout[2], "Footer:");
   }
 }
 

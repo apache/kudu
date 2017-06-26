@@ -117,15 +117,18 @@ int DispatchCommand(const vector<Mode*>& chain,
   vector<string> variadic_args;
   Status s = MarshalArgs(chain, action, remaining_args,
                          &required_args, &variadic_args);
-  if (s.ok()) {
-    s = action->Run(chain, required_args, variadic_args);
-  }
-  if (s.ok()) {
-    return 0;
-  } else {
+  if (!s.ok()) {
     cerr << s.ToString() << endl;
+    cerr << endl;
+    cerr << action->BuildHelp(chain, Action::USAGE_ONLY) << endl;
     return 1;
   }
+  s = action->Run(chain, required_args, variadic_args);
+  if (s.ok()) {
+    return 0;
+  }
+  cerr << s.ToString() << endl;
+  return 1;
 }
 
 // Replace hyphens with underscores in a string and return a copy.

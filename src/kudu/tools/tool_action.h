@@ -254,9 +254,17 @@ class ActionBuilder {
 // A leaf node in the tree, representing a logical operation taken by the tool.
 class Action {
  public:
+  enum HelpMode {
+    // Return the full help text, including descriptions for each
+    // of the arguments.
+    FULL_HELP,
+    // Return only a single-line usage statement.
+    USAGE_ONLY
+  };
 
   // Returns the help for this action given its parent mode chain.
-  std::string BuildHelp(const std::vector<Mode*>& chain) const;
+  std::string BuildHelp(const std::vector<Mode*>& chain,
+                        HelpMode mode = FULL_HELP) const;
 
   // Returns the help xml for this action
   std::string BuildHelpXML(const std::vector<Mode*>& chain) const;

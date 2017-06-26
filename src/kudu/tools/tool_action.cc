@@ -252,7 +252,8 @@ Status Action::Run(const vector<Mode*>& chain,
   return runner_({ chain, this, required_args, variadic_args });
 }
 
-string Action::BuildHelp(const vector<Mode*>& chain) const {
+string Action::BuildHelp(const vector<Mode*>& chain,
+                         Action::HelpMode mode) const {
   SetOptionalParameterDefaultValues();
   string usage_msg = Substitute("Usage: $0 $1", BuildUsageString(chain), name());
   string desc_msg;
@@ -294,6 +295,9 @@ string Action::BuildHelp(const vector<Mode*>& chain) const {
     }
     desc_msg += google::DescribeOneFlag(gflag_info);
     desc_msg += "\n";
+  }
+  if (mode == USAGE_ONLY) {
+    return usage_msg;
   }
   string msg;
   AppendHardWrapped(usage_msg, 8, &msg);
