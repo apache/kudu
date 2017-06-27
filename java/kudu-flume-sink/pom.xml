@@ -38,16 +38,7 @@
               <include>org.apache.kudu:kudu-client</include>
             </includes>
           </artifactSet>
-          <shadeTestJar>true</shadeTestJar>
         </configuration>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.avro</groupId>
