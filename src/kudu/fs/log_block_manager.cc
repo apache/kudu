@@ -781,8 +781,9 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
   //
   // Note that this take places _after_ the container has been synced to disk.
   // That's OK; truncation isn't needed for correctness, and in the event of a
-  // crash, it will be retried at startup.
-  RETURN_NOT_OK(TruncateDataToNextBlockOffset());
+  // crash or error, it will be retried at startup.
+  WARN_NOT_OK(TruncateDataToNextBlockOffset(),
+              "could not truncate excess preallocated space");
 
   if (full() && block_manager()->metrics()) {
     block_manager()->metrics()->full_containers->Increment();
