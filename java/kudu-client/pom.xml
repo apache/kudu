@@ -36,6 +36,14 @@
             <groupId>com.stumbleupon</groupId>
             <artifactId>async</artifactId>
             <version>${async.version}</version>
+            <exclusions>
+                <!-- Explicitly exclude slf4j because async uses version ranges
+                     for the dependency -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
