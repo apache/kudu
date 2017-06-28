@@ -18,13 +18,14 @@
 #include "kudu/consensus/consensus.proxy.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
@@ -33,12 +34,15 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
@@ -80,45 +84,54 @@ using rpc::RpcController;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
-Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
-                           const string& tablet_id,
-                           const string& leader_uuid,
+Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
+                           string tablet_id,
+                           string leader_uuid,
                            PeerMessageQueue* queue,
                            ThreadPoolToken* raft_pool_token,
                            gscoped_ptr<PeerProxy> proxy,
+                           shared_ptr<Messenger> messenger,
                            shared_ptr<Peer>* peer) {
 
-  shared_ptr<Peer> new_peer(new Peer(peer_pb,
-                                     tablet_id,
-                                     leader_uuid,
-                                     std::move(proxy),
+  shared_ptr<Peer> new_peer(new Peer(std::move(peer_pb),
+                                     std::move(tablet_id),
+                                     std::move(leader_uuid),
                                      queue,
-                                     raft_pool_token));
+                                     raft_pool_token,
+                                     std::move(proxy),
+                                     std::move(messenger)));
   RETURN_NOT_OK(new_peer->Init());
   *peer = std::move(new_peer);
   return Status::OK();
 }
 
-Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
-           gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
-           ThreadPoolToken* raft_pool_token)
+Peer::Peer(RaftPeerPB peer_pb,
+           string tablet_id,
+           string leader_uuid,
+           PeerMessageQueue* queue,
+           ThreadPoolToken* raft_pool_token,
+           gscoped_ptr<PeerProxy> proxy,
+           shared_ptr<Messenger> messenger)
     : tablet_id_(std::move(tablet_id)),
       leader_uuid_(std::move(leader_uuid)),
-      peer_pb_(peer_pb),
+      peer_pb_(std::move(peer_pb)),
       proxy_(std::move(proxy)),
       queue_(queue),
       failed_attempts_(0),
-      heartbeater_(
-          peer_pb.permanent_uuid(),
-          MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
-          boost::bind(&Peer::SignalRequest, this, true)),
-      raft_pool_token_(raft_pool_token) {
+      messenger_(std::move(messenger)),
+      raft_pool_token_(raft_pool_token),
+      rng_(GetRandomSeed32()) {
 }
 
 Status Peer::Init() {
-  std::lock_guard<simple_spinlock> lock(peer_lock_);
-  queue_->TrackPeer(peer_pb_.permanent_uuid());
-  RETURN_NOT_OK(heartbeater_.Start());
+  {
+    std::lock_guard<simple_spinlock> l(peer_lock_);
+    queue_->TrackPeer(peer_pb_.permanent_uuid());
+    UpdateNextHeartbeatTimeUnlocked();
+  }
+
+  // Schedule the first heartbeat.
+  ScheduleNextHeartbeatAndMaybeSignalRequest(Status::OK());
   return Status::OK();
 }
 
@@ -217,10 +230,9 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     return;
   }
 
-  // If we're actually sending ops there's no need to heartbeat for a while,
-  // reset the heartbeater
   if (req_has_ops) {
-    heartbeater_.Reset();
+    // If we're actually sending ops there's no need to heartbeat for a while.
+    UpdateNextHeartbeatTimeUnlocked();
   }
 
   MAYBE_FAULT(FLAGS_fault_crash_on_leader_request_fraction);
@@ -379,8 +391,6 @@ string Peer::LogPrefixUnlocked() const {
 }
 
 void Peer::Close() {
-  WARN_NOT_OK(heartbeater_.Stop(), "Could not stop heartbeater");
-
   // If the peer is already closed return.
   {
     std::lock_guard<simple_spinlock> lock(peer_lock_);
@@ -398,6 +408,69 @@ Peer::~Peer() {
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
+void Peer::ScheduleNextHeartbeatAndMaybeSignalRequest(const Status& status) {
+  if (!status.ok()) {
+    // The reactor was shut down.
+    return;
+  }
+
+  // We must schedule the next callback with the lowest possible jittered
+  // time as the delay so that if SendNextRequest() resets the next heartbeat
+  // time with a very low value, the scheduled callback can still honor it.
+  //
+  // In effect, this means the callback period and the heartbeat period are
+  // decoupled from one another.
+  MonoDelta schedule_delay = GetHeartbeatJitterLowerBound();
+  bool signal_now = false;
+  {
+    std::lock_guard<simple_spinlock> l(peer_lock_);
+    if (closed_) {
+      // The peer was closed.
+      return;
+    }
+
+    MonoTime now = MonoTime::Now();
+    if (now < next_hb_time_) {
+      // It's not yet time to heartbeat. Reduce the scheduled delay if enough
+      // time has elapsed, but don't increase it.
+      schedule_delay = std::min(schedule_delay, next_hb_time_ - now);
+    } else {
+      // It's time to heartbeat. Although the next heartbeat time is set now,
+      // it may be set again when we get to SendNextRequest().
+      signal_now = true;
+      UpdateNextHeartbeatTimeUnlocked();
+    }
+  }
+
+  if (signal_now) {
+    SignalRequest(true);
+  }
+
+  // Capture a shared_ptr reference into the submitted functor so that we're
+  // guaranteed that this object outlives the functor.
+  //
+  // Note: we use std::bind and not boost::bind here because the latter doesn't
+  // work with std::shared_ptr.
+  shared_ptr<Peer> s_this = shared_from_this();
+  messenger_->ScheduleOnReactor(
+      std::bind(&Peer::ScheduleNextHeartbeatAndMaybeSignalRequest, s_this,
+                std::placeholders::_1), schedule_delay);
+}
+
+MonoDelta Peer::GetHeartbeatJitterLowerBound() {
+  return MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms / 2);
+}
+
+void Peer::UpdateNextHeartbeatTimeUnlocked() {
+  DCHECK(peer_lock_.is_locked());
+
+  // We randomize the next heartbeat time between period/2 and period so
+  // multiple tablets on the same TS don't end up heartbeating in lockstep.
+  int64_t half_period_ms = GetHeartbeatJitterLowerBound().ToMilliseconds();
+  int64_t additional_jitter_ms = rng_.NextDoubleFraction() * half_period_ms;
+  next_hb_time_ =  MonoTime::Now() + MonoDelta::FromMilliseconds(
+      half_period_ms + additional_jitter_ms);
+}
 
 RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                            gscoped_ptr<ConsensusServiceProxy> consensus_proxy)

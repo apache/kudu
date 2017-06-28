@@ -29,7 +29,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/resettable_heartbeater.h"
+#include "kudu/util/random.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/status.h"
 
@@ -105,18 +105,26 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // log entries) are assembled on 'raft_pool_token'.
   // Response handling may also involve IO related to log-entry lookups and is
   // also done on 'raft_pool_token'.
-  static Status NewRemotePeer(const RaftPeerPB& peer_pb,
-                              const std::string& tablet_id,
-                              const std::string& leader_uuid,
+  static Status NewRemotePeer(RaftPeerPB peer_pb,
+                              std::string tablet_id,
+                              std::string leader_uuid,
                               PeerMessageQueue* queue,
                               ThreadPoolToken* raft_pool_token,
                               gscoped_ptr<PeerProxy> proxy,
+                              std::shared_ptr<rpc::Messenger> messenger,
                               std::shared_ptr<Peer>* peer);
 
  private:
-  Peer(const RaftPeerPB& peer_pb, std::string tablet_id, std::string leader_uuid,
-       gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
-       ThreadPoolToken* raft_pool_token);
+  // Returns the lowest possible jitter-induced heartbeat time delay.
+  static MonoDelta GetHeartbeatJitterLowerBound();
+
+  Peer(RaftPeerPB peer_pb,
+       std::string tablet_id,
+       std::string leader_uuid,
+       PeerMessageQueue* queue,
+       ThreadPoolToken* raft_pool_token,
+       gscoped_ptr<PeerProxy> proxy,
+       std::shared_ptr<rpc::Messenger> messenger);
 
   void SendNextRequest(bool even_if_queue_empty);
 
@@ -144,6 +152,17 @@ class Peer : public std::enable_shared_from_this<Peer> {
   void ProcessResponseError(const Status& status);
 
   std::string LogPrefixUnlocked() const;
+
+  // Schedules the next heartbeat for this peer, optionally sending a heartbeat
+  // now if it makes sense to do so. Initially called from Init() to schedule
+  // the first heartbeat, and subsequently as a callback running on a reactor thread.
+  void ScheduleNextHeartbeatAndMaybeSignalRequest(const Status& status);
+
+  // Resets the next time that we should heartbeat to this peer. Does not
+  // perform any actual scheduling.
+  //
+  // Must be called with 'peer_lock_' held.
+  void UpdateNextHeartbeatTimeUnlocked();
 
   const std::string& tablet_id() const { return tablet_id_; }
 
@@ -173,16 +192,18 @@ class Peer : public std::enable_shared_from_this<Peer> {
 
   rpc::RpcController controller_;
 
-  // Heartbeater for remote peer implementations.
-  // This will send status only requests to the remote peers
-  // whenever we go more than 'FLAGS_raft_heartbeat_interval_ms'
-  // without sending actual data.
-  ResettableHeartbeater heartbeater_;
+  std::shared_ptr<rpc::Messenger> messenger_;
 
   // Thread pool token used to construct requests to this peer.
   //
   // RaftConsensus owns this shared token and is responsible for destroying it.
   ThreadPoolToken* raft_pool_token_;
+
+  // The next time that a heartbeat should be sent to this peer.
+  MonoTime next_hb_time_;
+
+  // A PRNG, used to generate jittered heartbeat time.
+  Random rng_;
 
   // lock that protects Peer state changes, initialization, etc.
   mutable simple_spinlock peer_lock_;
@@ -229,6 +250,8 @@ class PeerProxyFactory {
                           gscoped_ptr<PeerProxy>* proxy) = 0;
 
   virtual ~PeerProxyFactory() {}
+
+  virtual const std::shared_ptr<rpc::Messenger>& messenger() const = 0;
 };
 
 // PeerProxy implementation that does RPC calls
@@ -264,10 +287,15 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
  public:
   explicit RpcPeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger);
 
-  virtual Status NewProxy(const RaftPeerPB& peer_pb,
-                          gscoped_ptr<PeerProxy>* proxy) OVERRIDE;
+  Status NewProxy(const RaftPeerPB& peer_pb,
+                  gscoped_ptr<PeerProxy>* proxy) override;
 
-  virtual ~RpcPeerProxyFactory();
+  ~RpcPeerProxyFactory();
+
+  const std::shared_ptr<rpc::Messenger>& messenger() const override {
+    return messenger_;
+  }
+
  private:
   std::shared_ptr<rpc::Messenger> messenger_;
 };

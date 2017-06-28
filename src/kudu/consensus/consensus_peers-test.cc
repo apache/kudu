@@ -28,6 +28,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
@@ -41,6 +42,8 @@ namespace consensus {
 
 using log::Log;
 using log::LogOptions;
+using rpc::Messenger;
+using rpc::MessengerBuilder;
 using std::shared_ptr;
 using std::unique_ptr;
 
@@ -81,10 +84,14 @@ class ConsensusPeersTest : public KuduTest {
         FakeRaftPeerPB(kLeaderUuid),
         kTabletId,
         raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
+
+    MessengerBuilder bld("test");
+    ASSERT_OK(bld.Build(&messenger_));
   }
 
   virtual void TearDown() OVERRIDE {
     ASSERT_OK(log_->WaitUntilAllFlushed());
+    messenger_->Shutdown();
   }
 
   DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
@@ -95,12 +102,13 @@ class ConsensusPeersTest : public KuduTest {
     auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
         raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb));
     gscoped_ptr<PeerProxy> proxy(proxy_ptr);
-    CHECK_OK(Peer::NewRemotePeer(peer_pb,
+    CHECK_OK(Peer::NewRemotePeer(std::move(peer_pb),
                                  kTabletId,
                                  kLeaderUuid,
                                  message_queue_.get(),
                                  raft_pool_token_.get(),
                                  std::move(proxy),
+                                 messenger_,
                                  peer));
     return proxy_ptr;
   }
@@ -139,6 +147,7 @@ class ConsensusPeersTest : public KuduTest {
   LogOptions options_;
   unique_ptr<ThreadPoolToken> raft_pool_token_;
   scoped_refptr<server::Clock> clock_;
+  shared_ptr<Messenger> messenger_;
 };
 
 
@@ -246,6 +255,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 message_queue_.get(),
                                 raft_pool_token_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
+                                messenger_,
                                 &peer));
 
   // Make the peer respond without making any progress -- it always returns
@@ -284,6 +294,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 message_queue_.get(),
                                 raft_pool_token_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
+                                messenger_,
                                 &peer));
 
   // Initial response has to be successful -- otherwise we'll consider the peer

@@ -77,6 +77,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
                                       queue_,
                                       raft_pool_token_,
                                       std::move(peer_proxy),
+                                      peer_proxy_factory_->messenger(),
                                       &remote_peer));
     peers_.emplace(peer_pb.permanent_uuid(), std::move(remote_peer));
   }

@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/leader_election.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,14 @@
 #include "kudu/util/test_util.h"
 
 namespace kudu {
+
+namespace rpc {
+class Messenger;
+} // namespace rpc
+
 namespace consensus {
 
+using std::shared_ptr;
 using std::string;
 using std::unordered_map;
 using std::vector;
@@ -73,10 +80,16 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
     return Status::OK();
   }
 
+  const shared_ptr<rpc::Messenger>& messenger() const override {
+    return null_messenger_;
+  }
+
  private:
   // FYI, the tests may add and remove nodes from this map while we hold a
   // reference to it.
   const ProxyMap* const proxy_map_;
+
+  shared_ptr<rpc::Messenger> null_messenger_;
 };
 
 class LeaderElectionTest : public KuduTest {

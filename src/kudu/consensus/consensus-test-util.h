@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/bind.hpp>
-#include <gmock/gmock.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -24,6 +22,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <boost/bind.hpp>
+#include <gmock/gmock.h>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
@@ -33,6 +34,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/server/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
@@ -350,15 +352,21 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
  public:
   NoOpTestPeerProxyFactory() {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
+    CHECK_OK(rpc::MessengerBuilder("test").Build(&messenger_));
   }
 
-  virtual Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                          gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
+  Status NewProxy(const consensus::RaftPeerPB& peer_pb,
+                  gscoped_ptr<PeerProxy>* proxy) override {
     proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
   }
 
+  const std::shared_ptr<rpc::Messenger>& messenger() const override {
+    return messenger_;
+  }
+ private:
   gscoped_ptr<ThreadPool> pool_;
+  std::shared_ptr<rpc::Messenger> messenger_;
 };
 
 typedef std::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerMap;
@@ -556,10 +564,11 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   explicit LocalTestPeerProxyFactory(TestPeerMapManager* peers)
     : peers_(peers) {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
+    CHECK_OK(rpc::MessengerBuilder("test").Build(&messenger_));
   }
 
-  virtual Status NewProxy(const consensus::RaftPeerPB& peer_pb,
-                          gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
+  Status NewProxy(const consensus::RaftPeerPB& peer_pb,
+                  gscoped_ptr<PeerProxy>* proxy) override {
     LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
                                                            pool_.get(),
                                                            peers_);
@@ -568,12 +577,17 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
     return Status::OK();
   }
 
-  virtual const vector<LocalTestPeerProxy*>& GetProxies() {
+  const vector<LocalTestPeerProxy*>& GetProxies() {
     return proxies_;
+  }
+
+  const std::shared_ptr<rpc::Messenger>& messenger() const override {
+    return messenger_;
   }
 
  private:
   gscoped_ptr<ThreadPool> pool_;
+  std::shared_ptr<rpc::Messenger> messenger_;
   TestPeerMapManager* const peers_;
     // NOTE: There is no need to delete this on the dctor because proxies are externally managed
   vector<LocalTestPeerProxy*> proxies_;
