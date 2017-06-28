@@ -328,7 +328,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     LockGuard l(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
 
-    RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+    RETURN_NOT_OK(EnsureFailureDetectorEnabled());
 
     // If this is the first term expire the FD immediately so that we have a fast first
     // election, otherwise we just let the timer expire normally.
@@ -344,7 +344,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
         LOG_WITH_PREFIX_UNLOCKED(INFO) << "Consensus starting up: Expiring failure detector timer "
                                           "to make a prompt election more likely";
       }
-      RETURN_NOT_OK(ExpireFailureDetectorUnlocked());
+      RETURN_NOT_OK(ExpireFailureDetector());
     }
 
     // Now assume "follower" duties.
@@ -432,7 +432,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       return Status::OK();
     }
     if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
-      RETURN_NOT_OK(SnoozeFailureDetectorUnlocked()); // Reduce election noise while in this state.
+      RETURN_NOT_OK(SnoozeFailureDetector()); // Reduce election noise while in this state.
       return Status::IllegalState("Not starting election: Node is currently "
                                   "a non-participant in the raft config",
                                   SecureShortDebugString(cmeta_->ActiveConfig()));
@@ -444,10 +444,10 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election, so that
     // if the election times out, we will try again.
-    RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+    RETURN_NOT_OK(EnsureFailureDetectorEnabled());
 
     MonoDelta timeout = LeaderElectionExpBackoffDeltaUnlocked();
-    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(timeout, ALLOW_LOGGING));
+    RETURN_NOT_OK(SnoozeFailureDetector(timeout, ALLOW_LOGGING));
 
     // Increment the term and vote for ourselves, unless it's a pre-election.
     if (mode != PRE_ELECTION) {
@@ -557,7 +557,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Becoming Leader. State: " << ToStringUnlocked();
 
   // Disable FD while we are leader.
-  RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
+  RETURN_NOT_OK(EnsureFailureDetectorDisabled());
 
   // Don't vote for anyone if we're a leader.
   withhold_votes_until_ = MonoTime::Max();
@@ -592,7 +592,7 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   ClearLeaderUnlocked();
 
   // FD should be running while we are a follower.
-  RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+  RETURN_NOT_OK(EnsureFailureDetectorEnabled());
 
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();
@@ -1210,7 +1210,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Snooze the failure detector as soon as we decide to accept the message.
     // We are guaranteed to be acting as a FOLLOWER at this point by the above
     // sanity check.
-    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
+    RETURN_NOT_OK(SnoozeFailureDetector());
 
     // We update the lag metrics here in addition to after appending to the queue so the
     // metrics get updated even when the operation is rejected.
@@ -1385,9 +1385,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // If just waiting for our log append to finish lets snooze the timer.
       // We don't want to fire leader election because we're waiting on our own log.
       if (s.IsTimedOut()) {
-        ThreadRestrictions::AssertWaitAllowed();
-        LockGuard l(lock_);
-        RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
+        RETURN_NOT_OK(SnoozeFailureDetector());
       }
     } while (s.IsTimedOut());
     RETURN_NOT_OK(s);
@@ -1962,7 +1960,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   // persist our vote to disk. We use an exponential backoff to avoid too much
   // split-vote contention when nodes display high latencies.
   MonoDelta additional_backoff = LeaderElectionExpBackoffDeltaUnlocked();
-  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, ALLOW_LOGGING));
+  RETURN_NOT_OK(SnoozeFailureDetector(additional_backoff, ALLOW_LOGGING));
 
   if (!request->is_pre_election()) {
     // Persist our vote to disk.
@@ -1973,7 +1971,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
 
   // Give peer time to become leader. Snooze one more time after persisting our
   // vote. When disk latency is high, this should help reduce churn.
-  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, DO_NOT_LOG));
+  RETURN_NOT_OK(SnoozeFailureDetector(additional_backoff, DO_NOT_LOG));
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
                           GetRequestVoteLogPrefixUnlocked(*request),
@@ -2122,8 +2120,8 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     //   finish another one is triggered already.
     // We ignore the status as we don't want to fail if we the timer is
     // disabled.
-    ignore_result(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked(),
-                                                ALLOW_LOGGING));
+    ignore_result(SnoozeFailureDetector(LeaderElectionExpBackoffDeltaUnlocked(),
+                                        ALLOW_LOGGING));
 
     if (result.decision == VOTE_DENIED) {
       failed_elections_since_stable_leader_++;
@@ -2357,8 +2355,7 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
 }
 
 
-Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
-  DCHECK(lock_.is_locked());
+Status RaftConsensus::EnsureFailureDetectorEnabled() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
@@ -2371,8 +2368,7 @@ Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
                                   Bind(&RaftConsensus::ReportFailureDetected, Unretained(this)));
 }
 
-Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
-  DCHECK(lock_.is_locked());
+Status RaftConsensus::EnsureFailureDetectorDisabled() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
@@ -2383,8 +2379,7 @@ Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
   return failure_detector_->UnTrack(kTimerId);
 }
 
-Status RaftConsensus::ExpireFailureDetectorUnlocked() {
-  DCHECK(lock_.is_locked());
+Status RaftConsensus::ExpireFailureDetector() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
@@ -2392,14 +2387,12 @@ Status RaftConsensus::ExpireFailureDetectorUnlocked() {
   return failure_detector_->MessageFrom(kTimerId, MonoTime::Min());
 }
 
-Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
-  DCHECK(lock_.is_locked());
-  return SnoozeFailureDetectorUnlocked(MonoDelta::FromMicroseconds(0), DO_NOT_LOG);
+Status RaftConsensus::SnoozeFailureDetector() {
+  return SnoozeFailureDetector(MonoDelta::FromMicroseconds(0), DO_NOT_LOG);
 }
 
-Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta,
-                                                    AllowLogging allow_logging) {
-  DCHECK(lock_.is_locked());
+Status RaftConsensus::SnoozeFailureDetector(const MonoDelta& additional_delta,
+                                            AllowLogging allow_logging) {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
@@ -2407,8 +2400,9 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
   MonoTime time = MonoTime::Now() + additional_delta;
 
   if (allow_logging == ALLOW_LOGGING) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Snoozing failure detection for election timeout "
-                                   << "plus an additional " + additional_delta.ToString();
+    LOG(INFO) << LogPrefixThreadSafe()
+              << "Snoozing failure detection for election timeout plus an additional "
+              << additional_delta.ToString();
   }
 
   return failure_detector_->MessageFrom(kTimerId, time);

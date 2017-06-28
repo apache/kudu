@@ -524,30 +524,30 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
   // If the failure detector is already registered, has no effect.
-  Status EnsureFailureDetectorEnabledUnlocked();
+  Status EnsureFailureDetectorEnabled();
 
   // Untrack the current leader from failure detector.
   // This typically happens when the local peer becomes leader.
   // If the failure detector is already unregistered, has no effect.
-  Status EnsureFailureDetectorDisabledUnlocked();
+  Status EnsureFailureDetectorDisabled();
 
   // Set the failure detector to an "expired" state, so that the next time
   // the failure monitor runs it triggers an election.
   // This is primarily intended to be used at startup time.
-  Status ExpireFailureDetectorUnlocked();
+  Status ExpireFailureDetector();
 
   // "Reset" the failure detector to indicate leader activity.
   // The failure detector must currently be enabled.
   // When this is called a failure is guaranteed not to be detected
   // before 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
   // 'FLAGS_raft_heartbeat_interval_ms' has elapsed.
-  Status SnoozeFailureDetectorUnlocked() WARN_UNUSED_RESULT;
+  Status SnoozeFailureDetector() WARN_UNUSED_RESULT;
 
   // Like the above but adds 'additional_delta' to the default timeout
   // period. If allow_logging is set to ALLOW_LOGGING, then this method
   // will print a log message when called.
-  Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta,
-                                       AllowLogging allow_logging) WARN_UNUSED_RESULT;
+  Status SnoozeFailureDetector(const MonoDelta& additional_delta,
+                               AllowLogging allow_logging) WARN_UNUSED_RESULT;
 
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.
