@@ -633,39 +633,18 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Returns OK if leader, IllegalState otherwise.
   Status CheckActiveLeaderUnlocked() const WARN_UNUSED_RESULT;
 
-  // Returns the currently active Raft role.
-  RaftPeerPB::Role GetActiveRoleUnlocked() const;
-
-  // Returns true if there is a configuration change currently in-flight but not yet
-  // committed.
-  bool IsConfigChangePendingUnlocked() const;
-
-  // Inverse of IsConfigChangePendingUnlocked(): returns OK if there is
-  // currently *no* configuration change pending, and IllegalState is there *is* a
-  // configuration change pending.
+  // Returns OK if there is currently *no* configuration change pending, and
+  // IllegalState is there *is* a configuration change pending.
   Status CheckNoConfigChangePendingUnlocked() const WARN_UNUSED_RESULT;
 
   // Sets the given configuration as pending commit. Does not persist into the peers
   // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
   Status SetPendingConfigUnlocked(const RaftConfigPB& new_config) WARN_UNUSED_RESULT;
 
-  // Clear (cancel) the pending configuration.
-  void ClearPendingConfigUnlocked();
-
-  // Return the pending configuration, or crash if one is not set.
-  RaftConfigPB GetPendingConfigUnlocked() const;
-
   // Changes the committed config for this replica. Checks that there is a
   // pending configuration and that it is equal to this one. Persists changes to disk.
   // Resets the pending configuration to null.
   Status SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit);
-
-  // Return the persisted configuration.
-  RaftConfigPB GetCommittedConfigUnlocked() const;
-
-  // Return the "active" configuration - if there is a pending configuration return it;
-  // otherwise return the committed configuration.
-  RaftConfigPB GetActiveConfigUnlocked() const;
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.

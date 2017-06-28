@@ -312,7 +312,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Replica starting. Triggering "
                                    << info.orphaned_replicates.size()
                                    << " pending transactions. Active config: "
-                                   << SecureShortDebugString(GetActiveConfigUnlocked());
+                                   << SecureShortDebugString(cmeta_->ActiveConfig());
     for (ReplicateMsg* replicate : info.orphaned_replicates) {
       ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
@@ -426,7 +426,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     LockGuard l(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
 
-    RaftPeerPB::Role active_role = GetActiveRoleUnlocked();
+    RaftPeerPB::Role active_role = cmeta_->active_role();
     if (active_role == RaftPeerPB::LEADER) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting " << mode << " -- already leader";
       return Status::OK();
@@ -435,7 +435,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       RETURN_NOT_OK(SnoozeFailureDetectorUnlocked()); // Reduce election noise while in this state.
       return Status::IllegalState("Not starting election: Node is currently "
                                   "a non-participant in the raft config",
-                                  SecureShortDebugString(GetActiveConfigUnlocked()));
+                                  SecureShortDebugString(cmeta_->ActiveConfig()));
     }
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Starting " << mode_str
@@ -460,7 +460,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       RETURN_NOT_OK(SetVotedForCurrentTermUnlocked(peer_uuid_));
     }
 
-    RaftConfigPB active_config = GetActiveConfigUnlocked();
+    RaftConfigPB active_config = cmeta_->ActiveConfig();
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting " << mode_str << " with config: "
                                    << SecureShortDebugString(active_config);
 
@@ -521,7 +521,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
   RETURN_NOT_OK(CheckRunningUnlocked());
-  if (GetActiveRoleUnlocked() != RaftPeerPB::LEADER) {
+  if (cmeta_->active_role() != RaftPeerPB::LEADER) {
     resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
     StatusToPB(Status::IllegalState("Not currently leader"),
                resp->mutable_error()->mutable_status());
@@ -674,7 +674,7 @@ Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusR
     int64_t committed_config_opid_index = cmeta_->GetConfigOpIdIndex(COMMITTED_CONFIG);
     if (round->replicate_msg()->id().index() > committed_config_opid_index) {
       RETURN_NOT_OK(SetPendingConfigUnlocked(new_config));
-      if (GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+      if (cmeta_->active_role() == RaftPeerPB::LEADER) {
         RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
       }
     } else {
@@ -709,7 +709,7 @@ void RaftConsensus::NotifyCommitIndex(int64_t commit_index) {
 
   pending_.AdvanceCommittedIndex(commit_index);
 
-  if (GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+  if (cmeta_->active_role() == RaftPeerPB::LEADER) {
     peer_manager_->SignalRequest(false);
   }
 }
@@ -756,13 +756,13 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
       return;
     }
 
-    if (IsConfigChangePendingUnlocked()) {
+    if (cmeta_->has_pending_config()) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << fail_msg << "There is already a config change operation "
                                      << "in progress. Unable to evict follower until it completes. "
                                      << "Doing nothing.";
       return;
     }
-    committed_config = GetCommittedConfigUnlocked();
+    committed_config = cmeta_->CommittedConfig();
   }
 
   // Run config change on thread pool after dropping lock.
@@ -1568,7 +1568,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
       return Status::InvalidArgument("server must have permanent_uuid specified",
                                      SecureShortDebugString(req));
     }
-    RaftConfigPB committed_config = GetCommittedConfigUnlocked();
+    RaftConfigPB committed_config = cmeta_->CommittedConfig();
 
     // Support atomic ChangeConfig requests.
     if (req.has_cas_config_opid_index()) {
@@ -1662,13 +1662,13 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
     current_term = GetCurrentTermUnlocked();
-    committed_config = GetCommittedConfigUnlocked();
-    if (IsConfigChangePendingUnlocked()) {
+    committed_config = cmeta_->CommittedConfig();
+    if (cmeta_->has_pending_config()) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING)
             << "Replica has a pending config, but the new config "
             << "will be unsafely changed anyway. "
             << "Currently pending config on the node: "
-            << SecureShortDebugString(GetPendingConfigUnlocked());
+            << SecureShortDebugString(cmeta_->PendingConfig());
     }
     all_replicated_index = queue_->GetAllReplicatedIndex();
     last_committed_index = queue_->GetCommittedIndex();
@@ -1985,7 +1985,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
 RaftPeerPB::Role RaftConsensus::role() const {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
-  return GetActiveRoleUnlocked();
+  return cmeta_->active_role();
 }
 
 const char* RaftConsensus::State_Name(State state) {
@@ -2036,8 +2036,8 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_conf
 
 Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   DCHECK(lock_.is_locked());
-  DCHECK_EQ(RaftPeerPB::LEADER, GetActiveRoleUnlocked());
-  RaftConfigPB active_config = GetActiveConfigUnlocked();
+  DCHECK_EQ(RaftPeerPB::LEADER, cmeta_->active_role());
+  RaftConfigPB active_config = cmeta_->ActiveConfig();
 
   // Change the peers so that we're able to replicate messages remotely and
   // locally. The peer manager must be closed before updating the active config
@@ -2070,7 +2070,7 @@ ConsensusStatePB RaftConsensus::ConsensusState() const {
 RaftConfigPB RaftConsensus::CommittedConfig() const {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
-  return GetCommittedConfigUnlocked();
+  return cmeta_->CommittedConfig();
 }
 
 void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
@@ -2086,7 +2086,7 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
-    role = GetActiveRoleUnlocked();
+    role = cmeta_->active_role();
   }
   if (role == RaftPeerPB::LEADER) {
     out << "<h2>Queue overview</h2>" << std::endl;
@@ -2182,11 +2182,11 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
                                       << "Result: Term " << election_term << ": "
                                       << (result.decision == VOTE_GRANTED ? "won" : "lost")
                                       << ". RaftConfig: "
-                                      << SecureShortDebugString(GetActiveConfigUnlocked());
+                                      << SecureShortDebugString(cmeta_->ActiveConfig());
     return;
   }
 
-  if (GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+  if (cmeta_->active_role() == RaftPeerPB::LEADER) {
     // If this was a pre-election, it's possible to see the following interleaving:
     //
     //  1. Term N (follower): send a real election for term N
@@ -2304,11 +2304,11 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
 
   if (!status.ok()) {
     // If the config change being aborted is the current pending one, abort it.
-    if (IsConfigChangePendingUnlocked() &&
+    if (cmeta_->has_pending_config() &&
         cmeta_->GetConfigOpIdIndex(PENDING_CONFIG) == op_id.index()) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting config change with OpId "
                                      << op_id << ": " << status.ToString();
-      ClearPendingConfigUnlocked();
+      cmeta_->clear_pending_config();
     } else {
       LOG_WITH_PREFIX_UNLOCKED(INFO)
           << "Skipping abort of non-pending config change with OpId "
@@ -2447,7 +2447,7 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term,
     return Status::IllegalState(Substitute("Can't advance term to: $0 current term: $1 is higher.",
                                            new_term, GetCurrentTermUnlocked()));
   }
-  if (GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+  if (cmeta_->active_role() == RaftPeerPB::LEADER) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Stepping down as leader of term "
                                    << GetCurrentTermUnlocked();
     RETURN_NOT_OK(BecomeReplicaUnlocked());
@@ -2478,7 +2478,7 @@ Status RaftConsensus::CheckRunningUnlocked() const {
 
 Status RaftConsensus::CheckActiveLeaderUnlocked() const {
   DCHECK(lock_.is_locked());
-  RaftPeerPB::Role role = GetActiveRoleUnlocked();
+  RaftPeerPB::Role role = cmeta_->active_role();
   switch (role) {
     case RaftPeerPB::LEADER:
       return Status::OK();
@@ -2491,24 +2491,14 @@ Status RaftConsensus::CheckActiveLeaderUnlocked() const {
   }
 }
 
-RaftPeerPB::Role RaftConsensus::GetActiveRoleUnlocked() const {
-  DCHECK(lock_.is_locked());
-  return cmeta_->active_role();
-}
-
-bool RaftConsensus::IsConfigChangePendingUnlocked() const {
-  DCHECK(lock_.is_locked());
-  return cmeta_->has_pending_config();
-}
-
 Status RaftConsensus::CheckNoConfigChangePendingUnlocked() const {
   DCHECK(lock_.is_locked());
-  if (IsConfigChangePendingUnlocked()) {
+  if (cmeta_->has_pending_config()) {
     return Status::IllegalState(
         Substitute("RaftConfig change currently pending. Only one is allowed at a time.\n"
                    "  Committed config: $0.\n  Pending config: $1",
-                   SecureShortDebugString(GetCommittedConfigUnlocked()),
-                   SecureShortDebugString(GetPendingConfigUnlocked())));
+                   SecureShortDebugString(cmeta_->CommittedConfig()),
+                   SecureShortDebugString(cmeta_->PendingConfig())));
   }
   return Status::OK();
 }
@@ -2532,16 +2522,6 @@ Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   return Status::OK();
 }
 
-void RaftConsensus::ClearPendingConfigUnlocked() {
-  DCHECK(lock_.is_locked());
-  cmeta_->clear_pending_config();
-}
-
-RaftConfigPB RaftConsensus::GetPendingConfigUnlocked() const {
-  DCHECK(lock_.is_locked());
-  return cmeta_->PendingConfig();
-}
-
 Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_commit) {
   TRACE_EVENT0("consensus", "RaftConsensus::SetCommittedConfigUnlocked");
   DCHECK(lock_.is_locked());
@@ -2555,8 +2535,8 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
   // because unsafe config change allows multiple pending configs to exist.
   // Therefore we only need to validate that 'config_to_commit' matches the pending config
   // if the pending config does not have its 'unsafe_config_change' flag set.
-  if (IsConfigChangePendingUnlocked()) {
-    RaftConfigPB pending_config = GetPendingConfigUnlocked();
+  if (cmeta_->has_pending_config()) {
+    RaftConfigPB pending_config = cmeta_->PendingConfig();
     if (!pending_config.unsafe_config_change()) {
       // Quorums must be exactly equal, even w.r.t. peer ordering.
       CHECK_EQ(pending_config.SerializeAsString(),
@@ -2571,16 +2551,6 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
   cmeta_->clear_pending_config();
   CHECK_OK(cmeta_->Flush());
   return Status::OK();
-}
-
-RaftConfigPB RaftConsensus::GetCommittedConfigUnlocked() const {
-  DCHECK(lock_.is_locked());
-  return cmeta_->CommittedConfig();
-}
-
-RaftConfigPB RaftConsensus::GetActiveConfigUnlocked() const {
-  DCHECK(lock_.is_locked());
-  return cmeta_->ActiveConfig();
 }
 
 Status RaftConsensus::SetCurrentTermUnlocked(int64_t new_term,
@@ -2658,7 +2628,7 @@ string RaftConsensus::LogPrefixUnlocked() const {
                     options_.tablet_id,
                     peer_uuid_,
                     GetCurrentTermUnlocked(),
-                    RaftPeerPB::Role_Name(GetActiveRoleUnlocked()));
+                    RaftPeerPB::Role_Name(cmeta_->active_role()));
 }
 
 string RaftConsensus::LogPrefixThreadSafe() const {
@@ -2676,7 +2646,7 @@ string RaftConsensus::ToString() const {
 string RaftConsensus::ToStringUnlocked() const {
   DCHECK(lock_.is_locked());
   return Substitute("Replica: $0, State: $1, Role: $2",
-                    peer_uuid_, State_Name(state_), RaftPeerPB::Role_Name(GetActiveRoleUnlocked()));
+                    peer_uuid_, State_Name(state_), RaftPeerPB::Role_Name(cmeta_->active_role()));
 }
 
 ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
