@@ -327,7 +327,10 @@ class LogTiming {
   void Print(int64_t max_expected_millis) {
     stopwatch_.stop();
     CpuTimes times = stopwatch_.elapsed();
-    if (times.wall_millis() > max_expected_millis) {
+    // TODO(todd): for some reason, times.wall_millis() sometimes ends up negative
+    // on rare occasion, for unclear reasons, so we have to check max_expected_millis
+    // < 0 to be sure we always print when requested.
+    if (max_expected_millis < 0 || times.wall_millis() > max_expected_millis) {
       google::LogMessage(file_, line_, severity_).stream()
         << prefix_ << "Time spent " << description_ << ": "
         << times.ToString();
