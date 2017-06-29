@@ -81,9 +81,9 @@ TEST_F(TimeManagerTest, TestTimeManagerNonLeaderMode) {
   ASSERT_EQ(time_manager_->GetSafeTime(), init);
 
   // Check that 'before' is safe, as is 'init'. 'after' shouldn't be safe.
-  ASSERT_TRUE(time_manager_->IsTimestampSafeUnlocked(before));
-  ASSERT_TRUE(time_manager_->IsTimestampSafeUnlocked(init));
-  ASSERT_FALSE(time_manager_->IsTimestampSafeUnlocked(after));
+  ASSERT_TRUE(time_manager_->IsTimestampSafe(before));
+  ASSERT_TRUE(time_manager_->IsTimestampSafe(init));
+  ASSERT_FALSE(time_manager_->IsTimestampSafe(after));
 
   // Shouldn't be able to assign timestamps.
   ReplicateMsg message;
@@ -169,7 +169,7 @@ TEST_F(TimeManagerTest, TestTimeManagerLeaderMode) {
 
   // 'Now' should be safe.
   Timestamp now = clock_->Now();
-  ASSERT_TRUE(time_manager_->IsTimestampSafeUnlocked(now));
+  ASSERT_TRUE(time_manager_->IsTimestampSafe(now));
   ASSERT_GT(time_manager_->GetSafeTime(), now);
 
   // When changing to non-leader mode a timestamp after the last safe time shouldn't be

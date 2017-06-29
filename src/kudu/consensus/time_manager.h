@@ -126,10 +126,15 @@ class TimeManager : public RefCountedThreadSafe<TimeManager> {
   //
   // In non-leader mode returns the last safe time received from a leader.
   Timestamp GetSafeTime();
+
+  // Returns a timestamp that is guaranteed to be higher than all other timestamps
+  // that have been assigned by calls to GetSerialTimestamp() (in this or another
+  // replica).
+  Timestamp GetSerialTimestamp();
+
  private:
   FRIEND_TEST(TimeManagerTest, TestTimeManagerNonLeaderMode);
   FRIEND_TEST(TimeManagerTest, TestTimeManagerLeaderMode);
-  friend class RaftConsensus;
 
   // Returns whether we've advanced safe time recently.
   // If this returns false we might be partitioned or there might be election churn.
@@ -164,21 +169,22 @@ class TimeManager : public RefCountedThreadSafe<TimeManager> {
 
   // Returns whether 'timestamp' is safe.
   // Requires that we've waited for the local clock to move past 'timestamp'.
+  bool IsTimestampSafe(Timestamp timestamp);
+
+  // Internal, unlocked implementation of IsTimestampSafe().
   bool IsTimestampSafeUnlocked(Timestamp timestamp);
 
   // Advances safe time and wakes up any waiters.
   void AdvanceSafeTimeAndWakeUpWaitersUnlocked(Timestamp safe_time);
 
-  // Returns a timestamp that is guaranteed to higher than all other timestamps
-  // that have been assigned by calls to GetSerialTimestamp() (in this or another
-  // replica).
-  Timestamp GetSerialTimestamp();
+  // Internal, unlocked implementation of GetSerialTimestamp().
+  Timestamp GetSerialTimestampUnlocked();
 
-  // Like the above, but returns a serial timestamp plus the maximum error.
+  // Like GetSerialTimestamp(), but returns a serial timestamp plus the maximum error.
   // NOTE: GetSerialTimestamp() might still return timestamps that are smaller.
   Timestamp GetSerialTimestampPlusMaxError();
 
-  // Internal, unlocked implementation of GetSafeTime();
+  // Internal, unlocked implementation of GetSafeTime().
   Timestamp GetSafeTimeUnlocked();
 
   // Lock to protect the non-const fields below.
