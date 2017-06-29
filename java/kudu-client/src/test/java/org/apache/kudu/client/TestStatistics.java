@@ -23,6 +23,9 @@ import org.junit.Test;
 
 import org.apache.kudu.client.Statistics.Statistic;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class TestStatistics extends BaseKuduTest {
 
   private static final String TABLE_NAME = TestStatistics.class.getName() + "-"
@@ -69,7 +72,13 @@ public class TestStatistics extends BaseKuduTest {
     assertEquals(rowCount, statistics.getClientStatistic(Statistic.OPS_ERRORS));
     assertEquals(byteSize * 2, statistics.getClientStatistic(Statistic.BYTES_WRITTEN));
 
-    assertEquals(1, statistics.getTableSet().size());
-    assertEquals(1, statistics.getTabletSet().size());
+    List<String> tableNames = new ArrayList<>(statistics.getTableSet());
+    assertEquals(1, tableNames.size());
+    assertEquals(TABLE_NAME, tableNames.get(0));
+    assertEquals(rowCount, statistics.getTableStatistic(TABLE_NAME, Statistic.WRITE_OPS));
+
+    List<String> tabletIds = new ArrayList<>(statistics.getTabletSet());
+    assertEquals(1, tabletIds.size());
+    assertEquals(rowCount, statistics.getTabletStatistic(tabletIds.get(0), Statistic.WRITE_OPS));
   }
 }
