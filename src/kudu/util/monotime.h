@@ -22,6 +22,8 @@
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
+
+#include "kudu/gutil/port.h"
 #else
 // This is a poor module interdependency, but the stubs are header-only and
 // it's only for exported header builds, so we'll make an exception.
@@ -173,7 +175,8 @@ class KUDU_EXPORT MonoTime {
   /// @param [in] b
   ///   The second MonoTime object to select from.
   /// @return The earliest (minimum) of the two monotimes.
-  static const MonoTime& Earliest(const MonoTime& a, const MonoTime& b);
+  static const MonoTime& Earliest(const MonoTime& a, const MonoTime& b)
+      ATTRIBUTE_DEPRECATED("use std::min() instead");
 
   /// Build a MonoTime object. The resulting object is not initialized
   /// and not ready to use.

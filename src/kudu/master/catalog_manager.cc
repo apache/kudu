@@ -2869,7 +2869,7 @@ Status RetryingTSRpcTask::Run() {
 
   // Calculate and set the timeout deadline.
   MonoTime timeout = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms);
-  const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
+  const MonoTime& deadline = std::min(timeout, deadline_);
   rpc_.Reset();
   rpc_.set_deadline(deadline);
 

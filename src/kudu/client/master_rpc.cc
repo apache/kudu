@@ -19,6 +19,7 @@
 
 #include "kudu/client/master_rpc.h"
 
+#include <algorithm>
 #include <mutex>
 
 #include <boost/bind.hpp>
@@ -230,9 +231,8 @@ string ConnectToClusterRpc::ToString() const {
 
 void ConnectToClusterRpc::SendRpc() {
   // Compute the actual deadline to use for each RPC.
-  MonoTime rpc_deadline = MonoTime::Now() + rpc_timeout_;
-  MonoTime actual_deadline = MonoTime::Earliest(retrier().deadline(),
-                                                rpc_deadline);
+  const MonoTime rpc_deadline = MonoTime::Now() + rpc_timeout_;
+  const MonoTime actual_deadline = std::min(retrier().deadline(), rpc_deadline);
 
   std::lock_guard<simple_spinlock> l(lock_);
   for (int i = 0; i < addrs_.size(); i++) {

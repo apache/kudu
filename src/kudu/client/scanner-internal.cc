@@ -18,7 +18,6 @@
 #include "kudu/client/scanner-internal.h"
 
 #include <algorithm>
-#include <boost/bind.hpp>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -36,9 +35,9 @@
 
 using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
-
 using std::set;
 using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -263,7 +262,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
   MonoTime rpc_deadline;
   if (allow_time_for_failover) {
     rpc_deadline = MonoTime::Now() + table_->client()->default_rpc_timeout();
-    rpc_deadline = MonoTime::Earliest(overall_deadline, rpc_deadline);
+    rpc_deadline = std::min(overall_deadline, rpc_deadline);
   } else {
     rpc_deadline = overall_deadline;
   }

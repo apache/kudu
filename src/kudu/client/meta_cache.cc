@@ -17,6 +17,7 @@
 
 #include "kudu/client/meta_cache.h"
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <set>
@@ -664,7 +665,7 @@ void LookupRpc::SendRpc() {
   }
   MonoTime rpc_deadline = now + meta_cache_->client_->default_rpc_timeout();
   mutable_retrier()->mutable_controller()->set_deadline(
-      MonoTime::Earliest(rpc_deadline, retrier().deadline()));
+      std::min(rpc_deadline, retrier().deadline()));
 
   master_proxy()->GetTableLocationsAsync(req_, &resp_,
                                          mutable_retrier()->mutable_controller(),

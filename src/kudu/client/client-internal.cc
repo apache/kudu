@@ -170,9 +170,9 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     // deadline so that we reserve some time with which to find a new
     // leader master and retry before the overall deadline expires.
     //
-    // TODO: KUDU-683 tracks cleanup for this.
+    // TODO(KUDU-683): cleanup this up
     MonoTime rpc_deadline = now + client->default_rpc_timeout();
-    rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
+    rpc.set_deadline(std::min(rpc_deadline, deadline));
 
     for (uint32_t required_feature_flag : required_feature_flags) {
       rpc.RequireServerFeature(required_feature_flag);
