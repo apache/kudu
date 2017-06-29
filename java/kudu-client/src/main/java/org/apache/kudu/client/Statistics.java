@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import java.nio.charset.Charset;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -26,9 +25,6 @@ import com.google.common.collect.Sets;
 
 import org.apache.kudu.annotations.InterfaceAudience;
 import org.apache.kudu.annotations.InterfaceStability;
-import org.apache.kudu.util.Slice;
-import org.apache.kudu.util.Slices;
-
 
 /**
  * A Statistics belongs to a specific AsyncKuduClient. It stores client-level
@@ -101,8 +97,7 @@ public class Statistics {
    * @return the value of the statistic
    */
   public long getTabletStatistic(String tabletId, Statistic statistic) {
-    Slice tabletIdAsSlice = Slices.copiedBuffer(tabletId, Charset.defaultCharset());
-    TabletStatistics tabletStatistics = stsMap.get(tabletIdAsSlice);
+    TabletStatistics tabletStatistics = stsMap.get(tabletId);
     if (tabletStatistics == null) {
       return 0;
     } else {
@@ -173,8 +168,7 @@ public class Statistics {
    * @return table name
    */
   public String getTableName(String tabletId) {
-    Slice tabletIdAsSlice = Slices.copiedBuffer(tabletId, Charset.defaultCharset());
-    TabletStatistics tabletStatistics = stsMap.get(tabletIdAsSlice);
+    TabletStatistics tabletStatistics = stsMap.get(tabletId);
     if (tabletStatistics == null) {
       return null;
     } else {
