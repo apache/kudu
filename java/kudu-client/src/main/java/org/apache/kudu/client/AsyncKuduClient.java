@@ -126,7 +126,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * a lookup of a single partition (e.g. for a write), or re-looking-up a tablet with
    * stale information.
    */
-  static int FETCH_TABLETS_PER_POINT_LOOKUP = 10;
+  static final int FETCH_TABLETS_PER_POINT_LOOKUP = 10;
   /**
    * The number of tablets to fetch from the master when looking up a range of
    * tablets.
@@ -680,7 +680,7 @@ public class AsyncKuduClient implements AutoCloseable {
   void removeSession(AsyncKuduSession session) {
     synchronized (sessions) {
       boolean removed = sessions.remove(session);
-      assert removed == true;
+      assert removed;
     }
   }
 

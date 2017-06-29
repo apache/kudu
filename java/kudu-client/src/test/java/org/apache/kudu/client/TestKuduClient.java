@@ -773,9 +773,7 @@ public class TestKuduClient extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testScanNonCoveredTable() throws Exception {
-
-    Schema schema = basicSchema;
-    syncClient.createTable(tableName, schema, getBasicTableOptionsWithNonCoveredRange());
+    syncClient.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);

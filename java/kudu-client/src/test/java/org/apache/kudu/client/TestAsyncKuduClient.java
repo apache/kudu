@@ -31,8 +31,6 @@ import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
@@ -42,8 +40,6 @@ import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
 public class TestAsyncKuduClient extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduClient.class);
-
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
@@ -237,7 +233,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testCreateTableOutOfOrderPrimaryKeys() throws Exception {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(6);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(6);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key_1", Type.INT8).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key_2", Type.INT16).key(true).build());

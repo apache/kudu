@@ -565,12 +565,11 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     PartialRow upperBound = schema.newPartialRow();
     upperBound.addInt(schema.getColumnByIndex(0).getName(), exclusiveEnd);
 
-    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+    return client.newScannerBuilder(table)
         .lowerBound(lowerBound)
         .exclusiveUpperBound(upperBound)
         .setProjectedColumnNames(columnNames)
         .build();
-    return scanner;
   }
 
   private TabletServerErrorPB makeTabletServerError() {

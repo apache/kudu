@@ -27,7 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 
 import com.google.common.base.Charsets;
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import org.apache.flume.Channel;
 import org.apache.flume.Context;

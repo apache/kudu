@@ -32,7 +32,7 @@ import org.junit.rules.TestName;
 
 public class TestKuduSession extends BaseKuduTest {
   @Rule
-  public TestName name = new TestName();
+  public final TestName name = new TestName();
 
   private KuduTable table;
 

@@ -448,8 +448,7 @@ public class ITClient extends BaseKuduTest {
     }
   }
 
-  class UncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
-
+  private class UncaughtExceptionHandler implements Thread.UncaughtExceptionHandler {
     @Override
     public void uncaughtException(Thread t, Throwable e) {
       // Only report an error if we're still running, else we'll spam the log.

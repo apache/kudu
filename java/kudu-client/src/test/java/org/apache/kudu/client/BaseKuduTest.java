@@ -45,15 +45,8 @@ public class BaseKuduTest {
 
   protected static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
-  private static final String NUM_MASTERS_PROP = "NUM_MASTERS";
-  private static final int NUM_TABLET_SERVERS = 3;
-  private static final int DEFAULT_NUM_MASTERS = 3;
-
-  // Number of masters that will be started for this test if we're starting
-  // a cluster.
-  private static final int NUM_MASTERS =
-      Integer.getInteger(NUM_MASTERS_PROP, DEFAULT_NUM_MASTERS);
-
+  // Default timeout/sleep interval for various client operations, waiting for various jobs/threads
+  // to complete, etc.
   protected static final int DEFAULT_SLEEP = 50000;
 
   // Currently not specifying a seed since we want a random behavior when running tests that
@@ -79,28 +72,8 @@ public class BaseKuduTest {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    FakeDNS.getInstance().install();
-
     LOG.info("Setting up before class...");
-
-    miniCluster = miniClusterBuilder
-        .numMasters(NUM_MASTERS)
-        .numTservers(NUM_TABLET_SERVERS)
-        .defaultTimeoutMs(DEFAULT_SLEEP)
-        .build();
-
-    masterAddresses = miniCluster.getMasterAddresses();
-    masterHostPorts = miniCluster.getMasterHostPorts();
-
-    LOG.info("Creating new Kudu client...");
-    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
-                                .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
-                                .build();
-    syncClient = new KuduClient(client);
-    LOG.info("Waiting for tablet servers...");
-    if (!miniCluster.waitForTabletServers(NUM_TABLET_SERVERS)) {
-      fail("Couldn't get " + NUM_TABLET_SERVERS + " tablet servers running, aborting");
-    }
+    doSetup(Integer.getInteger("NUM_MASTERS", 3), 3);
   }
 
   @AfterClass
@@ -117,6 +90,39 @@ public class BaseKuduTest {
       if (miniCluster != null) {
         miniCluster.shutdown();
       }
+    }
+  }
+
+  /**
+   * This method is intended to be called from custom @BeforeClass method to setup Kudu mini cluster
+   * with the specified parameters. The #BaseKuduTest class calls it in its @BeforeClass method
+   * with the default parameters.
+   *
+   * @param numMasters number of masters in the cluster to start
+   * @param numTabletServers number of tablet servers in the cluster to start
+   * @throws Exception if something goes wrong
+   */
+  protected static void doSetup(int numMasters, int numTabletServers)
+      throws Exception {
+    FakeDNS.getInstance().install();
+
+    miniCluster = miniClusterBuilder
+        .numMasters(numMasters)
+        .numTservers(numTabletServers)
+        .defaultTimeoutMs(DEFAULT_SLEEP)
+        .build();
+    masterAddresses = miniCluster.getMasterAddresses();
+    masterHostPorts = miniCluster.getMasterHostPorts();
+
+    LOG.info("Creating new Kudu client...");
+    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
+        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+        .build();
+    syncClient = new KuduClient(client);
+
+    LOG.info("Waiting for tablet servers...");
+    if (!miniCluster.waitForTabletServers(numTabletServers)) {
+      fail(String.format("Couldn't get %d tablet servers running, aborting", numTabletServers));
     }
   }
 
@@ -246,7 +252,7 @@ public class BaseKuduTest {
   }
 
   public static Schema getBasicSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(5);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(5);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_i", Type.INT32).build());
@@ -306,14 +312,14 @@ public class BaseKuduTest {
     return insert;
   }
 
-  static Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
+  static final Callback<Object, Object> defaultErrorCB = new Callback<Object, Object>() {
     @Override
     public Object call(Object arg) throws Exception {
       if (arg == null) return null;
       if (arg instanceof Exception) {
         LOG.warn("Got exception", (Exception) arg);
       } else {
-        LOG.warn("Got an error response back " + arg);
+        LOG.warn("Got an error response back {}", arg);
       }
       return new Exception("Can't recover from error, see previous WARN");
     }
@@ -386,8 +392,8 @@ public class BaseKuduTest {
 
       leader = tablet.getLeaderReplica();
       if (leader == null) {
-        LOG.info("Sleeping while waiting for a tablet LEADER to arise, currently slept " +
-        deadlineTracker.getElapsedMillis() + "ms");
+        LOG.info("Sleeping while waiting for a tablet LEADER to arise, currently slept {} ms",
+            deadlineTracker.getElapsedMillis());
         Thread.sleep(50);
       }
     }
@@ -424,7 +430,7 @@ public class BaseKuduTest {
           .getPort();
     }
     if (leaderPort == -1) {
-      fail("No leader master found after " + DEFAULT_SLEEP + " ms.");
+      fail(String.format("No leader master found after %d ms", DEFAULT_SLEEP));
     }
     return leaderPort;
   }

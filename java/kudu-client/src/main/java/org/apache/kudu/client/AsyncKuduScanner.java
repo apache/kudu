@@ -555,9 +555,7 @@ public final class AsyncKuduScanner {
     if (closed) {
       return Deferred.fromResult(null);
     }
-    final Deferred<RowResultIterator> d =
-        client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
-    return d;
+    return client.closeScanner(this).addCallback(closedCallback()); // TODO errBack ?
   }
 
   /** Callback+Errback invoked when the TabletServer closed our scanner.  */

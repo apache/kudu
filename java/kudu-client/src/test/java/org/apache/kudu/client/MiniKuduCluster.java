@@ -583,8 +583,8 @@ public class MiniKuduCluster implements AutoCloseable {
     private int numTservers = 3;
     private int defaultTimeoutMs = 50000;
     private boolean enableKerberos = false;
-    private List<String> extraTserverFlags = new ArrayList<>();
-    private List<String> extraMasterFlags = new ArrayList<>();
+    private final List<String> extraTserverFlags = new ArrayList<>();
+    private final List<String> extraMasterFlags = new ArrayList<>();
 
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
