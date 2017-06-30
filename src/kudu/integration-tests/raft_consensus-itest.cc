@@ -2484,7 +2484,8 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
   workload.set_timeout_allowed(true);
-  workload.set_write_timeout_millis(50);
+  workload.set_write_timeout_millis(150);
+  workload.set_payload_bytes(30000);
   workload.Setup();
   workload.Start();
 
