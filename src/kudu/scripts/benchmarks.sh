@@ -513,7 +513,11 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${FS_SCANINSERT_DISK}%_insert" fs-withdisk-insert
   load_and_generate_plot "${FS_SCANINSERT_DISK}%_scan%" fs-withdisk-scan
 
-  load_and_generate_plot "${DENSE_NODE_ITEST}%" dense-node-bench
+  load_and_generate_plot "${DENSE_NODE_ITEST}_time%" dense-node-bench-times
+  load_and_generate_plot "${DENSE_NODE_ITEST}_num%containers%" dense-node-bench-containers
+  load_and_generate_plot "${DENSE_NODE_ITEST}_num_blocks%" dense-node-bench-blocks
+  load_and_generate_plot "${DENSE_NODE_ITEST}_num_threads%" dense-node-bench-threads
+  load_and_generate_plot "${DENSE_NODE_ITEST}_num_bytes%" dense-node-bench-bytes
 
   # Generate all the pngs for all the mt-tablet tests
   for i in $(seq 0 $NUM_MT_TABLET_TESTS); do
