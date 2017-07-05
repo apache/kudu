@@ -20,7 +20,6 @@
 #include <csignal>
 #include <stdlib.h>
 
-#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -28,9 +27,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/strings/numbers.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
@@ -98,34 +94,6 @@ vector<string> MiniKdc::MakeArgv(const vector<string>& in_argv) {
 
 namespace {
 // Attempts to find the path to the specified Kerberos binary, storing it in 'path'.
-Status GetBinaryPath(const string& binary,
-                     const vector<string>& search,
-                     string* path) {
-  string p;
-
-  // First, check specified locations which are sometimes not on the PATH.
-  // This is necessary to check first so that the system Heimdal kerberos
-  // binaries won't be found first on OS X.
-  for (const auto& location : search) {
-    p = JoinPathSegments(location, binary);
-    if (Env::Default()->FileExists(p)) {
-      *path = p;
-      return Status::OK();
-    }
-  }
-
-  // Next check if the binary is on the PATH.
-  Status s = Subprocess::Call({ "which", binary }, "", &p);
-  if (s.ok()) {
-    StripTrailingNewline(&p);
-    *path = p;
-    return Status::OK();
-  }
-
-  return Status::NotFound("Unable to find binary", binary);
-}
-
-// Attempts to find the path to the specified Kerberos binary, storing it in 'path'.
 Status GetBinaryPath(const string& binary, string* path) {
   static const vector<string> kCommonLocations = {
     "/usr/local/opt/krb5/sbin", // Homebrew
@@ -135,10 +103,9 @@ Status GetBinaryPath(const string& binary, string* path) {
     "/usr/lib/mit/sbin", // SLES
     "/usr/sbin", // Linux
   };
-  return GetBinaryPath(binary, kCommonLocations, path);
+  return GetExecutablePath(binary, kCommonLocations, path);
 }
 } // namespace
-
 
 Status MiniKdc::Start() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, "starting KDC");
@@ -178,7 +145,7 @@ Status MiniKdc::Start() {
 
   const bool need_config_update = (options_.port == 0);
   // Wait for KDC to start listening on its ports and commencing operation.
-  RETURN_NOT_OK(WaitForKdcPorts());
+  RETURN_NOT_OK(WaitForUdpBind(kdc_process_->pid(), &options_.port, MonoDelta::FromSeconds(1)));
 
   if (need_config_update) {
     // If we asked for an ephemeral port, grab the actual ports and
@@ -259,67 +226,6 @@ Status MiniKdc::CreateKrb5Conf() const {
                                              options_.renew_lifetime, options_.ticket_lifetime);
   return WriteStringToFile(Env::Default(), file_contents,
                            JoinPathSegments(options_.data_root, "krb5.conf"));
-}
-
-Status MiniKdc::WaitForKdcPorts() {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 100, Substitute("waiting for KDC ports"));
-  // We have to use 'lsof' to figure out which ports the KDC bound to if we
-  // requested ephemeral ones. The KDC doesn't log the bound port or expose it
-  // in any other fashion, and re-implementing lsof involves parsing a lot of
-  // files in /proc/. So, requiring lsof for tests and parsing its output seems
-  // more straight-forward. We call lsof in a loop in case the kdc is slow to
-  // bind to the ports.
-
-  string lsof;
-  RETURN_NOT_OK(GetBinaryPath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
-
-  const vector<string> cmd = {
-    lsof, "-wbnP", "-Ffn",
-    "-p", std::to_string(kdc_process_->pid()),
-    "-a", "-i", "4UDP"};
-
-  string lsof_out;
-  for (int i = 1; ; i++) {
-    lsof_out.clear();
-    Status s = Subprocess::Call(cmd, "", &lsof_out);
-
-    if (s.ok()) {
-      StripTrailingNewline(&lsof_out);
-      break;
-    } else if (i > 10) {
-      return s;
-    }
-
-    SleepFor(MonoDelta::FromMilliseconds(i * i));
-  }
-
-  // The '-Ffn' flag gets lsof to output something like:
-  //   p19730
-  //   f123
-  //   n*:41254
-  // The first line is the pid. We ignore it.
-  // The second line is the file descriptor number. We ignore it.
-  // The third line has the bind address and port.
-  vector<string> lines = strings::Split(lsof_out, "\n");
-  int32_t port = -1;
-  if (lines.size() != 3 ||
-      lines[2].substr(0, 3) != "n*:" ||
-      !safe_strto32(lines[2].substr(3), &port) ||
-      port <= 0) {
-    return Status::RuntimeError("unexpected lsof output", lsof_out);
-  }
-  CHECK(port > 0 && port < std::numeric_limits<uint16_t>::max())
-      << "parsed invalid port: " << port;
-  VLOG(1) << "Determined bound KDC port: " << port;
-  if (options_.port == 0) {
-    options_.port = port;
-  } else {
-    // Sanity check: if KDC's port is already established, it's supposed to be
-    // written into the configuration files, so the process must bind to the
-    // already established port.
-    CHECK(options_.port == port);
-  }
-  return Status::OK();
 }
 
 Status MiniKdc::CreateUserPrincipal(const string& username) {

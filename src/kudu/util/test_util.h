@@ -22,6 +22,7 @@
 #include <functional>
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env.h"
@@ -108,6 +109,18 @@ void AssertEventually(const std::function<void(void)>& f,
 
 // Count the number of open file descriptors in use by this process.
 int CountOpenFds(Env* env);
+
+// Attempts to find the path to the executable, searching the provided locations
+// as well as the $PATH environment variable.
+Status GetExecutablePath(const std::string& binary,
+                         const std::vector<std::string>& search,
+                         std::string* path) WARN_UNUSED_RESULT;
+
+// Waits for the subprocess to bind to any listening TCP port, and returns the port.
+Status WaitForTcpBind(pid_t pid, uint16_t* port, MonoDelta timeout) WARN_UNUSED_RESULT;
+
+// Waits for the subprocess to bind to any listening UDP port, and returns the port.
+Status WaitForUdpBind(pid_t pid, uint16_t* port, MonoDelta timeout) WARN_UNUSED_RESULT;
 
 } // namespace kudu
 #endif

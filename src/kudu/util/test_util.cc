@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/util/test_util.h"
 
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -25,7 +26,9 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest-spi.h>
 
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
@@ -34,6 +37,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/spinlock_profiling.h"
+#include "kudu/util/subprocess.h"
 
 DEFINE_string(test_leave_files, "on_failure",
               "Whether to leave test files around after the test run. "
@@ -291,6 +295,97 @@ int CountOpenFds(Env* env) {
 
   // Exclude the fd opened to iterate over kProcSelfFd.
   return num_fds - 1;
+}
+
+Status GetExecutablePath(const string& binary,
+                         const vector<string>& search,
+                         string* path) {
+  string p;
+
+  // First, check specified locations. This is necessary to check first so that
+  // the system binaries won't be found before the specified search locations.
+  for (const auto& location : search) {
+    p = JoinPathSegments(location, binary);
+    if (Env::Default()->FileExists(p)) {
+      *path = p;
+      return Status::OK();
+    }
+  }
+
+  // Next check if the binary is on the PATH.
+  Status s = Subprocess::Call({ "which", binary }, "", &p);
+  if (s.ok()) {
+    StripTrailingNewline(&p);
+    *path = p;
+    return Status::OK();
+  }
+
+  return Status::NotFound("Unable to find binary", binary);
+}
+
+namespace {
+Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeout) {
+  // In general, processes do not expose the port they bind to, and
+  // reimplementing lsof involves parsing a lot of files in /proc/. So,
+  // requiring lsof for tests and parsing its output seems more
+  // straight-forward. We call lsof in a loop since it typically takes a long
+  // time for it to initialize and bind a port.
+
+  string lsof;
+  RETURN_NOT_OK(GetExecutablePath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
+
+  const vector<string> cmd = {
+    lsof, "-wbnP", "-Ffn",
+    "-p", std::to_string(pid),
+    "-a", "-i", kind
+  };
+
+  MonoTime deadline = MonoTime::Now() + timeout;
+  string lsof_out;
+
+  for (int64_t i = 1; ; i++) {
+    lsof_out.clear();
+    Status s = Subprocess::Call(cmd, "", &lsof_out);
+
+    if (s.ok()) {
+      StripTrailingNewline(&lsof_out);
+      break;
+    }
+    if (deadline < MonoTime::Now()) {
+      return s;
+    }
+
+    SleepFor(MonoDelta::FromMilliseconds(i * 10));
+  }
+
+  // The '-Ffn' flag gets lsof to output something like:
+  //   p19730
+  //   f123
+  //   n*:41254
+  // The first line is the pid. We ignore it.
+  // The second line is the file descriptor number. We ignore it.
+  // The third line has the bind address and port.
+  vector<string> lines = strings::Split(lsof_out, "\n");
+  int32_t p = -1;
+  if (lines.size() != 3 ||
+      lines[2].substr(0, 3) != "n*:" ||
+      !safe_strto32(lines[2].substr(3), &p) ||
+      p <= 0) {
+    return Status::RuntimeError("unexpected lsof output", lsof_out);
+  }
+  CHECK(p > 0 && p < std::numeric_limits<uint16_t>::max()) << "parsed invalid port: " << p;
+  VLOG(1) << "Determined bound port: " << p;
+  *port = p;
+  return Status::OK();
+}
+} // anonymous namespace
+
+Status WaitForTcpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
+  return WaitForBind(pid, port, "4TCP", timeout);
+}
+
+Status WaitForUdpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
+  return WaitForBind(pid, port, "4UDP", timeout);
 }
 
 } // namespace kudu

@@ -122,10 +122,6 @@ class MiniKdc {
   // Creates a krb5.conf in the data root.
   Status CreateKdcConf() const WARN_UNUSED_RESULT;
 
-  // Determine the ports that the KDC bound to. Will wait for the KDC if it is
-  // still initializing.
-  Status WaitForKdcPorts() WARN_UNUSED_RESULT;
-
   std::unique_ptr<Subprocess> kdc_process_;
   MiniKdcOptions options_;
 };
