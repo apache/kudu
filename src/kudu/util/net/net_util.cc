@@ -22,14 +22,16 @@
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <boost/functional/hash.hpp>
-#include <gflags/gflags.h>
+#include <functional>
+#include <memory>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <boost/functional/hash.hpp>
+#include <gflags/gflags.h>
+
 #include "kudu/gutil/endian.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -56,19 +58,42 @@
 DEFINE_bool(fail_dns_resolution, false, "Whether to fail all dns resolution, for tests.");
 TAG_FLAG(fail_dns_resolution, hidden);
 
+using std::function;
 using std::unordered_set;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
 namespace {
-struct AddrinfoDeleter {
-  void operator()(struct addrinfo* info) {
-    freeaddrinfo(info);
+
+using AddrInfo = unique_ptr<addrinfo, function<void(addrinfo*)>>;
+
+// An utility wrapper around getaddrinfo() call to convert the return code
+// of the libc library function into Status.
+Status GetAddrInfo(const string& hostname,
+                   const addrinfo& hints,
+                   const string& op_description,
+                   AddrInfo* info) {
+  addrinfo* res = nullptr;
+  const int rc = getaddrinfo(hostname.c_str(), nullptr, &hints, &res);
+  const int err = errno; // preserving the errno from the getaddrinfo() call
+  AddrInfo result(res, ::freeaddrinfo);
+  if (rc == 0) {
+    if (info != nullptr) {
+      info->swap(result);
+    }
+    return Status::OK();
   }
-};
+  const string err_msg = Substitute("unable to $0", op_description);
+  if (rc == EAI_SYSTEM) {
+    return Status::NetworkError(err_msg, ErrnoToString(err), err);
+  }
+  return Status::NetworkError(err_msg, gai_strerror(rc));
 }
+
+} // anonymous namespace
 
 HostPort::HostPort()
   : host_(""),
@@ -123,21 +148,14 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
-  struct addrinfo* res = nullptr;
-  int rc;
-  LOG_SLOW_EXECUTION(WARNING, 200,
-                     Substitute("resolving address for $0", host_)) {
-    rc = getaddrinfo(host_.c_str(), nullptr, &hints, &res);
+  AddrInfo result;
+  const string op_description = Substitute("resolve address for $0", host_);
+  LOG_SLOW_EXECUTION(WARNING, 200, op_description) {
+    RETURN_NOT_OK(GetAddrInfo(host_, hints, op_description, &result));
   }
-  if (rc != 0) {
-    return Status::NetworkError(
-      StringPrintf("Unable to resolve address '%s'", host_.c_str()),
-      gai_strerror(rc));
-  }
-  gscoped_ptr<addrinfo, AddrinfoDeleter> scoped_res(res);
-  for (; res != nullptr; res = res->ai_next) {
-    CHECK_EQ(res->ai_family, AF_INET);
-    struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr);
+  for (const addrinfo* ai = result.get(); ai != nullptr; ai = ai->ai_next) {
+    CHECK_EQ(ai->ai_family, AF_INET);
+    struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(ai->ai_addr);
     addr->sin_port = htons(port_);
     Sockaddr sockaddr(*addr);
     if (addresses) {
@@ -300,20 +318,15 @@ Status GetFQDN(string* hostname) {
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_CANONNAME;
-
-  struct addrinfo* result;
-  LOG_SLOW_EXECUTION(WARNING, 200,
-                     Substitute("looking up canonical hostname for localhost "
-                                "(eventual result was $0)", *hostname)) {
+  AddrInfo result;
+  const string op_description =
+      Substitute("look up canonical hostname for localhost '$0'", *hostname);
+  LOG_SLOW_EXECUTION(WARNING, 200, op_description) {
     TRACE_EVENT0("net", "getaddrinfo");
-    int rc = getaddrinfo(hostname->c_str(), nullptr, &hints, &result);
-    if (rc != 0) {
-      return Status::NetworkError("Unable to lookup FQDN", ErrnoToString(errno), errno);
-    }
+    RETURN_NOT_OK(GetAddrInfo(*hostname, hints, op_description, &result));
   }
 
   *hostname = result->ai_canonname;
-  freeaddrinfo(result);
   return Status::OK();
 }
 
