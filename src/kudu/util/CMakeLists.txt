@@ -130,6 +130,7 @@ set(UTIL_SRCS
   debug/trace_event_impl.cc
   debug/trace_event_impl_constants.cc
   debug/trace_event_synthetic_delay.cc
+  easy_json.cc
   env.cc env_posix.cc env_util.cc
   errno.cc
   faststring.cc
@@ -335,6 +336,7 @@ ADD_KUDU_TEST(callback_bind-test)
 ADD_KUDU_TEST(countdown_latch-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(debug-util-test)
+ADD_KUDU_TEST(easy_json-test)
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(env_util-test)
 ADD_KUDU_TEST(errno-test)
