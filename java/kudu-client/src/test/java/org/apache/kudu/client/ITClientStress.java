@@ -17,7 +17,6 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.Closeable;
@@ -26,13 +25,14 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Supplier;
 
 import org.junit.Test;
-
+import org.apache.kudu.client.SessionConfiguration.FlushMode;
 import org.apache.kudu.util.CapturingLogAppender;
 
 public class ITClientStress extends BaseKuduTest {
@@ -72,7 +72,9 @@ public class ITClientStress extends BaseKuduTest {
     } finally {
       pool.shutdown();
       assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
-      assertNull(thrown.get());
+      if (thrown.get() != null) {
+        throw new AssertionError(thrown.get());
+      }
     }
     assertFalse("log contained NPE",
         cla.getAppendedText().contains("NullPointerException"));
@@ -110,5 +112,56 @@ public class ITClientStress extends BaseKuduTest {
         };
       }
     });
+  }
+
+  /**
+   * Stress test which performs upserts from many sessions on different threads
+   * sharing the same KuduClient and KuduTable instance.
+   */
+  @Test(timeout=60000)
+  public void testMultipleSessions() throws Exception {
+    final String TABLE_NAME = "testMultipleSessions";
+    final int SECONDS_TO_RUN = 10;
+    final int NUM_THREADS = 60;
+    final KuduTable table = createTable(TABLE_NAME, basicSchema,
+        getBasicCreateTableOptions());
+    final AtomicInteger numUpserted = new AtomicInteger(0);
+    try (final KuduClient client =
+        new KuduClient.KuduClientBuilder(masterAddresses)
+        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+        .build()) {
+
+      runTasks(NUM_THREADS, SECONDS_TO_RUN, new Supplier<Callable<Void>>() {
+        @Override
+        public Callable<Void> get() {
+          return new Callable<Void>() {
+            @Override
+            public Void call() throws Exception {
+              KuduSession s = client.newSession();
+              s.setFlushMode(FlushMode.AUTO_FLUSH_SYNC);
+              try {
+                for (int i = 0; i < 100; i++) {
+                  Upsert u = table.newUpsert();
+                  u.getRow().addInt(0, i);
+                  u.getRow().addInt(1, 12345);
+                  u.getRow().addInt(2, 3);
+                  u.getRow().setNull(3);
+                  u.getRow().addBoolean(4, false);
+                  OperationResponse apply = s.apply(u);
+                  if (apply.hasRowError()) {
+                    throw new AssertionError(apply.getRowError().toString());
+                  }
+                  numUpserted.incrementAndGet();
+                }
+              } finally {
+                s.close();
+              }
+              return null;
+            }
+          };
+        }
+      });
+    }
+    LOG.info("Upserted {} rows", numUpserted.get());
   }
 }
