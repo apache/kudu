@@ -1,4 +1,4 @@
-#!/bin/bash -xe
+#!/bin/bash
 #
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -17,9 +17,10 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Tests that the Kudu client library can be installed outside
-# the build tree, that the installed headers are sane, and that
-# the sample code can be built and runs correctly.
+
+# This script verifies that the Kudu client library can be installed outside
+# the build tree, that the installed headers are sane, and that the sample code
+# can be built and runs correctly.
 
 # Clean up after the test. Must be idempotent.
 cleanup() {
@@ -39,6 +40,42 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+set -e
+set -o pipefail
+set -x
+
+wait_for_listen_port() {
+  local pid=$1
+  local expected_port=$2
+  local num_attempts=$3
+
+  local attempt=0
+  while [ true ]; do
+    # The lsof utility does not allow to distinguish between an existing
+    # process not listening to the specified port and a non-existing process
+    # by its return code. For the fast check let's verify that the process
+    # is still running.
+    if ! kill -0 $pid; then
+      return 1
+    fi
+    local ports=$(lsof -wbnP -Fn -p $pid -a -i 4TCP -a -s TCP:LISTEN | \
+        sed '1d;s/^[^:].*://')
+    for i in $ports; do
+      if [ $i -eq $expected_port ]; then
+        return 0
+      fi
+    done
+
+    attempt=$((attempt+1))
+    if [ $attempt -ge $num_attempts ]; then
+      break
+    fi
+    sleep 1
+  done
+
+  return 1
+}
 
 OUTPUT_DIR=$(cd $(dirname "$BASH_SOURCE"); pwd)
 
@@ -91,13 +128,13 @@ CMAKE_PREFIX_PATH=$PREFIX_DIR $CMAKE .
 make -j$(getconf _NPROCESSORS_ONLN)
 popd
 
-# Pick a unique localhost IP address so this can run in parallel with other
-# tests. This only works on Linux.
 LOCALHOST_IP=127.0.0.1
 if [ "$(uname)" == "Linux" ]; then
+  # Pick a unique localhost IP address so this can run in parallel with other
+  # tests. This only works on Linux.
   LOCALHOST_IP=127.$[($$ >> 8) & 0xff].$[$$ & 0xff].1
-  echo Using unique localhost IP $LOCALHOST_IP
 fi
+echo Using localhost IP $LOCALHOST_IP
 
 
 # Start master+ts
@@ -105,6 +142,7 @@ export TMPDIR=${TMPDIR:-/tmp}
 export TEST_TMPDIR=${TEST_TMPDIR:-$TMPDIR/kudutest-$UID}
 mkdir -p $TEST_TMPDIR
 BASE_DIR=$(mktemp -d $TEST_TMPDIR/client_samples-test.XXXXXXXX)
+MASTER_RPC_PORT=7051
 mkdir -p "$BASE_DIR/master/logs"
 $OUTPUT_DIR/kudu-master \
   --unlock_experimental_flags \
@@ -112,25 +150,42 @@ $OUTPUT_DIR/kudu-master \
   --log_dir=$BASE_DIR/master/logs \
   --fs_wal_dir=$BASE_DIR/master/wals \
   --fs_data_dirs=$BASE_DIR/master/data \
-  --webserver_interface=localhost \
+  --webserver_interface=$LOCALHOST_IP \
   --webserver_port=0 \
-  --rpc_bind_addresses=$LOCALHOST_IP &
+  --rpc_bind_addresses=$LOCALHOST_IP:$MASTER_RPC_PORT &
 MASTER_PID=$!
+
+TSERVER_RPC_PORT=7050
 mkdir -p "$BASE_DIR/ts/logs"
 $OUTPUT_DIR/kudu-tserver \
   --unlock_experimental_flags \
   --log_dir=$BASE_DIR/ts/logs \
   --fs_wal_dir=$BASE_DIR/ts/wals \
   --fs_data_dirs=$BASE_DIR/ts/data \
-  --rpc_bind_addresses=$LOCALHOST_IP \
+  --rpc_bind_addresses=$LOCALHOST_IP:$TSERVER_RPC_PORT \
   --local_ip_for_outbound_sockets=$LOCALHOST_IP \
-  --webserver_interface=localhost \
+  --webserver_interface=$LOCALHOST_IP \
   --webserver_port=0 \
-  --tserver_master_addrs=$LOCALHOST_IP &
+  --tserver_master_addrs=$LOCALHOST_IP:$MASTER_RPC_PORT &
 TS_PID=$!
 
-# Let them run for a bit.
-sleep 5
+# Make sure that at least it's possible to establish a TCP connection to the
+# master's and the tablet server's RPC ports before running the client sample
+# application.
+if ! wait_for_listen_port $MASTER_PID $MASTER_RPC_PORT 30; then
+  set +x
+  echo -----------------------------------------
+  echo master is not accepting connections
+  echo -----------------------------------------
+  exit 1
+fi
+if ! wait_for_listen_port $TS_PID $TSERVER_RPC_PORT 30; then
+  set +x
+  echo -----------------------------------------
+  echo tserver is not accepting connections
+  echo -----------------------------------------
+  exit 1
+fi
 
 # Run the samples.
 $SAMPLES_DIR/sample $LOCALHOST_IP
