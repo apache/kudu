@@ -317,7 +317,6 @@ class Connection extends SimpleChannelUpstreamHandler {
       // bit confused that we are trying to send data and misinterpret it as a
       // renegotiation attempt, and throw an SSLException. So, we just ignore any
       // SSLException if we've already attempted to close.
-      LOG.debug("{} ignoring SSLException: already disconnected", getLogPrefix());
     } else {
       LOG.error("{} unexpected exception from downstream on {}: {}", getLogPrefix(), c, e);
     }
