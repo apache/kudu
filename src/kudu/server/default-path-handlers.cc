@@ -28,7 +28,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <gperftools/malloc_extension.h>
-#include <mustache.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -36,6 +35,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/pprof-path-handlers.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/histogram.pb.h"
@@ -45,10 +45,8 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 
-using mustache::RenderTemplate;
 using std::ifstream;
 using std::string;
-using std::endl;
 using strings::Substitute;
 
 DEFINE_int64(web_log_bytes, 1024 * 1024,
@@ -86,14 +84,11 @@ struct Tags {
 
 // Writes the last FLAGS_web_log_bytes of the INFO logfile to a webpage
 // Note to get best performance, set GLOG_logbuflevel=-1 to prevent log buffering
-static void LogsHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
-  bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
-  Tags tags(as_text);
+static void LogsHandler(const Webserver::WebRequest& req, EasyJson* output) {
+  (*output)["raw"] = (req.parsed_args.find("raw") != req.parsed_args.end());
   string logfile;
   GetFullLogFilename(google::INFO, &logfile);
-  (*output) << tags.header <<"INFO logs" << tags.end_header << endl;
-  (*output) << "Log path is: " << logfile << endl;
-
+  (*output)["logfile"] = logfile;
   struct stat file_stat;
   if (stat(logfile.c_str(), &file_stat) == 0) {
     size_t size = file_stat.st_size;
@@ -104,12 +99,10 @@ static void LogsHandler(const Webserver::WebRequest& req, std::ostringstream* ou
     // file is likely to be small, this is unlikely to be an issue in
     // practice.
     log.seekg(seekpos);
-    (*output) << tags.line_break <<"Showing last " << FLAGS_web_log_bytes
-              << " bytes of log" << endl;
-    (*output) << tags.line_break << tags.pre_tag << log.rdbuf() << tags.end_pre_tag;
-
-  } else {
-    (*output) << tags.line_break << "Couldn't open INFO log file: " << logfile;
+    (*output)["web_log_bytes"] = FLAGS_web_log_bytes;
+    std::ostringstream ss;
+    ss << log.rdbuf();
+    (*output)["log"] = ss.str();
   }
 }
 
@@ -193,10 +186,14 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
 }
 
 void AddDefaultPathHandlers(Webserver* webserver) {
-  webserver->RegisterPathHandler("/logs", "Logs", LogsHandler);
-  webserver->RegisterPathHandler("/varz", "Flags", FlagsHandler);
-  webserver->RegisterPathHandler("/memz", "Memory (total)", MemUsageHandler);
-  webserver->RegisterPathHandler("/mem-trackers", "Memory (detail)", MemTrackersHandler);
+  bool styled = true;
+  bool on_nav_bar = true;
+  webserver->RegisterPathHandler("/logs", "Logs", LogsHandler, styled, on_nav_bar);
+  webserver->RegisterPrerenderedPathHandler("/varz", "Flags", FlagsHandler, styled, on_nav_bar);
+  webserver->RegisterPrerenderedPathHandler("/memz", "Memory (total)", MemUsageHandler,
+                                            styled, on_nav_bar);
+  webserver->RegisterPrerenderedPathHandler("/mem-trackers", "Memory (detail)", MemTrackersHandler,
+                                            styled, on_nav_bar);
 
   AddPprofPathHandlers(webserver);
 }
@@ -237,15 +234,18 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
-  Webserver::PathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics, _1, _2);
+  Webserver::PrerenderedPathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics,
+                                                                   _1, _2);
   bool not_styled = false;
   bool not_on_nav_bar = false;
   bool is_on_nav_bar = true;
-  webserver->RegisterPathHandler("/metrics", "Metrics", callback, not_styled, is_on_nav_bar);
+  webserver->RegisterPrerenderedPathHandler("/metrics", "Metrics", callback,
+                                            not_styled, is_on_nav_bar);
 
   // The old name -- this is preserved for compatibility with older releases of
   // monitoring software which expects the old name.
-  webserver->RegisterPathHandler("/jsonmetricz", "Metrics", callback, not_styled, not_on_nav_bar);
+  webserver->RegisterPrerenderedPathHandler("/jsonmetricz", "Metrics", callback,
+                                            not_styled, not_on_nav_bar);
 }
 
 } // namespace kudu

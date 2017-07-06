@@ -31,14 +31,14 @@ using std::string;
 
 namespace kudu {
 
-class JsonBuilderTest: public KuduTest {};
+class EasyJsonTest: public KuduTest {};
 
-TEST_F(JsonBuilderTest, TestNull) {
+TEST_F(EasyJsonTest, TestNull) {
   EasyJson ej;
   ASSERT_TRUE(ej.value().IsNull());
 }
 
-TEST_F(JsonBuilderTest, TestBasic) {
+TEST_F(EasyJsonTest, TestBasic) {
   EasyJson ej;
   ej.SetObject();
   ej.Set("1", true);
@@ -56,7 +56,7 @@ TEST_F(JsonBuilderTest, TestBasic) {
   ASSERT_EQ(string(v["7"].GetString()), "string");
 }
 
-TEST_F(JsonBuilderTest, TestNested) {
+TEST_F(EasyJsonTest, TestNested) {
   EasyJson ej;
   ej.SetObject();
   ej.Get("nested").SetObject();
@@ -70,7 +70,7 @@ TEST_F(JsonBuilderTest, TestNested) {
   ASSERT_EQ(ej.value()["nested_array"][SizeType(1)].GetInt(), 2);
 }
 
-TEST_F(JsonBuilderTest, TestCompactSyntax) {
+TEST_F(EasyJsonTest, TestCompactSyntax) {
   EasyJson ej;
   ej["nested"]["nested_attr"] = true;
   ASSERT_EQ(ej.value()["nested"]["nested_attr"].GetBool(), true);
@@ -82,7 +82,19 @@ TEST_F(JsonBuilderTest, TestCompactSyntax) {
   ASSERT_EQ(ej.value()["nested_array"][SizeType(1)].GetInt(), 2);
 }
 
-TEST_F(JsonBuilderTest, TestAllocatorLifetime) {
+TEST_F(EasyJsonTest, TestComplexInitializer) {
+  EasyJson ej;
+  ej = EasyJson::kObject;
+  ASSERT_TRUE(ej.value().IsObject());
+
+  EasyJson nested_arr = ej.Set("nested_arr", EasyJson::kArray);
+  ASSERT_TRUE(nested_arr.value().IsArray());
+
+  EasyJson nested_obj = nested_arr.PushBack(EasyJson::kObject);
+  ASSERT_TRUE(ej["nested_arr"][0].value().IsObject());
+}
+
+TEST_F(EasyJsonTest, TestAllocatorLifetime) {
   EasyJson* root = new EasyJson;
   EasyJson child = (*root)["child"];
   delete root;

@@ -270,9 +270,9 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
     { "/tracing/json/end_recording_compressed", kEndRecordingCompressed },
     { "/tracing/json/simple_dump", kSimpleDump } };
 
-  typedef pair<string, Handler> HandlerPair;
+  typedef pair<const string, Handler> HandlerPair;
   for (const HandlerPair& e : handlers) {
-    server->RegisterPathHandler(
+    server->RegisterPrerenderedPathHandler(
       e.first, "",
       boost::bind(&HandleRequest, e.second, _1, _2),
       false /* styled */, false /* is_on_nav_bar */);

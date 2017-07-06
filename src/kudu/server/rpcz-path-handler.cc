@@ -72,9 +72,9 @@ void RpczPathHandler(const shared_ptr<Messenger>& messenger,
 } // anonymous namespace
 
 void AddRpczPathHandlers(const shared_ptr<Messenger>& messenger, Webserver* webserver) {
-  webserver->RegisterPathHandler("/rpcz", "RPCs",
-                                 boost::bind(RpczPathHandler, messenger, _1, _2),
-                                 false, true);
+  webserver->RegisterPrerenderedPathHandler("/rpcz", "RPCs",
+                                            boost::bind(RpczPathHandler, messenger, _1, _2),
+                                            false, true);
 }
 
 } // namespace kudu

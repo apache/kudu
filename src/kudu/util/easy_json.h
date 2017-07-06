@@ -47,7 +47,21 @@ namespace kudu {
 // built rapidjson Value.
 class EasyJson {
  public:
+  // Used for initializing EasyJson's with complex types.
+  // For example:
+  //
+  //  EasyJson array;
+  //  EasyJson nested = array.PushBack(EasyJson::kObject);
+  //  nested["attr"] = "val";
+  //  // array = [ { "attr": "val" } ]
+  enum ComplexTypeInitializer {
+    kObject,
+    kArray
+  };
+
   EasyJson();
+  // Initializes the EasyJson object with the given type.
+  explicit EasyJson(ComplexTypeInitializer type);
   ~EasyJson() = default;
 
   // Returns the child EasyJson associated with key.
@@ -81,34 +95,41 @@ class EasyJson {
   EasyJson operator[](int index);
 
   // Sets the underlying Value equal to val.
+  // Returns a reference to the object itself.
   //
   // 'val' can be a bool, int32_t, int64_t, double,
-  // char*, or string.
+  // char*, string, or ComplexTypeInitializer.
+  EasyJson& operator=(const std::string& val);
   template<typename T>
   EasyJson& operator=(T val);
 
   // Sets the underlying Value to an object.
+  // Returns a reference to the object itself.
   //
   // i.e. after calling SetObject(),
   // value().IsObject() == true
   EasyJson& SetObject();
   // Sets the underlying Value to an array.
+  // Returns a reference to the object itself.
   //
   // i.e. after calling SetArray(),
   // value().IsArray() == true
   EasyJson& SetArray();
 
   // Associates val with key.
+  // Returns the child object.
   //
   // If this EasyJson's underlying Value is not an object
   // (i.e. !this->value().IsObject()), then its Value is
   // coerced to an object, overwriting the old Value.
   // If the given key does not exist, a new child entry
   // is created with the given value.
+  EasyJson Set(const std::string& key, const std::string& val);
   template<typename T>
   EasyJson Set(const std::string& key, T val);
 
   // Stores val at index.
+  // Returns the child object.
   //
   // If this EasyJson's underlying Value is not an array
   // (i.e. !this->value().IsArray()), then its Value is
@@ -116,19 +137,25 @@ class EasyJson {
   // If index >= this->value().Size(), then the underlying
   // array's size is increased to index + 1 (new indices
   // are filled with Null values).
+  EasyJson Set(int index, const std::string& val);
   template<typename T>
   EasyJson Set(int index, T val);
 
   // Appends val to the underlying array.
+  // Returns a reference to the new child object.
   //
   // If this EasyJson's underlying Value is not an array
   // (i.e. !this->value().IsArray()), then its Value is
   // coerced to an array, overwriting the old Value.
+  EasyJson PushBack(const std::string& val);
   template<typename T>
   EasyJson PushBack(T val);
 
   // Returns a reference to the underlying Value.
   rapidjson::Value& value() const { return *value_; }
+
+  // Returns a string representation of the underlying json.
+  std::string ToString() const;
 
  private:
   // One instance of EasyJsonAllocator is shared among a root

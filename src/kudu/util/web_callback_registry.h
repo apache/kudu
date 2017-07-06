@@ -23,9 +23,18 @@
 
 #include <boost/function.hpp>
 
+#include "kudu/util/easy_json.h"
+
 namespace kudu {
 
 // Interface for registering webserver callbacks.
+//
+// To register a webserver callback for /example/path:
+//
+// 1. Define a PathHandlerCallback that accepts an EasyJson
+//    object and fills out its fields with relevant information.
+// 2. Call RegisterPathHandler("/example/path", ...)
+// 3. Create the file $KUDU_HOME/www/example/path.mustache
 class WebCallbackRegistry {
  public:
   typedef std::map<std::string, std::string> ArgumentMap;
@@ -44,8 +53,14 @@ class WebCallbackRegistry {
     std::string post_data;
   };
 
-  typedef boost::function<void (const WebRequest& args, std::ostringstream* output)>
+  // A function that adds members to the JSON object 'output' to be
+  // rendered in an HTML template.
+  typedef boost::function<void (const WebRequest& args, EasyJson* output)>
       PathHandlerCallback;
+
+  // A function that streams fully rendered HTML to 'output'.
+  typedef boost::function<void (const WebRequest& args, std::ostringstream* output)>
+      PrerenderedPathHandlerCallback;
 
   virtual ~WebCallbackRegistry() {}
 
@@ -58,9 +73,18 @@ class WebCallbackRegistry {
   // footers.
   // The first registration's choice of is_styled overrides all
   // subsequent registrations for that URL.
+  // For each call to RegisterPathHandler(), the file $KUDU_HOME/www<path>.mustache
+  // should exist.
   virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
                                    const PathHandlerCallback& callback,
-                                   bool is_styled = true, bool is_on_nav_bar = true) = 0;
+                                   bool is_styled, bool is_on_nav_bar) = 0;
+
+  // Same as RegisterPathHandler(), except that callback produces prerendered HTML.
+  // Use RegisterPathHandler() with a mustache template instead.
+  virtual void RegisterPrerenderedPathHandler(const std::string& path, const std::string& alias,
+                                              const PrerenderedPathHandlerCallback& callback,
+                                              bool is_styled,
+                                              bool is_on_nav_bar) = 0;
 };
 
 } // namespace kudu

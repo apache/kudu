@@ -269,9 +269,11 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
         Bind(&GetInVoluntaryContextSwitches)));
 
   if (web) {
-    WebCallbackRegistry::PathHandlerCallback thread_callback =
+    WebCallbackRegistry::PrerenderedPathHandlerCallback thread_callback =
         bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
-    DCHECK_NOTNULL(web)->RegisterPathHandler("/threadz", "Threads", thread_callback);
+    DCHECK_NOTNULL(web)->RegisterPrerenderedPathHandler("/threadz", "Threads", thread_callback,
+                                                        true /* is_styled*/,
+                                                        true /* is_on_nav_bar */);
   }
   return Status::OK();
 }

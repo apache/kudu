@@ -28,8 +28,9 @@
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <mustache.h>
 #include <squeasel.h>
 
 #include "kudu/gutil/map-util.h"
@@ -42,10 +43,12 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
@@ -54,8 +57,9 @@
 typedef sig_t sighandler_t;
 #endif
 
-using std::make_pair;
+using mustache::RenderTemplate;
 using std::ostringstream;
+using std::stringstream;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -91,16 +95,16 @@ Webserver::~Webserver() {
   STLDeleteValues(&path_handlers_);
 }
 
-void Webserver::RootHandler(const Webserver::WebRequest& args, ostringstream* output) {
-  (*output) << "<h2>Status Pages</h2>";
+void Webserver::RootHandler(const Webserver::WebRequest& /* args */, EasyJson* output) {
+  EasyJson path_handlers = output->Set("path_handlers", EasyJson::kArray);
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
-      (*output) << "<a href=\"" << handler.first << "\">" << handler.second->alias() << "</a><br/>";
+      EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
+      path_handler["path"] = handler.first;
+      path_handler["alias"] = handler.second->alias();
     }
   }
-  (*output) << "<hr/>\n";
-  (*output) << "<h2>Version Info</h2>\n";
-  (*output) << "<pre>" << EscapeForHtmlToString(VersionInfo::GetAllVersionInfo()) << "</pre>";
+  (*output)["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
@@ -256,10 +260,10 @@ Status Webserver::Start() {
   }
 
   PathHandlerCallback default_callback =
-    std::bind<void>(std::mem_fn(&Webserver::RootHandler),
-                    this, std::placeholders::_1, std::placeholders::_2);
+      std::bind<void>(std::mem_fn(&Webserver::RootHandler),
+                      this, std::placeholders::_1, std::placeholders::_2);
 
-  RegisterPathHandler("/", "Home", default_callback);
+  RegisterPathHandler("/", "Home", default_callback, true /* styled */, true /* on_nav_bar */);
 
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(GetBoundAddresses(&addrs));
@@ -365,7 +369,6 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
   return RunPathHandler(*handler, connection, request_info);
 }
 
-
 int Webserver::RunPathHandler(const PathHandler& handler,
                               struct sq_connection* connection,
                               struct sq_request_info* request_info) {
@@ -415,14 +418,18 @@ int Webserver::RunPathHandler(const PathHandler& handler,
     use_style = false;
   }
 
-  ostringstream output;
-  if (use_style) BootstrapPageHeader(&output);
-  for (const PathHandlerCallback& callback_ : handler.callbacks()) {
-    callback_(req, &output);
-  }
-  if (use_style) BootstrapPageFooter(&output);
+  ostringstream content;
+  handler.callback()(req, &content);
 
-  string str = output.str();
+  string full_content;
+  if (use_style) {
+    stringstream output;
+    RenderMainTemplate(content.str(), &output);
+    full_content = output.str();
+  } else {
+    full_content = content.str();
+  }
+
   // Without styling, render the page as plain text
   string headers = strings::Substitute(
       "HTTP/1.1 200 OK\r\n"
@@ -431,69 +438,117 @@ int Webserver::RunPathHandler(const PathHandler& handler,
       "X-Frame-Options: $2\r\n"
       "\r\n",
       use_style ? "text/html" : "text/plain",
-      str.length(),
+      full_content.length(),
       FLAGS_webserver_x_frame_options);
   // Make sure to use sq_write for printing the body; sq_printf truncates at 8kb
   sq_write(connection, headers.c_str(), headers.length());
-  sq_write(connection, str.c_str(), str.length());
+  sq_write(connection, full_content.c_str(), full_content.length());
   return 1;
 }
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  std::lock_guard<RWMutex> l(lock_);
-  auto it = path_handlers_.find(path);
-  if (it == path_handlers_.end()) {
-    it = path_handlers_.insert(
-        make_pair(path, new PathHandler(is_styled, is_on_nav_bar, alias))).first;
-  }
-  it->second->AddCallback(callback);
+  string render_path = (path == "/") ? "/home" : path;
+  auto wrapped_cb = [=](const WebRequest& args, ostringstream* output) {
+    EasyJson ej;
+    callback(args, &ej);
+    stringstream out;
+    Render(render_path, ej, is_styled, &out);
+    (*output) << out.rdbuf();
+  };
+  RegisterPrerenderedPathHandler(path, alias, wrapped_cb, is_styled, is_on_nav_bar);
 }
 
-const char* const kPageHeader = "<!DOCTYPE html>"
-" <html>"
-"   <head><title>Kudu</title>"
-" <meta charset='utf-8'/>"
-" <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
-" <script src='/jquery-1.11.1.min.js' defer></script>"
-" <script src='/bootstrap/js/bootstrap.min.js' defer></script>"
-" <link href='/kudu.css' rel='stylesheet' />"
-" </head>"
-" <body>";
+void Webserver::RegisterPrerenderedPathHandler(const string& path, const string& alias,
+    const PrerenderedPathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
+  std::lock_guard<RWMutex> l(lock_);
+  InsertOrDie(&path_handlers_, path, new PathHandler(is_styled, is_on_nav_bar, alias, callback));
+}
 
-static const char* const kNavigationBarPrefix =
-"<div class='navbar navbar-inverse navbar-fixed-top'>"
-"      <div class='navbar-inner'>"
-"        <div class='container-fluid'>"
-"          <a href='/'>"
-"            <img src=\"/logo.png\" width='61' height='45' alt=\"Kudu\" style=\"float:left\"/>"
-"          </a>"
-"          <div class='nav-collapse collapse'>"
-"            <ul class='nav'>";
+string Webserver::MustachePartialTag(const string& path) const {
+  return Substitute("{{> $0.mustache}}", path);
+}
 
-static const char* const kNavigationBarSuffix =
-"            </ul>"
-"          </div>"
-"        </div>"
-"      </div>"
-"    </div>"
-"    <div class='container-fluid'>";
+bool Webserver::MustacheTemplateAvailable(const string& path) const {
+  if (!static_pages_available()) {
+    return false;
+  }
+  return Env::Default()->FileExists(Substitute("$0$1.mustache", opts_.doc_root, path));
+}
 
-void Webserver::BootstrapPageHeader(ostringstream* output) {
-  (*output) << kPageHeader;
-  (*output) << kNavigationBarPrefix;
+static const char* const kMainTemplate = R"(
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Kudu</title>
+    <meta charset='utf-8'/>
+    <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />
+    <script src='/jquery-1.11.1.min.js' defer></script>
+    <script src='/bootstrap/js/bootstrap.min.js' defer></script>
+    <link href='/kudu.css' rel='stylesheet' />
+  </head>
+  <body>
+    <div class='navbar navbar-inverse navbar-fixed-top'>
+      <div class='navbar-inner'>
+        <div class='container-fluid'>
+          <a href='/'>
+            <img src="/logo.png" width='61' height='45' alt="Kudu" style="float:left"/>
+          </a>
+          <div class='nav-collapse collapse'>
+            <ul class='nav'>
+              {{#path_handlers}}
+              <li><a href="{{path}}">{{alias}}</a></li>
+              {{/path_handlers}}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class='container-fluid'>
+      {{^static_pages_available}}
+      <div style="color: red">
+        <strong>Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root
+        flag to fix page styling.</strong>
+      </div>
+      {{/static_pages_available}}
+      {{{content}}}
+    </div>
+    {{#footer_html}}
+    <footer class="footer"><div class="container text-muted">
+      {{{.}}}
+    </div></footer>
+    {{/footer_html}}
+  </body>
+</html>
+)";
+
+void Webserver::RenderMainTemplate(const string& content, stringstream* output) {
+  EasyJson ej;
+  ej["static_pages_available"] = static_pages_available();
+  ej["content"] = content;
+  {
+    shared_lock<RWMutex> l(lock_);
+    ej["footer_html"] = footer_html_;
+  }
+  EasyJson path_handlers = ej.Set("path_handlers", EasyJson::kArray);
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
-      (*output) << "<li><a href=\"" << handler.first << "\">" << handler.second->alias()
-                << "</a></li>";
+      EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
+      path_handler["path"] = handler.first;
+      path_handler["alias"] = handler.second->alias();
     }
   }
-  (*output) << kNavigationBarSuffix;
+  RenderTemplate(kMainTemplate, opts_.doc_root, ej.value(), output);
+}
 
-  if (!static_pages_available()) {
-    (*output) << "<div style=\"color: red\"><strong>"
-              << "Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root "
-              << "flag to fix page styling.</strong></div>\n";
+void Webserver::Render(const string& path, const EasyJson& ej, bool use_style,
+                       stringstream* output) {
+  if (MustacheTemplateAvailable(path)) {
+    RenderTemplate(MustachePartialTag(path), opts_.doc_root, ej.value(), output);
+  } else if (use_style) {
+    (*output) << "<pre>" << ej.ToString() << "</pre>";
+  } else {
+    (*output) << ej.ToString();
   }
 }
 
@@ -504,17 +559,6 @@ bool Webserver::static_pages_available() const {
 void Webserver::set_footer_html(const std::string& html) {
   std::lock_guard<RWMutex> l(lock_);
   footer_html_ = html;
-}
-
-void Webserver::BootstrapPageFooter(ostringstream* output) {
-  shared_lock<RWMutex> l(lock_);
-  *output << "</div>\n"; // end bootstrap 'container' div
-  if (!footer_html_.empty()) {
-    *output << "<footer class=\"footer\"><div class=\"container text-muted\">";
-    *output << footer_html_;
-    *output << "</div></footer>";
-  }
-  *output << "</body></html>";
 }
 
 } // namespace kudu

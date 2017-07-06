@@ -59,9 +59,14 @@ class Webserver : public WebCallbackRegistry {
   // to the world. Requires that the server has been Start()ed.
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
 
-  virtual void RegisterPathHandler(const std::string& path, const std::string& alias,
-                                   const PathHandlerCallback& callback,
-                                   bool is_styled = true, bool is_on_nav_bar = true) OVERRIDE;
+  void RegisterPathHandler(const std::string& path, const std::string& alias,
+                           const PathHandlerCallback& callback,
+                           bool is_styled, bool is_on_nav_bar) override;
+
+  void RegisterPrerenderedPathHandler(const std::string& path, const std::string& alias,
+                                      const PrerenderedPathHandlerCallback& callback,
+                                      bool is_styled,
+                                      bool is_on_nav_bar) override;
 
   // Change the footer HTML to be displayed at the bottom of all styled web pages.
   void set_footer_html(const std::string& html);
@@ -72,19 +77,17 @@ class Webserver : public WebCallbackRegistry {
   // Container class for a list of path handler callbacks for a single URL.
   class PathHandler {
    public:
-    PathHandler(bool is_styled, bool is_on_nav_bar, std::string alias)
+    PathHandler(bool is_styled, bool is_on_nav_bar, std::string alias,
+                PrerenderedPathHandlerCallback callback)
         : is_styled_(is_styled),
           is_on_nav_bar_(is_on_nav_bar),
-          alias_(std::move(alias)) {}
-
-    void AddCallback(const PathHandlerCallback& callback) {
-      callbacks_.push_back(callback);
-    }
+          alias_(std::move(alias)),
+          callback_(std::move(callback)) {}
 
     bool is_styled() const { return is_styled_; }
     bool is_on_nav_bar() const { return is_on_nav_bar_; }
     const std::string& alias() const { return alias_; }
-    const std::vector<PathHandlerCallback>& callbacks() const { return callbacks_; }
+    const PrerenderedPathHandlerCallback& callback() const { return callback_; }
 
    private:
     // If true, the page appears is rendered styled.
@@ -96,8 +99,8 @@ class Webserver : public WebCallbackRegistry {
     // Alias used when displaying this link on the nav bar.
     std::string alias_;
 
-    // List of callbacks to render output for this page, called in order.
-    std::vector<PathHandlerCallback> callbacks_;
+    // Callback to render output for this page.
+    PrerenderedPathHandlerCallback callback_;
   };
 
   bool static_pages_available() const;
@@ -105,12 +108,22 @@ class Webserver : public WebCallbackRegistry {
   // Build the string to pass to mongoose specifying where to bind.
   Status BuildListenSpec(std::string* spec) const WARN_UNUSED_RESULT;
 
-  // Renders a common Bootstrap-styled header
-  void BootstrapPageHeader(std::ostringstream* output);
+  // Returns a mustache tag that renders the partial at path when
+  // passed to mustache::RenderTemplate.
+  std::string MustachePartialTag(const std::string& path) const;
 
-  // Renders a common Bootstrap-styled footer. Must be used in conjunction with
-  // BootstrapPageHeader.
-  void BootstrapPageFooter(std::ostringstream* output);
+  // Returns whether or not a mustache template corresponding
+  // to the given path can be found.
+  bool MustacheTemplateAvailable(const std::string& path) const;
+
+  // Renders the main HTML template with the pre-rendered string 'content'
+  // in the main body of the page, into 'output'.
+  void RenderMainTemplate(const std::string& content, std::stringstream* output);
+
+  // Renders the template corresponding to 'path' (if available), using
+  // fields in 'ej'.
+  void Render(const std::string& path, const EasyJson& ej, bool use_style,
+              std::stringstream* output);
 
   // Dispatch point for all incoming requests.
   // Static so that it can act as a function pointer, and then call the next method
@@ -127,7 +140,7 @@ class Webserver : public WebCallbackRegistry {
                                       const char* message);
 
   // Registered to handle "/", and prints a list of available URIs
-  void RootHandler(const WebRequest& args, std::ostringstream* output);
+  void RootHandler(const WebRequest& args, EasyJson* output);
 
   // Builds a map of argument name to argument value from a typical URL argument
   // string (that is, "key1=value1&key2=value2.."). If no value is given for a

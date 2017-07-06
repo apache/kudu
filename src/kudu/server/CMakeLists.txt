@@ -83,13 +83,14 @@ set(SERVER_PROCESS_SRCS
 
 add_library(server_process ${SERVER_PROCESS_SRCS})
 target_link_libraries(server_process
-  server_base_proto
-  server_common
-  kudu_common
-  kudu_fs
   gutil
   krpc
+  kudu_common
+  kudu_fs
   kudu_util
+  mustache
+  server_base_proto
+  server_common
   squeasel)
 
 # This module depends on tcmalloc and profiler directly, so need to make

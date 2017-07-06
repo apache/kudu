@@ -68,39 +68,39 @@ TabletServerPathHandlers::~TabletServerPathHandlers() {
 }
 
 Status TabletServerPathHandlers::Register(Webserver* server) {
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/scans", "Scans",
     boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/tablets", "Tablets",
     boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/tablet", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/transactions", "",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/tablet-rowsetlayout-svg", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/tablet-consensus-status", "",
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/log-anchors", "",
     boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/dashboards", "Dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
-  server->RegisterPathHandler(
+  server->RegisterPrerenderedPathHandler(
     "/maintenance-manager", "",
     boost::bind(&TabletServerPathHandlers::HandleMaintenanceManagerPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);

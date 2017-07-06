@@ -589,21 +589,26 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
 Status MasterPathHandlers::Register(Webserver* server) {
   bool is_styled = true;
   bool is_on_nav_bar = true;
-  server->RegisterPathHandler("/tablet-servers", "Tablet Servers",
-                              boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
-                              is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/tables", "Tables",
-                              boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
-                              is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/table", "",
-                              boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
-                              is_styled, false);
-  server->RegisterPathHandler("/masters", "Masters",
-                              boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
-                              is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/dump-entities", "Dump Entities",
-                              boost::bind(&MasterPathHandlers::HandleDumpEntities, this, _1, _2),
-                              false, false);
+  server->RegisterPrerenderedPathHandler(
+      "/tablet-servers", "Tablet Servers",
+      boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
+      is_styled, is_on_nav_bar);
+  server->RegisterPrerenderedPathHandler(
+      "/tables", "Tables",
+      boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
+      is_styled, is_on_nav_bar);
+  server->RegisterPrerenderedPathHandler(
+      "/table", "",
+      boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
+      is_styled, false);
+  server->RegisterPrerenderedPathHandler(
+      "/masters", "Masters",
+      boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
+      is_styled, is_on_nav_bar);
+  server->RegisterPrerenderedPathHandler(
+      "/dump-entities", "Dump Entities",
+      boost::bind(&MasterPathHandlers::HandleDumpEntities, this, _1, _2),
+      false, false);
   return Status::OK();
 }
 
