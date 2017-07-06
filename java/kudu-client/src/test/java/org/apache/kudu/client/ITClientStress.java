@@ -129,42 +129,36 @@ public class ITClientStress extends BaseKuduTest {
     final KuduTable table = createTable(TABLE_NAME, basicSchema,
         getBasicCreateTableOptions());
     final AtomicInteger numUpserted = new AtomicInteger(0);
-    try (final KuduClient client =
-        new KuduClient.KuduClientBuilder(masterAddresses)
-        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
-        .build()) {
-
-      runTasks(NUM_THREADS, SECONDS_TO_RUN, new Supplier<Callable<Void>>() {
-        @Override
-        public Callable<Void> get() {
-          return new Callable<Void>() {
-            @Override
-            public Void call() throws Exception {
-              KuduSession s = client.newSession();
-              s.setFlushMode(FlushMode.AUTO_FLUSH_SYNC);
-              try {
-                for (int i = 0; i < 100; i++) {
-                  Upsert u = table.newUpsert();
-                  u.getRow().addInt(0, i);
-                  u.getRow().addInt(1, 12345);
-                  u.getRow().addInt(2, 3);
-                  u.getRow().setNull(3);
-                  u.getRow().addBoolean(4, false);
-                  OperationResponse apply = s.apply(u);
-                  if (apply.hasRowError()) {
-                    throw new AssertionError(apply.getRowError().toString());
-                  }
-                  numUpserted.incrementAndGet();
+    runTasks(NUM_THREADS, SECONDS_TO_RUN, new Supplier<Callable<Void>>() {
+      @Override
+      public Callable<Void> get() {
+        return new Callable<Void>() {
+          @Override
+          public Void call() throws Exception {
+            KuduSession s = syncClient.newSession();
+            s.setFlushMode(FlushMode.AUTO_FLUSH_SYNC);
+            try {
+              for (int i = 0; i < 100; i++) {
+                Upsert u = table.newUpsert();
+                u.getRow().addInt(0, i);
+                u.getRow().addInt(1, 12345);
+                u.getRow().addInt(2, 3);
+                u.getRow().setNull(3);
+                u.getRow().addBoolean(4, false);
+                OperationResponse apply = s.apply(u);
+                if (apply.hasRowError()) {
+                  throw new AssertionError(apply.getRowError().toString());
                 }
-              } finally {
-                s.close();
+                numUpserted.incrementAndGet();
               }
-              return null;
+            } finally {
+              s.close();
             }
-          };
-        }
-      });
-    }
+            return null;
+          }
+        };
+      }
+    });
     LOG.info("Upserted {} rows", numUpserted.get());
   }
 }

@@ -27,7 +27,10 @@ import java.util.ArrayList;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
+
+import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.apache.kudu.client.Client.ScanTokenPB;
@@ -41,7 +44,13 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       TestScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
 
   private static Schema schema = getSchema();
-  private static KuduTable table;
+
+  /**
+   * The timestamp after inserting the rows into the test table during
+   * setupBeforeClass().
+   */
+  private static long beforeClassWriteTimestamp;
+  private KuduTable table;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -59,8 +68,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
     createTable(TABLE_NAME, schema, builder);
 
-    table = openTable(TABLE_NAME);
-
+    KuduTable table = openTable(TABLE_NAME);
     AsyncKuduSession session = client.newSession();
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
 
@@ -81,6 +89,18 @@ public class TestScannerMultiTablet extends BaseKuduTest {
         d.join(DEFAULT_SLEEP);
       }
     }
+
+    beforeClassWriteTimestamp = client.getLastPropagatedTimestamp();
+  }
+
+  @Before
+  public void setup() throws Exception {
+    // Reset the clients in order to clear the propagated timestamp, which may
+    // have been set if other test cases ran before this one. This ensures
+    // that all tests set their own state.
+    resetClients();
+    // Reopen the table using the reset client.
+    table = openTable(TABLE_NAME);
   }
 
   // Test various combinations of start/end row keys.
@@ -240,21 +260,47 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(9, rowCount);
   }
 
-  // Test multi tablets scan in READ_YOUR_WRITES mode for both AUTO_FLUSH_SYNC
-  // (single operation) and MANUAL_FLUSH (batches) flush modes to ensure
-  // client-local read-your-writes.
+  // Regression test for KUDU-2415.
+  // Scanning a never-written-to tablet from a fresh client with no propagated
+  // timestamp in "read-your-writes' mode should not fail.
   @Test(timeout = 100000)
-  public void testReadYourWrites() throws Exception {
+  @Ignore("TODO(KUDU-2415)") // not fixed yet!
+  public void testReadYourWritesFreshClientFreshTable() throws Exception {
+    // NOTE: this test fails because the first tablet in the table
+    // is empty and has never been written to.
+
     // Perform scan in READ_YOUR_WRITES mode. Before the scan, verify that the
-    // propagated timestamp is set via previous write session while snapshot
-    // timestamp is not.
+    // propagated timestamp is unset, since this is a fresh client.
     AsyncKuduScanner scanner = client.newScannerBuilder(table)
                                      .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
                                      .build();
     KuduScanner syncScanner = new KuduScanner(scanner);
     assertEquals(scanner.getReadMode(), syncScanner.getReadMode());
-    long preTs = client.getLastPropagatedTimestamp();
-    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+
+    assertEquals(9, countRowsInScan(syncScanner));
+  }
+
+  // Test multi tablets scan in READ_YOUR_WRITES mode for both AUTO_FLUSH_SYNC
+  // (single operation) and MANUAL_FLUSH (batches) flush modes to ensure
+  // client-local read-your-writes.
+  @Test(timeout = 100000)
+  public void testReadYourWrites() throws Exception {
+    long preTs = beforeClassWriteTimestamp;
+
+    // Update the propagated timestamp to ensure we see the rows written
+    // in the constructor.
+    syncClient.updateLastPropagatedTimestamp(preTs);
+
+    // Perform scan in READ_YOUR_WRITES mode. Before the scan, verify that the
+    // scanner timestamp is not yet set. It will get set only once the scan
+    // is opened.
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+                                     .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+                                     .build();
+    KuduScanner syncScanner = new KuduScanner(scanner);
+    assertEquals(scanner.getReadMode(), syncScanner.getReadMode());
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
 
     assertEquals(9, countRowsInScan(syncScanner));
@@ -298,9 +344,6 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testScanPropagatesLatestTimestamp() throws Exception {
-    // Reset the clients in order to clear the propagated timestamp, which may
-    // have been set if other test cases ran before this one.
-    resetClients();
     AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
 
     // Initially, the client does not have the timestamp set.
@@ -339,8 +382,6 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testScanTokenPropagatesTimestamp() throws Exception {
-    resetClients();
-
     // Initially, the client does not have the timestamp set.
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
     assertEquals(KuduClient.NO_TIMESTAMP, syncClient.getLastPropagatedTimestamp());

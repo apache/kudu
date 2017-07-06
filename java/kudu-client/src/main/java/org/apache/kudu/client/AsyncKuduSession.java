@@ -529,6 +529,9 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   public Deferred<OperationResponse> apply(final Operation operation) throws KuduException {
     Preconditions.checkNotNull(operation, "Can not apply a null operation");
+    Preconditions.checkArgument(operation.getTable().getAsyncClient() == client,
+        "Applied operations must be created from a KuduTable instance opened " +
+        "from the same client that opened this KuduSession");
 
     // Freeze the row so that the client can not concurrently modify it while it is in flight.
     operation.getRow().freeze();

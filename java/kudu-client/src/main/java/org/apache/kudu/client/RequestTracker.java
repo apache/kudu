@@ -73,12 +73,16 @@ public class RequestTracker {
   }
 
   /**
-   * Marks the given sequence id as complete. This operation is idempotent.
+   * Marks the given sequence id as complete. The provided sequence ID must be a valid
+   * number that was previously returned by {@link #newSeqNo()}. It is illegal to call
+   * this method twice with the same sequence number.
    * @param sequenceId the sequence id to mark as complete
    */
   public void rpcCompleted(long sequenceId) {
+    assert sequenceId != NO_SEQ_NO;
     synchronized (lock) {
-      incompleteRpcs.remove(sequenceId);
+      boolean removed = incompleteRpcs.remove(sequenceId);
+      assert(removed) : "Could not remove seqid " + sequenceId + " from request tracker";
     }
   }
 

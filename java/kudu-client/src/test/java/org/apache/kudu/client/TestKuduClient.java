@@ -524,7 +524,8 @@ public class TestKuduClient extends BaseKuduTest {
       while (scanner.hasMoreRows()) {
         count += scanner.nextRows().getNumRows();
       }
-      assertEquals(Math.min(num_rows, limit), count);
+      assertEquals(String.format("Limit %d returned %d/%d rows", limit, count, num_rows),
+          Math.min(num_rows, limit), count);
     }
 
     // Now test with limits for async scanners.

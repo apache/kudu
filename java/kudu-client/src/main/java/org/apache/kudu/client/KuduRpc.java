@@ -235,7 +235,9 @@ public abstract class KuduRpc<R> {
     }
     deferred = null;
     attempt = 0;
-    if (isRequestTracked()) {
+    // If the subclass is a "tracked RPC" unregister it, unless it never
+    // got to the point of being registered.
+    if (isRequestTracked() && sequenceId != RequestTracker.NO_SEQ_NO) {
       table.getAsyncClient().getRequestTracker().rpcCompleted(sequenceId);
       sequenceId = RequestTracker.NO_SEQ_NO;
     }

@@ -57,9 +57,8 @@ public class TestRequestTracker {
     tracker.rpcCompleted(5);
     assertEquals(2, tracker.firstIncomplete());
 
-    // Mark the first half as complete.
-    // Note that we're also testing that rpcCompleted is idempotent.
-    for (int i = 1; i < max / 2; i++) {
+    // Mark 2-4 inclusive as complete.
+    for (int i = 2; i <= 4; i++) {
       tracker.rpcCompleted(i);
     }
 

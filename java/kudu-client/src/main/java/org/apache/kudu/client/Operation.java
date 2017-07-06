@@ -42,6 +42,9 @@ import org.apache.kudu.util.Pair;
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
  * and knows how to serialize its child classes.
+ *
+ * TODO(todd): this should not extend KuduRpc. Rather, we should make single-operation writes
+ * just use a Batch instance with a single operation in it.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
