@@ -77,6 +77,16 @@ wait_for_listen_port() {
   return 1
 }
 
+exit_error() {
+  local err_msg="$1"
+
+  set +x
+  echo ----------------------------------------------------------------------
+  echo ERROR: $err_msg
+  echo ----------------------------------------------------------------------
+  exit 1
+}
+
 OUTPUT_DIR=$(cd $(dirname "$BASH_SOURCE"); pwd)
 
 # Install the client library to a temporary directory.
@@ -159,6 +169,8 @@ TSERVER_RPC_PORT=7050
 mkdir -p "$BASE_DIR/ts/logs"
 $OUTPUT_DIR/kudu-tserver \
   --unlock_experimental_flags \
+  --heartbeat_interval_ms=200 \
+  --heartbeat_rpc_timeout_ms=1000 \
   --log_dir=$BASE_DIR/ts/logs \
   --fs_wal_dir=$BASE_DIR/ts/wals \
   --fs_data_dirs=$BASE_DIR/ts/data \
@@ -173,18 +185,33 @@ TS_PID=$!
 # master's and the tablet server's RPC ports before running the client sample
 # application.
 if ! wait_for_listen_port $MASTER_PID $MASTER_RPC_PORT 30; then
-  set +x
-  echo -----------------------------------------
-  echo master is not accepting connections
-  echo -----------------------------------------
-  exit 1
+  exit_error "master is not accepting connections"
 fi
 if ! wait_for_listen_port $TS_PID $TSERVER_RPC_PORT 30; then
-  set +x
-  echo -----------------------------------------
-  echo tserver is not accepting connections
-  echo -----------------------------------------
-  exit 1
+  exit_error "tserver is not accepting connections"
+fi
+
+# Allow for the tablet server registering with the master: wait for ~10s max.
+max_attempts=10
+attempt=0
+num_tservers=0
+while [ true ]; do
+  if ! num_tservers=$($OUTPUT_DIR/kudu tserver list \
+      $LOCALHOST_IP:$MASTER_RPC_PORT -format=space | wc -l); then
+    exit_error "failed to determine number of registered tservers"
+  fi
+  if [ $num_tservers -ge 1 ]; then
+    break
+  fi
+  attempt=$((attempt+1))
+  if [ $attempt -ge $max_attempts ]; then
+    break
+  fi
+  sleep 1
+done
+
+if [ $num_tservers -lt 1 ]; then
+  exit_error "tserver has not registered with the master"
 fi
 
 # Run the samples.
