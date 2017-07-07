@@ -370,7 +370,7 @@ TEST_F(ConsistencyITest, TestTimestampPropagationFromScans) {
 //   * Get the client's latest observed timestamp: it should be strictly greater
 //     than the recorded timestamp.
 //
-//   * Make a full table scan at in READ_AT_TIMESTAMP mode at 'ts_ref'
+//   * Make a full table scan in the READ_AT_SNAPSHOT mode at 'ts_ref'
 //     timestamp: the scan should retrieve only the first row.
 //
 // If the client propates the timestamps, the second server should receive

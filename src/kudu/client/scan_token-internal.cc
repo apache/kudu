@@ -211,7 +211,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       pb.set_read_mode(kudu::READ_LATEST);
       if (configuration_.has_snapshot_timestamp()) {
         LOG(WARNING) << "Ignoring snapshot timestamp since not in "
-                        "READ_AT_TIMESTAMP mode.";
+                        "READ_AT_SNAPSHOT mode.";
       }
       break;
     case KuduScanner::READ_AT_SNAPSHOT:
