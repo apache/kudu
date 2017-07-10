@@ -145,10 +145,16 @@ int16_t Status::posix_code() const {
 }
 
 Status Status::CloneAndPrepend(const Slice& msg) const {
+  if (ok()) {
+    return *this;
+  }
   return Status(code(), msg, message(), posix_code());
 }
 
 Status Status::CloneAndAppend(const Slice& msg) const {
+  if (ok()) {
+    return *this;
+  }
   return Status(code(), message(), msg, posix_code());
 }
 

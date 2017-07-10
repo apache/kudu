@@ -94,5 +94,24 @@ TEST(StatusTest, TestMoveAssignment) {
   }
 }
 
+TEST(StatusTest, TestAndThen) {
+  ASSERT_OK(Status::OK().AndThen(Status::OK)
+                        .AndThen(Status::OK)
+                        .AndThen(Status::OK));
+
+  ASSERT_TRUE(Status::InvalidArgument("").AndThen([] { return Status::IllegalState(""); })
+                                         .IsInvalidArgument());
+  ASSERT_TRUE(Status::InvalidArgument("").AndThen(Status::OK)
+                                         .IsInvalidArgument());
+  ASSERT_TRUE(Status::OK().AndThen([] { return Status::InvalidArgument(""); })
+                          .AndThen(Status::OK)
+                          .IsInvalidArgument());
+
+  ASSERT_EQ("foo: bar",
+            Status::OK().CloneAndPrepend("baz")
+                        .AndThen([] {
+                          return Status::InvalidArgument("bar").CloneAndPrepend("foo");
+                        }).message());
+}
 
 }  // namespace kudu

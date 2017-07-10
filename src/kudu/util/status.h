@@ -160,6 +160,35 @@ class KUDU_EXPORT Status {
   ///   rvalue reference to a Status object.
   /// @return The reference to the modified object.
   Status& operator=(Status&& s);
+
+  /// If this status is OK, calls 'op' and returns the result, otherwise returns
+  /// this status.
+  ///
+  /// This method can be used to chain together multiple Status-returning
+  /// operations, short circuiting after the first one to fail.
+  ///
+  /// Example:
+  ///
+  /// @code
+  /// unique_ptr<SequentialFile> file;
+  /// Status s = Env::Default()
+  ///               ->NewSequentialFile("/tmp/example.txt", &file)
+  ///               .AndThen([&] {
+  ///                 return file->Write(0, "some data")
+  ///                             .CloneAndPrepend("failed to write to example file");
+  ///               });
+  /// @endcode
+  ///
+  /// @param [in] op
+  ///   Status-returning closure or function to run.
+  /// @return 'this', if this is not OK, or the result of running op.
+  template<typename F>
+  Status AndThen(F op) {
+    if (ok()) {
+      return op();
+    }
+    return *this;
+  }
 #endif
 
   /// @return A success status.
@@ -330,7 +359,9 @@ class KUDU_EXPORT Status {
   ///   or @c -1 if there is none.
   int16_t posix_code() const;
 
-  /// Clone the object and add the specified prefix to the clone's message.
+  /// Clone this status and add the specified prefix to the message.
+  ///
+  /// If this status is OK, then an OK status will be returned.
   ///
   /// @param [in] msg
   ///   The message to prepend.
@@ -338,7 +369,9 @@ class KUDU_EXPORT Status {
   ///   leading message.
   Status CloneAndPrepend(const Slice& msg) const;
 
-  /// Clone the object and add the specified suffix to the clone's message.
+  /// Clone this status and add the specified suffix to the message.
+  ///
+  /// If this status is OK, then an OK status will be returned.
   ///
   /// @param [in] msg
   ///   The message to append.
