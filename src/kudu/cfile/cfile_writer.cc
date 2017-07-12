@@ -63,7 +63,7 @@ DEFINE_string(cfile_do_on_finish, "flush",
               "Possible values are 'close', 'flush', or 'nothing'.");
 TAG_FLAG(cfile_do_on_finish, experimental);
 
-DEFINE_bool(cfile_write_checksums, false,
+DEFINE_bool(cfile_write_checksums, true,
             "Write CRC32 checksums for each block");
 TAG_FLAG(cfile_write_checksums, evolving);
 
