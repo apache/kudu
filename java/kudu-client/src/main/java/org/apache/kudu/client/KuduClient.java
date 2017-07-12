@@ -270,7 +270,7 @@ public class KuduClient implements AutoCloseable {
     try {
       asyncClient.close();
     } catch (Exception e) {
-      KuduException.transformException(e);
+      throw KuduException.transformException(e);
     }
   }
 
