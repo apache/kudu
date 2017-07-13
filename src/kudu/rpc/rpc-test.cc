@@ -29,10 +29,12 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
+#include "kudu/util/random.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 
@@ -492,9 +494,9 @@ TEST_P(TestRpc, TestRpcSidecar) {
   // we can't write the whole response to the socket in a single call.
   DoTestSidecar(p, 3000 * 1024, 2000 * 1024);
 
-  DoTestOutgoingSidecar(p, 0, 0);
-  DoTestOutgoingSidecar(p, 123, 456);
-  DoTestOutgoingSidecar(p, 3000 * 1024, 2000 * 1024);
+  DoTestOutgoingSidecarExpectOK(p, 0, 0);
+  DoTestOutgoingSidecarExpectOK(p, 123, 456);
+  DoTestOutgoingSidecarExpectOK(p, 3000 * 1024, 2000 * 1024);
 }
 
 TEST_P(TestRpc, TestRpcSidecarLimits) {
@@ -884,6 +886,116 @@ TEST_P(TestRpc, TestApplicationFeatureFlagUnsupportedServer) {
     SCOPED_TRACE(strings::Substitute("supported response: $0", s.ToString()));
     ASSERT_TRUE(s.ok());
   }
+}
+
+TEST_P(TestRpc, TestCancellation) {
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  for (int i = OutboundCall::READY; i <= OutboundCall::FINISHED_SUCCESS; ++i) {
+    FLAGS_rpc_inject_cancellation_state = i;
+    switch (i) {
+      case OutboundCall::READY:
+      case OutboundCall::ON_OUTBOUND_QUEUE:
+      case OutboundCall::SENDING:
+      case OutboundCall::SENT:
+        ASSERT_TRUE(DoTestOutgoingSidecar(p, 0, 0).IsAborted());
+        ASSERT_TRUE(DoTestOutgoingSidecar(p, 123, 456).IsAborted());
+        ASSERT_TRUE(DoTestOutgoingSidecar(p, 3000 * 1024, 2000 * 1024).IsAborted());
+        break;
+      case OutboundCall::NEGOTIATION_TIMED_OUT:
+      case OutboundCall::TIMED_OUT:
+        DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(1000));
+        break;
+      case OutboundCall::CANCELLED:
+        break;
+      case OutboundCall::FINISHED_NEGOTIATION_ERROR:
+      case OutboundCall::FINISHED_ERROR: {
+        AddRequestPB req;
+        req.set_x(1);
+        req.set_y(2);
+        AddResponsePB resp;
+        RpcController controller;
+        controller.RequireServerFeature(FeatureFlags::FOO);
+        controller.RequireServerFeature(99);
+        Status s = p.SyncRequest("Add", req, &resp, &controller);
+        ASSERT_TRUE(s.IsRemoteError());
+        break;
+      }
+      case OutboundCall::FINISHED_SUCCESS:
+        DoTestOutgoingSidecarExpectOK(p, 0, 0);
+        DoTestOutgoingSidecarExpectOK(p, 123, 456);
+        DoTestOutgoingSidecarExpectOK(p, 3000 * 1024, 2000 * 1024);
+        break;
+    }
+  }
+  client_messenger->Shutdown();
+}
+
+#define TEST_PAYLOAD_SIZE  (1 << 23)
+#define TEST_SLEEP_TIME_MS (500)
+
+static void SleepCallback(uint8_t* payload, CountDownLatch* latch) {
+  // Overwrites the payload which the sidecar is pointing to. The server
+  // checks if the payload matches the expected pattern to detect cases
+  // in which the payload is overwritten while it's being sent.
+  memset(payload, 0, TEST_PAYLOAD_SIZE);
+  latch->CountDown();
+}
+
+TEST_P(TestRpc, TestCancellationAsync) {
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+
+  RpcController controller;
+
+  // The payload to be used during the RPC.
+  gscoped_array<uint8_t> payload(new uint8_t[TEST_PAYLOAD_SIZE]);
+
+  // Used to generate sleep time between invoking RPC and requesting cancellation.
+  Random rand(SeedRandom());
+
+  for (int i = 0; i < 10; ++i) {
+    SleepWithSidecarRequestPB req;
+    SleepWithSidecarResponsePB resp;
+
+    // Initialize the payload with non-zero pattern.
+    memset(payload.get(), 0xff, TEST_PAYLOAD_SIZE);
+    req.set_sleep_micros(TEST_SLEEP_TIME_MS);
+    req.set_pattern(0xffffffff);
+    req.set_num_repetitions(TEST_PAYLOAD_SIZE / sizeof(uint32_t));
+
+    int idx;
+    Slice s(payload.get(), TEST_PAYLOAD_SIZE);
+    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(s), &idx));
+    req.set_sidecar_idx(idx);
+
+    CountDownLatch latch(1);
+    p.AsyncRequest(GenericCalculatorService::kSleepWithSidecarMethodName,
+                   req, &resp, &controller,
+                   boost::bind(SleepCallback, payload.get(), &latch));
+    // Sleep for a while before cancelling the RPC.
+    if (i > 0) SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(i * 30)));
+    controller.Cancel();
+    latch.Wait();
+    ASSERT_TRUE(controller.status().IsAborted() || controller.status().ok());
+    controller.Reset();
+  }
+  client_messenger->Shutdown();
 }
 
 } // namespace rpc

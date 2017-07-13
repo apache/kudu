@@ -193,11 +193,18 @@ class ReactorThread {
 
  private:
   friend class AssignOutboundCallTask;
+  friend class CancellationTask;
   friend class RegisterConnectionTask;
   friend class DelayedTask;
 
   // Run the main event loop of the reactor.
   void RunThread();
+
+  // Find a connection to the given remote and returns it in 'conn'.
+  // Returns true if a connection is found. Returns false otherwise.
+  bool FindConnection(const ConnectionId& conn_id,
+                      CredentialsPolicy cred_policy,
+                      scoped_refptr<Connection>* conn);
 
   // Find or create a new connection to the given remote.
   // If such a connection already exists, returns that, otherwise creates a new one.
@@ -229,6 +236,13 @@ class ReactorThread {
   // Assign a new outbound call to the appropriate connection object.
   // If this fails, the call is marked failed and completed.
   void AssignOutboundCall(const std::shared_ptr<OutboundCall> &call);
+
+  // Cancel the outbound call. May update corresponding connection
+  // object to remove call from the CallAwaitingResponse object.
+  // Also mark the call as slated for cancellation so the callback
+  // may be invoked early if the RPC hasn't yet been sent or if it's
+  // waiting for a response from the remote.
+  void CancelOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // Register a new connection.
   void RegisterConnection(scoped_refptr<Connection> conn);
@@ -312,6 +326,9 @@ class Reactor {
   // Queue a new call to be sent. If the reactor is already shut down, marks
   // the call as failed.
   void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
+
+  // Queue a new reactor task to cancel an outbound call.
+  void QueueCancellation(const std::shared_ptr<OutboundCall> &call);
 
   // Schedule the given task's Run() method to be called on the
   // reactor thread.

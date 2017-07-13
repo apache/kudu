@@ -71,6 +71,8 @@ using kudu::rpc_test::SendTwoStringsRequestPB;
 using kudu::rpc_test::SendTwoStringsResponsePB;
 using kudu::rpc_test::SleepRequestPB;
 using kudu::rpc_test::SleepResponsePB;
+using kudu::rpc_test::SleepWithSidecarRequestPB;
+using kudu::rpc_test::SleepWithSidecarResponsePB;
 using kudu::rpc_test::TestInvalidResponseRequestPB;
 using kudu::rpc_test::TestInvalidResponseResponsePB;
 using kudu::rpc_test::WhoAmIRequestPB;
@@ -85,6 +87,7 @@ class GenericCalculatorService : public ServiceIf {
   static const char *kFullServiceName;
   static const char *kAddMethodName;
   static const char *kSleepMethodName;
+  static const char *kSleepWithSidecarMethodName;
   static const char *kPushTwoStringsMethodName;
   static const char *kSendTwoStringsMethodName;
   static const char *kAddExactlyOnce;
@@ -106,6 +109,8 @@ class GenericCalculatorService : public ServiceIf {
       DoAdd(incoming);
     } else if (incoming->remote_method().method_name() == kSleepMethodName) {
       DoSleep(incoming);
+    } else if (incoming->remote_method().method_name() == kSleepWithSidecarMethodName) {
+      DoSleepWithSidecar(incoming);
     } else if (incoming->remote_method().method_name() == kSendTwoStringsMethodName) {
       DoSendTwoStrings(incoming);
     } else if (incoming->remote_method().method_name() == kPushTwoStringsMethodName) {
@@ -203,6 +208,31 @@ class GenericCalculatorService : public ServiceIf {
 
     LOG(INFO) << "got call: " << SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
+    SleepResponsePB resp;
+    incoming->RespondSuccess(resp);
+  }
+
+  void DoSleepWithSidecar(InboundCall *incoming) {
+    Slice param(incoming->serialized_request());
+    SleepWithSidecarRequestPB req;
+    if (!req.ParseFromArray(param.data(), param.size())) {
+      incoming->RespondFailure(ErrorStatusPB::ERROR_INVALID_REQUEST,
+        Status::InvalidArgument("Couldn't parse pb",
+                                req.InitializationErrorString()));
+      return;
+    }
+
+    LOG(INFO) << "got call: " << SecureShortDebugString(req);
+    SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
+
+    uint32 pattern = req.pattern();
+    uint32 num_repetitions = req.num_repetitions();
+    Slice sidecar;
+    CHECK_OK(incoming->GetInboundSidecar(req.sidecar_idx(), &sidecar));
+    CHECK_EQ(sidecar.size(), sizeof(uint32) * num_repetitions);
+    const uint32_t *data = reinterpret_cast<const uint32_t*>(sidecar.data());
+    for (int i = 0; i < num_repetitions; ++i) CHECK_EQ(data[i], pattern);
+
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);
   }
@@ -361,6 +391,7 @@ class CalculatorService : public CalculatorServiceIf {
 const char *GenericCalculatorService::kFullServiceName = "kudu.rpc.GenericCalculatorService";
 const char *GenericCalculatorService::kAddMethodName = "Add";
 const char *GenericCalculatorService::kSleepMethodName = "Sleep";
+const char *GenericCalculatorService::kSleepWithSidecarMethodName = "SleepWithSidecar";
 const char *GenericCalculatorService::kPushTwoStringsMethodName = "PushTwoStrings";
 const char *GenericCalculatorService::kSendTwoStringsMethodName = "SendTwoStrings";
 const char *GenericCalculatorService::kAddExactlyOnce = "AddExactlyOnce";
@@ -462,7 +493,7 @@ class RpcTestBase : public KuduTest {
     CHECK_EQ(0, second.compare(Slice(expected)));
   }
 
-  void DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {
+  Status DoTestOutgoingSidecar(const Proxy &p, int size1, int size2) {
     PushTwoStringsRequestPB request;
     RpcController controller;
 
@@ -478,12 +509,17 @@ class RpcTestBase : public KuduTest {
     request.set_sidecar2_idx(idx2);
 
     PushTwoStringsResponsePB resp;
-    CHECK_OK(p.SyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
-            request, &resp, &controller));
+    KUDU_RETURN_NOT_OK(p.SyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+                                     request, &resp, &controller));
     CHECK_EQ(size1, resp.size1());
     CHECK_EQ(resp.data1(), s1);
     CHECK_EQ(size2, resp.size2());
     CHECK_EQ(resp.data2(), s2);
+    return Status::OK();
+  }
+
+  void DoTestOutgoingSidecarExpectOK(const Proxy &p, int size1, int size2) {
+    CHECK_OK(DoTestOutgoingSidecar(p, size1, size2));
   }
 
   void DoTestExpectTimeout(const Proxy& p,

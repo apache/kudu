@@ -246,6 +246,9 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   car->call->SetTimedOut(negotiation_complete_ ? Phase::REMOTE_CALL
                                                : Phase::CONNECTION_NEGOTIATION);
 
+  // Test cancellation when 'car->call' is in 'TIMED_OUT' state
+  MaybeInjectCancellation(car->call);
+
   // Drop the reference to the call. If the original caller has moved on after
   // seeing the timeout, we no longer need to hold onto the allocated memory
   // from the request.
@@ -258,22 +261,41 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   // already timed out.
 }
 
+void Connection::CancelOutboundCall(const shared_ptr<OutboundCall> &call) {
+  CallAwaitingResponse* car = FindPtrOrNull(awaiting_response_, call->call_id());
+  if (car != nullptr) {
+    // car->call may be NULL if the call has timed out already.
+    DCHECK(!car->call || car->call.get() == call.get());
+    car->call.reset();
+  }
+}
+
+// Inject a cancellation when 'call' is in state 'FLAGS_rpc_inject_cancellation_state'.
+void inline Connection::MaybeInjectCancellation(const shared_ptr<OutboundCall> &call) {
+  if (PREDICT_FALSE(call->ShouldInjectCancellation())) {
+    reactor_thread_->reactor()->messenger()->QueueCancellation(call);
+  }
+}
+
 // Callbacks after sending a call on the wire.
 // This notifies the OutboundCall object to change its state to SENT once it
 // has been fully transmitted.
 struct CallTransferCallbacks : public TransferCallbacks {
  public:
-  explicit CallTransferCallbacks(shared_ptr<OutboundCall> call)
-      : call_(std::move(call)) {}
+  explicit CallTransferCallbacks(shared_ptr<OutboundCall> call,
+                                 Connection *conn)
+      : call_(std::move(call)), conn_(conn) {}
 
   virtual void NotifyTransferFinished() OVERRIDE {
     // TODO: would be better to cancel the transfer while it is still on the queue if we
     // timed out before the transfer started, but there is still a race in the case of
     // a partial send that we have to handle here
     if (call_->IsFinished()) {
-      DCHECK(call_->IsTimedOut());
+      DCHECK(call_->IsTimedOut() || call_->IsCancelled());
     } else {
       call_->SetSent();
+      // Test cancellation when 'call_' is in 'SENT' state.
+      conn_->MaybeInjectCancellation(call_);
     }
     delete this;
   }
@@ -286,6 +308,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
 
  private:
   shared_ptr<OutboundCall> call_;
+  Connection* conn_;
 };
 
 void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
@@ -305,6 +328,9 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   // yet assigned a call ID.
   DCHECK(!call->call_id_assigned());
 
+  // We shouldn't reach this point if 'call' was requested to be cancelled.
+  DCHECK(!call->cancellation_requested());
+
   // Assign the call ID.
   int32_t call_id = GetNextCallId();
   call->set_call_id(call_id);
@@ -314,6 +340,9 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   size_t n_slices = call->SerializeTo(&tmp_slices);
 
   call->SetQueued();
+
+  // Test cancellation when 'call_' is in 'ON_OUTBOUND_QUEUE' state.
+  MaybeInjectCancellation(call);
 
   scoped_car car(car_pool_.make_scoped_ptr(car_pool_.Construct()));
   car->conn = this;
@@ -363,7 +392,7 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
     car->timeout_timer.start();
   }
 
-  TransferCallbacks *cb = new CallTransferCallbacks(call);
+  TransferCallbacks *cb = new CallTransferCallbacks(call, this);
   awaiting_response_[call_id] = car.release();
   QueueOutbound(gscoped_ptr<OutboundTransfer>(
       OutboundTransfer::CreateForCallRequest(call_id, tmp_slices, n_slices, cb)));
@@ -551,13 +580,17 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
   // The car->timeout_timer ev::timer will be stopped automatically by its destructor.
   scoped_car car(car_pool_.make_scoped_ptr(car_ptr));
 
-  if (PREDICT_FALSE(car->call.get() == nullptr)) {
+  if (PREDICT_FALSE(!car->call)) {
     // The call already failed due to a timeout.
-    VLOG(1) << "Got response to call id " << resp->call_id() << " after client already timed out";
+    VLOG(1) << "Got response to call id " << resp->call_id() << " after client "
+            << "already timed out or cancelled";
     return;
   }
 
   car->call->SetResponse(std::move(resp));
+
+  // Test cancellation when 'car->call' is in 'FINISHED_SUCCESS' or 'FINISHED_ERROR' state.
+  MaybeInjectCancellation(car->call);
 }
 
 void Connection::WriteHandler(ev::io &watcher, int revents) {
@@ -586,10 +619,10 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
       if (transfer->is_for_outbound_call()) {
         CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
         if (!car->call) {
-          // If the call has already timed out, then the 'call' field will have been nulled.
-          // In that case, we don't need to bother sending it.
+          // If the call has already timed out or has already been cancelled, the 'call'
+          // field would be set to NULL. In that case, don't bother sending it.
           outbound_transfers_.pop_front();
-          transfer->Abort(Status::Aborted("already timed out"));
+          transfer->Abort(Status::Aborted("already timed out or cancelled"));
           delete transfer;
           continue;
         }
@@ -606,12 +639,17 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
           transfer->Abort(s);
           car->call->SetFailed(s, negotiation_complete_ ? Phase::REMOTE_CALL
                                                         : Phase::CONNECTION_NEGOTIATION);
+          // Test cancellation when 'call_' is in 'FINISHED_ERROR' state.
+          MaybeInjectCancellation(car->call);
           car->call.reset();
           delete transfer;
           continue;
         }
 
         car->call->SetSending();
+
+        // Test cancellation when 'call_' is in 'SENDING' state.
+        MaybeInjectCancellation(car->call);
       }
     }
 

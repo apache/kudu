@@ -202,6 +202,9 @@ class Messenger {
   // Enqueue a call for processing on the server.
   void QueueInboundCall(gscoped_ptr<InboundCall> call);
 
+  // Queue a cancellation for the given outbound call.
+  void QueueCancellation(const std::shared_ptr<OutboundCall> &call);
+
   // Take ownership of the socket via Socket::Release
   void RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote);
 

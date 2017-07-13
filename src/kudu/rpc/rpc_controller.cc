@@ -23,6 +23,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_header.pb.h"
 
@@ -32,7 +33,7 @@ namespace kudu {
 namespace rpc {
 
 RpcController::RpcController()
-    : credentials_policy_(CredentialsPolicy::ANY_CREDENTIALS) {
+    : credentials_policy_(CredentialsPolicy::ANY_CREDENTIALS), messenger_(nullptr) {
   DVLOG(4) << "RpcController " << this << " constructed";
 }
 
@@ -63,6 +64,7 @@ void RpcController::Reset() {
   call_.reset();
   required_server_features_.clear();
   credentials_policy_ = CredentialsPolicy::ANY_CREDENTIALS;
+  messenger_ = nullptr;
 }
 
 bool RpcController::finished() const {
@@ -143,6 +145,12 @@ Status RpcController::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
 void RpcController::SetRequestParam(const google::protobuf::Message& req) {
   DCHECK(call_ != nullptr);
   call_->SetRequestPayload(req, std::move(outbound_sidecars_));
+}
+
+void RpcController::Cancel() {
+  DCHECK(call_);
+  DCHECK(messenger_);
+  messenger_->QueueCancellation(call_);
 }
 
 } // namespace rpc

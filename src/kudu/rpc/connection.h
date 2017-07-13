@@ -113,7 +113,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
                 std::unique_ptr<ErrorStatusPB> rpc_error = {});
 
   // Queue a new call to be made. If the queueing fails, the call will be
-  // marked failed.
+  // marked failed. The caller is expected to check if 'call' has been cancelled
+  // before making the call.
   // Takes ownership of the 'call' object regardless of whether it succeeds or fails.
   void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
@@ -121,6 +122,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
   //
   // This may be called from a non-reactor thread.
   void QueueResponseForCall(gscoped_ptr<InboundCall> call);
+
+  // Cancel an outbound call by removing any reference to it by CallAwaitingResponse
+  // in 'awaiting_responses_'.
+  void CancelOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // The address of the remote end of the connection.
   const Sockaddr &remote() const { return remote_; }
@@ -216,6 +221,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
  private:
   friend struct CallAwaitingResponse;
   friend class QueueTransferTask;
+  friend struct CallTransferCallbacks;
   friend struct ResponseTransferCallbacks;
 
   // A call which has been fully sent to the server, which we're waiting for
@@ -268,6 +274,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // We will take ownership of the transfer.
   // This must be called from the reactor thread.
   void QueueOutbound(gscoped_ptr<OutboundTransfer> transfer);
+
+  // Internal test function for injecting cancellation request when 'call'
+  // reaches state specified in 'FLAGS_rpc_inject_cancellation_state'.
+  void MaybeInjectCancellation(const std::shared_ptr<OutboundCall> &call);
 
   // The reactor thread that created this connection.
   ReactorThread* const reactor_thread_;

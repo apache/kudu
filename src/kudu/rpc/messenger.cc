@@ -467,6 +467,11 @@ void Messenger::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   WARN_NOT_OK((*service)->QueueInboundCall(std::move(call)), "Unable to handle RPC call");
 }
 
+void Messenger::QueueCancellation(const shared_ptr<OutboundCall> &call) {
+  Reactor *reactor = RemoteToReactor(call->conn_id().remote());
+  reactor->QueueCancellation(call);
+}
+
 void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote) {
   Reactor *reactor = RemoteToReactor(remote);
   reactor->RegisterInboundSocket(new_socket, remote);

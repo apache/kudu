@@ -250,8 +250,13 @@ void ReactorThread::RegisterConnection(scoped_refptr<Connection> conn) {
 
 void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
   DCHECK(IsCurrentThread());
-  scoped_refptr<Connection> conn;
 
+  // Skip if the outbound has been cancelled already.
+  if (PREDICT_FALSE(call->IsCancelled())) {
+    return;
+  }
+
+  scoped_refptr<Connection> conn;
   Status s = FindOrStartConnection(call->conn_id(),
                                    call->controller()->credentials_policy(),
                                    &conn);
@@ -261,6 +266,24 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
   }
 
   conn->QueueOutboundCall(call);
+}
+
+void ReactorThread::CancelOutboundCall(const shared_ptr<OutboundCall>& call) {
+  DCHECK(IsCurrentThread());
+
+  // If the callback has been invoked already, the cancellation is a no-op.
+  // The controller may be gone already if the callback has been invoked.
+  if (call->IsFinished()) {
+    return;
+  }
+
+  scoped_refptr<Connection> conn;
+  if (FindConnection(call->conn_id(),
+                     call->controller()->credentials_policy(),
+                     &conn)) {
+    conn->CancelOutboundCall(call);
+  }
+  call->Cancel();
 }
 
 //
@@ -361,9 +384,9 @@ void ReactorThread::RunThread() {
   reactor_->messenger_.reset();
 }
 
-Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
-                                            CredentialsPolicy cred_policy,
-                                            scoped_refptr<Connection>* conn) {
+bool ReactorThread::FindConnection(const ConnectionId& conn_id,
+                                   CredentialsPolicy cred_policy,
+                                   scoped_refptr<Connection>* conn) {
   DCHECK(IsCurrentThread());
   const auto range = client_conns_.equal_range(conn_id);
   scoped_refptr<Connection> found_conn;
@@ -404,6 +427,16 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   if (found_conn) {
     // Found matching not-to-be-shutdown connection: return it as the result.
     conn->swap(found_conn);
+    return true;
+  }
+  return false;
+}
+
+Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
+                                            CredentialsPolicy cred_policy,
+                                            scoped_refptr<Connection>* conn) {
+  DCHECK(IsCurrentThread());
+  if (FindConnection(conn_id, cred_policy, conn)) {
     return Status::OK();
   }
 
@@ -716,7 +749,7 @@ class AssignOutboundCallTask : public ReactorTask {
 
   void Abort(const Status& status) override {
     // It doesn't matter what is the actual phase of the OutboundCall: just set
-    // it to Phase::REMOTE_CALL to finilize the state of the call.
+    // it to Phase::REMOTE_CALL to finalize the state of the call.
     call_->SetFailed(status, OutboundCall::Phase::REMOTE_CALL);
     delete this;
   }
@@ -728,7 +761,33 @@ class AssignOutboundCallTask : public ReactorTask {
 void Reactor::QueueOutboundCall(const shared_ptr<OutboundCall>& call) {
   DVLOG(3) << name_ << ": queueing outbound call "
            << call->ToString() << " to remote " << call->conn_id().remote().ToString();
+  // Test cancellation when 'call_' is in 'READY' state.
+  if (PREDICT_FALSE(call->ShouldInjectCancellation())) {
+    QueueCancellation(call);
+  }
   ScheduleReactorTask(new AssignOutboundCallTask(call));
+}
+
+class CancellationTask : public ReactorTask {
+ public:
+  explicit CancellationTask(shared_ptr<OutboundCall> call)
+      : call_(std::move(call)) {}
+
+  void Run(ReactorThread* reactor) override {
+    reactor->CancelOutboundCall(call_);
+    delete this;
+  }
+
+  void Abort(const Status& /*status*/) override {
+    delete this;
+  }
+
+ private:
+  shared_ptr<OutboundCall> call_;
+};
+
+void Reactor::QueueCancellation(const shared_ptr<OutboundCall>& call) {
+  ScheduleReactorTask(new CancellationTask(call));
 }
 
 void Reactor::ScheduleReactorTask(ReactorTask *task) {

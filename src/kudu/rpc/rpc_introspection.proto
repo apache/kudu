@@ -42,6 +42,7 @@ message RpcCallInProgressPB {
     FINISHED_SUCCESS = 6;
     NEGOTIATION_TIMED_OUT = 7;
     FINISHED_NEGOTIATION_ERROR = 8;
+    CANCELLED = 9;
 
     // TODO(todd): add states for InboundCall
   }

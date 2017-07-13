@@ -38,6 +38,8 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+DECLARE_int32(rpc_inject_cancellation_state);
+
 namespace google {
 namespace protobuf {
 class Message;
@@ -157,6 +159,13 @@ class OutboundCall {
   // Returns the number of slices in the serialized call.
   size_t SerializeTo(TransferPayload* slices);
 
+  // Mark in the call that cancellation has been requested. If the call hasn't yet
+  // started sending or has finished sending the RPC request but is waiting for a
+  // response, cancel the RPC right away. Otherwise, wait until the RPC has finished
+  // sending before cancelling it. If the call is finished, it's a no-op.
+  // REQUIRES: must be called from the reactor thread.
+  void Cancel();
+
   // Callback after the call has been put on the outbound connection queue.
   void SetQueued();
 
@@ -181,6 +190,8 @@ class OutboundCall {
   bool IsTimedOut() const;
 
   bool IsNegotiationError() const;
+
+  bool IsCancelled() const;
 
   // Is the call finished?
   bool IsFinished() const;
@@ -216,8 +227,22 @@ class OutboundCall {
     return header_.call_id();
   }
 
+  // Returns true if cancellation has been requested. Must be called from
+  // reactor thread.
+  bool cancellation_requested() const {
+    return cancellation_requested_;
+  }
+
+  // Test function which returns true if a cancellation request should be injected
+  // at the current state.
+  bool ShouldInjectCancellation() const {
+    return FLAGS_rpc_inject_cancellation_state != -1 &&
+        FLAGS_rpc_inject_cancellation_state == state();
+  }
+
  private:
   friend class RpcController;
+  FRIEND_TEST(TestRpc, TestCancellation);
 
   // Various states the call propagates through.
   // NB: if adding another state, be sure to update OutboundCall::IsFinished()
@@ -229,12 +254,16 @@ class OutboundCall {
     SENT,
     NEGOTIATION_TIMED_OUT,
     TIMED_OUT,
+    CANCELLED,
     FINISHED_NEGOTIATION_ERROR,
     FINISHED_ERROR,
     FINISHED_SUCCESS
   };
 
   static std::string StateName(State state);
+
+  // Mark the call as cancelled. This also invokes the callback to notify the caller.
+  void SetCancelled();
 
   void set_state(State new_state);
   State state() const;
@@ -261,7 +290,9 @@ class OutboundCall {
   Status status_;
   gscoped_ptr<ErrorStatusPB> error_pb_;
 
-  // Call the user-provided callback.
+  // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
+  // prior to invoking the callback so the client can assume that the call doesn't
+  // hold references to outbound sidecars.
   void CallCallback();
 
   // The RPC header.
@@ -295,6 +326,9 @@ class OutboundCall {
 
   // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
   int64_t sidecar_byte_size_ = -1;
+
+  // True if cancellation was requested on this call.
+  bool cancellation_requested_;
 
   DISALLOW_COPY_AND_ASSIGN(OutboundCall);
 };

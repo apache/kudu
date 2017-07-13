@@ -40,6 +40,7 @@ namespace kudu {
 namespace rpc {
 
 class ErrorStatusPB;
+class Messenger;
 class OutboundCall;
 class RequestIdPB;
 class RpcSidecar;
@@ -223,6 +224,19 @@ class RpcController {
   // to this request.
   Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);
 
+  // Cancel the call associated with the RpcController. This function should only be
+  // called when there is an outstanding outbound call. It's always safe to call
+  // Cancel() after you've sent a call, so long as you haven't called Reset() yet.
+  // Caller is not responsible for synchronization between cancellation and the
+  // callback. (i.e. the callback may or may not be invoked yet when Cancel()
+  // is called).
+  //
+  // Cancellation is "best effort" - i.e. it's still possible the callback passed
+  // to the call will be fired with a success status. If cancellation succeeds,
+  // the callback will be invoked with a Aborted status. Cancellation is asynchronous
+  // so the callback will still be invoked from the reactor thread.
+  void Cancel();
+
  private:
   friend class OutboundCall;
   friend class Proxy;
@@ -230,6 +244,9 @@ class RpcController {
   // Set the outbound call_'s request parameter, and transfer ownership of
   // outbound_sidecars_ to call_ in preparation for serialization.
   void SetRequestParam(const google::protobuf::Message& req);
+
+  // Set the messenger which contains the reactor thread handling the outbound call.
+  void SetMessenger(Messenger* messenger) { messenger_ = messenger; }
 
   MonoDelta timeout_;
   std::unordered_set<uint32_t> required_server_features_;
@@ -242,6 +259,10 @@ class RpcController {
   // The id of this request.
   // Ownership is transferred to OutboundCall once the call is sent.
   std::unique_ptr<RequestIdPB> request_id_;
+
+  // The messenger which contains the reactor thread for 'call_'.
+  // Set only when 'call_' is set.
+  Messenger* messenger_;
 
   // Once the call is sent, it is tracked here.
   std::shared_ptr<OutboundCall> call_;
