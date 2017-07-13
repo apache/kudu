@@ -297,6 +297,15 @@ void Peer::ProcessResponse() {
     return;
   }
 
+  // Notify consensus that the peer has failed.
+  if (response_.has_error() && response_.error().code() == TabletServerErrorPB::TABLET_FAILED) {
+    Status response_status = StatusFromPB(response_.error().status());
+    queue_->NotifyPeerHasFailed(peer_pb_.permanent_uuid(),
+                                response_status.ToString());
+    ProcessResponseError(response_status);
+    return;
+  }
+
   // Pass through errors we can respond to, like not found, since in that case
   // we will need to start a Tablet Copy. TODO: Handle DELETED response once implemented.
   if ((response_.has_error() &&

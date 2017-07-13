@@ -106,13 +106,15 @@ class TsRecoveryITest : public ExternalMiniClusterITestBase,
   TsRecoveryITest() { extra_tserver_flags_.emplace_back(GetParam()); }
 
  protected:
-  void StartClusterOneTs(const vector<string>& extra_tserver_flags = {});
+  void StartClusterOneTs(const vector<string>& extra_tserver_flags,
+                         const vector<string>& extra_master_flags = {});
 
   vector<string> extra_tserver_flags_ = {};
 };
 
-void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flags) {
-  StartCluster(extra_tserver_flags, {}, 1 /* replicas */);
+void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flags,
+                                        const vector<string>& extra_master_flags) {
+  StartCluster(extra_tserver_flags, extra_master_flags, 1 /* replicas */);
 }
 
 #if defined(__APPLE__)
@@ -304,7 +306,10 @@ TEST_P(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
 // - the bootstrap should fail (but not crash) because it cannot apply the cell size
 // - if we manually increase the cell size limit again, it should replay correctly.
 TEST_P(TsRecoveryITest, TestChangeMaxCellSize) {
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
+  // Prevent the master from tombstoning the evicted tablet so we can observe
+  // its FAILED state.
+  NO_FATALS(StartClusterOneTs(extra_tserver_flags_,
+      { "--master_tombstone_evicted_tablet_replicas=false" }));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_payload_bytes(10000);

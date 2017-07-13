@@ -66,6 +66,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -639,13 +640,15 @@ Status TSTabletManager::DeleteTablet(
   // If the tablet is already deleted, the CAS check isn't possible because
   // consensus and therefore the log is not available.
   TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
-  bool tablet_deleted = (data_state == TABLET_DATA_DELETED || data_state == TABLET_DATA_TOMBSTONED);
+  bool tablet_deleted = (data_state == TABLET_DATA_DELETED ||
+                         data_state == TABLET_DATA_TOMBSTONED ||
+                         replica->state() == tablet::FAILED);
 
   // They specified an "atomic" delete. Check the committed config's opid_index.
-  // TODO: There's actually a race here between the check and shutdown, but
-  // it's tricky to fix. We could try checking again after the shutdown and
-  // restarting the tablet if the local replica committed a higher config
-  // change op during that time, or potentially something else more invasive.
+  // TODO(mpercy): There's actually a race here between the check and shutdown,
+  // but it's tricky to fix. We could try checking again after the shutdown and
+  // restarting the tablet if the local replica committed a higher config change
+  // op during that time, or potentially something else more invasive.
   shared_ptr<RaftConsensus> consensus = replica->shared_consensus();
   if (cas_config_opid_index_less_or_equal && !tablet_deleted) {
     if (!consensus) {
@@ -675,9 +678,15 @@ Status TSTabletManager::DeleteTablet(
   if (PREDICT_FALSE(!s.ok())) {
     s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                      tablet_id));
-    LOG(WARNING) << s.ToString();
-    replica->SetFailed(s);
-    return s;
+    // TODO(awong): A failure status here indicates a failure to update the
+    // tablet metadata, consensus metadta, or WAL (failures to remove blocks
+    // only log warnings). Once the above are no longer points of failure,
+    // handle errors here accordingly.
+    //
+    // If this fails, there is no guarantee that the on-disk metadata reflects
+    // that the tablet is deleted. To be safe, crash here.
+    LOG(FATAL) << Substitute("Failed to delete tablet data for $0: ",
+        tablet_id) << s.ToString();
   }
 
   replica->SetStatusMessage("Deleted tablet blocks from disk");
@@ -768,9 +777,14 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
 
   scoped_refptr<ConsensusMetadata> cmeta;
   Status s = cmeta_manager_->Load(replica->tablet_id(), &cmeta);
+  auto fail_tablet = MakeScopedCleanup([&]() {
+    // If something goes wrong, clean up the replica's internal members and mark
+    // it FAILED.
+    replica->SetError(s);
+    replica->Shutdown();
+  });
   if (PREDICT_FALSE(!s.ok())) {
     LOG(ERROR) << LogPrefix(tablet_id) << "Failed to load consensus metadata: " << s.ToString();
-    replica->SetFailed(s);
     return;
   }
 
@@ -798,7 +812,6 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to bootstrap: "
                  << s.ToString();
-      replica->SetFailed(s);
       return;
     }
   }
@@ -817,12 +830,14 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
                  << s.ToString();
-      replica->SetFailed(s);
       return;
     }
 
     replica->RegisterMaintenanceOps(server_->maintenance_manager());
   }
+
+  // Now that the tablet has successfully opened, cancel the cleanup.
+  fail_tablet.cancel();
 
   int elapsed_ms = (MonoTime::Now() - start).ToMilliseconds();
   if (elapsed_ms > FLAGS_tablet_start_warn_threshold_ms) {

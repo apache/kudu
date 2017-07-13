@@ -239,6 +239,10 @@ class PeerMessageQueue {
   // it is alive and making progress.
   void NotifyPeerIsResponsive(const std::string& peer_uuid);
 
+  // Notify consensus that the given peer has failed.
+  void NotifyPeerHasFailed(const std::string& peer_uuid,
+                           const std::string& reason);
+
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
   void ResponseFromPeer(const std::string& peer_uuid,

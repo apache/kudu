@@ -40,6 +40,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
@@ -81,45 +82,88 @@ using rpc::MessengerBuilder;
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using std::unique_ptr;
 using strings::Substitute;
 using tablet::TabletReplica;
 using tserver::MiniTabletServer;
-using tserver::TSTabletManager;
 
 static const char* const kTableName = "test-table";
-static const int kNumReplicas = 2;
 
 class TsTabletManagerITest : public KuduTest {
  public:
   TsTabletManagerITest()
       : schema_(SimpleIntKeyKuduSchema()) {
   }
-  virtual void SetUp() OVERRIDE;
+  virtual void SetUp() override {
+    KuduTest::SetUp();
+
+    MessengerBuilder bld("client");
+    ASSERT_OK(bld.Build(&client_messenger_));
+  }
+
+  void StartCluster(int num_replicas) {
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = num_replicas;
+    cluster_.reset(new InternalMiniCluster(env_, opts));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  }
 
  protected:
   const KuduSchema schema_;
 
-  gscoped_ptr<InternalMiniCluster> cluster_;
+  unique_ptr<InternalMiniCluster> cluster_;
   client::sp::shared_ptr<KuduClient> client_;
   std::shared_ptr<Messenger> client_messenger_;
 };
 
-void TsTabletManagerITest::SetUp() {
-  KuduTest::SetUp();
-
-  MessengerBuilder bld("client");
-  ASSERT_OK(bld.Build(&client_messenger_));
+// Test that when a tablet is marked as failed, it will eventually be evicted
+// and replaced.
+TEST_F(TsTabletManagerITest, TestFailedTabletsAreReplaced) {
+  const int kNumReplicas = 3;
+  NO_FATALS(StartCluster(kNumReplicas));
 
   InternalMiniClusterOptions opts;
   opts.num_tablet_servers = kNumReplicas;
-  cluster_.reset(new InternalMiniCluster(env_, opts));
-  ASSERT_OK(cluster_->Start());
-  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+  unique_ptr<InternalMiniCluster> cluster(new InternalMiniCluster(env_, opts));
+  ASSERT_OK(cluster->Start());
+  TestWorkload work(cluster.get());
+  work.set_num_replicas(3);
+  work.Setup();
+  work.Start();
+
+  // Insert data until until the tablet becomes visible to the server.
+  MiniTabletServer* ts = cluster->mini_tablet_server(0);
+  string tablet_id;
+  ASSERT_EVENTUALLY([&] {
+    vector<string> tablet_ids = ts->ListTablets();
+    ASSERT_EQ(1, tablet_ids.size());
+    tablet_id = tablet_ids[0];
+  });
+  {
+    // Fail one of the replicas (the first one, chosen arbitrarily).
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
+    replica->SetError(Status::IOError("INJECTED ERROR: tablet failed"));
+    replica->Shutdown();
+    ASSERT_EQ(tablet::FAILED, replica->state());
+  }
+
+  // Ensure the tablet eventually is replicated.
+  ASSERT_EVENTUALLY([&]{
+    scoped_refptr<TabletReplica> replica;
+    ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
+    ASSERT_EQ(replica->state(), tablet::RUNNING);
+  });
+  work.StopAndJoin();
 }
 
 // Test that when the leader changes, the tablet manager gets notified and
 // includes that information in the next tablet report.
 TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
+  const int kNumReplicas = 2;
+  NO_FATALS(StartCluster(kNumReplicas));
+
   // We need to control elections precisely for this test since we're using
   // EmulateElection() with a distributed consensus configuration.
   FLAGS_enable_leader_failure_detection = false;
@@ -133,7 +177,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
 
   // Create the table.
   client::sp::shared_ptr<KuduTable> table;
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&schema_)
             .set_range_partition_columns({ "key" })

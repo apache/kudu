@@ -207,11 +207,12 @@ bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
   if (PREDICT_FALSE(state != tablet::RUNNING)) {
     Status s = Status::IllegalState("Tablet not RUNNING",
                                     tablet::TabletStatePB_Name(state));
+    TabletServerErrorPB::Code code = TabletServerErrorPB::TABLET_NOT_RUNNING;
     if (state == tablet::FAILED) {
       s = s.CloneAndAppend((*replica)->error().ToString());
+      code = TabletServerErrorPB::TABLET_FAILED;
     }
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    SetupErrorAndRespond(resp->mutable_error(), s, code, context);
     return false;
   }
   return true;

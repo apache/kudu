@@ -3016,13 +3016,13 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
 }
 
 // Test that, if the raft metadata on a replica is corrupt, then the server
-// doesn't crash, but instead just marks the tablet as corrupt.
+// doesn't crash, but instead marks the tablet as failed.
 TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
   // Start cluster and wait until we have a stable leader.
-  NO_FATALS(BuildAndStart());
+  // Switch off tombstoning of evicted replicas to observe the failed tablet state.
+  NO_FATALS(BuildAndStart({}, { "--master_tombstone_evicted_tablet_replicas=false" }));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
                                   tablet_id_, 1));
-
 
   // Shut down one of the tablet servers, and then muck
   // with its consensus metadata to corrupt it.
@@ -3042,13 +3042,12 @@ TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
                                    tablet::FAILED,
                                    MonoDelta::FromSeconds(30)));
 
-  // Currently, the tablet server does not automatically delete FAILED replicas.
-  // So, manually delete the bad replica in order to recover.
-  ASSERT_OK(itest::DeleteTablet(tablet_servers_[ts->uuid()], tablet_id_,
-                                tablet::TABLET_DATA_TOMBSTONED, boost::none,
-                                MonoDelta::FromSeconds(30)));
+  // Switch on deletion of evicted replicas (this is default behavior) to ensure
+  // the tablet is reassigned.
+  ASSERT_OK(cluster_->SetFlag(cluster_->master(0),
+      "master_tombstone_evicted_tablet_replicas", "true"));
 
-  // A new good copy should get created.
+  // A new good copy should get created automatically.
   ASSERT_OK(WaitUntilTabletInState(tablet_servers_[ts->uuid()],
                                    tablet_id_,
                                    tablet::RUNNING,

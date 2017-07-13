@@ -617,11 +617,23 @@ void PeerMessageQueue::UpdateLastIndexAppendedToLeader(int64_t last_idx_appended
   UpdateLagMetricsUnlocked();
 }
 
-void PeerMessageQueue::NotifyPeerIsResponsive(const std::string& peer_uuid) {
+void PeerMessageQueue::NotifyPeerIsResponsive(const string& peer_uuid) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
   if (!peer) return;
   peer->last_successful_communication_time = MonoTime::Now();
+}
+
+void PeerMessageQueue::NotifyPeerHasFailed(const string& peer_uuid, const string& reason) {
+  std::unique_lock<simple_spinlock> l(queue_lock_);
+  TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
+  if (peer) {
+    // Use the current term to ensure the peer will be evicted, otherwise this
+    // notification may be ignored.
+    int64_t current_term = queue_state_.current_term;
+    l.unlock();
+    NotifyObserversOfFailedFollower(peer_uuid, current_term, reason);
+  }
 }
 
 void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
