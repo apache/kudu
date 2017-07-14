@@ -480,6 +480,7 @@ TEST_F(ToolTest, TestModeHelp) {
     const vector<string> kChangeConfigModeRegexes = {
         "add_replica.*Add a new replica",
         "change_replica_type.*Change the type of an existing replica",
+        "move_replica.*Move a tablet replica",
         "remove_replica.*Remove an existing replica"
     };
     NO_FATALS(RunTestHelp("tablet change_config", kChangeConfigModeRegexes));
@@ -1195,7 +1196,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 }
 
 // Create and start Kudu mini cluster, optionally creating a table in the DB,
-// and then run 'kudu test loadgen ...' utility against it.
+// and then run 'kudu perf loadgen ...' utility against it.
 void ToolTest::RunLoadgen(int num_tservers,
                           const vector<string>& tool_args,
                           const string& table_name) {

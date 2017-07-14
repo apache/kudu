@@ -32,7 +32,6 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/tools/color.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
@@ -71,25 +70,6 @@ using std::string;
 using std::stringstream;
 using std::unordered_map;
 using strings::Substitute;
-
-// The stream to write output to. If this is NULL, defaults to cout.
-// This is used by tests to capture output.
-ostream* g_err_stream = NULL;
-
-// Print an informational message to cout.
-static ostream& Out() {
-  return (g_err_stream ? *g_err_stream : cout);
-}
-
-// Print a warning message to cout.
-static ostream& Warn() {
-  return Out() << Color(AnsiCode::YELLOW, "WARNING: ");
-}
-
-// Print an error message to cout.
-static ostream& Error() {
-  return Out() << Color(AnsiCode::RED, "WARNING: ");
-}
 
 namespace {
 // Return true if 'str' matches any of the patterns in 'patterns', or if
@@ -198,11 +178,10 @@ Status Ksck::FetchInfoFromTabletServers() {
   if (bad_servers.Load() == 0) {
     Out() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
     return Status::OK();
-  } else {
-    Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
-                         servers_count - bad_servers.Load(), bad_servers.Load()) << endl;
-    return Status::NetworkError("Not all Tablet Servers are reachable");
   }
+  Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
+                       servers_count - bad_servers.Load(), bad_servers.Load()) << endl;
+  return Status::NetworkError("Not all Tablet Servers are reachable");
 }
 
 Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
@@ -247,11 +226,10 @@ Status Ksck::CheckTablesConsistency() {
   if (bad_tables_count == 0) {
     Out() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_checked) << endl;
     return Status::OK();
-  } else {
-    Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
-                         bad_tables_count, tables_checked) << endl;
-    return Status::Corruption(Substitute("$0 table(s) are bad", bad_tables_count));
   }
+  Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
+                       bad_tables_count, tables_checked) << endl;
+  return Status::Corruption(Substitute("$0 table(s) are bad", bad_tables_count));
 }
 
 // Class to act as a collector of scan results.
@@ -289,10 +267,10 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
 
   // Blocks until either the number of results plus errors reported equals
   // num_tablet_replicas (from the constructor), or until the timeout expires,
-  // whichever comes first.
+  // whichever comes first. Progress messages are printed to 'out'.
   // Returns false if the timeout expired before all responses came in.
   // Otherwise, returns true.
-  bool WaitFor(const MonoDelta& timeout) const {
+  bool WaitFor(const MonoDelta& timeout, std::ostream* out) const {
     MonoTime start = MonoTime::Now();
     MonoTime deadline = start + timeout;
 
@@ -305,7 +283,7 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
       done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
       string status = done ? "finished in " : "running for ";
       int run_time_sec = (MonoTime::Now() - start).ToSeconds();
-      Out() << "Checksum " << status << run_time_sec << "s: "
+      (*out) << "Checksum " << status << run_time_sec << "s: "
              << responses_.count() << "/" << expected_count_ << " replicas remaining ("
              << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
              << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
@@ -492,7 +470,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
     }
   }
 
-  bool timed_out = !reporter->WaitFor(options.timeout);
+  bool timed_out = !reporter->WaitFor(options.timeout, out_);
 
   // Even if we timed out, print the checksum results that we did get.
   ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();
@@ -584,21 +562,20 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
                         Color(AnsiCode::GREEN, "HEALTHY"),
                         tablets.size()) << endl;
     return true;
-  } else {
-    if (result_counts[CheckResult::UNAVAILABLE] > 0) {
-      Out() << Substitute("Table $0 has $1 $2 tablet(s)",
-                          table->name(),
-                          result_counts[CheckResult::UNAVAILABLE],
-                          Color(AnsiCode::RED, "unavailable")) << endl;
-    }
-    if (result_counts[CheckResult::UNDER_REPLICATED] > 0) {
-      Out() << Substitute("Table $0 has $1 $2 tablet(s)",
-                          table->name(),
-                          result_counts[CheckResult::UNDER_REPLICATED],
-                          Color(AnsiCode::YELLOW, "under-replicated")) << endl;
-    }
-    return false;
   }
+  if (result_counts[CheckResult::UNAVAILABLE] > 0) {
+    Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                        table->name(),
+                        result_counts[CheckResult::UNAVAILABLE],
+                        Color(AnsiCode::RED, "unavailable")) << endl;
+  }
+  if (result_counts[CheckResult::UNDER_REPLICATED] > 0) {
+    Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                        table->name(),
+                        result_counts[CheckResult::UNDER_REPLICATED],
+                        Color(AnsiCode::YELLOW, "under-replicated")) << endl;
+  }
+  return false;
 }
 
 namespace {

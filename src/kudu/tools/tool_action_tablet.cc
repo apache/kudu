@@ -18,6 +18,8 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
+#include <boost/optional.hpp>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -33,10 +35,18 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
+
+DEFINE_int64(move_copy_timeout_sec, 600,
+             "Number of seconds to wait for tablet copy to complete when relocating a tablet");
+DEFINE_int64(move_leader_timeout_sec, 10,
+             "Number of seconds to wait for a leader when relocating a leader tablet");
 
 namespace kudu {
 namespace tools {
@@ -47,10 +57,17 @@ using client::KuduTablet;
 using client::KuduTabletServer;
 using consensus::ChangeConfigType;
 using consensus::ConsensusServiceProxy;
+using consensus::ConsensusStatePB;
+using consensus::GetConsensusStateRequestPB;
+using consensus::GetConsensusStateResponsePB;
+using consensus::GetLastOpIdRequestPB;
+using consensus::GetLastOpIdResponsePB;
+using consensus::OpId;
 using consensus::RaftPeerPB;
 using rpc::RpcController;
 using std::cout;
 using std::endl;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -59,7 +76,9 @@ using strings::Substitute;
 namespace {
 
 const char* const kReplicaTypeArg = "replica_type";
-const char* const kReplicaUuidArg = "replica_uuid";
+const char* const kTsUuidArg = "ts_uuid";
+const char* const kFromTsUuidArg = "from_ts_uuid";
+const char* const kToTsUuidArg = "to_ts_uuid";
 
 Status GetRpcAddressForTS(const client::sp::shared_ptr<KuduClient>& client,
                           const string& uuid,
@@ -101,25 +120,53 @@ Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
       "No leader replica found for tablet $0", tablet_id));
 }
 
-Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
-  // Parse and validate arguments.
-  RaftPeerPB peer_pb;
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
-  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  const string& replica_uuid = FindOrDie(context.required_args, kReplicaUuidArg);
-  if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) {
-    const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
-    string uppercase_peer_type;
-    ToUpperCase(replica_type, &uppercase_peer_type);
-    RaftPeerPB::MemberType member_type_val;
-    if (!RaftPeerPB::MemberType_Parse(uppercase_peer_type, &member_type_val)) {
-      return Status::InvalidArgument("Unrecognized peer type", replica_type);
-    }
-    peer_pb.set_member_type(member_type_val);
+Status DoKsckForTablet(const vector<string>& master_addresses, const string& tablet_id) {
+  shared_ptr<KsckMaster> master;
+  RETURN_NOT_OK(RemoteKsckMaster::Build(master_addresses, &master));
+  shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+
+  // Print to an unopened ofstream to discard ksck output.
+  // See https://stackoverflow.com/questions/8243743.
+  std::ofstream null_stream;
+  Ksck ksck(cluster, &null_stream);
+  ksck.set_tablet_id_filters({ tablet_id });
+  RETURN_NOT_OK(ksck.CheckMasterRunning());
+  RETURN_NOT_OK(ksck.FetchTableAndTabletInfo());
+  RETURN_NOT_OK(ksck.FetchInfoFromTabletServers());
+  return ksck.CheckTablesConsistency();
+}
+
+Status WaitForCleanKsck(const vector<string>& master_addresses,
+                        const string& tablet_id,
+                        const MonoDelta& timeout) {
+  Status s;
+  MonoTime deadline = MonoTime::Now() + timeout;
+  while (MonoTime::Now() < deadline) {
+    s = DoKsckForTablet(master_addresses, tablet_id);
+    if (s.ok()) return s;
+    SleepFor(MonoDelta::FromMilliseconds(1000));
   }
+  return s.CloneAndPrepend("timed out with ksck errors remaining: last error");
+}
+
+Status DoChangeConfig(const vector<string>& master_addresses,
+                      const string& tablet_id,
+                      const string& replica_uuid,
+                      const boost::optional<RaftPeerPB::MemberType>& member_type,
+                      ChangeConfigType cc_type) {
+  if (cc_type == consensus::REMOVE_SERVER && member_type) {
+    return Status::InvalidArgument("cannot supply Raft member type when removing a server");
+  }
+  if ((cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) && !member_type) {
+    return Status::InvalidArgument(
+        "must specify member type when adding a server or changing member type");
+  }
+
+  RaftPeerPB peer_pb;
   peer_pb.set_permanent_uuid(replica_uuid);
+  if (member_type) {
+    peer_pb.set_member_type(*member_type);
+  }
 
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(KuduClientBuilder()
@@ -156,6 +203,27 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   return Status::OK();
 }
 
+Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
+  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
+  boost::optional<RaftPeerPB::MemberType> member_type;
+  if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) {
+    const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
+    string uppercase_peer_type;
+    ToUpperCase(replica_type, &uppercase_peer_type);
+    RaftPeerPB::MemberType member_type_val;
+    if (!RaftPeerPB::MemberType_Parse(uppercase_peer_type, &member_type_val)) {
+      return Status::InvalidArgument("Unrecognized peer type", replica_type);
+    }
+    member_type = member_type_val;
+  }
+
+  return DoChangeConfig(master_addresses, tablet_id, replica_uuid, member_type, cc_type);
+}
+
 Status AddReplica(const RunnerContext& context) {
   return ChangeConfig(context, consensus::ADD_SERVER);
 }
@@ -166,6 +234,25 @@ Status ChangeReplicaType(const RunnerContext& context) {
 
 Status RemoveReplica(const RunnerContext& context) {
   return ChangeConfig(context, consensus::REMOVE_SERVER);
+}
+
+Status DoLeaderStepDown(const client::sp::shared_ptr<KuduClient>& client, const string& tablet_id,
+                        const string& leader_uuid, const HostPort& leader_hp) {
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  consensus::LeaderStepDownRequestPB req;
+  consensus::LeaderStepDownResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+
+  RETURN_NOT_OK(proxy->LeaderStepDown(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
 }
 
 Status LeaderStepDown(const RunnerContext& context) {
@@ -189,21 +276,124 @@ Status LeaderStepDown(const RunnerContext& context) {
   }
   RETURN_NOT_OK(s);
 
-  unique_ptr<ConsensusServiceProxy> proxy;
-  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+  return DoLeaderStepDown(client, tablet_id, leader_uuid, leader_hp);
+}
 
-  consensus::LeaderStepDownRequestPB req;
-  consensus::LeaderStepDownResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(client->default_admin_operation_timeout());
-  req.set_dest_uuid(leader_uuid);
-  req.set_tablet_id(tablet_id);
-
-  RETURN_NOT_OK(proxy->LeaderStepDown(req, &resp, &rpc));
+Status GetConsensusState(const unique_ptr<ConsensusServiceProxy>& proxy,
+                         const string& tablet_id,
+                         const string& replica_uuid,
+                         const MonoDelta& timeout,
+                         ConsensusStatePB* consensus_state) {
+  GetConsensusStateRequestPB req;
+  GetConsensusStateResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+  req.set_dest_uuid(replica_uuid);
+  req.add_tablet_ids(tablet_id);
+  RETURN_NOT_OK(proxy->GetConsensusState(req, &resp, &controller));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
+  if (resp.tablets_size() == 0) {
+    return Status::NotFound("tablet not found:", tablet_id);
+  }
+  DCHECK_EQ(1, resp.tablets_size());
+  *consensus_state = resp.tablets(0).cstate();
   return Status::OK();
+}
+
+Status GetLastCommittedOpId(const string& tablet_id, const string& replica_uuid,
+                            const HostPort& replica_hp, const MonoDelta& timeout, OpId* opid) {
+  GetLastOpIdRequestPB req;
+  GetLastOpIdResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+  req.set_tablet_id(tablet_id);
+  req.set_dest_uuid(replica_uuid);
+  req.set_opid_type(consensus::COMMITTED_OPID);
+
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(replica_hp.host(), replica_hp.port(), &proxy));
+  RETURN_NOT_OK(proxy->GetLastOpId(req, &resp, &controller));
+  *opid = resp.opid();
+  return Status::OK();
+}
+
+Status ChangeLeader(const client::sp::shared_ptr<KuduClient>& client, const string& tablet_id,
+                    const string& old_leader_uuid, const HostPort& old_leader_hp,
+                    const MonoDelta& timeout) {
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(old_leader_hp.host(), old_leader_hp.port(), &proxy));
+  ConsensusStatePB cstate;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, old_leader_uuid,
+                                  client->default_admin_operation_timeout(), &cstate));
+  int64 current_term = -1;
+  MonoTime deadline = MonoTime::Now() + timeout;
+
+  // First, check the leader and, if it's the old leader, ask it to step down.
+  // Repeat until we time out or get a different leader.
+  while (MonoTime::Now() < deadline) {
+    RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, old_leader_uuid,
+                                    client->default_admin_operation_timeout(), &cstate));
+
+    if (cstate.current_term() > current_term && cstate.has_leader_uuid()) {
+      current_term = cstate.current_term();
+      if (cstate.leader_uuid() != old_leader_uuid) {
+        break;
+      }
+      RETURN_NOT_OK(DoLeaderStepDown(client, tablet_id, old_leader_uuid, old_leader_hp));
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1000));
+  }
+
+  // Second, once we have a new leader, wait for it to assert leadership by replicating an op
+  // in the current term to the old leader.
+  OpId opid;
+  while (MonoTime::Now() < deadline) {
+    RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, old_leader_uuid, old_leader_hp,
+                                       client->default_admin_operation_timeout(), &opid));
+    if (opid.term() == current_term) {
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(500));
+  }
+
+  return Status::TimedOut("unable to change leadership in time");
+}
+
+Status MoveReplica(const RunnerContext &context) {
+  const string& master_addresses_str = FindOrDie(context.required_args, kMasterAddressesArg);
+  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const string& rem_replica_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
+  const string& add_replica_uuid = FindOrDie(context.required_args, kToTsUuidArg);
+
+  // Check the tablet is in perfect health and, if so, add the new server.
+  RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
+                        "ksck pre-move health check failed");
+  RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, add_replica_uuid,
+                               RaftPeerPB::VOTER, consensus::ADD_SERVER));
+
+  // Wait until the tablet copy completes and the tablet returns to perfect health.
+  MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
+  RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses, tablet_id, copy_timeout),
+                        "failed waiting for clean ksck after add server");
+
+  // Finally, remove the chosen replica.
+  // If it is the leader, it will be asked to step down.
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(KuduClientBuilder().master_server_addrs(master_addresses).Build(&client));
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  if (rem_replica_uuid == leader_uuid) {
+    RETURN_NOT_OK_PREPEND(ChangeLeader(client, tablet_id,
+                                       leader_uuid, leader_hp,
+                                       MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
+                          "failed changing leadership from the replica to be removed");
+  }
+  return DoChangeConfig(master_addresses, tablet_id, rem_replica_uuid,
+                        boost::none, consensus::REMOVE_SERVER);
 }
 
 } // anonymous namespace
@@ -214,7 +404,8 @@ unique_ptr<Mode> BuildTabletMode() {
       .Description("Add a new replica to a tablet's Raft configuration")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddRequiredParameter({ kReplicaUuidArg, "New replica's UUID" })
+      .AddRequiredParameter({ kTsUuidArg,
+                              "UUID of the tablet server that should host the new replica" })
       .AddRequiredParameter(
           { kReplicaTypeArg, "New replica's type. Must be VOTER or NON-VOTER."
           })
@@ -226,7 +417,8 @@ unique_ptr<Mode> BuildTabletMode() {
           "Change the type of an existing replica in a tablet's Raft configuration")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddRequiredParameter({ kReplicaUuidArg, "Existing replica's UUID" })
+      .AddRequiredParameter({ kTsUuidArg,
+                              "UUID of the tablet server hosting the existing replica" })
       .AddRequiredParameter(
           { kReplicaTypeArg, "Existing replica's new type. Must be VOTER or NON-VOTER."
           })
@@ -237,7 +429,26 @@ unique_ptr<Mode> BuildTabletMode() {
       .Description("Remove an existing replica from a tablet's Raft configuration")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddRequiredParameter({ kReplicaUuidArg, "Existing replica's UUID" })
+      .AddRequiredParameter({ kTsUuidArg,
+                              "UUID of the tablet server hosting the existing replica" })
+      .Build();
+
+  const string move_extra_desc = "The replica move tool effectively moves a "
+      "replica from one tablet server to another by adding a replica to the "
+      "new server and then removing it from the old one. It requires that "
+      "ksck return no errors when run against the target tablet. If the move "
+      "fails, the user should wait for any tablet copy to complete, and, if "
+      "the copy succeeds, use remove_replica manually. If the copy fails, the "
+      "new replica will be deleted automatically after some time, and then the "
+      "move can be retried.";
+  unique_ptr<Action> move_replica =
+      ActionBuilder("move_replica", &MoveReplica)
+      .Description("Move a tablet replica from one tablet server to another")
+      .ExtraDescription(move_extra_desc)
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddRequiredParameter({ kFromTsUuidArg, "UUID of the tablet server to move from" })
+      .AddRequiredParameter({ kToTsUuidArg, "UUID of the tablet server to move to" })
       .Build();
 
   unique_ptr<Action> leader_step_down =
@@ -252,6 +463,7 @@ unique_ptr<Mode> BuildTabletMode() {
       .Description("Change a tablet's Raft configuration")
       .AddAction(std::move(add_replica))
       .AddAction(std::move(change_replica_type))
+      .AddAction(std::move(move_replica))
       .AddAction(std::move(remove_replica))
       .Build();
 

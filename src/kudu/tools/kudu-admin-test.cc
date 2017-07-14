@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -48,9 +50,11 @@ using itest::TabletServerMap;
 using itest::TServerDetails;
 using itest::WAIT_FOR_LEADER;
 using itest::WaitForReplicasReportedToMaster;
+using itest::WaitForServersToAgree;
 using itest::WaitUntilCommittedOpIdIndexIs;
 using itest::WaitUntilTabletInState;
 using itest::WaitUntilTabletRunning;
+using std::deque;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -165,6 +169,80 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                 leader, tablet_id_,
                                                 MonoDelta::FromSeconds(10)));
+}
+
+// Test relocating replicas while running a workload.
+// 1. Instantiate external mini cluster with 5 TS.
+// 2. Create a table with 3 replicas.
+// 3. Start a workload.
+// 4. Using the CLI, move the 3 replicas around the 5 TS.
+// 5. Profit!
+TEST_F(AdminCliTest, TestMoveTablet) {
+  FLAGS_num_tablet_servers = 5;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart());
+
+  vector<string> tservers;
+  AppendKeysFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+  deque<string> active_tservers;
+  for (auto iter = tablet_replicas_.find(tablet_id_); iter != tablet_replicas_.cend(); ++iter) {
+    active_tservers.push_back(iter->second->uuid());
+  }
+  ASSERT_EQ(FLAGS_num_replicas, active_tservers.size());
+
+  deque<string> inactive_tservers;
+  std::sort(tservers.begin(), tservers.end());
+  std::sort(active_tservers.begin(), active_tservers.end());
+  std::set_difference(tservers.cbegin(), tservers.cend(),
+                      active_tservers.cbegin(), active_tservers.cend(),
+                      std::back_inserter(inactive_tservers));
+  ASSERT_EQ(FLAGS_num_tablet_servers - FLAGS_num_replicas, inactive_tservers.size());
+
+  // The workload is light (1 thread, 1 op batches) so that new replicas
+  // bootstrap and converge quickly.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_num_write_threads(1);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  // Assuming no ad hoc leadership changes, 3 guarantees the leader is move at least once.
+  int num_moves = AllowSlowTests() ? 3 : 1;
+  for (int i = 0; i < num_moves; i++) {
+    const string remove = active_tservers.front();
+    const string add = inactive_tservers.front();
+    ASSERT_OK(Subprocess::Call({
+                                   GetKuduCtlAbsolutePath(),
+                                   "tablet",
+                                   "change_config",
+                                   "move_replica",
+                                   cluster_->master()->bound_rpc_addr().ToString(),
+                                   tablet_id_,
+                                   remove,
+                                   add
+                               }));
+    active_tservers.pop_front();
+    active_tservers.push_back(add);
+    inactive_tservers.pop_front();
+    inactive_tservers.push_back(remove);
+
+    // Allow the added server time to catch up so it applies the newest configuration.
+    // If we don't wait, the initial ksck of move_tablet can fail with consensus conflict.
+    TabletServerMap active_tservers_map;
+    for (const string& uuid : active_tservers) {
+      InsertOrDie(&active_tservers_map, uuid, tablet_servers_[uuid]);
+    }
+    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), active_tservers_map,
+                                    tablet_id_, 1));
+  }
+  workload.StopAndJoin();
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
 }
 
 Status RunUnsafeChangeConfig(const string& tablet_id,

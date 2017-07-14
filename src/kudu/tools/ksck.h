@@ -22,6 +22,7 @@
 
 #include <boost/optional.hpp>
 #include <gtest/gtest_prod.h>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <set>
@@ -33,6 +34,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.service.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/color.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
@@ -377,8 +379,10 @@ class KsckCluster {
 // Externally facing class to run checks against the provided cluster.
 class Ksck {
  public:
-  explicit Ksck(std::shared_ptr<KsckCluster> cluster)
-      : cluster_(std::move(cluster)) {}
+  explicit Ksck(std::shared_ptr<KsckCluster> cluster, std::ostream* out = &std::cout)
+      : cluster_(std::move(cluster)),
+        out_(out) {}
+
   ~Ksck() {}
 
   // Set whether ksck should verify that each of the tablet's raft configurations
@@ -446,11 +450,28 @@ class Ksck {
   CheckResult VerifyTablet(const std::shared_ptr<KsckTablet>& tablet,
                            int table_num_replicas);
 
+  // Print an informational message to this instance's output stream.
+  ostream& Out() {
+    return *out_;
+  }
+
+  // Print an error message to this instance's output stream.
+  ostream& Error() {
+    return (*out_) << Color(AnsiCode::RED, "ERROR: ");
+  }
+
+  // Print a warning message to this instance's output stream.
+  ostream& Warn() {
+    return (*out_) << Color(AnsiCode::YELLOW, "WARNING: ");
+  }
+
   const std::shared_ptr<KsckCluster> cluster_;
 
   bool check_replica_count_ = true;
   vector<string> table_filters_;
   vector<string> tablet_id_filters_;
+
+  std::ostream* out_;
 
   DISALLOW_COPY_AND_ASSIGN(Ksck);
 };

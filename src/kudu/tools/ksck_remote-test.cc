@@ -16,12 +16,10 @@
 // under the License.
 
 #include <memory>
-#include <sstream>
 
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tools/data_gen_util.h"
@@ -46,11 +44,6 @@ using client::sp::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using strings::Substitute;
-
-// Import this symbol from ksck.cc so we can introspect the
-// errors being written to stderr.
-extern std::ostream* g_err_stream;
 
 static const char *kTableName = "ksck-test-table";
 
@@ -62,11 +55,6 @@ class RemoteKsckTest : public KuduTest {
     b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
     b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
     CHECK_OK(b.Build(&schema_));
-    g_err_stream = &err_stream_;
-  }
-
-  ~RemoteKsckTest() {
-    g_err_stream = NULL;
   }
 
   virtual void SetUp() OVERRIDE {
@@ -110,7 +98,7 @@ class RemoteKsckTest : public KuduTest {
     std::shared_ptr<KsckMaster> master;
     ASSERT_OK(RemoteKsckMaster::Build(master_addresses, &master));
     std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
-    ksck_.reset(new Ksck(cluster));
+    ksck_.reset(new Ksck(cluster, &err_stream_));
   }
 
   virtual void TearDown() OVERRIDE {

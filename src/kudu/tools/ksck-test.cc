@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <iosfwd>
 #include <memory>
 #include <unordered_map>
 
@@ -39,10 +38,6 @@ using std::static_pointer_cast;
 using std::string;
 using std::unordered_map;
 using strings::Substitute;
-
-// Import this symbol from ksck.cc so we can introspect the
-// errors being written to stderr.
-extern std::ostream* g_err_stream;
 
 class MockKsckTabletServer : public KsckTabletServer {
  public:
@@ -121,7 +116,7 @@ class KsckTest : public KuduTest {
   KsckTest()
       : master_(new MockKsckMaster()),
         cluster_(new KsckCluster(static_pointer_cast<KsckMaster>(master_))),
-        ksck_(new Ksck(cluster_)) {
+        ksck_(new Ksck(cluster_, &err_stream_)) {
     FLAGS_color = "never";
     unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
     for (int i = 0; i < 3; i++) {
@@ -130,12 +125,6 @@ class KsckTest : public KuduTest {
       InsertOrDie(&tablet_servers, ts->uuid(), ts);
     }
     master_->tablet_servers_.swap(tablet_servers);
-
-    g_err_stream = &err_stream_;
-  }
-
-  ~KsckTest() {
-    g_err_stream = NULL;
   }
 
  protected:
