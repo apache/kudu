@@ -29,10 +29,10 @@
 
     <!-- inherit from the ASF POM for distribution management -->
     <parent>
-      <groupId>org.apache</groupId>
-      <artifactId>apache</artifactId>
-      <version>18</version>
-      <relativePath/>
+        <groupId>org.apache</groupId>
+        <artifactId>apache</artifactId>
+        <version>18</version>
+        <relativePath/>
     </parent>
 
     <name>Kudu</name>
@@ -72,6 +72,8 @@
         <protobuf.version>3.3.0</protobuf.version>
         <slf4j.version>1.7.25</slf4j.version>
         <yetus.version>0.4.0</yetus.version>
+        <parquet.version>1.9.0</parquet.version>
+        <sparkavro.version>3.2.0</sparkavro.version>
 
         <!-- Scala Library dependencies -->
         <spark1.version>1.6.3</spark1.version>
@@ -83,8 +85,9 @@
         <!-- Misc variables -->
         <testdata.dir>target/testdata</testdata.dir>
         <testArgLine>-enableassertions -Xmx1900m
-        -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
-        -Djava.awt.headless=true</testArgLine>
+            -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
+            -Djava.awt.headless=true
+        </testArgLine>
     </properties>
 
     <modules>
