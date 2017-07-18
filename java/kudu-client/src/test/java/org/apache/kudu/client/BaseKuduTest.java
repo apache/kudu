@@ -382,7 +382,7 @@ public class BaseKuduTest {
    * @return the RPC port of the given tablet's leader tablet server.
    * @throws Exception
    */
-  private static int findLeaderTabletServerPort(LocatedTablet tablet)
+  protected static int findLeaderTabletServerPort(LocatedTablet tablet)
       throws Exception {
     LocatedTablet.Replica leader = null;
     DeadlineTracker deadlineTracker = new DeadlineTracker();
