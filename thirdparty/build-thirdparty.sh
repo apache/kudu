@@ -191,6 +191,15 @@ else
   exit 1
 fi
 
+### Detect and enable 'ninja' instead of 'make' for faster builds.
+if which ninja-build > /dev/null ; then
+  NINJA=ninja-build
+  EXTRA_CMAKE_FLAGS=-GNinja
+elif which ninja > /dev/null ; then
+  NINJA=ninja
+  EXTRA_CMAKE_FLAGS=-GNinja
+fi
+
 ### Build common tools and header-only libraries
 
 PREFIX=$PREFIX_COMMON

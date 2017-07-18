@@ -27,6 +27,10 @@
 # * EXTRA_CXXFLAGS - additional flags to pass to the C++ compiler.
 # * EXTRA_LDFLAGS - additional flags to pass to the linker.
 # * EXTRA_LIBS - additional libraries to link.
+# * NINJA - if set, uses this instead of 'make' for cmake-configured libraries.
+#           note that 'EXTRA_CMAKE_FLAGS" should be set to include -GNinja as
+#           well to generate the proper build files.
+# * EXTRA_CMAKE_FLAGS - extra flags to pass to cmake
 #
 # build-definitions.sh is meant to be sourced from build-thirdparty.sh, and
 # relies on environment variables defined there and in vars.sh.
@@ -91,6 +95,8 @@ build_cmake() {
   $CMAKE_SOURCE/bootstrap \
     --prefix=$PREFIX \
     --parallel=$PARALLEL
+  # Unfortunately, cmake's bootstrap always uses Makefiles
+  # and can't be configured to build with ninja.
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
@@ -105,8 +111,9 @@ build_libcxxabi() {
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
     -DLLVM_PATH=$LLVM_SOURCE \
+    $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE/projects/libcxxabi
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -134,8 +141,9 @@ build_libcxx() {
     -DLIBCXX_CXX_ABI=libcxxabi \
     -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$LLVM_SOURCE/projects/libcxxabi/include \
     -DLLVM_USE_SANITIZER=$SANITIZER_TYPE \
+    $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE/projects/libcxx
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -216,9 +224,10 @@ build_llvm() {
     -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS $EXTRA_LDFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
     $TOOLS_ARGS \
+    $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE
 
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
 
   if [[ "$BUILD_TYPE" == "normal" ]]; then
     # Create a link from Clang to thirdparty/clang-toolchain. This path is used
@@ -244,8 +253,9 @@ build_gflags() {
     -DBUILD_SHARED_LIBS=On \
     -DBUILD_STATIC_LIBS=On \
     -DREGISTER_INSTALL_PREFIX=Off \
+    $EXTRA_CMAKE_FLAGS \
     $GFLAGS_SOURCE
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
@@ -327,8 +337,9 @@ build_gmock() {
       -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_POSITION_INDEPENDENT_CODE=On \
       -DBUILD_SHARED_LIBS=$SHARED \
+      $EXTRA_CMAKE_FLAGS \
       $GMOCK_SOURCE/googlemock
-    make -j$PARALLEL $EXTRA_MAKEFLAGS
+    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS
     popd
   done
 
@@ -402,13 +413,15 @@ build_lz4() {
   LZ4_BDIR=$TP_BUILD_DIR/$LZ4_NAME$MODE_SUFFIX
   mkdir -p $LZ4_BDIR
   pushd $LZ4_BDIR
+  rm -Rf CMakeCache.txt CMakeFiles/
   CFLAGS="$EXTRA_CFLAGS" \
     cmake \
     -DCMAKE_BUILD_TYPE=release \
     -DBUILD_TOOLS=0 \
     -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX \
+    $EXTRA_CMAKE_FLAGS \
     $LZ4_SOURCE/cmake_unofficial
-  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
 
