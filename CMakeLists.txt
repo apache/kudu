@@ -25,7 +25,7 @@ cmake_minimum_required(VERSION 3.4.3)
 # Prevent builds from the top-level source directory. This ensures that build
 # output is well isolated from the source tree.
 #
-# May be overridden by setting KUDU_ALLOW_IN_SOURCE_BUILDS; this is only
+# May be overridden by setting KUDU_ALLOW_IN_SOURCE_BUILD; this is only
 # recommended for experts!
 if("${CMAKE_CURRENT_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}" AND
     NOT "${KUDU_ALLOW_IN_SOURCE_BUILD}")

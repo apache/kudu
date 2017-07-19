@@ -19,7 +19,7 @@
 # Sets COMPILER_VERSION to the version
 execute_process(COMMAND env LANG=C "${CMAKE_CXX_COMPILER}" -v
                 ERROR_VARIABLE COMPILER_VERSION_FULL)
-message(INFO " ${COMPILER_VERSION_FULL}")
+message(${COMPILER_VERSION_FULL})
 
 # clang on Linux and Mac OS X before 10.9
 if("${COMPILER_VERSION_FULL}" MATCHES ".*clang version.*")
@@ -52,3 +52,9 @@ else()
 endif()
 message("Selected compiler ${COMPILER_FAMILY} ${COMPILER_VERSION}")
 
+# gcc (and some varieties of clang) mention the path prefix where system headers
+# and libraries are located.
+if("${COMPILER_VERSION_FULL}" MATCHES "Configured with: .* --prefix=([^ ]*)")
+  set(COMPILER_SYSTEM_PREFIX_PATH ${CMAKE_MATCH_1})
+  message("Selected compiler built with --prefix=${COMPILER_SYSTEM_PREFIX_PATH}")
+endif()
