@@ -156,7 +156,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // Schedules the next heartbeat for this peer, optionally sending a heartbeat
   // now if it makes sense to do so. Initially called from Init() to schedule
   // the first heartbeat, and subsequently as a callback running on a reactor thread.
-  void ScheduleNextHeartbeatAndMaybeSignalRequest(const Status& status);
+  void ScheduleNextHeartbeatAndMaybeSignalRequest();
 
   // Resets the next time that we should heartbeat to this peer. Does not
   // perform any actual scheduling.

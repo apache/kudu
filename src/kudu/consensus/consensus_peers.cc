@@ -79,6 +79,7 @@ namespace kudu {
 namespace consensus {
 
 using std::shared_ptr;
+using std::weak_ptr;
 using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
@@ -131,7 +132,7 @@ Status Peer::Init() {
   }
 
   // Schedule the first heartbeat.
-  ScheduleNextHeartbeatAndMaybeSignalRequest(Status::OK());
+  ScheduleNextHeartbeatAndMaybeSignalRequest();
   return Status::OK();
 }
 
@@ -142,12 +143,14 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
     return Status::IllegalState("Peer was closed.");
   }
 
-  // Capture a shared_ptr reference into the submitted functor so that we're
-  // guaranteed that this object outlives the functor.
-  shared_ptr<Peer> s_this = shared_from_this();
-  RETURN_NOT_OK(raft_pool_token_->SubmitFunc([even_if_queue_empty, s_this]() {
-        s_this->SendNextRequest(even_if_queue_empty);
-      }));
+  // Capture a weak_ptr reference into the submitted functor so that we can
+  // safely handle the functor outliving its peer.
+  weak_ptr<Peer> w_this = shared_from_this();
+  RETURN_NOT_OK(raft_pool_token_->SubmitFunc([even_if_queue_empty, w_this]() {
+    if (auto p = w_this.lock()) {
+      p->SendNextRequest(even_if_queue_empty);
+    }
+  }));
   return Status::OK();
 }
 
@@ -295,11 +298,14 @@ void Peer::ProcessResponse() {
   // of the response handling logic on our thread pool and not on the reactor
   // thread.
   //
-  // Capture a shared_ptr reference into the submitted functor so that we're
-  // guaranteed that this object outlives the functor.
-  shared_ptr<Peer> s_this = shared_from_this();
-  Status s = raft_pool_token_->SubmitFunc([s_this]() {
-    s_this->DoProcessResponse();
+  // Capture a weak_ptr reference into the submitted functor so that we can
+  // safely handle the functor outliving its peer.
+  weak_ptr<Peer> w_this = shared_from_this();
+  Status s = raft_pool_token_->SubmitFunc([w_this]() {
+    if (auto p = w_this.lock()) {
+      p->DoProcessResponse();
+
+    }
   });
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
@@ -408,12 +414,7 @@ Peer::~Peer() {
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
-void Peer::ScheduleNextHeartbeatAndMaybeSignalRequest(const Status& status) {
-  if (!status.ok()) {
-    // The reactor was shut down.
-    return;
-  }
-
+void Peer::ScheduleNextHeartbeatAndMaybeSignalRequest() {
   // We must schedule the next callback with the lowest possible jittered
   // time as the delay so that if SendNextRequest() resets the next heartbeat
   // time with a very low value, the scheduled callback can still honor it.
@@ -446,15 +447,18 @@ void Peer::ScheduleNextHeartbeatAndMaybeSignalRequest(const Status& status) {
     SignalRequest(true);
   }
 
-  // Capture a shared_ptr reference into the submitted functor so that we're
-  // guaranteed that this object outlives the functor.
-  //
-  // Note: we use std::bind and not boost::bind here because the latter doesn't
-  // work with std::shared_ptr.
-  shared_ptr<Peer> s_this = shared_from_this();
-  messenger_->ScheduleOnReactor(
-      std::bind(&Peer::ScheduleNextHeartbeatAndMaybeSignalRequest, s_this,
-                std::placeholders::_1), schedule_delay);
+  // Capture a weak_ptr reference into the submitted functor so that we can
+  // safely handle the functor outliving its peer.
+  weak_ptr<Peer> w_this = shared_from_this();
+  messenger_->ScheduleOnReactor([w_this](const Status& s) {
+    if (!s.ok()) {
+      // The reactor was shut down.
+      return;
+    }
+    if (auto p = w_this.lock()) {
+      p->ScheduleNextHeartbeatAndMaybeSignalRequest();
+    }
+  }, schedule_delay);
 }
 
 MonoDelta Peer::GetHeartbeatJitterLowerBound() {
