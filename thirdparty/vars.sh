@@ -54,6 +54,8 @@ PROTOBUF_VERSION=3.3.0
 PROTOBUF_NAME=protobuf-$PROTOBUF_VERSION
 PROTOBUF_SOURCE=$TP_SOURCE_DIR/$PROTOBUF_NAME
 
+# Note: CMake gets patched on SLES12SP0. When changing the CMake version, please check if
+# cmake-issue-15873-dont-use-select.patch needs to be updated.
 CMAKE_VERSION=3.9.0
 CMAKE_NAME=cmake-$CMAKE_VERSION
 CMAKE_SOURCE=$TP_SOURCE_DIR/$CMAKE_NAME

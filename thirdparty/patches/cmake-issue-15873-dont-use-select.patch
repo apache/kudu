@@ -1,14 +1,27 @@
+From cfdd1aebc180805d7148c2c385c2e0b97287bedc Mon Sep 17 00:00:00 2001
+From: Matthew Jacobs <mj@cloudera.com>
+Date: Thu, 20 Jul 2017 09:28:41 -0700
+Subject: [PATCH] Don't use select() due to
+ https://cmake.org/Bug/view.php?id=15873
+
+---
+ Source/kwsys/ProcessUNIX.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
 diff --git a/Source/kwsys/ProcessUNIX.c b/Source/kwsys/ProcessUNIX.c
-index 1be6d02..525217a 100644
+index 9ebcfce..b448b03 100644
 --- a/Source/kwsys/ProcessUNIX.c
 +++ b/Source/kwsys/ProcessUNIX.c
-@@ -110,7 +110,8 @@ static inline void kwsysProcess_usleep(unsigned int msec)
+@@ -100,7 +100,8 @@ static inline void kwsysProcess_usleep(unsigned int msec)
   * without select().
   */
  #if !defined(__BEOS__) && !defined(__VMS) && !defined(__MINT__)
--# define KWSYSPE_USE_SELECT 1
+-#define KWSYSPE_USE_SELECT 1
 +// Don't use select() due to https://cmake.org/Bug/view.php?id=15873
-+# define KWSYSPE_USE_SELECT 0
++#define KWSYSPE_USE_SELECT 0
  #endif
  
  /* Some platforms do not have siginfo on their signal handlers.  */
+-- 
+1.9.1
+
