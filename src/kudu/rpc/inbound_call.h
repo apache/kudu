@@ -119,9 +119,10 @@ class InboundCall {
                                    const google::protobuf::MessageLite& app_error_pb,
                                    ErrorStatusPB* err);
 
-  // Serialize the response packet for the finished call.
+  // Serialize the response packet for the finished call into 'slices'.
   // The resulting slices refer to memory in this object.
-  void SerializeResponseTo(std::vector<Slice>* slices) const;
+  // Returns the number of slices in the serialized response.
+  size_t SerializeResponseTo(TransferPayload* slices) const;
 
   // See RpcContext::AddRpcSidecar()
   Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);

@@ -154,7 +154,8 @@ class OutboundCall {
 
   // Serialize the call for the wire. Requires that SetRequestPayload()
   // is called first. This is called from the Reactor thread.
-  Status SerializeTo(std::vector<Slice>* slices);
+  // Returns the number of slices in the serialized call.
+  size_t SerializeTo(TransferPayload* slices);
 
   // Callback after the call has been put on the outbound connection queue.
   void SetQueued();

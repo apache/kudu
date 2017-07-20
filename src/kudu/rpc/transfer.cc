@@ -135,32 +135,32 @@ string InboundTransfer::StatusAsString() const {
   return Substitute("$0/$1 bytes received", cur_offset_, total_length_);
 }
 
-OutboundTransfer* OutboundTransfer::CreateForCallRequest(
-    int32_t call_id,
-    const std::vector<Slice> &payload,
-    TransferCallbacks *callbacks) {
-  return new OutboundTransfer(call_id, payload, callbacks);
+OutboundTransfer* OutboundTransfer::CreateForCallRequest(int32_t call_id,
+                                                         const TransferPayload &payload,
+                                                         size_t n_payload_slices,
+                                                         TransferCallbacks *callbacks) {
+  return new OutboundTransfer(call_id, payload, n_payload_slices, callbacks);
 }
 
-OutboundTransfer* OutboundTransfer::CreateForCallResponse(const std::vector<Slice> &payload,
+OutboundTransfer* OutboundTransfer::CreateForCallResponse(const TransferPayload &payload,
+                                                          size_t n_payload_slices,
                                                           TransferCallbacks *callbacks) {
-  return new OutboundTransfer(kInvalidCallId, payload, callbacks);
+  return new OutboundTransfer(kInvalidCallId, payload, n_payload_slices, callbacks);
 }
-
 
 OutboundTransfer::OutboundTransfer(int32_t call_id,
-                                   const std::vector<Slice> &payload,
+                                   const TransferPayload &payload,
+                                   size_t n_payload_slices,
                                    TransferCallbacks *callbacks)
   : cur_slice_idx_(0),
     cur_offset_in_slice_(0),
     callbacks_(callbacks),
     call_id_(call_id),
     aborted_(false) {
-  CHECK(!payload.empty());
 
-  n_payload_slices_ = payload.size();
-  CHECK_LE(n_payload_slices_, arraysize(payload_slices_));
-  for (int i = 0; i < payload.size(); i++) {
+  n_payload_slices_ = n_payload_slices;
+  CHECK_LE(n_payload_slices_, payload_slices_.size());
+  for (int i = 0; i < n_payload_slices; i++) {
     payload_slices_[i] = payload[i];
   }
 }

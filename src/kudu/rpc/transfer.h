@@ -18,6 +18,7 @@
 #ifndef KUDU_RPC_TRANSFER_H
 #define KUDU_RPC_TRANSFER_H
 
+#include <array>
 #include <boost/intrusive/list.hpp>
 #include <gflags/gflags.h>
 #include <set>
@@ -55,6 +56,8 @@ class TransferLimits {
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(TransferLimits);
 };
+
+typedef std::array<Slice, TransferLimits::kMaxPayloadSlices> TransferPayload;
 
 // This class is used internally by the RPC layer to represent an inbound
 // transfer in progress.
@@ -119,12 +122,14 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
 
   // Create an outbound transfer for a call request.
   static OutboundTransfer* CreateForCallRequest(int32_t call_id,
-                                                const std::vector<Slice> &payload,
+                                                const TransferPayload &payload,
+                                                size_t n_payload_slices,
                                                 TransferCallbacks *callbacks);
 
   // Create an outbound transfer for a call response.
   // See above for details.
-  static OutboundTransfer* CreateForCallResponse(const std::vector<Slice> &payload,
+  static OutboundTransfer* CreateForCallResponse(const TransferPayload &payload,
+                                                 size_t n_payload_slices,
                                                  TransferCallbacks *callbacks);
 
   // Destruct the transfer. A transfer object should never be deallocated
@@ -162,12 +167,13 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
 
  private:
   OutboundTransfer(int32_t call_id,
-                   const std::vector<Slice> &payload,
+                   const TransferPayload& payload,
+                   size_t n_payload_slices,
                    TransferCallbacks *callbacks);
 
   // Slices to send. Uses an array here instead of a vector to avoid an expensive
   // vector construction (improved performance a couple percent).
-  Slice payload_slices_[TransferLimits::kMaxPayloadSlices];
+  TransferPayload payload_slices_;
   size_t n_payload_slices_;
 
   // The current slice that is being sent.

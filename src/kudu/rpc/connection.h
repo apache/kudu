@@ -320,10 +320,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Starts as Status::OK, gets set to a shutdown status upon Shutdown().
   Status shutdown_status_;
 
-  // Temporary vector used when serializing - avoids an allocation
-  // when serializing calls.
-  std::vector<Slice> slices_tmp_;
-
   // RPC features supported by the remote end of the connection.
   std::set<RpcFeatureFlag> remote_features_;
 

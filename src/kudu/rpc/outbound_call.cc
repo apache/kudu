@@ -92,7 +92,7 @@ OutboundCall::~OutboundCall() {
   DVLOG(4) << "OutboundCall " << this << " destroyed with state_: " << StateName(state_);
 }
 
-Status OutboundCall::SerializeTo(vector<Slice>* slices) {
+size_t OutboundCall::SerializeTo(TransferPayload* slices) {
   DCHECK_LT(0, request_buf_.size())
       << "Must call SetRequestPayload() before SerializeTo()";
 
@@ -109,10 +109,16 @@ Status OutboundCall::SerializeTo(vector<Slice>* slices) {
   serialization::SerializeHeader(
       header_, sidecar_byte_size_ + request_buf_.size(), &header_buf_);
 
-  slices->push_back(Slice(header_buf_));
-  slices->push_back(Slice(request_buf_));
-  for (const unique_ptr<RpcSidecar>& car : sidecars_) slices->push_back(car->AsSlice());
-  return Status::OK();
+  size_t n_slices = 2 + sidecars_.size();
+  DCHECK_LE(n_slices, slices->size());
+  auto slice_iter = slices->begin();
+  *slice_iter++ = Slice(header_buf_);
+  *slice_iter++ = Slice(request_buf_);
+  for (auto& sidecar : sidecars_) {
+    *slice_iter++ = sidecar->AsSlice();
+  }
+  DCHECK_EQ(slice_iter - slices->begin(), n_slices);
+  return n_slices;
 }
 
 void OutboundCall::SetRequestPayload(const Message& req,
@@ -120,6 +126,7 @@ void OutboundCall::SetRequestPayload(const Message& req,
   DCHECK_EQ(-1, sidecar_byte_size_);
 
   sidecars_ = move(sidecars);
+  DCHECK_LE(sidecars_.size(), TransferLimits::kMaxSidecars);
 
   // Compute total size of sidecar payload so that extra space can be reserved as part of
   // the request body.
