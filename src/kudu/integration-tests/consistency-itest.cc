@@ -29,6 +29,7 @@
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -51,7 +52,7 @@
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_int32(scanner_gc_check_interval_us);
-DECLARE_bool(use_mock_wall_clock);
+DECLARE_string(time_source);
 
 using kudu::client::ScanConfiguration;
 using kudu::client::sp::shared_ptr;
@@ -80,7 +81,7 @@ class ConsistencyITest : public MiniClusterITestBase {
         key_split_value_(8) {
 
     // Using the mock clock: need to advance the clock for tablet servers.
-    FLAGS_use_mock_wall_clock = true;
+    FLAGS_time_source = "mock";
 
     // Reduce the TS<->Master heartbeat interval: this speeds up testing,
     // saving about 700ms per test.
@@ -104,7 +105,8 @@ class ConsistencyITest : public MiniClusterITestBase {
   static void UpdateClock(HybridClock* clock, MonoDelta delta) {
     const uint64_t new_time(HybridClock::GetPhysicalValueMicros(clock->Now()) +
                             delta.ToMicroseconds());
-    clock->SetMockClockWallTimeForTests(new_time);
+    auto* ntp = down_cast<clock::MockNtp*>(clock->time_service());
+    ntp->SetMockClockWallTimeForTests(new_time);
   }
 
   // Creates a table with the specified name and replication factor.

@@ -111,7 +111,7 @@ message GetStatusResponsePB {
 
 // Makes the HybridClock of the server use these values for wall clock time and error,
 // for testing purposes.
-// Requires that the server was started with '--use_mock_wall_clock=true'.
+// Requires that the server was started with '--time_source=mock'.
 message SetServerWallClockForTestsRequestPB {
   optional uint64 now_usec = 1;
   optional uint64 max_error_usec = 2;

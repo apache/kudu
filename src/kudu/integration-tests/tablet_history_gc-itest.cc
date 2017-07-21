@@ -22,6 +22,7 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -52,7 +53,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_maintenance_manager);
-DECLARE_bool(use_mock_wall_clock);
+DECLARE_string(time_source);
 DECLARE_double(missed_heartbeats_before_rejecting_snapshot_scans);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(maintenance_manager_num_threads);
@@ -73,7 +74,8 @@ class TabletHistoryGcITest : public MiniClusterITestBase {
   void AddTimeToHybridClock(HybridClock* clock, MonoDelta delta) {
     uint64_t now = HybridClock::GetPhysicalValueMicros(clock->Now());
     uint64_t new_time = now + delta.ToMicroseconds();
-    clock->SetMockClockWallTimeForTests(new_time);
+    auto* ntp = down_cast<clock::MockNtp*>(clock->time_service());
+    ntp->SetMockClockWallTimeForTests(new_time);
   }
 };
 
@@ -103,7 +105,7 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
 
 // Check that the maintenance manager op to delete undo deltas actually deletes them.
 TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
-  FLAGS_use_mock_wall_clock = true; // Allow moving the clock.
+  FLAGS_time_source = "mock"; // Allow moving the clock.
   FLAGS_tablet_history_max_age_sec = 1000;
   FLAGS_flush_threshold_secs = 0; // Flush as aggressively as possible.
   FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.
@@ -238,7 +240,7 @@ class RandomizedTabletHistoryGcITest : public TabletHistoryGcITest {
   RandomizedTabletHistoryGcITest() {
     // We need to fully control compactions, flushes, and the clock.
     FLAGS_enable_maintenance_manager = false;
-    FLAGS_use_mock_wall_clock = true;
+    FLAGS_time_source = "mock";
     FLAGS_tablet_history_max_age_sec = 100;
 
     // Set these really high since we're using the mock clock.
@@ -508,7 +510,8 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   // Set initial clock time to 1000 seconds past 0, which is enough so that the
   // AHM will not be negative.
   const uint64_t kInitialMicroTime = 1L * 1000 * 1000 * 1000;
-  clock_->SetMockClockWallTimeForTests(kInitialMicroTime);
+  auto* ntp = down_cast<clock::MockNtp*>(clock_->time_service());
+  ntp->SetMockClockWallTimeForTests(kInitialMicroTime);
 
   LOG(INFO) << "Seeding random number generator";
   Random random(SeedRandom());

@@ -20,12 +20,13 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(use_mock_wall_clock);
+DECLARE_string(time_source);
 
 namespace kudu {
 namespace clock {
@@ -45,9 +46,13 @@ class HybridClockTest : public KuduTest {
   scoped_refptr<HybridClock> clock_;
 };
 
+clock::MockNtp* mock_ntp(const scoped_refptr<HybridClock>& clock) {
+  return down_cast<clock::MockNtp*>(clock->time_service());
+}
+
 TEST(MockHybridClockTest, TestMockedSystemClock) {
   google::FlagSaver saver;
-  FLAGS_use_mock_wall_clock = true;
+  FLAGS_time_source = "mock";
   scoped_refptr<HybridClock> clock(new HybridClock());
   clock->Init();
   Timestamp timestamp;
@@ -61,8 +66,8 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
   // Now set an arbitrary time and check that is the time returned by the clock.
   uint64_t time = 1234;
   uint64_t error = 100 * 1000;
-  clock->SetMockClockWallTimeForTests(time);
-  clock->SetMockMaxClockErrorForTests(error);
+  mock_ntp(clock)->SetMockClockWallTimeForTests(time);
+  mock_ntp(clock)->SetMockMaxClockErrorForTests(error);
   clock->NowWithError(&timestamp, &max_error_usec);
   ASSERT_EQ(timestamp.ToUint64(),
             HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 0).ToUint64());
@@ -81,10 +86,10 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
 // This is a regression test for KUDU-1345.
 TEST(MockHybridClockTest, TestClockDealsWithWrapping) {
   google::FlagSaver saver;
-  FLAGS_use_mock_wall_clock = true;
+  FLAGS_time_source = "mock";
   scoped_refptr<HybridClock> clock(new HybridClock());
-  clock->SetMockClockWallTimeForTests(1000);
   clock->Init();
+  mock_ntp(clock)->SetMockClockWallTimeForTests(1000);
 
   Timestamp prev = clock->Now();
 
@@ -103,7 +108,7 @@ TEST(MockHybridClockTest, TestClockDealsWithWrapping) {
   // Advance the time microsecond by microsecond, and ensure the clock never
   // goes backwards.
   for (int time = 1001; time < 1020; time++) {
-    clock->SetMockClockWallTimeForTests(time);
+    mock_ntp(clock)->SetMockClockWallTimeForTests(time);
     Timestamp now = clock->Now();
 
     // Clock should run strictly forwards.

@@ -18,9 +18,14 @@
 #include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
+#include <boost/algorithm/string/predicate.hpp>
 #include <glog/logging.h>
 #include <mutex>
+#include <string>
 
+#include "kudu/clock/mock_ntp.h"
+#include "kudu/clock/system_ntp.h"
+#include "kudu/clock/system_unsync_time.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
@@ -31,10 +36,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
-
-#if !defined(__APPLE__)
-#include <sys/timex.h>
-#endif // !defined(__APPLE__)
 
 DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
              "Maximum allowed clock synchronization error as reported by NTP "
@@ -47,10 +48,19 @@ DEFINE_bool(use_hybrid_clock, true,
             " implementation. This should be disabled for testing purposes only.");
 TAG_FLAG(use_hybrid_clock, hidden);
 
-DEFINE_bool(use_mock_wall_clock, false,
-            "Whether HybridClock should use a mock wall clock which is updated manually"
-            "instead of reading time from the system clock, for tests.");
-TAG_FLAG(use_mock_wall_clock, hidden);
+DEFINE_string(time_source, "system",
+              "The clock source that HybridClock should use. Must be one of "
+              "'system' or 'mock' (for tests only)");
+TAG_FLAG(time_source, experimental);
+DEFINE_validator(time_source, [](const char* /* flag_name */, const string& value) {
+    if (boost::iequals(value, "system") ||
+        boost::iequals(value, "mock")) {
+      return true;
+    }
+    LOG(ERROR) << "unknown value for 'time_source': '" << value << "'"
+               << " (expected one of 'system' or 'mock')";
+    return false;
+  });
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
@@ -68,43 +78,6 @@ namespace kudu {
 namespace clock {
 
 namespace {
-
-#if !defined(__APPLE__)
-// Returns the clock modes and checks if the clock is synchronized.
-Status GetClockModes(timex* timex) {
-  // this makes ntp_adjtime a read-only call
-  timex->modes = 0;
-  int rc = ntp_adjtime(timex);
-  if (PREDICT_FALSE(rc == TIME_ERROR)) {
-    return Status::ServiceUnavailable(
-        Substitute("Error reading clock. Clock considered unsynchronized. Return code: $0", rc));
-  }
-  // TODO what to do about leap seconds? see KUDU-146
-  if (PREDICT_FALSE(rc != TIME_OK)) {
-    LOG(ERROR) << Substitute("TODO Server undergoing leap second. Return code: $0", rc);
-  }
-  return Status::OK();
-}
-
-// Returns the current time/max error and checks if the clock is synchronized.
-kudu::Status GetClockTime(ntptimeval* timeval) {
-  int rc = ntp_gettime(timeval);
-  switch (rc) {
-    case TIME_OK:
-      return Status::OK();
-    case -1: // generic error
-      return Status::ServiceUnavailable("Error reading clock. ntp_gettime() failed",
-                                        ErrnoToString(errno));
-    case TIME_ERROR:
-      return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
-    default:
-      // TODO what to do about leap seconds? see KUDU-146
-      KLOG_FIRST_N(ERROR, 1) << "Server undergoing leap second. This may cause consistency issues "
-        << "(rc=" << rc << ")";
-      return Status::OK();
-  }
-}
-#endif // !defined(__APPLE__)
 
 Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_usec) {
   if (!deadline.Initialized()) {
@@ -128,56 +101,25 @@ const int HybridClock::kBitsToShift = 12;
 // This mask gives us back the logical bits.
 const uint64_t HybridClock::kLogicalBitMask = (1 << kBitsToShift) - 1;
 
-const uint64_t HybridClock::kNanosPerSec = 1000000;
-
-const double HybridClock::kAdjtimexScalingFactor = 65536;
 
 HybridClock::HybridClock()
-    : mock_clock_time_usec_(0),
-      mock_clock_max_error_usec_(0),
-#if !defined(__APPLE__)
-      divisor_(1),
-#endif
-      tolerance_adjustment_(1),
-      next_timestamp_(0),
+    : next_timestamp_(0),
       state_(kNotInitialized) {
 }
 
 Status HybridClock::Init() {
-  if (PREDICT_FALSE(FLAGS_use_mock_wall_clock)) {
-    LOG(WARNING) << "HybridClock set to mock the wall clock.";
-    state_ = kInitialized;
-    return Status::OK();
-  }
-#if defined(__APPLE__)
-  LOG(WARNING) << "HybridClock initialized in local mode (OS X only). "
-               << "Not suitable for distributed clusters.";
+  if (boost::iequals(FLAGS_time_source, "mock")) {
+    time_service_.reset(new clock::MockNtp());
+  } else if (boost::iequals(FLAGS_time_source, "system")) {
+#ifndef __APPLE__
+    time_service_.reset(new clock::SystemNtp());
 #else
-  // Read the current time. This will return an error if the clock is not synchronized.
-  uint64_t now_usec;
-  uint64_t error_usec;
-  RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
-
-  timex timex;
-  RETURN_NOT_OK(GetClockModes(&timex));
-  // read whether the STA_NANO bit is set to know whether we'll get back nanos
-  // or micros in timeval.time.tv_usec. See:
-  // http://stackoverflow.com/questions/16063408/does-ntp-gettime-actually-return-nanosecond-precision
-  // set the timeval.time.tv_usec divisor so that we always get micros
-  if (timex.status & STA_NANO) {
-    divisor_ = 1000;
+    time_service_.reset(new clock::SystemUnsyncTime());
+#endif
   } else {
-    divisor_ = 1;
+    return Status::InvalidArgument("invalid NTP source", FLAGS_time_source);
   }
-
-  // Calculate the sleep skew adjustment according to the max tolerance of the clock.
-  // Tolerance comes in parts per million but needs to be applied a scaling factor.
-  tolerance_adjustment_ = (1 + ((timex.tolerance / kAdjtimexScalingFactor) / 1000000.0));
-
-  LOG(INFO) << "HybridClock initialized. Resolution in nanos?: " << (divisor_ == 1000)
-            << " Wait times tolerance adjustment: " << tolerance_adjustment_
-            << " Current error: " << error_usec;
-#endif // defined(__APPLE__)
+  RETURN_NOT_OK(time_service_->Init());
 
   state_ = kInitialized;
 
@@ -338,7 +280,7 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then,
 
   // Additionally adjust the sleep time with the max tolerance adjustment
   // to account for the worst case clock skew while we're sleeping.
-  wait_for_usec *= tolerance_adjustment_;
+  wait_for_usec *= (1 + (time_service_->skew_ppm() / 1000000.0));
 
   // Check that sleeping wouldn't sleep longer than our deadline.
   RETURN_NOT_OK(CheckDeadlineNotWithinMicros(deadline, wait_for_usec));
@@ -388,47 +330,16 @@ bool HybridClock::IsAfter(Timestamp t) {
 }
 
 kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
-  if (PREDICT_FALSE(FLAGS_use_mock_wall_clock)) {
-    VLOG(1) << "Current clock time: " << mock_clock_time_usec_ << " error: "
-            << mock_clock_max_error_usec_ << ". Updating to time: " << now_usec
-            << " and error: " << error_usec;
-    *now_usec = mock_clock_time_usec_;
-    *error_usec = mock_clock_max_error_usec_;
-  } else {
-#if defined(__APPLE__)
-    *now_usec = GetCurrentTimeMicros();
-    *error_usec = 0;
-  }
-#else
-    // Read the time. This will return an error if the clock is not synchronized.
-    ntptimeval timeval;
-    RETURN_NOT_OK(GetClockTime(&timeval));
-    *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
-    *error_usec = timeval.maxerror;
-  }
-
+  RETURN_NOT_OK(time_service_->WalltimeWithError(now_usec, error_usec));
   // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec
   // we also return a non-ok status.
   if (*error_usec > FLAGS_max_clock_sync_error_usec) {
     return Status::ServiceUnavailable(Substitute("Error: Clock synchronized but error was"
         "too high ($0 us).", *error_usec));
   }
-#endif // defined(__APPLE__)
   return kudu::Status::OK();
 }
 
-void HybridClock::SetMockClockWallTimeForTests(uint64_t now_usec) {
-  CHECK(FLAGS_use_mock_wall_clock);
-  std::lock_guard<simple_spinlock> lock(lock_);
-  CHECK_GE(now_usec, mock_clock_time_usec_);
-  mock_clock_time_usec_ = now_usec;
-}
-
-void HybridClock::SetMockMaxClockErrorForTests(uint64_t max_error_usec) {
-  CHECK(FLAGS_use_mock_wall_clock);
-  std::lock_guard<simple_spinlock> lock(lock_);
-  mock_clock_max_error_usec_ = max_error_usec;
-}
 
 // Used to get the timestamp for metrics.
 uint64_t HybridClock::NowForMetrics() {

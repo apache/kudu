@@ -26,6 +26,7 @@
 
 namespace kudu {
 namespace clock {
+class TimeService;
 
 // The HybridTime clock.
 //
@@ -146,21 +147,12 @@ class HybridClock : public Clock {
   // separated.
   static std::string StringifyTimestamp(const Timestamp& timestamp);
 
-  // Sets the time to be returned by a mock call to the system clock, for tests.
-  // Requires that 'FLAGS_use_mock_wall_clock' is set to true and that 'now_usec' is higher
-  // than the previously set time.
-  // NOTE: This refers to the time returned by the system clock, not the time returned
-  // by HybridClock, i.e. 'now_usec' is not a HybridTime timestmap and shouldn't have
-  // a logical component.
-  void SetMockClockWallTimeForTests(uint64_t now_usec);
-
-  // Sets the max. error to be returned by a mock call to the system clock, for tests.
-  // Requires that 'FLAGS_use_mock_wall_clock' is set to true.
-  // This can be used to make HybridClock report the wall clock as unsynchronized, by
-  // setting error to be more than the configured tolerance.
-  void SetMockMaxClockErrorForTests(uint64_t max_error_usec);
+  clock::TimeService* time_service() {
+    return time_service_.get();
+  }
 
  private:
+  friend class TestNtp;
 
   // Obtains the current wallclock time and maximum error in microseconds,
   // and checks if the clock is synchronized.
@@ -174,19 +166,9 @@ class HybridClock : public Clock {
   // Used to get the current error, for metrics.
   uint64_t ErrorForMetrics();
 
-  // Set by calls to SetMockClockWallTimeForTests().
-  // For testing purposes only.
-  uint64_t mock_clock_time_usec_;
-
-  // Set by calls to SetMockClockErrorForTests().
-  // For testing purposes only.
-  uint64_t mock_clock_max_error_usec_;
-
-#if !defined(__APPLE__)
-  uint64_t divisor_;
-#endif
-
-  double tolerance_adjustment_;
+  // Used to fetch the current time and error bound from the system or NTP
+  // service.
+  std::unique_ptr<clock::TimeService> time_service_;
 
   mutable simple_spinlock lock_;
 
@@ -200,12 +182,6 @@ class HybridClock : public Clock {
 
   // Mask to extract the pure logical bits.
   static const uint64_t kLogicalBitMask;
-
-  static const uint64_t kNanosPerSec;
-
-  // The scaling factor used to obtain ppms. From the adjtimex source:
-  // "scale factor used by adjtimex freq param.  1 ppm = 65536"
-  static const double kAdjtimexScalingFactor;
 
   enum State {
     kNotInitialized,

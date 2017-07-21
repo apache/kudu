@@ -15,9 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-add_library(clock
+set(CLOCK_SRCS
   hybrid_clock.cc
-  logical_clock.cc)
+  logical_clock.cc
+  mock_ntp.cc
+  system_unsync_time.cc)
+
+if (NOT APPLE)
+  set(CLOCK_SRCS ${CLOCK_SRCS} system_ntp.cc)
+endif()
+
+add_library(clock ${CLOCK_SRCS})
+
 target_link_libraries(clock
   kudu_util)
 

@@ -23,6 +23,7 @@
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
@@ -31,7 +32,7 @@
 #include "kudu/util/debug/leak_annotations.h"
 #include "kudu/util/flag_tags.h"
 
-DECLARE_bool(use_mock_wall_clock);
+DECLARE_string(time_source);
 DECLARE_bool(use_hybrid_clock);
 
 using std::string;
@@ -169,18 +170,19 @@ void GenericServiceImpl::ServerClock(const ServerClockRequestPB* req,
 void GenericServiceImpl::SetServerWallClockForTests(const SetServerWallClockForTestsRequestPB *req,
                                                    SetServerWallClockForTestsResponsePB *resp,
                                                    rpc::RpcContext *context) {
-  if (!FLAGS_use_hybrid_clock || !FLAGS_use_mock_wall_clock) {
+  if (!FLAGS_use_hybrid_clock || FLAGS_time_source != "mock") {
     LOG(WARNING) << "Error setting wall clock for tests. Server is not using HybridClock"
-        "or was not started with '--use_mock_wall_clock= true'";
+        "or was not started with '--ntp-source=mock'";
     resp->set_success(false);
   }
 
-  clock::HybridClock* clock = down_cast<clock::HybridClock*>(server_->clock());
+  auto* clock = down_cast<clock::HybridClock*>(server_->clock());
+  auto* mock = down_cast<clock::MockNtp*>(clock->time_service());
   if (req->has_now_usec()) {
-    clock->SetMockClockWallTimeForTests(req->now_usec());
+    mock->SetMockClockWallTimeForTests(req->now_usec());
   }
   if (req->has_max_error_usec()) {
-    clock->SetMockMaxClockErrorForTests(req->max_error_usec());
+    mock->SetMockMaxClockErrorForTests(req->max_error_usec());
   }
   resp->set_success(true);
   context->RespondSuccess();

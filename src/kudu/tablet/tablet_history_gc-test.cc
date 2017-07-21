@@ -19,6 +19,7 @@
 #include <gflags/gflags.h>
 
 #include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/mock_ntp.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet-test-base.h"
@@ -27,7 +28,7 @@
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(tablet_history_max_age_sec);
-DECLARE_bool(use_mock_wall_clock);
+DECLARE_string(time_source);
 
 using kudu::clock::HybridClock;
 
@@ -51,13 +52,19 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
 
   TabletHistoryGcTest()
       : Superclass(TabletHarness::Options::HYBRID_CLOCK) {
-    FLAGS_use_mock_wall_clock = true;
+    FLAGS_time_source = "mock";
+  }
+
+  void SetMockTime(int64_t micros) {
+    auto* hybrid_clock = down_cast<HybridClock*>(clock());
+    auto* ntp = down_cast<clock::MockNtp*>(hybrid_clock->time_service());
+    ntp->SetMockClockWallTimeForTests(micros);
   }
 
   virtual void SetUp() OVERRIDE {
     NO_FATALS(TabletTestBase<IntKeyTestSetup<INT64>>::SetUp());
     // Mock clock defaults to 0 and this screws up the AHM calculation which ends up negative.
-    down_cast<HybridClock*>(clock())->SetMockClockWallTimeForTests(GetCurrentTimeMicros());
+    SetMockTime(GetCurrentTimeMicros());
   }
 
  protected:
@@ -71,7 +78,7 @@ class TabletHistoryGcTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   void AddTimeToHybridClock(MonoDelta delta) {
     uint64_t now = HybridClock::GetPhysicalValueMicros(clock()->Now());
     uint64_t new_time = now + delta.ToMicroseconds();
-    down_cast<HybridClock*>(clock())->SetMockClockWallTimeForTests(new_time);
+    SetMockTime(new_time);
   }
 
   int64_t TotalNumRows() const { return num_rowsets_ * rows_per_rowset_; }
