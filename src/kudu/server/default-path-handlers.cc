@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/bind.hpp>
 #include <gperftools/malloc_extension.h>
 
@@ -53,6 +54,12 @@ DEFINE_int64(web_log_bytes, 1024 * 1024,
     "The maximum number of bytes to display on the debug webserver's log page");
 TAG_FLAG(web_log_bytes, advanced);
 TAG_FLAG(web_log_bytes, runtime);
+
+// For configuration dashboard
+DECLARE_string(redact);
+DECLARE_string(rpc_encryption);
+DECLARE_string(rpc_authentication);
+DECLARE_string(webserver_certificate_file);
 
 namespace kudu {
 
@@ -185,6 +192,41 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
   *output << "</tbody></table>\n";
 }
 
+static void ConfigurationHandler(const Webserver::WebRequest& /* req */, EasyJson* output) {
+  EasyJson security_configs = output->Set("security_configs", EasyJson::kArray);
+
+  EasyJson rpc_encryption = security_configs.PushBack(EasyJson::kObject);
+  rpc_encryption["name"] = "RPC Encryption";
+  rpc_encryption["value"] = FLAGS_rpc_encryption;
+  rpc_encryption["secure"] = boost::iequals(FLAGS_rpc_encryption, "required");
+  rpc_encryption["id"] = "rpc_encryption";
+  rpc_encryption["explanation"] = "Configure with --rpc_encryption. Most secure value is "
+                                  "'required'.";
+
+  EasyJson rpc_authentication = security_configs.PushBack(EasyJson::kObject);
+  rpc_authentication["name"] = "RPC Authentication";
+  rpc_authentication["value"] = FLAGS_rpc_authentication;
+  rpc_authentication["secure"] = boost::iequals(FLAGS_rpc_authentication, "required");
+  rpc_authentication["id"] = "rpc_authentication";
+  rpc_authentication["explanation"] = "Configure with --rpc_authentication. Most secure value is "
+                                      "'required'.";
+
+  EasyJson webserver_encryption = security_configs.PushBack(EasyJson::kObject);
+  webserver_encryption["name"] = "Webserver Encryption";
+  webserver_encryption["value"] = FLAGS_webserver_certificate_file.empty() ? "off" : "on";
+  webserver_encryption["secure"] = !FLAGS_webserver_certificate_file.empty();
+  webserver_encryption["id"] = "webserver_encryption";
+  webserver_encryption["explanation"] = "Configure with --webserver_certificate_file and "
+                                        "webserver_private_key_file.";
+
+  EasyJson webserver_redaction = security_configs.PushBack(EasyJson::kObject);
+  webserver_redaction["name"] = "Webserver Redaction";
+  webserver_redaction["value"] = FLAGS_redact;
+  webserver_redaction["secure"] = boost::iequals(FLAGS_redact, "all");
+  webserver_redaction["id"] = "webserver_redaction";
+  webserver_redaction["explanation"] = "Configure with --redact. Most secure value is 'all'.";
+}
+
 void AddDefaultPathHandlers(Webserver* webserver) {
   bool styled = true;
   bool on_nav_bar = true;
@@ -194,6 +236,8 @@ void AddDefaultPathHandlers(Webserver* webserver) {
                                             styled, on_nav_bar);
   webserver->RegisterPrerenderedPathHandler("/mem-trackers", "Memory (detail)", MemTrackersHandler,
                                             styled, on_nav_bar);
+  webserver->RegisterPathHandler("/config", "Configuration", ConfigurationHandler,
+                                  styled, on_nav_bar);
 
   AddPprofPathHandlers(webserver);
 }

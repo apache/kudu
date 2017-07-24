@@ -49,3 +49,7 @@ body {
 .footer pre {
   border: none;
 }
+
+.glyphicon-hide {
+  color: transparent;
+}
