@@ -19,7 +19,9 @@
  */
 
 body {
-  padding-top: 60px;
+  padding-top: 20px;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .navbar-inverse .nav>li>a {

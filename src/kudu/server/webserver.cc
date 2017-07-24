@@ -483,28 +483,28 @@ static const char* const kMainTemplate = R"(
     <title>Kudu</title>
     <meta charset='utf-8'/>
     <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />
-    <script src='/jquery-1.11.1.min.js' defer></script>
+    <script src='/jquery-3.2.1.min.js' defer></script>
     <script src='/bootstrap/js/bootstrap.min.js' defer></script>
     <link href='/kudu.css' rel='stylesheet' />
   </head>
   <body>
-    <div class='navbar navbar-inverse navbar-fixed-top'>
-      <div class='navbar-inner'>
-        <div class='container-fluid'>
-          <a href='/'>
-            <img src="/logo.png" width='61' height='45' alt="Kudu" style="float:left"/>
+
+    <nav class="navbar navbar-default">
+      <div class="container-fluid">
+        <div class="navbar-header">
+          <a class="navbar-brand" style="padding-top: 5px;" href="/">
+            <img src="/logo.png" width='61' height='45' alt="Kudu" />
           </a>
-          <div class='nav-collapse collapse'>
-            <ul class='nav'>
-              {{#path_handlers}}
-              <li><a href="{{path}}">{{alias}}</a></li>
-              {{/path_handlers}}
-            </ul>
-          </div>
         </div>
-      </div>
-    </div>
-    <div class='container-fluid'>
+        <div id="navbar" class="navbar-collapse collapse">
+          <ul class="nav navbar-nav">
+           {{#path_handlers}}
+            <li><a class="nav-link"href="{{path}}">{{alias}}</a></li>
+           {{/path_handlers}}
+          </ul>
+        </div><!--/.nav-collapse -->
+      </div><!--/.container-fluid -->
+    </nav>
       {{^static_pages_available}}
       <div style="color: red">
         <strong>Static pages not available. Configure KUDU_HOME or use the --webserver_doc_root
