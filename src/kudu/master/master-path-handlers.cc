@@ -44,6 +44,7 @@
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
@@ -126,24 +127,18 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
-                                              ostringstream* output) {
+                                              EasyJson* output) {
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   if (!l.first_failed_status().ok()) {
-    *output << "Master is not ready: " << l.first_failed_status().ToString();
+    (*output)["error"] = Substitute("Master is not ready: $0",  l.first_failed_status().ToString());
     return;
   }
 
-  *output << "<h1>Tables</h1>\n";
-
   std::vector<scoped_refptr<TableInfo>> tables;
   master_->catalog_manager()->GetAllTables(&tables);
+  (*output).Set<int64_t>("num_tables", tables.size());
 
-  *output << Substitute("There are $0 tables\n", tables.size());
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Table Name</th><th>Table Id</th>" <<
-      "<th>State</th><th>State Message</th></tr></thead>\n";
-  typedef std::map<string, string> StringMap;
-  StringMap ordered_tables;
+  EasyJson tables_json = output->Set("tables", EasyJson::kArray);
   for (const scoped_refptr<TableInfo>& table : tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
     if (!l.data().is_running()) {
@@ -151,19 +146,12 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     }
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    ordered_tables[l.data().name()] = Substitute(
-        "<tr><th>$0</th><td><a href=\"/table?id=$1\">$1</a></td>"
-            "<td>$2</td><td>$3</td></tr>\n",
-        EscapeForHtmlToString(l.data().name()),
-        EscapeForHtmlToString(table->id()),
-        state,
-        EscapeForHtmlToString(l.data().pb.state_msg()));
+    EasyJson table_json = tables_json.PushBack(EasyJson::kObject);
+    table_json["name"] = EscapeForHtmlToString(l.data().name());
+    table_json["id"] = EscapeForHtmlToString(table->id());
+    table_json["state"] = state;
+    table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
   }
-  *output << "<tbody>\n";
-  for (const StringMap::value_type& table : ordered_tables) {
-    *output << table.second;
-  }
-  *output << "</tbody></table>\n";
 }
 
 namespace {
@@ -593,7 +581,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
       "/tablet-servers", "Tablet Servers",
       boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
       is_styled, is_on_nav_bar);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
       "/tables", "Tables",
       boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
       is_styled, is_on_nav_bar);

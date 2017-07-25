@@ -23,6 +23,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/easy_json.h"
 
 namespace kudu {
 class Schema;
@@ -49,7 +50,7 @@ class MasterPathHandlers {
   void HandleTabletServers(const Webserver::WebRequest& req,
                            std::ostringstream* output);
   void HandleCatalogManager(const Webserver::WebRequest& req,
-                            std::ostringstream* output);
+                            EasyJson* output);
   void HandleTablePage(const Webserver::WebRequest& req,
                        std::ostringstream *output);
   void HandleMasters(const Webserver::WebRequest& req,
