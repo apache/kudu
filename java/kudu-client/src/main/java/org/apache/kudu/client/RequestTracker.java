@@ -17,9 +17,8 @@
 
 package org.apache.kudu.client;
 
-import java.util.Queue;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.TreeSet;
+import javax.annotation.concurrent.GuardedBy;
 
 import org.apache.yetus.audience.InterfaceAudience;
 
@@ -28,8 +27,12 @@ import org.apache.yetus.audience.InterfaceAudience;
  */
 @InterfaceAudience.Private
 public class RequestTracker {
-  private final AtomicLong sequenceIdTracker = new AtomicLong();
-  private final Queue<Long> incompleteRpcs = new PriorityBlockingQueue<>();
+  private Object lock = new Object();
+
+  @GuardedBy("lock")
+  private long nextSeqNo = 1;
+  @GuardedBy("lock")
+  private final TreeSet<Long> incompleteRpcs = new TreeSet<>();
 
   static final long NO_SEQ_NO = -1;
 
@@ -48,9 +51,11 @@ public class RequestTracker {
    * @return a new sequence number
    */
   public long newSeqNo() {
-    Long next = sequenceIdTracker.incrementAndGet();
-    incompleteRpcs.add(next);
-    return next;
+    synchronized (lock) {
+      long seq = nextSeqNo++;
+      incompleteRpcs.add(seq);
+      return seq;
+    }
   }
 
   /**
@@ -59,8 +64,12 @@ public class RequestTracker {
    * @return the first incomplete sequence number
    */
   public long firstIncomplete() {
-    Long peek = incompleteRpcs.peek();
-    return peek == null ? NO_SEQ_NO : peek;
+    synchronized (lock) {
+      if (incompleteRpcs.isEmpty()) {
+        return NO_SEQ_NO;
+      }
+      return incompleteRpcs.first();
+    }
   }
 
   /**
@@ -68,7 +77,9 @@ public class RequestTracker {
    * @param sequenceId the sequence id to mark as complete
    */
   public void rpcCompleted(long sequenceId) {
-    incompleteRpcs.remove(sequenceId);
+    synchronized (lock) {
+      incompleteRpcs.remove(sequenceId);
+    }
   }
 
   public String getClientId() {
