@@ -111,7 +111,7 @@
 == Server management
 
 * Production deployments should configure a least 4GB of memory for tablet servers,
-  and ideally more than 10GB.
+  and ideally more than 16GB when approaching the data and tablet <<Scale>> limits.
 
 * Write ahead logs (WAL) can only be stored on one disk.
 
@@ -140,9 +140,9 @@
 * Recommended maximum number of masters is 3.
 
 * Recommended maximum amount of stored data, post-replication and post-compression,
-  per tablet server is 4TB.
+  per tablet server is 8TB.
 
-* Recommended maximum number of tablets per tablet server is 1000, post-replication.
+* Recommended maximum number of tablets per tablet server is 2000, post-replication.
 
 * Maximum number of tablets per table for each tablet server is 60, post-replication,
   at table-creation time.
