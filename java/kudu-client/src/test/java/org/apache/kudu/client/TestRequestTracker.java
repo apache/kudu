@@ -18,7 +18,18 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.junit.Assert;
 import org.junit.Test;
+
+import com.google.common.collect.Lists;
 
 public class TestRequestTracker {
 
@@ -70,5 +81,42 @@ public class TestRequestTracker {
 
     // Test that we get back to NO_SEQ_NO after marking them all.
     assertEquals(RequestTracker.NO_SEQ_NO, tracker.firstIncomplete());
+  }
+
+  private static class Checker {
+    long curIncomplete = 0;
+    public synchronized void check(long seqNo, long firstIncomplete) {
+      Assert.assertTrue("should not send a seq number that was previously marked complete",
+          seqNo >= curIncomplete);
+      curIncomplete = Math.max(firstIncomplete, curIncomplete);
+    }
+  }
+
+  @Test(timeout = 30000)
+  public void testMultiThreaded() throws InterruptedException, ExecutionException {
+    final AtomicBoolean done = new AtomicBoolean(false);
+    final RequestTracker rt = new RequestTracker("fake id");
+    final Checker checker = new Checker();
+    ExecutorService exec = Executors.newCachedThreadPool();
+    List<Future<Void>> futures = Lists.newArrayList();
+    for (int i = 0; i < 16; i++) {
+      futures.add(exec.submit(new Callable<Void>() {
+        @Override
+        public Void call() {
+          while (!done.get()) {
+            long seqNo = rt.newSeqNo();
+            long incomplete = rt.firstIncomplete();
+            checker.check(seqNo, incomplete);
+            rt.rpcCompleted(seqNo);
+          }
+          return null;
+        }
+      }));
+    }
+    Thread.sleep(5000);
+    done.set(true);
+    for (Future<Void> f : futures) {
+      f.get();
+    }
   }
 }
