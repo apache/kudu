@@ -19,12 +19,12 @@
 
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/trace.h"
@@ -99,7 +99,7 @@ Status AlterSchemaTransaction::Start() {
   DCHECK(!state_->has_timestamp());
   DCHECK(state_->consensus_round()->replicate_msg()->has_timestamp());
   state_->set_timestamp(Timestamp(state_->consensus_round()->replicate_msg()->timestamp()));
-  TRACE("START. Timestamp: $0", server::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
+  TRACE("START. Timestamp: $0", clock::HybridClock::GetPhysicalValueMicros(state_->timestamp()));
   return Status::OK();
 }
 

@@ -25,16 +25,16 @@
 
 #include <glog/logging.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
@@ -585,7 +585,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
   if (snapshot_timestamp == kSnapshotAtNow) {
     snapshot_str = "NOW";
   } else {
-    snapshot_str = server::HybridClock::StringifyTimestamp(Timestamp(snapshot_timestamp));
+    snapshot_str = clock::HybridClock::StringifyTimestamp(Timestamp(snapshot_timestamp));
   }
 
   client::KuduScanner scanner(table.get());

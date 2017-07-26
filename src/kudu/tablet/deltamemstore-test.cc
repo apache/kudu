@@ -20,14 +20,14 @@
 #include <stdlib.h>
 #include <unordered_set>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/server/logical_clock.h"
-#include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/stopwatch.h"
@@ -50,7 +50,7 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
     : op_id_(consensus::MaximumOpId()),
       schema_(CreateSchema()),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
     CHECK_OK(DeltaMemStore::Create(0, 0,
                                    new log::LogAnchorRegistry(),
                                    MemTracker::GetRootTracker(), &dms_));
@@ -122,7 +122,7 @@ class TestDeltaMemStore : public KuduTest {
 
   const Schema schema_;
   shared_ptr<DeltaMemStore> dms_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
   MvccManager mvcc_;
   gscoped_ptr<FsManager> fs_manager_;
 };

@@ -18,12 +18,12 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/server/logical_clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
-namespace server {
+namespace clock {
 
 class LogicalClockTest : public KuduTest {
  public:
@@ -82,6 +82,6 @@ TEST_F(LogicalClockTest, TestIsAfter) {
   ASSERT_TRUE(clock_->IsAfter(ts2));
 }
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu
 

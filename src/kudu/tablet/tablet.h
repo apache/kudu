@@ -45,22 +45,21 @@
 
 namespace kudu {
 
+class MaintenanceManager;
+class MaintenanceOp;
+class MaintenanceOpStats;
 class MemTracker;
 class MetricEntity;
 class RowChangeList;
 class UnionIterator;
 
-namespace log {
-class LogAnchorRegistry;
-}
-
-namespace server {
+namespace clock {
 class Clock;
 }
 
-class MaintenanceManager;
-class MaintenanceOp;
-class MaintenanceOpStats;
+namespace log {
+class LogAnchorRegistry;
+}
 
 namespace tablet {
 
@@ -92,7 +91,7 @@ class Tablet {
   // If 'metric_registry' is non-NULL, then this tablet will create a 'tablet' entity
   // within the provided registry. Otherwise, no metrics are collected.
   Tablet(const scoped_refptr<TabletMetadata>& metadata,
-         const scoped_refptr<server::Clock>& clock,
+         const scoped_refptr<clock::Clock>& clock,
          const std::shared_ptr<MemTracker>& parent_mem_tracker,
          MetricRegistry* metric_registry,
          const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry);
@@ -390,7 +389,7 @@ class Tablet {
   // Return true if this RPC is allowed.
   bool ShouldThrottleAllow(int64_t bytes);
 
-  scoped_refptr<server::Clock> clock() const { return clock_; }
+  scoped_refptr<clock::Clock> clock() const { return clock_; }
 
   std::string LogPrefix() const;
 
@@ -587,7 +586,7 @@ class Tablet {
   int64_t next_mrs_id_;
 
   // A pointer to the server's clock.
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
 
   MvccManager mvcc_;
   LockManager lock_manager_;

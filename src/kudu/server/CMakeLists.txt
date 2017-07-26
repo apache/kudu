@@ -16,33 +16,6 @@
 # under the License.
 
 #########################################
-# server_common
-#########################################
-
-set(SERVER_COMMON_SRCS
-  hybrid_clock.cc
-  logical_clock.cc
-)
-
-add_library(server_common ${SERVER_COMMON_SRCS})
-target_link_libraries(server_common
-  kudu_common
-  codegen
-  gutil
-  kudu_fs
-  kudu_util
-  consensus_metadata_proto
-  security)
-
-#########################################
-# server_common tests
-#########################################
-
-set(KUDU_TEST_LINK_LIBS server_common ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(hybrid_clock-test)
-ADD_KUDU_TEST(logical_clock-test)
-
-#########################################
 # server_base_proto
 #########################################
 
@@ -83,6 +56,8 @@ set(SERVER_PROCESS_SRCS
 
 add_library(server_process ${SERVER_PROCESS_SRCS})
 target_link_libraries(server_process
+  clock
+  codegen
   gutil
   krpc
   kudu_common
@@ -90,7 +65,6 @@ target_link_libraries(server_process
   kudu_util
   mustache
   server_base_proto
-  server_common
   squeasel)
 
 # This module depends on tcmalloc and profiler directly, so need to make

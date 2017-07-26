@@ -14,20 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_SERVER_LOGICAL_CLOCK_H_
-#define KUDU_SERVER_LOGICAL_CLOCK_H_
+#pragma once
 
 #include <string>
 
-#include "kudu/server/clock.h"
+#include "kudu/clock/clock.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 class MonoDelta;
 class MonoTime;
-namespace server {
+namespace clock {
 
 // An implementation of Clock that behaves as a plain Lamport Clock.
 // In a single node, single tablet, setting this generates exactly the
@@ -85,8 +83,5 @@ class LogicalClock : public Clock {
   FunctionGaugeDetacher metric_detacher_;
 };
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu
-
-#endif /* KUDU_SERVER_LOGICAL_CLOCK_H_ */
-

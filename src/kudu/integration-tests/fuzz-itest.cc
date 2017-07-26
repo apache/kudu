@@ -17,24 +17,24 @@
 
 #include <boost/optional.hpp>
 #include <boost/optional/optional_io.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <gflags/gflags.h>
 #include <list>
 #include <string>
 #include <vector>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/schema.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/mini_master.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/server/logical_clock.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -661,7 +661,7 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
       case TEST_FLUSH_OPS: {
         FlushSessionOrDie(session_);
         cur_val = pending_val;
-        int current_time = down_cast<kudu::server::LogicalClock*>(
+        int current_time = down_cast<kudu::clock::LogicalClock*>(
             tablet()->clock().get())->GetCurrentTime();
         saved_values_[current_time] = cur_val;
         break;

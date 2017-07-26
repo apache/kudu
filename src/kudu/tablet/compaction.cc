@@ -24,13 +24,13 @@
 #include <unordered_set>
 #include <vector>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -39,7 +39,7 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
 
-using kudu::server::HybridClock;
+using kudu::clock::HybridClock;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::unordered_set;

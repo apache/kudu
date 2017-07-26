@@ -18,18 +18,18 @@
 #include <atomic>
 #include <gflags/gflags.h>
 
-#include "kudu/server/hybrid_clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
-#include "kudu/tablet/tablet-test-base.h"
 
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_bool(use_mock_wall_clock);
 
-using kudu::server::HybridClock;
+using kudu::clock::HybridClock;
 
 // Specify row regex to match on. Empty string means don't match anything.
 #define ASSERT_DEBUG_DUMP_ROWS_MATCH(pattern) do { \

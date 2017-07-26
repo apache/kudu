@@ -316,7 +316,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   tablet_replica_->SetBootstrapping();
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 cmeta_manager_,
-                                scoped_refptr<server::Clock>(master_->clock()),
+                                scoped_refptr<clock::Clock>(master_->clock()),
                                 master_->mem_tracker(),
                                 scoped_refptr<rpc::ResultTracker>(),
                                 metric_registry_,
@@ -331,7 +331,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 
   RETURN_NOT_OK_PREPEND(tablet_replica_->Start(consensus_info,
                                                tablet,
-                                               scoped_refptr<server::Clock>(master_->clock()),
+                                               scoped_refptr<clock::Clock>(master_->clock()),
                                                master_->messenger(),
                                                scoped_refptr<rpc::ResultTracker>(),
                                                log,

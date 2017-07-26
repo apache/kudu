@@ -26,6 +26,8 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -37,8 +39,6 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
@@ -53,13 +53,13 @@ METRIC_DECLARE_entity(tablet);
 namespace kudu {
 namespace log {
 
+using clock::Clock;
+
 using consensus::OpId;
 using consensus::CommitMsg;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
 using consensus::NO_OP;
-
-using server::Clock;
 
 using tserver::WriteRequestPB;
 
@@ -169,7 +169,7 @@ class LogTestBase : public KuduTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
-    clock_.reset(new server::HybridClock());
+    clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
   }
 

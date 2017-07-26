@@ -21,13 +21,13 @@
 #include <utility>
 
 #include "kudu/client/client-test-util.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -40,7 +40,7 @@
 using kudu::client::KuduScanner;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
-using kudu::server::HybridClock;
+using kudu::clock::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;

@@ -36,7 +36,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/server/clock.h"
+#include "kudu/clock/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/pb_util.h"
@@ -90,7 +90,7 @@ inline RaftPeerPB FakeRaftPeerPB(const std::string& uuid) {
 // TestOperationStatus::AckPeer().
 inline void AppendReplicateMessagesToQueue(
     PeerMessageQueue* queue,
-    const scoped_refptr<server::Clock>& clock,
+    const scoped_refptr<clock::Clock>& clock,
     int64_t first,
     int64_t count,
     int64_t payload_size = 0) {

@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
@@ -37,7 +38,6 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -93,7 +93,7 @@ Status WaitUntilLeaderForTests(RaftConsensus* raft) {
 class RaftConsensusQuorumTest : public KuduTest {
  public:
   RaftConsensusQuorumTest()
-    : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
+    : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(0))),
       metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
       schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;
@@ -563,7 +563,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   vector<scoped_refptr<ConsensusMetadataManager>> cmeta_managers_;
   gscoped_ptr<TestPeerMapManager> peers_;
   vector<TestTransactionFactory*> txn_factories_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;

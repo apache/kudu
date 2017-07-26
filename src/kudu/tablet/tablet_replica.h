@@ -83,7 +83,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // in the consensus configuration.
   Status Start(const consensus::ConsensusBootstrapInfo& bootstrap_info,
                std::shared_ptr<tablet::Tablet> tablet,
-               scoped_refptr<server::Clock> clock,
+               scoped_refptr<clock::Clock> clock,
                std::shared_ptr<rpc::Messenger> messenger,
                scoped_refptr<rpc::ResultTracker> result_tracker,
                scoped_refptr<log::Log> log,
@@ -216,7 +216,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     return log_.get();
   }
 
-  server::Clock* clock() {
+  clock::Clock* clock() {
     return clock_.get();
   }
 
@@ -326,7 +326,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Token for serial task submission to the server-wide transaction prepare pool.
   std::unique_ptr<ThreadPoolToken> prepare_pool_token_;
 
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
 
   // List of maintenance operations for the tablet that need information that only the peer
   // can provide.

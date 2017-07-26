@@ -26,14 +26,14 @@
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/client/callbacks.h"
-#include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
@@ -41,6 +41,7 @@
 #include "kudu/client/session-internal.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/atomicops.h"
@@ -55,7 +56,6 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/tls_context.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -766,7 +766,7 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 
   // Get the time from the server and transform to micros, disregarding any
   // logical values (we shouldn't have any with a single server anyway).
-  int64_t ts = server::HybridClock::GetPhysicalValueMicros(
+  int64_t ts = clock::HybridClock::GetPhysicalValueMicros(
       cluster_->mini_tablet_server(0)->server()->clock()->Now());
 
   // Insert the second half of the rows
@@ -810,7 +810,7 @@ TEST_F(ClientTest, TestScanAtFutureTimestamp) {
 
   // Try to perform a scan at NowLatest(). This is in the future,
   // but the server should wait until it's in the past.
-  int64_t ts = server::HybridClock::GetPhysicalValueMicros(
+  int64_t ts = clock::HybridClock::GetPhysicalValueMicros(
       cluster_->mini_tablet_server(0)->server()->clock()->NowLatest());
   ASSERT_OK(scanner.SetSnapshotMicros(ts));
   ASSERT_OK(scanner.Open());

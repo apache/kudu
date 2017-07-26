@@ -49,7 +49,7 @@ namespace rpc {
 class ResultTracker;
 } // namespace rpc
 
-namespace server {
+namespace clock {
 class Clock;
 }
 
@@ -67,7 +67,7 @@ extern const char* kLogRecoveryDir;
 // TSTabletManager.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
                        const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
-                       const scoped_refptr<server::Clock>& clock,
+                       const scoped_refptr<clock::Clock>& clock,
                        const std::shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<rpc::ResultTracker>& result_tracker,
                        MetricRegistry* metric_registry,

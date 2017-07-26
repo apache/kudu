@@ -27,6 +27,8 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
@@ -34,8 +36,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_mem_trackers.h"
@@ -61,7 +61,7 @@ class TestRowSet : public KuduRowSetTest {
     : KuduRowSetTest(CreateTestSchema()),
       n_rows_(FLAGS_roundtrip_num_rows),
       op_id_(consensus::MaximumOpId()),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
     CHECK_GT(n_rows_, 0);
   }
 
@@ -335,7 +335,7 @@ class TestRowSet : public KuduRowSetTest {
 
   size_t n_rows_;
   consensus::OpId op_id_; // Generally a "fake" OpId for these tests.
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
   MvccManager mvcc_;
 };
 

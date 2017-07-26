@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row_operations.h"
@@ -42,7 +43,6 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -149,11 +149,10 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          "Space used by this tablet's data blocks.");
 
 using kudu::MaintenanceManager;
+using kudu::clock::HybridClock;
 using kudu::log::LogAnchorRegistry;
-using kudu::server::HybridClock;
 using std::shared_ptr;
 using std::string;
-using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -178,7 +177,7 @@ TabletComponents::TabletComponents(shared_ptr<MemRowSet> mrs,
 ////////////////////////////////////////////////////////////
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
-               const scoped_refptr<server::Clock>& clock,
+               const scoped_refptr<clock::Clock>& clock,
                const shared_ptr<MemTracker>& parent_mem_tracker,
                MetricRegistry* metric_registry,
                const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)

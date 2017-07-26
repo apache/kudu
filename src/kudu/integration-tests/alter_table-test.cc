@@ -26,20 +26,20 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/master-test-util.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"

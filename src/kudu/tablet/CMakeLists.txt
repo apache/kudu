@@ -74,12 +74,12 @@ ADD_EXPORTABLE_LIBRARY(tablet_proto
 
 add_library(tablet ${TABLET_SRCS})
 target_link_libraries(tablet
+  clock
   tablet_proto
   codegen
   kudu_common
   cfile
   gutil
-  server_common
   kudu_fs
   kudu_util
   consensus)

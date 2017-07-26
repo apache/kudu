@@ -19,11 +19,11 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/stopwatch.h"
@@ -48,7 +48,7 @@ class TestMemRowSet : public KuduTest {
       log_anchor_registry_(new LogAnchorRegistry()),
       schema_(CreateSchema()),
       key_schema_(schema_.CreateKeyProjection()),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
   static Schema CreateSchema() {
@@ -181,7 +181,7 @@ class TestMemRowSet : public KuduTest {
   faststring mutation_buf_;
   const Schema schema_;
   const Schema key_schema_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
   MvccManager mvcc_;
 };
 

@@ -86,7 +86,7 @@ set(LOG_SRCS
 
 add_library(log ${LOG_SRCS})
 target_link_libraries(log
-  server_common
+  clock
   gutil
   kudu_common
   kudu_fs

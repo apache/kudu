@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/server/hybrid_clock.h"
+#include "kudu/clock/hybrid_clock.h"
 
 #include <algorithm>
 #include <glog/logging.h>
@@ -65,7 +65,7 @@ using kudu::Status;
 using strings::Substitute;
 
 namespace kudu {
-namespace server {
+namespace clock {
 
 namespace {
 
@@ -491,5 +491,5 @@ string HybridClock::StringifyTimestamp(const Timestamp& timestamp) {
                     GetLogicalValue(timestamp));
 }
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu

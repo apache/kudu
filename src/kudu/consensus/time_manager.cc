@@ -45,7 +45,7 @@ DECLARE_int32(scanner_max_wait_ms);
 namespace kudu {
 namespace consensus {
 
-using server::Clock;
+using clock::Clock;
 using strings::Substitute;
 
 typedef std::lock_guard<simple_spinlock> Lock;

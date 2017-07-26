@@ -19,7 +19,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/server/hybrid_clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -28,7 +28,7 @@
 DECLARE_bool(use_mock_wall_clock);
 
 namespace kudu {
-namespace server {
+namespace clock {
 
 class HybridClockTest : public KuduTest {
  public:
@@ -289,5 +289,5 @@ TEST_F(HybridClockTest, TestGetPhysicalComponentDifference) {
   ASSERT_EQ(-100, negative_delta.ToMicroseconds());
 }
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu

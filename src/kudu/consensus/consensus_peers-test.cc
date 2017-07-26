@@ -19,17 +19,17 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus-test-util.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -72,7 +72,7 @@ class ConsensusPeersTest : public KuduTest {
                        0, // schema_version
                        NULL,
                        &log_));
-    clock_.reset(new server::HybridClock());
+    clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 
     scoped_refptr<TimeManager> time_manager(new TimeManager(clock_, Timestamp::kMin));
@@ -146,7 +146,7 @@ class ConsensusPeersTest : public KuduTest {
   const Schema schema_;
   LogOptions options_;
   unique_ptr<ThreadPoolToken> raft_pool_token_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
   shared_ptr<Messenger> messenger_;
 };
 

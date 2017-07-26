@@ -24,6 +24,8 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
@@ -43,8 +45,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/result_tracker.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
@@ -77,6 +77,7 @@ DECLARE_int32(max_clock_sync_error_usec);
 namespace kudu {
 namespace tablet {
 
+using clock::Clock;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::ChangeConfigRecordPB;
@@ -86,13 +87,13 @@ using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::MinimumOpId;
 using consensus::NO_OP;
-using consensus::OperationType;
-using consensus::OperationType_Name;
 using consensus::OpId;
 using consensus::OpIdEquals;
 using consensus::OpIdEqualsFunctor;
 using consensus::OpIdHashFunctor;
 using consensus::OpIdToString;
+using consensus::OperationType;
+using consensus::OperationType_Name;
 using consensus::RaftConfigPB;
 using consensus::ReplicateMsg;
 using consensus::WRITE_OP;
@@ -103,7 +104,6 @@ using log::LogOptions;
 using log::LogReader;
 using log::ReadableLogSegment;
 using rpc::ResultTracker;
-using server::Clock;
 using std::map;
 using std::shared_ptr;
 using std::string;
@@ -1082,7 +1082,7 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
   } else {
     DCHECK(clock_->SupportsExternalConsistencyMode(COMMIT_WAIT)) << "The provided clock does not"
         "support COMMIT_WAIT external consistency mode.";
-    safe_time = server::HybridClock::AddPhysicalTimeToTimestamp(
+    safe_time = clock::HybridClock::AddPhysicalTimeToTimestamp(
         Timestamp(replicate->timestamp()),
         MonoDelta::FromMicroseconds(-FLAGS_max_clock_sync_error_usec));
   }

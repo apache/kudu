@@ -18,6 +18,8 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -31,14 +33,12 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/logical_clock.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/tablet_replica_mm_ops.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tablet/tablet_replica.h"
-#include "kudu/tablet/tablet_replica_mm_ops.h"
-#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"

@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/log.h"
@@ -26,7 +27,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
@@ -65,7 +65,7 @@ class LogCacheTest : public KuduTest {
                             &log_));
 
     CloseAndReopenCache(MinimumOpId());
-    clock_.reset(new server::HybridClock());
+    clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
   }
 
@@ -106,7 +106,7 @@ class LogCacheTest : public KuduTest {
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<LogCache> cache_;
   scoped_refptr<log::Log> log_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
 };
 
 

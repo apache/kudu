@@ -22,6 +22,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
@@ -29,7 +30,6 @@
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -70,7 +70,7 @@ class TestCompaction : public KuduRowSetTest {
       op_id_(consensus::MaximumOpId()),
       row_builder_(schema_),
       arena_(32*1024, 128*1024),
-      clock_(server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+      clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
   }
 
@@ -434,7 +434,7 @@ class TestCompaction : public KuduRowSetTest {
   RowBuilder row_builder_;
   char key_buf_[256];
   Arena arena_;
-  scoped_refptr<server::LogicalClock> clock_;
+  scoped_refptr<clock::LogicalClock> clock_;
   MvccManager mvcc_;
 
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;

@@ -130,7 +130,7 @@ TabletReplica::~TabletReplica() {
 
 Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
                             shared_ptr<Tablet> tablet,
-                            scoped_refptr<server::Clock> clock,
+                            scoped_refptr<clock::Clock> clock,
                             shared_ptr<Messenger> messenger,
                             scoped_refptr<ResultTracker> result_tracker,
                             scoped_refptr<Log> log,

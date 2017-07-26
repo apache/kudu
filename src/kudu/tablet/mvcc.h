@@ -23,8 +23,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "kudu/clock/clock.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/server/clock.h"
 #include "kudu/util/locks.h"
 
 namespace kudu {

@@ -21,13 +21,13 @@
 #include <glog/logging.h>
 #include <mutex>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/stopwatch.h"

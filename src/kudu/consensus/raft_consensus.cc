@@ -25,6 +25,7 @@
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta_manager.h"
@@ -37,7 +38,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/server/clock.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"

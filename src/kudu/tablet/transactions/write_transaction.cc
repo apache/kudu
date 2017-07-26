@@ -20,17 +20,17 @@
 #include <algorithm>
 #include <vector>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/row_op.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"

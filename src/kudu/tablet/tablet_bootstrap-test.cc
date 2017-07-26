@@ -20,6 +20,7 @@
 #include <memory>
 #include <vector>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/iterator.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -29,11 +30,10 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/data_dirs.h"
-#include "kudu/server/logical_clock.h"
-#include "kudu/util/logging_test_util.h"
-#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/logging_test_util.h"
 
 using std::shared_ptr;
 using std::string;
@@ -43,21 +43,20 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
+using clock::Clock;
+using clock::LogicalClock;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
-using consensus::kMinimumTerm;
 using consensus::MakeOpId;
 using consensus::OpId;
 using consensus::ReplicateMsg;
 using consensus::ReplicateRefPtr;
+using consensus::kMinimumTerm;
 using consensus::make_scoped_refptr_replicate;
 using log::Log;
 using log::LogAnchorRegistry;
 using log::LogTestBase;
-using log::ReadableLogSegment;
-using server::Clock;
-using server::LogicalClock;
 using tserver::WriteRequestPB;
 
 class BootstrapTest : public LogTestBase {

@@ -21,16 +21,16 @@
 #include <memory>
 #include <unordered_set>
 
+#include "kudu/clock/logical_clock.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_compaction.h"
+#include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;

@@ -72,6 +72,7 @@ add_executable(kudu
 )
 target_link_libraries(kudu
   ${KRB5_REALM_OVERRIDE}
+  clock
   consensus
   gutil
   krpc
@@ -82,7 +83,6 @@ target_link_libraries(kudu
   kudu_util
   log
   master
-  server_common
   tablet
   tserver
   ${KUDU_BASE_LIBS}

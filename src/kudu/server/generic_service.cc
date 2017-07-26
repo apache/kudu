@@ -21,11 +21,11 @@
 #include <string>
 #include <unordered_set>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/remote_user.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/hybrid_clock.h"
+#include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leak_annotations.h"
@@ -175,7 +175,7 @@ void GenericServiceImpl::SetServerWallClockForTests(const SetServerWallClockForT
     resp->set_success(false);
   }
 
-  server::HybridClock* clock = down_cast<server::HybridClock*>(server_->clock());
+  clock::HybridClock* clock = down_cast<clock::HybridClock*>(server_->clock());
   if (req->has_now_usec()) {
     clock->SetMockClockWallTimeForTests(req->now_usec());
   }

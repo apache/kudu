@@ -22,11 +22,11 @@
 #include <google/protobuf/util/message_differencer.h>
 #include <zlib.h>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -41,8 +41,8 @@ using google::protobuf::util::MessageDifferencer;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
-using kudu::server::Clock;
-using kudu::server::HybridClock;
+using kudu::clock::Clock;
+using kudu::clock::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletSuperBlockPB;

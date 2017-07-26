@@ -14,20 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_SERVER_HYBRID_CLOCK_H_
-#define KUDU_SERVER_HYBRID_CLOCK_H_
+#pragma once
 
 #include <string>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/server/clock.h"
+#include "kudu/clock/clock.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace server {
+namespace clock {
 
 // The HybridTime clock.
 //
@@ -222,7 +220,5 @@ class HybridClock : public Clock {
   FunctionGaugeDetacher metric_detacher_;
 };
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu
-
-#endif /* KUDU_SERVER_HYBRID_CLOCK_H_ */

@@ -20,8 +20,8 @@
 #include <mutex>
 #include <thread>
 
-#include "kudu/server/hybrid_clock.h"
-#include "kudu/server/logical_clock.h"
+#include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
@@ -31,14 +31,14 @@ using std::thread;
 namespace kudu {
 namespace tablet {
 
-using server::Clock;
-using server::HybridClock;
+using clock::Clock;
+using clock::HybridClock;
 
 class MvccTest : public KuduTest {
  public:
   MvccTest()
       : clock_(
-          server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+          clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
   }
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
@@ -55,7 +55,7 @@ class MvccTest : public KuduTest {
   }
 
  protected:
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
 
   mutable simple_spinlock lock_;
   gscoped_ptr<MvccSnapshot> result_snapshot_;

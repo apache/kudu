@@ -83,7 +83,7 @@ class KuduTabletTest : public KuduTest {
     return client_schema_;
   }
 
-  server::Clock* clock() {
+  clock::Clock* clock() {
     return harness_->clock();
   }
 

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/server/logical_clock.h"
+#include "kudu/clock/logical_clock.h"
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
@@ -25,7 +25,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace server {
+namespace clock {
 
 METRIC_DEFINE_gauge_uint64(server, logical_clock_timestamp,
                            "Logical Clock Timestamp",
@@ -101,6 +101,6 @@ string LogicalClock::Stringify(Timestamp timestamp) {
   return strings::Substitute("L: $0", timestamp.ToUint64());
 }
 
-}  // namespace server
+}  // namespace clock
 }  // namespace kudu
 

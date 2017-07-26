@@ -20,6 +20,7 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus-test-util.h"
@@ -31,7 +32,6 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_macros.h"
@@ -69,7 +69,7 @@ class ConsensusQueueTest : public KuduTest {
                             0, // schema_version
                             NULL,
                             &log_));
-    clock_.reset(new server::HybridClock());
+    clock_.reset(new clock::HybridClock());
     ASSERT_OK(clock_->Init());
 
     ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
@@ -77,7 +77,7 @@ class ConsensusQueueTest : public KuduTest {
   }
 
   void CloseAndReopenQueue() {
-    scoped_refptr<server::Clock> clock(new server::HybridClock());
+    scoped_refptr<clock::Clock> clock(new clock::HybridClock());
     ASSERT_OK(clock->Init());
     scoped_refptr<TimeManager> time_manager(new TimeManager(clock, Timestamp::kMin));
     queue_.reset(new PeerMessageQueue(metric_entity_,
@@ -198,7 +198,7 @@ class ConsensusQueueTest : public KuduTest {
   gscoped_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
-  scoped_refptr<server::Clock> clock_;
+  scoped_refptr<clock::Clock> clock_;
 };
 
 // Tests that the queue is able to track a peer when it starts tracking a peer

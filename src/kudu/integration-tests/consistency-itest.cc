@@ -23,22 +23,22 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/scanner-internal.h"
+#include "kudu/client/client.h"
 #include "kudu/client/scan_configuration.h"
+#include "kudu/client/scanner-internal.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -58,7 +58,7 @@ using kudu::client::sp::shared_ptr;
 using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
-using kudu::server::HybridClock;
+using kudu::clock::HybridClock;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;

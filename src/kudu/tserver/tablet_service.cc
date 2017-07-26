@@ -26,6 +26,7 @@
 
 #include <boost/optional.hpp>
 
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -40,7 +41,6 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -48,8 +48,8 @@
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
-#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/scanners.h"
+#include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"

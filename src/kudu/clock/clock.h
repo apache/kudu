@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_SERVER_CLOCK_H_
-#define KUDU_SERVER_CLOCK_H_
+#pragma once
 
 #include <string>
 
@@ -31,7 +29,7 @@ class faststring;
 class MetricEntity;
 class Slice;
 class Status;
-namespace server {
+namespace clock {
 
 // An interface for a clock that can be used to assign timestamps to
 // operations.
@@ -110,7 +108,5 @@ class Clock : public RefCountedThreadSafe<Clock> {
   virtual ~Clock() {}
 };
 
-} // namespace server
+} // namespace clock
 } // namespace kudu
-
-#endif /* KUDU_SERVER_CLOCK_H_ */

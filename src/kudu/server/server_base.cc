@@ -24,6 +24,8 @@
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 
+#include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -36,13 +38,11 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
-#include "kudu/security/kerberos_util.h"
 #include "kudu/security/init.h"
+#include "kudu/security/kerberos_util.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
-#include "kudu/server/hybrid_clock.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/rpcz-path-handler.h"
 #include "kudu/server/server_base.pb.h"
@@ -148,9 +148,9 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   fs_manager_.reset(new FsManager(options.env, fs_opts));
 
   if (FLAGS_use_hybrid_clock) {
-    clock_ = new HybridClock();
+    clock_ = new clock::HybridClock();
   } else {
-    clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
+    clock_ = clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }
 
   if (FLAGS_webserver_enabled) {

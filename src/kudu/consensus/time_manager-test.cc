@@ -15,14 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <thread>
 #include <gtest/gtest.h>
+#include <thread>
 
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
+#include "kudu/clock/logical_clock.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/time_manager.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/hybrid_clock.h"
-#include "kudu/server/logical_clock.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
@@ -33,7 +33,7 @@ using std::unique_ptr;
 
 class TimeManagerTest : public KuduTest {
  public:
-  TimeManagerTest() : clock_(new server::HybridClock()) {}
+  TimeManagerTest() : clock_(new clock::HybridClock()) {}
 
   void SetUp() override {
     CHECK_OK(clock_->Init());
@@ -63,7 +63,7 @@ class TimeManagerTest : public KuduTest {
     return latch;
   }
 
-  scoped_refptr<server::HybridClock> clock_;
+  scoped_refptr<clock::HybridClock> clock_;
   scoped_refptr<TimeManager> time_manager_;
   vector<unique_ptr<CountDownLatch>> latches_;
   vector<std::thread> threads_;

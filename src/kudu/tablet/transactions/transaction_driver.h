@@ -19,12 +19,12 @@
 #define KUDU_TABLET_TRANSACTION_DRIVER_H_
 
 #include <string>
-#include <kudu/rpc/result_tracker.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/server/clock.h"
+#include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"

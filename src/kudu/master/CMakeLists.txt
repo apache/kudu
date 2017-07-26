@@ -47,6 +47,7 @@ set(MASTER_SRCS
 
 add_library(master ${MASTER_SRCS})
 target_link_libraries(master
+  clock
   gutil
   krpc
   kserver
@@ -55,7 +56,6 @@ target_link_libraries(master
   master_proto
   rpc_header_proto
   security
-  server_common
   server_process
   tablet
   token_proto

@@ -22,6 +22,8 @@
 #include <glog/stl_logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/clock/clock.h"
+#include "kudu/clock/hybrid_clock.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
@@ -31,11 +33,9 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/server/clock.h"
-#include "kudu/server/hybrid_clock.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
@@ -52,6 +52,8 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
+using clock::Clock;
+using clock::HybridClock;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
@@ -59,8 +61,6 @@ using consensus::RECEIVED_OPID;
 using log::AppendNoOpsToLogSync;
 using log::Log;
 using log::LogOptions;
-using server::Clock;
-using server::HybridClock;
 
 namespace {
 // Generate a row key such that an increasing sequence (0...N) ends up spreading writes

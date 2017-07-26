@@ -119,6 +119,7 @@ set(TSERVER_SRCS
 
 add_library(tserver ${TSERVER_SRCS})
 target_link_libraries(tserver
+  clock
   consensus
   consensus_proto
   krpc
@@ -128,7 +129,6 @@ target_link_libraries(tserver
   master_proto
   protobuf
   security
-  server_common
   server_process
   tablet
   tablet_copy_proto
