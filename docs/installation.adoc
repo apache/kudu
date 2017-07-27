@@ -31,8 +31,9 @@
 You can deploy Kudu on a cluster using packages or you can build Kudu
 from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm[Kudu Quickstart VM].
 
-NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
-version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera's
+NOTE: Cloudera Manager users can install and manage Kudu with
+link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
+instead of following these instructions. For more information, see Cloudera's
 link:http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html[Kudu documentation].
 
 .Upgrading Kudu
@@ -64,10 +65,6 @@ Windows::
 - If solid state storage is available, storing Kudu WALs on such high-performance
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.
-
-.Management
-- If you use Cloudera Manager and CDH, Cloudera Manager 5.4.3 or newer is required.
-Cloudera Manager 5.4.7 and newer provide better monitoring and administration options.
 
 [[install_packages]]
 == Install Using Packages
