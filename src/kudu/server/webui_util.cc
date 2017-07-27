@@ -42,6 +42,10 @@ void HtmlOutputSchemaTable(const Schema& schema,
   *output << "<tbody>";
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
+    const string& html_escaped_col_name = EscapeForHtmlToString(col.name());
+    const string& col_name = schema.is_key_column(col.name()) ?
+                                 Substitute("<u>$0</u>", html_escaped_col_name) :
+                                 html_escaped_col_name;
     string read_default = "-";
     if (col.has_read_default()) {
       read_default = col.Stringify(col.read_default_value());
@@ -55,7 +59,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
     const string& compression = CompressionType_Name(attrs.compression);
     *output << Substitute("<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td>"
                           "<td>$4</td><td>$5</td><td>$6</td></tr>\n",
-                          EscapeForHtmlToString(col.name()),
+                          col_name,
                           schema.column_id(i),
                           col.TypeToString(),
                           EscapeForHtmlToString(encoding),

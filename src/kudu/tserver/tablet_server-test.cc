@@ -181,7 +181,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   // Tablet page should include the schema.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
                        &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "<th>key</th>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<th><u>key</u></th>");
   ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NULLABLE</td>");
 
   // Test fetching metrics.
