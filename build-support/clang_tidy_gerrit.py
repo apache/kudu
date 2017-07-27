@@ -17,6 +17,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import argparse
 import collections
 import compile_flags
 import json
@@ -152,14 +153,27 @@ class TestClangTidyGerrit(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Basic setup and argument parsing.
     logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(
+        description="Run clang-tidy on a patch, optionally posting warnings as comments to gerrit")
+    parser.add_argument("-n", "--no-gerrit", action="store_true",
+                        help="Whether to run locally i.e. (no interaction with gerrit)")
+    parser.add_argument('rev', help="The git revision to process")
+    args = parser.parse_args()
 
-    rev = sys.argv[1]
-    revision_url = get_gerrit_revision_url(rev)
-    print revision_url
-    clang_output = run_tidy(rev)
+    # Find the gerrit revision URL, if applicable.
+    if not args.no_gerrit:
+        revision_url = get_gerrit_revision_url(args.rev)
+        print revision_url
+
+    # Run clang-tidy and parse the output.
+    clang_output = run_tidy(args.rev)
     logging.info("Clang output")
     logging.info(clang_output)
+    if args.no_gerrit:
+        print >>sys.stderr, "Skipping gerrit"
+        sys.exit(0)
     logging.info("=" * 80)
     parsed = parse_clang_output(clang_output)
     if not parsed:
@@ -168,8 +182,8 @@ if __name__ == "__main__":
     print "Parsed clang warnings:"
     print json.dumps(parsed, indent=4)
 
+    # Post the output as comments to the gerrit URL.
     gerrit_json_obj = create_gerrit_json_obj(parsed)
     print "Will post to gerrit:"
     print json.dumps(gerrit_json_obj, indent=4)
-
     post_comments(revision_url, gerrit_json_obj)
