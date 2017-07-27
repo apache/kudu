@@ -43,6 +43,7 @@
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -182,6 +183,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     std::lock_guard<simple_spinlock> lock(lock_);
     return state_;
   }
+
+  std::string StateName() const;
 
   // Returns the current Raft configuration.
   const consensus::RaftConfigPB RaftConfig() const;
@@ -353,6 +356,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // The result tracker for writes.
   scoped_refptr<rpc::ResultTracker> result_tracker_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletReplica);
 };

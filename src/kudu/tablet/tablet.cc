@@ -224,7 +224,6 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
 
   if (metric_registry) {
     MetricEntity::AttributeMap attrs;
-    // TODO(KUDU-745): table_id is apparently not set in the metadata.
     attrs["table_id"] = metadata_->table_id();
     attrs["table_name"] = metadata_->table_name();
     attrs["partition"] = metadata_->partition_schema().PartitionDebugString(metadata_->partition(),

@@ -46,6 +46,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -106,6 +107,10 @@ METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateC
 METRIC_DECLARE_counter(glog_info_messages);
 METRIC_DECLARE_counter(glog_warning_messages);
 METRIC_DECLARE_counter(glog_error_messages);
+METRIC_DECLARE_counter(tablet_copy_bytes_fetched);
+METRIC_DECLARE_counter(tablet_copy_bytes_sent);
+METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
+METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 
 namespace kudu {
@@ -389,7 +394,9 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
 
   {
     // Start up a TabletCopyClient and open a tablet copy session.
-    TabletCopyClient tc_client(tablet_id, fs_manager.get(), cmeta_manager, cluster_->messenger());
+    TabletCopyClient tc_client(tablet_id, fs_manager.get(),
+                               cmeta_manager, cluster_->messenger(),
+                               nullptr /* no metrics */);
     scoped_refptr<tablet::TabletMetadata> meta;
     ASSERT_OK(tc_client.Start(cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
                               &meta));
@@ -486,7 +493,7 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
 }
 
-// Test that multiple concurrent tablet copys do not cause problems.
+// Test that multiple concurrent tablet copies do not cause problems.
 // This is a regression test for KUDU-951, in which concurrent sessions on
 // multiple tablets between the same tablet copy client host and source host
 // could corrupt each other.
@@ -810,7 +817,7 @@ TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags, master_flags;
   ts_flags.emplace_back("--enable_leader_failure_detection=false");
-  ts_flags.emplace_back("--tablet_copy_dowload_file_inject_latency_ms=5000");
+  ts_flags.emplace_back("--tablet_copy_download_file_inject_latency_ms=5000");
   ts_flags.emplace_back("--follower_unavailable_considered_failed_sec=2");
   master_flags.emplace_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
@@ -1270,5 +1277,129 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
 }
 
 #endif // __APPLE__
+
+namespace {
+int64_t TabletCopyBytesSent(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_bytes_sent,
+      "value",
+      &ret));
+  return ret;
+}
+
+int64_t TabletCopyBytesFetched(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_bytes_fetched,
+      "value",
+      &ret));
+  return ret;
+}
+
+int64_t TabletCopyOpenSourceSessions(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_open_source_sessions,
+      "value",
+      &ret));
+  return ret;
+}
+
+int64_t TabletCopyOpenClientSessions(ExternalTabletServer* ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_tablet_copy_open_client_sessions,
+      "value",
+      &ret));
+  return ret;
+}
+} // anonymous namespace
+
+// Test that tablet copy metrics work correctly.
+TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kTsIndex = 1; // Pick a random TS.
+
+  // Slow down tablet copy a little so we observe an active session and client.
+  vector<string> ts_flags;
+  ts_flags.emplace_back("--tablet_copy_download_file_inject_latency_ms=1000");
+  NO_FATALS(StartCluster(ts_flags));
+
+  // Populate a tablet with some data.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Ensure all the servers agree before we proceed.
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
+                                  workload.batches_completed()));
+
+  int leader_index;
+  int follower_index;
+  TServerDetails* leader_ts;
+  TServerDetails* follower_ts;
+
+  // Find the leader and then tombstone the follower replica, causing a tablet copy.
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+  leader_index = cluster_->tablet_server_index_by_uuid(leader_ts->uuid());
+  follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
+  follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
+
+  LOG(INFO) << "Tombstoning follower tablet " << tablet_id
+            << " on TS " << follower_ts->uuid();
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
+                                TABLET_DATA_TOMBSTONED,
+                                boost::none, kTimeout));
+
+  // Wait for copying to start.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      follower_index, tablet_id,
+      { tablet::TABLET_DATA_COPYING },
+      kTimeout));
+
+  // We should see one source session on the leader and one client session on the follower.
+  ASSERT_EQ(1, TabletCopyOpenSourceSessions(cluster_->tablet_server(leader_index)));
+  ASSERT_EQ(1, TabletCopyOpenClientSessions(cluster_->tablet_server(follower_index)));
+
+  // Wait for copying to finish.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      follower_index, tablet_id,
+      { tablet::TABLET_DATA_READY },
+      kTimeout));
+
+  // Check that the final bytes fetched is equal to the final bytes sent, and both are positive.
+  int64 bytes_sent = TabletCopyBytesSent(cluster_->tablet_server(leader_index));
+  int64 bytes_fetched = TabletCopyBytesFetched(cluster_->tablet_server(follower_index));
+  ASSERT_GT(bytes_sent, 0);
+  ASSERT_EQ(bytes_sent, bytes_fetched);
+
+  // The tablet copy sessions last until bootstrap is complete, so we'll wait for the
+  // new replica to catch up then check there are no open sessions.
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
+                                  workload.batches_completed()));
+
+  ASSERT_EQ(0, TabletCopyOpenSourceSessions(cluster_->tablet_server(leader_index)));
+  ASSERT_EQ(0, TabletCopyOpenClientSessions(cluster_->tablet_server(follower_index)));
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
 
 } // namespace kudu

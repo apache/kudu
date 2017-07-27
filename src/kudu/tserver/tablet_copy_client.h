@@ -26,6 +26,8 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -61,6 +63,14 @@ class DataIdPB;
 class DataChunkPB;
 class TabletCopyServiceProxy;
 
+// Server-wide tablet copy metrics.
+struct TabletCopyClientMetrics {
+  explicit TabletCopyClientMetrics(const scoped_refptr<MetricEntity>& metric_entity);
+
+  scoped_refptr<Counter> bytes_fetched;
+  scoped_refptr<AtomicGauge<int32>> open_client_sessions;
+};
+
 // Client class for using tablet copy to copy a tablet from another host.
 // This class is not thread-safe.
 //
@@ -74,7 +84,8 @@ class TabletCopyClient {
   // 'fs_manager' and 'messenger' must remain valid until this object is destroyed.
   TabletCopyClient(std::string tablet_id, FsManager* fs_manager,
                    scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
-                   std::shared_ptr<rpc::Messenger> messenger);
+                   std::shared_ptr<rpc::Messenger> messenger,
+                   TabletCopyClientMetrics* tablet_copy_metrics);
 
   // Attempt to clean up resources on the remote end by sending an
   // EndTabletCopySession() RPC
@@ -227,6 +238,8 @@ class TabletCopyClient {
   std::unique_ptr<consensus::ConsensusStatePB> remote_cstate_;
   std::vector<uint64_t> wal_seqnos_;
   int64_t start_time_micros_;
+
+  TabletCopyClientMetrics* tablet_copy_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };

@@ -57,7 +57,6 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
-#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
@@ -154,6 +153,7 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     cmeta_manager_(new ConsensusMetadataManager(fs_manager_)),
     server_(server),
     metric_registry_(server->metric_registry()),
+    tablet_copy_metrics_(server->metric_entity()),
     state_(MANAGER_INITIALIZING) {
 }
 
@@ -541,7 +541,8 @@ void TSTabletManager::RunTabletCopy(
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
-  TabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_, server_->messenger());
+  TabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_,
+                             server_->messenger(), &tablet_copy_metrics_);
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   if (replacing_tablet) {

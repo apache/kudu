@@ -36,14 +36,14 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
-#include "kudu/tserver/tablet_copy_source_session.h"
-#include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 
@@ -108,7 +108,8 @@ TabletCopyServiceImpl::TabletCopyServiceImpl(
       fs_manager_(CHECK_NOTNULL(server->fs_manager())),
       tablet_replica_lookup_(CHECK_NOTNULL(tablet_replica_lookup)),
       rand_(GetRandomSeed32()),
-      shutdown_latch_(1) {
+      shutdown_latch_(1),
+      tablet_copy_metrics_(server->metric_entity()) {
   CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
                           &TabletCopyServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
@@ -151,7 +152,8 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
           " at $2: session id = $3",
           tablet_id, requestor_uuid, context->requestor_string(), session_id);
       session.reset(new TabletCopySourceSession(tablet_replica, session_id,
-                                                requestor_uuid, fs_manager_));
+                                                requestor_uuid, fs_manager_,
+                                                &tablet_copy_metrics_));
       RPC_RETURN_NOT_OK(session->Init(),
                         TabletCopyErrorPB::UNKNOWN_ERROR,
                         Substitute("Error beginning tablet copy session for tablet $0", tablet_id),
@@ -266,6 +268,8 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
 
   data_chunk->set_total_data_length(total_data_length);
   data_chunk->set_offset(offset);
+
+  tablet_copy_metrics_.bytes_sent->IncrementBy(resp->chunk().data().size());
 
   // Calculate checksum.
   uint32_t crc32 = Crc32c(data->data(), data->length());

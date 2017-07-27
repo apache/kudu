@@ -73,12 +73,22 @@ TAG_FLAG(tablet_copy_save_downloaded_metadata, advanced);
 TAG_FLAG(tablet_copy_save_downloaded_metadata, hidden);
 TAG_FLAG(tablet_copy_save_downloaded_metadata, runtime);
 
-DEFINE_int32(tablet_copy_dowload_file_inject_latency_ms, 0,
+DEFINE_int32(tablet_copy_download_file_inject_latency_ms, 0,
              "Injects latency into the loop that downloads files, causing tablet copy "
              "to take much longer. For use in tests only.");
-TAG_FLAG(tablet_copy_dowload_file_inject_latency_ms, hidden);
+TAG_FLAG(tablet_copy_download_file_inject_latency_ms, hidden);
 
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
+
+METRIC_DEFINE_counter(server, tablet_copy_bytes_fetched,
+                      "Bytes Fetched By Tablet Copy",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes fetched during tablet copy operations since server start");
+
+METRIC_DEFINE_gauge_int32(server, tablet_copy_open_client_sessions,
+                          "Open Table Copy Client Sessions",
+                          kudu::MetricUnit::kSessions,
+                          "Number of currently open tablet copy client sessions on this server");
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
@@ -109,10 +119,16 @@ using tablet::TabletMetadata;
 using tablet::TabletReplica;
 using tablet::TabletSuperBlockPB;
 
+TabletCopyClientMetrics::TabletCopyClientMetrics(const scoped_refptr<MetricEntity>& metric_entity)
+    : bytes_fetched(METRIC_tablet_copy_bytes_fetched.Instantiate(metric_entity)),
+      open_client_sessions(METRIC_tablet_copy_open_client_sessions.Instantiate(metric_entity, 0)) {
+}
+
 TabletCopyClient::TabletCopyClient(std::string tablet_id,
-                                   FsManager* fs_manager,
-                                   scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                                   shared_ptr<Messenger> messenger)
+    FsManager* fs_manager,
+    scoped_refptr<ConsensusMetadataManager> cmeta_manager,
+    shared_ptr<Messenger> messenger,
+    TabletCopyClientMetrics* tablet_copy_metrics)
     : tablet_id_(std::move(tablet_id)),
       fs_manager_(fs_manager),
       cmeta_manager_(std::move(cmeta_manager)),
@@ -121,7 +137,11 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       replace_tombstoned_tablet_(false),
       tablet_replica_(nullptr),
       session_idle_timeout_millis_(0),
-      start_time_micros_(0) {
+      start_time_micros_(0),
+      tablet_copy_metrics_(tablet_copy_metrics) {
+  if (tablet_copy_metrics_) {
+    tablet_copy_metrics_->open_client_sessions->Increment();
+  }
 }
 
 TabletCopyClient::~TabletCopyClient() {
@@ -130,6 +150,9 @@ TabletCopyClient::~TabletCopyClient() {
                                              LogPrefix()));
   WARN_NOT_OK(Abort(), Substitute("$0Failed to fully clean up tablet after aborted copy",
                                   LogPrefix()));
+  if (tablet_copy_metrics_) {
+    tablet_copy_metrics_->open_client_sessions->IncrementBy(-1);
+  }
 }
 
 Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>& meta,
@@ -631,16 +654,19 @@ Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
     // Write the data.
     RETURN_NOT_OK(appendable->Append(resp.chunk().data()));
 
-    if (PREDICT_FALSE(FLAGS_tablet_copy_dowload_file_inject_latency_ms > 0)) {
+    if (PREDICT_FALSE(FLAGS_tablet_copy_download_file_inject_latency_ms > 0)) {
       LOG_WITH_PREFIX(INFO) << "Injecting latency into file download: " <<
-          FLAGS_tablet_copy_dowload_file_inject_latency_ms;
-      SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_dowload_file_inject_latency_ms));
+          FLAGS_tablet_copy_download_file_inject_latency_ms;
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_download_file_inject_latency_ms));
     }
 
     if (offset + resp.chunk().data().size() == resp.chunk().total_data_length()) {
       done = true;
     }
     offset += resp.chunk().data().size();
+    if (tablet_copy_metrics_) {
+      tablet_copy_metrics_->bytes_fetched->IncrementBy(resp.chunk().data().size());
+    }
   }
 
   return Status::OK();

@@ -225,7 +225,7 @@ class TabletCopyTest : public KuduTabletTest {
 
   void InitSession() {
     session_.reset(new TabletCopySourceSession(tablet_replica_.get(), "TestSession", "FakeUUID",
-                   fs_manager()));
+                   fs_manager(), nullptr /* no metrics */));
     ASSERT_OK(session_->Init());
   }
 

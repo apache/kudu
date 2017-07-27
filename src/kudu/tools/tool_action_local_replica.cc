@@ -356,7 +356,8 @@ Status CopyFromRemote(const RunnerContext& context) {
   MessengerBuilder builder("tablet_copy_client");
   shared_ptr<Messenger> messenger;
   builder.Build(&messenger);
-  TabletCopyClient client(tablet_id, &fs_manager, cmeta_manager, messenger);
+  TabletCopyClient client(tablet_id, &fs_manager, cmeta_manager,
+                          messenger, nullptr /* no metrics */);
   RETURN_NOT_OK(client.Start(hp, nullptr));
   RETURN_NOT_OK(client.FetchAll(nullptr));
   return client.Finish();

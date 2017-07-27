@@ -37,6 +37,8 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -80,6 +82,10 @@ METRIC_DEFINE_histogram(tablet, op_prepare_run_time, "Operation Prepare Run Time
                         "that operations are experiencing high contention with one another for "
                         "locks.",
                         10000000, 2);
+
+METRIC_DEFINE_gauge_string(tablet, state, "Tablet State",
+                           kudu::MetricUnit::kState,
+                           "State of this tablet.");
 
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusOptions;
@@ -184,6 +190,10 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
       if (tablet_->metrics()) {
         TRACE("Starting instrumentation");
         txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
+
+        METRIC_state.InstantiateFunctionGauge(
+            tablet_->GetMetricEntity(), Bind(&TabletReplica::StateName, Unretained(this)))
+            ->AutoDetach(&metric_detacher_);
       }
       txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
@@ -218,6 +228,10 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
   mark_dirty_clbk_.Run("Started TabletReplica");
 
   return Status::OK();
+}
+
+string TabletReplica::StateName() const {
+  return TabletStatePB_Name(state());
 }
 
 const consensus::RaftConfigPB TabletReplica::RaftConfig() const {

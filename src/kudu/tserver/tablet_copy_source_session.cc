@@ -56,6 +56,16 @@ DEFINE_int32(tablet_copy_transfer_chunk_size_bytes, 4 * 1024 * 1024,
              "tablet servers.");
 TAG_FLAG(tablet_copy_transfer_chunk_size_bytes, hidden);
 
+METRIC_DEFINE_counter(server, tablet_copy_bytes_sent,
+                      "Bytes Sent For Tablet Copy",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes sent during tablet copy operations since server start");
+
+METRIC_DEFINE_gauge_int32(server, tablet_copy_open_source_sessions,
+                          "Open Table Copy Source Sessions",
+                          kudu::MetricUnit::kSessions,
+                          "Number of currently open tablet copy source sessions on this server");
+
 namespace kudu {
 namespace tserver {
 
@@ -71,19 +81,33 @@ using strings::Substitute;
 using tablet::TabletMetadata;
 using tablet::TabletReplica;
 
+TabletCopySourceMetrics::TabletCopySourceMetrics(const scoped_refptr<MetricEntity>& metric_entity)
+    : bytes_sent(METRIC_tablet_copy_bytes_sent.Instantiate(metric_entity)),
+      open_source_sessions(METRIC_tablet_copy_open_source_sessions.Instantiate(metric_entity, 0)) {
+}
+
 TabletCopySourceSession::TabletCopySourceSession(
     const scoped_refptr<TabletReplica>& tablet_replica, std::string session_id,
-    std::string requestor_uuid, FsManager* fs_manager)
+    std::string requestor_uuid, FsManager* fs_manager,
+    TabletCopySourceMetrics* tablet_copy_metrics)
     : tablet_replica_(tablet_replica),
       session_id_(std::move(session_id)),
       requestor_uuid_(std::move(requestor_uuid)),
       fs_manager_(fs_manager),
       blocks_deleter_(&blocks_),
-      logs_deleter_(&logs_) {}
+      logs_deleter_(&logs_),
+      tablet_copy_metrics_(tablet_copy_metrics) {
+  if (tablet_copy_metrics_) {
+    tablet_copy_metrics_->open_source_sessions->Increment();
+  }
+}
 
 TabletCopySourceSession::~TabletCopySourceSession() {
   // No lock taken in the destructor, should only be 1 thread with access now.
   CHECK_OK(UnregisterAnchorIfNeededUnlocked());
+  if (tablet_copy_metrics_) {
+    tablet_copy_metrics_->open_source_sessions->IncrementBy(-1);
+  }
 }
 
 Status TabletCopySourceSession::Init() {

@@ -31,6 +31,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
@@ -317,6 +318,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   TransitionInProgressMap transition_in_progress_;
 
   MetricRegistry* metric_registry_;
+
+  TabletCopyClientMetrics tablet_copy_metrics_;
 
   TSTabletManagerStatePB state_;
 

@@ -105,6 +105,10 @@ const char* MetricUnit::Name(Type unit) {
       return "context switches";
     case kDataDirectories:
       return "data directories";
+    case kState:
+      return "state";
+    case kSessions:
+      return "sessions";
     default:
       DCHECK(false) << "Unknown unit with type = " << unit;
       return "UNKNOWN UNIT";

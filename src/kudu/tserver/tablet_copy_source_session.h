@@ -36,6 +36,8 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/env.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
@@ -49,6 +51,14 @@ class TabletReplica;
 } // namespace tablet
 
 namespace tserver {
+
+// Server-wide tablet source session metrics.
+struct TabletCopySourceMetrics {
+  explicit TabletCopySourceMetrics(const scoped_refptr<MetricEntity>& metric_entity);
+
+  scoped_refptr<Counter> bytes_sent;
+  scoped_refptr<AtomicGauge<int32>> open_source_sessions;
+};
 
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.
 // Assumes that the file underlying the RandomAccessFile is immutable.
@@ -89,8 +99,10 @@ struct ImmutableReadableBlockInfo {
 class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSession> {
  public:
   TabletCopySourceSession(const scoped_refptr<tablet::TabletReplica>& tablet_replica,
-                          std::string session_id, std::string requestor_uuid,
-                          FsManager* fs_manager);
+                          std::string session_id,
+                          std::string requestor_uuid,
+                          FsManager* fs_manager,
+                          TabletCopySourceMetrics* tablet_copy_metrics);
 
   // Initialize the session, including anchoring files (TODO) and fetching the
   // tablet superblock and list of WAL segments.
@@ -195,6 +207,8 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   log::SegmentSequence log_segments_;
 
   log::LogAnchor log_anchor_;
+
+  TabletCopySourceMetrics* tablet_copy_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopySourceSession);
 };

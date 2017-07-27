@@ -130,6 +130,8 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
   // TODO(mpercy): This is a hack, replace some kind of timer. See KUDU-286.
   CountDownLatch shutdown_latch_;
   scoped_refptr<Thread> session_expiration_thread_;
+
+  TabletCopySourceMetrics tablet_copy_metrics_;
 };
 
 } // namespace tserver

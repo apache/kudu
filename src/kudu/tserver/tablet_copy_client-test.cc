@@ -105,7 +105,8 @@ class TabletCopyClientTest : public TabletCopyTest {
     client_.reset(new TabletCopyClient(GetTabletId(),
                                        fs_manager_.get(),
                                        cmeta_manager,
-                                       messenger_));
+                                       messenger_,
+                                       nullptr /* no metrics */));
     ASSERT_OK(GetRaftConfigLeader(tablet_replica_->consensus()->ConsensusState(), &leader_));
 
     HostPort host_port;
