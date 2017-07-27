@@ -18,6 +18,7 @@
 #ifndef KUDU_CONSENSUS_LEADER_ELECTION_H
 #define KUDU_CONSENSUS_LEADER_ELECTION_H
 
+#include <functional>
 #include <map>
 #include <string>
 #include <unordered_map>
@@ -25,7 +26,6 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -141,7 +141,7 @@ struct ElectionResult {
 // This class is thread-safe.
 class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
  public:
-  typedef Callback<void(const ElectionResult&)> ElectionDecisionCallback;
+  typedef std::function<void(const ElectionResult&)> ElectionDecisionCallback;
   typedef std::unordered_map<std::string, PeerProxy*> ProxyMap;
 
   // Set up a new leader election driver.

@@ -82,9 +82,9 @@ struct ConsensusOptions {
 };
 
 typedef int64_t ConsensusTerm;
-typedef StatusCallback ConsensusReplicatedCallback;
+typedef StdStatusCallback ConsensusReplicatedCallback;
 
-class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
+class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       public PeerMessageQueueObserver {
  public:
 
@@ -124,6 +124,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
                 RaftPeerPB local_peer_pb,
                 scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                 ThreadPool* raft_pool);
+  ~RaftConsensus();
 
   // Initializes the RaftConsensus object. This should be called before
   // publishing this object to any thread other than the thread that invoked
@@ -166,7 +167,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // increase the reference count for the provided callbacks.
   scoped_refptr<ConsensusRound> NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
-      const ConsensusReplicatedCallback& replicated_cb);
+      ConsensusReplicatedCallback replicated_cb);
 
   // Call StartElection(), log a warning if the call fails (usually due to
   // being shut down).
@@ -247,7 +248,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
 
   // Implement a ChangeConfig() request.
   Status ChangeConfig(const ChangeConfigRequestPB& req,
-                      const StatusCallback& client_cb,
+                      StdStatusCallback client_cb,
                       boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Implement an UnsafeChangeConfig() request.
@@ -373,9 +374,6 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   using LockGuard = std::lock_guard<simple_spinlock>;
   using UniqueLock = std::unique_lock<simple_spinlock>;
 
-  // Private because this class is refcounted.
-  ~RaftConsensus();
-
   // Returns string description for State enum value.
   static const char* State_Name(State state);
 
@@ -386,9 +384,10 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Replicate (as leader) a pre-validated config change. This includes
   // updating the peers and setting the new_configuration as pending.
   // The old_configuration must be the currently-committed configuration.
-  Status ReplicateConfigChangeUnlocked(const RaftConfigPB& old_config,
-                                       const RaftConfigPB& new_config,
-                                       const StatusCallback& client_cb);
+  Status ReplicateConfigChangeUnlocked(
+      const RaftConfigPB& old_config,
+      const RaftConfigPB& new_config,
+      StdStatusCallback client_cb);
 
   // Update the peers and queue to be consistent with a new active configuration.
   // Should only be called by the leader.
@@ -569,7 +568,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   // Calls MarkDirty() if 'status' == OK. Then, always calls 'client_cb' with
   // 'status' as its argument.
   void MarkDirtyOnSuccess(const std::string& reason,
-                          const StatusCallback& client_cb,
+                          const StdStatusCallback& client_cb,
                           const Status& status);
 
   // Attempt to remove the follower with the specified 'uuid' from the config,
@@ -602,7 +601,7 @@ class RaftConsensus : public RefCountedThreadSafe<RaftConsensus>,
   //
   // NOTE: Must be called while holding 'lock_'.
   void NonTxRoundReplicationFinished(ConsensusRound* round,
-                                     const StatusCallback& client_cb,
+                                     const StdStatusCallback& client_cb,
                                      const Status& status);
 
   // As a leader, append a new ConsensusRound to the queue.
@@ -827,7 +826,8 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
  public:
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
-  ConsensusRound(RaftConsensus* consensus, gscoped_ptr<ReplicateMsg> replicate_msg,
+  ConsensusRound(RaftConsensus* consensus,
+                 gscoped_ptr<ReplicateMsg> replicate_msg,
                  ConsensusReplicatedCallback replicated_cb);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
@@ -855,8 +855,8 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   // permanently failed to replicate if 'status' is anything else. If 'status'
   // is OK() then the operation can be applied to the state machine, otherwise
   // the operation should be aborted.
-  void SetConsensusReplicatedCallback(const ConsensusReplicatedCallback& replicated_cb) {
-    replicated_cb_ = replicated_cb;
+  void SetConsensusReplicatedCallback(ConsensusReplicatedCallback replicated_cb) {
+    replicated_cb_ = std::move(replicated_cb);
   }
 
   // If a continuation was set, notifies it that the round has been replicated.

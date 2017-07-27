@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -369,25 +370,25 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
   std::shared_ptr<rpc::Messenger> messenger_;
 };
 
-typedef std::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerMap;
+typedef std::unordered_map<std::string, std::shared_ptr<RaftConsensus>> TestPeerMap;
 
 // Thread-safe manager for list of peers being used in tests.
 class TestPeerMapManager {
  public:
   explicit TestPeerMapManager(RaftConfigPB config) : config_(std::move(config)) {}
 
-  void AddPeer(const std::string& peer_uuid, const scoped_refptr<RaftConsensus>& peer) {
+  void AddPeer(const std::string& peer_uuid, const std::shared_ptr<RaftConsensus>& peer) {
     std::lock_guard<simple_spinlock> lock(lock_);
     InsertOrDie(&peers_, peer_uuid, peer);
   }
 
-  Status GetPeerByIdx(int idx, scoped_refptr<RaftConsensus>* peer_out) const {
+  Status GetPeerByIdx(int idx, std::shared_ptr<RaftConsensus>* peer_out) const {
     CHECK_LT(idx, config_.peers_size());
     return GetPeerByUuid(config_.peers(idx).permanent_uuid(), peer_out);
   }
 
   Status GetPeerByUuid(const std::string& peer_uuid,
-                       scoped_refptr<RaftConsensus>* peer_out) const {
+                       std::shared_ptr<RaftConsensus>* peer_out) const {
     std::lock_guard<simple_spinlock> lock(lock_);
     if (!FindCopy(peers_, peer_uuid, peer_out)) {
       return Status::NotFound("Other consensus instance was destroyed");
@@ -493,7 +494,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
     // Give the other peer a clean response object to write to.
     ConsensusResponsePB other_peer_resp;
-    scoped_refptr<RaftConsensus> peer;
+    std::shared_ptr<RaftConsensus> peer;
     Status s = peers_->GetPeerByUuid(peer_uuid_, &peer);
 
     if (s.ok()) {
@@ -526,7 +527,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     VoteResponsePB other_peer_resp;
     other_peer_resp.CopyFrom(*response);
 
-    scoped_refptr<RaftConsensus> peer;
+    std::shared_ptr<RaftConsensus> peer;
     Status s = peers_->GetPeerByUuid(peer_uuid_, &peer);
 
     if (s.ok()) {
@@ -662,8 +663,10 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 
   Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
     auto txn = new TestDriver(pool_.get(), log_, round);
-    txn->round_->SetConsensusReplicatedCallback(Bind(&TestDriver::ReplicationFinished,
-                                                     Unretained(txn)));
+    txn->round_->SetConsensusReplicatedCallback(std::bind(
+        &TestDriver::ReplicationFinished,
+        txn,
+        std::placeholders::_1));
     return Status::OK();
   }
 

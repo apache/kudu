@@ -131,7 +131,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
     return consensus_.get();
   }
 
-  scoped_refptr<consensus::RaftConsensus> shared_consensus() const {
+  std::shared_ptr<consensus::RaftConsensus> shared_consensus() const {
     std::lock_guard<simple_spinlock> lock(lock_);
     return consensus_;
   }
@@ -304,7 +304,7 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   scoped_refptr<log::Log> log_;
   std::shared_ptr<Tablet> tablet_;
   std::shared_ptr<rpc::Messenger> messenger_;
-  scoped_refptr<consensus::RaftConsensus> consensus_;
+  std::shared_ptr<consensus::RaftConsensus> consensus_;
   simple_spinlock prepare_replicate_lock_;
 
   // Lock protecting state_, last_status_, as well as smart pointers to collaborating

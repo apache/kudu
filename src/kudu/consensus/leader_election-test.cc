@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/leader_election.h"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -211,8 +212,9 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
   scoped_refptr<LeaderElection> election(
       new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         Bind(&LeaderElectionTest::ElectionCallback,
-                              Unretained(this))));
+                         std::bind(&LeaderElectionTest::ElectionCallback,
+                                   this,
+                                   std::placeholders::_1)));
   return election;
 }
 
@@ -267,8 +269,9 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
   scoped_refptr<LeaderElection> election(
       new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         Bind(&LeaderElectionTest::ElectionCallback,
-                              Unretained(this))));
+                         std::bind(&LeaderElectionTest::ElectionCallback,
+                                   this,
+                                   std::placeholders::_1)));
   return election;
 }
 
@@ -293,8 +296,9 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
     scoped_refptr<LeaderElection> election(
         new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
                            MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                           Bind(&LeaderElectionTest::ElectionCallback,
-                                Unretained(this))));
+                           std::bind(&LeaderElectionTest::ElectionCallback,
+                                     this,
+                                     std::placeholders::_1)));
     election->Run();
     latch_.Wait();
 
@@ -421,8 +425,9 @@ TEST_F(LeaderElectionTest, TestFailToCreateProxy) {
   scoped_refptr<LeaderElection> election(
       new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
-                         Bind(&LeaderElectionTest::ElectionCallback,
-                              Unretained(this))));
+                         std::bind(&LeaderElectionTest::ElectionCallback,
+                                   this,
+                                   std::placeholders::_1)));
   election->Run();
   latch_.Wait();
   ASSERT_EQ(kElectionTerm, result_->vote_request.candidate_term());

@@ -18,11 +18,13 @@
 #include "kudu/tserver/tablet_service.h"
 
 #include <algorithm>
-#include <boost/optional.hpp>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include <boost/optional.hpp>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
@@ -214,7 +216,7 @@ template<class RespClass>
 bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
                            RespClass* resp,
                            rpc::RpcContext* context,
-                           scoped_refptr<RaftConsensus>* consensus) {
+                           shared_ptr<RaftConsensus>* consensus) {
   *consensus = replica->shared_consensus();
   if (!*consensus) {
     Status s = Status::ServiceUnavailable("Raft Consensus unavailable. Tablet not running");
@@ -255,8 +257,15 @@ void HandleResponse(const ReqType* req, RespType* resp,
 }
 
 template <class ReqType, class RespType>
-static StatusCallback BindHandleResponse(const ReqType* req, RespType* resp, RpcContext* context) {
-  return Bind(&HandleResponse<ReqType, RespType>, req, resp, context);
+static StdStatusCallback BindHandleResponse(
+    const ReqType* req,
+    RespType* resp,
+    RpcContext* context) {
+  return std::bind(&HandleResponse<ReqType, RespType>,
+                   req,
+                   resp,
+                   context,
+                   std::placeholders::_1);
 }
 
 } // namespace
@@ -856,7 +865,7 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   replica->permanent_uuid();
 
   // Submit the update directly to the TabletReplica's RaftConsensus instance.
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->Update(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -886,7 +895,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   }
 
   // Submit the vote request directly to the consensus instance.
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->RequestVote(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -911,7 +920,7 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
 
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   boost::optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
@@ -935,7 +944,7 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
     return;
   }
 
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   TabletServerErrorPB::Code error_code;
   Status s = consensus->UnsafeChangeConfig(*req, &error_code);
@@ -966,7 +975,7 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
     return;
   }
 
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->StartElection(
       consensus::RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
@@ -992,7 +1001,7 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
     return;
   }
 
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   Status s = consensus->StepDown(resp);
   if (PREDICT_FALSE(!s.ok())) {
@@ -1022,7 +1031,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }
-  scoped_refptr<RaftConsensus> consensus;
+  shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   if (PREDICT_FALSE(req->opid_type() == consensus::UNKNOWN_OPID_TYPE)) {
     HandleUnknownError(Status::InvalidArgument("Invalid opid_type specified to GetLastOpId()"),
@@ -1057,7 +1066,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
       continue;
     }
 
-    scoped_refptr<RaftConsensus> consensus(replica->shared_consensus());
+    shared_ptr<RaftConsensus> consensus(replica->shared_consensus());
     if (!consensus) {
       continue;
     }

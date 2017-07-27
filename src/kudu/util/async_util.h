@@ -19,6 +19,8 @@
 #ifndef KUDU_UTIL_ASYNC_UTIL_H
 #define KUDU_UTIL_ASYNC_UTIL_H
 
+#include <functional>
+
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/countdown_latch.h"
@@ -35,12 +37,14 @@ namespace kudu {
 class Synchronizer {
  public:
   Synchronizer()
-    : l(1) {
+    : l_(1) {
   }
+
   void StatusCB(const Status& status) {
-    s = status;
-    l.CountDown();
+    s_ = status;
+    l_.CountDown();
   }
+
   StatusCallback AsStatusCallback() {
     // Synchronizers are often declared on the stack, so it doesn't make
     // sense for a callback to take a reference to its synchronizer.
@@ -49,23 +53,37 @@ class Synchronizer {
     // its synchronizer.
     return Bind(&Synchronizer::StatusCB, Unretained(this));
   }
-  Status Wait() {
-    l.Wait();
-    return s;
+
+  StdStatusCallback AsStdStatusCallback() {
+    // Synchronizers are often declared on the stack, so it doesn't make
+    // sense for a callback to take a reference to its synchronizer.
+    //
+    // Note: this means the returned callback _must_ go out of scope before
+    // its synchronizer.
+    return std::bind(&Synchronizer::StatusCB, this, std::placeholders::_1);
   }
+
+  Status Wait() {
+    l_.Wait();
+    return s_;
+  }
+
   Status WaitFor(const MonoDelta& delta) {
-    if (PREDICT_FALSE(!l.WaitFor(delta))) {
+    if (PREDICT_FALSE(!l_.WaitFor(delta))) {
       return Status::TimedOut("Timed out while waiting for the callback to be called.");
     }
-    return s;
+    return s_;
   }
+
   void Reset() {
-    l.Reset(1);
+    l_.Reset(1);
   }
+
  private:
+  Status s_;
+  CountDownLatch l_;
+
   DISALLOW_COPY_AND_ASSIGN(Synchronizer);
-  Status s;
-  CountDownLatch l;
 };
 
 } // namespace kudu

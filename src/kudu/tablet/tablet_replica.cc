@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_replica.h"
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -157,8 +158,10 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     TRACE("Creating consensus instance");
     ConsensusOptions options;
     options.tablet_id = meta_->tablet_id();
-    scoped_refptr<RaftConsensus> consensus(new RaftConsensus(std::move(options), local_peer_pb_,
-                                                             cmeta_manager_, raft_pool));
+    shared_ptr<RaftConsensus> consensus(std::make_shared<RaftConsensus>(std::move(options),
+                                                                        local_peer_pb_,
+                                                                        cmeta_manager_,
+                                                                        raft_pool));
     RETURN_NOT_OK(consensus->Init());
 
     scoped_refptr<MetricEntity> metric_entity;
@@ -545,9 +548,11 @@ Status TabletReplica::StartReplicaTransaction(const scoped_refptr<ConsensusRound
   scoped_refptr<TransactionDriver> driver;
   RETURN_NOT_OK(NewReplicaTransactionDriver(std::move(transaction), &driver));
 
-  // Unretained is required to avoid a refcount cycle.
+  // A raw pointer is required to avoid a refcount cycle.
   state->consensus_round()->SetConsensusReplicatedCallback(
-      Bind(&TransactionDriver::ReplicationFinished, Unretained(driver.get())));
+      std::bind(&TransactionDriver::ReplicationFinished,
+                driver.get(),
+                std::placeholders::_1));
 
   RETURN_NOT_OK(driver->ExecuteAsync());
   return Status::OK();

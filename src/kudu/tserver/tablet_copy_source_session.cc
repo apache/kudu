@@ -120,7 +120,7 @@ Status TabletCopySourceSession::Init() {
   // We do this after snapshotting the log to avoid a scenario where the latest
   // entry in the log has a term higher than the term stored in the consensus
   // metadata, which will results in a CHECK failure on RaftConsensus init.
-  scoped_refptr<consensus::RaftConsensus> consensus = tablet_replica_->shared_consensus();
+  shared_ptr<consensus::RaftConsensus> consensus = tablet_replica_->shared_consensus();
   if (!consensus) {
     tablet::TabletStatePB tablet_state = tablet_replica_->state();
     return Status::IllegalState(Substitute(

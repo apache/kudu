@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/transactions/transaction_driver.h"
 
+#include <functional>
 #include <mutex>
 
 #include "kudu/consensus/time_manager.h"
@@ -133,10 +134,12 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     gscoped_ptr<ReplicateMsg> replicate_msg;
     transaction_->NewReplicateMsg(&replicate_msg);
     if (consensus_) { // sometimes NULL in tests
-      // Unretained is required to avoid a refcount cycle.
+      // A raw pointer is required to avoid a refcount cycle.
       mutable_state()->set_consensus_round(
         consensus_->NewRound(std::move(replicate_msg),
-                             Bind(&TransactionDriver::ReplicationFinished, Unretained(this))));
+                             std::bind(&TransactionDriver::ReplicationFinished,
+                                       this,
+                                       std::placeholders::_1)));
     }
   }
 

@@ -1102,7 +1102,7 @@ bool CatalogManager::IsInitialized() const {
 }
 
 RaftPeerPB::Role CatalogManager::Role() const {
-  scoped_refptr<consensus::RaftConsensus> consensus;
+  shared_ptr<consensus::RaftConsensus> consensus;
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     if (state_ == kRunning) {
