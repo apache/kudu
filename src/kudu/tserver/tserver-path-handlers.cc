@@ -49,8 +49,8 @@ using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
 using kudu::MaintenanceManagerStatusPB;
-using kudu::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
+using kudu::MaintenanceManagerStatusPB_OpInstancePB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
@@ -607,7 +607,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
   *output << "  <thead><tr><th>Name</th><th>Instances running</th></tr></thead>\n";
   *output << "<tbody>\n";
   for (int i = 0; i < ops_count; i++) {
-    MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
+    const MaintenanceManagerStatusPB_MaintenanceOpPB& op_pb = pb.registered_operations(i);
     if (op_pb.running() > 0) {
       *output <<  Substitute("<tr><td>$0</td><td>$1</td></tr>\n",
                              EscapeForHtmlToString(op_pb.name()),
@@ -622,13 +622,13 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
       "<th>Time since op started</th></tr></thead>\n";
   *output << "<tbody>\n";
   for (int i = 0; i < pb.completed_operations_size(); i++) {
-    MaintenanceManagerStatusPB_CompletedOpPB op_pb = pb.completed_operations(i);
+    const MaintenanceManagerStatusPB_OpInstancePB& op_pb = pb.completed_operations(i);
     *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
                            EscapeForHtmlToString(op_pb.name()),
                            HumanReadableElapsedTime::ToShortString(
                                op_pb.duration_millis() / 1000.0),
                            HumanReadableElapsedTime::ToShortString(
-                               op_pb.secs_since_start()));
+                               op_pb.millis_since_start() / 1000.0));
   }
   *output << "</tbody></table>\n";
 
@@ -638,7 +638,7 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
           << "       <th>Logs retained</th><th>Perf</th></tr></thead>\n";
   *output << "<tbody>\n";
   for (int i = 0; i < ops_count; i++) {
-    MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
+    const MaintenanceManagerStatusPB_MaintenanceOpPB& op_pb = pb.registered_operations(i);
     if (op_pb.running() == 0) {
       *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
                             EscapeForHtmlToString(op_pb.name()),

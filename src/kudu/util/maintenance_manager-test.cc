@@ -293,6 +293,34 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   manager_->UnregisterOp(&op2);
 }
 
+// Test retrieving a list of an op's running instances
+TEST_F(MaintenanceManagerTest, TestRunningInstances) {
+  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE);
+  op.set_perf_improvement(10);
+  op.set_remaining_runs(2);
+  op.set_sleep_time(MonoDelta::FromSeconds(1));
+  manager_->RegisterOp(&op);
+
+  // Check that running instances are added to the maintenance manager's collection,
+  // and fields are getting filled.
+  ASSERT_EVENTUALLY([&]() {
+      MaintenanceManagerStatusPB status_pb;
+      manager_->GetMaintenanceManagerStatusDump(&status_pb);
+      ASSERT_EQ(status_pb.running_operations_size(), 2);
+      const MaintenanceManagerStatusPB_OpInstancePB& instance1 = status_pb.running_operations(0);
+      const MaintenanceManagerStatusPB_OpInstancePB& instance2 = status_pb.running_operations(1);
+      ASSERT_EQ(instance1.name(), op.name());
+      ASSERT_NE(instance1.thread_id(), instance2.thread_id());
+    });
+
+  // Wait for instances to complete.
+  manager_->UnregisterOp(&op);
+
+  // Check that running instances are removed from collection after completion.
+  MaintenanceManagerStatusPB status_pb;
+  manager_->GetMaintenanceManagerStatusDump(&status_pb);
+  ASSERT_EQ(status_pb.running_operations_size(), 0);
+}
 // Test adding operations and make sure that the history of recently completed operations
 // is correct in that it wraps around and doesn't grow.
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {

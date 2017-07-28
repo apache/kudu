@@ -24,6 +24,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -145,6 +146,31 @@ class MaintenanceOpStats {
   MonoTime last_modified_;
 };
 
+// Represents an instance of a maintenance operation.
+struct OpInstance {
+  // Id of thread the instance ran on.
+  std::thread::id thread_id;
+  // Name of operation.
+  std::string name;
+  // Time the operation took to run. Value is unitialized if instance is still running.
+  MonoDelta duration;
+  MonoTime start_mono_time;
+
+  MaintenanceManagerStatusPB_OpInstancePB DumpToPB() const {
+    MaintenanceManagerStatusPB_OpInstancePB pb;
+    std::stringstream ss;
+    ss << thread_id;
+    pb.set_thread_id(ss.str());
+    pb.set_name(name);
+    if (duration.Initialized()) {
+      pb.set_duration_millis(duration.ToMilliseconds());
+    }
+    MonoDelta delta(MonoTime::Now() - start_mono_time);
+    pb.set_millis_since_start(delta.ToMilliseconds());
+    return pb;
+  }
+};
+
 // MaintenanceOp objects represent background operations that the
 // MaintenanceManager can schedule.  Once a MaintenanceOp is registered, the
 // manager will periodically poll it for statistics.  The registrant is
@@ -242,13 +268,6 @@ struct MaintenanceOpComparator {
   }
 };
 
-// Holds the information regarding a recently completed operation.
-struct CompletedOp {
-  std::string name;
-  MonoDelta duration;
-  MonoTime start_mono_time;
-};
-
 // The MaintenanceManager manages the scheduling of background operations such
 // as flushes or compactions.  It runs these operations in the background, in a
 // thread pool.  It uses information provided in MaintenanceOpStats objects to
@@ -309,11 +328,17 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   gscoped_ptr<ThreadPool> thread_pool_;
   ConditionVariable cond_;
   bool shutdown_;
-  uint64_t running_ops_;
   int32_t polling_interval_ms_;
+  // Maps thread ids to instances of an op that they're running. Instances should be added
+  // right before MaintenanceOp::Perform() is called, and should be removed right after
+  // MaintenanceOp::Perform() completes. Any thread that adds an instance to this map
+  // owns that instance, and the instance should exist until the same thread removes it.
+  // Must acquire lock_ before accessing.
+  std::map<std::thread::id, OpInstance*> running_instances_;
+  uint64_t running_ops_;
   // Vector used as a circular buffer for recently completed ops. Elements need to be added at
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
-  std::vector<CompletedOp> completed_ops_;
+  std::vector<OpInstance> completed_ops_;
   int64_t completed_ops_count_;
   std::string server_uuid_;
   Random rand_;

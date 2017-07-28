@@ -21,8 +21,10 @@
 #include <memory>
 #include <stdint.h>
 #include <string>
+#include <thread>
 #include <utility>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
@@ -32,6 +34,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
@@ -122,10 +125,10 @@ MaintenanceManager::MaintenanceManager(const Options& options)
       FLAGS_maintenance_manager_num_threads : options.num_threads),
     cond_(&lock_),
     shutdown_(false),
-    running_ops_(0),
     polling_interval_ms_(options.polling_interval_ms <= 0 ?
           FLAGS_maintenance_manager_polling_interval_ms :
           options.polling_interval_ms),
+    running_ops_(0),
     completed_ops_count_(0),
     rand_(GetRandomSeed32()),
     memory_pressure_func_(&process_memory::UnderMemoryPressure) {
@@ -428,8 +431,33 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
-  MonoTime start_time = MonoTime::Now();
+  std::thread::id thread_id = std::this_thread::get_id();
+  OpInstance op_instance;
+  op_instance.thread_id = thread_id;
+  op_instance.name = op->name();
+  op_instance.start_mono_time = MonoTime::Now();
   op->RunningGauge()->Increment();
+  {
+    std::lock_guard<Mutex> lock(lock_);
+    InsertOrDie(&running_instances_, thread_id, &op_instance);
+  }
+
+  auto cleanup = MakeScopedCleanup([&]{
+    op->RunningGauge()->Decrement();
+
+    std::lock_guard<Mutex> l(lock_);
+    running_instances_.erase(thread_id);
+    op_instance.duration = MonoTime::Now() - op_instance.start_mono_time;
+    completed_ops_[completed_ops_count_ % completed_ops_.size()] = op_instance;
+    completed_ops_count_++;
+
+    op->DurationHistogram()->Increment(op_instance.duration.ToMilliseconds());
+
+    running_ops_--;
+    op->running_--;
+    op->cond_->Signal();
+    cond_.Signal(); // wake up scheduler
+  });
 
   scoped_refptr<Trace> trace(new Trace);
   LOG_TIMING(INFO, Substitute("running $0", op->name())) {
@@ -439,23 +467,6 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
     op->Perform();
   }
   LOG_WITH_PREFIX(INFO) << op->name() << " metrics: " << trace->MetricsAsJSON();
-
-  op->RunningGauge()->Decrement();
-  MonoDelta delta = MonoTime::Now() - start_time;
-
-  std::lock_guard<Mutex> l(lock_);
-  CompletedOp& completed_op = completed_ops_[completed_ops_count_ % completed_ops_.size()];
-  completed_op.name = op->name();
-  completed_op.duration = delta;
-  completed_op.start_mono_time = start_time;
-  completed_ops_count_++;
-
-  op->DurationHistogram()->Increment(delta.ToMilliseconds());
-
-  running_ops_--;
-  op->running_--;
-  op->cond_->Signal();
-  cond_.Signal(); // wake up scheduler
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
@@ -485,18 +496,17 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     }
   }
 
+  for (const auto& running_instance : running_instances_) {
+    *out_pb->add_running_operations() = running_instance.second->DumpToPB();
+  }
+
   for (int n = 1; n <= completed_ops_.size(); n++) {
     int i = completed_ops_count_ - n;
     if (i < 0) break;
     const auto& completed_op = completed_ops_[i % completed_ops_.size()];
 
     if (!completed_op.name.empty()) {
-      MaintenanceManagerStatusPB_CompletedOpPB* completed_pb = out_pb->add_completed_operations();
-      completed_pb->set_name(completed_op.name);
-      completed_pb->set_duration_millis(completed_op.duration.ToMilliseconds());
-
-      MonoDelta delta(MonoTime::Now().GetDeltaSince(completed_op.start_mono_time));
-      completed_pb->set_secs_since_start(delta.ToSeconds());
+      *out_pb->add_completed_operations() = completed_op.DumpToPB();
     }
   }
 }
