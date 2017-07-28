@@ -740,8 +740,15 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
   LOG(INFO) << LogPrefix(tablet_id) << "Bootstrapping tablet";
   TRACE("Bootstrapping tablet");
 
+  scoped_refptr<ConsensusMetadata> cmeta;
+  Status s = cmeta_manager_->Load(replica->tablet_id(), &cmeta);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(ERROR) << LogPrefix(tablet_id) << "Failed to load consensus metadata: " << s.ToString();
+    replica->SetFailed(s);
+    return;
+  }
+
   consensus::ConsensusBootstrapInfo bootstrap_info;
-  Status s;
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
     // Disable tracing for the bootstrap, since this would result in
     // potentially millions of transaction traces being attached to the
@@ -752,7 +759,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     // with a partially created tablet here?
     replica->SetBootstrapping();
     s = BootstrapTablet(replica->tablet_metadata(),
-                        cmeta_manager_,
+                        cmeta->CommittedConfig(),
                         scoped_refptr<clock::Clock>(server_->clock()),
                         server_->mem_tracker(),
                         server_->result_tracker(),

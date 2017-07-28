@@ -312,10 +312,13 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
       master_->tablet_apply_pool(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
 
+  scoped_refptr<ConsensusMetadata> cmeta;
+  RETURN_NOT_OK(cmeta_manager_->Load(metadata->tablet_id(), &cmeta));
+
   consensus::ConsensusBootstrapInfo consensus_info;
   tablet_replica_->SetBootstrapping();
   RETURN_NOT_OK(BootstrapTablet(metadata,
-                                cmeta_manager_,
+                                cmeta->CommittedConfig(),
                                 scoped_refptr<clock::Clock>(master_->clock()),
                                 master_->mem_tracker(),
                                 scoped_refptr<rpc::ResultTracker>(),

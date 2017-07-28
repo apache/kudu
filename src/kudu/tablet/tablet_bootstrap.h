@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_BOOTSTRAP_H_
-#define KUDU_TABLET_TABLET_BOOTSTRAP_H_
+#pragma once
 
 #include <memory>
 #include <string>
@@ -66,7 +65,7 @@ extern const char* kLogRecoveryDir;
 // This is a synchronous method, but is typically called within a thread pool by
 // TSTabletManager.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
-                       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
+                       consensus::RaftConfigPB committed_raft_config,
                        const scoped_refptr<clock::Clock>& clock,
                        const std::shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<rpc::ResultTracker>& result_tracker,
@@ -79,5 +78,3 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
 
 }  // namespace tablet
 }  // namespace kudu
-
-#endif /* KUDU_TABLET_TABLET_BOOTSTRAP_H_ */

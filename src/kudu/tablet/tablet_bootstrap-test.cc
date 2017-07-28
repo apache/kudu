@@ -112,11 +112,15 @@ class BootstrapTest : public LogTestBase {
   Status RunBootstrapOnTestTablet(const scoped_refptr<TabletMetadata>& meta,
                                   shared_ptr<Tablet>* tablet,
                                   ConsensusBootstrapInfo* boot_info) {
+
+    scoped_refptr<ConsensusMetadata> cmeta;
+    RETURN_NOT_OK(cmeta_manager_->Load(meta->tablet_id(), &cmeta));
+
     scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
         meta,
-        cmeta_manager_,
+        cmeta->CommittedConfig(),
         scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
         shared_ptr<MemTracker>(),
         scoped_refptr<rpc::ResultTracker>(),
@@ -411,7 +415,7 @@ TEST_F(BootstrapTest, TestMissingConsensusMetadata) {
   Status s = RunBootstrapOnTestTablet(meta, &tablet, &boot_info);
 
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), "Unable to load Consensus metadata");
+  ASSERT_STR_CONTAINS(s.ToString(), "Unable to load consensus metadata");
 }
 
 TEST_F(BootstrapTest, TestOperationOverwriting) {

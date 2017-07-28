@@ -29,8 +29,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/consensus_meta.h"
-#include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
@@ -80,11 +78,8 @@ namespace tablet {
 using clock::Clock;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
-using consensus::ChangeConfigRecordPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataManager;
 using consensus::MinimumOpId;
 using consensus::NO_OP;
 using consensus::OpId;
@@ -166,7 +161,7 @@ class FlushedStoresSnapshot {
 class TabletBootstrap {
  public:
   TabletBootstrap(const scoped_refptr<TabletMetadata>& tablet_meta,
-                  const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
+                  RaftConfigPB committed_raft_config,
                   const scoped_refptr<Clock>& clock,
                   shared_ptr<MemTracker> mem_tracker,
                   const scoped_refptr<ResultTracker>& result_tracker,
@@ -337,9 +332,9 @@ class TabletBootstrap {
   // Log a status message and set the TabletReplica's status as well.
   void SetStatusMessage(const string& status);
 
-  scoped_refptr<TabletMetadata> tablet_meta_;
-  const scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
-  scoped_refptr<Clock> clock_;
+  const scoped_refptr<TabletMetadata> tablet_meta_;
+  const RaftConfigPB committed_raft_config_;
+  const scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
@@ -348,8 +343,6 @@ class TabletBootstrap {
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<log::Log> log_;
   std::shared_ptr<log::LogReader> log_reader_;
-
-  scoped_refptr<ConsensusMetadata> cmeta_;
 
   // Statistics on the replay of entries in the log.
   struct Stats {
@@ -410,7 +403,7 @@ void TabletBootstrap::SetStatusMessage(const string& status) {
 }
 
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
-                       const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
+                       RaftConfigPB committed_raft_config,
                        const scoped_refptr<Clock>& clock,
                        const shared_ptr<MemTracker>& mem_tracker,
                        const scoped_refptr<ResultTracker>& result_tracker,
@@ -422,8 +415,8 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", tablet_meta->tablet_id());
-  TabletBootstrap bootstrap(tablet_meta, cmeta_manager, clock, mem_tracker, result_tracker,
-                            metric_registry, tablet_replica, log_anchor_registry);
+  TabletBootstrap bootstrap(tablet_meta, std::move(committed_raft_config), clock, mem_tracker,
+                            result_tracker, metric_registry, tablet_replica, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -450,14 +443,14 @@ static string DebugInfo(const string& tablet_id,
 
 TabletBootstrap::TabletBootstrap(
     const scoped_refptr<TabletMetadata>& tablet_meta,
-    const scoped_refptr<ConsensusMetadataManager>& cmeta_manager,
+    RaftConfigPB committed_raft_config,
     const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
     const scoped_refptr<ResultTracker>& result_tracker,
     MetricRegistry* metric_registry,
     const scoped_refptr<TabletReplica>& tablet_replica,
     const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : tablet_meta_(tablet_meta),
-      cmeta_manager_(cmeta_manager),
+      committed_raft_config_(std::move(committed_raft_config)),
       clock_(clock),
       mem_tracker_(std::move(mem_tracker)),
       result_tracker_(result_tracker),
@@ -506,12 +499,6 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                      scoped_refptr<Log>* rebuilt_log,
                                      ConsensusBootstrapInfo* consensus_info) {
   string tablet_id = tablet_meta_->tablet_id();
-
-  // Replay requires a valid Consensus metadata file to exist in order to
-  // compare the committed consensus configuration seqno with the log entries and also to persist
-  // committed but unpersisted changes.
-  RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta_),
-                        "Unable to load Consensus metadata");
 
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
   // of a tablet copy. It's likely that not all files were copied over
@@ -562,9 +549,6 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   }
 
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
-
-  // Flush the consensus metadata once at the end to persist our changes, if any.
-  cmeta_->Flush();
 
   RETURN_NOT_OK(RemoveRecoveryDir());
   FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet);
@@ -1418,28 +1402,20 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 
 Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
                                                 const CommitMsg& commit_msg) {
-  ChangeConfigRecordPB* change_config = replicate_msg->mutable_change_config_record();
-  RaftConfigPB config = change_config->new_config();
-
-  int64_t cmeta_opid_index =  cmeta_->GetConfigOpIdIndex(consensus::COMMITTED_CONFIG);
-  if (replicate_msg->id().index() > cmeta_opid_index) {
-    DCHECK(!config.has_opid_index());
-    config.set_opid_index(replicate_msg->id().index());
-    VLOG_WITH_PREFIX(1) << "WAL replay found Raft configuration with log index "
-                        << config.opid_index()
-                        << " that is greater than the committed config's index "
-                        << cmeta_opid_index
-                        << ". Applying this configuration change.";
-    cmeta_->set_committed_config(config);
-    // We flush once at the end of bootstrap.
-  } else {
-    VLOG_WITH_PREFIX(1) << "WAL replay found Raft configuration with log index "
-                        << replicate_msg->id().index()
-                        << ", which is less than or equal to the committed "
-                        << "config's index " << cmeta_opid_index << ". "
-                        << "Skipping application of this config change.";
+  // Invariant: The committed config change request is always locally persisted
+  // in the consensus metadata before the commit message is written to the WAL.
+  if (PREDICT_FALSE(replicate_msg->id().index() > committed_raft_config_.opid_index())) {
+    string msg = Substitute("Committed config change op in WAL has opid index ($0) greater than "
+                            "config persisted in the consensus metadata ($1). "
+                            "Replicate message: {$2}. "
+                            "Committed raft config in consensus metadata: {$3}",
+                            replicate_msg->id().index(),
+                            committed_raft_config_.opid_index(),
+                            SecureShortDebugString(*replicate_msg),
+                            SecureShortDebugString(committed_raft_config_));
+    LOG_WITH_PREFIX(DFATAL) << msg;
+    return Status::Corruption(msg);
   }
-
   return AppendCommitMsg(commit_msg);
 }
 

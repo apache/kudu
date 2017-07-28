@@ -21,12 +21,14 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
 namespace consensus {
 
 using std::lock_guard;
 using std::string;
+using strings::Substitute;
 
 ConsensusMetadataManager::ConsensusMetadataManager(FsManager* fs_manager)
     : fs_manager_(DCHECK_NOTNULL(fs_manager)) {
@@ -37,8 +39,10 @@ Status ConsensusMetadataManager::Create(const string& tablet_id,
                                         int64_t current_term,
                                         scoped_refptr<ConsensusMetadata>* cmeta_out) {
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
-                                          config, current_term, &cmeta));
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
+                                                  config, current_term, &cmeta),
+                        Substitute("Unable to create consensus metadata for tablet $0", tablet_id));
+
   lock_guard<Mutex> l(lock_);
   InsertOrDie(&cmeta_cache_, tablet_id, cmeta);
   if (cmeta_out) *cmeta_out = std::move(cmeta);
@@ -62,7 +66,9 @@ Status ConsensusMetadataManager::Load(const string& tablet_id,
 
   // If it's not yet cached, drop the lock before we load it.
   scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK(ConsensusMetadata::Load(fs_manager_, tablet_id, fs_manager_->uuid(), &cmeta));
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager_, tablet_id, fs_manager_->uuid(),
+                                                &cmeta),
+                        Substitute("Unable to load consensus metadata for tablet $0", tablet_id));
 
   // Cache and return the loaded ConsensusMetadata.
   {
@@ -81,7 +87,9 @@ Status ConsensusMetadataManager::Delete(const string& tablet_id) {
     lock_guard<Mutex> l(lock_);
     cmeta_cache_.erase(tablet_id); // OK to delete an uncached cmeta; ignore the return value.
   }
-  return ConsensusMetadata::DeleteOnDiskData(fs_manager_, tablet_id);
+  RETURN_NOT_OK_PREPEND(ConsensusMetadata::DeleteOnDiskData(fs_manager_, tablet_id),
+                        Substitute("Unable to delete consensus metadata for tablet $0", tablet_id));
+  return Status::OK();
 }
 
 } // namespace consensus
