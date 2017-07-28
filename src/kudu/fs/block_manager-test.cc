@@ -844,11 +844,12 @@ TYPED_TEST(BlockManagerTest, TestDiskSpaceCheck) {
 }
 
 // Regression test for KUDU-1793.
-TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
+TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   const int kNumTries = 3;
-  const int kNumBlockTries = 1000;
+  const int kNumBlockTries = 500;
   const int kNumAppends = 4;
-  const string kTestData = "asdf";
+  const string kLongTestData = string(3000, 'L');
+  const string kShortTestData = string(40, 's');
 
   // Since we're appending so little data, reconfigure these to ensure quite a
   // few containers and a good amount of preallocating.
@@ -863,31 +864,39 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
   // errors may also crop up here.
   FLAGS_log_container_live_metadata_before_compact_ratio = 0.5;
 
-  // Creates a block, writing the result to 'out' on success.
-  auto create_a_block = [&](BlockId* out) -> Status {
+  // Creates a block with the given 'test_data', writing the result
+  // to 'out' on success.
+  auto create_a_block = [&](BlockId* out, const string& test_data) -> Status {
     unique_ptr<WritableBlock> block;
     RETURN_NOT_OK(this->bm_->CreateBlock(this->test_block_opts_, &block));
     for (int i = 0; i < kNumAppends; i++) {
-      RETURN_NOT_OK(block->Append(kTestData));
+      RETURN_NOT_OK(block->Append(test_data));
     }
+
+    RETURN_NOT_OK(block->FlushDataAsync());
     RETURN_NOT_OK(block->Close());
     *out = block->id();
     return Status::OK();
   };
 
-  // Reads a block given by 'id', comparing its contents to kTestData.
+  // Reads a block given by 'id', comparing its contents. Note that
+  // we need to compare with both kLongTestData and kShortTestData as we
+  // do not know the blocks' content ahead.
   auto read_a_block = [&](const BlockId& id) -> Status {
     unique_ptr<ReadableBlock> block;
     RETURN_NOT_OK(this->bm_->OpenBlock(id, &block));
     uint64_t size;
     RETURN_NOT_OK(block->Size(&size));
-    CHECK_EQ(kNumAppends * kTestData.size(), size);
+    uint8_t buf[size];
+    Slice slice(buf, size);
+    RETURN_NOT_OK(block->Read(0, &slice));
 
+    string data = slice.ToString();
+    const string* string_to_check =
+        kNumAppends * kShortTestData.size() == size ? &kShortTestData : &kLongTestData;
     for (int i = 0; i < kNumAppends; i++) {
-      uint8_t buf[kTestData.size()];
-      Slice s(buf, kTestData.size());
-      RETURN_NOT_OK(block->Read(i * kNumAppends, &s));
-      CHECK_EQ(kTestData, s);
+      CHECK_EQ(*string_to_check,
+               data.substr(i * string_to_check->size(), string_to_check->size()));
     }
     return Status::OK();
   };
@@ -902,7 +911,10 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailedWrites) {
     int num_created = 0;
     for (int i = 0; i < kNumBlockTries; i++) {
       BlockId id;
-      Status s = create_a_block(&id);
+      // Inject different size of data to better simulate
+      // real world case.
+      Status s = create_a_block(&id, i % 2 ? kShortTestData : kLongTestData);
+
       if (s.ok()) {
         InsertOrDie(&ids, id);
         num_created++;

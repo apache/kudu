@@ -376,6 +376,9 @@ class LogBlockContainer {
   // the pool fails, it runs synchronously on the current thread.
   void ExecClosure(const Closure& task);
 
+  // Mark the container to be read-only.
+  void SetReadOnly();
+
   // Produces a debug-friendly string representation of this container.
   string ToString() const;
 
@@ -397,6 +400,7 @@ class LogBlockContainer {
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   const DataDir* data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
+  bool read_only() const { return read_only_.Load(); }
 
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
@@ -470,6 +474,11 @@ class LogBlockContainer {
   // as the block manager.
   const LogBlockManagerMetrics* metrics_;
 
+  // If true, only read operations are allowed. Existing blocks may
+  // not be deleted until the next restart, and new blocks may not
+  // be added.
+  AtomicBool read_only_;
+
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
 
@@ -487,7 +496,8 @@ LogBlockContainer::LogBlockContainer(
       live_bytes_(0),
       live_bytes_aligned_(0),
       live_blocks_(0),
-      metrics_(block_manager->metrics()) {
+      metrics_(block_manager->metrics()),
+      read_only_(false) {
 }
 
 void LogBlockContainer::HandleError(const Status& s) const {
@@ -773,22 +783,35 @@ Status LogBlockContainer::ProcessRecord(
 }
 
 Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
+  Status result_status = s;
   auto cleanup = MakeScopedCleanup([&]() {
+    // Handle errors that have not been handled by marking the
+    // container as read-only to forbid future writes. Because
+    // the on-disk state may contain partial/complete data/metadata
+    // at this point, it is not safe to either overwrite it or
+    // append to it.
+    if (!result_status.ok()) {
+      SetReadOnly();
+    }
+
     block_manager_->MakeContainerAvailable(this);
   });
 
-  if (!s.ok()) {
-    // Early return; 'cleanup' makes the container available again.
-    return s;
-  }
+  // Early return; 'cleanup' marks the container as read-only.
+  RETURN_NOT_OK(s);
 
   // A failure when syncing the container means the container (and its new
-  // blocks) may be missing the next time the on-disk state is reloaded.
+  // blocks) may be missing the next time the on-disk state is reloaded. As
+  // such, it's not correct to add the block to in-memory state unless
+  // synchronization succeeds.
   //
-  // As such, it's not correct to add the block to in-memory state unless
-  // synchronization succeeds. In the worst case, this means the data file
-  // will have written some garbage that can be expunged during a GC.
-  RETURN_NOT_OK(block_manager()->SyncContainer(*this));
+  // On the other hand, the new blocks' metadata may be already on disk
+  // despite syncing failure.
+  //
+  // Thus, we consider the failure as fatal and mark the container
+  // 'read only'. See 'cleanup' above.
+  result_status = block_manager()->SyncContainer(*this);
+  RETURN_NOT_OK(result_status);
 
   scoped_refptr<LogBlock> lb = block_manager()->AddLogBlock(
       this, block->id(), next_block_offset_, block->BytesAppended());
@@ -828,6 +851,7 @@ Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
 }
 
 Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) {
+  DCHECK(!read_only());
   DCHECK_GE(offset, next_block_offset_);
 
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->WriteV(offset, data));
@@ -857,6 +881,7 @@ Status LogBlockContainer::ReadVData(int64_t offset, vector<Slice>* results) cons
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
+  DCHECK(!read_only());
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
   RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Append(pb));
@@ -864,6 +889,7 @@ Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
 }
 
 Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
+  DCHECK(!read_only());
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length));
@@ -871,11 +897,13 @@ Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
 }
 
 Status LogBlockContainer::FlushMetadata() {
+  DCHECK(!read_only());
   RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Flush());
   return Status::OK();
 }
 
 Status LogBlockContainer::SyncData() {
+  DCHECK(!read_only());
   if (FLAGS_enable_data_block_fsync) {
     RETURN_NOT_OK_HANDLE_ERROR(data_file_->Sync());
   }
@@ -883,6 +911,7 @@ Status LogBlockContainer::SyncData() {
 }
 
 Status LogBlockContainer::SyncMetadata() {
+  DCHECK(!read_only());
   if (FLAGS_enable_data_block_fsync) {
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Sync());
   }
@@ -904,6 +933,7 @@ Status LogBlockContainer::ReopenMetadataWriter() {
 
 Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
                                              size_t next_append_length) {
+  DCHECK(!read_only());
   DCHECK_GE(block_start_offset, 0);
 
   if (!FLAGS_log_container_preallocate_bytes) {
@@ -928,6 +958,7 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
 }
 
 void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
+  DCHECK(!read_only());
   DCHECK_GE(block->offset(), 0);
 
   // The log block manager maintains block contiguity as an invariant, which
@@ -965,6 +996,7 @@ void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
 }
 
 void LogBlockContainer::BlockDeleted(const scoped_refptr<LogBlock>& block) {
+  DCHECK(!read_only());
   DCHECK_GE(block->offset(), 0);
 
   live_bytes_.IncrementBy(-block->length());
@@ -981,6 +1013,10 @@ string LogBlockContainer::ToString() const {
   CHECK(TryStripSuffixString(data_file_->filename(),
                              LogBlockManager::kContainerDataFileSuffix, &s));
   return s;
+}
+
+void LogBlockContainer::SetReadOnly() {
+  read_only_.Store(true);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1137,6 +1173,11 @@ Status LogWritableBlock::Close() {
 }
 
 Status LogWritableBlock::Abort() {
+  // Abort the operation for read-only container.
+  if (container_->read_only()) {
+    return Status::Aborted("container $0 is read-only", container_->ToString());
+  }
+
   RETURN_NOT_OK(DoClose(NO_SYNC));
 
   // DoClose() has unlocked the container; it may be locked by someone else.
@@ -1188,16 +1229,31 @@ Status LogWritableBlock::AppendV(const vector<Slice>& data) {
 }
 
 Status LogWritableBlock::FlushDataAsync() {
+  Status s;
+  auto cleanup = MakeScopedCleanup([&]() {
+    // Mark container as read-only to avoid further
+    // writes in case of failure, as it is not safe to
+    // either overwrite the unsuccessful writes or
+    // append to it. Note that we do not care the failure
+    // of FlushData(), since the corresponding metadata
+    // has not been appended yet.
+    if (!s.ok()) {
+      container_->SetReadOnly();
+    }
+  });
+
   DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)
       << "Invalid state: " << state_;
   if (state_ == DIRTY) {
     VLOG(3) << "Flushing block " << id();
     RETURN_NOT_OK(container_->FlushData(block_offset_, block_length_));
 
-    RETURN_NOT_OK_PREPEND(AppendMetadata(), "Unable to append block metadata");
+    s = AppendMetadata();
+    RETURN_NOT_OK_PREPEND(s, "Unable to append block metadata");
 
     // TODO(unknown): Flush just the range we care about.
-    RETURN_NOT_OK(container_->FlushMetadata());
+    s = container_->FlushMetadata();
+    RETURN_NOT_OK(s);
   }
 
   state_ = FLUSHING;
@@ -1623,10 +1679,23 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
 Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   CHECK(!read_only_);
 
-  scoped_refptr<LogBlock> lb(RemoveLogBlock(block_id));
-  if (!lb) {
-    return Status::NotFound("Can't find block", block_id.ToString());
+  // Deletion is forbidden for read-only container.
+  scoped_refptr<LogBlock> lb;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    auto it = blocks_by_block_id_.find(block_id);
+    if (it == blocks_by_block_id_.end()) {
+      return Status::NotFound("Can't find block", block_id.ToString());
+    }
+
+    lb = it->second;
+    if (lb->container()->read_only()) {
+      return Status::IllegalState("container $0 is read-only",
+                                  lb->container()->ToString());
+    }
+    RemoveLogBlockUnlocked(it);
   }
+
   VLOG(3) << "Deleting block " << block_id;
   lb->Delete();
   lb->container()->BlockDeleted(lb);
@@ -1740,7 +1809,7 @@ void LogBlockManager::MakeContainerAvailable(LogBlockContainer* container) {
 
 void LogBlockManager::MakeContainerAvailableUnlocked(LogBlockContainer* container) {
   DCHECK(lock_.is_locked());
-  if (container->full()) {
+  if (container->full() || container->read_only()) {
     return;
   }
   available_containers_by_data_dir_[container->data_dir()].push_back(container);
@@ -1820,23 +1889,19 @@ bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
   return true;
 }
 
-scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  scoped_refptr<LogBlock> result =
-      EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
-  if (result) {
-    VLOG(2) << Substitute("Removed block: offset $0, length $1",
-                          result->offset(), result->length());
+void LogBlockManager::RemoveLogBlockUnlocked(const BlockMap::iterator& it) {
+  scoped_refptr<LogBlock> lb = std::move(it->second);
+  blocks_by_block_id_.erase(it);
 
-    mem_tracker_->Release(kudu_malloc_usable_size(result.get()));
+  VLOG(2) << Substitute("Removed block: offset $0, length $1",
+                        lb->offset(), lb->length());
 
-    if (metrics()) {
-      metrics()->blocks_under_management->Decrement();
-      metrics()->bytes_under_management->DecrementBy(result->length());
-    }
+  mem_tracker_->Release(kudu_malloc_usable_size(lb.get()));
+
+  if (metrics()) {
+    metrics()->blocks_under_management->Decrement();
+    metrics()->bytes_under_management->DecrementBy(lb->length());
   }
-
-  return result;
 }
 
 void LogBlockManager::OpenDataDir(DataDir* dir,
