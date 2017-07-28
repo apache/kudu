@@ -214,6 +214,7 @@ int64_t CurrentConsumption() {
 }
 
 int64_t HardLimit() {
+  InitLimits();
   return g_hard_limit;
 }
 
