@@ -503,6 +503,11 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
     return Status::OK();
   }
   RETURN_NOT_OK(BecomeReplicaUnlocked());
+
+  // Snooze the failure detector for an extra leader failure timeout.
+  // This should ensure that a different replica is elected leader after this one steps down.
+  WARN_NOT_OK(SnoozeFailureDetector(MinimumElectionTimeout(), ALLOW_LOGGING),
+              "unable to snooze failure detector after stepping down");
   return Status::OK();
 }
 

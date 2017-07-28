@@ -45,7 +45,7 @@
 
 DEFINE_int64(move_copy_timeout_sec, 600,
              "Number of seconds to wait for tablet copy to complete when relocating a tablet");
-DEFINE_int64(move_leader_timeout_sec, 10,
+DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
 
 namespace kudu {
@@ -365,13 +365,13 @@ Status MoveReplica(const RunnerContext &context) {
   const string& master_addresses_str = FindOrDie(context.required_args, kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  const string& rem_replica_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
-  const string& add_replica_uuid = FindOrDie(context.required_args, kToTsUuidArg);
+  const string& from_ts_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
+  const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
 
   // Check the tablet is in perfect health and, if so, add the new server.
   RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
                         "ksck pre-move health check failed");
-  RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, add_replica_uuid,
+  RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
                                RaftPeerPB::VOTER, consensus::ADD_SERVER));
 
   // Wait until the tablet copy completes and the tablet returns to perfect health.
@@ -386,13 +386,13 @@ Status MoveReplica(const RunnerContext &context) {
   string leader_uuid;
   HostPort leader_hp;
   RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
-  if (rem_replica_uuid == leader_uuid) {
+  if (from_ts_uuid == leader_uuid) {
     RETURN_NOT_OK_PREPEND(ChangeLeader(client, tablet_id,
                                        leader_uuid, leader_hp,
                                        MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
                           "failed changing leadership from the replica to be removed");
   }
-  return DoChangeConfig(master_addresses, tablet_id, rem_replica_uuid,
+  return DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
                         boost::none, consensus::REMOVE_SERVER);
 }
 

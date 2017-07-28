@@ -51,6 +51,7 @@ using itest::TServerDetails;
 using itest::WAIT_FOR_LEADER;
 using itest::WaitForReplicasReportedToMaster;
 using itest::WaitForServersToAgree;
+using itest::WaitUntilCommittedConfigNumVotersIs;
 using itest::WaitUntilCommittedOpIdIndexIs;
 using itest::WaitUntilTabletInState;
 using itest::WaitUntilTabletRunning;
@@ -236,8 +237,8 @@ TEST_F(AdminCliTest, TestMoveTablet) {
     for (const string& uuid : active_tservers) {
       InsertOrDie(&active_tservers_map, uuid, tablet_servers_[uuid]);
     }
-    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), active_tservers_map,
-                                    tablet_id_, 1));
+    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(FLAGS_num_replicas, active_tservers_map[add],
+                                                  tablet_id_, MonoDelta::FromSeconds(30)));
   }
   workload.StopAndJoin();
 
