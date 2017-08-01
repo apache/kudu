@@ -20,12 +20,11 @@ tablet. The use cases for this functionality include:
 
 * Replacing a failed tablet server to maintain the desired replication
   factor of tablet data.
-* Growing the Kudu cluster over time. "Rebalancing" tablet locations to even
-* out the load across tablet
-  servers.
+* Growing the Kudu cluster over time. This might need "rebalancing" tablet
+  locations to even out the load across tablet servers.
 * Increasing the replication of one or more tablets of a table if they
-  become hot (eg in a time series workload, making today’s partitions have a
-  higher replication)
+  become hot (e.g. in a time series workload, making today’s partitions have a
+  higher replication).
 
 ## Scope
 This document covers the following topics:
@@ -236,7 +235,7 @@ and replay all data, it may be tens of minutes or even hours before regaining
 fault tolerance.
 
 As an example, consider the case of a four-node cluster, each node having 1TB
-of replica data. If a node fails, then its 1TB worth of data must be transfered
+of replica data. If a node fails, then its 1TB worth of data must be transferred
 among the remaining nodes, so we need to wait for 300+GB of data to transfer,
 which could take up to an hour. During that hour, we would have no
 latency-leveling on writes unless we did something like the above.
