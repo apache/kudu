@@ -402,9 +402,13 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   // first component of the principal.
   rc = KRB5_LNAME_NOTRANS;
 #endif
-  if (rc == KRB5_LNAME_NOTRANS) {
+  if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {
     // No name mapping specified. We fall back to simply taking the first component
     // of the principal, for compatibility with the default behavior of Hadoop.
+    //
+    // NOTE: KRB5_PLUGIN_NO_HANDLE isn't typically expected here, but works around
+    // a bug in SSSD's auth_to_local implementation: https://pagure.io/SSSD/sssd/issue/3459
+    //
     // TODO(todd): we should support custom configured auth-to-local mapping, since
     // most Hadoop ecosystem components do not load them from krb5.conf.
     if (princ->length > 0) {
