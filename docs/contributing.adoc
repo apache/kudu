@@ -140,7 +140,7 @@ submit a patch to the review, even if you were not the original reviewer.
 Gerrit allows you to vote on a review. A vote of `+2` from at least one committer
 (besides the submitter) is required before the patch can be merged.
 
-== Code Style
+== {cpp} Code Style
 
 Get familiar with these guidelines so that your contributions can be reviewed and
 integrated quickly and easily.
@@ -283,24 +283,6 @@ and decremented when the `Callback` goes out of scope.
 See the large file comment in _gutil/callback.h_ for more details, and
 _util/callback_bind-test.cc_ for examples.
 
-=== `CMake` Style Guide
-
-`CMake` allows commands in lower, upper, or mixed case. To keep
-the CMake files consistent, please use the following guidelines:
-
-* *built-in commands* in lowercase
-----
-add_subdirectory(some/path)
-----
-* *built-in arguments* in uppercase
-----
-message(STATUS "message goes here")
-----
-* *custom commands or macros* in uppercase
-----
-ADD_KUDU_TEST(some-test)
-----
-
 === GFlags
 
 Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
@@ -361,6 +343,69 @@ comment in _flag_tags.h_ for guidelines.
   example, many Kudu binaries need to configure a WAL directory. Rather than
   creating `foo_wal_dir` and `bar_wal_dir` gflags, better to have a single
   `kudu_wal_dir` gflag for use universally.
+
+== Java Code Style
+
+=== Preconditions vs assert in the Kudu Java client
+
+Use `assert` for verification of the static (i.e. non-runtime) internal
+invariants. Internal means the pre- and post-conditions which are
+completely under control of the code of a class or a function itself and cannot
+be influenced by input parameters and other runtime/dynamic conditions.
+
+Use `Preconditions` for verification of the input parameters and the other
+conditions which are outside of the control of the local code, or conditions
+which are dependent on the state of other objects/components in runtime.
+
+[source,java]
+----
+Object pop() {
+  // Use Preconditions here because the external user of the class should not
+  // call pop() on an empty stack, but the stack itself is internally consistent
+  Preconditions.checkState(curSize > 0, "queue must not be empty");
+  Object toReturn = data[--curSize];
+  // Use an assert here because if we ended up with a negative size counter,
+  // that's an indication of a broken implementation of the stack; i.e. it's
+  // an invariant, not a state check.
+  assert curSize >= 0;
+  return toReturn;
+}
+----
+
+However, keep in mind that `assert` checks are enabled only when the JVM is
+run with `-ea` option. So, if some dynamic condition is crucial for the
+overall consistency (e.g. a data loss can occur if some dynamic condition is not
+satisfied and the code continues its execution), consider throwing an
+`AssertionError`:
+
+[source,java]
+----
+if (!isCriticalConditionSatisfied) {
+  throw new AssertionError("cannot continue: data loss is possible otherwise");
+}
+----
+
+==== References
+* link:https://docs.oracle.com/javase/8/docs/technotes/guides/language/assert.html[Programming With Assertions]
+* link:https://github.com/google/guava/wiki/PreconditionsExplained[Guava Preconditions Explained]
+
+== `CMake` Style Guide
+
+`CMake` allows commands in lower, upper, or mixed case. To keep
+the CMake files consistent, please use the following guidelines:
+
+* *built-in commands* in lowercase
+----
+add_subdirectory(some/path)
+----
+* *built-in arguments* in uppercase
+----
+message(STATUS "message goes here")
+----
+* *custom commands or macros* in uppercase
+----
+ADD_KUDU_TEST(some-test)
+----
 
 == Testing
 
