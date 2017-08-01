@@ -1696,10 +1696,15 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     }
 
     // Ensure writes timeout while only a minority is alive.
-    Status s = WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
-                                  kTestRowKey, kTestRowIntVal, "foo",
-                                  MonoDelta::FromMilliseconds(100));
-    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    //
+    // The SIGSTOP issued by Pause() is delivered asynchronously, so we may
+    // need to retry this a few times to see the timeout.
+    ASSERT_EVENTUALLY([&]{
+      Status s = WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
+                                    kTestRowKey, kTestRowIntVal, "foo",
+                                    MonoDelta::FromMilliseconds(100));
+      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    });
 
     // Step down.
     ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
@@ -1707,7 +1712,7 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     // Assert that elections time out without a live majority.
     // We specify a very short timeout here to keep the tests fast.
     ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
-    s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
+    Status s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     LOG(INFO) << "Expected timeout encountered on election with weakened config: " << s.ToString();
 
