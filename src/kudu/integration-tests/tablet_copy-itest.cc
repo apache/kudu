@@ -79,6 +79,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+METRIC_DECLARE_gauge_int32(tablets_num_running);
+METRIC_DECLARE_gauge_int32(tablets_num_bootstrapping);
+
 DEFINE_int32(test_num_threads, 16,
              "Number of test threads to launch");
 DEFINE_int32(test_delete_leader_num_iters, 3,
@@ -1593,6 +1596,92 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
   ASSERT_EQ(0, TabletCopyOpenClientSessions(cluster_->tablet_server(follower_index)));
 
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+namespace {
+int64_t CountRunningTablets(ExternalTabletServer *ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      nullptr,
+      &METRIC_tablets_num_running,
+      "value",
+      &ret));
+  return ret;
+}
+
+int64_t CountBootstrappingTablets(ExternalTabletServer *ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_server,
+      nullptr,
+      &METRIC_tablets_num_bootstrapping,
+      "value",
+      &ret));
+  return ret;
+}
+} // anonymous namespace
+
+// Check that state metrics work during tablet copy.
+TEST_F(TabletCopyITest, TestTabletStateMetricsDuringTabletCopy) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kTsIndex = 1; // Pick a random TS.
+  NO_FATALS(StartCluster({ "--tablet_state_walk_min_period_ms=10" }));
+
+  // Populate the tablet with some data.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Ensure all the servers agree before we proceed.
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
+                                  workload.batches_completed()));
+
+  // Find the leader so we can tombstone a follower, which makes the test faster and more focused.
+  int leader_index;
+  int follower_index;
+  TServerDetails* leader_ts;
+  TServerDetails* follower_ts;
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+  leader_index = cluster_->tablet_server_index_by_uuid(leader_ts->uuid());
+  follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
+  follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
+
+  // State: 1 running tablet.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)));
+  });
+
+  // Tombstone the tablet on the follower.
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
+                                TABLET_DATA_TOMBSTONED,
+                                boost::none, kTimeout));
+
+  // State: 0 running tablets.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(0, CountRunningTablets(cluster_->tablet_server(follower_index)));
+  });
+
+  // Wait for the tablet to be revived via tablet copy.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      follower_index, tablet_id,
+      { tablet::TABLET_DATA_READY },
+      kTimeout));
+
+  // State: 1 running or bootstrapping tablet.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)) +
+                 CountBootstrappingTablets(cluster_->tablet_server(follower_index)));
+  });
 }
 
 } // namespace kudu

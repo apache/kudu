@@ -109,6 +109,8 @@ const char* MetricUnit::Name(Type unit) {
       return "state";
     case kSessions:
       return "sessions";
+    case kTablets:
+      return "tablets";
     default:
       DCHECK(false) << "Unknown unit with type = " << unit;
       return "UNKNOWN UNIT";

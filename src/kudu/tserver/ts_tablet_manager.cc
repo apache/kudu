@@ -17,7 +17,6 @@
 
 #include "kudu/tserver/ts_tablet_manager.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -112,6 +111,11 @@ DEFINE_double(fault_crash_after_tc_files_fetched, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_after_tc_files_fetched, unsafe);
 
+DEFINE_int32(tablet_state_walk_min_period_ms, 1000,
+             "Minimum amount of time in milliseconds between walks of the "
+             "tablet map to update tablet state counts.");
+TAG_FLAG(tablet_state_walk_min_period_ms, advanced);
+
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -155,8 +159,8 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     server_(server),
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
-    state_(MANAGER_INITIALIZING) {
-}
+    tablet_manager_metrics_(server->metric_entity(), this),
+    state_(MANAGER_INITIALIZING) {}
 
 TSTabletManager::~TSTabletManager() {
 }
@@ -1164,6 +1168,48 @@ void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
       << Substitute("No data directory found with UUID $0", uuid);
   LOG(FATAL) << Substitute("Data directory $0 failed. Disk failure handling not implemented",
                            dd_manager->FindDataDirByUuidIndex(uuid_idx)->dir());
+}
+
+void TSTabletManager::RefreshTabletStateCache() {
+  MonoDelta period = MonoDelta::FromMilliseconds(FLAGS_tablet_state_walk_min_period_ms);
+  std::lock_guard<rw_spinlock> lock(lock_);
+  // Cache is fresh enough; don't regenerate counts.
+  if (last_walked_ + period > MonoTime::Now()) {
+    return;
+  }
+  tablet_manager_metrics_.ResetTabletStateCounts();
+  for (const auto& entry : tablet_map_) {
+    switch (entry.second->state()) {
+      case tablet::NOT_INITIALIZED:
+        tablet_manager_metrics_.num_not_initialized++;
+        break;
+      case tablet::INITIALIZED:
+        tablet_manager_metrics_.num_initialized++;
+        break;
+      case tablet::BOOTSTRAPPING:
+        tablet_manager_metrics_.num_bootstrapping++;
+        break;
+      case tablet::RUNNING:
+        tablet_manager_metrics_.num_running++;
+        break;
+      case tablet::FAILED:
+        tablet_manager_metrics_.num_failed++;
+        break;
+      case tablet::STOPPING:
+        tablet_manager_metrics_.num_stopping++;
+        break;
+      case tablet::STOPPED:
+        tablet_manager_metrics_.num_stopped++;
+        break;
+      case tablet::SHUTDOWN:
+        tablet_manager_metrics_.num_shutdown++;
+        break;
+      case tablet::UNKNOWN:
+        // pass
+        break;
+    }
+  }
+  last_walked_ = MonoTime::Now();
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(

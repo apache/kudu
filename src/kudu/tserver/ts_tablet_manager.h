@@ -33,9 +33,11 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
+#include "kudu/tserver/ts_tablet_manager_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace boost {
@@ -79,9 +81,9 @@ class TransitionInProgressDeleter;
 
 // Keeps track of the tablets hosted on the tablet server side.
 //
-// TODO: will also be responsible for keeping the local metadata about
-// which tablets are hosted on this server persistent on disk, as well
-// as re-opening all the tablets at startup, etc.
+// TODO(todd): will also be responsible for keeping the local metadata about which
+// tablets are hosted on this server persistent on disk, as well as re-opening all
+// the tablets at startup, etc.
 class TSTabletManager : public tserver::TabletReplicaLookupIf {
  public:
   // Construct the tablet manager.
@@ -199,6 +201,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
   void FailTabletsInDataDir(const std::string& uuid);
 
+  // Refresh the cached counts of tablet states, if the cache is old enough.
+  void RefreshTabletStateCache();
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 
@@ -307,11 +312,19 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   typedef std::unordered_map<std::string, scoped_refptr<tablet::TabletReplica> > TabletMap;
 
   // Lock protecting tablet_map_, dirty_tablets_, state_,
-  // transition_in_progress_, and perm_deleted_tablet_ids_.
+  // transition_in_progress_, perm_deleted_tablet_ids_,
+  // tablet_manager_metrics_, and last_walked_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
+
+  // Timestamp indicating the last time tablet_map_ was walked to count
+  // tablet states.
+  MonoTime last_walked_ = MonoTime::Min();
+
+  // Metrics container for the tablet manager; holds cached tablet states from tablet_map_.
+  TSTabletManagerMetrics tablet_manager_metrics_;
 
   // Permanently deleted tablet ids. If a tablet is removed with status
   // TABLET_DATA_DELETED then it is added to this map (until the next process

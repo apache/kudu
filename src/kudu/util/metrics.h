@@ -388,6 +388,7 @@ struct MetricUnit {
     kDataDirectories,
     kState,
     kSessions,
+    kTablets,
   };
   static const char* Name(Type unit);
 };

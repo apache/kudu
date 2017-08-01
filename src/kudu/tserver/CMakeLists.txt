@@ -114,6 +114,7 @@ set(TSERVER_SRCS
   tablet_server_options.cc
   tablet_service.cc
   ts_tablet_manager.cc
+  ts_tablet_manager_metrics.cc
   tserver-path-handlers.cc
 )
 
