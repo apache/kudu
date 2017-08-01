@@ -288,6 +288,13 @@ void BinaryPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
 
   DCHECK_LE(pos, num_elems_);
 
+  // Seeking past the last element is valid -- it just sets us to the
+  // same state as if we have read all of the elements.
+  if (pos == num_elems_) {
+    cur_idx_ = pos;
+    return;
+  }
+
   int target_restart = pos/restart_interval_;
   SeekToRestartPoint(target_restart);
 
@@ -302,7 +309,7 @@ void BinaryPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
 // point. Note that the restart points in the file do not include
 // the '0' restart point, since that is simply the beginning of
 // the data and hence a waste of space. So, 'idx' may range from
-// 0 (first record) through num_restarts_ (last recorded restart point)
+// 0 (first record) through num_restarts_ (exclusive).
 const uint8_t * BinaryPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
   DCHECK_LE(idx, num_restarts_);
 
