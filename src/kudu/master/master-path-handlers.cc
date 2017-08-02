@@ -149,14 +149,14 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 
   std::vector<scoped_refptr<TableInfo>> tables;
   master_->catalog_manager()->GetAllTables(&tables);
-  (*output).Set<int64_t>("num_tables", tables.size());
-
+  int num_running_tables = 0;
   EasyJson tables_json = output->Set("tables", EasyJson::kArray);
   for (const scoped_refptr<TableInfo>& table : tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
     if (!l.data().is_running()) {
       continue;
     }
+    num_running_tables++; // Table count excluding deleted ones
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
     EasyJson table_json = tables_json.PushBack(EasyJson::kObject);
@@ -165,6 +165,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     table_json["state"] = state;
     table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
   }
+  (*output).Set<int64_t>("num_tables", num_running_tables);
 }
 
 namespace {
