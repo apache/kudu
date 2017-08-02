@@ -1367,7 +1367,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // If just waiting for our log append to finish lets snooze the timer.
       // We don't want to fire leader election because we're waiting on our own log.
       if (s.IsTimedOut()) {
-        RETURN_NOT_OK(SnoozeFailureDetector());
+        WARN_NOT_OK(SnoozeFailureDetector(),
+                    "failed to snooze failure detector");
       }
     } while (s.IsTimedOut());
     RETURN_NOT_OK(s);
