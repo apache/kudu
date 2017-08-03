@@ -139,7 +139,7 @@ Status TlsHandshake::Verify(const Socket& socket) const {
   }
 
   // Get the peer certificate.
-  X509* cert = remote_cert_.GetRawData();
+  X509* cert = remote_cert_.GetEndOfChainX509();
   if (!cert) {
     if (SSL_get_verify_mode(ssl_.get()) & SSL_VERIFY_FAIL_IF_NO_PEER_CERT) {
       return Status::NotAuthorized("Handshake failed: unable to retreive peer certificate");
@@ -187,12 +187,12 @@ Status TlsHandshake::GetCerts() {
   if (cert) {
     // For whatever reason, SSL_get_certificate (unlike SSL_get_peer_certificate)
     // does not increment the X509's reference count.
-    local_cert_.AdoptAndAddRefRawData(cert);
+    local_cert_.AdoptAndAddRefX509(cert);
   }
 
   cert = SSL_get_peer_certificate(ssl_.get());
   if (cert) {
-    remote_cert_.AdoptRawData(cert);
+    remote_cert_.AdoptX509(cert);
   }
   return Status::OK();
 }

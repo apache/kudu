@@ -40,37 +40,53 @@ std::string X509NameToString(X509_NAME* name);
 // our Kerberos principal in IPKI certs.
 int GetKuduKerberosPrincipalOidNid();
 
-class Cert : public RawDataWrapper<X509> {
+// A wrapper class around the STACK_OF(X509) object. This can either hold one certificate or
+// a chain of certificates.
+// TODO(unknown): Currently, there isn't a mechanism to add to the chain. Implement it when needed.
+class Cert : public RawDataWrapper<STACK_OF(X509)> {
  public:
   Status FromString(const std::string& data, DataFormat format) WARN_UNUSED_RESULT;
   Status ToString(std::string* data, DataFormat format) const WARN_UNUSED_RESULT;
   Status FromFile(const std::string& fpath, DataFormat format) WARN_UNUSED_RESULT;
 
+  int chain_len() const { return sk_X509_num(data_.get()); }
+
   std::string SubjectName() const;
   std::string IssuerName() const;
 
-  // Return DNS names from the SAN extension field.
+  // Return DNS names from the SAN extension field of the end-user cert.
   std::vector<std::string> Hostnames() const;
 
-  // Return the 'userId' extension of this cert, if set.
+  // Return the 'userId' extension of the end-user cert, if set.
   boost::optional<std::string> UserId() const;
 
-  // Return the Kerberos principal encoded in this certificate, if set.
+  // Return the Kerberos principal encoded in the end-user certificate, if set.
   boost::optional<std::string> KuduKerberosPrincipal() const;
 
-  // Check whether the specified private key matches the certificate.
-  // Return Status::OK() if key match the certificate.
+  // Check whether the specified private key matches the end-user certificate.
+  // Return Status::OK() if key match the end-user certificate.
   Status CheckKeyMatch(const PrivateKey& key) const WARN_UNUSED_RESULT;
 
-  // Returns the 'tls-server-end-point' channel bindings for the certificate as
+  // Returns the 'tls-server-end-point' channel bindings for the end-user certificate as
   // specified in RFC 5929.
   Status GetServerEndPointChannelBindings(std::string* channel_bindings) const WARN_UNUSED_RESULT;
 
-  // Adopts the provided X509 certificate, and increments the reference count.
-  void AdoptAndAddRefRawData(X509* data);
+  // Adopts the provided STACK_OF(X509), and increments the reference count of the X509 cert
+  // contained within it. Currently, only one certificate should be contained in the stack.
+  void AdoptAndAddRefRawData(RawDataType* data);
 
-  // Returns the certificate's public key.
+  // Adopts the provided X509 certificate, and replaces the current underlying STACK_OF(X509).
+  void AdoptX509(X509* cert);
+
+  // Adopts the provided X509 certificate, increments its reference count and replaces the current
+  // underlying STACK_OF(X509).
+  void AdoptAndAddRefX509(X509* cert);
+
+  // Returns the end-user certificate's public key.
   Status GetPublicKey(PublicKey* key) const WARN_UNUSED_RESULT;
+
+  // Get the last certificate in the chain, otherwise known as the 'end-user' certificate.
+  X509* GetEndOfChainX509() const;
 };
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {

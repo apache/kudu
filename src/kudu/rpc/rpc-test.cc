@@ -154,6 +154,30 @@ TEST_P(TestRpc, TestCall) {
   }
 }
 
+TEST_P(TestRpc, TestCallWithChainCert) {
+  bool enable_ssl = GetParam();
+  // We're only interested in running this test with TLS enabled.
+  if (!enable_ssl) return;
+
+  ASSERT_OK(security::CreateTestSSLCertSignedByChain(GetTestDataDirectory(),
+                                                     &FLAGS_rpc_certificate_file,
+                                                     &FLAGS_rpc_private_key_file,
+                                                     &FLAGS_rpc_ca_certificate_file));
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  SCOPED_TRACE(strings::Substitute("Connecting to $0", server_addr.ToString()));
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
+                                                            "{remote=$0, user_credentials=",
+                                                        server_addr.ToString()));
+
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+}
+
 // Test making successful RPC calls while using a TLS certificate with a password protected
 // private key.
 TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
@@ -162,7 +186,7 @@ TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
   if (!enable_ssl) return;
 
   string passwd;
-  CHECK_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
+  ASSERT_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
                                                        &FLAGS_rpc_certificate_file,
                                                        &FLAGS_rpc_private_key_file,
                                                        &passwd));
@@ -173,16 +197,14 @@ TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
   StartTestServer(&server_addr, enable_ssl);
 
   // Set up client.
-  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  SCOPED_TRACE(strings::Substitute("Connecting to $0", server_addr.ToString()));
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
   ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
                                                             "{remote=$0, user_credentials=",
                                                         server_addr.ToString()));
 
-  for (int i = 0; i < 10; i++) {
-    ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
-  }
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 }
 
 // Test that using a TLS certificate with a password protected private key and providing

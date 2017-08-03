@@ -177,7 +177,7 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
   auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
 
-  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetRawData(), nullptr),
+  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetEndOfChainX509(), nullptr),
                      "could not init X509_STORE_CTX");
   int rc = X509_verify_cert(store_ctx.get());
   if (rc != 1) {
@@ -221,7 +221,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
 
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetRawData()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
                      "failed to use certificate");
   has_cert_ = true;
   return Status::OK();
@@ -249,17 +249,22 @@ Status TlsContext::AddTrustedCertificate(const Cert& cert) {
 
   unique_lock<RWMutex> lock(lock_);
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
-  int rc = X509_STORE_add_cert(cert_store, cert.GetRawData());
-  if (rc <= 0) {
-    // Ignore the common case of re-adding a cert that is already in the
-    // trust store.
-    auto err = ERR_peek_error();
-    if (ERR_GET_LIB(err) == ERR_LIB_X509 &&
-        ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
-      ERR_clear_error();
-      return Status::OK();
+
+  // Iterate through the certificate chain and add each individual certificate to the store.
+  for (int i = 0; i < cert.chain_len(); ++i) {
+    X509* inner_cert = sk_X509_value(cert.GetRawData(), i);
+    int rc = X509_STORE_add_cert(cert_store, inner_cert);
+    if (rc <= 0) {
+      // Ignore the common case of re-adding a cert that is already in the
+      // trust store.
+      auto err = ERR_peek_error();
+      if (ERR_GET_LIB(err) == ERR_LIB_X509 &&
+          ERR_GET_REASON(err) == X509_R_CERT_ALREADY_IN_HASH_TABLE) {
+        ERR_clear_error();
+        return Status::OK();
+      }
+      OPENSSL_RET_NOT_OK(rc, "failed to add trusted certificate");
     }
-    OPENSSL_RET_NOT_OK(rc, "failed to add trusted certificate");
   }
   trusted_cert_count_ += 1;
   return Status::OK();
@@ -280,7 +285,7 @@ Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
     X509_OBJECT* obj = sk_X509_OBJECT_value(cert_store->objs, i);
     if (obj->type != X509_LU_X509) continue;
     Cert c;
-    c.AdoptAndAddRefRawData(obj->data.x509);
+    c.AdoptAndAddRefX509(obj->data.x509);
     string der;
     RETURN_NOT_OK(c.ToString(&der, DataFormat::DER));
     ret.emplace_back(std::move(der));
@@ -345,7 +350,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   // a leak. Calling this nonsense X509_check_ca() forces the X509 extensions to
   // get cached, so we don't hit the race later. 'VerifyCertChain' also has the
   // effect of triggering the racy codepath.
-  ignore_result(X509_check_ca(cert.GetRawData()));
+  ignore_result(X509_check_ca(cert.GetEndOfChainX509()));
   ERR_clear_error(); // in case it left anything on the queue.
 
   // Step 4: Adopt the new key and cert.
@@ -353,7 +358,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   CHECK(!has_cert_);
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetRawData()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
                      "failed to use certificate");
   has_cert_ = true;
   csr_ = std::move(csr);
@@ -393,7 +398,7 @@ Status TlsContext::AdoptSignedCert(const Cert& cert) {
     return Status::RuntimeError("certificate public key does not match the CSR public key");
   }
 
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetRawData()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
                      "failed to use certificate");
 
   // This should never fail since we already compared the cert's public key

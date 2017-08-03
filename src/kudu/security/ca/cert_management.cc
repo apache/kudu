@@ -306,7 +306,7 @@ Status CertSigner::Sign(const CertSignRequest& req, Cert* ret) const {
   auto x509 = ssl_make_unique(X509_new());
   RETURN_NOT_OK(FillCertTemplateFromRequest(req.GetRawData(), x509.get()));
   RETURN_NOT_OK(DoSign(EVP_sha256(), exp_interval_sec_, x509.get()));
-  ret->AdoptRawData(x509.release());
+  ret->AdoptX509(x509.release());
 
   return Status::OK();
 }
@@ -397,7 +397,7 @@ Status CertSigner::DoSign(const EVP_MD* digest, int32_t exp_seconds,
 
   // If we have a CA cert, then the CA is the issuer.
   // Otherwise, we are self-signing so the target cert is also the issuer.
-  X509* issuer_cert = ca_cert_ ? ca_cert_->GetRawData() : ret;
+  X509* issuer_cert = ca_cert_ ? ca_cert_->GetEndOfChainX509() : ret;
   X509_NAME* issuer_name = X509_get_subject_name(issuer_cert);
   OPENSSL_RET_NOT_OK(X509_set_issuer_name(ret, issuer_name),
       "error setting issuer name");

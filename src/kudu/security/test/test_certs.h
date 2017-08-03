@@ -64,9 +64,16 @@ Status CreateTestSSLCertWithPlainKey(const std::string& dir,
 // Same as the CreateTestSSLCertWithPlainKey() except that the private key is
 // encrypted with a password that is returned in 'key_password'.
 Status CreateTestSSLCertWithEncryptedKey(const std::string& dir,
-                                          std::string* cert_file,
-                                          std::string* key_file,
-                                          std::string* key_password);
+                                         std::string* cert_file,
+                                         std::string* key_file,
+                                         std::string* key_password);
+
+// Same as the CreateTestSSLCertWithPlainKey() except that the 'cert_file' is
+// signed by a CA chain.
+Status CreateTestSSLCertSignedByChain(const std::string& dir,
+                                      std::string* cert_file,
+                                      std::string* key_file,
+                                      std::string* ca_cert_file);
 
 } // namespace security
 } // namespace kudu

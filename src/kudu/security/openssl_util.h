@@ -121,6 +121,22 @@ template<> struct SslTypeTraits<X509> {
   static constexpr auto kWritePemFunc = &PEM_write_bio_X509;
   static constexpr auto kWriteDerFunc = &i2d_X509_bio;
 };
+
+// SslTypeTraits functions for Type STACK_OF(X509)
+STACK_OF(X509)* PEM_read_STACK_OF_X509(BIO* bio, void* /* unused */,
+    pem_password_cb* /* unused */, void* /* unused */);
+int PEM_write_STACK_OF_X509(BIO* bio, STACK_OF(X509)* obj);
+STACK_OF(X509)* DER_read_STACK_OF_X509(BIO* bio, void* /* unused */);
+int DER_write_STACK_OF_X509(BIO* bio, STACK_OF(X509)* obj);
+void free_STACK_OF_X509(STACK_OF(X509)* sk);
+
+template<> struct SslTypeTraits<STACK_OF(X509)> {
+  static constexpr auto kFreeFunc = &free_STACK_OF_X509;
+  static constexpr auto kReadPemFunc = &PEM_read_STACK_OF_X509;
+  static constexpr auto kReadDerFunc = &DER_read_STACK_OF_X509;
+  static constexpr auto kWritePemFunc = &PEM_write_STACK_OF_X509;
+  static constexpr auto kWriteDerFunc = &DER_write_STACK_OF_X509;
+};
 template<> struct SslTypeTraits<X509_EXTENSION> {
   static constexpr auto kFreeFunc = &X509_EXTENSION_free;
 };
