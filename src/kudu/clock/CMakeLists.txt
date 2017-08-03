@@ -28,10 +28,10 @@ endif()
 add_library(clock ${CLOCK_SRCS})
 
 target_link_libraries(clock
+  kudu_common
   kudu_util)
 
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS}
-  clock
-  kudu_common)
+  clock)
 ADD_KUDU_TEST(hybrid_clock-test)
 ADD_KUDU_TEST(logical_clock-test)
