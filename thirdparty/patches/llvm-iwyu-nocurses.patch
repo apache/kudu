@@ -1,0 +1,14 @@
+--- a/tools/clang/tools/include-what-you-use/CMakeLists.txt 2017-08-07 16:41:03.193267222 -0700
++++ b/tools/clang/tools/include-what-you-use/CMakeLists.txt	2017-08-07 16:41:12.603327180 -0700
+@@ -173,11 +173,9 @@ if( WIN32 )
+     version # For clangDriver's MSVCToolchain
+   )
+ elseif( UNIX )
+-  include(FindCurses)
+   target_link_libraries(include-what-you-use
+     pthread
+     z
+-    ${CURSES_LIBRARIES}
+     ${CMAKE_DL_LIBS}
+   )
+ else()

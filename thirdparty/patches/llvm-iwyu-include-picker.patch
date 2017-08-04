@@ -1,0 +1,10 @@
+--- a/tools/clang/tools/include-what-you-use/iwyu_include_picker.cc 2017-08-07 16:41:03.193267222 -0700
++++ b/tools/clang/tools/include-what-you-use/iwyu_include_picker.cc	2017-08-07 16:41:12.603327180 -0700
+@@ -288,6 +288,7 @@ const IncludeMapEntry libc_include_map[] = {
+   { "<bits/param.h>", kPrivate, "<sys/param.h>", kPublic },
+   { "<bits/poll.h>", kPrivate, "<sys/poll.h>", kPrivate },
+   { "<bits/poll2.h>", kPrivate, "<sys/poll.h>", kPrivate },
++  { "<bits/local_lim.h>", kPrivate, "<limits.h>", kPublic },
+   { "<bits/posix1_lim.h>", kPrivate, "<limits.h>", kPublic },
+   { "<bits/posix2_lim.h>", kPrivate, "<limits.h>", kPublic },
+   { "<bits/posix_opt.h>", kPrivate, "<unistd.h>", kPublic },
