@@ -36,6 +36,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.BaseKuduTest;
+import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
@@ -105,11 +106,11 @@ public class ITImportCsv extends BaseKuduTest {
     Job job = ImportCsv.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
+    KuduTable openTable = openTable(TABLE_NAME);
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
-
-    assertEquals(3, countRowsInScan(
-        client.newScannerBuilder(openTable(TABLE_NAME)).build()));
-    // TODO: should verify the actual returned rows, not just the count!
+    assertEquals(3, countRowsInScan(client.newScannerBuilder(openTable).build()));
+    assertEquals("INT32 key=1, INT32 column1_i=3, DOUBLE column2_d=2.3, STRING column3_s=some " +
+      "string, BOOL column4_b=true", scanTableToStrings(openTable).get(0));
   }
 
   private void writeCsvFile(File data) throws IOException {

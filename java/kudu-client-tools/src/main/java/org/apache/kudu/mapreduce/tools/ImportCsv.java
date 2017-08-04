@@ -50,10 +50,10 @@ public class ImportCsv extends Configured implements Tool {
   /**
    * Sets up the actual job.
    *
-   * @param conf The current configuration.
-   * @param args The command line parameters.
-   * @return The newly created job.
-   * @throws java.io.IOException When setting up the job fails.
+   * @param conf the current configuration
+   * @param args the command line parameters
+   * @return the newly created job
+   * @throws java.io.IOException when setting up the job fails
    */
   @SuppressWarnings("deprecation")
   public static Job createSubmittableJob(Configuration conf, String[] args)
@@ -79,7 +79,7 @@ public class ImportCsv extends Configured implements Tool {
   }
 
   /*
-   * @param errorMsg Error message. Can be null.
+   * @param errorMsg error message. Can be null
    */
   private static void usage(final String errorMsg) {
     if (errorMsg != null && errorMsg.length() > 0) {
