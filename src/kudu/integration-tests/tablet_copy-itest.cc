@@ -636,6 +636,9 @@ TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
 }
 
 namespace {
+#ifndef __APPLE__
+// CountBlocksUnderManagement() is used by routines which work with the
+// LogBlockManager (not used on OS X).
 int64_t CountBlocksUnderManagement(ExternalTabletServer* ets) {
   int64_t ret;
   CHECK_OK(ets->GetInt64Metric(
@@ -646,6 +649,8 @@ int64_t CountBlocksUnderManagement(ExternalTabletServer* ets) {
                &ret));
   return ret;
 }
+#endif // #ifndef __APPLE__
+
 int64_t CountUpdateConsensusCalls(ExternalTabletServer* ets) {
   int64_t ret;
   CHECK_OK(ets->GetInt64Metric(
