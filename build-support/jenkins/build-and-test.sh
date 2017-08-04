@@ -391,6 +391,9 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   virtualenv $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
   pip install --upgrade pip
+  # On RHEL 6, keeping setuptools in requirements.txt fails as of setuptools 36.2.7.
+  # Strangely, it does work when extracted like this.
+  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
   CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
@@ -425,6 +428,8 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   virtualenv -p python3 $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
   pip install --upgrade pip
+  # See the comment in the BUILD_PYTHON section above for why we need this line.
+  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
   CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
