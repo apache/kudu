@@ -221,6 +221,74 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
 };
 
 ////////////////////////////////////////////////////////////
+// LogWritableBlock (declaration)
+////////////////////////////////////////////////////////////
+
+// A log-backed block that has been opened for writing.
+//
+// There's no reference to a LogBlock as this block has yet to be
+// persisted.
+class LogWritableBlock : public WritableBlock {
+ public:
+  enum SyncMode {
+    SYNC,
+    NO_SYNC
+  };
+
+  LogWritableBlock(LogBlockContainer* container, BlockId block_id,
+                   int64_t block_offset);
+
+  virtual ~LogWritableBlock();
+
+  virtual Status Close() OVERRIDE;
+
+  virtual Status Abort() OVERRIDE;
+
+  virtual const BlockId& id() const OVERRIDE;
+
+  virtual BlockManager* block_manager() const OVERRIDE;
+
+  virtual Status Append(const Slice& data) OVERRIDE;
+
+  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
+
+  virtual Status FlushDataAsync() OVERRIDE;
+
+  virtual size_t BytesAppended() const OVERRIDE;
+
+  virtual State state() const OVERRIDE;
+
+  // Actually close the block, possibly synchronizing its dirty data and
+  // metadata to disk.
+  Status DoClose(SyncMode mode);
+
+  // Write this block's metadata to disk.
+  //
+  // Does not synchronize the written data; that takes place in Close().
+  Status AppendMetadata();
+
+ private:
+  // The owning container. Must outlive the block.
+  LogBlockContainer* container_;
+
+  // The block's identifier.
+  const BlockId block_id_;
+
+  // The block's offset within the container. Known from the moment the
+  // block is created.
+  const int64_t block_offset_;
+
+  // The block's length. Changes with each Append().
+  int64_t block_length_;
+
+  // The state of the block describing where it is in the write lifecycle,
+  // for example, has it been synchronized to disk?
+  WritableBlock::State state_;
+
+  DISALLOW_COPY_AND_ASSIGN(LogWritableBlock);
+};
+
+////////////////////////////////////////////////////////////
 // LogBlockContainer
 ////////////////////////////////////////////////////////////
 
@@ -1079,72 +1147,8 @@ void LogBlock::Delete() {
 }
 
 ////////////////////////////////////////////////////////////
-// LogWritableBlock
+// LogWritableBlock (definition)
 ////////////////////////////////////////////////////////////
-
-// A log-backed block that has been opened for writing.
-//
-// There's no reference to a LogBlock as this block has yet to be
-// persisted.
-class LogWritableBlock : public WritableBlock {
- public:
-  enum SyncMode {
-    SYNC,
-    NO_SYNC
-  };
-
-  LogWritableBlock(LogBlockContainer* container, BlockId block_id,
-                   int64_t block_offset);
-
-  virtual ~LogWritableBlock();
-
-  virtual Status Close() OVERRIDE;
-
-  virtual Status Abort() OVERRIDE;
-
-  virtual const BlockId& id() const OVERRIDE;
-
-  virtual BlockManager* block_manager() const OVERRIDE;
-
-  virtual Status Append(const Slice& data) OVERRIDE;
-
-  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
-
-  virtual Status FlushDataAsync() OVERRIDE;
-
-  virtual size_t BytesAppended() const OVERRIDE;
-
-  virtual State state() const OVERRIDE;
-
-  // Actually close the block, possibly synchronizing its dirty data and
-  // metadata to disk.
-  Status DoClose(SyncMode mode);
-
-  // Write this block's metadata to disk.
-  //
-  // Does not synchronize the written data; that takes place in Close().
-  Status AppendMetadata();
-
- private:
-  // The owning container. Must outlive the block.
-  LogBlockContainer* container_;
-
-  // The block's identifier.
-  const BlockId block_id_;
-
-  // The block's offset within the container. Known from the moment the
-  // block is created.
-  const int64_t block_offset_;
-
-  // The block's length. Changes with each Append().
-  int64_t block_length_;
-
-  // The state of the block describing where it is in the write lifecycle,
-  // for example, has it been synchronized to disk?
-  WritableBlock::State state_;
-
-  DISALLOW_COPY_AND_ASSIGN(LogWritableBlock);
-};
 
 LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
                                    BlockId block_id, int64_t block_offset)
