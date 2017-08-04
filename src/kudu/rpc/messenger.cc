@@ -119,9 +119,6 @@ DECLARE_bool(allow_world_readable_credentials);
 namespace kudu {
 namespace rpc {
 
-class Messenger;
-class ServerBuilder;
-
 template <typename T>
 static Status ParseTriState(const char* flag_name, const string& flag_value, T* tri_state) {
   if (boost::iequals(flag_value, "required")) {
