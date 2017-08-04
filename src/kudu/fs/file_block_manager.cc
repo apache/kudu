@@ -447,7 +447,7 @@ class FileReadableBlock : public ReadableBlock {
 };
 
 void FileReadableBlock::HandleError(const Status& s) const {
-  const DataDir* dir = block_manager_->dd_manager()->FindDataDirByUuidIndex(
+  const DataDir* dir = block_manager_->dd_manager_->FindDataDirByUuidIndex(
       internal::FileBlockLocation::GetDataDirIdx(block_id_));
   HANDLE_DISK_FAILURE(s, block_manager_->error_manager()->RunErrorNotificationCb(dir));
 }
@@ -525,9 +525,6 @@ size_t FileReadableBlock::memory_footprint() const {
 // FileBlockManager
 ////////////////////////////////////////////////////////////
 
-static const char* kBlockManagerType = "file";
-static const int kMaxPaths = (1 << 16) - 1;
-
 Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& location) {
   vector<string> parent_dirs;
   location.GetAllParentDirs(&parent_dirs);
@@ -555,7 +552,7 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
 
 bool FileBlockManager::FindBlockPath(const BlockId& block_id,
                                      string* path) const {
-  DataDir* dir = dd_manager_.FindDataDirByUuidIndex(
+  DataDir* dir = dd_manager_->FindDataDirByUuidIndex(
       internal::FileBlockLocation::GetDataDirIdx(block_id));
   if (dir) {
     *path = internal::FileBlockLocation::FromBlockId(
@@ -565,11 +562,12 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
 }
 
 FileBlockManager::FileBlockManager(Env* env,
+                                   DataDirManager* dd_manager,
                                    FsErrorManager* error_manager,
                                    const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
-    dd_manager_(env, opts.metric_entity, kBlockManagerType, opts.root_paths),
+    dd_manager_(dd_manager),
     error_manager_(DCHECK_NOTNULL(error_manager)),
     file_cache_("fbm", env_, GetFileCacheCapacityForBlockManager(env_),
                 opts.metric_entity),
@@ -586,28 +584,12 @@ FileBlockManager::FileBlockManager(Env* env,
 FileBlockManager::~FileBlockManager() {
 }
 
-Status FileBlockManager::Create() {
-  CHECK(!read_only_);
-  return dd_manager_.Create(
-      FLAGS_enable_data_block_fsync ? DataDirManager::FLAG_CREATE_FSYNC : 0);
-}
-
 Status FileBlockManager::Open(FsReport* report) {
-  DataDirManager::LockMode mode;
-  if (!FLAGS_block_manager_lock_dirs) {
-    mode = DataDirManager::LockMode::NONE;
-  } else if (read_only_) {
-    mode = DataDirManager::LockMode::OPTIONAL;
-  } else {
-    mode = DataDirManager::LockMode::MANDATORY;
-  }
-  RETURN_NOT_OK(dd_manager_.Open(kMaxPaths, mode));
-
   RETURN_NOT_OK(file_cache_.Init());
 
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
-  for (const auto& dd : dd_manager_.data_dirs()) {
+  for (const auto& dd : dd_manager_->data_dirs()) {
     // TODO(adar): probably too expensive to fill out the stats/checks.
     local_report.data_dirs.push_back(dd->dir());
   }
@@ -624,9 +606,9 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   CHECK(!read_only_);
 
   DataDir* dir;
-  RETURN_NOT_OK(dd_manager_.GetNextDataDir(opts, &dir));
+  RETURN_NOT_OK(dd_manager_->GetNextDataDir(opts, &dir));
   uint16_t uuid_idx;
-  CHECK(dd_manager_.FindUuidIndexByDataDir(dir, &uuid_idx));
+  CHECK(dd_manager_->FindUuidIndexByDataDir(dir, &uuid_idx));
 
   string path;
   vector<string> created_dirs;
@@ -686,7 +668,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
 #define RETURN_NOT_OK_FBM_DISK_FAILURE(status_expr) do { \
   RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
-      error_manager_->RunErrorNotificationCb(dd_manager()->FindDataDirByUuidIndex( \
+      error_manager_->RunErrorNotificationCb(dd_manager_->FindDataDirByUuidIndex( \
       internal::FileBlockLocation::GetDataDirIdx(block_id)))); \
 } while (0);
 
@@ -789,7 +771,7 @@ void GetAllBlockIdsForDataDir(Env* env,
 } // anonymous namespace
 
 Status FileBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
-  const auto& dds = dd_manager_.data_dirs();
+  const auto& dds = dd_manager_->data_dirs();
   block_ids->clear();
 
   // The FBM does not maintain block listings in memory, so off we go to the
@@ -803,7 +785,7 @@ Status FileBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
                              &block_id_vecs[i],
                              &statuses[i]));
   }
-  for (const auto& dd : dd_manager_.data_dirs()) {
+  for (const auto& dd : dd_manager_->data_dirs()) {
     dd->WaitOnClosures();
   }
 

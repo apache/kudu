@@ -22,6 +22,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
@@ -73,27 +74,38 @@ class LogBlockManagerTest : public KuduTest {
   }
 
   void SetUp() override {
-    CHECK_OK(bm_->Create());
-
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    CHECK_OK(bm_->Open(&report));
-    CHECK_OK(bm_->dd_manager()->CreateDataDirGroup(test_tablet_name_));
-    CHECK(bm_->dd_manager()->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    ASSERT_OK(bm_->Open(&report));
+    ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+    ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
  protected:
   LogBlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity) {
+    if (!dd_manager_) {
+      // Ensure the directory manager is initialized.
+      CHECK_OK(DataDirManager::CreateNew(env_, { test_dir_ },
+          DataDirManagerOptions(), &dd_manager_));
+    }
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
-    opts.root_paths = { test_dir_ };
-    return new LogBlockManager(env_, test_error_manager_.get(), opts);
+    return new LogBlockManager(env_, dd_manager_.get(), test_error_manager_.get(), opts);
   }
 
-  Status ReopenBlockManager(FsReport* report = nullptr) {
-    bm_.reset(CreateBlockManager(scoped_refptr<MetricEntity>()));
+  Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,
+                            FsReport* report = nullptr) {
+    // The directory manager must outlive the block manager. Destroy the block
+    // manager first to enforce this.
+    bm_.reset();
+
+    // Re-open the directory manager first to clear any in-memory maps.
+    RETURN_NOT_OK(DataDirManager::OpenExisting(env_, { test_dir_ },
+        DataDirManagerOptions(), &dd_manager_));
+
+    bm_.reset(CreateBlockManager(metric_entity));
     RETURN_NOT_OK(bm_->Open(report));
-    RETURN_NOT_OK(bm_->dd_manager()->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+    RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
     return Status::OK();
   }
 
@@ -149,6 +161,7 @@ class LogBlockManagerTest : public KuduTest {
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
 
+  unique_ptr<DataDirManager> dd_manager_;
   unique_ptr<FsErrorManager> test_error_manager_;
   unique_ptr<LogBlockManager> bm_;
 
@@ -162,13 +175,15 @@ class LogBlockManagerTest : public KuduTest {
     // Populate 'data_files' and 'metadata_files'.
     vector<string> data_files;
     vector<string> metadata_files;
-    vector<string> children;
-    ASSERT_OK(env_->GetChildren(GetTestDataDirectory(), &children));
-    for (const string& child : children) {
-      if (HasSuffixString(child, LogBlockManager::kContainerDataFileSuffix)) {
-        data_files.push_back(JoinPathSegments(GetTestDataDirectory(), child));
-      } else if (HasSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix)) {
-        metadata_files.push_back(JoinPathSegments(GetTestDataDirectory(), child));
+    for (const string& data_dir : dd_manager_->GetDataDirs()) {
+      vector<string> children;
+      ASSERT_OK(env_->GetChildren(data_dir, &children));
+      for (const string& child : children) {
+        if (HasSuffixString(child, LogBlockManager::kContainerDataFileSuffix)) {
+          data_files.push_back(JoinPathSegments(data_dir, child));
+        } else if (HasSuffixString(child, LogBlockManager::kContainerMetadataFileSuffix)) {
+          metadata_files.push_back(JoinPathSegments(data_dir, child));
+        }
       }
     }
 
@@ -221,9 +236,7 @@ static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
 TEST_F(LogBlockManagerTest, MetricsTest) {
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
-  bm_.reset(CreateBlockManager(entity));
-  ASSERT_OK(bm_->Open(nullptr));
-  ASSERT_OK(bm_->dd_manager()->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+  ASSERT_OK(ReopenBlockManager(entity));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
 
   // Lower the max container size so that we can more easily test full
@@ -269,8 +282,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   // persistent information so they should be the same.
   MetricRegistry new_registry;
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
-  bm_.reset(CreateBlockManager(new_entity));
-  ASSERT_OK(bm_->Open(nullptr));
+  ASSERT_OK(ReopenBlockManager(new_entity));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
   // Delete a block. Its contents should no longer be under management.
@@ -796,7 +808,7 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add a mixture of regular and misaligned blocks to it.
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   int num_misaligned_blocks = 0;
   for (int i = 0; i < kNumBlocks; i++) {
@@ -807,7 +819,7 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
       // container metadata writers do not expect the metadata files to have
       // been changed underneath them.
       FsReport report;
-      ASSERT_OK(ReopenBlockManager(&report));
+      ASSERT_OK(ReopenBlockManager(nullptr, &report));
       ASSERT_FALSE(report.HasFatalErrors());
       num_misaligned_blocks++;
     } else {
@@ -834,7 +846,7 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
     }
   }
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors()) << report.ToString();
   ASSERT_EQ(num_misaligned_blocks, report.misaligned_block_check->entries.size());
   for (const auto& mb : report.misaligned_block_check->entries) {
@@ -854,7 +866,7 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
   // do this by reopening it; shutdown will wait for outstanding hole punches.
   //
   // On reopen, some misaligned blocks should be gone from the report.
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_GT(report.misaligned_block_check->entries.size(), 0);
   ASSERT_LT(report.misaligned_block_check->entries.size(), num_misaligned_blocks);
@@ -908,13 +920,13 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
   NO_FATALS(GetContainerNames(&container_names));
 
   // Corrupt one container.
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   ASSERT_OK(corruptor.PreallocateFullContainer());
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_EQ(1, report.full_container_space_check->entries.size());
   const LBMFullContainerSpaceCheck::Entry& fcs =
@@ -953,7 +965,7 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   ASSERT_EQ(0, file_size_on_disk);
 
   // Add some "unpunched blocks" to the container.
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumBlocks; i++) {
     ASSERT_OK(corruptor.AddUnpunchedBlockToFullContainer());
@@ -964,7 +976,7 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_EQ(1, report.full_container_space_check->entries.size());
   const LBMFullContainerSpaceCheck::Entry& fcs =
@@ -980,7 +992,7 @@ TEST_F(LogBlockManagerTest, TestRepairUnpunchedBlocks) {
   // Wait for the block manager to punch out all of the holes (done as part of
   // repair at startup). It's easiest to do this by reopening it; shutdown will
   // wait for outstanding hole punches.
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   NO_FATALS(AssertEmptyReport(report));
 
   // File size should be 0 post-repair.
@@ -994,7 +1006,7 @@ TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
   // Create some incomplete containers. The corruptor will select between
   // several variants of "incompleteness" at random (see
   // LBMCorruptor::CreateIncompleteContainer() for details).
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumContainers; i++) {
     ASSERT_OK(corruptor.CreateIncompleteContainer());
@@ -1005,7 +1017,7 @@ TEST_F(LogBlockManagerTest, TestRepairIncompleteContainer) {
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_EQ(kNumContainers, report.incomplete_container_check->entries.size());
   unordered_set<string> container_name_set(container_names.begin(),
@@ -1032,7 +1044,7 @@ TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
   // Add some malformed records. The corruptor will select between
   // several variants of "malformedness" at random (see
   // LBMCorruptor::AddMalformedRecordToContainer for details).
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumRecords; i++) {
     ASSERT_OK(corruptor.AddMalformedRecordToContainer());
@@ -1040,7 +1052,7 @@ TEST_F(LogBlockManagerTest, TestDetectMalformedRecords) {
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_TRUE(report.HasFatalErrors());
   ASSERT_EQ(kNumRecords, report.malformed_record_check->entries.size());
   for (const auto& mr : report.malformed_record_check->entries) {
@@ -1062,7 +1074,7 @@ TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
   NO_FATALS(GetOnlyContainer(&container_name));
 
   // Add some misaligned blocks.
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumBlocks; i++) {
     ASSERT_OK(corruptor.AddMisalignedBlockToContainer());
@@ -1070,7 +1082,7 @@ TEST_F(LogBlockManagerTest, TestDetectMisalignedBlocks) {
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_EQ(kNumBlocks, report.misaligned_block_check->entries.size());
   uint64_t fs_block_size;
@@ -1101,7 +1113,7 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
   ASSERT_EQ(kNumContainers, container_names.size());
 
   // Add some partial records.
-  LBMCorruptor corruptor(env_, { test_dir_ }, SeedRandom());
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), SeedRandom());
   ASSERT_OK(corruptor.Init());
   for (int i = 0; i < kNumRecords; i++) {
     ASSERT_OK(corruptor.AddPartialRecordToContainer());
@@ -1109,7 +1121,7 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
 
   // Check the report.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_FALSE(report.HasFatalErrors());
   ASSERT_EQ(kNumRecords, report.partial_record_check->entries.size());
   unordered_set<string> container_name_set(container_names.begin(),
@@ -1182,7 +1194,7 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
     ASSERT_OK(bm_->DeleteBlock(id));
     num_blocks_deleted++;
     FsReport report;
-    ASSERT_OK(ReopenBlockManager(&report));
+    ASSERT_OK(ReopenBlockManager(nullptr, &report));
     last_live_aligned_bytes = report.stats.live_block_bytes_aligned;
 
     ASSERT_OK(env_->GetFileSize(metadata_file_name, &post_compaction_file_size));
@@ -1200,7 +1212,7 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
   // dead blocks that were removed) shouldn't affect the number of live bytes
   // post-alignment.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_EQ(last_live_aligned_bytes, report.stats.live_block_bytes_aligned);
 }
 
@@ -1221,7 +1233,7 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   // consume a lot of file descriptors).
   FLAGS_log_container_max_blocks = 4;
   // Reopen so the flags take effect.
-  ASSERT_OK(ReopenBlockManager(nullptr));
+  ASSERT_OK(ReopenBlockManager());
 
   // Create many container with a bunch of blocks, half of which are deleted.
   vector<BlockId> block_ids;
@@ -1240,7 +1252,7 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   // files, since we've deleted half the blocks in every container and the
   // threshold is set high above.
   FsReport report;
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
 
   // Delete the remaining blocks in a random order. This will append to metadata
   // files which have just been compacted. Since we have more metadata files than
@@ -1253,7 +1265,7 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
 
   // Reopen to make sure that the metadata can be properly loaded and
   // that the resulting block manager is empty.
-  ASSERT_OK(ReopenBlockManager(&report));
+  ASSERT_OK(ReopenBlockManager(nullptr, &report));
   ASSERT_EQ(0, report.stats.live_block_count);
   ASSERT_EQ(0, report.stats.live_block_bytes_aligned);
 }

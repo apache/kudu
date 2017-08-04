@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_FS_FS_MANAGER_H
-#define KUDU_FS_FS_MANAGER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -118,7 +117,7 @@ class FsManager {
   //
   // If the filesystem has not been initialized, returns NotFound. In that
   // case, CreateInitialFileSystemLayout() may be used to initialize the
-  // on-disk structures.
+  // on-disk and in-memory structures.
   Status Open(fs::FsReport* report = nullptr);
 
   // Registers an error-handling callback with the FsErrorManager.
@@ -224,7 +223,9 @@ class FsManager {
 
   Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
 
-  fs::DataDirManager* dd_manager() const;
+  fs::DataDirManager* dd_manager() const {
+    return dd_manager_.get();
+  }
 
   fs::BlockManager* block_manager() {
     return block_manager_.get();
@@ -310,6 +311,7 @@ class FsManager {
 
   std::unique_ptr<InstanceMetadataPB> metadata_;
 
+  std::unique_ptr<fs::DataDirManager> dd_manager_;
   std::unique_ptr<fs::BlockManager> block_manager_;
   std::unique_ptr<fs::FsErrorManager> error_manager_;
 
@@ -320,4 +322,3 @@ class FsManager {
 
 } // namespace kudu
 
-#endif

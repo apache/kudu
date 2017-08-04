@@ -110,18 +110,15 @@ class BlockManagerTest : public KuduTest {
     test_block_opts_(CreateBlockOptions({ test_tablet_name_ })),
     test_error_manager_(new FsErrorManager()),
     bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
-                           shared_ptr<MemTracker>(),
-                           { test_dir_ })) {
+                           shared_ptr<MemTracker>())) {
   }
 
-  virtual void SetUp() OVERRIDE {
-    CHECK_OK(bm_->Create());
-    // Pass in a report to prevent the block manager from logging
-    // unnecessarily.
+  virtual void SetUp() override {
+    // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
     CHECK_OK(bm_->Open(&report));
-    CHECK_OK(bm_->dd_manager()->CreateDataDirGroup(test_tablet_name_));
-    CHECK(bm_->dd_manager()->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    CHECK_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+    CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
   void DistributeBlocksAcrossDirs(int num_dirs, int num_blocks_per_dir) {
@@ -129,7 +126,7 @@ class BlockManagerTest : public KuduTest {
     string tablet_name = Substitute("$0_disks", num_dirs);
     CreateBlockOptions opts({ tablet_name });
     FLAGS_fs_target_data_dirs_per_tablet = num_dirs;
-    ASSERT_OK(bm_->dd_manager()->CreateDataDirGroup(tablet_name));
+    ASSERT_OK(dd_manager_->CreateDataDirGroup(tablet_name));
     int num_blocks = num_dirs * num_blocks_per_dir;
 
     // Write 'num_blocks' blocks to this data dir group.
@@ -145,13 +142,16 @@ class BlockManagerTest : public KuduTest {
 
  protected:
   T* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
-                        const shared_ptr<MemTracker>& parent_mem_tracker,
-                        const vector<string>& paths) {
+                        const shared_ptr<MemTracker>& parent_mem_tracker) {
+    if (!dd_manager_) {
+      // Create a new directory manager if necessary.
+      CHECK_OK(DataDirManager::CreateNew(env_, { test_dir_ },
+          DataDirManagerOptions(), &dd_manager_));
+    }
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
-    opts.root_paths = paths;
-    return new T(env_, test_error_manager_.get(), opts);
+    return new T(env_, this->dd_manager_.get(), test_error_manager_.get(), opts);
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -159,16 +159,23 @@ class BlockManagerTest : public KuduTest {
                             const vector<string>& paths,
                             bool create,
                             bool load_test_group = true) {
-    bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker, paths));
+    // The directory manager must outlive the block manager. Destroy the block
+    // manager first to enforce this.
+    bm_.reset();
+    DataDirManagerOptions opts;
+    opts.metric_entity = metric_entity;
     if (create) {
-      RETURN_NOT_OK(bm_->Create());
+      RETURN_NOT_OK(DataDirManager::CreateNew(env_, paths, opts, &dd_manager_));
+    } else {
+      RETURN_NOT_OK(DataDirManager::OpenExisting(env_, paths, opts, &dd_manager_));
     }
+    bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
     RETURN_NOT_OK(bm_->Open(nullptr));
 
     // Certain tests may maintain their own directory groups, in which case
     // the default test group should not be used.
     if (load_test_group) {
-      RETURN_NOT_OK(bm_->dd_manager()->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
+      RETURN_NOT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, test_group_pb_));
     }
     return Status::OK();
   }
@@ -205,21 +212,20 @@ class BlockManagerTest : public KuduTest {
   string test_tablet_name_;
   CreateBlockOptions test_block_opts_;
   unique_ptr<FsErrorManager> test_error_manager_;
-  gscoped_ptr<T> bm_;
+  unique_ptr<DataDirManager> dd_manager_;
+  unique_ptr<T> bm_;
 };
 
 template <>
 void BlockManagerTest<LogBlockManager>::SetUp() {
   RETURN_NOT_LOG_BLOCK_MANAGER();
-  CHECK_OK(bm_->Create());
-  // Pass in a report to prevent the block manager from logging
-  // unnecessarily.
+  // Pass in a report to prevent the block manager from logging unnecessarily.
   FsReport report;
-  CHECK_OK(bm_->Open(&report));
-  CHECK_OK(bm_->dd_manager()->CreateDataDirGroup(test_tablet_name_));
+  ASSERT_OK(bm_->Open(&report));
+  ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
 
   // Store the DataDirGroupPB for tests that reopen the block manager.
-  CHECK(bm_->dd_manager()->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+  CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
 }
 
 template <>
@@ -287,7 +293,7 @@ void BlockManagerTest<LogBlockManager>::RunBlockDistributionTest(const vector<st
 template <>
 void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& paths) {
   // Ensure that each path has an instance file and that it's well-formed.
-  for (const string& path : paths) {
+  for (const string& path : dd_manager_->GetDataDirs()) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_EQ(3, children.size());
@@ -307,7 +313,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
   // high probability.
   CreateBlockOptions opts({ "multipath_test" });
   FLAGS_fs_target_data_dirs_per_tablet = 3;
-  ASSERT_OK(bm_->dd_manager()->CreateDataDirGroup("multipath_test"));
+  ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   // Write twenty blocks.
   const char* kTestData = "test data";
@@ -338,7 +344,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   // yield two containers per path.
   CreateBlockOptions opts({ "multipath_test" });
   FLAGS_fs_target_data_dirs_per_tablet = 3;
-  ASSERT_OK(bm_->dd_manager()->CreateDataDirGroup("multipath_test"));
+  ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   const char* kTestData = "test data";
   ScopedWritableBlockCloser closer;
@@ -351,16 +357,18 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   }
   ASSERT_OK(closer.CloseBlocks());
 
-  // Verify the results. Each path has dot, dotdot, instance file.
-  // (numPaths * 2) containers were created, each consisting of 2 files.
-  // Thus, there should be a total of (numPaths * (3 + 4)) files.
+  // Verify the results. (numPaths * 2) containers were created, each
+  // consisting of 2 files. Thus, there should be a total of
+  // (numPaths * 4) files, ignoring '.', '..', and instance files.
   int sum = 0;
   for (const string& path : paths) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
-    sum += children.size();
+    int files_in_path = 0;
+    ASSERT_OK(CountFiles(path, &files_in_path));
+    sum += files_in_path;
   }
-  ASSERT_EQ(paths.size() * 7, sum);
+  ASSERT_EQ(paths.size() * 4, sum);
 }
 
 template <>
@@ -460,14 +468,14 @@ TYPED_TEST(BlockManagerTest, CreateBlocksInDataDirs) {
                                     "directory group registered for tablet");
 
   // Ensure the data dir groups can only be created once.
-  s = this->bm_->dd_manager()->CreateDataDirGroup(this->test_tablet_name_);
+  s = this->dd_manager_->CreateDataDirGroup(this->test_tablet_name_);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Tried to create directory group for tablet "
                                     "but one is already registered");
 
   DataDirGroupPB test_group_pb;
   // Check that the in-memory DataDirGroup did not change.
-  ASSERT_TRUE(this->bm_->dd_manager()->GetDataDirGroupPB(
+  ASSERT_TRUE(this->dd_manager_->GetDataDirGroupPB(
       this->test_tablet_name_, &test_group_pb));
   ASSERT_TRUE(MessageDifferencer::Equals(test_group_pb, this->test_group_pb_));
 }
@@ -667,8 +675,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // on-disk metadata should still be clean.
   gscoped_ptr<BlockManager> new_bm(this->CreateBlockManager(
       scoped_refptr<MetricEntity>(),
-      MemTracker::CreateTracker(-1, "other tracker"),
-      { this->test_dir_ }));
+      MemTracker::CreateTracker(-1, "other tracker")));
   ASSERT_OK(new_bm->Open(nullptr));
 
   // Test that the state of all three blocks is properly reflected.
@@ -694,6 +701,7 @@ TYPED_TEST(BlockManagerTest, BlockDistributionTest) {
   vector<string> paths;
   for (int i = 0; i < 5; i++) {
     paths.push_back(this->GetTestPath(Substitute("block_dist_path$0", i)));
+    ASSERT_OK(this->env_->CreateDir(paths[i]));
   }
   ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                      shared_ptr<MemTracker>(),
@@ -708,6 +716,7 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
   vector<string> paths;
   for (int i = 0; i < 3; i++) {
     paths.push_back(this->GetTestPath(Substitute("path$0", i)));
+    ASSERT_OK(this->env_->CreateDir(paths[i]));
   }
   ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                      shared_ptr<MemTracker>(),

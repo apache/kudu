@@ -148,39 +148,52 @@ class BlockManagerStressTest : public KuduTest {
     // depending on the number of CPUs on the system.
     FLAGS_cache_force_single_shard = true;
 
-    if (FLAGS_block_manager_paths.empty()) {
-      data_dirs_.push_back(test_dir_);
-    } else {
-      data_dirs_ = strings::Split(FLAGS_block_manager_paths, ",",
-                                  strings::SkipEmpty());
-    }
-
     // Defer block manager creation until after the above flags are set.
     bm_.reset(CreateBlockManager());
+    bm_->Open(nullptr);
+    dd_manager_->CreateDataDirGroup(test_tablet_name_);
+    CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
-  virtual void SetUp() OVERRIDE {
-    CHECK_OK(bm_->Create());
-    CHECK_OK(bm_->Open(nullptr));
-    CHECK_OK(bm_->dd_manager()->CreateDataDirGroup(test_tablet_name_));
-    CHECK(bm_->dd_manager()->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
-  }
+  virtual void TearDown() override {
+    // Ensure the proper destructor order. The directory manager must outlive
+    // the block manager.
+    bm_.reset();
 
-  virtual void TearDown() OVERRIDE {
-    // If non-standard paths were provided we need to delete them in
-    // between test runs.
+    // If non-standard paths were provided we need to delete them in between
+    // test runs.
     if (!FLAGS_block_manager_paths.empty()) {
-      for (const auto& dd : data_dirs_) {
+      for (const auto& dd : dd_manager_->GetDataRoots()) {
         WARN_NOT_OK(env_->DeleteRecursively(dd),
                     Substitute("Couldn't recursively delete $0", dd));
       }
     }
+    dd_manager_.reset();
   }
 
   BlockManager* CreateBlockManager() {
+    // The directory manager must outlive the block manager. Destroy the block
+    // manager first to enforce this.
+    bm_.reset();
+
+    vector<string> data_dirs;
+    if (FLAGS_block_manager_paths.empty()) {
+      data_dirs.push_back(test_dir_);
+    } else {
+      data_dirs = strings::Split(FLAGS_block_manager_paths, ",",
+                                 strings::SkipEmpty());
+    }
+    if (!dd_manager_) {
+      // Create a new directory manager if necessary.
+      CHECK_OK(DataDirManager::CreateNew(env_, data_dirs,
+          DataDirManagerOptions(), &dd_manager_));
+    } else {
+      // Open a existing directory manager, wiping away in-memory maps.
+      CHECK_OK(DataDirManager::OpenExisting(env_, data_dirs,
+          DataDirManagerOptions(), &dd_manager_));
+    }
     BlockManagerOptions opts;
-    opts.root_paths = data_dirs_;
-    return new T(env_, test_error_manager_.get(), opts);
+    return new T(env_, dd_manager_.get(), test_error_manager_.get(), opts);
   }
 
   void RunTest(double secs) {
@@ -241,9 +254,6 @@ class BlockManagerStressTest : public KuduTest {
   void InjectNonFatalInconsistencies();
 
  protected:
-  // Directories where blocks will be written.
-  vector<string> data_dirs_;
-
   // Used to generate random data. All PRNG instances are seeded with this
   // value to ensure that the test is reproducible.
   int rand_seed_;
@@ -262,6 +272,9 @@ class BlockManagerStressTest : public KuduTest {
 
   // The block manager.
   gscoped_ptr<BlockManager> bm_;
+
+  // The directory manager.
+  unique_ptr<DataDirManager> dd_manager_;
 
   // The error manager.
   unique_ptr<FsErrorManager> test_error_manager_;
@@ -485,7 +498,7 @@ void BlockManagerStressTest<FileBlockManager>::InjectNonFatalInconsistencies() {
 
 template <>
 void BlockManagerStressTest<LogBlockManager>::InjectNonFatalInconsistencies() {
-  LBMCorruptor corruptor(env_, data_dirs_, rand_seed_);
+  LBMCorruptor corruptor(env_, dd_manager_->GetDataDirs(), rand_seed_);
   ASSERT_OK(corruptor.Init());
 
   for (int i = 0; i < FLAGS_num_inconsistencies; i++) {
@@ -525,7 +538,7 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
     this->bm_.reset(this->CreateBlockManager());
     FsReport report;
     ASSERT_OK(this->bm_->Open(&report));
-    ASSERT_OK(this->bm_->dd_manager()->LoadDataDirGroupFromPB(this->test_tablet_name_,
+    ASSERT_OK(this->dd_manager_->LoadDataDirGroupFromPB(this->test_tablet_name_,
                                                               this->test_group_pb_));
     ASSERT_OK(report.LogAndCheckForFatalErrors());
     this->RunTest(FLAGS_test_duration_secs / kNumStarts);

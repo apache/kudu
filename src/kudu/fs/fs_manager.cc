@@ -65,10 +65,17 @@ TAG_FLAG(enable_data_block_fsync, unsafe);
 #if defined(__linux__)
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
+static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
+  return value == "log" || value == "file";
+}
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "Only the file block manager is supported for non-Linux systems.");
+static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
+  return value == "file";
+}
 #endif
+DEFINE_validator(block_manager, &ValidateBlockManagerType);
 TAG_FLAG(block_manager, advanced);
 
 DEFINE_string(fs_wal_dir, "",
@@ -85,6 +92,7 @@ using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
+using kudu::fs::DataDirManagerOptions;
 using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
@@ -228,9 +236,6 @@ Status FsManager::Init() {
     VLOG(1) << "All roots: " << canonicalized_all_fs_roots_;
   }
 
-  // With the data roots canonicalized, we can initialize the block manager.
-  InitBlockManager();
-
   initted_ = true;
   return Status::OK();
 }
@@ -239,14 +244,11 @@ void FsManager::InitBlockManager() {
   BlockManagerOptions opts;
   opts.metric_entity = metric_entity_;
   opts.parent_mem_tracker = parent_mem_tracker_;
-  opts.root_paths = GetDataRootDirs();
   opts.read_only = read_only_;
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, error_manager_.get(), opts));
-  } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, error_manager_.get(), opts));
+    block_manager_.reset(new FileBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
   } else {
-    LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
+    block_manager_.reset(new LogBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
   }
 }
 
@@ -279,9 +281,25 @@ Status FsManager::Open(FsReport* report) {
     CheckAndFixPermissions();
   }
 
+  // Open the directory manager if it has not been opened already.
+  if (!dd_manager_) {
+    DataDirManagerOptions dm_opts;
+    dm_opts.metric_entity = metric_entity_;
+    dm_opts.read_only = read_only_;
+    vector<string> canonicalized_data_roots(canonicalized_data_fs_roots_.begin(),
+                                            canonicalized_data_fs_roots_.end());
+    LOG_TIMING(INFO, "opening directory manager") {
+      RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
+          canonicalized_data_roots, dm_opts, &dd_manager_));
+    }
+  }
+
+  // Finally, initialize and open the block manager.
+  InitBlockManager();
   LOG_TIMING(INFO, "opening block manager") {
     RETURN_NOT_OK(block_manager_->Open(report));
   }
+
   LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
             << std::endl << SecureDebugString(*metadata_);
   return Status::OK();
@@ -352,8 +370,16 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     }
   }
 
-  // And lastly, the block manager.
-  RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
+  // And lastly, create the directory manager.
+  DataDirManagerOptions opts;
+  opts.metric_entity = metric_entity_;
+  opts.read_only = read_only_;
+  vector<string> canonicalized_data_roots(canonicalized_data_fs_roots_.begin(),
+                                          canonicalized_data_fs_roots_.end());
+  LOG_TIMING(INFO, "creating directory manager") {
+    RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(env_,
+        canonicalized_data_roots, opts, &dd_manager_), "Unable to create directory manager");
+  }
 
   // Success: don't delete any files.
   for (ScopedFileDeleter* deleter : delete_on_failure) {
@@ -422,16 +448,8 @@ const string& FsManager::uuid() const {
 }
 
 vector<string> FsManager::GetDataRootDirs() const {
-  // Add the data subdirectory to each data root.
-  vector<string> data_paths;
-  for (const string& data_fs_root : canonicalized_data_fs_roots_) {
-    data_paths.push_back(JoinPathSegments(data_fs_root, kDataDirName));
-  }
-  return data_paths;
-}
-
-DataDirManager* FsManager::dd_manager() const {
-  return block_manager_->dd_manager();
+  // Get the data subdirectory for each data root.
+  return dd_manager_->GetDataDirs();
 }
 
 string FsManager::GetTabletMetadataDir() const {

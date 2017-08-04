@@ -31,8 +31,12 @@ extern const char kOldTmpInfix[];
 
 // Join two path segments with the appropriate path separator,
 // if necessary.
-std::string JoinPathSegments(const std::string &a,
-                             const std::string &b);
+std::string JoinPathSegments(const std::string& a,
+                             const std::string& b);
+
+// Join each path segment in a list with a common suffix segment.
+std::vector<std::string> JoinPathSegmentsV(const std::vector<std::string>& v,
+                                           const std::string& s);
 
 // Split a path into segments with the appropriate path separator.
 std::vector<std::string> SplitPath(const std::string& path);

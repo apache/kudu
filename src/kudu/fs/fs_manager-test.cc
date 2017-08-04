@@ -297,6 +297,7 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   ASSERT_EQ(6, n_tmp_files);
 
   // Opening fs_manager should remove tmp files
+  ReinitFsManager(wal_path, data_paths);
   ASSERT_OK(fs_manager()->Open());
 
   n_tmp_files = 0;

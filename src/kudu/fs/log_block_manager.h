@@ -162,13 +162,13 @@ class LogBlockManager : public BlockManager {
   static const char* kContainerMetadataFileSuffix;
   static const char* kContainerDataFileSuffix;
 
-  // Note: 'env' and 'error_manager' should remain alive for the lifetime of
-  // the block manager.
-  LogBlockManager(Env* env, FsErrorManager* error_manager, const BlockManagerOptions& opts);
+  // Note: all objects passed as pointers should remain alive for the lifetime
+  // of the block manager.
+  LogBlockManager(Env* env, DataDirManager* dd_manager,
+                  FsErrorManager* error_manager,
+                  const BlockManagerOptions& opts);
 
   virtual ~LogBlockManager();
-
-  Status Create() override;
 
   Status Open(FsReport* report) override;
 
@@ -183,8 +183,6 @@ class LogBlockManager : public BlockManager {
   Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
-
-  DataDirManager* dd_manager() override { return &dd_manager_; }
 
   FsErrorManager* error_manager() override { return error_manager_; }
 
@@ -354,8 +352,9 @@ class LogBlockManager : public BlockManager {
   // Protects the block map, container structures, and 'dirty_dirs'.
   mutable simple_spinlock lock_;
 
-  // Manages and owns all of the block manager's data directories.
-  DataDirManager dd_manager_;
+  // Manages and owns the data directories in which the block manager will
+  // place its blocks.
+  DataDirManager* dd_manager_;
 
   // Manages callbacks used to handle disk failure.
   FsErrorManager* error_manager_;

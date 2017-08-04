@@ -189,9 +189,6 @@ struct BlockManagerOptions {
   // If NULL, new memory trackers will be parented to the root tracker.
   std::shared_ptr<MemTracker> parent_mem_tracker;
 
-  // The paths where data blocks will be stored. Cannot be empty.
-  std::vector<std::string> root_paths;
-
   // Whether the block manager should only allow reading. Defaults to false.
   bool read_only;
 };
@@ -201,12 +198,6 @@ struct BlockManagerOptions {
 class BlockManager {
  public:
   virtual ~BlockManager() {}
-
-  // Creates a new on-disk representation for this block manager. Must be
-  // followed up with a call to Open() to use the block manager.
-  //
-  // Returns an error if one already exists or cannot be created.
-  virtual Status Create() = 0;
 
   // Opens an existing on-disk representation of this block manager and
   // checks it for inconsistencies. If found, and if the block manager was not
@@ -265,9 +256,6 @@ class BlockManager {
   // concurrent operations are ongoing, some of the blocks themselves may not
   // even exist after the call.
   virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) = 0;
-
-  // Exposes the underlying DataDirManager.
-  virtual DataDirManager* dd_manager() = 0;
 
   // Exposes the FsErrorManager used to handle fs errors.
   virtual FsErrorManager* error_manager() = 0;
