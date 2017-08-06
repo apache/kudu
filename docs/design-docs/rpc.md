@@ -271,6 +271,10 @@ a typical message looks like without sidecars:
 +------------------------------------------------+
 | Main message protobuf                          |
 +------------------------------------------------+
+| RPC Footer protobuf length (variable encoding) | --- Exists only in client requests.
++------------------------------------------------+
+| RPC Footer protobuf                            | --- Exists only in client requests.
++------------------------------------------------+
 ```
 
 In this case, the main message length is equal to the protobuf's byte size.
@@ -298,6 +302,10 @@ Here's what it looks like with the sidecars:
 | Sidecar 2                                      |
 +------------------------------------------------+ --- ...
 | ...                                            |
++------------------------------------------------+
+| RPC Footer protobuf length (variable encoding) | --- Exists only in client requests.
++------------------------------------------------+
+| RPC Footer protobuf                            | --- Exists only in client requests.
 +------------------------------------------------+
 ```
 
@@ -351,6 +359,11 @@ serialized as follows:
     - for typical RPC calls, this is the user-specified request or response protobuf
     - for RPC calls which caused an error, the response is an ErrorStatusPB
     - during negotiation, this is a NegotiatePB
+
+  footer: varint-prefixed footer protobuf
+    - the last part of a RPC message
+    - exists only in client->server message if both client and server support HAS_FOOTER feature flag
+    - contains a flag which is set when the client->server message is cancelled mid-transmission.
 ```
 
 ### Example packet capture
@@ -358,19 +371,29 @@ serialized as follows:
 An example call (captured with strace on rpc-test.cc) follows:
 
 ```
-   "\x00\x00\x00\x17"   (total_size: 23 bytes to follow)
-   "\x09"  RequestHeader varint: 9 bytes
-    "\x08\x0a\x1a\x03\x41\x64\x64\x20\x01" (RequestHeader protobuf)
-      Decoded with protoc --decode=RequestHeader rpc_header.proto:
-      callId: 10
-      methodName: "Add"
-      requestParam: true
+   "\x00\x00\x00\x40"   (total_size: 64 bytes to follow)
+   "\x2f"  RequestHeader varint: 47 bytes
+    "\x18\x09\x32\x28\x0a\x21\x6b\x75\x64\x75\x2e\x72\x70\x63\x2e\x47\x65\x6e\x65"
+    "\x72\x69\x63\x43\x61\x6c\x63\x75\x6c\x61\x74\x6f\x72\x53\x65\x72\x76\x69\x63"
+    "\x65\x12\x03\x41\x64\x64\x50\x90\x4e" (RequestHeader protobuf)
+      Decoded with printf "\x08\x0a..." | protoc --decode=kudu.rpc.RequestHeader rpc_header.proto:
+      call_id: 9
+      remote_method {
+        service_name: "kudu.rpc.GenericCalculatorService"
+        method_name: "Add"
+      }
+      timeout_millis: 10000
 
    "\x0c"  Request parameter varint: 12 bytes
-    "\x08\xd4\x90\x80\x91\x01\x10\xf8\xcf\xc4\xed\x04" Request parameter
-      Decoded with protoc --decode=kudu.rpc_test.AddRequestPB rpc/rtest.proto
+    "\x08\xd4\x90\x80\x91\x01\x10\xf8\xcf\xc4\xed\x04" (Request parameter protobuf)
+      Decoded with printf "\x08\xd4..." | protoc --decode=kudu.rpc_test.AddRequestPB rtest.proto
       x: 304089172
       y: 1303455736
+
+   "\x02"  RequestFooter varint: 2 bytes
+    "\x08\x00" (RequestFooter protobuf)
+      Decoded with printf "\x08\x00" | protoc --decode=kudu.rpc_test.RequestFooterPB rpc_header.proto
+      aborted: false
 ```
 
 ## Negotiation

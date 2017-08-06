@@ -961,7 +961,7 @@ TEST_P(TestRpc, TestCancellation) {
   client_messenger->Shutdown();
 }
 
-#define TEST_PAYLOAD_SIZE  (1 << 23)
+#define TEST_PAYLOAD_SIZE  (1 << 26)
 #define TEST_SLEEP_TIME_MS (500)
 
 static void SleepCallback(uint8_t* payload, CountDownLatch* latch) {
@@ -991,30 +991,38 @@ TEST_P(TestRpc, TestCancellationAsync) {
   // Used to generate sleep time between invoking RPC and requesting cancellation.
   Random rand(SeedRandom());
 
-  for (int i = 0; i < 10; ++i) {
+  // Set the max allowed payload size to 1GB.
+  FLAGS_rpc_max_message_size = 1 << 30;
+
+  for (int i = 0; i < 100; ++i) {
     SleepWithSidecarRequestPB req;
     SleepWithSidecarResponsePB resp;
 
     // Initialize the payload with non-zero pattern.
-    memset(payload.get(), 0xff, TEST_PAYLOAD_SIZE);
     req.set_sleep_micros(TEST_SLEEP_TIME_MS);
     req.set_pattern(0xffffffff);
-    req.set_num_repetitions(TEST_PAYLOAD_SIZE / sizeof(uint32_t));
+    memset(payload.get(), 0xff, TEST_PAYLOAD_SIZE);
 
-    int idx;
-    Slice s(payload.get(), TEST_PAYLOAD_SIZE);
-    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(s), &idx));
-    req.set_sidecar_idx(idx);
+    uint32 num_sidecars = rand.Uniform32(TransferLimits::kMaxSidecars);
+    for (int j = 0; j < num_sidecars; ++j) {
+      uint32 num_repetitions = rand.Uniform32(TEST_PAYLOAD_SIZE) / sizeof(uint32_t);
+      Slice s(payload.get(), num_repetitions * sizeof(uint32_t));
+      int idx;
+      CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(s), &idx));
+      req.add_sidecar_idx(idx);
+    }
 
     CountDownLatch latch(1);
+    controller.set_timeout(MonoDelta::FromMicroseconds(rand.Uniform64(i * 500L + 1)));
     p.AsyncRequest(GenericCalculatorService::kSleepWithSidecarMethodName,
                    req, &resp, &controller,
                    boost::bind(SleepCallback, payload.get(), &latch));
     // Sleep for a while before cancelling the RPC.
-    if (i > 0) SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(i * 30)));
+    SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(i * 500L + 1)));
     controller.Cancel();
     latch.Wait();
-    ASSERT_TRUE(controller.status().IsAborted() || controller.status().ok());
+    const Status &status = controller.status();
+    ASSERT_TRUE(status.IsTimedOut() || status.IsAborted() || status.ok());
     controller.Reset();
   }
   client_messenger->Shutdown();

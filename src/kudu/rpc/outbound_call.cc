@@ -26,6 +26,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/rpc/connection.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -78,8 +79,7 @@ OutboundCall::OutboundCall(const ConnectionId& conn_id,
       conn_id_(conn_id),
       callback_(std::move(callback)),
       controller_(DCHECK_NOTNULL(controller)),
-      response_(DCHECK_NOTNULL(response_storage)),
-      cancellation_requested_(false) {
+      response_(DCHECK_NOTNULL(response_storage)) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
            << " and RPC timeout: "
            << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");
@@ -118,6 +118,7 @@ size_t OutboundCall::SerializeTo(TransferPayload* slices) {
   serialization::SerializeHeader(
       header_, sidecar_byte_size_ + request_buf_.size(), &header_buf_);
 
+  // Header and Msg in addition to sidecars.
   size_t n_slices = 2 + sidecars_.size();
   DCHECK_LE(n_slices, slices->size());
   auto slice_iter = slices->begin();
@@ -128,6 +129,28 @@ size_t OutboundCall::SerializeTo(TransferPayload* slices) {
   }
   DCHECK_EQ(slice_iter - slices->begin(), n_slices);
   return n_slices;
+}
+
+void OutboundCall::AppendFooter(Slice* slice) {
+  DCHECK(!footer_.has_aborted());
+  footer_.set_aborted(false);
+  serialization::SerializeFooter(footer_, &footer_buf_);
+  *slice = Slice(footer_buf_);
+  serialization::IncrementMsgLength(footer_buf_.size(), &header_buf_);
+}
+
+void OutboundCall::MarkPayloadCancelled(TransferPayload* slices,
+                                        const uint8_t* relocated_dst) {
+  DCHECK(footer_.has_aborted());
+  auto slice_iter = slices->begin() + 2;
+  for (auto& sidecar : sidecars_) {
+    *slice_iter++ = Slice(relocated_dst, sidecar->AsSlice().size());
+  }
+  size_t old_size = footer_buf_.size();
+  footer_.set_aborted(true);
+  serialization::SerializeFooter(footer_, &footer_buf_);
+  DCHECK_EQ(footer_buf_.size(), old_size);
+  *slice_iter++ = Slice(footer_buf_);
 }
 
 void OutboundCall::SetRequestPayload(const Message& req,
@@ -220,7 +243,8 @@ void OutboundCall::set_state_unlocked(State new_state) {
       DCHECK(state_ == SENT || state_ == ON_OUTBOUND_QUEUE || state_ == SENDING);
       break;
     case CANCELLED:
-      DCHECK(state_ == READY || state_ == ON_OUTBOUND_QUEUE || state_ == SENT);
+      DCHECK(state_ == READY || state_ == ON_OUTBOUND_QUEUE || state_ == SENDING ||
+             state_ == SENT);
       break;
     case FINISHED_SUCCESS:
       DCHECK_EQ(state_, SENT);
@@ -233,17 +257,24 @@ void OutboundCall::set_state_unlocked(State new_state) {
   state_ = new_state;
 }
 
-void OutboundCall::Cancel() {
-  cancellation_requested_ = true;
+void OutboundCall::Cancel(const Connection* conn) {
   // No lock needed as it's called from reactor thread
   switch (state_) {
+    case SENDING:
+      // 'conn' can be NULL if the connection was somehow shut down due to errors.
+      // If the remote server doesn't support parsing footer and the call is being sent
+      // already, ignore the cancellation request as if it were completed already.
+      if (PREDICT_FALSE(conn == nullptr || !conn->RemoteSupportsFooter())) {
+        break;
+      }
+      // fall-through if remote supports parsing footer.
+      FALLTHROUGH_INTENDED;
     case READY:
     case ON_OUTBOUND_QUEUE:
     case SENT: {
       SetCancelled();
       break;
     }
-    case SENDING:
     case NEGOTIATION_TIMED_OUT:
     case TIMED_OUT:
     case CANCELLED:
@@ -318,21 +349,19 @@ void OutboundCall::SetSending() {
 void OutboundCall::SetSent() {
   set_state(SENT);
 
-  // This method is called in the reactor thread, so free the header buf,
-  // which was also allocated from this thread. tcmalloc's thread caching
+  // This method is called in the reactor thread, so free the header and footer buf,
+  // which were also allocated from this thread. tcmalloc's thread caching
   // behavior is a lot more efficient if memory is freed from the same thread
   // which allocated it -- this lets it keep to thread-local operations instead
   // of taking a mutex to put memory back on the global freelist.
-  delete [] header_buf_.release();
+  header_buf_.clear();
+  header_buf_.shrink_to_fit();
+  footer_buf_.clear();
+  footer_buf_.shrink_to_fit();
 
   // request_buf_ is also done being used here, but since it was allocated by
   // the caller thread, we would rather let that thread free it whenever it
   // deletes the RpcController.
-
-  // If cancellation was requested, it's now a good time to do the actual cancellation.
-  if (cancellation_requested()) {
-    SetCancelled();
-  }
 }
 
 void OutboundCall::SetFailed(const Status &status,
@@ -414,6 +443,16 @@ bool OutboundCall::IsNegotiationError() const {
     default:
       return false;
   }
+}
+
+bool OutboundCall::IsOnOutboundQueue() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return state_ == ON_OUTBOUND_QUEUE;
+}
+
+bool OutboundCall::IsInTransmission() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return state_ == ON_OUTBOUND_QUEUE || state_ == SENDING;
 }
 
 bool OutboundCall::IsFinished() const {
@@ -502,8 +541,8 @@ Status CallResponse::GetSidecar(int idx, Slice* sidecar) const {
 
 Status CallResponse::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   CHECK(!parsed_);
-  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_,
-                                            &serialized_response_));
+  RETURN_NOT_OK(serialization::ParseMessage(
+      transfer->data(), &header_, nullptr, &serialized_response_));
 
   // Use information from header to extract the payload slices.
   RETURN_NOT_OK(RpcSidecar::ParseSidecars(header_.sidecar_offsets(),

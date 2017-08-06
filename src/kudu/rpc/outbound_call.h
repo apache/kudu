@@ -100,17 +100,32 @@ class OutboundCall {
     header_.set_call_id(call_id);
   }
 
-  // Serialize the call for the wire. Requires that SetRequestPayload()
-  // is called first. This is called from the Reactor thread.
-  // Returns the number of slices in the serialized call.
+  // Serialize the call for the wire. Requires that SetRequestPayload() is called first.
+  // This is called from the Reactor thread. The serialized payload are stored as slices
+  // in "slices". Returns the number of slices in the serialized call.
   size_t SerializeTo(TransferPayload* slices);
+
+  // Called right before the outbound call begins transmission to add a footer to the
+  // message. This function sets aborted flag in 'footer' to false, serializes it to PB
+  // and stores it in 'footer_buf_' and updates 'slice' to point to it. The total message
+  // length (stored in the first 4 bytes of "header_buf_") is incremented to account for
+  // the footer.
+  // REQUIRES: must be called from the reactor thread.
+  void AppendFooter(Slice* slice);
+
+  // Called when the call is cancelled. Updates all sidecar slices to point to
+  // 'relocated_dst' while keeping their sizes unchanged. Also update the footer
+  // to indicate that the call has been aborted. Can only be called if AppendFooter()
+  // was called before.
+  // REQUIRES: must be called from the reactor thread.
+  void MarkPayloadCancelled(TransferPayload* slices, const uint8_t* relocated_dst);
 
   // Mark in the call that cancellation has been requested. If the call hasn't yet
   // started sending or has finished sending the RPC request but is waiting for a
-  // response, cancel the RPC right away. Otherwise, wait until the RPC has finished
-  // sending before cancelling it. If the call is finished, it's a no-op.
+  // response, cancel the RPC right away. If the RPC is being sent, cancel it only
+  // if the remote supports "REQUEST_FOOTERS". If the call is finished, it's a no-op.
   // REQUIRES: must be called from the reactor thread.
-  void Cancel();
+  void Cancel(const Connection* conn);
 
   // Callback after the call has been put on the outbound connection queue.
   void SetQueued();
@@ -133,14 +148,26 @@ class OutboundCall {
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
   void SetTimedOut(Phase phase);
+
   bool IsTimedOut() const;
 
   bool IsNegotiationError() const;
 
   bool IsCancelled() const;
 
+  bool IsOnOutboundQueue() const;
+
+  // True if the call is scheduled to be sent or in the process of being sent.
+  // There is an entry for the call in the OutboundTransfer queue.
+  bool IsInTransmission() const;
+
   // Is the call finished?
   bool IsFinished() const;
+
+  // True if the outbound call has any non-empty sidecars attached to it.
+  bool HasNonEmptySidecars() const {
+    return sidecar_byte_size_ > 0;
+  }
 
   // Fill in the call response.
   void SetResponse(gscoped_ptr<CallResponse> resp);
@@ -171,12 +198,6 @@ class OutboundCall {
   int32_t call_id() const {
     DCHECK(call_id_assigned());
     return header_.call_id();
-  }
-
-  // Returns true if cancellation has been requested. Must be called from
-  // reactor thread.
-  bool cancellation_requested() const {
-    return cancellation_requested_;
   }
 
   // Test function which returns true if a cancellation request should be injected
@@ -228,6 +249,11 @@ class OutboundCall {
   // This will only be non-NULL if status().IsRemoteError().
   const ErrorStatusPB* error_pb() const;
 
+  // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
+  // prior to invoking the callback so the client can assume that the call doesn't
+  // hold references to outbound sidecars.
+  void CallCallback();
+
   // Lock for state_ status_, error_pb_ fields, since they
   // may be mutated by the reactor thread while the client thread
   // reads them.
@@ -236,15 +262,14 @@ class OutboundCall {
   Status status_;
   gscoped_ptr<ErrorStatusPB> error_pb_;
 
-  // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
-  // prior to invoking the callback so the client can assume that the call doesn't
-  // hold references to outbound sidecars.
-  void CallCallback();
-
   // The RPC header.
   // Parts of this (eg the call ID) are only assigned once this call has been
   // passed to the reactor thread and assigned a connection.
   RequestHeader header_;
+
+  // The RPC footer.
+  // This is sent last as part of a RPC request.
+  RequestFooterPB footer_;
 
   // The remote method being called.
   RemoteMethod remote_method_;
@@ -262,6 +287,7 @@ class OutboundCall {
   // Buffers for storing segments of the wire-format request.
   faststring header_buf_;
   faststring request_buf_;
+  faststring footer_buf_;
 
   // Once a response has been received for this call, contains that response.
   // Otherwise NULL.
@@ -272,9 +298,6 @@ class OutboundCall {
 
   // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
   int64_t sidecar_byte_size_ = -1;
-
-  // True if cancellation was requested on this call.
-  bool cancellation_requested_;
 
   DISALLOW_COPY_AND_ASSIGN(OutboundCall);
 };

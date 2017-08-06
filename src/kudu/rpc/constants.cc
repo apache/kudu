@@ -31,8 +31,12 @@ const char* const kSaslProtoName = "kudu";
 //
 // NOTE: the TLS_AUTHENTICATION_ONLY flag is dynamically added on both
 // sides based on the remote peer's address.
+//
+// NOTE: the REQUEST_FOOTERS is always set on the client side. The server side
+// which supports parsing footer sets REQUEST_FOOTERS if client side has it set.
 set<RpcFeatureFlag> kSupportedServerRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
-set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS };
+set<RpcFeatureFlag> kSupportedClientRpcFeatureFlags = { APPLICATION_FEATURE_FLAGS,
+                                                        REQUEST_FOOTERS };
 
 } // namespace rpc
 } // namespace kudu

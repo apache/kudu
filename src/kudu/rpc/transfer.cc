@@ -30,6 +30,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/memory/memory.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
@@ -53,9 +54,18 @@ namespace kudu {
 namespace rpc {
 
 using std::ostringstream;
-using std::set;
+using std::shared_ptr;
 using std::string;
 using strings::Substitute;
+
+// The outbound transfer for an outbound call can be aborted after it has started already.
+// The system has to continue sending up to number of bytes specified in the header or the
+// receiving end will never make progress, leading to resource leak. In order to release
+// the sidecars early, we call MarkPayloadCancelled() on the outbound call to relocate the
+// sidecars to point to 'g_dummy_buffer'. SendBuffer() below recognizes slices pointing to
+// this dummy buffer and handles them differently.
+#define DUMMY_BUFFER_SIZE (1 << 20)
+uint8_t g_dummy_buffer[DUMMY_BUFFER_SIZE];
 
 #define RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status) \
   if (PREDICT_FALSE(!status.ok())) {                            \
@@ -64,6 +74,13 @@ using strings::Substitute;
     }                                                           \
     return status;                                              \
   }
+
+// Initialize the dummy buffer with a known pattern for easier debugging.
+__attribute__((constructor))
+static void InitializeDummyBuffer() {
+  OverwriteWithPattern(reinterpret_cast<char*>(g_dummy_buffer),
+                       DUMMY_BUFFER_SIZE, "ABORTED-TRANSFER");
+}
 
 TransferCallbacks::~TransferCallbacks()
 {}
@@ -152,23 +169,30 @@ OutboundTransfer::OutboundTransfer(int32_t call_id,
                                    const TransferPayload &payload,
                                    size_t n_payload_slices,
                                    TransferCallbacks *callbacks)
-  : cur_slice_idx_(0),
+  : n_payload_slices_(n_payload_slices),
+    cur_slice_idx_(0),
     cur_offset_in_slice_(0),
     callbacks_(callbacks),
     call_id_(call_id),
     aborted_(false) {
-
-  n_payload_slices_ = n_payload_slices;
-  CHECK_LE(n_payload_slices_, payload_slices_.size());
+  // We should leave the last entry for the footer.
+  CHECK_LE(n_payload_slices_, payload_slices_.size() - 1);
   for (int i = 0; i < n_payload_slices; i++) {
     payload_slices_[i] = payload[i];
   }
 }
 
+void OutboundTransfer::AppendFooter(const shared_ptr<OutboundCall> &call) {
+  DCHECK(!TransferStarted());
+  DCHECK(is_for_outbound_call());
+  DCHECK_LE(n_payload_slices_, payload_slices_.size() - 1);
+  call->AppendFooter(&payload_slices_[n_payload_slices_++]);
+}
+
 OutboundTransfer::~OutboundTransfer() {
   if (!TransferFinished() && !aborted_) {
     callbacks_->NotifyTransferAborted(
-      Status::RuntimeError("RPC transfer destroyed before it finished sending"));
+        Status::RuntimeError("RPC transfer destroyed before it finished sending"));
   }
 }
 
@@ -179,20 +203,57 @@ void OutboundTransfer::Abort(const Status &status) {
   aborted_ = true;
 }
 
+void OutboundTransfer::Cancel(const shared_ptr<OutboundCall> &call,
+                              const Status &status) {
+  // Only transfer for outbound calls support cancellation.
+  DCHECK(is_for_outbound_call());
+  // If transfer has finished already, it's a no-op.
+  if (TransferFinished()) {
+    return;
+  }
+  // If transfer hasn't started yet, simply abort it.
+  if (!TransferStarted()) {
+    Abort(status);
+    return;
+  }
+  // Transfer has started already. Update the payload to give up the sidecars
+  // if they haven't all been sent yet. We only reach this point if remote also
+  // supports cancellation so the last slice is always the footer. Don't cancel
+  // the transfer if only the footer is left.
+  if (cur_slice_idx_ < n_payload_slices_ - 1) {
+    call->MarkPayloadCancelled(&payload_slices_, g_dummy_buffer);
+    status_ = status;
+  }
+}
+
+#define IO_VEC_SIZE (16)
+
 Status OutboundTransfer::SendBuffer(Socket &socket) {
-  CHECK_LT(cur_slice_idx_, n_payload_slices_);
+  DCHECK_LT(cur_slice_idx_, n_payload_slices_);
 
-  int n_iovecs = n_payload_slices_ - cur_slice_idx_;
-  struct iovec iovec[n_iovecs];
-  {
-    int offset_in_slice = cur_offset_in_slice_;
-    for (int i = 0; i < n_iovecs; i++) {
-      Slice &slice = payload_slices_[cur_slice_idx_ + i];
-      iovec[i].iov_base = slice.mutable_data() + offset_in_slice;
-      iovec[i].iov_len = slice.size() - offset_in_slice;
-
-      offset_in_slice = 0;
+  int idx = cur_slice_idx_;
+  int offset_in_slice = cur_offset_in_slice_;
+  struct iovec iovec[IO_VEC_SIZE];
+  int n_iovecs;
+  for (n_iovecs = 0; n_iovecs < IO_VEC_SIZE && idx < n_payload_slices_; ++n_iovecs) {
+    Slice &slice = payload_slices_[idx];
+    uint8_t* ptr = slice.mutable_data();
+    if (PREDICT_TRUE(ptr != g_dummy_buffer)) {
+      iovec[n_iovecs].iov_base = ptr + offset_in_slice;
+      iovec[n_iovecs].iov_len = slice.size() - offset_in_slice;
+    } else {
+      iovec[n_iovecs].iov_base = g_dummy_buffer;
+      iovec[n_iovecs].iov_len = slice.size() - offset_in_slice;
+      // The dummy buffer is of limited size. Split a slice into multiple slices
+      // if it's larger than DUMMY_BUFFER_SIZE.
+      if (iovec[n_iovecs].iov_len > DUMMY_BUFFER_SIZE) {
+        iovec[n_iovecs].iov_len = DUMMY_BUFFER_SIZE;
+        offset_in_slice += DUMMY_BUFFER_SIZE;
+        continue;
+      }
     }
+    offset_in_slice = 0;
+    ++idx;
   }
 
   int32_t written;
@@ -218,7 +279,11 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
   }
 
   if (cur_slice_idx_ == n_payload_slices_) {
-    callbacks_->NotifyTransferFinished();
+    if (PREDICT_FALSE(!status_.ok())) {
+      callbacks_->NotifyTransferAborted(status_);
+    } else {
+      callbacks_->NotifyTransferFinished();
+    }
     DCHECK_EQ(0, cur_offset_in_slice_);
   } else {
     DCHECK_LT(cur_slice_idx_, n_payload_slices_);
@@ -238,6 +303,10 @@ bool OutboundTransfer::TransferFinished() const {
     return true;
   }
   return false;
+}
+
+bool OutboundTransfer::TransferAborted() const {
+  return aborted_;
 }
 
 string OutboundTransfer::HexDump() const {

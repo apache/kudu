@@ -225,15 +225,19 @@ class GenericCalculatorService : public ServiceIf {
     LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
 
-    uint32 pattern = req.pattern();
-    uint32 num_repetitions = req.num_repetitions();
-    Slice sidecar;
-    CHECK_OK(incoming->GetInboundSidecar(req.sidecar_idx(), &sidecar));
-    CHECK_EQ(sidecar.size(), sizeof(uint32) * num_repetitions);
-    const uint32_t *data = reinterpret_cast<const uint32_t*>(sidecar.data());
-    for (int i = 0; i < num_repetitions; ++i) CHECK_EQ(data[i], pattern);
+    uint32_t pattern = req.pattern();
+    for (int i = 0; i < req.sidecar_idx_size(); ++i) {
+      Slice sidecar;
+      CHECK_OK(incoming->GetInboundSidecar(req.sidecar_idx(i), &sidecar));
+      CHECK_EQ(sidecar.size() % sizeof(uint32_t), 0);
+      const uint32_t *data = reinterpret_cast<const uint32_t*>(sidecar.data());
+      int num_repetitions = sidecar.size() / sizeof(uint32_t);
+      for (int j = 0; j < num_repetitions; ++j) {
+        CHECK_EQ(data[j], pattern);
+      }
+    }
 
-    SleepResponsePB resp;
+    SleepWithSidecarResponsePB resp;
     incoming->RespondSuccess(resp);
   }
 };
