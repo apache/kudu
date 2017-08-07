@@ -257,6 +257,7 @@ void MaintenanceManager::RunSchedulerThread() {
       LOG_WITH_PREFIX(INFO) << "Prepare failed for " << op->name()
                             << ".  Re-running scheduler.";
       op->running_--;
+      running_ops_--;
       op->cond_->Signal();
       continue;
     }
