@@ -26,6 +26,7 @@
 
 namespace kudu {
 
+class EasyJson;
 class Schema;
 struct IteratorStats;
 
@@ -66,7 +67,7 @@ class TabletServerPathHandlers {
   void HandleDashboardsPage(const Webserver::WebRequest& req,
                             std::ostringstream* output);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
-                                    std::ostringstream* output);
+                                    EasyJson* output);
   std::string ConsensusStatePBToHtml(const consensus::ConsensusStatePB& cstate) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
   std::string IteratorStatsToHtml(const Schema& projection,

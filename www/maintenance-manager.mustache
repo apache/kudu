@@ -1,0 +1,84 @@
+{{!
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+}}{{#raw}}{{{.}}}{{/raw}}{{^raw}}
+
+<h1>Maintenance Manager state</h1>
+
+<h3>Running operations</h3>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Instances running</th>
+    </tr>
+  </thead>
+  <tbody>
+   {{#running_operations}}
+    <tr>
+      <td>{{name}}</td>
+      <td>{{instances_running}}</td>
+    </tr>
+   {{/running_operations}}
+  </tbody>
+</table>
+
+<h3>Recent completed operations</h3>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Duration</th>
+      <th>Time since op started</th>
+    </tr>
+  </thead>
+  <tbody>
+   {{#completed_operations}}
+    <tr>
+      <td>{{name}}</td>
+      <td>{{duration}}</td>
+      <td>{{time_since_start}}</td>
+    </tr>
+   {{/completed_operations}}
+  </tbody>
+</table>
+
+<h3>Non-running operations</h3>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Runnable</th>
+      <th>RAM anchored</th>
+      <th>Logs retained</th>
+      <th>Perf</th>
+    </tr>
+  </thead>
+  <tbody>
+   {{#registered_operations}}
+    <tr>
+      <td>{{name}}</td>
+      <td>{{runnable}}</td>
+      <td>{{ram_anchored}}</td>
+      <td>{{logs_retained}}</td>
+      <td>{{perf}}</td>
+    </tr>
+   {{/registered_operations}}
+  </tbody>
+</table>
+
+{{/raw}}

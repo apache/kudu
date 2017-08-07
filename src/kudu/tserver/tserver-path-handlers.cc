@@ -40,6 +40,7 @@
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
@@ -104,7 +105,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/dashboards", "Dashboards",
     boost::bind(&TabletServerPathHandlers::HandleDashboardsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/maintenance-manager", "",
     boost::bind(&TabletServerPathHandlers::HandleMaintenanceManagerPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
@@ -594,65 +595,43 @@ string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
 }
 
 void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
-                                                            std::ostringstream* output) {
+                                                            EasyJson* output) {
   MaintenanceManager* manager = tserver_->maintenance_manager();
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);
   if (ContainsKey(req.parsed_args, "raw")) {
-    *output << SecureDebugString(pb);
+    (*output)["raw"] = SecureDebugString(pb);
     return;
   }
 
-  int ops_count = pb.registered_operations_size();
-
-  *output << "<h1>Maintenance Manager state</h1>\n";
-  *output << "<h3>Running operations</h3>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Name</th><th>Instances running</th></tr></thead>\n";
-  *output << "<tbody>\n";
-  for (int i = 0; i < ops_count; i++) {
-    const MaintenanceManagerStatusPB_MaintenanceOpPB& op_pb = pb.registered_operations(i);
+  EasyJson running_ops = output->Set("running_operations", EasyJson::kArray);
+  for (const auto& op_pb : pb.registered_operations()) {
     if (op_pb.running() > 0) {
-      *output <<  Substitute("<tr><td>$0</td><td>$1</td></tr>\n",
-                             EscapeForHtmlToString(op_pb.name()),
-                             op_pb.running());
+      EasyJson running_op = running_ops.PushBack(EasyJson::kObject);
+      running_op["name"] = op_pb.name();
+      running_op["instances_running"] = op_pb.running();
     }
   }
-  *output << "</tbody></table>\n";
 
-  *output << "<h3>Recent completed operations</h3>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Name</th><th>Duration</th>"
-      "<th>Time since op started</th></tr></thead>\n";
-  *output << "<tbody>\n";
-  for (int i = 0; i < pb.completed_operations_size(); i++) {
-    const MaintenanceManagerStatusPB_OpInstancePB& op_pb = pb.completed_operations(i);
-    *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
-                           EscapeForHtmlToString(op_pb.name()),
-                           HumanReadableElapsedTime::ToShortString(
-                               op_pb.duration_millis() / 1000.0),
-                           HumanReadableElapsedTime::ToShortString(
-                               op_pb.millis_since_start() / 1000.0));
+  EasyJson completed_ops = output->Set("completed_operations", EasyJson::kArray);
+  for (const auto& op_pb : pb.completed_operations()) {
+    EasyJson completed_op = completed_ops.PushBack(EasyJson::kObject);
+    completed_op["name"] = op_pb.name();
+    completed_op["duration"] =
+      HumanReadableElapsedTime::ToShortString(op_pb.duration_millis() / 1000.0);
+    completed_op["time_since_start"] =
+      HumanReadableElapsedTime::ToShortString(op_pb.millis_since_start() / 1000.0);
   }
-  *output << "</tbody></table>\n";
 
-  *output << "<h3>Non-running operations</h3>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Name</th><th>Runnable</th><th>RAM anchored</th>\n"
-          << "       <th>Logs retained</th><th>Perf</th></tr></thead>\n";
-  *output << "<tbody>\n";
-  for (int i = 0; i < ops_count; i++) {
-    const MaintenanceManagerStatusPB_MaintenanceOpPB& op_pb = pb.registered_operations(i);
-    if (op_pb.running() == 0) {
-      *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
-                            EscapeForHtmlToString(op_pb.name()),
-                            op_pb.runnable(),
-                            HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()),
-                            HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes()),
-                            op_pb.perf_improvement());
-    }
+  EasyJson registered_ops = output->Set("registered_operations", EasyJson::kArray);
+  for (const auto& op_pb : pb.registered_operations()) {
+    EasyJson registered_op = registered_ops.PushBack(EasyJson::kObject);
+    registered_op["name"] = op_pb.name();
+    registered_op["runnable"] = op_pb.runnable();
+    registered_op["ram_anchored"] = HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes());
+    registered_op["logs_retained"] = HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes());
+    registered_op["perf"] = op_pb.perf_improvement();
   }
-  *output << "</tbody></table>\n";
 }
 
 } // namespace tserver
