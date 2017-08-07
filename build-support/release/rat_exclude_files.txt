@@ -9,6 +9,8 @@ pax_global_header
 *.pdf
 version.txt
 build-support/release/rat_exclude_files.txt
+build-support/iwyu/mappings/boost-all-private.imp
+build-support/iwyu/mappings/boost-all.imp
 docs/support/doxygen/client_api.footer.in
 java/gradlew
 java/gradle/gradle-wrapper.jar
