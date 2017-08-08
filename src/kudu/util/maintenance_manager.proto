@@ -32,7 +32,7 @@ message MaintenanceManagerStatusPB {
   }
 
   message OpInstancePB {
-    required string thread_id = 1;
+    required int64 thread_id = 1;
     required string name = 2;
     // How long the op took to run. Only present if the instance completed.
     optional int32 duration_millis = 3;

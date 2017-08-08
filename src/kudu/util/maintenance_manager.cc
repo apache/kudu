@@ -431,22 +431,25 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
-  std::thread::id thread_id = std::this_thread::get_id();
+  int64_t thread_id = Thread::CurrentThreadId();
   OpInstance op_instance;
   op_instance.thread_id = thread_id;
   op_instance.name = op->name();
   op_instance.start_mono_time = MonoTime::Now();
   op->RunningGauge()->Increment();
   {
-    std::lock_guard<Mutex> lock(lock_);
+    std::lock_guard<Mutex> lock(running_instances_lock_);
     InsertOrDie(&running_instances_, thread_id, &op_instance);
   }
 
-  auto cleanup = MakeScopedCleanup([&]{
+  auto cleanup = MakeScopedCleanup([&] {
     op->RunningGauge()->Decrement();
 
     std::lock_guard<Mutex> l(lock_);
-    running_instances_.erase(thread_id);
+    {
+      std::lock_guard<Mutex> lock(running_instances_lock_);
+      running_instances_.erase(thread_id);
+    }
     op_instance.duration = MonoTime::Now() - op_instance.start_mono_time;
     completed_ops_[completed_ops_count_ % completed_ops_.size()] = op_instance;
     completed_ops_count_++;
@@ -496,8 +499,11 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     }
   }
 
-  for (const auto& running_instance : running_instances_) {
-    *out_pb->add_running_operations() = running_instance.second->DumpToPB();
+  {
+    std::lock_guard<Mutex> lock(running_instances_lock_);
+    for (const auto& running_instance : running_instances_) {
+      *out_pb->add_running_operations() = running_instance.second->DumpToPB();
+    }
   }
 
   for (int n = 1; n <= completed_ops_.size(); n++) {

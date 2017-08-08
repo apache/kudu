@@ -149,7 +149,7 @@ class MaintenanceOpStats {
 // Represents an instance of a maintenance operation.
 struct OpInstance {
   // Id of thread the instance ran on.
-  std::thread::id thread_id;
+  int64_t thread_id;
   // Name of operation.
   std::string name;
   // Time the operation took to run. Value is unitialized if instance is still running.
@@ -158,9 +158,7 @@ struct OpInstance {
 
   MaintenanceManagerStatusPB_OpInstancePB DumpToPB() const {
     MaintenanceManagerStatusPB_OpInstancePB pb;
-    std::stringstream ss;
-    ss << thread_id;
-    pb.set_thread_id(ss.str());
+    pb.set_thread_id(thread_id);
     pb.set_name(name);
     if (duration.Initialized()) {
       pb.set_duration_millis(duration.ToMilliseconds());
@@ -329,12 +327,6 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   ConditionVariable cond_;
   bool shutdown_;
   int32_t polling_interval_ms_;
-  // Maps thread ids to instances of an op that they're running. Instances should be added
-  // right before MaintenanceOp::Perform() is called, and should be removed right after
-  // MaintenanceOp::Perform() completes. Any thread that adds an instance to this map
-  // owns that instance, and the instance should exist until the same thread removes it.
-  // Must acquire lock_ before accessing.
-  std::map<std::thread::id, OpInstance*> running_instances_;
   uint64_t running_ops_;
   // Vector used as a circular buffer for recently completed ops. Elements need to be added at
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
@@ -346,6 +338,21 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // Function which should return true if the server is under global memory pressure.
   // This is indirected for testing purposes.
   std::function<bool(double*)> memory_pressure_func_;
+
+  // Running instances lock.
+  //
+  // This is separate of lock_ so that worker threads don't need to take the
+  // global MM lock when beginning operations. When taking both
+  // running_instances_lock_ and lock_, lock_ must be acquired first.
+  Mutex running_instances_lock_;
+
+  // Maps thread ids to instances of an op that they're running. Instances should be added
+  // right before MaintenanceOp::Perform() is called, and should be removed right after
+  // MaintenanceOp::Perform() completes. Any thread that adds an instance to this map
+  // owns that instance, and the instance should exist until the same thread removes it.
+  //
+  // Protected by running_instances_lock_;
+  std::unordered_map<int64_t, OpInstance*> running_instances_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };
