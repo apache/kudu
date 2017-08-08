@@ -66,7 +66,7 @@ esac
 
 
 if [ ! -e $APP_HOME/gradle/wrapper/gradle-wrapper.jar ]; then
-   curl -o $APP_HOME/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.0.2/gradle/wrapper/gradle-wrapper.jar
+   curl -o $APP_HOME/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.1.0/gradle/wrapper/gradle-wrapper.jar
 fi
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar

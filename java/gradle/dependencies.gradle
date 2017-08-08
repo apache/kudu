@@ -23,22 +23,22 @@ ext {
   versions = [:]
   libs = [:]
   // All supported scala versions.
-  scalaVersions = propertyWithDefault("scalaVersions", "2.11.8,2.10.6").split(",")
+  scalaVersions = propertyWithDefault("scalaVersions", "2.11.11,2.10.6").split(",")
 }
 
 versions += [
     async          : "1.4.1",
-    avro           : "1.8.1",
+    avro           : "1.8.2",
     clojure        : "1.8.0",
     clojureToolsCli: "0.3.5",
     commonsIo      : "2.5",
     findbugs       : "3.0.1",
-    flume          : "1.6.0",
-    gradle         : "4.0.2",
+    flume          : "1.7.0",
+    gradle         : "4.1.0",
     guava          : "20.0",
     hadoop         : "2.8.1",
     hamcrest       : "1.3",
-    jepsen         : "0.1.3",
+    jepsen         : "0.1.5",
     jsr305         : "3.0.2",
     junit          : "4.12",
     log4j          : "1.2.17",

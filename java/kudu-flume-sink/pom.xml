@@ -20,11 +20,6 @@
   <artifactId>kudu-flume-sink</artifactId>
   <name>Kudu Flume NG Sink</name>
 
-  <properties>
-    <avro.version>1.8.1</avro.version>
-    <flume.version>1.6.0</flume.version>
-  </properties>
-
   <build>
     <plugins>
       <plugin>

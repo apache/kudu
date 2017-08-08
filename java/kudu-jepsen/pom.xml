@@ -30,9 +30,6 @@
         <!-- Jepsen tests require specific infrastructure and do not run as part of the
              regular java tests.-->
         <skipTests>true</skipTests>
-        <clojure.version>1.8.0</clojure.version>
-        <jepsen.version>0.1.3</jepsen.version>
-        <clojure.maven.plugin.version>1.7.1</clojure.maven.plugin.version>
         <!-- List of Kudu Master nodes (e.g. "m0" or "m0,m1,m2") -->
         <masterNodes>m0</masterNodes>
         <!-- List of Kudu Tablet Server nodes (e.g. "t0,t1,t2") -->
@@ -70,7 +67,7 @@
         <dependency>
             <groupId>org.clojure</groupId>
             <artifactId>tools.cli</artifactId>
-            <version>0.3.5</version>
+            <version>${clojure.tools.version}</version>
         </dependency>
 
         <dependency>
@@ -110,7 +107,7 @@
             <plugin>
               <groupId>com.theoryinpractise</groupId>
               <artifactId>clojure-maven-plugin</artifactId>
-              <version>${clojure.maven.plugin.version}</version>
+              <version>${clojure-maven-plugin.version}</version>
               <!-- Load maven extensions (like type and packaging handlers) for
                    the clojure maven plugin-->
               <extensions>true</extensions>
@@ -128,7 +125,7 @@
               <!-- Do not run the checkstyle plugin for clojure sources -->
               <groupId>org.apache.maven.plugins</groupId>
               <artifactId>maven-checkstyle-plugin</artifactId>
-              <version>2.17</version>
+              <version>${maven-checkstyle-plugin.version}</version>
               <executions>
                 <execution>
                   <id>validate</id>
