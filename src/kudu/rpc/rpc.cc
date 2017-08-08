@@ -25,6 +25,7 @@
 #include "kudu/rpc/rpc_header.pb.h"
 
 using std::shared_ptr;
+using std::string;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

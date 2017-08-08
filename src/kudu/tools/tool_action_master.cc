@@ -46,6 +46,7 @@ using master::MasterServiceProxy;
 using std::cout;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace tools {
 namespace {

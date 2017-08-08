@@ -45,6 +45,8 @@ METRIC_DEFINE_gauge_size(server, active_scanners,
                          kudu::MetricUnit::kScanners,
                          "Number of scanners that are currently active");
 
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

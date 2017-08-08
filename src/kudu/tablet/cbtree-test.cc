@@ -31,13 +31,14 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-namespace tablet {
-namespace btree {
-
+using std::string;
 using std::thread;
 using std::unordered_set;
 using std::vector;
+
+namespace kudu {
+namespace tablet {
+namespace btree {
 
 class TestCBTree : public KuduTest {
  protected:

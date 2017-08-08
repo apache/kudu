@@ -55,7 +55,9 @@ METRIC_DECLARE_entity(tablet);
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 
@@ -479,9 +481,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   void VerifyNoCommitsBeforeReplicates(const vector<LogEntryPB*>& entries) {
-    unordered_set<OpId,
-                  OpIdHashFunctor,
-                  OpIdEqualsFunctor> replication_ops;
+    std::unordered_set<OpId, OpIdHashFunctor, OpIdEqualsFunctor> replication_ops;
 
     for (const LogEntryPB* entry : entries) {
       if (entry->has_replicate()) {
@@ -567,7 +567,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
-  unordered_map<ConsensusRound*, Synchronizer*> syncs_;
+  std::unordered_map<ConsensusRound*, Synchronizer*> syncs_;
 };
 
 // Tests Replicate/Commit a single message through the leader.

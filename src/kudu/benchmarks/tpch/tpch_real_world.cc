@@ -103,6 +103,9 @@ DEFINE_string(tpch_partition_strategy, "range",
               "tablets. This is less ideal, but more faithfully represents a lot of write "
               "workloads.");
 
+using std::string;
+using std::vector;
+
 namespace kudu {
 
 using client::KuduRowResult;

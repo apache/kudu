@@ -69,8 +69,9 @@ namespace kudu {
 namespace log {
 
 using consensus::OpId;
-using std::vector;
+using std::string;
 using std::shared_ptr;
+using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;

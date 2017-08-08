@@ -401,12 +401,12 @@ class Ksck {
   // If tablets is not empty, checks only the specified tablet IDs.
   // If both are specified, takes the intersection.
   // If both are empty (unset), all tables and tablets are checked.
-  void set_table_filters(vector<string> table_names) {
+  void set_table_filters(std::vector<std::string> table_names) {
     table_filters_ = std::move(table_names);
   }
 
   // See above.
-  void set_tablet_id_filters(vector<string> tablet_ids) {
+  void set_tablet_id_filters(std::vector<std::string> tablet_ids) {
     tablet_id_filters_ = std::move(tablet_ids);
   }
 
@@ -451,25 +451,25 @@ class Ksck {
                            int table_num_replicas);
 
   // Print an informational message to this instance's output stream.
-  ostream& Out() {
+  std::ostream& Out() {
     return *out_;
   }
 
   // Print an error message to this instance's output stream.
-  ostream& Error() {
+  std::ostream& Error() {
     return (*out_) << Color(AnsiCode::RED, "ERROR: ");
   }
 
   // Print a warning message to this instance's output stream.
-  ostream& Warn() {
+  std::ostream& Warn() {
     return (*out_) << Color(AnsiCode::YELLOW, "WARNING: ");
   }
 
   const std::shared_ptr<KsckCluster> cluster_;
 
   bool check_replica_count_ = true;
-  vector<string> table_filters_;
-  vector<string> tablet_id_filters_;
+  std::vector<std::string> table_filters_;
+  std::vector<std::string> tablet_id_filters_;
 
   std::ostream* out_;
 

@@ -30,6 +30,7 @@
 
 using google::protobuf::io::ZeroCopyOutputStream;
 using google::protobuf::io::Printer;
+using std::string;
 
 namespace kudu {
 

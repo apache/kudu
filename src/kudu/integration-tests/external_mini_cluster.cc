@@ -67,6 +67,7 @@ using rapidjson::Value;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;

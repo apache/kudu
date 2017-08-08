@@ -39,6 +39,7 @@ DECLARE_int64(disk_reserved_bytes_free_for_testing);
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

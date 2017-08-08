@@ -371,7 +371,7 @@ template<> struct GoodFastHash<StringPiece> {
 #endif
 
 // allow StringPiece to be logged
-extern ostream& operator<<(ostream& o, StringPiece piece);
+extern std::ostream& operator<<(std::ostream& o, StringPiece piece);
 
 
 #endif  // STRINGS_STRINGPIECE_H__

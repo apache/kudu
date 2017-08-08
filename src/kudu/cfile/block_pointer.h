@@ -26,9 +26,8 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/status.h"
 
-namespace kudu { namespace cfile {
-
-using std::string;
+namespace kudu {
+namespace cfile {
 
 class BlockPointer {
  public:
@@ -46,7 +45,7 @@ class BlockPointer {
     offset_(offset),
     size_(size) {}
 
-  string ToString() const {
+  std::string ToString() const {
     return strings::Substitute("offset=$0 size=$1", offset_, size_);
   }
 

@@ -42,6 +42,7 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::master::SysCatalogTable;
+using std::pair;
 using std::string;
 using std::vector;
 using std::unique_ptr;

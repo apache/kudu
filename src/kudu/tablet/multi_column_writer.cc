@@ -36,7 +36,7 @@ using std::unique_ptr;
 
 MultiColumnWriter::MultiColumnWriter(FsManager* fs,
                                      const Schema* schema,
-                                     string tablet_id)
+                                     std::string tablet_id)
   : fs_(fs),
     schema_(schema),
     finished_(false),

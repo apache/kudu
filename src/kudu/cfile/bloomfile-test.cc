@@ -24,6 +24,7 @@ namespace kudu {
 namespace cfile {
 
 using fs::CountingReadableBlock;
+using fs::ReadableBlock;
 using std::unique_ptr;
 
 class BloomFileTest : public BloomFileTestBase {

@@ -118,7 +118,7 @@ class ScannerManager {
   // Periodically call RemoveExpiredScanners().
   void RunRemovalThread();
 
-  ScannerMapStripe& GetStripeByScannerId(const string& scanner_id);
+  ScannerMapStripe& GetStripeByScannerId(const std::string& scanner_id);
 
   // (Optional) scanner metrics for this instance.
   gscoped_ptr<ScannerMetrics> metrics_;

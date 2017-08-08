@@ -111,7 +111,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   *output << "<h3>" << "Registrations" << "</h3>\n";
   auto generate_table = [](const vector<string>& rows,
                            const string& header,
-                           ostream* output) {
+                           std::ostream* output) {
     if (!rows.empty()) {
       *output << "<h4>" << header << "</h4>\n";
       *output << "<table class='table table-striped'>\n";

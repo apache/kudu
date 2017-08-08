@@ -64,7 +64,7 @@ class CountingReadableBlock : public ReadableBlock {
   }
 
   virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    vector<Slice> results = { *result };
+    std::vector<Slice> results = { *result };
     return ReadV(offset, &results);
   }
 

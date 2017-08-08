@@ -42,6 +42,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
 using std::unique_ptr;
 using std::vector;
 
@@ -77,7 +78,7 @@ class TestEncoding : public KuduTest {
                                  int num_items,
                                  const char *fmt_str) {
     vector<unique_ptr<string>> to_insert;
-    std::vector<Slice> slices;
+    vector<Slice> slices;
     for (uint i = 0; i < num_items; i++) {
       to_insert.emplace_back(new string(StringPrintf(fmt_str, i)));
       slices.emplace_back(to_insert.back()->data());
@@ -416,7 +417,7 @@ class TestEncoding : public KuduTest {
     ASSERT_EQ(kOrdinalPosBase, pbd.GetFirstRowId());
     ASSERT_EQ(0, pbd.GetCurrentIndex());
 
-    std::vector<CppType> decoded;
+    vector<CppType> decoded;
     decoded.resize(size);
 
     ColumnBlock dst_block(GetTypeInfo(Type), nullptr, &decoded[0], size, &arena_);
@@ -496,7 +497,7 @@ class TestEncoding : public KuduTest {
 
     srand(123);
 
-    std::vector<CppType> to_insert;
+    vector<CppType> to_insert;
     Random rd(SeedRandom());
     for (int i = 0; i < 10003; i++) {
       int64_t val = rd.Next64() % std::numeric_limits<CppType>::max();
@@ -532,7 +533,7 @@ class TestEncoding : public KuduTest {
 
     ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
 
-    std::vector<CppType> decoded;
+    vector<CppType> decoded;
     decoded.resize(to_insert.size());
 
     ColumnBlock dst_block(GetTypeInfo(IntType), nullptr,
@@ -598,7 +599,7 @@ class TestEncoding : public KuduTest {
 
     srand(123);
 
-    std::vector<uint8_t> to_insert;
+    vector<uint8_t> to_insert;
     for (int i = 0; i < 10003; ) {
       int run_size = random() % 100;
       bool val = random() % 2;
@@ -619,7 +620,7 @@ class TestEncoding : public KuduTest {
 
     ASSERT_EQ(kOrdinalPosBase, bd.GetFirstRowId());
 
-    std::vector<uint8_t> decoded;
+    vector<uint8_t> decoded;
     decoded.resize(to_insert.size());
 
     ColumnBlock dst_block(GetTypeInfo(BOOL), nullptr,

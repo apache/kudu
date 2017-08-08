@@ -59,6 +59,7 @@ DEFINE_bool(fail_dns_resolution, false, "Whether to fail all dns resolution, for
 TAG_FLAG(fail_dns_resolution, hidden);
 
 using std::function;
+using std::string;
 using std::unordered_set;
 using std::unique_ptr;
 using std::vector;

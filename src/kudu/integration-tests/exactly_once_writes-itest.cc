@@ -21,6 +21,9 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
+using std::string;
+using std::vector;
+
 namespace kudu {
 namespace tserver {
 
@@ -69,7 +72,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
   Sockaddr address = cluster_.get()->tablet_server(
       thread_idx % FLAGS_num_replicas)->bound_rpc_addr();
 
-  RpcController controller;
+  rpc::RpcController controller;
 
   const Schema schema = GetSimpleTestSchema();
 
@@ -151,7 +154,7 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
 
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
-  vector<TServerDetails*> tservers;
+  vector<itest::TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
 
   vector<scoped_refptr<kudu::Thread>> threads;

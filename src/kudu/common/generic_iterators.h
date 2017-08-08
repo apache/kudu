@@ -51,7 +51,7 @@ class MergeIterator : public RowwiseIterator {
 
   virtual bool HasNext() const OVERRIDE;
 
-  virtual string ToString() const OVERRIDE;
+  virtual std::string ToString() const OVERRIDE;
 
   virtual const Schema& schema() const OVERRIDE;
 
@@ -79,7 +79,7 @@ class MergeIterator : public RowwiseIterator {
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
-  vector<IteratorStats> finished_iter_stats_by_col_;
+  std::vector<IteratorStats> finished_iter_stats_by_col_;
 
   // The number of iterators, used by ToString().
   const int num_orig_iters_;
@@ -110,7 +110,7 @@ class UnionIterator : public RowwiseIterator {
 
   bool HasNext() const OVERRIDE;
 
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
 
   const Schema &schema() const OVERRIDE {
     CHECK(initted_);
@@ -149,7 +149,7 @@ class UnionIterator : public RowwiseIterator {
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
-  vector<IteratorStats> finished_iter_stats_by_col_;
+  std::vector<IteratorStats> finished_iter_stats_by_col_;
 
   // When the underlying iterators are initialized, each needs its own
   // copy of the scan spec in order to do its own pushdown calculations, etc.
@@ -173,7 +173,7 @@ class MaterializingIterator : public RowwiseIterator {
 
   bool HasNext() const OVERRIDE;
 
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
 
   const Schema &schema() const OVERRIDE {
     return iter_->schema();
@@ -227,7 +227,7 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
 
   bool HasNext() const OVERRIDE;
 
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
 
   const Schema &schema() const OVERRIDE {
     return base_iter_->schema();

@@ -180,7 +180,7 @@ class BoundCalculator {
 
   // Compute the lower and upper bounds to the 0-1 knapsack problem with the elements
   // added so far.
-  pair<double, double> ComputeLowerAndUpperBound() const {
+  std::pair<double, double> ComputeLowerAndUpperBound() const {
     int excess_weight = total_weight_ - max_weight_;
     if (excess_weight <= 0) {
       // If we've added less than the budget, our "bounds" are just including
@@ -350,7 +350,7 @@ void BudgetedCompactionPolicy::RunExact(
 // See docs/design-docs/compaction-policy.md for an overview of the compaction
 // policy implemented in this function.
 Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
-                                             unordered_set<RowSet*>* picked,
+                                             std::unordered_set<RowSet*>* picked,
                                              double* quality,
                                              std::vector<std::string>* log) {
   vector<RowSetInfo> asc_min_key, asc_max_key;

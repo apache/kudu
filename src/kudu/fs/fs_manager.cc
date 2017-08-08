@@ -90,6 +90,8 @@ using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
 using std::map;
+using std::ostream;
+using std::set;
 using std::stack;
 using std::string;
 using std::unique_ptr;
@@ -305,7 +307,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   // subdirectories.
   //
   // In the event of failure, delete everything we created.
-  deque<ScopedFileDeleter*> delete_on_failure;
+  std::deque<ScopedFileDeleter*> delete_on_failure;
   ElementDeleter d(&delete_on_failure);
 
   InstanceMetadataPB metadata;

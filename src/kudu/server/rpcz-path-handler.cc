@@ -37,6 +37,7 @@ using kudu::rpc::DumpRpczStoreResponsePB;
 using kudu::rpc::Messenger;
 using std::ostringstream;
 using std::shared_ptr;
+using std::string;
 
 namespace kudu {
 

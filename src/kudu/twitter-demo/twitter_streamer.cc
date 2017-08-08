@@ -32,6 +32,7 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using std::thread;
 
 const char* kTwitterUrl = "https://stream.twitter.com/1.1/statuses/sample.json";
 

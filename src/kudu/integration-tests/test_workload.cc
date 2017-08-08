@@ -81,7 +81,7 @@ void TestWorkload::set_schema(const client::KuduSchema& schema) {
   // Do some sanity checks on the schema. They reflect how the rest of
   // TestWorkload is going to use the schema.
   CHECK_GT(schema.num_columns(), 0) << "Schema should have at least one column";
-  vector<int> key_indexes;
+  std::vector<int> key_indexes;
   schema.GetPrimaryKeyColumnIndexes(&key_indexes);
   CHECK_EQ(1, key_indexes.size()) << "Schema should have just one key column";
   CHECK_EQ(0, key_indexes[0]) << "Schema's key column should be index 0";
@@ -150,7 +150,7 @@ void TestWorkload::WriteThread() {
         tools::GenerateDataForRow(schema_, key, &rng_, row);
         if (payload_bytes_) {
           // Note: overriding payload_bytes_ requires the "simple" schema.
-          string test_payload(payload_bytes_.get(), '0');
+          std::string test_payload(payload_bytes_.get(), '0');
           CHECK_OK(row->SetStringCopy(2, test_payload));
         }
         CHECK_OK(session->Apply(insert.release()));
@@ -246,7 +246,7 @@ void TestWorkload::Setup() {
 
   if (!table_exists) {
     // Create split rows.
-    vector<const KuduPartialRow*> splits;
+    std::vector<const KuduPartialRow*> splits;
     for (int i = 1; i < num_tablets_; i++) {
       KuduPartialRow* r = schema_.NewRow();
       CHECK_OK(r->SetInt32("key", MathLimits<int32_t>::kMax / num_tablets_ * i));

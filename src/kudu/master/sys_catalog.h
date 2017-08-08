@@ -234,7 +234,7 @@ class SysCatalogTable {
   void ReqDeleteTablets(tserver::WriteRequestPB* req,
                         const std::vector<TabletInfo*>& tablets);
 
-  static string TskSeqNumberToEntryId(int64_t seq_number);
+  static std::string TskSeqNumberToEntryId(int64_t seq_number);
 
   // Special string injected into SyncWrite() random failures (if enabled).
   //

@@ -32,6 +32,8 @@
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;
+using std::vector;
+using strings::Substitute;
 
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);

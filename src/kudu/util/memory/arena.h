@@ -42,8 +42,6 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/slice.h"
 
-using std::allocator;
-
 namespace kudu {
 
 template<bool THREADSAFE> struct ArenaTraits;
@@ -184,7 +182,7 @@ class ArenaBase {
   }
 
   BufferAllocator* const buffer_allocator_;
-  vector<std::unique_ptr<Component> > arena_;
+  std::vector<std::unique_ptr<Component> > arena_;
 
   // The current component to allocate from.
   // Use AcquireLoadCurrent and ReleaseStoreCurrent to load/store.
@@ -223,7 +221,7 @@ template<class T, bool THREADSAFE> class ArenaAllocator {
 
   ~ArenaAllocator() { }
 
-  pointer allocate(size_type n, allocator<void>::const_pointer /*hint*/ = 0) {
+  pointer allocate(size_type n, std::allocator<void>::const_pointer /*hint*/ = 0) {
     return reinterpret_cast<T*>(arena_->AllocateBytes(n * sizeof(T)));
   }
 

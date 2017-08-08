@@ -28,6 +28,7 @@ namespace tablet {
 
 using std::shared_ptr;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool pad_key) const {

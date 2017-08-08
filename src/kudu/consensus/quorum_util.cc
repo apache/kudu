@@ -28,14 +28,15 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace consensus {
-
 using google::protobuf::RepeatedPtrField;
 using std::map;
 using std::pair;
 using std::string;
+using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace consensus {
 
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config) {
   for (const RaftPeerPB& peer : config.peers()) {

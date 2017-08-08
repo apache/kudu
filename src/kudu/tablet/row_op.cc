@@ -48,7 +48,7 @@ void RowOp::SetMutateSucceeded(gscoped_ptr<OperationResultPB> result) {
   this->result = std::move(result);
 }
 
-string RowOp::ToString(const Schema& schema) const {
+std::string RowOp::ToString(const Schema& schema) const {
   return decoded_op.ToString(schema);
 }
 

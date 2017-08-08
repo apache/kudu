@@ -50,6 +50,7 @@ using std::endl;
 using std::string;
 using std::stringstream;
 using std::unordered_set;
+using std::vector;
 
 using strings::Substitute;
 

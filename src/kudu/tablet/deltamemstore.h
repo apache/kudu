@@ -194,13 +194,13 @@ class DMSIterator : public DeltaIterator {
 
   Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
 
-  Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
+  Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
 
-  Status FilterColumnIdsAndCollectDeltas(const vector<ColumnId>& col_ids,
-                                         vector<DeltaKeyAndUpdate>* out,
+  Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
+                                         std::vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) OVERRIDE;
 
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
 
   virtual bool HasNext() OVERRIDE;
 

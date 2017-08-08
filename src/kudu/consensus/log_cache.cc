@@ -53,6 +53,8 @@ DEFINE_int32(global_log_cache_size_limit_mb, 1024,
              "caching log entries across all tablets is kept under this threshold.");
 TAG_FLAG(global_log_cache_size_limit_mb, advanced);
 
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

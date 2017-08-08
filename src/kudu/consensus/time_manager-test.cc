@@ -65,8 +65,8 @@ class TimeManagerTest : public KuduTest {
 
   scoped_refptr<clock::HybridClock> clock_;
   scoped_refptr<TimeManager> time_manager_;
-  vector<unique_ptr<CountDownLatch>> latches_;
-  vector<std::thread> threads_;
+  std::vector<unique_ptr<CountDownLatch>> latches_;
+  std::vector<std::thread> threads_;
 };
 
 // Tests TimeManager's functionality in non-leader mode and the transition to leader mode.

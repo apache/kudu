@@ -40,6 +40,7 @@ METRIC_DEFINE_entity(test_entity);
 namespace kudu {
 
 using debug::ScopedLeakCheckDisabler;
+using std::string;
 using std::vector;
 
 class MultiThreadedMetricsTest : public KuduTest {

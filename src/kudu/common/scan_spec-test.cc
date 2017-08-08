@@ -31,6 +31,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::vector;
+
 namespace kudu {
 
 class TestScanSpec : public KuduTest {

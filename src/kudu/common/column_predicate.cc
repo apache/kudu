@@ -27,6 +27,7 @@
 #include "kudu/util/memory/arena.h"
 
 using std::move;
+using std::string;
 using std::vector;
 
 namespace kudu {

@@ -51,6 +51,8 @@ DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
 DECLARE_string(block_manager);
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

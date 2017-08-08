@@ -37,6 +37,7 @@ using std::shared_ptr;
 using std::static_pointer_cast;
 using std::string;
 using std::unordered_map;
+using std::vector;
 using strings::Substitute;
 
 class MockKsckTabletServer : public KsckTabletServer {

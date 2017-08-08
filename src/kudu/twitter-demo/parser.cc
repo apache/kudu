@@ -71,7 +71,7 @@ static Status ParseTweet(const JsonReader& r,
   return Status::OK();
 }
 
-Status TwitterEventParser::Parse(const string& json, TwitterEvent* event) {
+Status TwitterEventParser::Parse(const std::string& json, TwitterEvent* event) {
   JsonReader r(json);
   RETURN_NOT_OK(r.Init());
   const rapidjson::Value* delete_obj;
@@ -83,7 +83,7 @@ Status TwitterEventParser::Parse(const string& json, TwitterEvent* event) {
   return ParseDelete(r, delete_obj, event);
 }
 
-string TwitterEventParser::ReformatTime(const string& twitter_time) {
+std::string TwitterEventParser::ReformatTime(const std::string& twitter_time) {
   struct tm t;
   memset(&t, 0, sizeof(t));
   // Example: Wed Aug 14 06:31:07 +0000 2013
@@ -95,7 +95,7 @@ string TwitterEventParser::ReformatTime(const string& twitter_time) {
   char buf[100];
   size_t n = strftime(buf, arraysize(buf), "%Y%m%d%H%M%S", &t);
   CHECK_GT(n, 0);
-  return string(buf);
+  return buf;
 }
 
 

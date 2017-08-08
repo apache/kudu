@@ -63,13 +63,8 @@
 #define UTIL_GTL_MAP_UTIL_H_
 
 #include <stddef.h>
-#include <string>
-using std::string;
 #include <utility>
-using std::make_pair;
-using std::pair;
 #include <vector>
-using std::vector;
 
 #include <glog/logging.h>
 
@@ -305,7 +300,7 @@ bool ContainsKeyValuePair(const Collection& collection,
                           const Key& key,
                           const Value& value) {
   typedef typename Collection::const_iterator const_iterator;
-  pair<const_iterator, const_iterator> range = collection.equal_range(key);
+  std::pair<const_iterator, const_iterator> range = collection.equal_range(key);
   for (const_iterator it = range.first; it != range.second; ++it) {
     if (it->second == value) {
       return true;
@@ -324,7 +319,7 @@ bool ContainsKeyValuePair(const Collection& collection,
 template <class Collection>
 bool InsertOrUpdate(Collection* const collection,
                     const typename Collection::value_type& vt) {
-  pair<typename Collection::iterator, bool> ret = collection->insert(vt);
+  std::pair<typename Collection::iterator, bool> ret = collection->insert(vt);
   if (!ret.second) {
     // update
     ret.first->second = vt.second;
@@ -361,7 +356,7 @@ bool InsertAndDeleteExisting(
     Collection* const collection,
     const typename Collection::key_type& key,
     const typename Collection::mapped_type& value) {
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(typename Collection::value_type(key, value));
   if (!ret.second) {
     delete ret.first->second;
@@ -435,7 +430,7 @@ typename Collection::mapped_type& InsertKeyOrDie(
     Collection* const collection,
     const typename Collection::key_type& key) {
   typedef typename Collection::value_type value_type;
-  pair<typename Collection::iterator, bool> res =
+  std::pair<typename Collection::iterator, bool> res =
       collection->insert(value_type(key, typename Collection::mapped_type()));
   CHECK(res.second) << "duplicate key: " << key;
   return res.first->second;
@@ -511,7 +506,7 @@ template <class Collection>
 typename Collection::mapped_type&
 LookupOrInsertNew(Collection* const collection,
                   const typename Collection::key_type& key) {
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(
           typename Collection::value_type(key,
               static_cast<typename Collection::mapped_type>(NULL)));
@@ -530,7 +525,7 @@ typename Collection::mapped_type&
 LookupOrInsertNew(Collection* const collection,
                   const typename Collection::key_type& key,
                   const Arg& arg) {
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(
           typename Collection::value_type(
               key,
@@ -563,7 +558,7 @@ LookupOrInsertNewSharedPtr(
     const typename Collection::key_type& key) {
   typedef typename Collection::mapped_type SharedPtr;
   typedef typename Collection::mapped_type::element_type Element;
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(typename Collection::value_type(key, SharedPtr()));
   if (ret.second) {
     ret.first->second.reset(new Element());
@@ -584,7 +579,7 @@ LookupOrInsertNewSharedPtr(
     const Arg& arg) {
   typedef typename Collection::mapped_type SharedPtr;
   typedef typename Collection::mapped_type::element_type Element;
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(typename Collection::value_type(key, SharedPtr()));
   if (ret.second) {
     ret.first->second.reset(new Element(arg));
@@ -608,7 +603,7 @@ bool UpdateReturnCopy(Collection* const collection,
                       const typename Collection::key_type& key,
                       const typename Collection::mapped_type& value,
                       typename Collection::mapped_type* previous) {
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
       collection->insert(typename Collection::value_type(key, value));
   if (!ret.second) {
     // update
@@ -626,7 +621,7 @@ template <class Collection>
 bool UpdateReturnCopy(Collection* const collection,
                       const typename Collection::value_type& vt,
                       typename Collection::mapped_type* previous) {
-  pair<typename Collection::iterator, bool> ret =
+  std::pair<typename Collection::iterator, bool> ret =
     collection->insert(vt);
   if (!ret.second) {
     // update
@@ -650,7 +645,7 @@ template <class Collection>
 typename Collection::mapped_type* const
 InsertOrReturnExisting(Collection* const collection,
                        const typename Collection::value_type& vt) {
-  pair<typename Collection::iterator, bool> ret = collection->insert(vt);
+  std::pair<typename Collection::iterator, bool> ret = collection->insert(vt);
   if (ret.second) {
     return NULL;  // Inserted, no existing previous value.
   } else {
@@ -750,7 +745,7 @@ void AppendKeysFromMap(const MapContainer& map_container,
 // without the complexity of a SFINAE-based solution.)
 template <class MapContainer, class KeyType>
 void AppendKeysFromMap(const MapContainer& map_container,
-                       vector<KeyType>* key_container) {
+                       std::vector<KeyType>* key_container) {
   CHECK(key_container != NULL);
   // We now have the opportunity to call reserve(). Calling reserve() every
   // time is a bad idea for some use cases: libstdc++'s implementation of
@@ -794,7 +789,7 @@ void AppendValuesFromMap(const MapContainer& map_container,
 // without the complexity of a SFINAE-based solution.)
 template <class MapContainer, class ValueType>
 void AppendValuesFromMap(const MapContainer& map_container,
-                         vector<ValueType>* value_container) {
+                         std::vector<ValueType>* value_container) {
   CHECK(value_container != NULL);
   // See AppendKeysFromMap for why this is done.
   if (value_container->empty()) {
@@ -826,18 +821,19 @@ void AppendValuesFromMap(const MapContainer& map_container,
 // if (result.second) ....
 //
 template <class MapContainer, typename Function>
-pair<typename MapContainer::mapped_type* const, bool>
+std::pair<typename MapContainer::mapped_type* const, bool>
 ComputeIfAbsentReturnAbsense(MapContainer* container,
                              const typename MapContainer::key_type& key,
                              Function compute_func) {
   typename MapContainer::iterator iter = container->find(key);
   bool new_value = iter == container->end();
   if (new_value) {
-    pair<typename MapContainer::iterator, bool> result = container->emplace(key, compute_func());
+    std::pair<typename MapContainer::iterator, bool> result =
+        container->emplace(key, compute_func());
     DCHECK(result.second) << "duplicate key: " << key;
     iter = result.first;
   }
-  return make_pair(&iter->second, new_value);
+  return std::make_pair(&iter->second, new_value);
 };
 
 // Like the above but doesn't return a pair, just returns a pointer to the value.

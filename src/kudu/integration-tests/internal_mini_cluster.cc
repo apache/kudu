@@ -34,6 +34,8 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -242,7 +244,7 @@ Status InternalMiniCluster::WaitForTabletServerCount(int count) const {
 Status InternalMiniCluster::WaitForTabletServerCount(int count,
                                              MatchMode mode,
                                              vector<shared_ptr<TSDescriptor>>* descs) const {
-  unordered_set<int> masters_to_search;
+  std::unordered_set<int> masters_to_search;
   for (int i = 0; i < num_masters(); i++) {
     if (!mini_master(i)->master()->IsShutdown()) {
       masters_to_search.insert(i);

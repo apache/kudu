@@ -46,7 +46,7 @@ class CrcTest : public KuduTest {
 
 // Basic functionality test.
 TEST_F(CrcTest, TestCRC32C) {
-  const string test_data("abcdefgh");
+  const std::string test_data("abcdefgh");
   const uint64_t kExpectedCrc = 0xa9421b7; // Known value from crcutil usage test program.
 
   Crc* crc32c = GetCrc32cInstance();

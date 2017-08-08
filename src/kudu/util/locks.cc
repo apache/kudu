@@ -21,6 +21,10 @@
 
 namespace kudu {
 
+using base::subtle::Acquire_CompareAndSwap;
+using base::subtle::NoBarrier_Load;
+using base::subtle::Release_Store;
+
 size_t percpu_rwlock::memory_footprint_excluding_this() const {
   // Because locks_ is a dynamic array of non-trivially-destructable types,
   // the returned pointer from new[] isn't guaranteed to point at the start of

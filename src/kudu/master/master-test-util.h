@@ -35,7 +35,7 @@ namespace kudu {
 namespace master {
 
 Status WaitForRunningTabletCount(MiniMaster* mini_master,
-                                 const string& table_name,
+                                 const std::string& table_name,
                                  int expected_count,
                                  GetTableLocationsResponsePB* resp) {
   int wait_time = 1000;

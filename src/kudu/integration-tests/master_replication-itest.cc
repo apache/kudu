@@ -33,6 +33,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
 using std::vector;
 
 namespace kudu {

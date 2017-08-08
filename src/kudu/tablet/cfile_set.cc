@@ -40,11 +40,17 @@ TAG_FLAG(consult_bloom_filters, hidden);
 namespace kudu {
 namespace tablet {
 
+using cfile::BloomFileReader;
+using cfile::CFileIterator;
+using cfile::CFileReader;
+using cfile::ColumnIterator;
 using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
 using fs::ReadableBlock;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////

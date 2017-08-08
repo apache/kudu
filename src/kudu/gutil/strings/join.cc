@@ -8,6 +8,11 @@
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/escaping.h"
 
+using std::map;
+using std::pair;
+using std::string;
+using std::vector;
+
 // ----------------------------------------------------------------------
 // JoinUsing()
 //    This merges a vector of string components with delim inserted

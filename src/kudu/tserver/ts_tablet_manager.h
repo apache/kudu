@@ -198,7 +198,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   };
 
   // Standard log prefix, given a tablet id.
-  static std::string LogPrefix(const string& tablet_id, FsManager *fs_manager);
+  static std::string LogPrefix(const std::string& tablet_id, FsManager *fs_manager);
   std::string LogPrefix(const std::string& tablet_id) const {
     return LogPrefix(tablet_id, fs_manager_);
   }
@@ -329,7 +329,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
  public:
   TransitionInProgressDeleter(TransitionInProgressMap* map, rw_spinlock* lock,
-                              string entry);
+                              std::string entry);
 
  private:
   friend class RefCountedThreadSafe<TransitionInProgressDeleter>;

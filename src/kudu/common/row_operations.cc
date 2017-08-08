@@ -28,6 +28,7 @@
 #include "kudu/util/slice.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

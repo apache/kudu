@@ -19,7 +19,6 @@
 #define KUDU_CFILE_INDEX_BLOCK_H
 
 #include <glog/logging.h>
-#include <string>
 #include <vector>
 
 #include "kudu/common/types.h"
@@ -31,10 +30,6 @@
 
 namespace kudu {
 namespace cfile {
-
-using std::string;
-using std::vector;
-using kudu::DataTypeTraits;
 
 // Forward decl.
 class IndexBlockIterator;
@@ -94,7 +89,7 @@ class IndexBlockBuilder {
   bool is_leaf_;
 
   faststring buffer_;
-  vector<uint32_t> entry_offsets_;
+  std::vector<uint32_t> entry_offsets_;
 };
 
 class IndexBlockReader {

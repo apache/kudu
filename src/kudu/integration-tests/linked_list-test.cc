@@ -54,6 +54,8 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
+using std::string;
+using std::vector;
 
 DEFINE_int32(seconds_to_run, 5, "Number of seconds for which to run the test");
 

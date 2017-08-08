@@ -35,6 +35,10 @@ DEFINE_bool(cache_force_single_shard, false,
             "Override all cache implementations to use just one shard");
 TAG_FLAG(cache_force_single_shard, hidden);
 
+using std::shared_ptr;
+using std::string;
+using std::vector;
+
 namespace kudu {
 
 class MetricEntity;
@@ -43,9 +47,6 @@ Cache::~Cache() {
 }
 
 namespace {
-
-using std::shared_ptr;
-using std::vector;
 
 typedef simple_spinlock MutexType;
 

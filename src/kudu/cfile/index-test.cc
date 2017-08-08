@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
+
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/cfile_writer.h"
@@ -24,10 +26,11 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
-namespace kudu { namespace cfile {
+namespace kudu {
+namespace cfile {
 
 Status SearchInReaderString(const IndexBlockReader &reader,
-                            string search_key,
+                            std::string search_key,
                             BlockPointer *ptr, Slice *match) {
 
   static faststring dst;

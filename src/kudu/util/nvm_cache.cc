@@ -67,6 +67,7 @@ class MetricEntity;
 namespace {
 
 using std::shared_ptr;
+using std::string;
 using std::vector;
 
 typedef simple_spinlock MutexType;

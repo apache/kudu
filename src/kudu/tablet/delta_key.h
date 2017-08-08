@@ -89,7 +89,7 @@ class DeltaKey {
     return Status::OK();
   }
 
-  string ToString() const {
+  std::string ToString() const {
     return strings::Substitute("(row $0@tx$1)", row_idx_, timestamp_.ToString());
   }
 

@@ -41,6 +41,7 @@ TAG_FLAG(rpc_dump_all_traces, advanced);
 TAG_FLAG(rpc_dump_all_traces, runtime);
 
 using std::pair;
+using std::string;
 using std::vector;
 using std::unique_ptr;
 
@@ -74,7 +75,7 @@ class MethodSampler {
   // This function recurses through the parent-child relationship graph,
   // keeping the current tree path in 'child_path' (empty at the root).
   static void GetTraceMetrics(const Trace& t,
-                              const std::string& child_path,
+                              const string& child_path,
                               RpczSamplePB* sample_pb);
 
   // An individual recorded sample.
@@ -233,7 +234,7 @@ void RpczStore::LogTrace(InboundCall* call) {
       // The traces may also be too large to fit in a log message.
       LOG(WARNING) << call->ToString() << " took " << duration_ms << "ms (client timeout "
                    << call->header_.timeout_millis() << ").";
-      std::string s = call->trace()->DumpToString();
+      string s = call->trace()->DumpToString();
       if (!s.empty()) {
         LOG(WARNING) << "Trace:\n" << s;
       }

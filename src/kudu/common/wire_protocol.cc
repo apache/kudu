@@ -37,6 +37,7 @@
 #include "kudu/util/slice.h"
 
 using google::protobuf::RepeatedPtrField;
+using std::string;
 using std::vector;
 
 namespace kudu {
@@ -452,7 +453,7 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate,
 Status ColumnPredicateFromPB(const Schema& schema,
                              Arena* arena,
                              const ColumnPredicatePB& pb,
-                             optional<ColumnPredicate>* predicate) {
+                             boost::optional<ColumnPredicate>* predicate) {
   if (!pb.has_column()) {
     return Status::InvalidArgument("Column predicate must include a column", SecureDebugString(pb));
   }

@@ -23,8 +23,8 @@
 namespace kudu {
 namespace tablet {
 
-string Mutation::StringifyMutationList(const Schema &schema, const Mutation *head) {
-  string ret;
+std::string Mutation::StringifyMutationList(const Schema &schema, const Mutation *head) {
+  std::string ret;
 
   ret.append("[");
 

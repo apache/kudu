@@ -80,6 +80,7 @@ using master::AlterTableResponsePB;
 using std::atomic;
 using std::map;
 using std::pair;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 using tablet::TabletReplica;

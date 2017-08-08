@@ -45,6 +45,7 @@
 #include "kudu/util/locks.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 #define RETRY_ON_EINTR(ret, expr) do {          \

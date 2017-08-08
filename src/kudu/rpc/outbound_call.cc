@@ -52,7 +52,9 @@ DEFINE_int32(rpc_inject_cancellation_state, -1,
              "will be injected. Should use values in OutboundCall::State only");
 TAG_FLAG(rpc_inject_cancellation_state, unsafe);
 
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace rpc {

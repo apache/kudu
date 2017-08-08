@@ -45,6 +45,7 @@ using log::LogOptions;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 
 const char* kTabletId = "test-peers-tablet";

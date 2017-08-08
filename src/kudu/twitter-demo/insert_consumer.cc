@@ -36,13 +36,15 @@
 #include "kudu/twitter-demo/twitter-schema.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace twitter_demo {
-
 using kudu::client::KuduInsert;
 using kudu::client::KuduClient;
 using kudu::client::KuduSession;
 using kudu::client::KuduTableCreator;
+using std::string;
+using std::vector;
+
+namespace kudu {
+namespace twitter_demo {
 
 InsertConsumer::InsertConsumer(client::sp::shared_ptr<KuduClient> client)
   : initted_(false),

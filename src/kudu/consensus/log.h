@@ -93,7 +93,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Append the given set of replicate messages, asynchronously.
   // This requires that the replicates have already been assigned OpIds.
-  Status AsyncAppendReplicates(const vector<consensus::ReplicateRefPtr>& replicates,
+  Status AsyncAppendReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates,
                                const StatusCallback& callback);
 
   // Append the given commit message, asynchronously.
@@ -489,7 +489,7 @@ class LogEntryBatch {
     return entry_batch_pb_->entry(idx).replicate().id();
   }
 
-  void SetReplicates(const vector<consensus::ReplicateRefPtr>& replicates) {
+  void SetReplicates(const std::vector<consensus::ReplicateRefPtr>& replicates) {
     replicates_ = replicates;
   }
 
@@ -509,7 +509,7 @@ class LogEntryBatch {
   // Used only when type is REPLICATE, this makes sure there's at
   // least a reference to each replicate message until we're finished
   // appending.
-  vector<consensus::ReplicateRefPtr> replicates_;
+  std::vector<consensus::ReplicateRefPtr> replicates_;
 
   // Callback to be invoked upon the entries being written and
   // synced to disk.

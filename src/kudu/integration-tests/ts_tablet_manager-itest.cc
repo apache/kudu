@@ -66,6 +66,8 @@ using master::TabletReportPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 using tablet::TabletReplica;
 using tserver::MiniTabletServer;

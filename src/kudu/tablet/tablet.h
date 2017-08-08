@@ -312,7 +312,7 @@ class Tablet {
   // Verbosely dump this entire tablet to the logs. This is only
   // really useful when debugging unit tests failures where the tablet
   // has a very small number of rows.
-  Status DebugDump(vector<std::string> *lines = NULL);
+  Status DebugDump(std::vector<std::string> *lines = NULL);
 
   const Schema* schema() const {
     return &metadata_->schema();
@@ -360,7 +360,7 @@ class Tablet {
   // Method used by tests to retrieve all rowsets of this table. This
   // will be removed once code for selecting the appropriate RowSet is
   // finished and delta files is finished is part of Tablet class.
-  void GetRowSetsForTests(vector<std::shared_ptr<RowSet> >* out);
+  void GetRowSetsForTests(std::vector<std::shared_ptr<RowSet> >* out);
 
   // Register the maintenance ops associated with this tablet
   void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
@@ -462,7 +462,7 @@ class Tablet {
                                     const MvccSnapshot &snap,
                                     const ScanSpec *spec,
                                     OrderMode order,
-                                    vector<std::shared_ptr<RowwiseIterator> > *iters) const;
+                                    std::vector<std::shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;

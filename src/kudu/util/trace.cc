@@ -32,9 +32,12 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/jsonwriter.h"
 
-namespace kudu {
-
+using std::pair;
+using std::string;
+using std::vector;
 using strings::internal::SubstituteArg;
+
+namespace kudu {
 
 __thread Trace* Trace::threadlocal_trace_;
 

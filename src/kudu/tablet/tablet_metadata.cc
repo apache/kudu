@@ -53,6 +53,8 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 
 using std::memory_order_relaxed;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;

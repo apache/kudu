@@ -28,9 +28,10 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-
+using std::string;
 using strings::Substitute;
+
+namespace kudu {
 
 class TestRowChangeList : public KuduTest {
  public:

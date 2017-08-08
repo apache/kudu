@@ -43,6 +43,7 @@ using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::rpc::Messenger;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;

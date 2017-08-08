@@ -312,10 +312,10 @@ class MemRowSet : public RowSet,
   // If 'lines' is NULL, dumps to LOG(INFO).
   //
   // This dumps every row, so should only be used in tests, etc.
-  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE;
+  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
 
-  string ToString() const OVERRIDE {
-    return string("memrowset");
+  std::string ToString() const OVERRIDE {
+    return "memrowset";
   }
 
   // Mark the memrowset as frozen. See CBTree::Freeze()
@@ -471,7 +471,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
     return iter_->Next();
   }
 
-  string ToString() const OVERRIDE {
+  std::string ToString() const OVERRIDE {
     return "memrowset iterator";
   }
 

@@ -69,6 +69,14 @@
 #include <sys/vfs.h>
 #endif  // defined(__APPLE__)
 
+using base::subtle::Atomic64;
+using base::subtle::Barrier_AtomicIncrement;
+using std::accumulate;
+using std::string;
+using std::unique_ptr;
+using std::vector;
+using strings::Substitute;
+
 // Copied from falloc.h. Useful for older kernels that lack support for
 // hole punching; fallocate(2) will return EOPNOTSUPP.
 #ifndef FALLOC_FL_KEEP_SIZE
@@ -177,14 +185,6 @@ DEFINE_string(env_inject_eio_globs, "*",
               "Comma-separated list of glob patterns specifying files on which "
               "I/O will fail. By default, all files may cause a failure.");
 TAG_FLAG(env_inject_eio_globs, hidden);
-
-using base::subtle::Atomic64;
-using base::subtle::Barrier_AtomicIncrement;
-using std::accumulate;
-using std::string;
-using std::unique_ptr;
-using std::vector;
-using strings::Substitute;
 
 static __thread uint64_t thread_local_id;
 static Atomic64 cur_thread_local_id_;

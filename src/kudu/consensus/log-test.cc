@@ -51,7 +51,12 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using consensus::CommitMsg;
 using consensus::MakeOpId;
+using consensus::NO_OP;
+using consensus::OpId;
+using consensus::ReplicateMsg;
+using consensus::WRITE_OP;
 using strings::Substitute;
 
 struct TestLogSequenceElem {

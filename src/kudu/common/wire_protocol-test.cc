@@ -31,6 +31,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
 using std::vector;
 
 namespace kudu {

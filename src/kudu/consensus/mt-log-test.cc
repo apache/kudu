@@ -46,7 +46,10 @@ namespace log {
 
 using std::shared_ptr;
 using std::vector;
+using consensus::OpId;
 using consensus::ReplicateRefPtr;
+using consensus::ReplicateMsg;
+using consensus::WRITE_OP;
 using consensus::make_scoped_refptr_replicate;
 
 namespace {

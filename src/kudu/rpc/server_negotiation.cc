@@ -55,6 +55,7 @@
 using std::set;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 // Fault injection flags.
 DEFINE_double(rpc_inject_invalid_authn_token_ratio, 0,

@@ -31,10 +31,6 @@
 
 namespace kudu {
 
-using base::subtle::Acquire_CompareAndSwap;
-using base::subtle::NoBarrier_Load;
-using base::subtle::Release_Store;
-
 // Wrapper around the Google SpinLock class to adapt it to the method names
 // expected by Boost.
 class simple_spinlock {

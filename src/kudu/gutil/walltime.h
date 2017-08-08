@@ -23,7 +23,6 @@
 
 #include <glog/logging.h>
 #include <string>
-using std::string;
 
 #if defined(__APPLE__)
 #include <mach/clock.h>

@@ -26,8 +26,6 @@
 
 namespace kudu {
 
-using tools::ChecksumOptions;
-
 class ExternalMiniCluster;
 class MonoDelta;
 
@@ -90,7 +88,7 @@ class ClusterVerifier {
 
   ExternalMiniCluster* cluster_;
 
-  ChecksumOptions checksum_options_;
+  tools::ChecksumOptions checksum_options_;
 
   MonoDelta operations_timeout_;
 

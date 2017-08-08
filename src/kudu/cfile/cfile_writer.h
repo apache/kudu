@@ -22,7 +22,6 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -46,7 +45,6 @@ namespace kudu {
 class Arena;
 
 namespace cfile {
-using std::unordered_map;
 
 class BlockPointer;
 class BTreeInfoPB;
@@ -142,7 +140,7 @@ class CFileWriter {
   //
   // validx_prev should be a Slice pointing to the last key of the previous block.
   // It will be used to optimize the value index entry for the block.
-  Status AppendRawBlock(const vector<Slice> &data_slices,
+  Status AppendRawBlock(const std::vector<Slice> &data_slices,
                         size_t ordinal_pos,
                         const void *validx_curr,
                         const Slice &validx_prev,
@@ -168,7 +166,8 @@ class CFileWriter {
   std::string ToString() const { return block_->id().ToString(); }
 
   // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
-  Status AppendDictBlock(const vector<Slice> &data_slices, BlockPointer *block_ptr,
+  Status AppendDictBlock(const std::vector<Slice> &data_slices,
+                         BlockPointer *block_ptr,
                          const char *name_for_log) {
     return AddBlock(data_slices, block_ptr, name_for_log);
   }
@@ -181,11 +180,11 @@ class CFileWriter {
   // Append the given block into the file.
   //
   // Sets *block_ptr to correspond to the newly inserted block.
-  Status AddBlock(const vector<Slice> &data_slices,
+  Status AddBlock(const std::vector<Slice> &data_slices,
                   BlockPointer *block_ptr,
                   const char *name_for_log);
 
-  Status WriteRawData(const vector<Slice>& data);
+  Status WriteRawData(const std::vector<Slice>& data);
 
   Status FinishCurDataBlock();
 
@@ -222,7 +221,7 @@ class CFileWriter {
   faststring tmp_buf_;
 
   // Metadata which has been added to the writer but not yet flushed.
-  vector<pair<string, string> > unflushed_metadata_;
+  std::vector<std::pair<std::string, std::string> > unflushed_metadata_;
 
   gscoped_ptr<BlockBuilder> data_block_;
   gscoped_ptr<IndexTreeBuilder> posidx_builder_;

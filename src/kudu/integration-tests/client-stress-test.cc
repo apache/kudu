@@ -36,6 +36,8 @@ METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
 using strings::Substitute;
+using std::set;
+using std::string;
 using std::vector;
 
 namespace kudu {

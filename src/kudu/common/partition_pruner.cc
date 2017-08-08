@@ -137,7 +137,7 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
 
   // Arenas must be at least the minimum chunk size, and we require at least
   // enough space for the range key columns.
-  Arena arena(max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()), 4096);
+  Arena arena(std::max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()), 4096);
   uint8_t* buf = static_cast<uint8_t*>(CHECK_NOTNULL(arena.AllocateBytes(schema.key_byte_size())));
   ContiguousRow row(&schema, buf);
 

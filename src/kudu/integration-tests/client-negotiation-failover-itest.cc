@@ -47,8 +47,8 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using std::string;
 using std::thread;
-using std::vector;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(rpc_reopen_outbound_connections);

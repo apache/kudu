@@ -37,6 +37,8 @@
 #include "kudu/util/trace.h"
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 METRIC_DEFINE_histogram(server, rpc_incoming_queue_time,

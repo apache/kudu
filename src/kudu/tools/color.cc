@@ -30,7 +30,7 @@ DEFINE_string(color, "auto",
               "valid values are 'always' or 'never'.");
 TAG_FLAG(color, stable);
 
-static bool ValidateColorFlag(const char* flagname, const string& value) {
+static bool ValidateColorFlag(const char* flagname, const std::string& value) {
   if (value == "always" ||
       value == "auto" ||
       value == "never") {
@@ -69,7 +69,7 @@ const char* StringForCode(AnsiCode color) {
 }
 } // anonymous namespace
 
-string Color(AnsiCode color, StringPiece s) {
+std::string Color(AnsiCode color, StringPiece s) {
   return strings::Substitute("$0$1$2",
                              StringForCode(color),
                              s,

@@ -50,6 +50,7 @@ DEFINE_string(compaction_policy_dump_svgs_pattern, "",
 TAG_FLAG(compaction_policy_dump_svgs_pattern, hidden);
 
 using std::ostream;
+using std::string;
 using std::unordered_set;
 using std::vector;
 

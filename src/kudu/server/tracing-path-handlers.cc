@@ -36,6 +36,7 @@
 
 using std::map;
 using std::ostringstream;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;

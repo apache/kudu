@@ -43,6 +43,8 @@
 DECLARE_uint64(tablet_copy_idle_timeout_ms);
 DECLARE_uint64(tablet_copy_timeout_poll_period_ms);
 
+using std::string;
+
 namespace kudu {
 namespace tserver {
 

@@ -151,6 +151,8 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
 using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;
 using kudu::log::LogAnchorRegistry;
+using std::ostream;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unordered_set;

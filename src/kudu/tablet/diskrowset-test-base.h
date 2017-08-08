@@ -53,8 +53,6 @@ DEFINE_int32(n_read_passes, 10,
 namespace kudu {
 namespace tablet {
 
-using std::unordered_set;
-
 class TestRowSet : public KuduRowSetTest {
  public:
   TestRowSet()
@@ -74,10 +72,10 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   static Schema CreateProjection(const Schema& schema,
-                                 const vector<string>& cols) {
-    vector<ColumnSchema> col_schemas;
-    vector<ColumnId> col_ids;
-    for (const string& col : cols) {
+                                 const std::vector<std::string>& cols) {
+    std::vector<ColumnSchema> col_schemas;
+    std::vector<ColumnId> col_ids;
+    for (const std::string& col : cols) {
       int idx = schema.find_column(col);
       CHECK_GE(idx, 0);
       col_schemas.push_back(schema.column(idx));
@@ -132,7 +130,7 @@ class TestRowSet : public KuduRowSetTest {
   // Picks some number of rows from the given rowset and updates
   // them. Stores the indexes of the updated rows in *updated.
   void UpdateExistingRows(DiskRowSet *rs, float update_ratio,
-                          unordered_set<uint32_t> *updated) {
+                          std::unordered_set<uint32_t> *updated) {
     int to_update = static_cast<int>(n_rows_ * update_ratio);
     faststring update_buf;
     RowChangeListEncoder update(&update_buf);
@@ -205,14 +203,14 @@ class TestRowSet : public KuduRowSetTest {
   // Updated rows (those whose index is present in 'updated') should have
   // a 'val' column equal to idx*5.
   // Other rows should have val column equal to idx.
-  void VerifyUpdates(const DiskRowSet &rs, const unordered_set<uint32_t> &updated) {
+  void VerifyUpdates(const DiskRowSet &rs, const std::unordered_set<uint32_t> &updated) {
     LOG_TIMING(INFO, "Reading updated rows with row iter") {
       VerifyUpdatesWithRowIter(rs, updated);
     }
   }
 
   void VerifyUpdatesWithRowIter(const DiskRowSet &rs,
-                                const unordered_set<uint32_t> &updated) {
+                                const std::unordered_set<uint32_t> &updated) {
     Schema proj_val = CreateProjection(schema_, { "val" });
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;
@@ -233,7 +231,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   void VerifyUpdatedBlock(const uint32_t *from_file, int start_row, size_t n_rows,
-                          const unordered_set<uint32_t> &updated) {
+                          const std::unordered_set<uint32_t> &updated) {
       for (int j = 0; j < n_rows; j++) {
         uint32_t idx_in_file = start_row + j;
         int expected;
@@ -253,7 +251,7 @@ class TestRowSet : public KuduRowSetTest {
   // Perform a random read of the given row key,
   // asserting that the result matches 'expected_val'.
   void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
-                        const string& expected_val) {
+                        const std::string& expected_val) {
     Arena arena(256, 1024);
     AutoReleasePool pool;
     ScanSpec spec;
@@ -265,9 +263,9 @@ class TestRowSet : public KuduRowSetTest {
     gscoped_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(&schema_, snap, UNORDERED, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
-    vector<string> rows;
+    std::vector<std::string> rows;
     IterateToStringList(row_iter.get(), &rows);
-    string result = JoinStrings(rows, "\n");
+    std::string result = JoinStrings(rows, "\n");
     ASSERT_EQ(expected_val, result);
   }
 
@@ -300,7 +298,7 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   void BenchmarkIterationPerformance(const DiskRowSet &rs,
-                                     const string &log_message) {
+                                     const std::string &log_message) {
     Schema proj_val = CreateProjection(schema_, { "val" });
     LOG_TIMING(INFO, log_message + " (val column only)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {

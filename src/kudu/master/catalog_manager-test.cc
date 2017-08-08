@@ -21,10 +21,12 @@
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+using std::vector;
+using strings::Substitute;
+
 namespace kudu {
 namespace master {
-
-using strings::Substitute;
 
 // Test of the tablet assignment algo for splits done at table creation time.
 // This tests that when we define a split, the tablet lands on the expected

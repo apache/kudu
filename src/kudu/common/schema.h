@@ -51,10 +51,6 @@
 
 namespace kudu {
 
-using std::vector;
-using std::unordered_map;
-using std::unordered_set;
-
 // The ID of a column. Each column in a table has a unique ID.
 struct ColumnId {
   explicit ColumnId(int32_t t_) : t(t_) {}
@@ -95,7 +91,7 @@ struct ColumnStorageAttributes {
       cfile_block_size(0) {
   }
 
-  string ToString() const;
+  std::string ToString() const;
 
   EncodingType encoding;
   CompressionType compression;
@@ -158,7 +154,7 @@ class ColumnSchema {
   //   ColumnSchema col_c("c", INT32, false, &default_i32);
   //   Slice default_str("Hello");
   //   ColumnSchema col_d("d", STRING, false, &default_str);
-  ColumnSchema(string name, DataType type, bool is_nullable = false,
+  ColumnSchema(std::string name, DataType type, bool is_nullable = false,
                const void* read_default = NULL,
                const void* write_default = NULL,
                ColumnStorageAttributes attributes = ColumnStorageAttributes())
@@ -182,17 +178,17 @@ class ColumnSchema {
     return is_nullable_;
   }
 
-  const string &name() const {
+  const std::string &name() const {
     return name_;
   }
 
   // Return a string identifying this column, including its
   // name.
-  string ToString() const;
+  std::string ToString() const;
 
   // Same as above, but only including the type information.
   // For example, "STRING NOT NULL".
-  string TypeToString() const;
+  std::string TypeToString() const;
 
   // Returns true if the column has a read default value
   bool has_read_default() const {
@@ -297,8 +293,8 @@ class ColumnSchema {
 
   // Stringify the given cell. This just stringifies the cell contents,
   // and doesn't include the column name or type.
-  string Stringify(const void *cell) const {
-    string ret;
+  std::string Stringify(const void *cell) const {
+    std::string ret;
     type_info_->AppendDebugStringForValue(cell, &ret);
     return ret;
   }
@@ -329,11 +325,11 @@ class ColumnSchema {
  private:
   friend class SchemaBuilder;
 
-  void set_name(const string& name) {
+  void set_name(const std::string& name) {
     name_ = name;
   }
 
-  string name_;
+  std::string name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
   // use shared_ptr since the ColumnSchema is always copied around.
@@ -383,7 +379,7 @@ class Schema {
   // empty schema and then use Reset(...)  so that errors can be
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
-  Schema(const vector<ColumnSchema>& cols,
+  Schema(const std::vector<ColumnSchema>& cols,
          int key_columns)
     : name_to_index_bytes_(0),
       // TODO: C++11 provides a single-arg constructor
@@ -400,8 +396,8 @@ class Schema {
   // empty schema and then use Reset(...)  so that errors can be
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
-  Schema(const vector<ColumnSchema>& cols,
-         const vector<ColumnId>& ids,
+  Schema(const std::vector<ColumnSchema>& cols,
+         const std::vector<ColumnId>& ids,
          int key_columns)
     : name_to_index_bytes_(0),
       // TODO: C++11 provides a single-arg constructor
@@ -415,7 +411,7 @@ class Schema {
   // Reset this Schema object to the given schema.
   // If this fails, the Schema object is left in an inconsistent
   // state and may not be used.
-  Status Reset(const vector<ColumnSchema>& cols, int key_columns) {
+  Status Reset(const std::vector<ColumnSchema>& cols, int key_columns) {
     std::vector<ColumnId> ids;
     return Reset(cols, ids, key_columns);
   }
@@ -423,8 +419,8 @@ class Schema {
   // Reset this Schema object to the given schema.
   // If this fails, the Schema object is left in an inconsistent
   // state and may not be used.
-  Status Reset(const vector<ColumnSchema>& cols,
-               const vector<ColumnId>& ids,
+  Status Reset(const std::vector<ColumnSchema>& cols,
+               const std::vector<ColumnId>& ids,
                int key_columns);
 
   // Return the number of bytes needed to represent a single row of this schema, without
@@ -553,7 +549,7 @@ class Schema {
   // in a way suitable for debugging. This isn't currently optimized
   // so should be avoided in hot paths.
   template<class RowType>
-  string DebugRow(const RowType& row) const {
+  std::string DebugRow(const RowType& row) const {
     DCHECK_SCHEMA_EQ(*this, *row.schema());
     return DebugRowColumns(row, num_columns());
   }
@@ -562,7 +558,7 @@ class Schema {
   // key-compatible with this one. Per above, this is not for use in
   // hot paths.
   template<class RowType>
-  string DebugRowKey(const RowType& row) const {
+  std::string DebugRowKey(const RowType& row) const {
     DCHECK_KEY_PROJECTION_SCHEMA_EQ(*this, *row.schema());
     return DebugRowColumns(row, num_key_columns());
   }
@@ -587,7 +583,7 @@ class Schema {
     START_KEY,
     END_KEY
   };
-  string DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) const;
+  std::string DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) const;
 
   // Compare two rows of this schema.
   template<class RowTypeA, class RowTypeB>
@@ -610,9 +606,9 @@ class Schema {
   // TODO this should probably be cached since the key projection
   // is not supposed to change, for a single schema.
   Schema CreateKeyProjection() const {
-    vector<ColumnSchema> key_cols(cols_.begin(),
+    std::vector<ColumnSchema> key_cols(cols_.begin(),
                                   cols_.begin() + num_key_columns_);
-    vector<ColumnId> col_ids;
+    std::vector<ColumnId> col_ids;
     if (!col_ids_.empty()) {
       col_ids.assign(col_ids_.begin(), col_ids_.begin() + num_key_columns_);
     }
@@ -668,7 +664,7 @@ class Schema {
 
   // Stringify this Schema. This is not particularly efficient,
   // so should only be used when necessary for output.
-  string ToString() const;
+  std::string ToString() const;
 
   // Return true if the schemas have exactly the same set of columns
   // and respective types.
@@ -803,7 +799,7 @@ class Schema {
   // row.
   template<class RowType>
   std::string DebugRowColumns(const RowType& row, int num_columns) const {
-    string ret;
+    std::string ret;
     ret.append("(");
 
     for (size_t col_idx = 0; col_idx < num_columns; col_idx++) {
@@ -819,11 +815,11 @@ class Schema {
 
   friend class SchemaBuilder;
 
-  vector<ColumnSchema> cols_;
+  std::vector<ColumnSchema> cols_;
   size_t num_key_columns_;
   ColumnId max_col_id_;
-  vector<ColumnId> col_ids_;
-  vector<size_t> col_offsets_;
+  std::vector<ColumnId> col_ids_;
+  std::vector<size_t> col_offsets_;
 
   // The keys of this map are StringPiece references to the actual name members of the
   // ColumnSchema objects inside cols_. This avoids an extra copy of those strings,
@@ -834,7 +830,7 @@ class Schema {
   // measure its memory footprint.
   int64_t name_to_index_bytes_;
   typedef STLCountingAllocator<std::pair<const StringPiece, size_t> > NameToIndexMapAllocator;
-  typedef unordered_map<
+  typedef std::unordered_map<
       StringPiece,
       size_t,
       std::hash<StringPiece>,
@@ -886,27 +882,27 @@ class SchemaBuilder {
   Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
   Schema BuildWithoutIds() const { return Schema(cols_, num_key_columns_); }
 
-  Status AddKeyColumn(const string& name, DataType type);
+  Status AddKeyColumn(const std::string& name, DataType type);
 
   Status AddColumn(const ColumnSchema& column, bool is_key);
 
-  Status AddColumn(const string& name, DataType type) {
+  Status AddColumn(const std::string& name, DataType type) {
     return AddColumn(name, type, false, NULL, NULL);
   }
 
-  Status AddNullableColumn(const string& name, DataType type) {
+  Status AddNullableColumn(const std::string& name, DataType type) {
     return AddColumn(name, type, true, NULL, NULL);
   }
 
-  Status AddColumn(const string& name,
+  Status AddColumn(const std::string& name,
                    DataType type,
                    bool is_nullable,
                    const void *read_default,
                    const void *write_default);
 
-  Status RemoveColumn(const string& name);
+  Status RemoveColumn(const std::string& name);
 
-  Status RenameColumn(const string& old_name, const string& new_name);
+  Status RenameColumn(const std::string& old_name, const std::string& new_name);
 
   Status ApplyColumnSchemaDelta(const ColumnSchemaDelta& col_delta);
 
@@ -914,9 +910,9 @@ class SchemaBuilder {
   DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
 
   ColumnId next_id_;
-  vector<ColumnId> col_ids_;
-  vector<ColumnSchema> cols_;
-  unordered_set<string> col_names_;
+  std::vector<ColumnId> col_ids_;
+  std::vector<ColumnSchema> cols_;
+  std::unordered_set<std::string> col_names_;
   size_t num_key_columns_;
 };
 

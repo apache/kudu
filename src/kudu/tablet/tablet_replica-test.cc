@@ -59,6 +59,7 @@ using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
+using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using log::Log;
 using log::LogOptions;

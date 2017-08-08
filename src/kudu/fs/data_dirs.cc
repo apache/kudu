@@ -102,6 +102,7 @@ using internal::DataDirGroup;
 using std::default_random_engine;
 using std::deque;
 using std::iota;
+using std::set;
 using std::shuffle;
 using std::string;
 using std::unique_ptr;

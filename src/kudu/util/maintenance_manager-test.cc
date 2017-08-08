@@ -32,6 +32,7 @@
 #include "kudu/util/thread.h"
 
 using std::shared_ptr;
+using std::string;
 using std::vector;
 using strings::Substitute;
 

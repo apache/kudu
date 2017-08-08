@@ -35,6 +35,9 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 
+using std::string;
+using std::vector;
+
 #if defined(__APPLE__)
 typedef sig_t sighandler_t;
 #endif
@@ -67,7 +70,7 @@ extern int GetStackTrace(void** result, int max_depth, int skip_count);
 bool Symbolize(void *pc, char *out, int out_size);
 
 namespace glog_internal_namespace_ {
-extern void DumpStackTraceToString(std::string *s);
+extern void DumpStackTraceToString(string *s);
 } // namespace glog_internal_namespace_
 } // namespace google
 
@@ -307,16 +310,16 @@ Status ListThreads(vector<pid_t> *tids) {
   return Status::OK();
 }
 
-std::string GetStackTrace() {
-  std::string s;
+string GetStackTrace() {
+  string s;
   google::glog_internal_namespace_::DumpStackTraceToString(&s);
   return s;
 }
 
-std::string GetStackTraceHex() {
+string GetStackTraceHex() {
   char buf[1024];
   HexStackTraceToString(buf, 1024);
-  return std::string(buf);
+  return buf;
 }
 
 void HexStackTraceToString(char* buf, size_t size) {

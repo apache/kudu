@@ -29,8 +29,9 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-using std::vector;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 DEFINE_int32(num_test_threads, 10, "number of stress test client threads");
 DEFINE_int32(num_iterations, 1000, "number of iterations per client thread");

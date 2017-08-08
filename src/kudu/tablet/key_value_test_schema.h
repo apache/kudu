@@ -42,8 +42,8 @@ struct ExpectedKeyValueRow {
     return key == other.key && val == other.val;
   }
 
-  string ToString() const {
-    string ret = strings::Substitute("{$0,", key);
+  std::string ToString() const {
+    std::string ret = strings::Substitute("{$0,", key);
     if (val == boost::none) {
       ret.append("NULL}");
     } else {

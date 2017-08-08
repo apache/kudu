@@ -131,6 +131,7 @@ using kudu::tablet::TabletStatusPB;
 using kudu::tablet::TransactionCompletionCallback;
 using kudu::tablet::WriteTransactionState;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;

@@ -144,7 +144,7 @@ MaintenanceManager::~MaintenanceManager() {
   Shutdown();
 }
 
-Status MaintenanceManager::Init(string server_uuid) {
+Status MaintenanceManager::Init(std::string server_uuid) {
   server_uuid_ = std::move(server_uuid);
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
       boost::bind(&MaintenanceManager::RunSchedulerThread, this),
@@ -385,7 +385,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   double capacity_pct;
   if (memory_pressure_func_(&capacity_pct)) {
     if (!most_mem_anchored_op) {
-      string msg = StringPrintf("we have exceeded our soft memory limit "
+      std::string msg = StringPrintf("we have exceeded our soft memory limit "
           "(current capacity is %.2f%%).  However, there are no ops currently "
           "runnable which would free memory.", capacity_pct);
       LOG_WITH_PREFIX(INFO) << msg;

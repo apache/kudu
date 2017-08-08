@@ -28,6 +28,7 @@ using strings::Substitute;
 
 namespace kudu {
 
+using std::string;
 using std::vector;
 
 namespace tablet {

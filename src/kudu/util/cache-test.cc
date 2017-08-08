@@ -82,8 +82,8 @@ class CacheTest : public KuduTest,
   }
 
   void Insert(int key, int value, int charge = 1) {
-    string key_str = EncodeInt(key);
-    string val_str = EncodeInt(value);
+    std::string key_str = EncodeInt(key);
+    std::string val_str = EncodeInt(value);
     Cache::PendingHandle* handle = CHECK_NOTNULL(cache_->Allocate(key_str, val_str.size(), charge));
     memcpy(cache_->MutableValue(handle), val_str.data(), val_str.size());
 

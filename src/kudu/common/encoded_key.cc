@@ -26,6 +26,7 @@
 namespace kudu {
 
 using std::string;
+using std::vector;
 
 
 EncodedKey::EncodedKey(faststring* data,

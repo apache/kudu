@@ -39,6 +39,8 @@ TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
 using std::make_shared;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace master {

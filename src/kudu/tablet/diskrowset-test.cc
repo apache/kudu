@@ -41,8 +41,10 @@ DECLARE_int32(tablet_delta_store_minor_compact_max);
 
 using std::is_sorted;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

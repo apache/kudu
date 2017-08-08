@@ -31,8 +31,10 @@
 
 DECLARE_int32(tsk_num_rsa_bits);
 
+using std::string;
 using std::make_shared;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace security {

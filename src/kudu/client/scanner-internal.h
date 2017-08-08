@@ -281,7 +281,7 @@ class KuduScanBatch::Data {
     return KuduRowResult(projection_, &direct_data_[offset]);
   }
 
-  void ExtractRows(vector<KuduScanBatch::RowPtr>* rows);
+  void ExtractRows(std::vector<KuduScanBatch::RowPtr>* rows);
 
   void Clear();
 

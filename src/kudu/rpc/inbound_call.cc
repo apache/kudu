@@ -34,6 +34,7 @@
 using google::protobuf::FieldDescriptor;
 using google::protobuf::io::CodedOutputStream;
 using google::protobuf::MessageLite;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;

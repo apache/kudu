@@ -68,7 +68,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
   }
 
   void TestAffectedMetrics(MaintenanceOp* op,
-                           const unordered_set<
+                           const std::unordered_set<
                              scoped_refptr<Histogram>,
                              ScopedRefPtrHashFunctor<Histogram>,
                              ScopedRefPtrEqualToFunctor<Histogram> >& metrics) {
@@ -84,7 +84,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
 
   MaintenanceOpStats stats_;
   MonoTime next_time_;
-  vector<scoped_refptr<Histogram> > all_possible_metrics_;
+  std::vector<scoped_refptr<Histogram> > all_possible_metrics_;
 };
 
 TEST_F(KuduTabletMmOpsTest, TestCompactRowSetsOpCacheStats) {

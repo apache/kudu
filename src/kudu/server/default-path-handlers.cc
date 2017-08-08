@@ -48,6 +48,7 @@
 
 using std::ifstream;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 DEFINE_int64(web_log_bytes, 1024 * 1024,

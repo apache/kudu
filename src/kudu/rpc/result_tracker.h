@@ -240,7 +240,7 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
   // Typically this is invoked from an internal thread started by 'StartGCThread()'.
   void GCResults();
 
-  string ToString();
+  std::string ToString();
 
  private:
   // Information about client originated ongoing RPCs.

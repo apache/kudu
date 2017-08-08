@@ -24,6 +24,7 @@
 #include "kudu/util/metrics.h"
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 METRIC_DECLARE_entity(server);

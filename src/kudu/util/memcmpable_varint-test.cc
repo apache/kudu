@@ -34,6 +34,10 @@ ostream &operator <<(ostream &os, const pair<T1, T2> &pair) {
 }
 }
 
+using std::make_pair;
+using std::pair;
+using std::vector;
+
 namespace kudu {
 
 class TestMemcmpableVarint : public KuduTest {
@@ -94,12 +98,12 @@ TEST_F(TestMemcmpableVarint, TestCompositeKeys) {
     buf2.clear();
 
     pair<uint64_t, uint64_t> p1 =
-      make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+        make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
     PutMemcmpableVarint64(&buf1, p1.first);
     PutMemcmpableVarint64(&buf1, p1.second);
 
     pair<uint64_t, uint64_t> p2 =
-      make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
+        make_pair(Rand64WithRandomBitLength(), Rand64WithRandomBitLength());
     PutMemcmpableVarint64(&buf2, p2.first);
     PutMemcmpableVarint64(&buf2, p2.second);
 
@@ -119,11 +123,13 @@ TEST_F(TestMemcmpableVarint, TestCompositeKeys) {
 // tests "interesting" values -- i.e values around the boundaries of where
 // the encoding changes its number of bytes.
 TEST_F(TestMemcmpableVarint, TestInterestingCompositeKeys) {
-  vector<uint64_t> interesting_values = { 0, 1, 240, // 1 byte
-                                          241, 2000, 2287, // 2 bytes
-                                          2288, 40000, 67823, // 3 bytes
-                                          67824, 1ULL << 23, (1ULL << 24) - 1, // 4 bytes
-                                          1ULL << 24, 1ULL << 30, (1ULL << 32) - 1 }; // 5 bytes
+  const vector<uint64_t> interesting_values = {
+    0, 1, 240, // 1 byte
+    241, 2000, 2287, // 2 bytes
+    2288, 40000, 67823, // 3 bytes
+    67824, 1ULL << 23, (1ULL << 24) - 1, // 4 bytes
+    1ULL << 24, 1ULL << 30, (1ULL << 32) - 1, // 5 bytes
+  };
 
   faststring buf1;
   faststring buf2;

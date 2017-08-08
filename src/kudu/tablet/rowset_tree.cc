@@ -33,6 +33,7 @@
 
 using std::vector;
 using std::shared_ptr;
+using std::string;
 
 namespace kudu {
 namespace tablet {

@@ -17,6 +17,7 @@
 
 #include "kudu/client/client-test-util.h"
 
+#include <string>
 #include <vector>
 
 #include <glog/logging.h>
@@ -26,13 +27,16 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+using std::vector;
+
 namespace kudu {
 namespace client {
 
 void LogSessionErrorsAndDie(const sp::shared_ptr<KuduSession>& session,
                             const Status& s) {
   CHECK(!s.ok());
-  std::vector<KuduError*> errors;
+  vector<KuduError*> errors;
   ElementDeleter d(&errors);
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);

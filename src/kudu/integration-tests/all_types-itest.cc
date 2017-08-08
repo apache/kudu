@@ -28,6 +28,7 @@
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
 
+using std::string;
 using std::vector;
 
 namespace kudu {

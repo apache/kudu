@@ -71,6 +71,7 @@ DECLARE_bool(cache_force_single_shard);
 
 using std::deque;
 using std::shared_ptr;
+using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::unordered_map;

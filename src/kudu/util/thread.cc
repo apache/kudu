@@ -59,6 +59,8 @@ using std::endl;
 using std::map;
 using std::ostringstream;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 METRIC_DEFINE_gauge_uint64(server, threads_started,

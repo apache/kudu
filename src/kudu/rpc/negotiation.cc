@@ -66,6 +66,7 @@ DEFINE_bool(rpc_encrypt_loopback_connections, false,
             "an attacker.");
 TAG_FLAG(rpc_encrypt_loopback_connections, advanced);
 
+using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 

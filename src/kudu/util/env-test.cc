@@ -60,6 +60,7 @@ DECLARE_string(env_inject_eio_globs);
 
 namespace kudu {
 
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

@@ -56,7 +56,7 @@ static const int64_t kSnapshotAtNow = -1;
 static const int64_t kNoParticularCountExpected = -1;
 
 // Vector of snapshot timestamp, count pairs.
-typedef vector<pair<uint64_t, int64_t> > SnapsAndCounts;
+typedef std::vector<std::pair<uint64_t, int64_t> > SnapsAndCounts;
 
 // Provides methods for writing data and reading it back in such a way that
 // facilitates checking for data integrity.
@@ -306,7 +306,7 @@ class PeriodicWebUIChecker {
                        const std::string& tablet_id, MonoDelta period)
       : period_(period), is_running_(true) {
     // List of master and ts web pages to fetch
-    vector<std::string> master_pages, ts_pages;
+    std::vector<std::string> master_pages, ts_pages;
 
     master_pages.emplace_back("/metrics");
     master_pages.emplace_back("/masters");
@@ -382,7 +382,7 @@ class PeriodicWebUIChecker {
   const MonoDelta period_;
   AtomicBool is_running_;
   scoped_refptr<Thread> checker_;
-  vector<std::string> urls_;
+  std::vector<std::string> urls_;
 };
 
 // Helper class to hold results from a linked list scan and perform the
@@ -433,7 +433,7 @@ std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
 }
 
 std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
-  vector<int64_t> ret;
+  std::vector<int64_t> ret;
   ret.reserve(num_tablets_ - 1);
   int64_t increment = kint64max / num_tablets_;
   for (int64_t i = 1; i < num_tablets_; i++) {
@@ -565,7 +565,7 @@ void LinkedListTester::DumpInsertHistogram(bool print_flags) {
 // If it does, *errors will be incremented once per duplicate and the given message
 // will be logged.
 static void VerifyNoDuplicateEntries(const std::vector<int64_t>& ints, int* errors,
-                                     const string& message) {
+                                     const std::string& message) {
   for (int i = 1; i < ints.size(); i++) {
     if (ints[i] == ints[i - 1]) {
       LOG(ERROR) << message << ": " << ints[i];
@@ -581,7 +581,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
   client::sp::shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
-  string snapshot_str;
+  std::string snapshot_str;
   if (snapshot_timestamp == kSnapshotAtNow) {
     snapshot_str = "NOW";
   } else {
@@ -696,8 +696,9 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
                                        const boost::function<Status(const std::string&)>& cb,
                                        WaitAndVerifyMode mode) {
 
-  std::list<pair<int64_t, int64_t> > samples_as_list(sampled_timestamps_and_counts_.begin(),
-                                                     sampled_timestamps_and_counts_.end());
+  std::list<std::pair<int64_t, int64_t>> samples_as_list(
+      sampled_timestamps_and_counts_.begin(),
+      sampled_timestamps_and_counts_.end());
 
   int64_t seen = 0;
   bool called = false;

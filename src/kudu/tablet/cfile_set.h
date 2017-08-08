@@ -41,11 +41,6 @@ namespace kudu {
 
 namespace tablet {
 
-using kudu::cfile::BloomFileReader;
-using kudu::cfile::CFileIterator;
-using kudu::cfile::CFileReader;
-using kudu::cfile::ColumnIterator;
-
 // Set of CFiles which make up the base data for a single rowset
 //
 // All of these files have the same number of rows, and thus the positional
@@ -81,8 +76,8 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
                  boost::optional<rowid_t>* idx,
                  ProbeStats* stats) const;
 
-  string ToString() const {
-    return string("CFile base data in ") + rowset_metadata_->ToString();
+  std::string ToString() const {
+    return std::string("CFile base data in ") + rowset_metadata_->ToString();
   }
 
   // Check if the given row is present. If it is, sets *rowid to the
@@ -111,13 +106,14 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   Status OpenAdHocIndexReader();
   Status LoadMinMaxKeys();
 
-  Status NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
-                           CFileIterator **iter) const;
-  Status NewKeyIterator(CFileIterator** key_iter) const;
+  Status NewColumnIterator(ColumnId col_id,
+                           cfile::CFileReader::CacheControl cache_blocks,
+                           cfile::CFileIterator **iter) const;
+  Status NewKeyIterator(cfile::CFileIterator** key_iter) const;
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
-  CFileReader* key_index_reader() const;
+  cfile::CFileReader* key_index_reader() const;
 
   const Schema &tablet_schema() const { return rowset_metadata_->tablet_schema(); }
 
@@ -130,14 +126,14 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // Map of column ID to reader. These are lazily initialized as needed.
   // We use flat_map here since it's the most memory-compact while
   // still having good performance for small maps.
-  typedef boost::container::flat_map<int, std::unique_ptr<CFileReader>> ReaderMap;
+  typedef boost::container::flat_map<int, std::unique_ptr<cfile::CFileReader>> ReaderMap;
   ReaderMap readers_by_col_id_;
 
   // A file reader for an ad-hoc index, i.e. an index that sits in its own file
   // and is not embedded with the column's data blocks. This is used when the
   // index pertains to more than one column, as in the case of composite keys.
-  std::unique_ptr<CFileReader> ad_hoc_idx_reader_;
-  gscoped_ptr<BloomFileReader> bloom_reader_;
+  std::unique_ptr<cfile::CFileReader> ad_hoc_idx_reader_;
+  gscoped_ptr<cfile::BloomFileReader> bloom_reader_;
 };
 
 
@@ -165,8 +161,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
     return cur_idx_ < upper_bound_idx_;
   }
 
-  virtual string ToString() const OVERRIDE {
-    return string("rowset iterator for ") + base_data_->ToString();
+  virtual std::string ToString() const OVERRIDE {
+    return std::string("rowset iterator for ") + base_data_->ToString();
   }
 
   const Schema &schema() const OVERRIDE {
@@ -180,7 +176,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   }
 
   // Collect the IO statistics for each of the underlying columns.
-  virtual void GetIteratorStats(vector<IteratorStats> *stats) const OVERRIDE;
+  virtual void GetIteratorStats(std::vector<IteratorStats> *stats) const OVERRIDE;
 
   virtual ~Iterator();
  private:
@@ -215,8 +211,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   const Schema* projection_;
 
   // Iterator for the key column in the underlying data.
-  gscoped_ptr<CFileIterator> key_iter_;
-  std::vector<std::unique_ptr<ColumnIterator>> col_iters_;
+  gscoped_ptr<cfile::CFileIterator> key_iter_;
+  std::vector<std::unique_ptr<cfile::ColumnIterator>> col_iters_;
 
   bool initted_;
 
@@ -236,7 +232,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
 
   // The underlying columns are prepared lazily, so that if a column is never
   // materialized, it doesn't need to be read off disk.
-  vector<bool> cols_prepared_;
+  std::vector<bool> cols_prepared_;
 
 };
 

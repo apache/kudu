@@ -218,9 +218,9 @@ Status FindTabletLeader(const TabletServerMap& tablet_servers,
 
 // Grabs list of followers using FindTabletLeader() above.
 Status FindTabletFollowers(const TabletServerMap& tablet_servers,
-                           const string& tablet_id,
+                           const std::string& tablet_id,
                            const MonoDelta& timeout,
-                           vector<TServerDetails*>* followers);
+                           std::vector<TServerDetails*>* followers);
 
 // Start an election on the specified tserver.
 // 'timeout' only refers to the RPC asking the peer to start an election. The

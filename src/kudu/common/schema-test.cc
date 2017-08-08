@@ -33,6 +33,7 @@
 namespace kudu {
 namespace tablet {
 
+using std::string;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;

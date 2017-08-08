@@ -37,6 +37,7 @@ DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
              "Minimum number of seconds each thread should work");
 
 using std::shared_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

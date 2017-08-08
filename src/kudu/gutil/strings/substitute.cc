@@ -9,6 +9,8 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/stl_util.h"
 
+using std::string;
+
 namespace strings {
 
 using internal::SubstituteArg;

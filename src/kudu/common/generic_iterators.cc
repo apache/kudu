@@ -40,8 +40,9 @@ using std::remove_if;
 using std::shared_ptr;
 using std::sort;
 using std::string;
-using std::unique_ptr;
 using std::tuple;
+using std::unique_ptr;
+using std::vector;
 
 DEFINE_bool(materializing_iterator_do_pushdown, true,
             "Should MaterializingIterator do predicate pushdown");

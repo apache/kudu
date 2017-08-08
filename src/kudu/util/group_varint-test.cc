@@ -41,7 +41,7 @@ static void DoTestRoundTripGVI32(
   // so append some extra padding data to ensure that it's not reading
   // uninitialized memory. The SSE implementation uses 128-bit reads
   // and the non-SSE one uses 32-bit reads.
-  buf.append(string(use_sse ? 16 : 4, 'x'));
+  buf.append(std::string(use_sse ? 16 : 4, 'x'));
 
   uint32_t ret[4];
 

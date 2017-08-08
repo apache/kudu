@@ -49,7 +49,9 @@ DEFINE_string(deltafile_default_compression_codec, "lz4",
 TAG_FLAG(deltafile_default_compression_codec, experimental);
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 

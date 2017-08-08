@@ -23,6 +23,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
 using strings::Substitute;
 
 namespace kudu {

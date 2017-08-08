@@ -29,6 +29,8 @@
 #include "kudu/tablet/rowset_metadata.h"
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu { namespace tablet {

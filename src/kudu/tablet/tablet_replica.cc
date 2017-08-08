@@ -100,7 +100,9 @@ using rpc::Messenger;
 using rpc::ResultTracker;
 using std::map;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 TabletReplica::TabletReplica(

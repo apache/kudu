@@ -35,6 +35,7 @@ METRIC_DEFINE_gauge_uint64(server, logical_clock_timestamp,
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using base::subtle::NoBarrier_CompareAndSwap;
+using base::subtle::NoBarrier_Load;
 
 Timestamp LogicalClock::Now() {
   return Timestamp(Barrier_AtomicIncrement(&now_, 1));
@@ -97,7 +98,7 @@ void LogicalClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_ent
     ->AutoDetachToLastValue(&metric_detacher_);
 }
 
-string LogicalClock::Stringify(Timestamp timestamp) {
+std::string LogicalClock::Stringify(Timestamp timestamp) {
   return strings::Substitute("L: $0", timestamp.ToUint64());
 }
 

@@ -127,10 +127,10 @@ class RowProjector {
                            "Base schema row: ", base_schema()->DebugRow(src_row));
   }
 
-  const vector<ProjectionIdxMapping>& base_cols_mapping() const {
+  const std::vector<ProjectionIdxMapping>& base_cols_mapping() const {
     return projector_.base_cols_mapping();
   }
-  const vector<size_t>& projection_defaults() const {
+  const std::vector<size_t>& projection_defaults() const {
     return projector_.projection_defaults();
   }
   bool is_identity() const { return projector_.is_identity(); }

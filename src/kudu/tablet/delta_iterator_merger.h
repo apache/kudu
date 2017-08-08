@@ -52,16 +52,16 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
-  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
+  virtual Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
   virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
-                                                 vector<DeltaKeyAndUpdate>* out,
+                                                 std::vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) OVERRIDE;
   virtual bool HasNext() OVERRIDE;
   bool MayHaveDeltas() override;
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  explicit DeltaIteratorMerger(vector<std::unique_ptr<DeltaIterator> > iters);
+  explicit DeltaIteratorMerger(std::vector<std::unique_ptr<DeltaIterator> > iters);
 
   std::vector<std::unique_ptr<DeltaIterator> > iters_;
 };

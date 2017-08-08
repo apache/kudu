@@ -42,11 +42,12 @@ TAG_FLAG(safe_time_max_lag_ms, experimental);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(scanner_max_wait_ms);
 
+using kudu::clock::Clock;
+using std::string;
+using strings::Substitute;
+
 namespace kudu {
 namespace consensus {
-
-using clock::Clock;
-using strings::Substitute;
 
 typedef std::lock_guard<simple_spinlock> Lock;
 

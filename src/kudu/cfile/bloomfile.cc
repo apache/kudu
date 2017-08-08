@@ -33,7 +33,9 @@
 
 DECLARE_bool(cfile_lazy_open);
 
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace cfile {

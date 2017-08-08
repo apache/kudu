@@ -31,6 +31,9 @@ DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_string(time_source);
 
 using kudu::clock::HybridClock;
+using std::string;
+using std::vector;
+using strings::Substitute;
 
 // Specify row regex to match on. Empty string means don't match anything.
 #define ASSERT_DEBUG_DUMP_ROWS_MATCH(pattern) do { \

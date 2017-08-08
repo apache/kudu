@@ -286,7 +286,7 @@ class DataDirManager {
   // Adds 'uuid_idx' to the set of failed data directories. This directory will
   // no longer be used. Logs an error message prefixed with 'error_message'
   // describing what directories are affected.
-  void MarkDataDirFailed(uint16_t uuid_idx, const string& error_message = "");
+  void MarkDataDirFailed(uint16_t uuid_idx, const std::string& error_message = "");
 
   // Returns whether or not the 'uuid_idx' refers to a failed directory.
   bool IsDataDirFailed(uint16_t uuid_idx) const;
@@ -315,12 +315,12 @@ class DataDirManager {
   // added. Although this function does not itself change DataDirManager state,
   // its expected usage warrants that it is called within the scope of a
   // lock_guard of dir_group_lock_.
-  Status GetDirsForGroupUnlocked(int target_size, vector<uint16_t>* group_indices);
+  Status GetDirsForGroupUnlocked(int target_size, std::vector<uint16_t>* group_indices);
 
   // Goes through the data dirs in 'uuid_indices' and populates
   // 'healthy_indices' with those that haven't failed.
-  void RemoveUnhealthyDataDirsUnlocked(const vector<uint16_t>& uuid_indices,
-                                       vector<uint16_t>* healthy_indices) const;
+  void RemoveUnhealthyDataDirsUnlocked(const std::vector<uint16_t>& uuid_indices,
+                                       std::vector<uint16_t>* healthy_indices) const;
 
   Env* env_;
   const std::string block_manager_type_;

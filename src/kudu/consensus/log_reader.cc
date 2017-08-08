@@ -61,6 +61,8 @@ struct LogSegmentSeqnoComparator {
 using consensus::OpId;
 using consensus::ReplicateMsg;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 const int64_t LogReader::kNoSizeLimit = -1;

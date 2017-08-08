@@ -27,6 +27,7 @@
 #include "kudu/server/monitored_task.h"
 #include "kudu/util/url-coding.h"
 
+using std::string;
 using strings::Substitute;
 
 namespace kudu {

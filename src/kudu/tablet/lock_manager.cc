@@ -31,6 +31,8 @@
 #include "kudu/util/semaphore.h"
 #include "kudu/util/trace.h"
 
+using base::subtle::NoBarrier_Load;
+
 namespace kudu {
 namespace tablet {
 

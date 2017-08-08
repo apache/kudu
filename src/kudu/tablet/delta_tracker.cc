@@ -43,9 +43,11 @@ using fs::CreateBlockOptions;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,

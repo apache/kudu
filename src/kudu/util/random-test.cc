@@ -23,6 +23,10 @@
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
+using std::numeric_limits;
+using std::unordered_set;
+using std::vector;
+
 namespace kudu {
 
 class RandomTest : public KuduTest {
@@ -62,10 +66,10 @@ TEST_F(RandomTest, TestNormalDist) {
 // This test reflects that, and if  we change the RNG algo this test should also change.
 TEST_F(RandomTest, TestUseOfBits) {
   // For Next32():
-  uint32_t ones32 = std::numeric_limits<uint32_t>::max();
+  uint32_t ones32 = numeric_limits<uint32_t>::max();
   uint32_t zeroes32 = 0;
   // For Next64():
-  uint64_t ones64 = std::numeric_limits<uint64_t>::max();
+  uint64_t ones64 = numeric_limits<uint64_t>::max();
   uint64_t zeroes64 = 0;
 
   for (int i = 0; i < 10000000; i++) {
@@ -81,8 +85,8 @@ TEST_F(RandomTest, TestUseOfBits) {
   // At the end, we should have flipped 31 and 64 bits, respectively. One
   // detail of the current RNG impl is that Next32() always returns a number
   // with MSB set to 0.
-  uint32_t expected_bits_31 = std::numeric_limits<uint32_t>::max() >> 1;
-  uint64_t expected_bits_64 = std::numeric_limits<uint64_t>::max();
+  uint32_t expected_bits_31 = numeric_limits<uint32_t>::max() >> 1;
+  uint64_t expected_bits_64 = numeric_limits<uint64_t>::max();
 
   ASSERT_EQ(0, ones32);
   ASSERT_EQ(expected_bits_31, zeroes32);
@@ -110,7 +114,7 @@ TEST_F(RandomTest, TestReservoirSample) {
   // Run 1000 trials selecting 5 elements.
   vector<int> results;
   vector<int> counts(population.size());
-  std::unordered_set<int> avoid;
+  unordered_set<int> avoid;
   for (int trial = 0; trial < 1000; trial++) {
     rng_.ReservoirSample(population, 5, avoid, &results);
     for (int result : results) {
@@ -151,7 +155,7 @@ TEST_F(RandomTest, TestReservoirSamplePopulationTooSmall) {
   }
 
   vector<int> results;
-  std::unordered_set<int> avoid;
+  unordered_set<int> avoid;
   rng_.ReservoirSample(population, 20, avoid, &results);
   ASSERT_EQ(population.size(), results.size());
   ASSERT_EQ(population, results);

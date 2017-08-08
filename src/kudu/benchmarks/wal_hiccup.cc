@@ -56,6 +56,7 @@ DEFINE_bool(page_align_wal_writes, false,
             "write to the fake WAL with exactly 4KB writes to never cross pages");
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 

@@ -470,7 +470,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   vector<const KuduPartialRow*> splits;
   for (int i = 0; i < kNumTablets - 1; i++) {
     KuduPartialRow* row = client_schema.NewRow();
-    ASSERT_OK(row->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets * (i + 1)));
+    ASSERT_OK(row->SetInt32(0, std::numeric_limits<int32_t>::max() / kNumTablets * (i + 1)));
     splits.push_back(row);
   }
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());

@@ -24,6 +24,8 @@
 #include "kudu/common/schema.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+
 namespace kudu {
 
 class PartialRowTest : public KuduTest {

@@ -42,6 +42,7 @@ namespace kudu {
 
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
+using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;

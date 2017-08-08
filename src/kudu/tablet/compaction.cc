@@ -40,9 +40,12 @@
 #include "kudu/util/debug/trace_event.h"
 
 using kudu::clock::HybridClock;
+using std::deque;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

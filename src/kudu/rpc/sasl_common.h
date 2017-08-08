@@ -33,8 +33,6 @@ class Sockaddr;
 
 namespace rpc {
 
-using std::string;
-
 // Constants
 extern const char* const kSaslMechPlain;
 extern const char* const kSaslMechGSSAPI;
@@ -83,7 +81,7 @@ Status DisableSaslInitialization() WARN_UNUSED_RESULT;
 Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) WARN_UNUSED_RESULT;
 
 // Return <ip>;<port> string formatted for SASL library use.
-string SaslIpPortString(const Sockaddr& addr);
+std::string SaslIpPortString(const Sockaddr& addr);
 
 // Return available plugin mechanisms for the given connection.
 std::set<SaslMechanism::Type> SaslListAvailableMechs();

@@ -107,7 +107,7 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
 
   void SetupErrorAndRespond(rpc::RpcContext* context,
                             TabletCopyErrorPB::Code code,
-                            const string& message,
+                            const std::string& message,
                             const Status& s);
 
   server::ServerBase* server_;

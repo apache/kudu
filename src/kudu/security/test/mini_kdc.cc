@@ -39,6 +39,7 @@
 using std::map;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

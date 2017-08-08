@@ -31,6 +31,7 @@
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/status.h"
 
+using std::string;
 using strings::Substitute;
 
 namespace kudu {

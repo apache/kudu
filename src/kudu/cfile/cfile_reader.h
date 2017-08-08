@@ -110,7 +110,7 @@ class CFileReader {
   //
   // Note that this implementation is currently O(n), so should not be used
   // in a hot path.
-  bool GetMetadataEntry(const string &key, string *val);
+  bool GetMetadataEntry(const std::string &key, std::string *val);
 
   // Can be called before Init().
   uint64_t file_size() const {
@@ -428,7 +428,7 @@ class CFileIterator : public ColumnIterator {
       return first_row_idx() + num_rows_in_block_ - 1;
     }
 
-    string ToString() const;
+    std::string ToString() const;
   };
 
   // Seek the given PreparedBlock to the given index within it.
@@ -468,7 +468,7 @@ class CFileIterator : public ColumnIterator {
   // Data blocks that contain data relevant to the currently Prepared
   // batch of rows.
   // These pointers are allocated from the prepared_block_pool_ below.
-  vector<PreparedBlock *> prepared_blocks_;
+  std::vector<PreparedBlock *> prepared_blocks_;
 
   ObjectPool<PreparedBlock> prepared_block_pool_;
   typedef ObjectPool<PreparedBlock>::scoped_ptr pblock_pool_scoped_ptr;

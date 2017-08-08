@@ -132,12 +132,12 @@ class RowSetMetadata {
     return blocks_by_col_id_;
   }
 
-  vector<BlockId> redo_delta_blocks() const {
+  std::vector<BlockId> redo_delta_blocks() const {
     std::lock_guard<LockType> l(lock_);
     return redo_delta_blocks_;
   }
 
-  vector<BlockId> undo_delta_blocks() const {
+  std::vector<BlockId> undo_delta_blocks() const {
     std::lock_guard<LockType> l(lock_);
     return undo_delta_blocks_;
   }

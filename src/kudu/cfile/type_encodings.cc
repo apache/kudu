@@ -32,12 +32,13 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
 
+using std::make_pair;
+using std::pair;
+using std::shared_ptr;
+using std::unordered_map;
+
 namespace kudu {
 namespace cfile {
-
-using std::unordered_map;
-using std::shared_ptr;
-
 
 template<DataType Type, EncodingType Encoding>
 struct DataTypeEncodingTraits {};

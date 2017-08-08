@@ -108,6 +108,8 @@ using rpc::MessengerBuilder;
 using std::cout;
 using std::endl;
 using std::list;
+using std::map;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -452,7 +454,7 @@ Status SummarizeDataSize(const RunnerContext& context) {
   vector<string> tablets;
   RETURN_NOT_OK(fs->ListTabletIds(&tablets));
 
-  unordered_map<string, TabletSizeStats> size_stats_by_table_id;
+  std::unordered_map<string, TabletSizeStats> size_stats_by_table_id;
 
   DataTable output_table({ "table id", "tablet id", "rowset id", "block type", "size" });
 

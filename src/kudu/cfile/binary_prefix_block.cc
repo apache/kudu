@@ -35,6 +35,7 @@ namespace kudu {
 namespace cfile {
 
 using kudu::coding::AppendGroupVarInt32;
+using std::string;
 using strings::Substitute;
 
 ////////////////////////////////////////////////////////////

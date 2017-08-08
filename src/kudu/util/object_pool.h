@@ -27,8 +27,6 @@
 
 namespace kudu {
 
-using base::ManualConstructor;
-
 template<class T>
 class ReturnToPool;
 
@@ -72,14 +70,14 @@ class ObjectPool {
 
   // Construct a new object instance from the pool.
   T *Construct() {
-    ManualConstructor<T> *obj = GetObject();
+    base::ManualConstructor<T> *obj = GetObject();
     obj->Init();
     return obj->get();
   }
 
   template<class Arg1>
   T *Construct(Arg1 arg1) {
-    ManualConstructor<T> *obj = GetObject();
+    base::ManualConstructor<T> *obj = GetObject();
     obj->Init(arg1);
     return obj->get();
   }
@@ -89,7 +87,7 @@ class ObjectPool {
   void Destroy(T *t) {
     CHECK_NOTNULL(t);
     ListNode *node = static_cast<ListNode *>(
-      reinterpret_cast<ManualConstructor<T> *>(t));
+      reinterpret_cast<base::ManualConstructor<T> *>(t));
 
     node->Destroy();
 
@@ -108,7 +106,7 @@ class ObjectPool {
   }
 
  private:
-  class ListNode : ManualConstructor<T> {
+  class ListNode : base::ManualConstructor<T> {
     friend class ObjectPool<T>;
 
     ListNode *next_on_free_list;
@@ -118,7 +116,7 @@ class ObjectPool {
   };
 
 
-  ManualConstructor<T> *GetObject() {
+  base::ManualConstructor<T> *GetObject() {
     if (free_list_head_ != NULL) {
       ListNode *tmp = free_list_head_;
       free_list_head_ = tmp->next_on_free_list;
@@ -126,7 +124,7 @@ class ObjectPool {
       DCHECK(tmp->is_on_freelist);
       tmp->is_on_freelist = false;
 
-      return static_cast<ManualConstructor<T> *>(tmp);
+      return static_cast<base::ManualConstructor<T> *>(tmp);
     }
     auto new_node = new ListNode();
     new_node->next_on_free_list = NULL;

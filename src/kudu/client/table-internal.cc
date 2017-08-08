@@ -19,6 +19,8 @@
 
 #include <string>
 
+using std::string;
+
 namespace kudu {
 namespace client {
 

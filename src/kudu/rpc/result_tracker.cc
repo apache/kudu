@@ -55,11 +55,14 @@ namespace rpc {
 using google::protobuf::Message;
 using kudu::MemTracker;
 using rpc::InboundCall;
+using std::make_pair;
 using std::move;
 using std::lock_guard;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

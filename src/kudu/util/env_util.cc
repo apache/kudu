@@ -67,6 +67,7 @@ TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, unsafe);
 TAG_FLAG(disk_reserved_override_prefix_1_bytes_free_for_testing, runtime);
 TAG_FLAG(disk_reserved_override_prefix_2_bytes_free_for_testing, runtime);
 
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;

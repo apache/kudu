@@ -44,7 +44,7 @@ using tools::RemoteKsckMaster;
 
 ClusterVerifier::ClusterVerifier(ExternalMiniCluster* cluster)
     : cluster_(cluster),
-      checksum_options_(ChecksumOptions()),
+      checksum_options_(tools::ChecksumOptions()),
       operations_timeout_(MonoDelta::FromSeconds(60)) {
   checksum_options_.use_snapshot = false;
 }

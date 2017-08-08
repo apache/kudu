@@ -55,8 +55,10 @@ DECLARE_bool(log_preallocate_segments);
 DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
 
 using std::shared_ptr;
+using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

@@ -206,7 +206,7 @@ struct VersionField {
     return v & BTREE_INSERTING_MASK;
   }
 
-  static string Stringify(AtomicVersion v) {
+  static std::string Stringify(AtomicVersion v) {
     return StringPrintf("[flags=%c%c%c vins=%" PRIu64 " vsplit=%" PRIu64 "]",
                         (v & BTREE_LOCK_MASK) ? 'L':' ',
                         (v & BTREE_SPLITTING_MASK) ? 'S':' ',
@@ -625,8 +625,8 @@ class PACKED InternalNode : public NodeBase<Traits> {
     #endif
   }
 
-  string ToString() const {
-    string ret("[");
+  std::string ToString() const {
+    std::string ret("[");
     for (int i = 0; i < num_children_; i++) {
       if (i > 0) {
         ret.append(", ");
@@ -778,8 +778,8 @@ class LeafNode : public NodeBase<Traits> {
     num_entries_ = new_num_entries;
   }
 
-  string ToString() const {
-    string ret;
+  std::string ToString() const {
+    std::string ret;
     for (int i = 0; i < num_entries_; i++) {
       if (i > 0) {
         ret.append(", ");

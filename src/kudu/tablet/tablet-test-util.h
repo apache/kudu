@@ -36,10 +36,6 @@
 namespace kudu {
 namespace tablet {
 
-using consensus::RaftConfigPB;
-using std::string;
-using std::vector;
-
 class KuduTabletTest : public KuduTest {
  public:
   explicit KuduTabletTest(const Schema& schema,
@@ -56,8 +52,8 @@ class KuduTabletTest : public KuduTest {
     SetUpTestTablet();
   }
 
-  void CreateTestTablet(const string& root_dir = "") {
-    string dir = root_dir.empty() ? GetTestPath("fs_root") : root_dir;
+  void CreateTestTablet(const std::string& root_dir = "") {
+    std::string dir = root_dir.empty() ? GetTestPath("fs_root") : root_dir;
     TabletHarness::Options opts(dir);
     opts.enable_metrics = true;
     opts.clock_type = clock_type_;
@@ -66,12 +62,12 @@ class KuduTabletTest : public KuduTest {
     CHECK_OK(harness_->Create(first_time));
   }
 
-  void SetUpTestTablet(const string& root_dir = "") {
+  void SetUpTestTablet(const std::string& root_dir = "") {
     CreateTestTablet(root_dir);
     CHECK_OK(harness_->Open());
   }
 
-  void TabletReOpen(const string& root_dir = "") {
+  void TabletReOpen(const std::string& root_dir = "") {
     SetUpTestTablet(root_dir);
   }
 
@@ -157,7 +153,7 @@ static inline Status SilentIterateToStringList(RowwiseIterator* iter,
 }
 
 static inline Status IterateToStringList(RowwiseIterator* iter,
-                                         vector<string>* out,
+                                         std::vector<std::string>* out,
                                          int limit = INT_MAX) {
   out->clear();
   Schema schema = iter->schema();
@@ -178,16 +174,17 @@ static inline Status IterateToStringList(RowwiseIterator* iter,
 
 // Performs snapshot reads, under each of the snapshots in 'snaps', and stores
 // the results in 'collected_rows'.
-static inline void CollectRowsForSnapshots(Tablet* tablet,
-                                           const Schema& schema,
-                                           const vector<MvccSnapshot>& snaps,
-                                           vector<vector<string>* >* collected_rows) {
+static inline void CollectRowsForSnapshots(
+    Tablet* tablet,
+    const Schema& schema,
+    const std::vector<MvccSnapshot>& snaps,
+    std::vector<std::vector<std::string>* >* collected_rows) {
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(schema, snapshot, UNORDERED, &iter));
     ASSERT_OK(iter->Init(NULL));
-    auto collector = new vector<string>();
+    auto collector = new std::vector<std::string>();
     ASSERT_OK(IterateToStringList(iter.get(), collector));
     for (const auto& mrs : *collector) {
       DVLOG(1) << "Got from MRS: " << mrs;
@@ -198,10 +195,11 @@ static inline void CollectRowsForSnapshots(Tablet* tablet,
 
 // Performs snapshot reads, under each of the snapshots in 'snaps', and verifies that
 // the results match the ones in 'expected_rows'.
-static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
-                                                 const Schema& schema,
-                                                 const vector<MvccSnapshot>& snaps,
-                                                 const vector<vector<string>* >& expected_rows) {
+static inline void VerifySnapshotsHaveSameResult(
+    Tablet* tablet,
+    const Schema& schema,
+    const std::vector<MvccSnapshot>& snaps,
+    const std::vector<std::vector<std::string>* >& expected_rows) {
   int idx = 0;
   // Now iterate again and make sure we get the same thing.
   for (const MvccSnapshot& snapshot : snaps) {
@@ -212,7 +210,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
                                             UNORDERED,
                                             &iter));
     ASSERT_OK(iter->Init(NULL));
-    vector<string> collector;
+    std::vector<std::string> collector;
     ASSERT_OK(IterateToStringList(iter.get(), &collector));
     ASSERT_EQ(collector.size(), expected_rows[idx]->size());
 
@@ -231,7 +229,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
 static inline Status DumpRowSet(const RowSet &rs,
                                 const Schema &projection,
                                 const MvccSnapshot &snap,
-                                vector<string> *out,
+                                std::vector<std::string> *out,
                                 int limit = INT_MAX) {
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(rs.NewRowIterator(&projection, snap, UNORDERED, &iter));
@@ -242,10 +240,10 @@ static inline Status DumpRowSet(const RowSet &rs,
 
 // Take an un-initialized iterator, Init() it, and iterate through all of its rows.
 // The resulting string contains a line per entry.
-static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
+static inline std::string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
   CHECK_OK(iter->Init(NULL));
 
-  vector<string> out;
+  std::vector<std::string> out;
   CHECK_OK(IterateToStringList(iter.get(), &out));
   return JoinStrings(out, "\n");
 }
@@ -253,11 +251,11 @@ static inline string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
 // Dump all of the rows of the tablet into the given vector.
 static inline Status DumpTablet(const Tablet& tablet,
                          const Schema& projection,
-                         vector<string>* out) {
+                         std::vector<std::string>* out) {
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet.NewRowIterator(projection, &iter));
   RETURN_NOT_OK(iter->Init(NULL));
-  std::vector<string> rows;
+  std::vector<std::string> rows;
   RETURN_NOT_OK(IterateToStringList(iter.get(), &rows));
   std::sort(rows.begin(), rows.end());
   out->swap(rows);

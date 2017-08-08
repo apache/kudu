@@ -72,6 +72,7 @@ using log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";

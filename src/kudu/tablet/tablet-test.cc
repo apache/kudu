@@ -40,7 +40,9 @@ DEFINE_int32(testcompaction_num_rows, 1000,
              "Number of rows per rowset in TestCompaction");
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

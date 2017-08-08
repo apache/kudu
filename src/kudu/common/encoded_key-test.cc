@@ -27,6 +27,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/test_macros.h"
 
+using std::string;
+
 namespace kudu {
 
 #define EXPECT_ROWKEY_EQ(schema, expected, enc_key)  \

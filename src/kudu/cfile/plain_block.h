@@ -132,7 +132,7 @@ class PlainBlockDecoder final : public BlockDecoder {
 
     if (data_.size() != kPlainBlockHeaderSize + num_elems_ * size_of_type) {
       return Status::Corruption(
-          string("unexpected data size. ") + "\nFirst 100 bytes: "
+          std::string("unexpected data size. ") + "\nFirst 100 bytes: "
               + HexDump(
                   Slice(data_.data(),
                         (data_.size() < 100 ? data_.size() : 100))));

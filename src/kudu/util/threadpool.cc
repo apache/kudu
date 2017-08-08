@@ -166,7 +166,7 @@ void ThreadPoolToken::Shutdown() {
   // outside the lock, in case there are concurrent threads wanting to access
   // the ThreadPool. The task's destructors may acquire locks, etc, so this
   // also prevents lock inversions.
-  deque<ThreadPool::Task> to_release = std::move(entries_);
+  std::deque<ThreadPool::Task> to_release = std::move(entries_);
   pool_->total_queued_tasks_ -= to_release.size();
 
   switch (state()) {
@@ -319,7 +319,7 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     total_queued_tasks_(0),
     tokenless_(NewToken(ExecutionMode::CONCURRENT)),
     metrics_(builder.metrics_) {
-  string prefix = !builder.trace_metric_prefix_.empty() ?
+  std::string prefix = !builder.trace_metric_prefix_.empty() ?
       builder.trace_metric_prefix_ : builder.name_;
 
   queue_time_trace_metric_name_ = TraceMetrics::InternName(
@@ -369,7 +369,7 @@ void ThreadPool::Shutdown() {
   // wanting to access the ThreadPool. The task's destructors may acquire
   // locks, etc, so this also prevents lock inversions.
   queue_.clear();
-  deque<deque<Task>> to_release;
+  std::deque<std::deque<Task>> to_release;
   for (auto* t : tokens_) {
     if (!t->entries_.empty()) {
       to_release.emplace_back(std::move(t->entries_));

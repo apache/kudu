@@ -57,7 +57,9 @@ using kudu::tablet::TabletStatePB;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
 using std::endl;
+using std::map;
 using std::shared_ptr;
+using std::string;
 using std::vector;
 using strings::Substitute;
 
@@ -195,7 +197,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
   // For assigning ids to table divs;
   int i = 0;
   auto generate_table = [this, &i](const vector<scoped_refptr<TabletReplica>>& replicas,
-                                   ostream* output) {
+                                   std::ostream* output) {
     i++;
 
     *output << "<h4>Summary</h4>\n";

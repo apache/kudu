@@ -95,13 +95,15 @@ DEFINE_int32(tpch_max_batch_size, 1000,
 DEFINE_string(table_name, "lineitem",
               "The table name to write/read");
 
+using std::string;
+using std::unordered_map;
+using std::vector;
+
 namespace kudu {
 
 using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduSchema;
-
-using std::unordered_map;
 
 struct Result {
   int32_t l_quantity;

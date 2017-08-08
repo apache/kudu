@@ -56,7 +56,7 @@ inline void AddTestRowToPB(RowOperationsPB::Type op_type,
                            const Schema& schema,
                            int32_t key,
                            int32_t int_val,
-                           const string& string_val,
+                           const std::string& string_val,
                            RowOperationsPB* ops) {
   AddTestRowWithNullableStringToPB(op_type, schema, key, int_val, string_val.c_str(), ops);
 }

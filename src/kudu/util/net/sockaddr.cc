@@ -32,9 +32,10 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/stopwatch.h"
 
-namespace kudu {
-
+using std::string;
 using strings::Substitute;
+
+namespace kudu {
 
 ///
 /// Sockaddr

@@ -28,9 +28,11 @@
 #include "kudu/util/status.h"
 #include "kudu/common/row.h"
 
-namespace kudu {
-
+using std::string;
 using std::unordered_set;
+using std::vector;
+
+namespace kudu {
 
 // In a new schema, we typically would start assigning column IDs at 0. However, this
 // makes it likely that in many test cases, the column IDs and the column indexes are

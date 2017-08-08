@@ -29,6 +29,8 @@
 DECLARE_int32(cfile_default_block_size);
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

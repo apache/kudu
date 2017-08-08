@@ -24,6 +24,7 @@
 #include "kudu/util/logging.h"
 
 using std::shared_ptr;
+using std::string;
 using std::unordered_map;
 
 namespace kudu {

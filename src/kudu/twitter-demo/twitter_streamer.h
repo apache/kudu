@@ -24,8 +24,6 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-using std::thread;
-
 namespace kudu {
 namespace twitter_demo {
 
@@ -51,7 +49,7 @@ class TwitterStreamer {
   Status DoStreaming();
   size_t DataReceived(const Slice& data);
 
-  thread thread_;
+  std::thread thread_;
   std::mutex lock_;
   Status stream_status_;
 

@@ -26,6 +26,8 @@
 #include "kudu/util/test_util.h"
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

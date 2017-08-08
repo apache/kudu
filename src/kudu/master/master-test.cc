@@ -49,10 +49,15 @@
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using std::map;
+using std::multiset;
 using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::thread;
+using std::unordered_map;
+using std::unordered_set;
+using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);

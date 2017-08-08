@@ -31,6 +31,7 @@
 using std::shared_ptr;
 using std::string;
 using std::unordered_set;
+using std::vector;
 
 namespace kudu { namespace tablet {
 

@@ -151,9 +151,9 @@ TEST_F(KeyUtilTest, TestTryDecrementCell) {
   }
   {
     ColumnSchema col_int32("a", INT32);
-    int32_t orig = numeric_limits<int32_t>::min();
+    int32_t orig = std::numeric_limits<int32_t>::min();
     EXPECT_EQ(key_util::TryDecrementCell(col_int32, &orig), false);
-    EXPECT_EQ(orig, numeric_limits<int32_t>::min());
+    EXPECT_EQ(orig, std::numeric_limits<int32_t>::min());
   }
   {
     ColumnSchema col_bool("a", BOOL);

@@ -35,12 +35,8 @@
 #endif
 
 #include <functional>
-using std::binary_function;
-using std::less;
 #include <string>
-using std::string;
 #include <vector>
-using std::vector;
 
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
@@ -184,7 +180,7 @@ inline bool HasSuffixString(const StringPiece& str,
 // The backslash character (\) is an escape character for * and ?
 // We limit the patterns to having a max of 16 * or ? characters.
 // ? matches 0 or 1 character, while * matches 0 or more characters.
-bool MatchPattern(const StringPiece& string,
+bool MatchPattern(const StringPiece& str,
                   const StringPiece& pattern);
 
 // Returns where suffix begins in str, or NULL if str doesn't end with suffix.
@@ -248,7 +244,7 @@ inline ptrdiff_t strcount(const char* buf, size_t len, char c) {
   return strcount(buf, buf + len, c);
 }
 // Returns the number of times a character occurs in a string for a C++ string:
-inline ptrdiff_t strcount(const string& buf, char c) {
+inline ptrdiff_t strcount(const std::string& buf, char c) {
   return strcount(buf.c_str(), buf.size(), c);
 }
 
@@ -267,7 +263,7 @@ char* AdjustedLastPos(const char* str, char separator, int n);
 // Compares two char* strings for equality. (Works with NULL, which compares
 // equal only to another NULL). Useful in hash tables:
 //    hash_map<const char*, Value, hash<const char*>, streq> ht;
-struct streq : public binary_function<const char*, const char*, bool> {
+struct streq : public std::binary_function<const char*, const char*, bool> {
   bool operator()(const char* s1, const char* s2) const {
     return ((s1 == 0 && s2 == 0) ||
             (s1 && s2 && *s1 == *s2 && strcmp(s1, s2) == 0));
@@ -277,7 +273,7 @@ struct streq : public binary_function<const char*, const char*, bool> {
 // Compares two char* strings. (Works with NULL, which compares greater than any
 // non-NULL). Useful in maps:
 //    map<const char*, Value, strlt> m;
-struct strlt : public binary_function<const char*, const char*, bool> {
+struct strlt : public std::binary_function<const char*, const char*, bool> {
   bool operator()(const char* s1, const char* s2) const {
     return (s1 != s2) && (s2 == 0 || (s1 != 0 && strcmp(s1, s2) < 0));
   }
@@ -298,7 +294,7 @@ inline bool IsAscii(const StringPiece& str) {
 //
 // Examples:
 // "a" -> "b", "aaa" -> "aab", "aa\xff" -> "ab", "\xff" -> "", "" -> ""
-string PrefixSuccessor(const StringPiece& prefix);
+std::string PrefixSuccessor(const StringPiece& prefix);
 
 // Returns the immediate lexicographically-following string. This is useful to
 // turn an inclusive range into something that can be used with Bigtable's
@@ -317,7 +313,7 @@ string PrefixSuccessor(const StringPiece& prefix);
 //
 // WARNING: Transforms "" -> "\0"; this doesn't account for Bigtable's special
 // treatment of "" as infinity.
-string ImmediateSuccessor(const StringPiece& s);
+std::string ImmediateSuccessor(const StringPiece& s);
 
 // Fills in *separator with a short string less than limit but greater than or
 // equal to start. If limit is greater than start, *separator is the common
@@ -327,7 +323,7 @@ string ImmediateSuccessor(const StringPiece& s);
 // FindShortestSeparator("abracadabra", "bacradabra", &sep) => sep == "b"
 // If limit is less than or equal to start, fills in *separator with start.
 void FindShortestSeparator(const StringPiece& start, const StringPiece& limit,
-                           string* separator);
+                           std::string* separator);
 
 // Copies at most n-1 bytes from src to dest, and returns dest. If n >=1, null
 // terminates dest; otherwise, returns dest unchanged. Unlike strncpy(), only
@@ -360,11 +356,11 @@ size_t strlcpy(char* dst, const char* src, size_t dst_size);
 // Replaces the first occurrence (if replace_all is false) or all occurrences
 // (if replace_all is true) of oldsub in s with newsub. In the second version,
 // *res must be distinct from all the other arguments.
-string StringReplace(const StringPiece& s, const StringPiece& oldsub,
+std::string StringReplace(const StringPiece& s, const StringPiece& oldsub,
                      const StringPiece& newsub, bool replace_all);
 void StringReplace(const StringPiece& s, const StringPiece& oldsub,
                    const StringPiece& newsub, bool replace_all,
-                   string* res);
+                   std::string* res);
 
 // Replaces all occurrences of substring in s with replacement. Returns the
 // number of instances replaced. s must be distinct from the other arguments.
@@ -372,12 +368,12 @@ void StringReplace(const StringPiece& s, const StringPiece& oldsub,
 // Less flexible, but faster, than RE::GlobalReplace().
 int GlobalReplaceSubstring(const StringPiece& substring,
                            const StringPiece& replacement,
-                           string* s);
+                           std::string* s);
 
 // Removes v[i] for every element i in indices. Does *not* preserve the order of
 // v. indices must be sorted in strict increasing order (no duplicates). Runs in
 // O(indices.size()).
-void RemoveStrings(vector<string>* v, const vector<int>& indices);
+void RemoveStrings(std::vector<std::string>* v, const std::vector<int>& indices);
 
 // Case-insensitive strstr(); use system strcasestr() instead.
 // WARNING: Removes const-ness of string argument!
@@ -424,7 +420,7 @@ const char* strstr_delimited(const char* haystack,
 char* gstrsep(char** stringp, const char* delim);
 
 // Appends StringPiece(data, len) to *s.
-void FastStringAppend(string* s, const char* data, int len);
+void FastStringAppend(std::string* s, const char* data, int len);
 
 // Returns a duplicate of the_string, with memory allocated by new[].
 char* strdup_with_new(const char* the_string);
@@ -478,12 +474,12 @@ bool FindTagValuePair(const char* in_str, char tag_value_separator,
 
 // Inserts separator after every interval characters in *s (but never appends to
 // the end of the original *s).
-void UniformInsertString(string* s, int interval, const char* separator);
+void UniformInsertString(std::string* s, int interval, const char* separator);
 
 // Inserts separator into s at each specified index. indices must be sorted in
 // ascending order.
 void InsertString(
-    string* s, const vector<uint32>& indices, char const* separator);
+    std::string* s, const std::vector<uint32>& indices, char const* separator);
 
 // Finds the nth occurrence of c in n; returns the index in s of that
 // occurrence, or string::npos if fewer than n occurrences.
@@ -509,6 +505,6 @@ int SafeSnprintf(char* str, size_t size, const char* format, ...)
 // Reads a line (terminated by delim) from file into *str. Reads delim from
 // file, but doesn't copy it into *str. Returns true if read a delim-terminated
 // line, or false on end-of-file or error.
-bool GetlineFromStdioFile(FILE* file, string* str, char delim);
+bool GetlineFromStdioFile(FILE* file, std::string* str, char delim);
 
 #endif  // STRINGS_UTIL_H_

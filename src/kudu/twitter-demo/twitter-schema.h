@@ -24,13 +24,11 @@
 namespace kudu {
 namespace twitter_demo {
 
-using client::KuduColumnSchema;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
+inline client::KuduSchema CreateTwitterSchema() {
+  using client::KuduColumnSchema;
 
-inline KuduSchema CreateTwitterSchema() {
-  KuduSchema s;
-  KuduSchemaBuilder b;
+  client::KuduSchema s;
+  client::KuduSchemaBuilder b;
   b.AddColumn("tweet_id")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
   b.AddColumn("text")->Type(KuduColumnSchema::STRING)->NotNull();
   b.AddColumn("source")->Type(KuduColumnSchema::STRING)->NotNull();

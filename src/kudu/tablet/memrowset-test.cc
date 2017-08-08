@@ -40,6 +40,8 @@ namespace tablet {
 using consensus::OpId;
 using log::LogAnchorRegistry;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 class TestMemRowSet : public KuduTest {
  public:

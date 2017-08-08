@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include <string>
-using std::string;
 
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -75,7 +74,7 @@ class SubstituteArg {
   // object.
   inline SubstituteArg(const char* value)  // NOLINT(runtime/explicit)
     : text_(value), size_(value == NULL ? 0 : strlen(text_)) {}
-  inline SubstituteArg(const string& value)  // NOLINT(runtime/explicit)
+  inline SubstituteArg(const std::string& value)  // NOLINT(runtime/explicit)
     : text_(value.data()), size_(value.size()) {}
   inline SubstituteArg(const StringPiece& value)  // NOLINT(runtime/explicit)
     : text_(value.data()), size_(value.size()) {}
@@ -157,7 +156,7 @@ char* SubstituteToBuffer(StringPiece format,
 }  // namespace internal
 
 void SubstituteAndAppend(
-  string* output, StringPiece format,
+  std::string* output, StringPiece format,
   const internal::SubstituteArg& arg0 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg1 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg2 = internal::SubstituteArg::kNoArg,
@@ -169,7 +168,7 @@ void SubstituteAndAppend(
   const internal::SubstituteArg& arg8 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg9 = internal::SubstituteArg::kNoArg);
 
-inline string Substitute(
+inline std::string Substitute(
   StringPiece format,
   const internal::SubstituteArg& arg0 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg1 = internal::SubstituteArg::kNoArg,
@@ -181,7 +180,7 @@ inline string Substitute(
   const internal::SubstituteArg& arg7 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg8 = internal::SubstituteArg::kNoArg,
   const internal::SubstituteArg& arg9 = internal::SubstituteArg::kNoArg) {
-  string result;
+  std::string result;
   SubstituteAndAppend(&result, format, arg0, arg1, arg2, arg3, arg4,
                                        arg5, arg6, arg7, arg8, arg9);
   return result;

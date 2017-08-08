@@ -62,6 +62,7 @@ namespace tools {
 using std::cout;
 using std::endl;
 using std::left;
+using std::map;
 using std::ostream;
 using std::right;
 using std::setw;
@@ -69,6 +70,7 @@ using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unordered_map;
+using std::vector;
 using strings::Substitute;
 
 namespace {

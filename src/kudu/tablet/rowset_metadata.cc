@@ -134,7 +134,7 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   }
 }
 
-const string RowSetMetadata::ToString() const {
+const std::string RowSetMetadata::ToString() const {
   return Substitute("RowSet($0)", id_);
 }
 

@@ -34,6 +34,7 @@ DEFINE_int32(alloc_size, 4, "number of bytes in each allocation");
 namespace kudu {
 
 using std::shared_ptr;
+using std::string;
 using std::thread;
 using std::vector;
 

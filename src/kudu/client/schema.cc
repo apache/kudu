@@ -40,6 +40,7 @@ MAKE_ENUM_LIMITS(kudu::client::KuduColumnSchema::DataType,
                  kudu::client::KuduColumnSchema::INT8,
                  kudu::client::KuduColumnSchema::BOOL);
 
+using std::string;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;

@@ -39,7 +39,7 @@ void Timestamp::EncodeTo(faststring* dst) const {
   PutMemcmpableVarint64(dst, v);
 }
 
-string Timestamp::ToString() const {
+std::string Timestamp::ToString() const {
   return strings::Substitute("$0", v);
 }
 

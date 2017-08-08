@@ -49,6 +49,7 @@ using std::endl;
 using std::ifstream;
 using std::ostringstream;
 using std::string;
+using std::vector;
 
 // GLog already implements symbolization. Just import their hidden symbol.
 namespace google {

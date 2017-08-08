@@ -59,8 +59,10 @@
 using std::pair;
 using std::set;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::unordered_map;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

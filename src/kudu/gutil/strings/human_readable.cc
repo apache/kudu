@@ -11,6 +11,8 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strip.h"
 
+using std::string;
+
 namespace {
 
 template <typename T>

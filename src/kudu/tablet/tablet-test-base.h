@@ -44,9 +44,6 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/gutil/strings/numbers.h"
 
-using std::unordered_set;
-using strings::Substitute;
-
 namespace kudu {
 namespace tablet {
 
@@ -85,12 +82,13 @@ struct StringKeyTestSetup {
     snprintf(buf, buf_size, "hello %" PRId64, key_idx);
   }
 
-  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  std::string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     char buf[256];
     FormatKey(buf, sizeof(buf), key_idx);
 
-    return Substitute(R"((string key="$0", int32 key_idx=$1, int32 val=$2))",
-                      buf, key_idx, val);
+    return strings::Substitute(
+        R"((string key="$0", int32 key_idx=$1, int32 val=$2))",
+        buf, key_idx, val);
   }
 
   // Slices can be arbitrarily large
@@ -120,10 +118,10 @@ struct CompositeKeyTestSetup {
     snprintf(buf, buf_size, "hello %" PRId64, key_idx);
   }
 
-  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  std::string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     char buf[256];
     FormatKey(buf, sizeof(buf), key_idx);
-    return Substitute(
+    return strings::Substitute(
       "(string key1=$0, int32 key2=$1, int32 val=$2, int32 val=$3)",
       buf, key_idx, key_idx, val);
   }
@@ -161,7 +159,7 @@ struct IntKeyTestSetup {
     CHECK_OK(row->SetInt32(2, val));
   }
 
-  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  std::string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     CHECK(false) << "Unsupported type";
     return "";
   }
@@ -215,29 +213,29 @@ void IntKeyTestSetup<INT64>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
 }
 
 template<>
-string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
-  return Substitute(
+std::string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  return strings::Substitute(
     "(int8 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
-  return Substitute(
+std::string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  return strings::Substitute(
     "(int16 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
-  return Substitute(
+std::string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  return strings::Substitute(
     "(int32 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
-  return Substitute(
+std::string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
+  return strings::Substitute(
     "(int64 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
@@ -270,14 +268,14 @@ struct NullableValueTestSetup {
     }
   }
 
-  string FormatDebugRow(int64_t key_idx, int64_t val, bool updated) {
+  std::string FormatDebugRow(int64_t key_idx, int64_t val, bool updated) {
     if (!updated && ShouldInsertAsNull(key_idx)) {
-      return Substitute(
+      return strings::Substitute(
       "(int32 key=$0, int32 key_idx=$1, int32 val=NULL)",
         (int32_t)key_idx, key_idx);
     }
 
-    return Substitute(
+    return strings::Substitute(
       "(int32 key=$0, int32 key_idx=$1, int32 val=$2)",
       (int32_t)key_idx, key_idx, val);
   }
@@ -489,7 +487,7 @@ class TabletTestBase : public KuduTabletTest {
   // Iterate through the full table, stringifying the resulting rows
   // into the given vector. This is only useful in tests which insert
   // a very small number of rows.
-  Status IterateToStringList(vector<string> *out) {
+  Status IterateToStringList(std::vector<std::string> *out) {
     gscoped_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
     RETURN_NOT_OK(iter->Init(NULL));
@@ -507,7 +505,7 @@ class TabletTestBase : public KuduTabletTest {
   // make sure that we don't overflow the type on inserts
   // or else we get errors because the key already exists
   uint64_t ClampRowCount(uint64_t proposal) const {
-    uint64_t num_rows = min(max_rows_, proposal);
+    uint64_t num_rows = std::min(max_rows_, proposal);
     if (num_rows < proposal) {
       LOG(WARNING) << "Clamping max rows to " << num_rows << " to prevent overflow";
     }

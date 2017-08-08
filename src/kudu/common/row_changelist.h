@@ -107,7 +107,7 @@ class RowChangeList {
   const Slice &slice() const { return encoded_data_; }
 
   // Return a string form of this changelist.
-  string ToString(const Schema &schema) const;
+  std::string ToString(const Schema &schema) const;
 
   bool is_reinsert() const {
     DCHECK_GT(encoded_data_.size(), 0);

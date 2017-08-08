@@ -125,6 +125,8 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           "Current Term of the Raft Consensus algorithm. This number increments "
                           "each time a leader election is started.");
 
+using std::string;
+
 namespace  {
 
 // Return the mean interval at which to check for failures of the
@@ -1665,7 +1667,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   // addresses of each server (since we can get the address information from
   // the committed config). Additionally, only a subset of the committed config
   // is required for typical cluster repair scenarios.
-  unordered_set<string> retained_peer_uuids;
+  std::unordered_set<string> retained_peer_uuids;
   const RaftConfigPB& config = req.new_config();
   for (const RaftPeerPB& new_peer : config.peers()) {
     const string& peer_uuid = new_peer.permanent_uuid();

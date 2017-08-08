@@ -8,9 +8,7 @@
 #include <string.h>
 
 #include <limits>
-using std::numeric_limits;
 #include <vector>
-using std::vector;
 
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
@@ -19,6 +17,10 @@ using std::vector;
 #include "kudu/gutil/utf/utf.h"  // for runetochar
 #include "kudu/gutil/charmap.h"
 #include "kudu/gutil/stl_util.h"
+
+using std::numeric_limits;
+using std::string;
+using std::vector;
 
 namespace strings {
 

@@ -37,6 +37,10 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
+using kudu::Status;
+using std::string;
+using strings::Substitute;
+
 DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
              "Maximum allowed clock synchronization error as reported by NTP "
              "before the server will abort.");
@@ -70,9 +74,6 @@ METRIC_DEFINE_gauge_uint64(server, hybrid_clock_error,
                            "Hybrid Clock Error",
                            kudu::MetricUnit::kMicroseconds,
                            "Server clock maximum error.");
-
-using kudu::Status;
-using strings::Substitute;
 
 namespace kudu {
 namespace clock {

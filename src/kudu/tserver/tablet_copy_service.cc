@@ -68,6 +68,8 @@ DEFINE_double(tablet_copy_early_session_timeout_prob, 0,
               "resulting in tablet copy failure. (For testing only!)");
 TAG_FLAG(tablet_copy_early_session_timeout_prob, unsafe);
 
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

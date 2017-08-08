@@ -50,7 +50,9 @@ METRIC_DECLARE_counter(block_cache_hits_caching);
 METRIC_DECLARE_entity(server);
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

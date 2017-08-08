@@ -163,7 +163,7 @@ class DeltaIterator {
   //
   // The Mutation objects will be allocated out of the provided Arena, which must be non-NULL.
   // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
-  virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
+  virtual Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) = 0;
 
   // Iterate through all deltas, adding deltas for columns not
   // specified in 'col_ids' to 'out'.
@@ -172,7 +172,7 @@ class DeltaIterator {
   // must be non-NULL.
   // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
   virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
-                                                 vector<DeltaKeyAndUpdate>* out,
+                                                 std::vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) = 0;
 
   // Returns true if there are any more rows left in this iterator.
@@ -202,7 +202,7 @@ Status DebugDumpDeltaIterator(DeltaType type,
                               DeltaIterator* iter,
                               const Schema& schema,
                               size_t nrows,
-                              vector<std::string>* out);
+                              std::vector<std::string>* out);
 
 // Writes the contents of 'iter' to 'out', block by block.  Used by
 // minor delta compaction.

@@ -44,6 +44,7 @@
 using strings::Substitute;
 using std::string;
 using std::unique_lock;
+using std::vector;
 
 DEFINE_int32(ipki_server_key_size, 2048,
              "the number of bits for server cert's private key. The server cert "

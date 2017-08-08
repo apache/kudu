@@ -186,14 +186,17 @@ class RowProjector {
 
   // Returns the mapping between base schema and projection schema columns
   // first: is the projection column index, second: is the base_schema  index
-  const vector<ProjectionIdxMapping>& base_cols_mapping() const { return base_cols_mapping_; }
-
+  const std::vector<ProjectionIdxMapping>& base_cols_mapping() const {
+    return base_cols_mapping_;
+  }
 
   // Returns the projection indexes of the columns to add with a default value.
   //
   // These are columns which are present in 'projection_' but not in 'base_schema',
   // and for which 'projection' has a default.
-  const vector<size_t>& projection_defaults() const { return projection_defaults_; }
+  const std::vector<size_t>& projection_defaults() const {
+    return projection_defaults_;
+  }
 
  private:
   friend class Schema;
@@ -246,8 +249,8 @@ class RowProjector {
  private:
   DISALLOW_COPY_AND_ASSIGN(RowProjector);
 
-  vector<ProjectionIdxMapping> base_cols_mapping_;
-  vector<size_t> projection_defaults_;
+  std::vector<ProjectionIdxMapping> base_cols_mapping_;
+  std::vector<size_t> projection_defaults_;
 
   const Schema* base_schema_;
   const Schema* projection_;
@@ -569,7 +572,7 @@ class RowBuilder {
     AddSlice(slice);
   }
 
-  void AddString(const string &str) {
+  void AddString(const std::string &str) {
     CheckNextType(STRING);
     AddSlice(str);
   }
@@ -579,7 +582,7 @@ class RowBuilder {
     AddSlice(slice);
   }
 
-  void AddBinary(const string &str) {
+  void AddBinary(const std::string &str) {
     CheckNextType(BINARY);
     AddSlice(str);
   }
@@ -690,7 +693,7 @@ class RowBuilder {
     Advance();
   }
 
-  void AddSlice(const string &str) {
+  void AddSlice(const std::string &str) {
     uint8_t *in_arena = arena_.AddSlice(str);
     CHECK(in_arena) << "could not allocate space in arena";
 

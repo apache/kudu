@@ -69,7 +69,7 @@ class Mutation {
 
   // Return a stringified version of the given list of mutations.
   // This should only be used for debugging/logging.
-  static string StringifyMutationList(const Schema &schema, const Mutation *head);
+  static std::string StringifyMutationList(const Schema &schema, const Mutation *head);
 
   // Append this mutation to the list at the given pointer.
   // This operation uses "Release" memory semantics

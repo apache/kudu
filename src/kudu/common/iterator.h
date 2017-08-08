@@ -54,7 +54,7 @@ class IteratorBase {
   virtual bool HasNext() const = 0;
 
   // Return a string representation of this iterator, suitable for debug output.
-  virtual string ToString() const = 0;
+  virtual std::string ToString() const = 0;
 
   // Return the schema for the rows which this iterator produces.
   virtual const Schema &schema() const = 0;

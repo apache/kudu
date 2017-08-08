@@ -26,6 +26,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/status.h"
 
+using std::set;
 using std::string;
 using std::vector;
 

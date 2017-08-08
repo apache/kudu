@@ -75,6 +75,7 @@ DECLARE_bool(rpc_trace_negotiation);
 using std::string;
 using std::thread;
 using std::unique_ptr;
+using std::vector;
 
 using kudu::security::Cert;
 using kudu::security::PkiConfig;

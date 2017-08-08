@@ -103,10 +103,10 @@ class ScanSpec {
     return exclusive_upper_bound_key_;
   }
 
-  const string& lower_bound_partition_key() const {
+  const std::string& lower_bound_partition_key() const {
     return lower_bound_partition_key_;
   }
-  const string& exclusive_upper_bound_partition_key() const {
+  const std::string& exclusive_upper_bound_partition_key() const {
     return exclusive_upper_bound_partition_key_;
   }
 

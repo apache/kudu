@@ -37,8 +37,10 @@
 DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

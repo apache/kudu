@@ -45,6 +45,7 @@ using base::SpinLockHolder;
 
 using strings::SubstituteAndAppend;
 using std::string;
+using std::vector;
 
 __thread TraceLog::PerThreadInfo* TraceLog::thread_local_info_ = nullptr;
 

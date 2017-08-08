@@ -29,6 +29,8 @@
 #include "kudu/util/env_util.h"
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace tserver {

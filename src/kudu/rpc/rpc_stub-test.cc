@@ -42,8 +42,10 @@ DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
 DECLARE_bool(socket_inject_short_recvs);
 
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using std::vector;
+using base::subtle::NoBarrier_Load;
 
 namespace kudu {
 namespace rpc {

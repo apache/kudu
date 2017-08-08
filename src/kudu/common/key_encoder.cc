@@ -90,7 +90,7 @@ const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
 ////------------------------------------------------------------
 
 template
-const KeyEncoder<string>& GetKeyEncoder(const TypeInfo* typeinfo);
+const KeyEncoder<std::string>& GetKeyEncoder(const TypeInfo* typeinfo);
 
 template
 const KeyEncoder<faststring>& GetKeyEncoder(const TypeInfo* typeinfo);

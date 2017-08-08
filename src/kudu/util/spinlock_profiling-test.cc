@@ -52,7 +52,7 @@ TEST_F(SpinLockProfilingTest, TestSpinlockProfiling) {
     ADOPT_TRACE(t.get());
     gutil::SubmitSpinLockProfileData(&lock, 4000000);
   }
-  string result = t->DumpToString();
+  std::string result = t->DumpToString();
   LOG(INFO) << "trace: " << result;
   ASSERT_STR_CONTAINS(result, "\"spinlock_wait_cycles\":4000000");
   // We can't assert more specifically because the CyclesPerSecond
@@ -71,7 +71,7 @@ TEST_F(SpinLockProfilingTest, TestStackCollection) {
   std::ostringstream str;
   int64_t dropped = 0;
   FlushSynchronizationProfile(&str, &dropped);
-  string s = str.str();
+  std::string s = str.str();
   ASSERT_STR_CONTAINS(s, "12345\t1 @ ");
   ASSERT_EQ(0, dropped);
 }

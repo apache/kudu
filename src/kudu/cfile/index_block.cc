@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_block.h"
+
+#include <string>
+
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/protobuf_util.h"
@@ -146,7 +149,8 @@ Status IndexBlockReader::Parse(const Slice &data) {
   size_t max_size = trailer_size_ptr - data_.data();
   if (trailer_size <= 0 ||
       trailer_size > max_size) {
-    string err = strings::Substitute("invalid index block trailer size: $0", trailer_size);
+    std::string err = strings::Substitute(
+        "invalid index block trailer size: $0", trailer_size);
     return Status::Corruption(err);
   }
 

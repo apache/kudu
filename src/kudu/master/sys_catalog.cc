@@ -78,9 +78,10 @@ using kudu::tablet::TabletReplica;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
 using std::function;
+using std::set;
 using std::shared_ptr;
-using std::unique_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 

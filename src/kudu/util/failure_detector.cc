@@ -29,10 +29,11 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
-namespace kudu {
-
+using std::string;
 using std::unordered_map;
 using strings::Substitute;
+
+namespace kudu {
 
 const int64_t RandomizedFailureMonitor::kMinWakeUpTimeMillis = 10;
 

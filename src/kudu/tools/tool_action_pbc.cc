@@ -40,6 +40,7 @@
 using std::cout;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 DEFINE_bool(oneline, false, "print each protobuf on a single line");
 TAG_FLAG(oneline, stable);

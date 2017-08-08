@@ -36,6 +36,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
+using std::string;
 using kudu::rpc::ServiceIf;
 
 namespace kudu {

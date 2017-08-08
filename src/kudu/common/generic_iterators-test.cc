@@ -40,6 +40,8 @@ DEFINE_int32(num_iters, 1, "Number of times to run merge");
 namespace kudu {
 
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 static const Schema kIntSchema({ ColumnSchema("val", UINT32) }, 1);
 

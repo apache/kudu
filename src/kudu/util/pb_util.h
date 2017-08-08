@@ -53,8 +53,6 @@ class RWFile;
 
 namespace pb_util {
 
-using google::protobuf::MessageLite;
-
 enum SyncMode {
   SYNC,
   NO_SYNC
@@ -75,28 +73,29 @@ enum class FileState {
 extern const int kPBContainerMinimumValidLength;
 
 // See MessageLite::AppendToString
-void AppendToString(const MessageLite &msg, faststring *output);
+void AppendToString(const google::protobuf::MessageLite &msg, faststring *output);
 
 // See MessageLite::AppendPartialToString
-void AppendPartialToString(const MessageLite &msg, faststring *output);
+void AppendPartialToString(const google::protobuf::MessageLite &msg, faststring *output);
 
 // See MessageLite::SerializeToString.
-void SerializeToString(const MessageLite &msg, faststring *output);
+void SerializeToString(const google::protobuf::MessageLite &msg, faststring *output);
 
 // See MessageLite::ParseFromZeroCopyStream
-Status ParseFromSequentialFile(MessageLite *msg, SequentialFile *rfile);
+Status ParseFromSequentialFile(google::protobuf::MessageLite *msg, SequentialFile *rfile);
 
 // Similar to MessageLite::ParseFromArray, with the difference that it returns
 // Status::Corruption() if the message could not be parsed.
-Status ParseFromArray(MessageLite* msg, const uint8_t* data, uint32_t length);
+Status ParseFromArray(google::protobuf::MessageLite* msg, const uint8_t* data, uint32_t length);
 
 // Load a protobuf from the given path.
-Status ReadPBFromPath(Env* env, const std::string& path, MessageLite* msg);
+Status ReadPBFromPath(Env* env, const std::string& path, google::protobuf::MessageLite* msg);
 
 // Serialize a protobuf to the given path.
 //
 // If SyncMode SYNC is provided, ensures the changes are made durable.
-Status WritePBToPath(Env* env, const std::string& path, const MessageLite& msg, SyncMode sync);
+Status WritePBToPath(Env* env, const std::string& path,
+                     const google::protobuf::MessageLite& msg, SyncMode sync);
 
 // Truncate any 'bytes' or 'string' fields of this message to max_len.
 // The text "<truncated>" is appended to any such truncated fields.

@@ -64,6 +64,8 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

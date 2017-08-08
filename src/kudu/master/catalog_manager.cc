@@ -209,6 +209,7 @@ DEFINE_int32(catalog_manager_inject_latency_prior_tsk_write_ms, 0,
 TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, hidden);
 TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, unsafe);
 
+using std::map;
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -2621,7 +2622,7 @@ Status CatalogManager::HandleRaftConfigChanged(
   *tablet_lock->mutable_data()->pb.mutable_consensus_state() = cstate;
 
   if (FLAGS_master_tombstone_evicted_tablet_replicas) {
-    unordered_set<string> current_member_uuids;
+    std::unordered_set<string> current_member_uuids;
     for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
       InsertOrDie(&current_member_uuids, peer.permanent_uuid());
     }

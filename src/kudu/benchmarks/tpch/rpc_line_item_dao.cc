@@ -37,6 +37,9 @@
 DEFINE_bool(tpch_cache_blocks_when_scanning, true,
             "Whether the scanners should cache the blocks that are read or not");
 
+using std::string;
+using std::vector;
+
 namespace kudu {
 
 using client::KuduInsert;

@@ -210,8 +210,8 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   void AddTablets(const std::vector<TabletInfo*>& tablets);
 
   // Atomically add and remove multiple tablets from this table.
-  void AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablets_to_add,
-                        const vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
+  void AddRemoveTablets(const std::vector<scoped_refptr<TabletInfo>>& tablets_to_add,
+                        const std::vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
 
   // Return true if tablet with 'partition_key_start' has been
   // removed from 'tablet_map_' below.

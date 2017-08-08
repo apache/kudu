@@ -32,7 +32,8 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/stopwatch.h"
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
 
 using strings::Substitute;
 
@@ -413,7 +414,7 @@ bool MvccSnapshot::MayHaveUncommittedTransactionsAtOrBefore(const Timestamp& tim
 }
 
 std::string MvccSnapshot::ToString() const {
-  string ret("MvccSnapshot[committed={T|");
+  std::string ret("MvccSnapshot[committed={T|");
 
   if (committed_timestamps_.size() == 0) {
     StrAppend(&ret, "T < ", all_committed_before_.ToString(),"}]");

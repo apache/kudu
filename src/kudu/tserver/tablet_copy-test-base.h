@@ -69,8 +69,8 @@ class TabletCopyTest : public TabletServerTestBase {
 
   // Return a vector of the blocks contained in the specified superblock (not
   // including orphaned blocks).
-  static vector<BlockId> ListBlocks(const tablet::TabletSuperBlockPB& superblock) {
-    vector<BlockId> block_ids;
+  static std::vector<BlockId> ListBlocks(const tablet::TabletSuperBlockPB& superblock) {
+    std::vector<BlockId> block_ids;
     for (const auto& rowset : superblock.rowsets()) {
       for (const auto& col : rowset.columns()) {
         block_ids.emplace_back(col.block().id());

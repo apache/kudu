@@ -68,6 +68,7 @@ TAG_FLAG(authn_token_validity_seconds, experimental);
 
 using std::min;
 using std::shared_ptr;
+using std::string;
 using std::vector;
 
 using kudu::consensus::RaftPeerPB;

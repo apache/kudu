@@ -33,6 +33,7 @@
 #include "kudu/util/trace.h"
 
 using google::protobuf::Message;
+using std::string;
 using std::unique_ptr;
 
 namespace kudu {

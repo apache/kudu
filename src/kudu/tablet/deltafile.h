@@ -201,11 +201,11 @@ class DeltaFileIterator : public DeltaIterator {
   Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
-  Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
+  Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
   Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
-                                         vector<DeltaKeyAndUpdate>* out,
+                                         std::vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) OVERRIDE;
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
   virtual bool HasNext() OVERRIDE;
   bool MayHaveDeltas() override;
 
@@ -254,7 +254,7 @@ class DeltaFileIterator : public DeltaIterator {
     rowid_t prepared_block_start_idx_;
 
     // Return a string description of this prepared block, for logging.
-    string ToString() const;
+    std::string ToString() const;
   };
 
 
@@ -282,7 +282,8 @@ class DeltaFileIterator : public DeltaIterator {
   Status VisitMutations(Visitor *visitor);
 
   // Log a FATAL error message about a bad delta.
-  void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
+  void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
+                            const std::string &msg);
 
   std::shared_ptr<DeltaFileReader> dfr_;
 
@@ -314,7 +315,7 @@ class DeltaFileIterator : public DeltaIterator {
   // The type of this delta iterator, i.e. UNDO or REDO.
   const DeltaType delta_type_;
 
-  CFileReader::CacheControl cache_blocks_;
+  cfile::CFileReader::CacheControl cache_blocks_;
 };
 
 

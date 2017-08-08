@@ -27,6 +27,7 @@
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/faststring.h"
 
+using std::string;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

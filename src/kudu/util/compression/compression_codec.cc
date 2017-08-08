@@ -263,7 +263,7 @@ Status GetCompressionCodec(CompressionType compression,
 }
 
 CompressionType GetCompressionCodecType(const std::string& name) {
-  string uname;
+  std::string uname;
   ToUpperCase(name, &uname);
 
   if (uname == "SNAPPY")

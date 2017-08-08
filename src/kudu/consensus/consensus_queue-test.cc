@@ -42,6 +42,8 @@ DECLARE_int32(consensus_max_batch_size_bytes);
 
 METRIC_DECLARE_entity(tablet);
 
+using std::vector;
+
 namespace kudu {
 namespace consensus {
 

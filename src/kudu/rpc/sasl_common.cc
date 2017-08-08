@@ -42,6 +42,7 @@
 #include "kudu/security/init.h"
 
 using std::set;
+using std::string;
 
 DECLARE_string(keytab_file);
 

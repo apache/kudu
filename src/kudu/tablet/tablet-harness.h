@@ -33,9 +33,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
-using std::string;
-using std::vector;
-
 namespace kudu {
 namespace tablet {
 
@@ -52,8 +49,9 @@ static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema
   CHECK_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
 
   // Create the tablet partitions.
-  vector<Partition> partitions;
-  CHECK_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), {}, schema, &partitions));
+  std::vector<Partition> partitions;
+  CHECK_OK(partition_schema.CreatePartitions(
+      std::vector<KuduPartialRow>(), {}, schema, &partitions));
   CHECK_EQ(1, partitions.size());
   return std::make_pair(partition_schema, partitions[0]);
 }
@@ -65,7 +63,7 @@ class TabletHarness {
       HYBRID_CLOCK,
       LOGICAL_CLOCK
     };
-    explicit Options(string root_dir)
+    explicit Options(std::string root_dir)
         : env(Env::Default()),
           tablet_id("test_tablet_id"),
           root_dir(std::move(root_dir)),
@@ -73,8 +71,8 @@ class TabletHarness {
           clock_type(LOGICAL_CLOCK) {}
 
     Env* env;
-    string tablet_id;
-    string root_dir;
+    std::string tablet_id;
+    std::string root_dir;
     bool enable_metrics;
     ClockType clock_type;
   };

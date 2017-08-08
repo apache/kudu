@@ -33,6 +33,8 @@ using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
 using strings::Split;
 using strings::Substitute;
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace tools {

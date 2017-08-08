@@ -34,6 +34,7 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace security {

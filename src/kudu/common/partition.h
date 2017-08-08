@@ -289,7 +289,7 @@ class PartitionSchema {
 
   // Private templated helper for EncodeKey.
   template<typename Row>
-  Status EncodeKeyImpl(const Row& row, string* buf) const;
+  Status EncodeKeyImpl(const Row& row, std::string* buf) const;
 
   // Returns true if all of the columns in the range partition key are unset in
   // the row.

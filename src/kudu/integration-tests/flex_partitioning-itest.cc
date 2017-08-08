@@ -56,6 +56,8 @@ using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
 using kudu::master::MasterErrorPB;
 using kudu::rpc::RpcController;
+using std::pair;
+using std::string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;

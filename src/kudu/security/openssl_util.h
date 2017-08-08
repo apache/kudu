@@ -69,7 +69,7 @@ typedef struct x509_st X509;
 namespace kudu {
 namespace security {
 
-using PasswordCallback = std::function<string(void)>;
+using PasswordCallback = std::function<std::string(void)>;
 
 // Disable initialization of OpenSSL. Must be called before
 // any call to InitializeOpenSSL().

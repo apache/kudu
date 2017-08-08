@@ -71,8 +71,10 @@ using google::protobuf::RepeatedPtrField;
 using kudu::fs::ScopedWritableBlockCloser;
 using kudu::fs::WritableBlock;
 using std::accumulate;
+using std::pair;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace cfile {

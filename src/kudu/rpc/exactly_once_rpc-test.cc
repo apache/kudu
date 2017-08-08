@@ -27,6 +27,7 @@ DECLARE_int64(result_tracker_gc_interval_ms);
 using std::atomic_int;
 using std::shared_ptr;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace rpc {

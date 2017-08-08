@@ -29,6 +29,7 @@
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 DECLARE_bool(rpc_server_allow_ephemeral_ports);
 

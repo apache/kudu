@@ -42,6 +42,7 @@
 
 using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 
@@ -390,7 +391,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     vector<string> wal_children;
     ASSERT_OK(fs_manager->env()->GetChildren(wal_dir, &wal_children));
     // Skip '.', '..', and index files.
-    unordered_set<string> wal_segments;
+    std::unordered_set<string> wal_segments;
     for (const auto& filename : wal_children) {
       if (HasPrefixString(filename, FsManager::kWalFileNamePrefix)) {
         wal_segments.insert(filename);

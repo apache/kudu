@@ -32,8 +32,9 @@
 #include "kudu/util/interval_tree-inl.h"
 #include "kudu/util/test_util.h"
 
-using std::vector;
+using std::pair;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {

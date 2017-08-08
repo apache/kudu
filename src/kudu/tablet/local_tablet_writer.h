@@ -79,7 +79,7 @@ class LocalTabletWriter {
   // Returns a bad Status if the applied operation had a per-row error.
   Status Write(RowOperationsPB::Type type,
                const KuduPartialRow& row) {
-    vector<Op> ops;
+    std::vector<Op> ops;
     ops.emplace_back(type, &row);
     return WriteBatch(ops);
   }

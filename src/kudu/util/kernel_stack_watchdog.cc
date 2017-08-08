@@ -37,6 +37,7 @@ DEFINE_int32(hung_task_check_interval_ms, 200,
 TAG_FLAG(hung_task_check_interval_ms, hidden);
 
 using std::lock_guard;
+using std::string;
 using strings::Substitute;
 
 namespace kudu {
@@ -66,13 +67,13 @@ KernelStackWatchdog::~KernelStackWatchdog() {
 void KernelStackWatchdog::SaveLogsForTests(bool save_logs) {
   lock_guard<simple_spinlock> l(log_lock_);
   if (save_logs) {
-    log_collector_.reset(new vector<string>());
+    log_collector_.reset(new std::vector<string>());
   } else {
     log_collector_.reset();
   }
 }
 
-vector<string> KernelStackWatchdog::LoggedMessagesForTests() const {
+std::vector<string> KernelStackWatchdog::LoggedMessagesForTests() const {
   lock_guard<simple_spinlock> l(log_lock_);
   CHECK(log_collector_) << "Must call SaveLogsForTests(true) first";
   return *log_collector_;

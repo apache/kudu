@@ -25,8 +25,6 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/util/status.h"
 
-using boost::optional;
-
 namespace kudu {
 
 class Arena;
@@ -119,7 +117,7 @@ void ColumnPredicateToPB(const ColumnPredicate& predicate, ColumnPredicatePB* pb
 Status ColumnPredicateFromPB(const Schema& schema,
                              Arena* arena,
                              const ColumnPredicatePB& pb,
-                             optional<ColumnPredicate>* predicate);
+                             boost::optional<ColumnPredicate>* predicate);
 
 // Encode the given row block into the provided protobuf and data buffers.
 //

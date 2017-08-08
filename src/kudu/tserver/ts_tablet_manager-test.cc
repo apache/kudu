@@ -39,6 +39,9 @@
 #define ASSERT_MONOTONIC_REPORT_SEQNO(report_seqno, tablet_report) \
   ASSERT_NO_FATAL_FAILURE(AssertMonotonicReportSeqno(report_seqno, tablet_report))
 
+using std::string;
+using std::vector;
+
 namespace kudu {
 namespace tserver {
 

@@ -108,11 +108,11 @@ class RowSet {
                            std::string* max_encoded_key) const = 0;
 
   // Return a displayable string for this rowset.
-  virtual string ToString() const = 0;
+  virtual std::string ToString() const = 0;
 
   // Dump the full contents of this rowset, for debugging.
   // This is very verbose so only useful within unit tests.
-  virtual Status DebugDump(vector<string> *lines = NULL) = 0;
+  virtual Status DebugDump(std::vector<std::string> *lines = NULL) = 0;
 
   // Estimate the number of bytes on-disk
   virtual uint64_t OnDiskSize() const = 0;
@@ -218,7 +218,7 @@ class RowSet {
 };
 
 // Used often enough, may as well typedef it.
-typedef vector<std::shared_ptr<RowSet> > RowSetVector;
+typedef std::vector<std::shared_ptr<RowSet> > RowSetVector;
 // Structure which caches an encoded and hashed key, suitable
 // for probing against rowsets.
 class RowSetKeyProbe {
@@ -335,9 +335,9 @@ class DuplicatingRowSet : public RowSet {
   // Return the size of this rowset relevant for merge compactions.
   uint64_t OnDiskDataSizeNoUndos() const OVERRIDE;
 
-  string ToString() const OVERRIDE;
+  std::string ToString() const OVERRIDE;
 
-  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE;
+  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
 
   std::shared_ptr<RowSetMetadata> metadata() OVERRIDE;
 

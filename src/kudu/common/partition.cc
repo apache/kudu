@@ -367,7 +367,7 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     partitions->swap(new_partitions);
   }
 
-  unordered_set<int> range_column_idxs;
+  std::unordered_set<int> range_column_idxs;
   for (const ColumnId& column_id : range_schema_.column_ids) {
     int column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {

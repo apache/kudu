@@ -32,8 +32,6 @@ class CountDownLatch;
 namespace tablet {
 class MvccManager;
 
-using std::string;
-
 // A snapshot of the current MVCC state, which can determine whether
 // a transaction ID should be considered visible.
 class MvccSnapshot {
@@ -90,7 +88,7 @@ class MvccSnapshot {
 
   // Return a string representation of the set of committed transactions
   // in this snapshot, suitable for debug printouts.
-  string ToString() const;
+  std::string ToString() const;
 
   // Return true if the snapshot is considered 'clean'. A clean snapshot is one
   // which is determined only by a timestamp -- the snapshot considers all

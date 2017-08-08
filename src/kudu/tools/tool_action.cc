@@ -30,6 +30,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/url-coding.h"
 
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;

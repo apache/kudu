@@ -33,7 +33,7 @@ TEST_F(MTBloomFileTest, Benchmark) {
   ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
   ASSERT_OK(OpenBloomFile());
 
-  vector<scoped_refptr<kudu::Thread> > threads;
+  std::vector<scoped_refptr<kudu::Thread> > threads;
 
   for (int i = 0; i < FLAGS_benchmark_num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;

@@ -56,8 +56,10 @@ DEFINE_bool(cfile_verify_checksums, true,
 TAG_FLAG(cfile_verify_checksums, evolving);
 
 using kudu::fs::ReadableBlock;
-using strings::Substitute;
+using std::string;
 using std::unique_ptr;
+using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {

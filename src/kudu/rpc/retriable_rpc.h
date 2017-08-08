@@ -281,7 +281,7 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpcCb(const Status& status
   // failure.
   Status final_status = result.status;
   if (!final_status.ok()) {
-    string error_string;
+    std::string error_string;
     if (current_) {
       error_string = strings::Substitute("Failed to write to server: $0", current_->ToString());
     } else {

@@ -40,6 +40,7 @@
 
 using std::ostringstream;
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace security {

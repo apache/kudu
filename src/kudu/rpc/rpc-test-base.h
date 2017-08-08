@@ -427,7 +427,7 @@ class RpcTestBase : public KuduTest {
   }
 
  protected:
-  std::shared_ptr<Messenger> CreateMessenger(const string &name,
+  std::shared_ptr<Messenger> CreateMessenger(const std::string &name,
                                              int n_reactors = 1,
                                              bool enable_ssl = false) {
     MessengerBuilder bld(name);
@@ -498,11 +498,11 @@ class RpcTestBase : public KuduTest {
     RpcController controller;
 
     int idx1;
-    string s1(size1, 'a');
+    std::string s1(size1, 'a');
     CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s1)), &idx1));
 
     int idx2;
-    string s2(size2, 'b');
+    std::string s2(size2, 'b');
     CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s2)), &idx2));
 
     request.set_sidecar1_idx(idx1);
@@ -613,7 +613,7 @@ class RpcTestBase : public KuduTest {
   }
 
  protected:
-  string service_name_;
+  std::string service_name_;
   std::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
   std::shared_ptr<kudu::MemTracker> mem_tracker_;

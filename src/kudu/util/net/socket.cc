@@ -276,7 +276,7 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
   DCHECK_GE(fd_, 0);
   if (::getsockname(fd_, (struct sockaddr *)&sin, &len) == -1) {
     int err = errno;
-    return Status::NetworkError(string("getsockname error: ") +
+    return Status::NetworkError(std::string("getsockname error: ") +
                                 ErrnoToString(err), Slice(), err);
   }
   *cur_addr = sin;
@@ -289,7 +289,7 @@ Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
   DCHECK_GE(fd_, 0);
   if (::getpeername(fd_, (struct sockaddr *)&sin, &len) == -1) {
     int err = errno;
-    return Status::NetworkError(string("getpeername error: ") +
+    return Status::NetworkError(std::string("getpeername error: ") +
                                 ErrnoToString(err), Slice(), err);
   }
   *cur_addr = sin;

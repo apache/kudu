@@ -27,6 +27,8 @@
 #include "kudu/common/types.h"
 #include "kudu/util/test_util.h"
 
+using std::vector;
+
 namespace kudu {
 
 class TestColumnPredicate : public KuduTest {

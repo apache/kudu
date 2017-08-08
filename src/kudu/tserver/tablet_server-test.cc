@@ -49,6 +49,7 @@ using kudu::tablet::TabletSuperBlockPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,

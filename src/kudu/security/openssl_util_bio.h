@@ -57,7 +57,7 @@ Status ToBIO(BIO* bio, DataFormat format, TYPE* obj) {
 // a password protected private key.
 inline int TLSPasswordCB(char* buf, int size, int /* rwflag */, void* userdata) {
   const auto* cb = reinterpret_cast<const PasswordCallback*>(userdata);
-  string pw = (*cb)();
+  std::string pw = (*cb)();
   if (pw.size() >= size) {
     LOG(ERROR) << "Provided key password is longer than maximum length "
                << size;
@@ -87,7 +87,7 @@ Status FromBIO(BIO* bio, DataFormat format, c_unique_ptr<TYPE>* ret,
 }
 
 template<typename Type, typename Traits = SslTypeTraits<Type>>
-Status FromString(const string& data, DataFormat format,
+Status FromString(const std::string& data, DataFormat format,
                   c_unique_ptr<Type>* ret) {
   const void* mdata = reinterpret_cast<const void*>(data.data());
   auto bio = ssl_make_unique(BIO_new_mem_buf(
@@ -115,7 +115,7 @@ Status ToString(std::string* data, DataFormat format, Type* obj) {
 }
 
 template<typename Type, typename Traits = SslTypeTraits<Type>>
-Status FromFile(const string& fpath, DataFormat format,
+Status FromFile(const std::string& fpath, DataFormat format,
                 c_unique_ptr<Type>* ret, const PasswordCallback& cb = PasswordCallback()) {
   auto bio = ssl_make_unique(BIO_new(BIO_s_file()));
   OPENSSL_RET_NOT_OK(BIO_read_filename(bio.get(), fpath.c_str()),

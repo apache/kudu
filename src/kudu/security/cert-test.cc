@@ -33,6 +33,7 @@
 #include "kudu/util/test_util.h"
 
 using std::pair;
+using std::string;
 using std::thread;
 using std::vector;
 

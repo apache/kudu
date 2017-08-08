@@ -22,6 +22,8 @@
 #include "kudu/common/schema.h"
 #include "kudu/tablet/tablet-test-base.h"
 
+using strings::Substitute;
+
 namespace kudu {
 namespace tablet {
 

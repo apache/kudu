@@ -68,7 +68,7 @@ namespace tserver {
 
 class TabletServerTestBase : public KuduTest {
  public:
-  typedef pair<int32_t, int32_t> KeyValue;
+  typedef std::pair<int32_t, int32_t> KeyValue;
 
   TabletServerTestBase()
     : schema_(GetSimpleTestSchema()),
@@ -141,7 +141,7 @@ class TabletServerTestBase : public KuduTest {
     WriteResponsePB resp;
     rpc::RpcController controller;
     controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
-    string new_string_val(strings::Substitute("mutated$0", row_idx));
+    std::string new_string_val(strings::Substitute("mutated$0", row_idx));
 
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, row_idx, new_val, new_string_val,
                    req.mutable_row_operations());
@@ -179,8 +179,8 @@ class TabletServerTestBase : public KuduTest {
                             uint64_t count,
                             uint64_t num_batches = -1,
                             TabletServerServiceProxy* proxy = NULL,
-                            string tablet_id = kTabletId,
-                            vector<uint64_t>* write_timestamps_collector = NULL,
+                            std::string tablet_id = kTabletId,
+                            std::vector<uint64_t>* write_timestamps_collector = NULL,
                             TimeSeries *ts = NULL,
                             bool string_field_defined = true) {
 
@@ -214,7 +214,7 @@ class TabletServerTestBase : public KuduTest {
       uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-        string str_val = strings::Substitute("original$0", j);
+        std::string str_val = strings::Substitute("original$0", j);
         const char* cstr_val = str_val.c_str();
         if (!string_field_defined) {
           cstr_val = NULL;
@@ -249,7 +249,7 @@ class TabletServerTestBase : public KuduTest {
   void DeleteTestRowsRemote(int64_t first_row,
                             uint64_t count,
                             TabletServerServiceProxy* proxy = NULL,
-                            string tablet_id = kTabletId) {
+                            std::string tablet_id = kTabletId) {
     if (!proxy) {
       proxy = proxy_.get();
     }
@@ -278,9 +278,9 @@ class TabletServerTestBase : public KuduTest {
     ASSERT_OK(row->SetStringCopy(2, StringPrintf("hello %d", index)));
   }
 
-  void DrainScannerToStrings(const string& scanner_id,
+  void DrainScannerToStrings(const std::string& scanner_id,
                              const Schema& projection,
-                             vector<string>* results,
+                             std::vector<std::string>* results,
                              TabletServerServiceProxy* proxy = NULL,
                              uint32_t call_seq_id = 1) {
 
@@ -314,7 +314,7 @@ class TabletServerTestBase : public KuduTest {
   void StringifyRowsFromResponse(const Schema& projection,
                                  const rpc::RpcController& rpc,
                                  ScanResponsePB& resp,
-                                 vector<string>* results) {
+                                 std::vector<std::string>* results) {
     RowwiseRowBlockPB* rrpb = resp.mutable_data();
     Slice direct, indirect; // sidecar data buffers
     ASSERT_OK(rpc.GetInboundSidecar(rrpb->rows_sidecar(), &direct));
@@ -322,7 +322,7 @@ class TabletServerTestBase : public KuduTest {
       ASSERT_OK(rpc.GetInboundSidecar(rrpb->indirect_data_sidecar(),
               &indirect));
     }
-    vector<const uint8_t*> rows;
+    std::vector<const uint8_t*> rows;
     ASSERT_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
                                         indirect, &direct, &rows));
     VLOG(1) << "Round trip got " << rows.size() << " rows";
@@ -372,7 +372,7 @@ class TabletServerTestBase : public KuduTest {
   }
 
   // Verifies that a set of expected rows (key, value) is present in the tablet.
-  void VerifyRows(const Schema& schema, const vector<KeyValue>& expected) {
+  void VerifyRows(const Schema& schema, const std::vector<KeyValue>& expected) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema, &iter));
     ASSERT_OK(iter->Init(NULL));

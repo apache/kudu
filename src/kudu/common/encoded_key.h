@@ -36,7 +36,7 @@ class EncodedKey {
   // in which case raw_keys represents the supplied prefix of a
   // composite key.
   EncodedKey(faststring *data,
-             vector<const void *> *raw_keys,
+             std::vector<const void *> *raw_keys,
              size_t num_key_cols);
 
   static gscoped_ptr<EncodedKey> FromContiguousRow(const ConstContiguousRow& row);
@@ -57,7 +57,7 @@ class EncodedKey {
 
   const Slice &encoded_key() const { return encoded_key_; }
 
-  const vector<const void *> &raw_keys() const { return raw_keys_; }
+  const std::vector<const void *> &raw_keys() const { return raw_keys_; }
 
   size_t num_key_columns() const { return num_key_cols_; }
 
@@ -85,7 +85,7 @@ class EncodedKey {
   const int num_key_cols_;
   Slice encoded_key_;
   gscoped_ptr<uint8_t[]> data_;
-  vector<const void *> raw_keys_;
+  std::vector<const void *> raw_keys_;
 };
 
 // A builder for encoded key: creates an encoded key from
@@ -110,7 +110,7 @@ class EncodedKeyBuilder {
   faststring encoded_key_;
   const size_t num_key_cols_;
   size_t idx_;
-  vector<const void *> raw_keys_;
+  std::vector<const void *> raw_keys_;
 };
 
 } // namespace kudu

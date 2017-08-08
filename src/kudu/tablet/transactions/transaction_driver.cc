@@ -43,6 +43,7 @@ using log::Log;
 using rpc::RequestIdPB;
 using rpc::ResultTracker;
 using std::shared_ptr;
+using std::string;
 
 static const char* kTimestampFieldName = "timestamp";
 

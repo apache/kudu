@@ -151,7 +151,7 @@ class DeltaTracker {
   // stores visible before attempting to flush the metadata to disk.
   Status CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& update,
                                         const SharedDeltaStoreVector& to_remove,
-                                        const vector<BlockId>& new_delta_blocks,
+                                        const std::vector<BlockId>& new_delta_blocks,
                                         DeltaType type,
                                         MetadataFlushType flush_type);
 
@@ -254,7 +254,7 @@ class DeltaTracker {
                   MetadataFlushType flush_type);
 
   // This collects undo and/or redo stores into '*stores'.
-  void CollectStores(vector<std::shared_ptr<DeltaStore>>* stores,
+  void CollectStores(std::vector<std::shared_ptr<DeltaStore>>* stores,
                      WhichStores which) const;
 
   // Performs the actual compaction. Results of compaction are written to "block",
@@ -280,8 +280,8 @@ class DeltaTracker {
   // race on 'redo_delta_stores_'.
   Status MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t end_idx,
                                          const Schema* schema,
-                                         vector<std::shared_ptr<DeltaStore > > *target_stores,
-                                         vector<BlockId> *target_blocks,
+                                         std::vector<std::shared_ptr<DeltaStore > > *target_stores,
+                                         std::vector<BlockId> *target_blocks,
                                          std::unique_ptr<DeltaIterator> *out);
 
   std::string LogPrefix() const;

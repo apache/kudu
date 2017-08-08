@@ -329,7 +329,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   ASSERT_OK(WaitForOpFromCurrentTerm(followers[0], tablet_id, COMMITTED_OPID, kTimeout, &opid));
 
   active_tablet_servers.clear();
-  unordered_set<string> replica_uuids;
+  std::unordered_set<string> replica_uuids;
   for (const auto& loc : tablet_locations.replicas()) {
     const string& uuid = loc.ts_info().permanent_uuid();
     InsertOrDie(&active_tablet_servers, uuid, tablet_servers_[uuid]);

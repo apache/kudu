@@ -16,6 +16,8 @@
 // under the License.
 
 #include <algorithm>
+#include <vector>
+
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -266,7 +268,7 @@ void StresserThread(HybridClock* clock, AtomicBool* stop) {
 // Regression test for KUDU-953: if threads are updating and polling the
 // clock concurrently, the clock should still never run backwards.
 TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
-  vector<scoped_refptr<kudu::Thread> > threads;
+  std::vector<scoped_refptr<kudu::Thread> > threads;
 
   AtomicBool stop(false);
   for (int i = 0; i < 4; i++) {

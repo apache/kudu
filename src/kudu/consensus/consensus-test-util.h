@@ -49,15 +49,13 @@
 #define ASSERT_OPID_EQ(left, right) \
   OpId TOKENPASTE2(_left, __LINE__) = (left); \
   OpId TOKENPASTE2(_right, __LINE__) = (right); \
-  if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) \
+  if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) { \
     FAIL() << "Expected: " << SecureShortDebugString(TOKENPASTE2(_right,__LINE__)) << "\n" \
-           << "Value: " << SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"
+           << "Value: " << SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"; \
+  }
 
 namespace kudu {
 namespace consensus {
-
-using log::Log;
-using strings::Substitute;
 
 inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
                                                       int64_t index,
@@ -78,7 +76,8 @@ inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
 inline RaftPeerPB FakeRaftPeerPB(const std::string& uuid) {
   RaftPeerPB peer_pb;
   peer_pb.set_permanent_uuid(uuid);
-  peer_pb.mutable_last_known_addr()->set_host(Substitute("$0-fake-hostname", CURRENT_TEST_NAME()));
+  peer_pb.mutable_last_known_addr()->set_host(strings::Substitute(
+      "$0-fake-hostname", CURRENT_TEST_NAME()));
   peer_pb.mutable_last_known_addr()->set_port(0);
   return peer_pb;
 }
@@ -109,9 +108,9 @@ inline RaftConfigPB BuildRaftConfigPBForTests(int num) {
   for (int i = 0; i < num; i++) {
     RaftPeerPB* peer_pb = raft_config.add_peers();
     peer_pb->set_member_type(RaftPeerPB::VOTER);
-    peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
+    peer_pb->set_permanent_uuid(strings::Substitute("peer-$0", i));
     HostPortPB* hp = peer_pb->mutable_last_known_addr();
-    hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
+    hp->set_host(strings::Substitute("peer-$0.fake-domain-for-tests", i));
     hp->set_port(0);
   }
   return raft_config;
@@ -578,7 +577,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
     return Status::OK();
   }
 
-  const vector<LocalTestPeerProxy*>& GetProxies() {
+  const std::vector<LocalTestPeerProxy*>& GetProxies() {
     return proxies_;
   }
 
@@ -591,7 +590,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
   std::shared_ptr<rpc::Messenger> messenger_;
   TestPeerMapManager* const peers_;
     // NOTE: There is no need to delete this on the dctor because proxies are externally managed
-  vector<LocalTestPeerProxy*> proxies_;
+  std::vector<LocalTestPeerProxy*> proxies_;
 };
 
 // A simple implementation of the transaction driver.
@@ -600,7 +599,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 // work.
 class TestDriver {
  public:
-  TestDriver(ThreadPool* pool, Log* log, const scoped_refptr<ConsensusRound>& round)
+  TestDriver(ThreadPool* pool, log::Log* log, const scoped_refptr<ConsensusRound>& round)
       : round_(round),
         pool_(pool),
         log_(log) {
@@ -645,14 +644,15 @@ class TestDriver {
   }
 
   ThreadPool* pool_;
-  Log* log_;
+  log::Log* log_;
 };
 
 // A transaction factory for tests, usually this is implemented by TabletReplica.
 class TestTransactionFactory : public ReplicaTransactionFactory {
  public:
-  explicit TestTransactionFactory(Log* log) : consensus_(nullptr),
-                                              log_(log) {
+  explicit TestTransactionFactory(log::Log* log)
+      : consensus_(nullptr),
+        log_(log) {
 
     CHECK_OK(ThreadPoolBuilder("test-txn-factory").set_max_threads(1).Build(&pool_));
   }
@@ -690,7 +690,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
  private:
   gscoped_ptr<ThreadPool> pool_;
   RaftConsensus* consensus_;
-  Log* log_;
+  log::Log* log_;
 };
 
 }  // namespace consensus

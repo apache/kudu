@@ -37,7 +37,9 @@ DEFINE_int32(n_verify, 1, "number of times to verify the updates"
 
 using std::is_sorted;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 namespace tablet {

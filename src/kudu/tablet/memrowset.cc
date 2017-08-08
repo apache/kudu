@@ -43,6 +43,8 @@ TAG_FLAG(mrs_use_codegen, hidden);
 
 using std::pair;
 using std::shared_ptr;
+using std::string;
+using std::vector;
 
 namespace kudu { namespace tablet {
 

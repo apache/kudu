@@ -53,7 +53,9 @@ using consensus::WRITE_OP;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, DriverType type)

@@ -42,6 +42,7 @@
 
 using std::string;
 using std::shared_ptr;
+using std::vector;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::security::Cert;

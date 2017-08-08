@@ -51,18 +51,6 @@ DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 namespace kudu {
 namespace tserver {
 
-using client::KuduSchemaFromSchema;
-using consensus::OpId;
-using consensus::RaftPeerPB;
-using itest::GetReplicaStatusAndCheckIfLeader;
-using itest::TabletReplicaMap;
-using itest::TabletServerMap;
-using itest::TServerDetails;
-using master::GetTableLocationsRequestPB;
-using master::GetTableLocationsResponsePB;
-using master::TabletLocationsPB;
-using rpc::RpcController;
-
 static const int kMaxRetries = 20;
 
 // A base for tablet server integration tests.
@@ -138,13 +126,13 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Waits that all replicas for a all tablets of 'table_id' table are online
   // and creates the tablet_replicas_ map.
-  void WaitForReplicasAndUpdateLocations(const string& table_id = kTableId) {
+  void WaitForReplicasAndUpdateLocations(const std::string& table_id = kTableId) {
     bool replicas_missing = true;
     for (int num_retries = 0; replicas_missing && num_retries < kMaxRetries; num_retries++) {
-      std::unordered_multimap<std::string, TServerDetails*> tablet_replicas;
-      GetTableLocationsRequestPB req;
-      GetTableLocationsResponsePB resp;
-      RpcController controller;
+      std::unordered_multimap<std::string, itest::TServerDetails*> tablet_replicas;
+      master::GetTableLocationsRequestPB req;
+      master::GetTableLocationsResponsePB resp;
+      rpc::RpcController controller;
       req.mutable_table()->set_table_name(table_id);
       controller.set_timeout(MonoDelta::FromSeconds(1));
       CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
@@ -171,8 +159,10 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
       for (const master::TabletLocationsPB& location : resp.tablet_locations()) {
         for (const master::TabletLocationsPB_ReplicaPB& replica : location.replicas()) {
-          TServerDetails* server = FindOrDie(tablet_servers_, replica.ts_info().permanent_uuid());
-          tablet_replicas.insert(pair<std::string, TServerDetails*>(location.tablet_id(), server));
+          itest::TServerDetails* server =
+              FindOrDie(tablet_servers_, replica.ts_info().permanent_uuid());
+          tablet_replicas.insert(std::pair<std::string, itest::TServerDetails*>(
+              location.tablet_id(), server));
         }
 
         if (tablet_replicas.count(location.tablet_id()) < FLAGS_num_replicas) {
@@ -215,35 +205,35 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Returns the last committed leader of the consensus configuration. Tries to get it from master
   // but then actually tries to the get the committed consensus configuration to make sure.
-  TServerDetails* GetLeaderReplicaOrNull(const std::string& tablet_id) {
+  itest::TServerDetails* GetLeaderReplicaOrNull(const std::string& tablet_id) {
     std::string leader_uuid;
     Status master_found_leader_result = GetTabletLeaderUUIDFromMaster(tablet_id, &leader_uuid);
 
     // See if the master is up to date. I.e. if it does report a leader and if the
     // replica it reports as leader is still alive and (at least thinks) its still
     // the leader.
-    TServerDetails* leader;
+    itest::TServerDetails* leader;
     if (master_found_leader_result.ok()) {
       leader = GetReplicaWithUuidOrNull(tablet_id, leader_uuid);
-      if (leader && GetReplicaStatusAndCheckIfLeader(leader, tablet_id,
-                                                     MonoDelta::FromMilliseconds(100)).ok()) {
+      if (leader && itest::GetReplicaStatusAndCheckIfLeader(
+            leader, tablet_id, MonoDelta::FromMilliseconds(100)).ok()) {
         return leader;
       }
     }
 
     // The replica we got from the master (if any) is either dead or not the leader.
     // Find the actual leader.
-    pair<TabletReplicaMap::iterator, TabletReplicaMap::iterator> range =
+    std::pair<itest::TabletReplicaMap::iterator, itest::TabletReplicaMap::iterator> range =
         tablet_replicas_.equal_range(tablet_id);
-    std::vector<TServerDetails*> replicas_copy;
+    std::vector<itest::TServerDetails*> replicas_copy;
     for (;range.first != range.second; ++range.first) {
       replicas_copy.push_back((*range.first).second);
     }
 
     std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
-    for (TServerDetails* replica : replicas_copy) {
-      if (GetReplicaStatusAndCheckIfLeader(replica, tablet_id,
-                                           MonoDelta::FromMilliseconds(100)).ok()) {
+    for (itest::TServerDetails* replica : replicas_copy) {
+      if (itest::GetReplicaStatusAndCheckIfLeader(
+            replica, tablet_id, MonoDelta::FromMilliseconds(100)).ok()) {
         return replica;
       }
     }
@@ -253,22 +243,22 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // For the last committed consensus configuration, return the last committed
   // leader of the consensus configuration and its followers.
   Status GetTabletLeaderAndFollowers(const std::string& tablet_id,
-                                     TServerDetails** leader,
-                                     vector<TServerDetails*>* followers) {
-    pair<TabletReplicaMap::iterator, TabletReplicaMap::iterator> range =
+                                     itest::TServerDetails** leader,
+                                     std::vector<itest::TServerDetails*>* followers) {
+    std::pair<itest::TabletReplicaMap::iterator, itest::TabletReplicaMap::iterator> range =
         tablet_replicas_.equal_range(tablet_id);
-    std::vector<TServerDetails*> replicas;
+    std::vector<itest::TServerDetails*> replicas;
     for (; range.first != range.second; ++range.first) {
       replicas.push_back((*range.first).second);
     }
 
-    TServerDetails* leader_replica = nullptr;
+    itest::TServerDetails* leader_replica = nullptr;
     auto it = replicas.begin();
     for (; it != replicas.end(); ++it) {
-      TServerDetails* replica = *it;
+      itest::TServerDetails* replica = *it;
       bool found_leader_replica = false;
       for (auto i = 0; i < kMaxRetries; ++i) {
-        if (GetReplicaStatusAndCheckIfLeader(
+        if (itest::GetReplicaStatusAndCheckIfLeader(
               replica, tablet_id, MonoDelta::FromMilliseconds(100)).ok()) {
           leader_replica = replica;
           found_leader_replica = true;
@@ -295,7 +285,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   Status GetLeaderReplicaWithRetries(const std::string& tablet_id,
-                                     TServerDetails** leader,
+                                     itest::TServerDetails** leader,
                                      int max_attempts = 100) {
     int attempts = 0;
     while (attempts < max_attempts) {
@@ -310,17 +300,17 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   Status GetTabletLeaderUUIDFromMaster(const std::string& tablet_id, std::string* leader_uuid) {
-    GetTableLocationsRequestPB req;
-    GetTableLocationsResponsePB resp;
-    RpcController controller;
+    master::GetTableLocationsRequestPB req;
+    master::GetTableLocationsResponsePB resp;
+    rpc::RpcController controller;
     controller.set_timeout(MonoDelta::FromMilliseconds(100));
     req.mutable_table()->set_table_name(kTableId);
 
     RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
-    for (const TabletLocationsPB& loc : resp.tablet_locations()) {
+    for (const master::TabletLocationsPB& loc : resp.tablet_locations()) {
       if (loc.tablet_id() == tablet_id) {
-        for (const TabletLocationsPB::ReplicaPB& replica : loc.replicas()) {
-          if (replica.role() == RaftPeerPB::LEADER) {
+        for (const master::TabletLocationsPB::ReplicaPB& replica : loc.replicas()) {
+          if (replica.role() == consensus::RaftPeerPB::LEADER) {
             *leader_uuid = replica.ts_info().permanent_uuid();
             return Status::OK();
           }
@@ -330,9 +320,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     return Status::NotFound("Unable to find leader for tablet", tablet_id);
   }
 
-  TServerDetails* GetReplicaWithUuidOrNull(const std::string& tablet_id,
+  itest::TServerDetails* GetReplicaWithUuidOrNull(const std::string& tablet_id,
                                            const std::string& uuid) {
-    pair<TabletReplicaMap::iterator, TabletReplicaMap::iterator> range =
+    std::pair<itest::TabletReplicaMap::iterator, itest::TabletReplicaMap::iterator> range =
         tablet_replicas_.equal_range(tablet_id);
     for (;range.first != range.second; ++range.first) {
       if ((*range.first).second->instance_id.permanent_uuid() == uuid) {
@@ -344,7 +334,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Gets the the locations of the consensus configuration and waits until all replicas
   // are available for all tablets.
-  void WaitForTSAndReplicas(const string& table_id = kTableId) {
+  void WaitForTSAndReplicas(const std::string& table_id = kTableId) {
     int num_retries = 0;
     // make sure the replicas are up and find the leader
     while (true) {
@@ -366,7 +356,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Removes a set of servers from the replicas_ list.
   // Handy for controlling who to validate against after killing servers.
-  void PruneFromReplicas(const unordered_set<std::string>& uuids) {
+  void PruneFromReplicas(const std::unordered_set<std::string>& uuids) {
     auto iter = tablet_replicas_.begin();
     while (iter != tablet_replicas_.end()) {
       if (uuids.count((*iter).second->instance_id.permanent_uuid()) != 0) {
@@ -382,25 +372,25 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   void GetOnlyLiveFollowerReplicas(const std::string& tablet_id,
-                                   std::vector<TServerDetails*>* followers) {
+                                   std::vector<itest::TServerDetails*>* followers) {
     followers->clear();
-    TServerDetails* leader;
+    itest::TServerDetails* leader;
     CHECK_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
 
-    std::vector<TServerDetails*> replicas;
-    pair<TabletReplicaMap::iterator, TabletReplicaMap::iterator> range =
+    std::vector<itest::TServerDetails*> replicas;
+    std::pair<itest::TabletReplicaMap::iterator, itest::TabletReplicaMap::iterator> range =
         tablet_replicas_.equal_range(tablet_id);
     for (;range.first != range.second; ++range.first) {
       replicas.push_back((*range.first).second);
     }
 
-    for (TServerDetails* replica : replicas) {
+    for (itest::TServerDetails* replica : replicas) {
       if (leader != NULL &&
           replica->instance_id.permanent_uuid() == leader->instance_id.permanent_uuid()) {
         continue;
       }
-      Status s = GetReplicaStatusAndCheckIfLeader(replica, tablet_id,
-                                                  MonoDelta::FromMilliseconds(100));
+      Status s = itest::GetReplicaStatusAndCheckIfLeader(
+          replica, tablet_id, MonoDelta::FromMilliseconds(100));
       if (s.IsIllegalState()) {
         followers->push_back(replica);
       }
@@ -409,8 +399,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   // Return the index within 'replicas' for the replica which is farthest ahead.
   int64_t GetFurthestAheadReplicaIdx(const std::string& tablet_id,
-                                     const std::vector<TServerDetails*>& replicas) {
-    std::vector<OpId> op_ids;
+                                     const std::vector<itest::TServerDetails*>& replicas) {
+    std::vector<consensus::OpId> op_ids;
     CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID,
                                        MonoDelta::FromSeconds(10), &op_ids));
 
@@ -460,8 +450,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     int live_count = 0;
     std::string error = strings::Substitute("Fewer than $0 TabletServers were alive. Dead TSs: ",
                                             num_tablet_servers);
-    RpcController controller;
-    for (const TabletServerMap::value_type& entry : tablet_servers_) {
+    rpc::RpcController controller;
+    for (const itest::TabletServerMap::value_type& entry : tablet_servers_) {
       controller.Reset();
       controller.set_timeout(MonoDelta::FromSeconds(10));
       PingRequestPB req;
@@ -491,10 +481,10 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
   // Create a table with a single tablet, with 'num_replicas'.
-  void CreateTable(const string& table_id = kTableId) {
+  void CreateTable(const std::string& table_id = kTableId) {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
-    client::KuduSchema client_schema(KuduSchemaFromSchema(schema_));
+    client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(table_id)
              .schema(&client_schema)
@@ -554,9 +544,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
 
   // Maps server uuid to TServerDetails
-  TabletServerMap tablet_servers_;
+  itest::TabletServerMap tablet_servers_;
   // Maps tablet to all replicas.
-  TabletReplicaMap tablet_replicas_;
+  itest::TabletReplicaMap tablet_replicas_;
 
   client::sp::shared_ptr<client::KuduClient> client_;
   client::sp::shared_ptr<client::KuduTable> table_;

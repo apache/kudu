@@ -67,7 +67,7 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return "";
   }
-  virtual Status DebugDump(vector<std::string> *lines = NULL) OVERRIDE {
+  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }

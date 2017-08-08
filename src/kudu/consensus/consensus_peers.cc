@@ -78,10 +78,12 @@ DECLARE_int32(raft_heartbeat_interval_ms);
 namespace kudu {
 namespace consensus {
 
-using std::shared_ptr;
-using std::weak_ptr;
 using rpc::Messenger;
 using rpc::RpcController;
+using std::shared_ptr;
+using std::string;
+using std::vector;
+using std::weak_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 

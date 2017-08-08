@@ -24,6 +24,8 @@
 #include "kudu/common/key_encoder.h"
 #include "kudu/util/debug-util.h"
 
+using std::vector;
+
 namespace kudu {
 namespace cfile {
 
