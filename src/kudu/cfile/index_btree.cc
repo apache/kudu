@@ -26,10 +26,13 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/make_shared.h"
 
 using std::vector;
+
+using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
@@ -278,7 +281,10 @@ Status IndexTreeIterator::LoadBlock(const BlockPointer &block, int depth) {
   seeked->block_ptr = block;
 
   // Parse the new block.
-  RETURN_NOT_OK(seeked->reader.Parse(seeked->data.data()));
+  RETURN_NOT_OK_PREPEND(seeked->reader.Parse(seeked->data.data()),
+                        Substitute("failed to parse index block in block $0 at $1",
+                                   reader_->block_id().ToString(),
+                                   block.ToString()));
 
   return Status::OK();
 }

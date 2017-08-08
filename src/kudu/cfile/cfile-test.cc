@@ -889,6 +889,7 @@ TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
     for (uint8_t flip = 0; flip < 8; flip++) {
       Status s = CorruptAndReadBlock(id, i, flip);
       ASSERT_TRUE(s.IsCorruption());
+      ASSERT_STR_MATCHES(s.ToString(), "block [0-9]+");
     }
   }
 }

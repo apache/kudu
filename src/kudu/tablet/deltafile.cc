@@ -43,6 +43,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -66,6 +67,7 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -459,7 +461,10 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 
   // Decode the block.
   pdb->decoder_.reset(new BinaryPlainBlockDecoder(pdb->block_.data()));
-  RETURN_NOT_OK(pdb->decoder_->ParseHeader());
+  RETURN_NOT_OK_PREPEND(pdb->decoder_->ParseHeader(),
+                        Substitute("unable to decode data block header in delta block $0 ($1)",
+                                   dfr_->cfile_reader()->block_id().ToString(),
+                                   dblk_ptr.ToString()));
 
   RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&pdb->first_updated_idx_));
   RETURN_NOT_OK(GetLastRowIndexInDecodedBlock(*pdb->decoder_, &pdb->last_updated_idx_));

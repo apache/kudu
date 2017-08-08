@@ -104,12 +104,13 @@ static Status ParseMagicAndLength(const Slice &data,
   } else if (memcmp(kMagicStringV2, data.data(), kMagicLength) == 0) {
     version = 2;
   } else {
-    return Status::Corruption("bad magic");
+    return Status::Corruption("bad CFile header magic", data.ToDebugString());
   }
 
   uint32_t len = DecodeFixed32(data.data() + kMagicLength);
   if (len > kMaxHeaderFooterPBSize) {
-    return Status::Corruption("invalid data size");
+    return Status::Corruption("invalid data size for header",
+                              std::to_string(len));
   }
 
   *cfile_version = version;
@@ -190,7 +191,10 @@ Status CFileReader::InitOnce() {
 }
 
 Status CFileReader::Init() {
-  return init_once_.Init(&CFileReader::InitOnce, this);
+  RETURN_NOT_OK_PREPEND(init_once_.Init(&CFileReader::InitOnce, this),
+                        Substitute("failed to init CFileReader for block $0",
+                                   block_id().ToString()));
+  return Status::OK();
 }
 
 Status CFileReader::ReadAndParseHeader() {
@@ -203,13 +207,15 @@ Status CFileReader::ReadAndParseHeader() {
   // proper protobuf header.
   uint8_t mal_scratch[kMagicAndLengthSize];
   Slice mal(mal_scratch, kMagicAndLengthSize);
-  RETURN_NOT_OK(block_->Read(0, &mal));
+  RETURN_NOT_OK_PREPEND(block_->Read(0, &mal),
+                        "failed to read CFile pre-header");
   uint32_t header_size;
-  RETURN_NOT_OK(ParseMagicAndLength(mal, &cfile_version_, &header_size));
+  RETURN_NOT_OK_PREPEND(ParseMagicAndLength(mal, &cfile_version_, &header_size),
+                        "failed to parse CFile pre-header");
 
   // Quick check to ensure the header size is reasonable.
   if (header_size >= file_size_ - kMagicAndLengthSize) {
-    return Status::Corruption("invalid header size");
+    return Status::Corruption("invalid CFile header size", std::to_string(header_size));
   }
 
   // Setup the data slices.
@@ -233,7 +239,8 @@ Status CFileReader::ReadAndParseHeader() {
   // Parse the protobuf header.
   header_.reset(new CFileHeaderPB());
   if (!header_->ParseFromArray(header.data(), header.size())) {
-    return Status::Corruption("Invalid cfile pb header");
+    return Status::Corruption("invalid cfile pb header",
+                              header.ToDebugString());
   }
 
   VLOG(2) << "Read header: " << SecureDebugString(*header_);
@@ -258,7 +265,9 @@ Status CFileReader::ReadAndParseFooter() {
 
   // Quick check to ensure the footer size is reasonable.
   if (footer_size >= file_size_ - kMagicAndLengthSize) {
-    return Status::Corruption("invalid footer size");
+    return Status::Corruption(Substitute(
+        "invalid CFile footer size $0 in block of size $1",
+        footer_size, file_size_));
   }
 
   uint8_t footer_scratch[footer_size];
@@ -279,7 +288,7 @@ Status CFileReader::ReadAndParseFooter() {
   // incompatible_features flag tells us if a checksum exists at all.
   footer_.reset(new CFileFooterPB());
   if (!footer_->ParseFromArray(footer.data(), footer.size())) {
-    return Status::Corruption("Invalid cfile pb footer");
+    return Status::Corruption("invalid cfile pb footer", footer.ToDebugString());
   }
 
   // Verify the footer checksum if needed.
@@ -290,7 +299,8 @@ Status CFileReader::ReadAndParseFooter() {
 
   // Verify if the compression codec is available.
   if (footer_->compression() != NO_COMPRESSION) {
-    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec_));
+    RETURN_NOT_OK_PREPEND(GetCompressionCodec(footer_->compression(), &codec_),
+                          "failed to load CFile compression codec");
   }
 
   VLOG(2) << "Read footer: " << SecureDebugString(*footer_);
@@ -434,8 +444,9 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
 
   uint32_t data_size = ptr.size();
   if (has_checksums()) {
-    if (kChecksumSize > data_size) {
-      return Status::Corruption("invalid data size");
+    if (PREDICT_FALSE(kChecksumSize > data_size)) {
+      return Status::Corruption("invalid data size for block pointer",
+                                ptr.ToString());
     }
     data_size -= kChecksumSize;
   }
@@ -459,10 +470,14 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
     results.push_back(checksum);
   }
-  RETURN_NOT_OK(block_->ReadV(ptr.offset(), &results));
+  RETURN_NOT_OK_PREPEND(block_->ReadV(ptr.offset(), &results),
+                        Substitute("failed to read CFile block $0 at $1",
+                                   block_id().ToString(), ptr.ToString()));
 
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
-    RETURN_NOT_OK(VerifyChecksum({ block }, checksum));
+    RETURN_NOT_OK_PREPEND(VerifyChecksum({ block }, checksum),
+                          Substitute("checksum error on CFile block $0 at $1",
+                                     block_id().ToString(), ptr.ToString()));
   }
 
   // Decompress the block
@@ -827,10 +842,13 @@ Status CFileIterator::PrepareForNewSeek() {
 
     // Cache the dictionary for performance
     RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
-                          "Couldn't read dictionary block");
+                          "couldn't read dictionary block");
 
     dict_decoder_.reset(new BinaryPlainBlockDecoder(dict_block_handle_.data()));
-    RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(), "Couldn't parse dictionary block header");
+    RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(),
+                          Substitute("couldn't parse dictionary block header in block $0 ($1)",
+                                     reader_->block_id().ToString(),
+                                     bp.ToString()));
   }
 
   seeked_ = nullptr;
@@ -886,7 +904,10 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   BlockDecoder *bd;
   RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(&bd, data_block, this));
   prep_block->dblk_.reset(bd);
-  RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
+  RETURN_NOT_OK_PREPEND(prep_block->dblk_->ParseHeader(),
+                        Substitute("unable to decode data block header in block $0 ($1)",
+                                   reader_->block_id().ToString(),
+                                   prep_block->dblk_ptr_.ToString()));
 
   // For nullable blocks, we filled in the row count from the null information above,
   // since the data block decoder only knows about the non-null values.
