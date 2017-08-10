@@ -96,6 +96,22 @@ Status ShutdownError(bool aborted) {
       Status::Aborted(msg, "", ESHUTDOWN) :
       Status::ServiceUnavailable(msg, "", ESHUTDOWN);
 }
+
+// Callback for libev fatal errors (eg running out of file descriptors).
+// Unfortunately libev doesn't plumb these back through to the caller, but
+// instead just expects the callback to abort.
+//
+// This implementation is slightly preferable to the built-in one since
+// it uses a FATAL log message instead of printing to stderr, which might
+// not end up anywhere useful in a daemonized context.
+void LibevSysErr(const char* msg) throw() {
+  PLOG(FATAL) << "LibEV fatal error: " << msg;
+}
+
+void DoInitLibEv() {
+  ev::set_syserr_cb(LibevSysErr);
+}
+
 } // anonymous namespace
 
 ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
@@ -620,6 +636,8 @@ Reactor::Reactor(shared_ptr<Messenger> messenger,
       name_(StringPrintf("%s_R%03d", messenger_->name().c_str(), index)),
       closing_(false),
       thread_(this, bld) {
+  static std::once_flag libev_once;
+  std::call_once(libev_once, DoInitLibEv);
 }
 
 Status Reactor::Init() {
