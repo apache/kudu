@@ -67,7 +67,7 @@ import org.apache.kudu.client.SessionConfiguration;
  *     The port is optional.</td></tr>
  * <tr><td>tableName</td><td></td><td>Yes</td>
  *     <td>The name of the Kudu table to write to.</td></tr>
- * <tr><td>batchSize</td><td>100</td><td>No</td>
+ * <tr><td>batchSize</td><td>1000</td><td>No</td>
  * <td>The maximum number of events the sink takes from the channel per transaction.</td></tr>
  * <tr><td>ignoreDuplicateRows</td><td>true</td>
  *     <td>No</td><td>Whether to ignore duplicate primary key errors caused by inserts.</td></tr>
@@ -93,7 +93,7 @@ import org.apache.kudu.client.SessionConfiguration;
 @InterfaceStability.Evolving
 public class KuduSink extends AbstractSink implements Configurable {
   private static final Logger logger = LoggerFactory.getLogger(KuduSink.class);
-  private static final Long DEFAULT_BATCH_SIZE = 100L;
+  private static final int DEFAULT_BATCH_SIZE = 1000;
   private static final Long DEFAULT_TIMEOUT_MILLIS =
           AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
   private static final String DEFAULT_KUDU_OPERATION_PRODUCER =
@@ -102,7 +102,7 @@ public class KuduSink extends AbstractSink implements Configurable {
 
   private String masterAddresses;
   private String tableName;
-  private long batchSize;
+  private int batchSize;
   private long timeoutMillis;
   private boolean ignoreDuplicateRows;
   private KuduTable table;
@@ -126,7 +126,7 @@ public class KuduSink extends AbstractSink implements Configurable {
     Preconditions.checkState(table == null && session == null,
         "Please call stop before calling start on an old instance.");
 
-    // client is not null only inside tests
+    // Client is not null only inside tests.
     if (client == null) {
       client = new KuduClient.KuduClientBuilder(masterAddresses).build();
     }
@@ -134,6 +134,7 @@ public class KuduSink extends AbstractSink implements Configurable {
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     session.setTimeoutMillis(timeoutMillis);
     session.setIgnoreAllDuplicateRows(ignoreDuplicateRows);
+    session.setMutationBufferSpace(batchSize);
 
     try {
       table = client.openTable(tableName);
@@ -190,7 +191,7 @@ public class KuduSink extends AbstractSink implements Configurable {
         "Missing table name. Please specify property '%s'",
         TABLE_NAME);
 
-    batchSize = context.getLong(BATCH_SIZE, DEFAULT_BATCH_SIZE);
+    batchSize = context.getInteger(BATCH_SIZE, DEFAULT_BATCH_SIZE);
     timeoutMillis = context.getLong(TIMEOUT_MILLIS, DEFAULT_TIMEOUT_MILLIS);
     ignoreDuplicateRows = context.getBoolean(IGNORE_DUPLICATE_ROWS, DEFAULT_IGNORE_DUPLICATE_ROWS);
     String operationProducerType = context.getString(PRODUCER);
