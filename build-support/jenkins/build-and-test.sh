@@ -56,6 +56,10 @@
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
+#   BUILD_GRADLE      Default: 1
+#     When building java code, also build the gradle build if this is set
+#     to 1.
+#
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
 #
@@ -68,6 +72,9 @@
 #     Extra flags which are passed to 'mvn' when building and running Java
 #     tests. This can be useful, for example, to choose a different maven
 #     repository location.
+#
+#   GRADLE_FLAGS       Default: ""
+#     Extra flags which are passed to 'gradle' when running Gradle commands.
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
@@ -103,6 +110,7 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
+BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 BUILD_PYTHON3=${BUILD_PYTHON3:-1}
 
@@ -125,6 +133,7 @@ mkdir -p $BUILD_ROOT
 
 # Same for the Java tests, which aren't inside BUILD_ROOT
 rm -rf $SOURCE_ROOT/java/*/target
+rm -rf $SOURCE_ROOT/java/*/build
 
 list_flaky_tests() {
   local url="http://$TEST_RESULT_SERVER/list_failed_tests?num_days=3&build_pattern=%25kudu-test%25"
@@ -192,6 +201,7 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
 
   # We currently dont capture coverage for Java or Python.
   BUILD_JAVA=0
+  BUILD_GRADLE=0
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -311,6 +321,7 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
   BUILD_JAVA=0
+  BUILD_GRADLE=0
 fi
 
 EXIT_STATUS=0
@@ -378,6 +389,16 @@ if [ "$BUILD_JAVA" == "1" ]; then
   elif ! mvn $MVN_FLAGS -Dtest="org.apache.kudu.spark.*.*" -DskipITs -Pspark_2.10 clean verify ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Spark 1.x build/test failed\n'
+  fi
+
+  # Rerun the build using the Gradle build.
+  # Note: We just ensure we can assemble and don't rerun the tests.
+  if [ "$BUILD_GRADLE" == "1" ]; then
+     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain"
+     if ! ./gradlew $GRADLE_FLAGS clean assemble; then
+       EXIT_STATUS=1
+       FAILURES="$FAILURES"$'Java Gradle build failed\n'
+     fi
   fi
 
   set +x
