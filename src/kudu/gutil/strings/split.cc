@@ -19,8 +19,9 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/hash/hash.h"
 
+using __gnu_cxx::hash_map;
+using __gnu_cxx::hash_set;
 using std::back_insert_iterator;
-using std::iterator_traits;
 using std::map;
 using std::numeric_limits;
 using std::pair;

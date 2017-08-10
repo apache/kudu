@@ -66,7 +66,7 @@ namespace {
 Status ParseBase64JsonRequest(const string& json_base64,
                               rapidjson::Document* doc) {
   string json_str;
-  if (!Base64Unescape(json_base64, &json_str)) {
+  if (!strings::Base64Unescape(json_base64, &json_str)) {
     return Status::InvalidArgument("Invalid base64-encoded JSON");
   }
 

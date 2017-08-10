@@ -230,7 +230,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   string enable_req_json = "{\"categoryFilter\":\"*\", \"useContinuousTracing\": \"true\","
     " \"useSampling\": \"false\"}";
   string req_b64;
-  Base64Escape(enable_req_json, &req_b64);
+  strings::Base64Escape(enable_req_json, &req_b64);
 
   for (bool compressed : {false, true}) {
     ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/begin_recording?$1",

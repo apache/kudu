@@ -78,11 +78,7 @@
 #include <string.h>
 #include <algorithm>
 #include <ext/hash_map>
-using __gnu_cxx::hash;
-using __gnu_cxx::hash_map;     // hacky way to make sure we import standard hash<> fns
 #include <ext/hash_set>
-using __gnu_cxx::hash;
-using __gnu_cxx::hash_set;
 #include <string>
 #include <utility>
 
@@ -98,7 +94,6 @@ using __gnu_cxx::hash_set;
 #include "kudu/gutil/hash/legacy_hash.h"
 #include "kudu/gutil/hash/string_hash.h"
 
-#include <ext/hash_set>
 namespace __gnu_cxx {
 
 
@@ -214,7 +209,6 @@ inline uint64 FingerprintCat(uint64 fp1, uint64 fp2) {
   return Hash64NumWithSeed(fp1, fp2);
 }
 
-#include <ext/hash_set>
 namespace __gnu_cxx {
 
 
@@ -308,8 +302,8 @@ template<> struct hash<std::string> {
 template<class First, class Second>
 struct hash<pair<First, Second> > {
   size_t operator()(const pair<First, Second>& p) const {
-    size_t h1 = hash<First>()(p.first);
-    size_t h2 = hash<Second>()(p.second);
+    size_t h1 = __gnu_cxx::hash<First>()(p.first);
+    size_t h2 = __gnu_cxx::hash<Second>()(p.second);
     // The decision below is at compile time
     return (sizeof(h1) <= sizeof(uint32)) ?
             Hash32NumWithSeed(h1, h2)
@@ -406,7 +400,6 @@ struct GoodFastHash<const std::basic_string<_CharT, _Traits, _Alloc> > {
 // functions are declared in this file.
 
 #if defined(__GNUC__)
-#include <ext/hash_set>
 namespace __gnu_cxx {
 
 extern template class hash_set<std::string>;

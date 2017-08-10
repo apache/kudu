@@ -4,16 +4,11 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+
 #include <ext/hash_map>
-using __gnu_cxx::hash;
-using __gnu_cxx::hash_map;
 #include <string>
-using std::string;
 #include <utility>
-using std::make_pair;
-using std::pair;
 #include <vector>
-using std::vector;
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/integral_types.h"
@@ -22,6 +17,12 @@ using std::vector;
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/hash/hash.h"
+
+using __gnu_cxx::hash_map;
+using std::make_pair;
+using std::pair;
+using std::string;
+using std::vector;
 
 // Convert a uint32 to a 4-byte string.
 string Uint32ToKey(uint32 u32) {

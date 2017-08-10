@@ -21,13 +21,10 @@
 #define STRINGS_SPLIT_H_
 
 #include <stddef.h>
+
 #include <algorithm>
 #include <ext/hash_map>
-using __gnu_cxx::hash;
-using __gnu_cxx::hash_map;
 #include <ext/hash_set>
-using __gnu_cxx::hash;
-using __gnu_cxx::hash_set;
 #include <iterator>
 #include <map>
 #include <set>
@@ -663,7 +660,7 @@ void SplitStringPieceToVector(const StringPiece& full,
 void SplitStringUsing(const std::string& full, const char* delimiters,
                       std::vector<std::string>* result);
 void SplitStringToHashsetUsing(const std::string& full, const char* delimiters,
-                               hash_set<std::string>* result);
+                               __gnu_cxx::hash_set<std::string>* result);
 void SplitStringToSetUsing(const std::string& full, const char* delimiters,
                            std::set<std::string>* result);
 // The even-positioned (0-based) components become the keys for the
@@ -674,7 +671,7 @@ void SplitStringToSetUsing(const std::string& full, const char* delimiters,
 void SplitStringToMapUsing(const std::string& full, const char* delim,
                            std::map<std::string, std::string>* result);
 void SplitStringToHashmapUsing(const std::string& full, const char* delim,
-                               hash_map<std::string, std::string>* result);
+                               __gnu_cxx::hash_map<std::string, std::string>* result);
 
 // ----------------------------------------------------------------------
 // SplitStringAllowEmpty()
@@ -728,7 +725,7 @@ void SplitStringWithEscapingToSet(const std::string& full,
                                   std::set<std::string>* result);
 void SplitStringWithEscapingToHashset(const std::string& full,
                                       const strings::CharSet& delimiters,
-                                      hash_set<std::string>* result);
+                                      __gnu_cxx::hash_set<std::string>* result);
 
 // ----------------------------------------------------------------------
 // SplitStringIntoNPiecesAllowEmpty()

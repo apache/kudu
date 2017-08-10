@@ -4114,7 +4114,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
     *out << "Orphaned tables (in by-name map, but not id map):\n";
     for (const TableInfoMap::value_type& e : names_copy) {
       *out << e.second->id() << ":\n";
-      *out << "  name: \"" << CHexEscape(e.first) << "\"\n";
+      *out << "  name: \"" << strings::CHexEscape(e.first) << "\"\n";
     }
   }
 }

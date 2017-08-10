@@ -627,49 +627,4 @@ void CleanStringLineEndings(std::string* str, bool auto_end_last_line);
 
 }  // namespace strings
 
-// The following functions used to be defined in strutil.h in the top-level
-// namespace, so we alias them here. Do not add new functions here.
-//
-//             Talk to him if you want to help.
-//
-// DEPRECATED(mec): Using these names in the global namespace is deprecated.
-// Use the strings:: names.
-
-using strings::EscapeStrForCSV;
-using strings::UnescapeCEscapeSequences;
-using strings::UnescapeCEscapeString;
-using strings::CEscapeString;
-using strings::CHexEscapeString;
-using strings::CEscape;
-using strings::CHexEscape;
-using strings::BackslashEscape;
-using strings::BackslashUnescape;
-using strings::QuotedPrintableUnescape;
-using strings::QEncodingUnescape;
-using strings::Base64Unescape;
-using strings::WebSafeBase64Unescape;
-using strings::CalculateBase64EscapedLen;
-using strings::Base64Escape;
-using strings::WebSafeBase64Escape;
-using strings::WebSafeBase64EscapeWithPadding;
-using strings::Base32Escape;
-using strings::Base32HexEscape;
-using strings::CalculateBase32EscapedLen;
-using strings::EightBase32DigitsToTenHexDigits;
-using strings::TenHexDigitsToEightBase32Digits;
-using strings::EightBase32DigitsToFiveBytes;
-using strings::FiveBytesToEightBase32Digits;
-using strings::int_to_hex_digit;
-using strings::int_to_lower_hex_digit;
-using strings::hex_digit_to_int;
-using strings::a2b_hex;
-using strings::a2b_bin;
-using strings::b2a_hex;
-using strings::b2a_bin;
-using strings::ShellEscape;
-using strings::ShellEscapeCommandLine;
-using strings::ByteStringFromAscii;
-using strings::ByteStringToAscii;
-using strings::CleanStringLineEndings;
-
 #endif  // STRINGS_ESCAPING_H_
