@@ -794,7 +794,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
                                         MetaCacheEntry* cache_entry) {
   VLOG(2) << "Processing master response for " << rpc.ToString()
-          << ". Response: " << SecureShortDebugString(rpc.resp());
+          << ". Response: " << pb_util::SecureShortDebugString(rpc.resp());
 
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(rpc.resp().ttl_millis());
@@ -884,7 +884,8 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
         DCHECK_EQ(tablet_lower_bound, remote->partition().partition_key_start());
         DCHECK_EQ(tablet_upper_bound, remote->partition().partition_key_end());
 
-        VLOG(3) << "Refreshing tablet " << tablet_id << ": " << SecureShortDebugString(tablet);
+        VLOG(3) << "Refreshing tablet " << tablet_id << ": "
+                << pb_util::SecureShortDebugString(tablet);
         remote->Refresh(ts_cache_, tablet.replicas());
 
         // Update the entry TTL.

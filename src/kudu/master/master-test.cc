@@ -46,6 +46,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;

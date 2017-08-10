@@ -69,14 +69,16 @@ TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
 DECLARE_bool(safe_time_advancement_without_writes);
 
-namespace kudu {
-namespace consensus {
-
-using log::Log;
+using kudu::log::Log;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace consensus {
 
 METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
                           MetricUnit::kOperations,

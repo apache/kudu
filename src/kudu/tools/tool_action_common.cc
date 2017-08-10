@@ -96,6 +96,8 @@ using master::ListTabletServersResponsePB;
 using master::ListMastersRequestPB;
 using master::ListMastersResponsePB;
 using master::MasterServiceProxy;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RequestIdPB;

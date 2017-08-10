@@ -147,8 +147,8 @@ class TabletServerTestBase : public KuduTest {
                    req.mutable_row_operations());
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
 
-    SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_FALSE(resp.has_error())<< SecureShortDebugString(resp);
+    SCOPED_TRACE(pb_util::SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << pb_util::SecureShortDebugString(resp);
     ASSERT_EQ(0, resp.per_row_errors_size());
     if (ts) {
       ts->AddValue(1);
@@ -230,7 +230,7 @@ class TabletServerTestBase : public KuduTest {
       if (resp.has_error() || resp.per_row_errors_size() > 0) {
         LOG(FATAL) << "Failed to insert batch "
                    << first_row_in_batch << "-" << last_row_in_batch
-                   << ": " << SecureDebugString(resp);
+                   << ": " << pb_util::SecureDebugString(resp);
       }
 
       inserted_since_last_report += count / num_batches;
@@ -266,10 +266,10 @@ class TabletServerTestBase : public KuduTest {
       AddTestKeyToPB(RowOperationsPB::DELETE, schema_, rowid, ops);
     }
 
-    SCOPED_TRACE(SecureDebugString(req));
+    SCOPED_TRACE(pb_util::SecureDebugString(req));
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
-    SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
+    SCOPED_TRACE(pb_util::SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error()) << pb_util::SecureShortDebugString(resp);
   }
 
   void BuildTestRow(int index, KuduPartialRow* row) {
@@ -301,9 +301,9 @@ class TabletServerTestBase : public KuduTest {
       rpc.Reset();
       req.set_batch_size_bytes(10000);
       req.set_call_seq_id(call_seq_id);
-      SCOPED_TRACE(SecureDebugString(req));
+      SCOPED_TRACE(pb_util::SecureDebugString(req));
       ASSERT_OK(DCHECK_NOTNULL(proxy)->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(SecureDebugString(resp));
+      SCOPED_TRACE(pb_util::SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
 
       StringifyRowsFromResponse(projection, rpc, resp, results);
@@ -419,9 +419,9 @@ class TabletServerTestBase : public KuduTest {
 
     // Send the call
     {
-      SCOPED_TRACE(SecureDebugString(req));
+      SCOPED_TRACE(pb_util::SecureDebugString(req));
       ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-      SCOPED_TRACE(SecureDebugString(resp));
+      SCOPED_TRACE(pb_util::SecureDebugString(resp));
       ASSERT_TRUE(resp.has_error());
       ASSERT_EQ(expected_code, resp.error().code());
       ASSERT_STR_CONTAINS(resp.error().status().message(), expected_message);
@@ -443,9 +443,9 @@ class TabletServerTestBase : public KuduTest {
 
     // Send the call
     {
-      SCOPED_TRACE(SecureDebugString(req));
+      SCOPED_TRACE(pb_util::SecureDebugString(req));
       ASSERT_OK(proxy_->Scan(req, resp, &rpc));
-      SCOPED_TRACE(SecureDebugString(*resp));
+      SCOPED_TRACE(pb_util::SecureDebugString(*resp));
       ASSERT_FALSE(resp->has_error());
       ASSERT_TRUE(resp->has_more_results());
     }

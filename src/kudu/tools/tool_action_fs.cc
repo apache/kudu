@@ -201,8 +201,8 @@ Status DumpCFile(const RunnerContext& context) {
   RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
-    cout << "Header:\n" << SecureDebugString(reader->header()) << endl;
-    cout << "Footer:\n" << SecureDebugString(reader->footer()) << endl;
+    cout << "Header:\n" << pb_util::SecureDebugString(reader->header()) << endl;
+    cout << "Footer:\n" << pb_util::SecureDebugString(reader->footer()) << endl;
   }
 
   if (FLAGS_print_rows) {

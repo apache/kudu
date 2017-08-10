@@ -40,6 +40,7 @@ using consensus::DriverType;
 using consensus::RaftConsensus;
 using consensus::ReplicateMsg;
 using log::Log;
+using pb_util::SecureShortDebugString;
 using rpc::RequestIdPB;
 using rpc::ResultTracker;
 using std::shared_ptr;

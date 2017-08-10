@@ -50,8 +50,10 @@
   OpId TOKENPASTE2(_left, __LINE__) = (left); \
   OpId TOKENPASTE2(_right, __LINE__) = (right); \
   if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) { \
-    FAIL() << "Expected: " << SecureShortDebugString(TOKENPASTE2(_right,__LINE__)) << "\n" \
-           << "Value: " << SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"; \
+    FAIL() << "Expected: " \
+           << pb_util::SecureShortDebugString(TOKENPASTE2(_right,__LINE__)) << "\n" \
+           << "Value: " \
+           << pb_util::SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"; \
   }
 
 namespace kudu {
@@ -239,7 +241,7 @@ class MockedPeerProxy : public TestPeerProxy {
   }
 
   virtual void set_update_response(const ConsensusResponsePB& update_response) {
-    CHECK(update_response.IsInitialized()) << SecureShortDebugString(update_response);
+    CHECK(update_response.IsInitialized()) << pb_util::SecureShortDebugString(update_response);
     {
       std::lock_guard<simple_spinlock> l(lock_);
       update_response_ = update_response;
@@ -475,7 +477,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
       miss_comm_ = false;
     }
     if (PREDICT_FALSE(miss_comm_copy)) {
-      VLOG(2) << this << ": injecting fault on " << SecureShortDebugString(*request);
+      VLOG(2) << this << ": injecting fault on " << pb_util::SecureShortDebugString(*request);
       SetResponseError(Status::IOError("Artificial error caused by communication "
           "failure injection."), final_response);
     } else {
@@ -505,7 +507,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not Update replica with request: "
-                   << SecureShortDebugString(other_peer_req)
+                   << pb_util::SecureShortDebugString(other_peer_req)
                    << " Status: " << s.ToString();
       SetResponseError(s, &other_peer_resp);
     }
@@ -534,7 +536,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not RequestVote from replica with request: "
-                   << SecureShortDebugString(other_peer_req)
+                   << pb_util::SecureShortDebugString(other_peer_req)
                    << " Status: " << s.ToString();
       SetResponseError(s, &other_peer_resp);
     }

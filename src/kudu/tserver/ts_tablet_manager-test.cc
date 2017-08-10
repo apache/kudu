@@ -49,6 +49,7 @@ using consensus::kInvalidOpIdIndex;
 using consensus::RaftConfigPB;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
+using pb_util::SecureShortDebugString;
 using tablet::TabletReplica;
 
 static const char* const kTabletId = "my-tablet-id";

@@ -52,6 +52,8 @@ using consensus::MaximumOpId;
 using consensus::MinimumOpId;
 using consensus::OpIdEquals;
 using log::ReadableLogSegment;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
 using std::thread;

@@ -89,6 +89,7 @@ using kudu::fs::FsReport;
 using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
+using kudu::pb_util::SecureDebugString;
 using std::map;
 using std::ostream;
 using std::set;

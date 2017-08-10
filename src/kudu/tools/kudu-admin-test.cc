@@ -55,6 +55,7 @@ using itest::WaitUntilCommittedConfigNumVotersIs;
 using itest::WaitUntilCommittedOpIdIndexIs;
 using itest::WaitUntilTabletInState;
 using itest::WaitUntilTabletRunning;
+using pb_util::SecureDebugString;
 using std::deque;
 using std::string;
 using std::vector;

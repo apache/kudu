@@ -96,6 +96,7 @@ using consensus::ALTER_SCHEMA_OP;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
+using pb_util::SecureDebugString;
 using rpc::Messenger;
 using rpc::ResultTracker;
 using std::map;

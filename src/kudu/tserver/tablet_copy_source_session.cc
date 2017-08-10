@@ -94,7 +94,7 @@ Status TabletCopySourceSession::Init() {
   vector<BlockIdPB> data_blocks =
       TabletMetadata::CollectBlockIdPBs(tablet_superblock_);
   for (const BlockIdPB& block_id : data_blocks) {
-    VLOG(1) << "Opening block " << SecureDebugString(block_id);
+    VLOG(1) << "Opening block " << pb_util::SecureDebugString(block_id);
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
   }
 

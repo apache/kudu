@@ -150,7 +150,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
           default:
             FAIL() << "Response had a fatal error: "
-                   << SecureShortDebugString(resp.error());
+                   << pb_util::SecureShortDebugString(resp.error());
             break;  // unreachable
         }
         SleepFor(MonoDelta::FromSeconds(1));
@@ -167,7 +167,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
         if (tablet_replicas.count(location.tablet_id()) < FLAGS_num_replicas) {
           LOG(WARNING)<< "Couldn't find the leader and/or replicas. Location: "
-              << SecureShortDebugString(location);
+              << pb_util::SecureShortDebugString(location);
           replicas_missing = true;
           SleepFor(MonoDelta::FromSeconds(1));
           break;

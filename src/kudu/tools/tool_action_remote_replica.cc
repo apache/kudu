@@ -118,7 +118,7 @@ class ReplicaDumper {
 
       if (resp.has_error()) {
         return Status::IOError("Failed to read: ",
-                               SecureShortDebugString(resp.error()));
+                               pb_util::SecureShortDebugString(resp.error()));
       }
 
       // The first response has a scanner ID. We use this for all subsequent
@@ -232,7 +232,7 @@ Status DeleteReplica(const RunnerContext& context) {
                         "DeleteTablet() failed");
   if (resp.has_error()) {
     return Status::IOError("Failed to delete tablet: ",
-                           SecureShortDebugString(resp.error()));
+                           pb_util::SecureShortDebugString(resp.error()));
   }
   return Status::OK();
 }
@@ -329,7 +329,7 @@ Status CopyReplica(const RunnerContext& context) {
     req.set_caller_term(std::numeric_limits<int64_t>::max());
   }
 
-  LOG(INFO) << "Sending copy replica request:\n" << SecureDebugString(req);
+  LOG(INFO) << "Sending copy replica request:\n" << pb_util::SecureDebugString(req);
   LOG(WARNING) << "NOTE: this copy may happen asynchronously "
                << "and may timeout if the tablet size is large. Watch the logs on "
                << "the target tablet server for indication of progress.";

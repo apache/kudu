@@ -231,6 +231,8 @@ using consensus::RaftConsensus;
 using consensus::RaftPeerPB;
 using consensus::StartTabletCopyRequestPB;
 using consensus::kMinimumTerm;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using rpc::RpcContext;
 using security::Cert;
 using security::DataFormat;

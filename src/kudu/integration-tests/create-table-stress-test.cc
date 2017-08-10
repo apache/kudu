@@ -155,7 +155,7 @@ TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
   LOG(INFO) << "Created table successfully!";
   // Use std::cout instead of log, since these responses are large and log
   // messages have a max size.
-  std::cout << "Response:\n" << SecureDebugString(resp);
+  std::cout << "Response:\n" << pb_util::SecureDebugString(resp);
   std::cout << "CatalogManager state:\n";
   cluster_->mini_master()->master()->catalog_manager()->DumpState(&std::cerr);
 
@@ -321,7 +321,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     req.set_max_returned_locations(1);
     req.set_partition_key_start(start_key_middle);
     ASSERT_OK(catalog->GetTableLocations(&req, &resp));
-    ASSERT_EQ(1, resp.tablet_locations_size()) << "Response: [" << SecureDebugString(resp) << "]";
+    ASSERT_EQ(1, resp.tablet_locations_size())
+        << "Response: [" << pb_util::SecureDebugString(resp) << "]";
     ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());
   }
 }

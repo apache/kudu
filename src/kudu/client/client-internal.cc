@@ -82,6 +82,7 @@ using master::ListTabletServersResponsePB;
 using master::MasterErrorPB;
 using master::MasterFeatures;
 using master::MasterServiceProxy;
+using pb_util::SecureShortDebugString;
 using rpc::CredentialsPolicy;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;

@@ -24,6 +24,8 @@ DECLARE_int64(remember_clients_ttl_ms);
 DECLARE_int64(remember_responses_ttl_ms);
 DECLARE_int64(result_tracker_gc_interval_ms);
 
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using std::atomic_int;
 using std::shared_ptr;
 using std::unique_ptr;

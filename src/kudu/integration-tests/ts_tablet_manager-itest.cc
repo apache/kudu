@@ -182,7 +182,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       // Ensure that our tablet reports are consistent.
       TabletReportPB& report = reports[0];
       ASSERT_EQ(1, report.updated_tablets_size())
-          << "Wrong report size:\n" << SecureDebugString(report);
+          << "Wrong report size:\n" << pb_util::SecureDebugString(report);
       const ReportedTabletPB& reported_tablet = report.updated_tablets(0);
       ASSERT_TRUE(reported_tablet.has_consensus_state());
 
@@ -190,10 +190,10 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       RaftPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.consensus_state());
       if (replica == new_leader_idx) {
         ASSERT_EQ(RaftPeerPB::LEADER, role)
-            << "Tablet report: " << SecureShortDebugString(report);
+            << "Tablet report: " << pb_util::SecureShortDebugString(report);
       } else {
         ASSERT_EQ(RaftPeerPB::FOLLOWER, role)
-            << "Tablet report: " << SecureShortDebugString(report);
+            << "Tablet report: " << pb_util::SecureShortDebugString(report);
       }
     }
   }

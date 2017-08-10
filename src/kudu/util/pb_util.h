@@ -500,11 +500,5 @@ class PbTracer : public debug::ConvertableToTraceFormat {
 
 } // namespace pb_util
 
-// TODO(todd) Replacing all Message::ToString call sites for KUDU-1812
-// is much easier if these are available in the 'kudu' namespace. We should
-// consider removing these imports and move them to all call sites.
-using pb_util::SecureDebugString; // NOLINT
-using pb_util::SecureShortDebugString; // NOLINT
-
 } // namespace kudu
 #endif

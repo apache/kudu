@@ -99,6 +99,8 @@ using log::LogOptions;
 using log::LogReader;
 using log::ReadableLogSegment;
 using rpc::ResultTracker;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using std::map;
 using std::shared_ptr;
 using std::string;

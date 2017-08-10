@@ -125,7 +125,10 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           "Current Term of the Raft Consensus algorithm. This number increments "
                           "each time a leader election is started.");
 
+using kudu::pb_util::SecureShortDebugString;
+using kudu::tserver::TabletServerErrorPB;
 using std::string;
+using strings::Substitute;
 
 namespace  {
 
@@ -153,9 +156,6 @@ int GetFailureMonitorCheckStddevMs() {
 
 namespace kudu {
 namespace consensus {
-
-using strings::Substitute;
-using tserver::TabletServerErrorPB;
 
 // Special string that represents any known leader to the failure detector.
 static const char* const kTimerId = "election-timer";

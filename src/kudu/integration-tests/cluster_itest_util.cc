@@ -67,6 +67,8 @@ using master::ListTabletServersResponsePB;
 using master::ListTabletServersResponsePB_Entry;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using rpc::Messenger;
 using rpc::RpcController;
 using std::min;

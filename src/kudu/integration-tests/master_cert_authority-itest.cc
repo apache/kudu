@@ -122,7 +122,7 @@ class MasterCertAuthorityTest : public KuduTest {
 
       // All masters (including followers) should accept the heartbeat.
       ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
-      SCOPED_TRACE(SecureDebugString(resp));
+      SCOPED_TRACE(pb_util::SecureDebugString(resp));
       ASSERT_FALSE(resp.has_error());
     }
   }
@@ -152,7 +152,7 @@ class MasterCertAuthorityTest : public KuduTest {
 
       // All masters (including followers) should accept the heartbeat.
       RETURN_NOT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
-      SCOPED_TRACE(SecureDebugString(resp));
+      SCOPED_TRACE(pb_util::SecureDebugString(resp));
       if (resp.has_error()) {
         return Status::RuntimeError("RPC error", resp.error().ShortDebugString());
       }

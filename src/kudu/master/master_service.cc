@@ -56,6 +56,8 @@ DEFINE_bool(master_non_leader_masters_propagate_tsk, false,
             "tests scenarios only and should not be used elsewhere.");
 TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
 
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::security::SignedTokenPB;
 using google::protobuf::Message;
 using std::string;

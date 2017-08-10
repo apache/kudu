@@ -76,6 +76,7 @@ namespace kudu {
 
 using crc::Crc32c;
 using server::ServerBase;
+using pb_util::SecureShortDebugString;
 using tablet::TabletReplica;
 
 namespace tserver {

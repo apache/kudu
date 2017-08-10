@@ -166,7 +166,7 @@ Status IndexBlockReader::Parse(const Slice &data) {
   key_offsets_ = trailer_ptr - sizeof(uint32_t) * trailer_.num_entries();
   CHECK(trailer_ptr >= data_.data());
 
-  VLOG(2) << "Parsed index trailer: " << SecureDebugString(trailer_);
+  VLOG(2) << "Parsed index trailer: " << pb_util::SecureDebugString(trailer_);
 
   parsed_ = true;
   return Status::OK();

@@ -195,7 +195,7 @@ class LogTestBase : public KuduTest {
 
   void EntriesToIdList(std::vector<uint32_t>* ids) {
     for (const LogEntryPB* entry : entries_) {
-      VLOG(2) << "Entry contents: " << SecureDebugString(*entry);
+      VLOG(2) << "Entry contents: " << pb_util::SecureDebugString(*entry);
       if (entry->type() == REPLICATE) {
         ids->push_back(entry->replicate().id().index());
       }
@@ -352,10 +352,10 @@ class LogTestBase : public KuduTest {
       strings::SubstituteAndAppend(&dump, "Segment: $0, Path: $1\n",
                                    segment->header().sequence_number(), segment->path());
       strings::SubstituteAndAppend(&dump, "Header: $0\n",
-                                   SecureShortDebugString(segment->header()));
+                                   pb_util::SecureShortDebugString(segment->header()));
       if (segment->HasFooter()) {
         strings::SubstituteAndAppend(&dump, "Footer: $0\n",
-                                     SecureShortDebugString(segment->footer()));
+                                     pb_util::SecureShortDebugString(segment->footer()));
       } else {
         dump.append("Footer: None or corrupt.");
       }

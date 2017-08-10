@@ -51,6 +51,8 @@ using kudu::consensus::TransactionStatusPB;
 using kudu::MaintenanceManagerStatusPB;
 using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
 using kudu::MaintenanceManagerStatusPB_OpInstancePB;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;

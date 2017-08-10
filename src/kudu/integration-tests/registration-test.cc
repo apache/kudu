@@ -71,6 +71,7 @@ using master::IsCreateTableDoneResponsePB;
 using master::MiniMaster;
 using master::TSDescriptor;
 using master::TabletLocationsPB;
+using kudu::pb_util::SecureShortDebugString;
 using tserver::MiniTabletServer;
 
 void CreateTableForTesting(MiniMaster* mini_master,

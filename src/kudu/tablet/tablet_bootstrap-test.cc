@@ -57,6 +57,7 @@ using consensus::make_scoped_refptr_replicate;
 using log::Log;
 using log::LogAnchorRegistry;
 using log::LogTestBase;
+using pb_util::SecureShortDebugString;
 using tserver::WriteRequestPB;
 
 class BootstrapTest : public LogTestBase {

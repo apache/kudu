@@ -51,19 +51,18 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 
+using base::subtle::Barrier_AtomicIncrement;
+using kudu::consensus::MinimumOpId;
+using kudu::consensus::OpId;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
 using std::shared_ptr;
 using std::string;
 using std::vector;
-
-using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
 
 namespace kudu {
-
-using consensus::MinimumOpId;
-using consensus::OpId;
-
 namespace tablet {
 
 const int64 kNoDurableMemStore = -1;

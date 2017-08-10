@@ -46,13 +46,14 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
   const shared_ptr<TSDescriptor>* found_ptr =
     FindOrNull(servers_by_id_, instance.permanent_uuid());
   if (!found_ptr) {
-    return Status::NotFound("unknown tablet server ID", SecureShortDebugString(instance));
+    return Status::NotFound("unknown tablet server ID",
+        pb_util::SecureShortDebugString(instance));
   }
   const shared_ptr<TSDescriptor>& found = *found_ptr;
 
   if (instance.instance_seqno() != found->latest_seqno()) {
     return Status::NotFound("mismatched instance sequence number",
-                            SecureShortDebugString(instance));
+                            pb_util::SecureShortDebugString(instance));
   }
 
   *ts_desc = found;

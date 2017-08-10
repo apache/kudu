@@ -108,7 +108,7 @@ class TableLoader : public TableVisitor {
 };
 
 static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
-  return SecureDebugString(a) == SecureDebugString(b);
+  return pb_util::SecureDebugString(a) == pb_util::SecureDebugString(b);
 }
 
 template<class C>

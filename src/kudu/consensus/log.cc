@@ -538,7 +538,7 @@ Status Log::CloseCurrentSegment() {
                         << active_segment_->path();
   }
   VLOG_WITH_PREFIX(2) << "Segment footer for " << active_segment_->path()
-                      << ": " << SecureShortDebugString(footer_builder_);
+                      << ": " << pb_util::SecureShortDebugString(footer_builder_);
 
   footer_builder_.set_close_timestamp_micros(GetCurrentTimeMicros());
   RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer_builder_));

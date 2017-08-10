@@ -29,6 +29,7 @@
 #include "kudu/util/status.h"
 
 using google::protobuf::RepeatedPtrField;
+using kudu::pb_util::SecureShortDebugString;
 using std::map;
 using std::pair;
 using std::string;

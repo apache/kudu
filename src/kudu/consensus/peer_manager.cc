@@ -28,11 +28,12 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
+using kudu::log::Log;
+using kudu::pb_util::SecureShortDebugString;
+using strings::Substitute;
+
 namespace kudu {
 namespace consensus {
-
-using log::Log;
-using strings::Substitute;
 
 PeerManager::PeerManager(std::string tablet_id,
                          std::string local_uuid,

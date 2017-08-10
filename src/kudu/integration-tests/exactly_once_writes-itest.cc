@@ -208,12 +208,12 @@ void ExactlyOnceSemanticsITest::DoTestWritesWithExactlyOnceSemantics(
   bool mismatched = false;
   for (int i = 0; i < num_batches; i++) {
     for (int j = 0; j < num_threads; j++) {
-      string expected_response = SecureShortDebugString(responses[j][i]);
+      string expected_response = pb_util::SecureShortDebugString(responses[j][i]);
       string expected_ts = strings::Substitute(
           "T:$0 TSidx:$1 TSuuid:$2", j, j % FLAGS_num_replicas,
           cluster_.get()->tablet_server(j % FLAGS_num_replicas)->instance_id().permanent_uuid());
       for (int k = 0; k < num_threads; k++) {
-        string got_response = SecureShortDebugString(responses[k][i]);
+        string got_response = pb_util::SecureShortDebugString(responses[k][i]);
         string got_ts = strings::Substitute(
             "T:$0 TSidx:$1 TSuuid:$2", k, k % FLAGS_num_replicas,
             cluster_.get()->tablet_server(k % FLAGS_num_replicas)->instance_id().permanent_uuid());

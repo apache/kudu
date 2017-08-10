@@ -25,11 +25,12 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace consensus {
-
+using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using strings::Substitute;
+
+namespace kudu {
+namespace consensus {
 
 //------------------------------------------------------------
 // PendingRounds

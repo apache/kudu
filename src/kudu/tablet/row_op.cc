@@ -20,6 +20,8 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/pb_util.h"
 
+using kudu::pb_util::SecureDebugString;
+
 namespace kudu {
 namespace tablet {
 

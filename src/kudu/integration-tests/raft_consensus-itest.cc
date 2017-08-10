@@ -91,6 +91,8 @@ using itest::TServerDetails;
 using itest::WaitUntilLeader;
 using itest::WriteSimpleTestRow;
 using master::TabletLocationsPB;
+using pb_util::SecureShortDebugString;
+using pb_util::SecureDebugString;
 using rpc::RpcController;
 using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;

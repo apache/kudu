@@ -74,18 +74,19 @@ TAG_FLAG(enable_tablet_copy, unsafe);
 
 DECLARE_int32(raft_heartbeat_interval_ms);
 
-
-namespace kudu {
-namespace consensus {
-
-using rpc::Messenger;
-using rpc::RpcController;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::Messenger;
+using kudu::rpc::RpcController;
+using kudu::tserver::TabletServerErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::vector;
 using std::weak_ptr;
 using strings::Substitute;
-using tserver::TabletServerErrorPB;
+
+
+namespace kudu {
+namespace consensus {
 
 Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
                            string tablet_id,

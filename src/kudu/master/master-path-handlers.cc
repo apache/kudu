@@ -86,7 +86,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
     string row = Substitute("<tr><th>$0</th><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
                             RegistrationToHtml(reg, desc->permanent_uuid()),
                             time_since_hb,
-                            EscapeForHtmlToString(SecureShortDebugString(reg)));
+                            EscapeForHtmlToString(pb_util::SecureShortDebugString(reg)));
 
     if (desc->PresumedDead()) {
       version_counts[reg.software_version()][1]++;
@@ -383,7 +383,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
         master.registration(),
         master.instance_id().permanent_uuid());
     string reg_str = EscapeForHtmlToString(
-        SecureShortDebugString(master.registration()));
+        pb_util::SecureShortDebugString(master.registration()));
     *output << Substitute(
         "  <tr><td>$0</td><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
         uuid_text,

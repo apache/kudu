@@ -173,7 +173,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
            vote_counter_->GetTotalExpectedVotes())
       << "Expected different number of followers. Follower UUIDs: ["
       << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ")
-      << "]; RaftConfig: {" << SecureShortDebugString(config) << "}";
+      << "]; RaftConfig: {" << pb_util::SecureShortDebugString(config) << "}";
 }
 
 LeaderElection::~LeaderElection() {

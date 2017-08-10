@@ -37,6 +37,8 @@
 #include "kudu/util/slice.h"
 
 using google::protobuf::RepeatedPtrField;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::vector;
 

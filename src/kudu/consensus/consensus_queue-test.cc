@@ -830,11 +830,11 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   StartTabletCopyRequestPB tc_req;
   ASSERT_OK(queue_->GetTabletCopyRequestForPeer(kPeerUuid, &tc_req));
 
-  ASSERT_TRUE(tc_req.IsInitialized()) << SecureShortDebugString(tc_req);
+  ASSERT_TRUE(tc_req.IsInitialized()) << pb_util::SecureShortDebugString(tc_req);
   ASSERT_EQ(kTestTablet, tc_req.tablet_id());
   ASSERT_EQ(kLeaderUuid, tc_req.copy_peer_uuid());
-  ASSERT_EQ(SecureShortDebugString(FakeRaftPeerPB(kLeaderUuid).last_known_addr()),
-            SecureShortDebugString(tc_req.copy_peer_addr()));
+  ASSERT_EQ(pb_util::SecureShortDebugString(FakeRaftPeerPB(kLeaderUuid).last_known_addr()),
+            pb_util::SecureShortDebugString(tc_req.copy_peer_addr()));
 }
 
 TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {

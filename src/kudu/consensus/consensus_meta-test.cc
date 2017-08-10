@@ -260,8 +260,8 @@ static void AssertConsensusMergeExpected(const scoped_refptr<ConsensusMetadata>&
   // See header docs for ConsensusMetadata::MergeCommittedConsensusStatePB() for
   // a "spec" of these assertions.
   ASSERT_TRUE(!cmeta->has_pending_config());
-  ASSERT_EQ(SecureShortDebugString(cmeta->CommittedConfig()),
-            SecureShortDebugString(cstate.committed_config()));
+  ASSERT_EQ(pb_util::SecureShortDebugString(cmeta->CommittedConfig()),
+            pb_util::SecureShortDebugString(cstate.committed_config()));
   ASSERT_EQ("", cmeta->leader_uuid());
   ASSERT_EQ(expected_term, cmeta->current_term());
   if (expected_voted_for.empty()) {

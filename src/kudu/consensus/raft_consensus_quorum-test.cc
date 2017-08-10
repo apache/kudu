@@ -54,24 +54,25 @@ METRIC_DECLARE_entity(tablet);
 #define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
 
+using kudu::pb_util::SecureShortDebugString;
+using kudu::log::Log;
+using kudu::log::LogEntryPB;
+using kudu::log::LogOptions;
+using kudu::log::LogReader;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 namespace kudu {
 
 namespace rpc {
 class RpcContext;
 }
-namespace consensus {
 
-using log::Log;
-using log::LogEntryPB;
-using log::LogOptions;
-using log::LogReader;
-using strings::Substitute;
-using strings::SubstituteAndAppend;
+namespace consensus {
 
 const char* kTestTablet = "TestTablet";
 

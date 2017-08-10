@@ -46,6 +46,15 @@ METRIC_DEFINE_histogram(tablet, log_reader_read_batch_latency, "Log Read Latency
                         "Microseconds spent reading log entry batches",
                         60000000LU, 2);
 
+using kudu::consensus::OpId;
+using kudu::consensus::ReplicateMsg;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using std::shared_ptr;
+using std::string;
+using std::vector;
+using strings::Substitute;
+
 namespace kudu {
 namespace log {
 
@@ -57,13 +66,6 @@ struct LogSegmentSeqnoComparator {
   }
 };
 }
-
-using consensus::OpId;
-using consensus::ReplicateMsg;
-using std::shared_ptr;
-using std::string;
-using std::vector;
-using strings::Substitute;
 
 const int64_t LogReader::kNoSizeLimit = -1;
 

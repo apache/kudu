@@ -67,6 +67,8 @@ using strings::Substitute;
 
 namespace kudu {
 
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using rpc::CredentialsPolicy;
 using rpc::ErrorStatusPB;
 using rpc::Messenger;

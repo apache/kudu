@@ -1009,7 +1009,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
 
   TabletSuperBlockPB pb1;
   meta->ToSuperBlock(&pb1);
-  debug_str = SecureDebugString(pb1);
+  debug_str = pb_util::SecureDebugString(pb1);
   StripWhiteSpace(&debug_str);
   ASSERT_STR_CONTAINS(stdout, "Superblock:");
   ASSERT_STR_CONTAINS(stdout, debug_str);
@@ -1138,7 +1138,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
     TabletSuperBlockPB pb1;
     meta->ToSuperBlock(&pb1);
-    debug_str = SecureDebugString(pb1);
+    debug_str = pb_util::SecureDebugString(pb1);
     StripWhiteSpace(&debug_str);
     ASSERT_STR_CONTAINS(stdout, "Superblock:");
     ASSERT_STR_CONTAINS(stdout, debug_str);

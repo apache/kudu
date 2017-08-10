@@ -63,6 +63,8 @@ using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using log::Log;
 using log::LogOptions;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
 using rpc::Messenger;
 using std::shared_ptr;
 using std::string;

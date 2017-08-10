@@ -56,6 +56,7 @@ DEFINE_bool(cfile_verify_checksums, true,
 TAG_FLAG(cfile_verify_checksums, evolving);
 
 using kudu::fs::ReadableBlock;
+using kudu::pb_util::SecureDebugString;
 using std::string;
 using std::unique_ptr;
 using std::vector;

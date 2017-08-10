@@ -189,7 +189,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState("Remote peer (" + copy_peer_uuid + ")" +
                                     " is currently copying itself!",
-                                    SecureShortDebugString(resp.superblock()));
+                                    pb_util::SecureShortDebugString(resp.superblock()));
     LOG_WITH_PREFIX(WARNING) << s.ToString();
     return s;
   }
@@ -594,7 +594,7 @@ Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
     // Sanity-check for corruption.
     RETURN_NOT_OK_PREPEND(VerifyData(offset, resp.chunk()),
                           Substitute("Error validating data item $0",
-                                     SecureShortDebugString(data_id)));
+                                     pb_util::SecureShortDebugString(data_id)));
 
     // Write the data.
     RETURN_NOT_OK(appendable->Append(resp.chunk().data()));

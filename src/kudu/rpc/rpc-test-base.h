@@ -206,7 +206,7 @@ class GenericCalculatorService : public ServiceIf {
       return;
     }
 
-    LOG(INFO) << "got call: " << SecureShortDebugString(req);
+    LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);
@@ -222,7 +222,7 @@ class GenericCalculatorService : public ServiceIf {
       return;
     }
 
-    LOG(INFO) << "got call: " << SecureShortDebugString(req);
+    LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
 
     uint32 pattern = req.pattern();

@@ -58,6 +58,8 @@ using kudu::client::internal::ConnectToClusterRpc;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;

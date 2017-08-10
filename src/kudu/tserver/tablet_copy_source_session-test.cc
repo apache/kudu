@@ -180,8 +180,10 @@ class TabletCopyTest : public KuduTabletTest {
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)));
       ASSERT_OK(tablet_replica_->SubmitWrite(std::move(state)));
       latch.Wait();
-      ASSERT_FALSE(resp.has_error()) << "Request failed: " << SecureShortDebugString(resp.error());
-      ASSERT_EQ(0, resp.per_row_errors_size()) << "Insert error: " << SecureShortDebugString(resp);
+      ASSERT_FALSE(resp.has_error())
+          << "Request failed: " << pb_util::SecureShortDebugString(resp.error());
+      ASSERT_EQ(0, resp.per_row_errors_size())
+          << "Insert error: " << pb_util::SecureShortDebugString(resp);
     }
     ASSERT_OK(tablet()->Flush());
   }

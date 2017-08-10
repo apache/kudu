@@ -33,16 +33,16 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
 
+using google::protobuf::RepeatedPtrField;
+using kudu::pb_util::SecureDebugString;
 using std::pair;
 using std::set;
 using std::string;
 using std::vector;
-
-namespace kudu {
-
-using google::protobuf::RepeatedPtrField;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
+
+namespace kudu {
 
 // The encoded size of a hash bucket in a partition key.
 static const size_t kEncodedBucketSize = sizeof(uint32_t);

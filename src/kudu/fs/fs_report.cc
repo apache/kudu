@@ -188,7 +188,7 @@ string LBMMalformedRecordCheck::ToString() const {
   for (const auto& mr : entries) {
     SubstituteAndAppend(
         &s, "Fatal error: malformed record in container $0: $1\n",
-        mr.container, SecureDebugString(mr.record));
+        mr.container, pb_util::SecureDebugString(mr.record));
   }
   return s;
 }

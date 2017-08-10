@@ -87,11 +87,11 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
   // Compare the 2 dumped superblock PBs.
   ASSERT_EQ(superblock_pb_1.SerializeAsString(),
             superblock_pb_2.SerializeAsString())
-    << SecureDebugString(superblock_pb_1)
-    << SecureDebugString(superblock_pb_2);
+    << pb_util::SecureDebugString(superblock_pb_1)
+    << pb_util::SecureDebugString(superblock_pb_2);
 
   LOG(INFO) << "Superblocks match:\n"
-            << SecureDebugString(superblock_pb_1);
+            << pb_util::SecureDebugString(superblock_pb_1);
 }
 
 TEST_F(TestTabletMetadata, TestOnDiskSize) {

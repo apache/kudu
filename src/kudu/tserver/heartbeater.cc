@@ -62,6 +62,7 @@ TAG_FLAG(heartbeat_max_failures_before_backoff, advanced);
 
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
+using kudu::pb_util::SecureDebugString;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
 using std::string;

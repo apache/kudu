@@ -211,7 +211,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   RowwiseRowBlockPB pb;
   faststring direct, indirect;
   SerializeRowBlock(block, &pb, nullptr, &direct, &indirect);
-  SCOPED_TRACE(SecureDebugString(pb));
+  SCOPED_TRACE(pb_util::SecureDebugString(pb));
   SCOPED_TRACE("Row data: " + direct.ToString());
   SCOPED_TRACE("Indirect data: " + indirect.ToString());
 
@@ -271,7 +271,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   RowwiseRowBlockPB pb;
   faststring direct, indirect;
   SerializeRowBlock(block, &pb, &proj_schema, &direct, &indirect, true /* pad timestamps */);
-  SCOPED_TRACE(SecureDebugString(pb));
+  SCOPED_TRACE(pb_util::SecureDebugString(pb));
   SCOPED_TRACE("Row data: " + HexDump(direct));
   SCOPED_TRACE("Indirect data: " + HexDump(indirect));
 

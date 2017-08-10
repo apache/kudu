@@ -37,6 +37,7 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::DriverType;
+using pb_util::SecureShortDebugString;
 using std::string;
 using std::unique_ptr;
 using strings::Substitute;

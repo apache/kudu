@@ -54,6 +54,8 @@ namespace rpc {
 
 using google::protobuf::Message;
 using kudu::MemTracker;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using rpc::InboundCall;
 using std::make_pair;
 using std::move;
