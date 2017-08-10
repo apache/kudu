@@ -19,6 +19,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   compile project(":kudu-mapreduce")
+  compile libs.parquetHadoop
   compile libs.yetusAnnotations
   compile libs.slf4jApi
 
