@@ -25,7 +25,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile.pb.h"
