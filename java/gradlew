@@ -65,7 +65,7 @@ case "`uname`" in
 esac
 
 
-if [[ ! -e $APP_HOME/gradle/wrapper/gradle-wrapper.jar ]]; then
+if [ ! -e $APP_HOME/gradle/wrapper/gradle-wrapper.jar ]; then
    curl -o $APP_HOME/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.0.2/gradle/wrapper/gradle-wrapper.jar
 fi
 

@@ -35,7 +35,7 @@ task bootstrapWrapper() {
 
 
     def boostrapString = """
-      if [[ ! -e $wrapperJarPath ]]; then
+      if [ ! -e $wrapperJarPath ]; then
          curl -o $wrapperJarPath $wrapperJarUrl
       fi
       """.stripIndent()
