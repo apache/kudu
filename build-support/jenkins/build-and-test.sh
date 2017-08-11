@@ -273,6 +273,7 @@ set +e
 
 # Run tests
 export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
+mkdir -p $TEST_LOGDIR # In case no tests are run (the directory won't be created)
 if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   if [ -z "$TEST_RESULT_SERVER" ]; then
     echo Must set TEST_RESULT_SERVER to use RUN_FLAKY_ONLY
@@ -380,34 +381,35 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   echo Building and testing python.
   echo ------------------------------------------------------------
 
-  # Failing to compile the Python client should result in a build failure
+  # Failing to compile the Python client should result in a build failure.
   set -e
   export KUDU_HOME=$SOURCE_ROOT
   export KUDU_BUILD=$BUILD_ROOT
   pushd $SOURCE_ROOT/python
 
-  # Create a sane test environment
+  # Create a sane test environment.
   rm -Rf $KUDU_BUILD/py_env
   virtualenv $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
-  pip install --upgrade pip
-  # On RHEL 6, keeping setuptools in requirements.txt fails as of setuptools 36.2.7.
-  # Strangely, it does work when extracted like this.
-  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
-  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
+
+  # Download all necessary requirements.
+  CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
 
-  # Assuming we run this script from base dir
+  # Build the Python bindings. This assumes we run this script from base dir.
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
+
+  # Run the Python tests.
   if ! python setup.py test \
-      --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python_client.xml" \
-      2> $KUDU_BUILD/test-logs/python_client.log ; then
+      --addopts="kudu --junit-xml=$TEST_LOGDIR/python_client.xml" \
+      2> $TEST_LOGDIR/python_client.log ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Python tests failed\n'
   fi
+
   deactivate
   popd
 fi
@@ -417,33 +419,35 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   echo Building and testing python 3.
   echo ------------------------------------------------------------
 
-  # Failing to compile the Python client should result in a build failure
+  # Failing to compile the Python client should result in a build failure.
   set -e
   export KUDU_HOME=$SOURCE_ROOT
   export KUDU_BUILD=$BUILD_ROOT
   pushd $SOURCE_ROOT/python
 
-  # Create a sane test environment
+  # Create a sane test environment.
   rm -Rf $KUDU_BUILD/py_env
   virtualenv -p python3 $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
-  pip install --upgrade pip
-  # See the comment in the BUILD_PYTHON section above for why we need this line.
-  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
-  CC=$CLANG CXX=$CLANG++ pip install --disable-pip-version-check -r requirements.txt
+
+  # Download all necessary requirements.
+  CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
 
-  # Assuming we run this script from base dir
+  # Build the Python bindings. This assumes we run this script from base dir.
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
+
+  # Run the Python tests.
   if ! python setup.py test \
-      --addopts="kudu --junit-xml=$KUDU_BUILD/test-logs/python3_client.xml" \
-      2> $KUDU_BUILD/test-logs/python3_client.log ; then
+      --addopts="kudu --junit-xml=$TEST_LOGDIR/python3_client.xml" \
+      2> $TEST_LOGDIR/python3_client.log ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Python 3 tests failed\n'
   fi
+
   deactivate
   popd
 fi
