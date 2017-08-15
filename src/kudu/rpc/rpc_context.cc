@@ -21,7 +21,6 @@
 #include <ostream>
 #include <sstream>
 
-#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/result_tracker.h"

@@ -31,6 +31,7 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/locks.h"
