@@ -45,6 +45,7 @@ set(KRPC_SRCS
     blocking_ops.cc
     client_negotiation.cc
     connection.cc
+    connection_id.cc
     constants.cc
     inbound_call.cc
     messenger.cc
