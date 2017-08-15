@@ -29,7 +29,7 @@ class UserCredentials {
  public:
   // Real user.
   bool has_real_user() const;
-  void set_real_user(const std::string& real_user);
+  void set_real_user(std::string real_user);
   const std::string& real_user() const { return real_user_; }
 
   // Returns a string representation of the object.

@@ -64,8 +64,9 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
         << s.ToString() << " before connecting to remote: " << remote.ToString();
   }
 
-  conn_id_.set_remote(remote);
-  conn_id_.mutable_user_credentials()->set_real_user(real_user);
+  UserCredentials creds;
+  creds.set_real_user(std::move(real_user));
+  conn_id_ = ConnectionId(remote, std::move(creds));
 }
 
 Proxy::~Proxy() {

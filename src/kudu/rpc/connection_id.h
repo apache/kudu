@@ -32,19 +32,18 @@ class ConnectionId {
   ConnectionId();
 
   // Copy constructor required for use with STL unordered_map.
-  ConnectionId(const ConnectionId& other);
+  ConnectionId(const ConnectionId& other) = default;
 
   // Convenience constructor.
   ConnectionId(const Sockaddr& remote, UserCredentials user_credentials);
 
   // The remote address.
-  void set_remote(const Sockaddr& remote);
   const Sockaddr& remote() const { return remote_; }
 
   // The credentials of the user associated with this connection, if any.
   void set_user_credentials(UserCredentials user_credentials);
+
   const UserCredentials& user_credentials() const { return user_credentials_; }
-  UserCredentials* mutable_user_credentials() { return &user_credentials_; }
 
   // Copy state from another object to this one.
   void CopyFrom(const ConnectionId& other);
@@ -58,13 +57,8 @@ class ConnectionId {
  private:
   // Remember to update HashCode() and Equals() when new fields are added.
   Sockaddr remote_;
+
   UserCredentials user_credentials_;
-
-  // Implementation of CopyFrom that can be shared with copy constructor.
-  void DoCopyFrom(const ConnectionId& other);
-
-  // Disable assignment operator.
-  void operator=(const ConnectionId&);
 };
 
 class ConnectionIdHash {

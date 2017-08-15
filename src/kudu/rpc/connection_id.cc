@@ -19,7 +19,7 @@
 
 #include <boost/functional/hash.hpp>
 
-#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 
 using std::string;
 
@@ -28,37 +28,19 @@ namespace rpc {
 
 ConnectionId::ConnectionId() {}
 
-ConnectionId::ConnectionId(const ConnectionId& other) {
-  DoCopyFrom(other);
-}
-
 ConnectionId::ConnectionId(const Sockaddr& remote, UserCredentials user_credentials) {
   remote_ = remote;
   user_credentials_ = std::move(user_credentials);
-}
-
-void ConnectionId::set_remote(const Sockaddr& remote) {
-  remote_ = remote;
 }
 
 void ConnectionId::set_user_credentials(UserCredentials user_credentials) {
   user_credentials_ = std::move(user_credentials);
 }
 
-void ConnectionId::CopyFrom(const ConnectionId& other) {
-  DoCopyFrom(other);
-}
-
 string ConnectionId::ToString() const {
-  // Does not print the password.
-  return StringPrintf("{remote=%s, user_credentials=%s}",
-      remote_.ToString().c_str(),
-      user_credentials_.ToString().c_str());
-}
-
-void ConnectionId::DoCopyFrom(const ConnectionId& other) {
-  remote_ = other.remote_;
-  user_credentials_ = other.user_credentials_;
+  return strings::Substitute("{remote=$0, user_credentials=$1}",
+                             remote_.ToString(),
+                             user_credentials_.ToString());
 }
 
 size_t ConnectionId::HashCode() const {

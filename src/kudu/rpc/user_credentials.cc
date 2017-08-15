@@ -32,8 +32,8 @@ bool UserCredentials::has_real_user() const {
   return !real_user_.empty();
 }
 
-void UserCredentials::set_real_user(const string& real_user) {
-  real_user_ = real_user;
+void UserCredentials::set_real_user(string real_user) {
+  real_user_ = std::move(real_user);
 }
 
 string UserCredentials::ToString() const {
