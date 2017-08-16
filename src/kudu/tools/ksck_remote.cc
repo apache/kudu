@@ -59,8 +59,10 @@ Status RemoteKsckTabletServer::Init() {
   RETURN_NOT_OK(ParseAddressList(
       host_port_.ToString(),
       tserver::TabletServer::kDefaultPort, &addresses));
-  generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addresses[0]));
-  ts_proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addresses[0]));
+  const auto& addr = addresses[0];
+  const auto& host = host_port_.host();
+  generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addr, host));
+  ts_proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addr, host));
   return Status::OK();
 }
 

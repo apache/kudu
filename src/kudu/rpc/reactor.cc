@@ -343,8 +343,9 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   std::unique_ptr<Socket> new_socket(new Socket(sock.Release()));
 
   // Register the new connection in our map.
-  *conn = new Connection(this, conn_id.remote(), std::move(new_socket), Connection::CLIENT);
-  (*conn)->set_local_user_credentials(conn_id.user_credentials());
+  *conn = new Connection(
+      this, conn_id.remote(), std::move(new_socket), Connection::CLIENT);
+  (*conn)->set_outbound_connection_id(conn_id);
 
   // Kick off blocking client connection negotiation.
   Status s = StartConnectionNegotiation(*conn);
@@ -437,10 +438,16 @@ void ReactorThread::DestroyConnection(Connection *conn,
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
-    ConnectionId conn_id(conn->remote(), conn->local_user_credentials());
-    auto it = client_conns_.find(conn_id);
-    CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
-    client_conns_.erase(it);
+    const auto range = client_conns_.equal_range(conn->outbound_connection_id());
+    CHECK(range.first != range.second) << "Couldn't find connection " << conn->ToString();
+    // The client_conns_ container is a multi-map.
+    for (auto it = range.first; it != range.second;) {
+      if (it->second.get() == conn) {
+        it = client_conns_.erase(it);
+        break;
+      }
+      ++it;
+    }
   } else if (conn->direction() == Connection::SERVER) {
     auto it = server_conns_.begin();
     while (it != server_conns_.end()) {

@@ -65,6 +65,7 @@ using master::ReportedTabletPB;
 using master::TabletReportPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
+using std::shared_ptr;
 using strings::Substitute;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
@@ -126,8 +127,9 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Build a TServerDetails map so we can check for convergence.
-  gscoped_ptr<MasterServiceProxy> master_proxy(
-      new MasterServiceProxy(client_messenger_, cluster_->mini_master()->bound_rpc_addr()));
+  const auto& addr = cluster_->mini_master()->bound_rpc_addr();
+  shared_ptr<MasterServiceProxy> master_proxy(
+      new MasterServiceProxy(client_messenger_, addr, addr.host()));
 
   itest::TabletServerMap ts_map;
   ASSERT_OK(CreateTabletServerMap(master_proxy.get(), client_messenger_, &ts_map));

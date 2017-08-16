@@ -165,7 +165,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                         << " from remote peer at address " << copy_source_addr.ToString();
 
   // Set up an RPC proxy for the TabletCopyService.
-  proxy_.reset(new TabletCopyServiceProxy(messenger_, addr));
+  proxy_.reset(new TabletCopyServiceProxy(messenger_, addr, copy_source_addr.host()));
 
   BeginTabletCopySessionRequestPB req;
   req.set_requestor_uuid(fs_manager_->uuid());

@@ -98,9 +98,7 @@ const struct sockaddr_in& Sockaddr::addr() const {
 }
 
 std::string Sockaddr::ToString() const {
-  char str[INET_ADDRSTRLEN];
-  ::inet_ntop(AF_INET, &addr_.sin_addr, str, INET_ADDRSTRLEN);
-  return StringPrintf("%s:%d", str, port());
+  return Substitute("$0:$1", host(), port());
 }
 
 bool Sockaddr::IsWildcard() const {

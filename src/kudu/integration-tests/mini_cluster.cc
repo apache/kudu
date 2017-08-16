@@ -341,8 +341,8 @@ std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy() const {
 }
 
 std::shared_ptr<MasterServiceProxy> MiniCluster::master_proxy(int idx) const {
-  return std::shared_ptr<MasterServiceProxy>(
-      new MasterServiceProxy(messenger_, CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr()));
+  const auto& addr = CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr();
+  return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
 }
 
 } // namespace kudu

@@ -124,7 +124,7 @@ class ClientThread {
   void Run() {
     shared_ptr<Messenger> client_messenger = bench_->CreateMessenger("Client");
 
-    CalculatorServiceProxy p(client_messenger, bench_->server_addr_);
+    CalculatorServiceProxy p(client_messenger, bench_->server_addr_, "localhost");
 
     AddRequestPB req;
     AddResponsePB resp;
@@ -177,7 +177,7 @@ class ClientAsyncWorkload {
       messenger_(std::move(messenger)),
       request_count_(0) {
     controller_.set_timeout(MonoDelta::FromSeconds(10));
-    proxy_.reset(new CalculatorServiceProxy(messenger_, bench_->server_addr_));
+    proxy_.reset(new CalculatorServiceProxy(messenger_, bench_->server_addr_, "localhost"));
   }
 
   void CallOneRpc() {

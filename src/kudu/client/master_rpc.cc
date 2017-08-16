@@ -106,21 +106,20 @@ ConnectToMasterRpc::~ConnectToMasterRpc() {
 }
 
 void ConnectToMasterRpc::SendRpc() {
-  MasterServiceProxy proxy(retrier().messenger(),
-                           addr_);
-  rpc::RpcController* rpc = mutable_retrier()->mutable_controller();
+  MasterServiceProxy proxy(retrier().messenger(), addr_, addr_.host());
+  rpc::RpcController* controller = mutable_retrier()->mutable_controller();
   // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
   // it doesn't seem to be.
   if (!trying_old_rpc_) {
     ConnectToMasterRequestPB req;
-    rpc->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
-    proxy.ConnectToMasterAsync(req, out_, rpc,
+    controller->RequireServerFeature(master::MasterFeatures::CONNECT_TO_MASTER);
+    proxy.ConnectToMasterAsync(req, out_, controller,
                                boost::bind(&ConnectToMasterRpc::SendRpcCb,
                                            this,
                                            Status::OK()));
   } else {
     GetMasterRegistrationRequestPB req;
-    proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, rpc,
+    proxy.GetMasterRegistrationAsync(req, &old_rpc_resp_, controller,
                                      boost::bind(&ConnectToMasterRpc::SendRpcCb,
                                                  this,
                                                  Status::OK()));

@@ -112,7 +112,8 @@ TEST_P(TestRpc, TestCall) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
   ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
                                                             "{remote=$0, user_credentials=",
                                                         server_addr.ToString()));
@@ -127,7 +128,8 @@ TEST_P(TestRpc, TestCallToBadServer) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, GetParam()));
   Sockaddr addr;
   addr.set_port(0);
-  Proxy p(client_messenger, addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, addr, addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Loop a few calls to make sure that we properly set up and tear down
   // the connections.
@@ -148,7 +150,8 @@ TEST_P(TestRpc, TestInvalidMethodCall) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Call the method which fails.
   Status s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
@@ -166,7 +169,7 @@ TEST_P(TestRpc, TestWrongService) {
 
   // Set up client with the wrong service name.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, "WrongServiceName");
+  Proxy p(client_messenger, server_addr, "localhost", "WrongServiceName");
 
   // Call the method which fails.
   Status s = DoTestSyncCall(p, "ThisMethodDoesNotExist");
@@ -201,7 +204,8 @@ TEST_P(TestRpc, TestHighFDs) {
   bool enable_ssl = GetParam();
   StartTestServer(&server_addr, enable_ssl);
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 }
 
@@ -220,7 +224,8 @@ TEST_P(TestRpc, TestConnectionKeepalive) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 
@@ -262,7 +267,8 @@ TEST_P(TestRpc, TestCallLongerThanKeepalive) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Make a call which sleeps longer than the keepalive.
   RpcController controller;
@@ -283,7 +289,8 @@ TEST_P(TestRpc, TestRpcSidecar) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, GetParam()));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Test a zero-length sidecar
   DoTestSidecar(p, 0, 0);
@@ -302,7 +309,8 @@ TEST_P(TestRpc, TestCallTimeout) {
   bool enable_ssl = GetParam();
   StartTestServer(&server_addr, enable_ssl);
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Test a very short timeout - we expect this will time out while the
   // call is still trying to connect, or in the send queue. This was triggering ASAN failures
@@ -330,7 +338,8 @@ TEST_P(TestRpc, TestCallTimeoutDoesntAffectNegotiation) {
   bool enable_ssl = GetParam();
   StartTestServer(&server_addr, enable_ssl);
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   FLAGS_rpc_negotiation_inject_delay_ms = 500;
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(50)));
@@ -373,7 +382,8 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   ASSERT_NO_FATAL_FAILURE(DoTestExpectTimeout(p, MonoDelta::FromMilliseconds(100)));
 
@@ -391,7 +401,8 @@ TEST_F(TestRpc, TestServerShutsDown) {
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
-  Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
 
   // Send a call.
   AddRequestPB req;
@@ -475,7 +486,8 @@ TEST_P(TestRpc, TestRpcHandlerLatencyMetric) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          CalculatorService::static_service_name());
 
   RpcController controller;
   SleepRequestPB req;
@@ -523,7 +535,7 @@ TEST_P(TestRpc, TestRpcCallbackDestroysMessenger) {
   RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(1));
   {
-    Proxy p(client_messenger, bad_addr, "xxx");
+    Proxy p(client_messenger, bad_addr, "xxx-host", "xxx-service");
     p.AsyncRequest("my-fake-method", req, &resp, &controller,
                    boost::bind(&DestroyMessengerCallback, &client_messenger, &latch));
   }
@@ -542,7 +554,8 @@ TEST_P(TestRpc, TestRpcContextClientDeadline) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          CalculatorService::static_service_name());
 
   SleepRequestPB req;
   req.set_sleep_micros(sleep_micros);
@@ -568,7 +581,8 @@ TEST_P(TestRpc, TestApplicationFeatureFlag) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          CalculatorService::static_service_name());
 
   { // Supported flag
     AddRequestPB req;
@@ -609,7 +623,8 @@ TEST_P(TestRpc, TestApplicationFeatureFlagUnsupportedServer) {
 
   // Set up client.
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
-  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          CalculatorService::static_service_name());
 
   { // Required flag
     AddRequestPB req;

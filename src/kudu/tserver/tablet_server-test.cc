@@ -102,7 +102,8 @@ TEST_F(TabletServerTest, TestServerClock) {
 
 TEST_F(TabletServerTest, TestSetFlags) {
   server::GenericServiceProxy proxy(
-      client_messenger_, mini_server_->bound_rpc_addr());
+      client_messenger_, mini_server_->bound_rpc_addr(),
+      mini_server_->bound_rpc_addr().host());
 
   server::SetFlagRequestPB req;
   server::SetFlagResponsePB resp;

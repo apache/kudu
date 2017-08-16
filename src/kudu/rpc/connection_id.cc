@@ -20,6 +20,7 @@
 #include <boost/functional/hash.hpp>
 
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 
 using std::string;
 
@@ -28,13 +29,13 @@ namespace rpc {
 
 ConnectionId::ConnectionId() {}
 
-ConnectionId::ConnectionId(const ConnectionId& other) {
-  DoCopyFrom(other);
-}
-
-ConnectionId::ConnectionId(const Sockaddr& remote, UserCredentials user_credentials) {
-  remote_ = remote;
-  user_credentials_ = std::move(user_credentials);
+ConnectionId::ConnectionId(const Sockaddr& remote,
+                           std::string hostname,
+                           UserCredentials user_credentials)
+    : remote_(remote),
+      hostname_(std::move(hostname)),
+      user_credentials_(std::move(user_credentials)) {
+  CHECK(!hostname_.empty());
 }
 
 void ConnectionId::set_remote(const Sockaddr& remote) {
@@ -45,32 +46,31 @@ void ConnectionId::set_user_credentials(UserCredentials user_credentials) {
   user_credentials_ = std::move(user_credentials);
 }
 
-void ConnectionId::CopyFrom(const ConnectionId& other) {
-  DoCopyFrom(other);
-}
-
 string ConnectionId::ToString() const {
-  // Does not print the password.
-  return StringPrintf("{remote=%s, user_credentials=%s}",
-      remote_.ToString().c_str(),
-      user_credentials_.ToString().c_str());
-}
+  string remote;
+  if (hostname_ != remote_.host()) {
+    remote = strings::Substitute("$0 ($1)", remote_.ToString(), hostname_);
+  } else {
+    remote = remote_.ToString();
+  }
 
-void ConnectionId::DoCopyFrom(const ConnectionId& other) {
-  remote_ = other.remote_;
-  user_credentials_ = other.user_credentials_;
+  return strings::Substitute("{remote=$0, user_credentials=$1}",
+                             remote,
+                             user_credentials_.ToString());
 }
 
 size_t ConnectionId::HashCode() const {
   size_t seed = 0;
   boost::hash_combine(seed, remote_.HashCode());
+  boost::hash_combine(seed, hostname_);
   boost::hash_combine(seed, user_credentials_.HashCode());
   return seed;
 }
 
 bool ConnectionId::Equals(const ConnectionId& other) const {
-  return (remote() == other.remote()
-       && user_credentials().Equals(other.user_credentials()));
+  return remote() == other.remote() &&
+      hostname_ == other.hostname_ &&
+      user_credentials().Equals(other.user_credentials());
 }
 
 size_t ConnectionIdHash::operator() (const ConnectionId& conn_id) const {
