@@ -247,7 +247,7 @@ if [ ! -d $PYTHON_SOURCE ]; then
   fetch_and_expand python-${PYTHON_VERSION}.tar.gz
 fi
 
-LLVM_PATCHLEVEL=5
+LLVM_PATCHLEVEL=6
 delete_if_wrong_patchlevel $LLVM_SOURCE $LLVM_PATCHLEVEL
 if [ ! -d $LLVM_SOURCE ]; then
   fetch_and_expand llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz
