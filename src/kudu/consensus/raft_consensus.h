@@ -262,8 +262,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.
-  // Primarily used for testing purposes.
-  Status GetLastOpId(OpIdType type, OpId* id);
+  // Returns boost::none if RaftConsensus was not properly initialized.
+  boost::optional<OpId> GetLastOpId(OpIdType type);
 
   // Returns the current Raft role of this instance.
   RaftPeerPB::Role role() const;
@@ -453,9 +453,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Abort any pending operations after the given op index,
   // and also truncate the LogCache accordingly.
   void TruncateAndAbortOpsAfterUnlocked(int64_t truncate_after_index);
-
-  // Returns the most recent OpId written to the Log.
-  OpId GetLatestOpIdFromLog();
 
   // Begin a replica transaction. If the type of message in 'msg' is not a type
   // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
@@ -675,6 +672,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   const ConsensusOptions& GetOptions() const;
 
+  // See GetLastOpId().
+  boost::optional<OpId> GetLastOpIdUnlocked(OpIdType type);
+
   std::string LogPrefix() const;
   std::string LogPrefixUnlocked() const;
 
@@ -724,10 +724,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // this factory to start it.
   ReplicaTransactionFactory* txn_factory_;
 
-  gscoped_ptr<PeerManager> peer_manager_;
+  std::unique_ptr<PeerManager> peer_manager_;
 
   // The queue of messages that must be sent to peers.
-  gscoped_ptr<PeerMessageQueue> queue_;
+  std::unique_ptr<PeerMessageQueue> queue_;
 
   // The currently pending rounds that have not yet been committed by
   // consensus. Protected by 'lock_'.

@@ -637,18 +637,6 @@ Status Log::DoAppend(LogEntryBatch* entry_batch) {
     return Status::OK();
   }
 
-  // We keep track of the last-written OpId here.
-  // This is needed to initialize Consensus on startup.
-  if (entry_batch->type_ == REPLICATE) {
-    // TODO Probably remove the code below as it looks suspicious: TabletReplica uses this
-    // as 'safe' anchor as it believes it in the log, when it actually isn't, i.e. this
-    // is not the last durable operation. Either move this to TabletReplica (since we're
-    // using in flights anyway no need to scan for ids here) or actually delay doing this
-    // until fsync() has been done. See KUDU-527.
-    std::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
-    last_entry_op_id_.CopyFrom(entry_batch->MaxReplicateOpId());
-  }
-
   // if the size of this entry overflows the current segment, get a new one
   if (allocation_state() == kAllocationNotStarted) {
     if ((active_segment_->Size() + entry_batch_bytes + 4) > max_segment_size_) {
@@ -826,15 +814,6 @@ Status Log::WaitUntilAllFlushed() {
   Synchronizer s;
   AsyncAppend(std::move(reserved_entry_batch), s.AsStatusCallback());
   return s.Wait();
-}
-
-void Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
-  shared_lock<rw_spinlock> l(last_entry_op_id_lock_);
-  if (last_entry_op_id_.IsInitialized()) {
-    DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
-  } else {
-    *op_id = consensus::MinimumOpId();
-  }
 }
 
 Status Log::GC(RetentionIndexes retention_indexes, int32_t* num_gced) {

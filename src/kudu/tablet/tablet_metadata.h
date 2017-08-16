@@ -224,9 +224,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
-  void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = callback; }
+  void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = std::move(callback); }
 
-  consensus::OpId tombstone_last_logged_opid() const { return tombstone_last_logged_opid_; }
+  // Return the last-logged opid of a tombstoned tablet, if known.
+  boost::optional<consensus::OpId> tombstone_last_logged_opid() const;
 
   // Loads the currently-flushed superblock from disk into the given protobuf.
   Status ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const;
@@ -353,7 +354,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Record of the last opid logged by the tablet before it was last
   // tombstoned. Has no meaning for non-tombstoned tablets.
-  consensus::OpId tombstone_last_logged_opid_;
+  boost::optional<consensus::OpId> tombstone_last_logged_opid_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.

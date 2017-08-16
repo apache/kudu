@@ -184,11 +184,9 @@ class MultiThreadedLogTest : public LogTestBase {
     for (int i = 0; i < FLAGS_num_reader_threads; i++) {
       reader_threads.emplace_back([&]() {
           std::map<int64_t, int64_t> map;
-          OpId opid;
           while (!stop_reader) {
-            log_->GetLatestEntryOpId(&opid);
             log_->GetReplaySizeMap(&map);
-            IgnoreResult(log_->GetGCableDataSize(RetentionIndexes(FLAGS_num_batches_per_thread)));
+            log_->GetGCableDataSize(RetentionIndexes(FLAGS_num_batches_per_thread));
           }
         });
     }

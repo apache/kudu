@@ -339,11 +339,14 @@ class RaftConsensusQuorumTest : public KuduTest {
 
     int backoff_exp = 0;
     const int kMaxBackoffExp = 8;
-    OpId committed;
+    OpId committed = MinimumOpId();
     while (true) {
-      if (peer->GetLastOpId(COMMITTED_OPID, &committed).ok() &&
-          committed.index() >= to_wait_for) {
-        return;
+      boost::optional<OpId> opt_committed = peer->GetLastOpId(COMMITTED_OPID);
+      if (opt_committed) {
+        committed = *opt_committed;
+        if (committed.index() >= to_wait_for) {
+          return;
+        }
       }
       if (MonoTime::Now() > (start + timeout)) {
         break;

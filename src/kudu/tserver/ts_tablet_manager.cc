@@ -126,7 +126,10 @@ class Tablet;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
+using consensus::OpIdToString;
+using consensus::RECEIVED_OPID;
 using consensus::RaftConfigPB;
+using consensus::RaftConsensus;
 using consensus::StartTabletCopyRequestPB;
 using consensus::kMinimumTerm;
 using fs::DataDirManager;
@@ -470,23 +473,29 @@ void TSTabletManager::RunTabletCopy(
         LOG(FATAL) << LogPrefix(tablet_id) << "Tablet Copy: "
                    << "Found tablet in TABLET_DATA_COPYING state during StartTabletCopy()";
       case TABLET_DATA_TOMBSTONED: {
-        int64_t last_logged_term = meta->tombstone_last_logged_opid().term();
-        CALLBACK_RETURN_NOT_OK_WITH_ERROR(
-            CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term),
-            TabletServerErrorPB::INVALID_CONFIG);
+        boost::optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
+        if (last_logged_opid) {
+          CALLBACK_RETURN_NOT_OK_WITH_ERROR(CheckLeaderTermNotLower(tablet_id, leader_term,
+                                                                    last_logged_opid->term()),
+                                            TabletServerErrorPB::INVALID_CONFIG);
+        }
         break;
       }
       case TABLET_DATA_READY: {
-        Log* log = old_replica->log();
-        if (!log) {
+        shared_ptr<RaftConsensus> consensus = old_replica->shared_consensus();
+        if (!consensus) {
           CALLBACK_AND_RETURN(
-              Status::IllegalState("Log unavailable. Tablet is not running", tablet_id));
+              Status::IllegalState("consensus unavailable: tablet not running", tablet_id));
         }
-        OpId last_logged_opid;
-        log->GetLatestEntryOpId(&last_logged_opid);
-        int64_t last_logged_term = last_logged_opid.term();
+        boost::optional<OpId> opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
+        if (!opt_last_logged_opid) {
+          CALLBACK_AND_RETURN(
+              Status::IllegalState("cannot determine last-logged opid: tablet not running",
+                                   tablet_id));
+        }
+        CHECK(opt_last_logged_opid);
         CALLBACK_RETURN_NOT_OK_WITH_ERROR(
-            CheckLeaderTermNotLower(tablet_id, leader_term, last_logged_term),
+            CheckLeaderTermNotLower(tablet_id, leader_term, opt_last_logged_opid->term()),
             TabletServerErrorPB::INVALID_CONFIG);
 
         // Tombstone the tablet and store the last-logged OpId.
@@ -503,7 +512,8 @@ void TSTabletManager::RunTabletCopy(
         // will simply tablet copy this replica again. We could try to
         // check again after calling Shutdown(), and if the check fails, try to
         // reopen the tablet. For now, we live with the (unlikely) race.
-        Status s = DeleteTabletData(meta, cmeta_manager_, TABLET_DATA_TOMBSTONED, last_logged_opid);
+        Status s = DeleteTabletData(meta, cmeta_manager_, TABLET_DATA_TOMBSTONED,
+                                    opt_last_logged_opid);
         if (PREDICT_FALSE(!s.ok())) {
           CALLBACK_AND_RETURN(
               s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
@@ -636,8 +646,8 @@ Status TSTabletManager::DeleteTablet(
   // it's tricky to fix. We could try checking again after the shutdown and
   // restarting the tablet if the local replica committed a higher config
   // change op during that time, or potentially something else more invasive.
+  shared_ptr<RaftConsensus> consensus = replica->shared_consensus();
   if (cas_config_opid_index_less_or_equal && !tablet_deleted) {
-    shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
     if (!consensus) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
       return Status::IllegalState("Raft Consensus not available. Tablet shutting down");
@@ -655,10 +665,9 @@ Status TSTabletManager::DeleteTablet(
   replica->Shutdown();
 
   boost::optional<OpId> opt_last_logged_opid;
-  if (replica->log()) {
-    OpId last_logged_opid;
-    replica->log()->GetLatestEntryOpId(&last_logged_opid);
-    opt_last_logged_opid = last_logged_opid;
+  if (consensus) {
+    opt_last_logged_opid = consensus->GetLastOpId(RECEIVED_OPID);
+    DCHECK(!opt_last_logged_opid || opt_last_logged_opid->IsInitialized());
   }
 
   Status s = DeleteTabletData(replica->tablet_metadata(), cmeta_manager_, delete_type,
@@ -1063,8 +1072,8 @@ Status TSTabletManager::DeleteTabletData(
   // that was previously in the metadata.
   RETURN_NOT_OK(meta->DeleteTabletData(delete_type, last_logged_opid));
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
-            << "Tablet deleted. Last logged OpId: "
-            << meta->tombstone_last_logged_opid();
+            << "tablet deleted: last-logged OpId: "
+            << (last_logged_opid ? OpIdToString(*last_logged_opid) : "(unknown)");
   MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
 
   RETURN_NOT_OK(Log::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));

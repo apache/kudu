@@ -114,40 +114,38 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 }
 #undef INSTANTIATE_METRIC
 
-PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
-                                   const scoped_refptr<log::Log>& log,
+PeerMessageQueue::PeerMessageQueue(scoped_refptr<MetricEntity> metric_entity,
+                                   scoped_refptr<log::Log> log,
                                    scoped_refptr<TimeManager> time_manager,
-                                   const RaftPeerPB& local_peer_pb,
-                                   const string& tablet_id,
-                                   unique_ptr<ThreadPoolToken> raft_pool_observers_token)
+                                   RaftPeerPB local_peer_pb,
+                                   string tablet_id,
+                                   unique_ptr<ThreadPoolToken> raft_pool_observers_token,
+                                   OpId last_locally_replicated,
+                                   const OpId& last_locally_committed)
     : raft_pool_observers_token_(std::move(raft_pool_observers_token)),
-      local_peer_pb_(local_peer_pb),
-      tablet_id_(tablet_id),
-      log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id),
+      local_peer_pb_(std::move(local_peer_pb)),
+      tablet_id_(std::move(tablet_id)),
+      log_cache_(metric_entity, log, local_peer_pb_.permanent_uuid(), tablet_id_),
       metrics_(metric_entity),
       time_manager_(std::move(time_manager)) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
   DCHECK(local_peer_pb_.has_last_known_addr());
+  DCHECK(last_locally_replicated.IsInitialized());
+  DCHECK(last_locally_committed.IsInitialized());
   queue_state_.current_term = 0;
   queue_state_.first_index_in_current_term = boost::none;
   queue_state_.committed_index = 0;
   queue_state_.all_replicated_index = 0;
   queue_state_.majority_replicated_index = 0;
   queue_state_.last_idx_appended_to_leader = 0;
-  queue_state_.state = kQueueConstructed;
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = -1;
-}
-
-void PeerMessageQueue::Init(const OpId& last_locally_replicated,
-                            const OpId& last_locally_committed) {
-  std::lock_guard<simple_spinlock> lock(queue_lock_);
-  CHECK_EQ(queue_state_.state, kQueueConstructed);
-  log_cache_.Init(last_locally_replicated);
-  queue_state_.last_appended = last_locally_replicated;
-  queue_state_.state = kQueueOpen;
+  queue_state_.last_appended = std::move(last_locally_replicated);
   queue_state_.committed_index = last_locally_committed.index();
-  TrackPeerUnlocked(local_peer_pb_.permanent_uuid());
+  queue_state_.state = kQueueOpen;
+  // TODO(mpercy): Merge LogCache::Init() with its constructor.
+  log_cache_.Init(queue_state_.last_appended);
+  TrackPeer(local_peer_pb_.permanent_uuid());
 }
 
 void PeerMessageQueue::SetLeaderMode(int64_t committed_index,
@@ -322,6 +320,7 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                                  last_id,
                                                  log_append_callback)));
   lock.lock();
+  DCHECK(last_id.IsInitialized());
   queue_state_.last_appended = last_id;
   UpdateMetricsUnlocked();
 
@@ -337,6 +336,7 @@ void PeerMessageQueue::TruncateOpsAfter(int64_t index) {
                               index));
   {
     std::unique_lock<simple_spinlock> lock(queue_lock_);
+    DCHECK(op.IsInitialized());
     queue_state_.last_appended = op;
   }
   log_cache_.TruncateOpsAfter(op.index());
@@ -344,11 +344,13 @@ void PeerMessageQueue::TruncateOpsAfter(int64_t index) {
 
 OpId PeerMessageQueue::GetLastOpIdInLog() const {
   std::unique_lock<simple_spinlock> lock(queue_lock_);
+  DCHECK(queue_state_.last_appended.IsInitialized());
   return queue_state_.last_appended;
 }
 
 OpId PeerMessageQueue::GetNextOpId() const {
   std::unique_lock<simple_spinlock> lock(queue_lock_);
+  DCHECK(queue_state_.last_appended.IsInitialized());
   return MakeOpId(queue_state_.current_term,
                   queue_state_.last_appended.index() + 1);
 }
@@ -632,7 +634,6 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
   Mode mode_copy;
   {
     std::lock_guard<simple_spinlock> scoped_lock(queue_lock_);
-    DCHECK_NE(kQueueConstructed, queue_state_.state);
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
     if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == nullptr)) {

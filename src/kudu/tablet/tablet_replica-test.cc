@@ -85,7 +85,9 @@ using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
+using consensus::RECEIVED_OPID;
 using consensus::RaftConfigPB;
+using consensus::RaftConsensus;
 using consensus::RaftPeerPB;
 using log::Log;
 using log::LogOptions;
@@ -276,11 +278,11 @@ class TabletReplicaTest : public KuduTabletTest {
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.
   void AssertLogAnchorEarlierThanLogLatest() {
     log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
-    OpId last_log_opid;
-    tablet_replica_->log_->GetLatestEntryOpId(&last_log_opid);
-    CHECK_LT(retention.for_durability, last_log_opid.index())
+    boost::optional<OpId> last_log_opid = tablet_replica_->consensus()->GetLastOpId(RECEIVED_OPID);
+    ASSERT_NE(boost::none, last_log_opid);
+    ASSERT_LT(retention.for_durability, last_log_opid->index())
       << "Expected valid log anchor, got earliest opid: " << retention.for_durability
-      << " (expected any value earlier than last log id: " << SecureShortDebugString(last_log_opid)
+      << " (expected any value earlier than last log id: " << SecureShortDebugString(*last_log_opid)
       << ")";
   }
 
@@ -343,7 +345,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
 
-  AssertLogAnchorEarlierThanLogLatest();
+  NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
   ASSERT_GT(tablet_replica_->log_anchor_registry()->GetAnchorCountForTests(), 0);
 
   // Ensure nothing gets deleted.
@@ -371,6 +373,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
 
   Log* log = tablet_replica_->log_.get();
+  shared_ptr<RaftConsensus> consensus = tablet_replica_->shared_consensus();
   int32_t num_gced;
 
   AssertNoLogAnchors();
@@ -394,10 +397,9 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(2, segments.size());
   AssertNoLogAnchors();
 
-  OpId id;
-  log->GetLatestEntryOpId(&id);
-  LOG(INFO) << "Before: " << SecureShortDebugString(id);
-
+  boost::optional<OpId> id = consensus->GetLastOpId(consensus::RECEIVED_OPID);
+  ASSERT_NE(boost::none, id);
+  LOG(INFO) << "Before: " << *id;
 
   // We currently have no anchors and the last operation in the log is 0.3
   // Before the below was ExecuteDeletesAndRollLogs(1) but that was breaking
@@ -409,7 +411,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
 
   // Execute a mutation.
   ASSERT_OK(ExecuteDeletesAndRollLogs(2));
-  AssertLogAnchorEarlierThanLogLatest();
+  NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
   ASSERT_GT(tablet_replica_->log_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
@@ -529,7 +531,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
 
-  AssertLogAnchorEarlierThanLogLatest();
+  NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
 
   // Try to GC(), nothing should be deleted due to the in-flight transaction.
   retention = tablet_replica_->GetRetentionIndexes();

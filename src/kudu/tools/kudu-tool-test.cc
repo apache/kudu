@@ -123,6 +123,7 @@ using cfile::StringDataGenerator;
 using cfile::WriterOptions;
 using client::sp::shared_ptr;
 using consensus::OpId;
+using consensus::RECEIVED_OPID;
 using consensus::ReplicateRefPtr;
 using consensus::ReplicateMsg;
 using fs::FsReport;
@@ -1552,15 +1553,14 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
   // so that we can compare the size of the data on disk before and
   // after the deletion of local_replica to verify that the size-on-disk
   // is reduced after the tool operation.
-  OpId last_logged_opid;
-  last_logged_opid.Clear();
+  boost::optional<OpId> last_logged_opid;
   string tablet_id;
   {
     vector<scoped_refptr<TabletReplica>> tablet_replicas;
     ts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
     ASSERT_EQ(1, tablet_replicas.size());
     tablet_id = tablet_replicas[0]->tablet_id();
-    tablet_replicas[0]->log()->GetLatestEntryOpId(&last_logged_opid);
+    last_logged_opid = tablet_replicas[0]->shared_consensus()->GetLastOpId(RECEIVED_OPID);
     Tablet* tablet = tablet_replicas[0]->tablet();
     ASSERT_OK(tablet->Flush());
   }
@@ -1594,10 +1594,12 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
     ASSERT_EQ(tablet_id, tablet_replicas[0]->tablet_id());
     ASSERT_EQ(TabletDataState::TABLET_DATA_TOMBSTONED,
               tablet_replicas[0]->tablet_metadata()->tablet_data_state());
-    OpId tombstoned_opid = tablet_replicas[0]->tablet_metadata()->tombstone_last_logged_opid();
-    ASSERT_TRUE(tombstoned_opid.IsInitialized());
-    ASSERT_EQ(last_logged_opid.term(), tombstoned_opid.term());
-    ASSERT_EQ(last_logged_opid.index(), tombstoned_opid.index());
+    boost::optional<OpId> tombstoned_opid =
+        tablet_replicas[0]->tablet_metadata()->tombstone_last_logged_opid();
+    ASSERT_NE(boost::none, tombstoned_opid);
+    ASSERT_NE(boost::none, last_logged_opid);
+    ASSERT_EQ(last_logged_opid->term(), tombstoned_opid->term());
+    ASSERT_EQ(last_logged_opid->index(), tombstoned_opid->index());
   }
 }
 

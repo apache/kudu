@@ -89,6 +89,7 @@ namespace tserver {
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
+using consensus::OpId;
 using env_util::CopyFile;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
@@ -141,16 +142,27 @@ Status TabletCopyClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>&
                                            data_state));
   }
 
-  replace_tombstoned_tablet_ = true;
-  meta_ = meta;
-
-  int64_t last_logged_term = meta->tombstone_last_logged_opid().term();
-  if (last_logged_term > caller_term) {
+  boost::optional<OpId> last_logged_opid = meta->tombstone_last_logged_opid();
+  if (!last_logged_opid) {
+    // There are certain cases where we can end up with a tombstoned replica
+    // that does not store its last-logged opid. One such case is when there is
+    // WAL corruption at startup time, resulting in a replica being evicted and
+    // deleted. In such a case, it is not possible to determine the last-logged
+    // opid. Another such case (at the time of writing) is initialization
+    // failure due to any number of problems, resulting in the replica going
+    // into an error state. If the replica is tombstoned while in an error
+    // state, the last-logged opid will not be stored. See KUDU-2106.
+    LOG_WITH_PREFIX(INFO) << "overwriting existing tombstoned replica "
+                             "with an unknown last-logged opid";
+  } else if (last_logged_opid->term() > caller_term) {
     return Status::InvalidArgument(
         Substitute("Leader has term $0 but the last log entry written by the tombstoned replica "
                    "for tablet $1 has higher term $2. Refusing tablet copy from leader",
-                   caller_term, tablet_id_, last_logged_term));
+                   caller_term, tablet_id_, last_logged_opid->term()));
   }
+
+  replace_tombstoned_tablet_ = true;
+  meta_ = meta;
 
   // Load the old consensus metadata, if it exists.
   scoped_refptr<ConsensusMetadata> cmeta;
@@ -243,15 +255,16 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     // misconfiguration causes us to attempt to copy from an out-of-date
     // source peer, even after passing the term check from the caller in
     // SetTabletToReplace().
-    int64_t last_logged_term = meta_->tombstone_last_logged_opid().term();
-    if (last_logged_term > remote_cstate_->current_term()) {
+
+    boost::optional<OpId> last_logged_opid = meta_->tombstone_last_logged_opid();
+    if (last_logged_opid && last_logged_opid->term() > remote_cstate_->current_term()) {
       return Status::InvalidArgument(
           Substitute("Tablet $0: source peer has term $1 but "
                      "tombstoned replica has last-logged opid with higher term $2. "
                      "Refusing tablet copy from source peer $3",
                      tablet_id_,
                      remote_cstate_->current_term(),
-                     last_logged_term,
+                     last_logged_opid->term(),
                      copy_peer_uuid));
     }
 
@@ -644,7 +657,7 @@ Status TabletCopyClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
 }
 
 string TabletCopyClient::LogPrefix() {
-  return Substitute("T $0 P $1: Tablet Copy client: ",
+  return Substitute("T $0 P $1: tablet copy: ",
                     tablet_id_, fs_manager_->uuid());
 }
 

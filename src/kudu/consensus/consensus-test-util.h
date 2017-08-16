@@ -47,14 +47,16 @@
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 
 #define ASSERT_OPID_EQ(left, right) \
-  OpId TOKENPASTE2(_left, __LINE__) = (left); \
-  OpId TOKENPASTE2(_right, __LINE__) = (right); \
-  if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) { \
-    FAIL() << "Expected: " \
-           << pb_util::SecureShortDebugString(TOKENPASTE2(_right,__LINE__)) << "\n" \
-           << "Value: " \
-           << pb_util::SecureShortDebugString(TOKENPASTE2(_left,__LINE__)) << "\n"; \
-  }
+  do { \
+    const OpId& TOKENPASTE2(_left, __LINE__) = (left); \
+    const OpId& TOKENPASTE2(_right, __LINE__) = (right); \
+    if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right, __LINE__))) { \
+      FAIL() << "Expected: " \
+            << pb_util::SecureShortDebugString(TOKENPASTE2(_left, __LINE__)) << "\n" \
+            << "Value: " \
+            << pb_util::SecureShortDebugString(TOKENPASTE2(_right, __LINE__)) << "\n"; \
+    } \
+  } while (false)
 
 namespace kudu {
 namespace consensus {

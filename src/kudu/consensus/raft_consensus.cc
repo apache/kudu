@@ -149,6 +149,7 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tserver::TabletServerErrorPB;
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace  {
@@ -220,16 +221,23 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                             ReplicaTransactionFactory* txn_factory,
                             scoped_refptr<MetricEntity> metric_entity,
                             Callback<void(const std::string& reason)> mark_dirty_clbk) {
+  DCHECK(metric_entity);
+
   peer_proxy_factory_ = DCHECK_NOTNULL(std::move(peer_proxy_factory));
   log_ = DCHECK_NOTNULL(std::move(log));
   time_manager_ = DCHECK_NOTNULL(std::move(time_manager));
   txn_factory_ = DCHECK_NOTNULL(txn_factory);
   mark_dirty_clbk_ = std::move(mark_dirty_clbk);
-  DCHECK(metric_entity);
 
   term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, cmeta_->current_term());
   follower_memory_pressure_rejections_ =
       metric_entity->FindOrCreateCounter(&METRIC_follower_memory_pressure_rejections);
+
+  // A single Raft thread pool token is shared between RaftConsensus and
+  // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
+  // raw pointer to the token, to emphasize that RaftConsensus is responsible
+  // for destroying the token.
+  raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
@@ -240,30 +248,27 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   //
   // TODO(adar): the token is SERIAL to match the previous single-thread
   // observer pool behavior, but CONCURRENT may be safe here.
-  queue_.reset(new PeerMessageQueue(std::move(metric_entity),
-                                    log_,
-                                    time_manager_,
-                                    local_peer_pb_,
-                                    options_.tablet_id,
-                                    raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL)));
-
-  // A single Raft thread pool token is shared between RaftConsensus and
-  // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
-  // raw pointer to the token, to emphasize that RaftConsensus is responsible
-  // for destroying the token.
-  raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
+  unique_ptr<PeerMessageQueue> queue(new PeerMessageQueue(
+      std::move(metric_entity),
+      log_,
+      time_manager_,
+      local_peer_pb_,
+      options_.tablet_id,
+      raft_pool_->NewToken(ThreadPool::ExecutionMode::SERIAL),
+      info.last_id,
+      info.last_committed_id));
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
-  peer_manager_.reset(new PeerManager(options_.tablet_id,
-                                      peer_uuid(),
-                                      peer_proxy_factory_.get(),
-                                      queue_.get(),
-                                      raft_pool_token_.get(),
-                                      log_));
+  unique_ptr<PeerManager> peer_manager(new PeerManager(options_.tablet_id,
+                                                       peer_uuid(),
+                                                       peer_proxy_factory_.get(),
+                                                       queue.get(),
+                                                       raft_pool_token_.get(),
+                                                       log_));
 
-  pending_.reset(new PendingRounds(Substitute("T $0 P $1: ", options_.tablet_id, peer_uuid()),
-                                   time_manager_));
+  unique_ptr<PendingRounds> pending(new PendingRounds(LogPrefixThreadSafe(), time_manager_));
+
   failure_monitor_.reset(new RandomizedFailureMonitor(GetRandomSeed32(),
                                                       GetFailureMonitorCheckMeanMs(),
                                                       GetFailureMonitorCheckStddevMs()));
@@ -281,7 +286,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   // That happens separately via the helper functions
   // EnsureFailureDetector(Enabled/Disabled)Unlocked();
   RETURN_NOT_OK(failure_monitor_->MonitorFailureDetector(options_.tablet_id,
-                                                        failure_detector_));
+                                                         failure_detector_));
 
   {
     ThreadRestrictions::AssertWaitAllowed();
@@ -289,7 +294,12 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
     CHECK_EQ(kInitialized, state_) << LogPrefixUnlocked() << "Illegal state for Start(): "
                                    << State_Name(state_);
 
+    queue_ = std::move(queue);
+    peer_manager_ = std::move(peer_manager);
+    pending_ = std::move(pending);
+
     ClearLeaderUnlocked();
+    RETURN_NOT_OK(EnsureFailureDetectorEnabled());
 
     // Our last persisted term can be higher than the last persisted operation
     // (i.e. if we called an election) but reverse should never happen.
@@ -302,8 +312,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
           GetCurrentTermUnlocked()));
     }
 
-    state_ = kRunning;
-
+    // Append any uncommitted replicate messages found during log replay to the queue.
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Replica starting. Triggering "
                                    << info.orphaned_replicates.size()
                                    << " pending transactions. Active config: "
@@ -313,17 +322,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
     }
 
+    // Set the initial committed opid for the PendingRounds only after
+    // appending any uncommitted replicate messages to the queue.
     pending_->SetInitialCommittedOpId(info.last_committed_id);
-
-    queue_->Init(info.last_id, info.last_committed_id);
-  }
-
-  {
-    ThreadRestrictions::AssertWaitAllowed();
-    LockGuard l(lock_);
-    RETURN_NOT_OK(CheckRunningUnlocked());
-
-    RETURN_NOT_OK(EnsureFailureDetectorEnabled());
 
     // If this is the first term expire the FD immediately so that we have a fast first
     // election, otherwise we just let the timer expire normally.
@@ -344,6 +345,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
     // Now assume "follower" duties.
     RETURN_NOT_OK(BecomeReplicaUnlocked());
+
+    state_ = kRunning;
   }
 
   if (IsSingleVoterConfig() && FLAGS_enable_leader_failure_detection) {
@@ -650,6 +653,7 @@ Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<Consensu
 
 Status RaftConsensus::AddPendingOperationUnlocked(const scoped_refptr<ConsensusRound>& round) {
   DCHECK(lock_.is_locked());
+  DCHECK(pending_);
 
   // If we are adding a pending config change, we need to propagate it to the
   // metadata.
@@ -1509,7 +1513,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // Candidate must have last-logged OpId at least as large as our own to get
   // our vote.
-  OpId local_last_logged_opid = GetLatestOpIdFromLog();
+  OpId local_last_logged_opid = queue_->GetLastOpIdInLog();
   bool vote_yes = !OpIdLessThan(request->candidate_status().last_received(),
                                 local_last_logged_opid);
 
@@ -1824,12 +1828,6 @@ void RaftConsensus::Shutdown() {
   if (failure_monitor_) failure_monitor_->Shutdown();
 
   shutdown_.Store(true, kMemOrderRelease);
-}
-
-OpId RaftConsensus::GetLatestOpIdFromLog() {
-  OpId id;
-  log_->GetLatestEntryOpId(&id);
-  return id;
 }
 
 Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg) {
@@ -2241,18 +2239,27 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   }
 }
 
-Status RaftConsensus::GetLastOpId(OpIdType type, OpId* id) {
+boost::optional<OpId> RaftConsensus::GetLastOpId(OpIdType type) {
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
-  if (type == RECEIVED_OPID) {
-    *DCHECK_NOTNULL(id) = queue_->GetLastOpIdInLog();
-  } else if (type == COMMITTED_OPID) {
-    id->set_term(pending_->GetTermWithLastCommittedOp());
-    id->set_index(pending_->GetCommittedIndex());
-  } else {
-    return Status::InvalidArgument("Unsupported OpIdType", OpIdType_Name(type));
+  return GetLastOpIdUnlocked(type);
+}
+
+boost::optional<OpId> RaftConsensus::GetLastOpIdUnlocked(OpIdType type) {
+  // Return early if this method is called on an instance of RaftConsensus that
+  // has not yet been started, failed during Init(), or failed during Start().
+  if (!queue_ || !pending_) return boost::none;
+
+  switch (type) {
+    case RECEIVED_OPID:
+      return queue_->GetLastOpIdInLog();
+    case COMMITTED_OPID:
+      return MakeOpId(pending_->GetTermWithLastCommittedOp(),
+                      pending_->GetCommittedIndex());
+    default:
+      LOG(DFATAL) << LogPrefixUnlocked() << "Invalid OpIdType " << type;
+      return boost::none;
   }
-  return Status::OK();
 }
 
 log::RetentionIndexes RaftConsensus::GetRetentionIndexes() {

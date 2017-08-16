@@ -183,6 +183,7 @@ vector<BlockId> TabletMetadata::CollectBlockIds() {
 
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
                                         const boost::optional<OpId>& last_logged_opid) {
+  DCHECK(!last_logged_opid || last_logged_opid->IsInitialized());
   CHECK(delete_type == TABLET_DATA_DELETED ||
         delete_type == TABLET_DATA_TOMBSTONED ||
         delete_type == TABLET_DATA_COPYING)
@@ -202,9 +203,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
     }
     rowsets_.clear();
     tablet_data_state_ = delete_type;
-    if (last_logged_opid) {
-      tombstone_last_logged_opid_ = *last_logged_opid;
-    }
+    tombstone_last_logged_opid_ = last_logged_opid;
   }
 
   // Keep a copy of the old data dir group in case of flush failure.
@@ -278,7 +277,6 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       table_name_(std::move(table_name)),
       partition_schema_(std::move(partition_schema)),
       tablet_data_state_(tablet_data_state),
-      tombstone_last_logged_opid_(MinimumOpId()),
       num_flush_pins_(0),
       needs_flush_(false),
       pre_flush_callback_(Bind(DoNothingStatusClosure)) {
@@ -297,7 +295,6 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       fs_manager_(fs_manager),
       next_rowset_idx_(0),
       schema_(nullptr),
-      tombstone_last_logged_opid_(MinimumOpId()),
       num_flush_pins_(0),
       needs_flush_(false),
       pre_flush_callback_(Bind(DoNothingStatusClosure)) {}
@@ -403,10 +400,15 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           fs::DataDirManager::DirDistributionMode::ACROSS_ALL_DIRS));
     }
 
-    if (superblock.has_tombstone_last_logged_opid()) {
+    // Note: Previous versions of Kudu used MinimumOpId() as a "null" value on
+    // disk for the last-logged opid, so we special-case it at load time and
+    // consider it equal to "not present".
+    if (superblock.has_tombstone_last_logged_opid() &&
+        superblock.tombstone_last_logged_opid().IsInitialized() &&
+        !OpIdEquals(MinimumOpId(), superblock.tombstone_last_logged_opid())) {
       tombstone_last_logged_opid_ = superblock.tombstone_last_logged_opid();
     } else {
-      tombstone_last_logged_opid_ = MinimumOpId();
+      tombstone_last_logged_opid_ = boost::none;
     }
   }
 
@@ -587,6 +589,11 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   return Status::OK();
 }
 
+boost::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return tombstone_last_logged_opid_;
+}
+
 Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const {
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(
@@ -623,8 +630,9 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                         "Couldn't serialize schema into superblock");
 
   pb.set_tablet_data_state(tablet_data_state_);
-  if (!OpIdEquals(tombstone_last_logged_opid_, MinimumOpId())) {
-    *pb.mutable_tombstone_last_logged_opid() = tombstone_last_logged_opid_;
+  if (tombstone_last_logged_opid_ &&
+      !OpIdEquals(MinimumOpId(), *tombstone_last_logged_opid_)) {
+    *pb.mutable_tombstone_last_logged_opid() = *tombstone_last_logged_opid_;
   }
 
   for (const BlockId& block_id : orphaned_blocks_) {

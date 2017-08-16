@@ -143,6 +143,9 @@ using kudu::consensus::GetNodeInstanceRequestPB;
 using kudu::consensus::GetNodeInstanceResponsePB;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
+using kudu::consensus::OpId;
+using kudu::consensus::UnsafeChangeConfigRequestPB;
+using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
@@ -1070,13 +1073,15 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                        resp, context);
     return;
   }
-  Status s = consensus->GetLastOpId(req->opid_type(), resp->mutable_opid());
-  if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
+  boost::optional<OpId> opid = consensus->GetLastOpId(req->opid_type());
+  if (!opid) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::IllegalState("Cannot fetch last OpId in WAL"),
+                         TabletServerErrorPB::TABLET_NOT_RUNNING,
                          context);
     return;
   }
+  *resp->mutable_opid() = *opid;
   context->RespondSuccess();
 }
 

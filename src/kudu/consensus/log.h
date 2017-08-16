@@ -169,10 +169,6 @@ class Log : public RefCountedThreadSafe<Log> {
     return tablet_id_;
   }
 
-  // Gets the last-used OpId written to the log.
-  // If no entry has ever been written to the log, returns (0, 0)
-  void GetLatestEntryOpId(consensus::OpId* op_id) const;
-
   // Runs the garbage collector on the set of previous segments. Segments that
   // only refer to in-mem state that has been flushed are candidates for
   // garbage collection.
@@ -368,14 +364,6 @@ class Log : public RefCountedThreadSafe<Log> {
   // Index which translates between operation indexes and the position
   // of the operation in the log.
   scoped_refptr<LogIndex> log_index_;
-
-  // Lock to protect last_entry_op_id_, which is constantly written but
-  // read occasionally by things like consensus and log GC.
-  mutable rw_spinlock last_entry_op_id_lock_;
-
-  // The last known OpId for a REPLICATE message appended to this log
-  // (any segment). NOTE: this op is not necessarily durable.
-  consensus::OpId last_entry_op_id_;
 
   // A footer being prepared for the current segment.
   // When the segment is closed, it will be written.

@@ -139,16 +139,14 @@ class PeerMessageQueue {
     int64_t last_seen_term_;
   };
 
-  PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
-                   const scoped_refptr<log::Log>& log,
+  PeerMessageQueue(scoped_refptr<MetricEntity> metric_entity,
+                   scoped_refptr<log::Log> log,
                    scoped_refptr<TimeManager> time_manager,
-                   const RaftPeerPB& local_peer_pb,
-                   const std::string& tablet_id,
-                   std::unique_ptr<ThreadPoolToken> raft_pool_observers_token);
-
-  // Initialize the queue.
-  void Init(const OpId& last_locally_replicated,
-            const OpId& last_locally_committed);
+                   RaftPeerPB local_peer_pb,
+                   std::string tablet_id,
+                   std::unique_ptr<ThreadPoolToken> raft_pool_observers_token,
+                   OpId last_locally_replicated,
+                   const OpId& last_locally_committed);
 
   // Changes the queue to leader mode, meaning it tracks majority replicated
   // operations and notifies observers when those change.
@@ -324,7 +322,6 @@ class PeerMessageQueue {
   };
 
   enum State {
-    kQueueConstructed,
     kQueueOpen,
     kQueueClosed
   };
