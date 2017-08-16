@@ -264,7 +264,7 @@ Status BuildProxy(const string& address,
   vector<Sockaddr> resolved;
   RETURN_NOT_OK(hp.ResolveAddresses(&resolved));
 
-  proxy->reset(new ProxyClass(messenger, resolved[0]));
+  proxy->reset(new ProxyClass(messenger, resolved[0], hp.host()));
   return Status::OK();
 }
 

@@ -113,7 +113,8 @@ class MasterTest : public KuduTest {
     // Create a client proxy to it.
     MessengerBuilder bld("Client");
     ASSERT_OK(bld.Build(&client_messenger_));
-    proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
+    proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr(),
+                                        mini_master_->bound_rpc_addr().host()));
   }
 
   virtual void TearDown() OVERRIDE {

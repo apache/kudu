@@ -257,8 +257,8 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
 
-    MasterServiceProxy proxy(messenger,
-                             cluster_->mini_master(i)->bound_rpc_addr());
+    const auto& addr = cluster_->mini_master(i)->bound_rpc_addr();
+    MasterServiceProxy proxy(messenger, addr, addr.host());
 
     // All masters (including followers) should accept the heartbeat.
     ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));

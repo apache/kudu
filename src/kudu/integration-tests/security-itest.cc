@@ -89,8 +89,8 @@ class SecurityITest : public KuduTest {
     // Make a new messenger so that we don't reuse any cached connections from
     // the minicluster startup sequence.
     auto messenger = NewMessengerOrDie();
-    server::GenericServiceProxy proxy(
-        messenger, cluster_->tablet_server(0)->bound_rpc_addr());
+    const auto& addr = cluster_->tablet_server(0)->bound_rpc_addr();
+    server::GenericServiceProxy proxy(messenger, addr, addr.host());
 
     rpc::RpcController controller;
     controller.set_timeout(MonoDelta::FromSeconds(30));
@@ -108,8 +108,8 @@ class SecurityITest : public KuduTest {
     // Make a new messenger so that we don't reuse any cached connections from
     // the minicluster startup sequence.
     auto messenger = NewMessengerOrDie();
-    master::MasterServiceProxy proxy(
-        messenger, cluster_->master(0)->bound_rpc_addr());
+    const auto& addr = cluster_->master(0)->bound_rpc_addr();
+    master::MasterServiceProxy proxy(messenger, addr, addr.host());
 
     rpc::RpcController rpc;
     master::TSHeartbeatRequestPB req;

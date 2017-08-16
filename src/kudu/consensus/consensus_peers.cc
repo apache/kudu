@@ -527,7 +527,7 @@ Status CreateConsensusServiceProxyForHost(const shared_ptr<Messenger>& messenger
     << "resolves to " << addrs.size() << " different addresses. Using "
     << addrs[0].ToString();
   }
-  new_proxy->reset(new ConsensusServiceProxy(messenger, addrs[0]));
+  new_proxy->reset(new ConsensusServiceProxy(messenger, addrs[0], hostport.host()));
   return Status::OK();
 }
 

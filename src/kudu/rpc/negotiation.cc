@@ -177,11 +177,7 @@ static Status DoClientNegotiation(Connection* conn,
                                        authn_token,
                                        encryption);
 
-  // Note that the fqdn is an IP address here: we've already lost whatever DNS
-  // name the client was attempting to use. Unless krb5 is configured with 'rdns
-  // = false', it will automatically take care of reversing this address to its
-  // canonical hostname to determine the expected server principal.
-  client_negotiation.set_server_fqdn(conn->remote().host());
+  client_negotiation.set_server_fqdn(conn->outbound_connection_id().hostname());
 
   if (authentication != RpcAuthentication::DISABLED) {
     Status s = client_negotiation.EnableGSSAPI();
@@ -210,7 +206,8 @@ static Status DoClientNegotiation(Connection* conn,
   }
 
   if (authentication != RpcAuthentication::REQUIRED) {
-    RETURN_NOT_OK(client_negotiation.EnablePlain(conn->local_user_credentials().real_user(), ""));
+    const auto& creds = conn->outbound_connection_id().user_credentials();
+    RETURN_NOT_OK(client_negotiation.EnablePlain(creds.real_user(), ""));
   }
 
   client_negotiation.set_deadline(deadline);

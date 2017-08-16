@@ -202,7 +202,7 @@ void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
   instance_pb->set_instance_seqno(latest_seqno_);
 }
 
-Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
+Status TSDescriptor::ResolveSockaddr(Sockaddr* addr, string* host) const {
   vector<HostPort> hostports;
   {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -222,7 +222,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
     }
   }
 
-  if (addrs.size() == 0) {
+  if (addrs.empty()) {
     return Status::NetworkError("Unable to find the TS address: ",
                                 SecureDebugString(*registration_));
   }
@@ -233,6 +233,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
                   << addrs[0].ToString();
   }
   *addr = addrs[0];
+  *host = last_hostport.host();
   return Status::OK();
 }
 
@@ -247,11 +248,13 @@ Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger
   }
 
   Sockaddr addr;
-  RETURN_NOT_OK(ResolveSockaddr(&addr));
+  string host;
+  RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
   std::lock_guard<simple_spinlock> l(lock_);
   if (!ts_admin_proxy_) {
-    ts_admin_proxy_.reset(new tserver::TabletServerAdminServiceProxy(messenger, addr));
+    ts_admin_proxy_.reset(new tserver::TabletServerAdminServiceProxy(
+        messenger, addr, std::move(host)));
   }
   *proxy = ts_admin_proxy_;
   return Status::OK();
@@ -268,11 +271,13 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
   }
 
   Sockaddr addr;
-  RETURN_NOT_OK(ResolveSockaddr(&addr));
+  string host;
+  RETURN_NOT_OK(ResolveSockaddr(&addr, &host));
 
   std::lock_guard<simple_spinlock> l(lock_);
   if (!consensus_proxy_) {
-    consensus_proxy_.reset(new consensus::ConsensusServiceProxy(messenger, addr));
+    consensus_proxy_.reset(new consensus::ConsensusServiceProxy(
+        messenger, addr, std::move(host)));
   }
   *proxy = consensus_proxy_;
   return Status::OK();

@@ -57,8 +57,11 @@ class UserCredentials;
 // After initialization, multiple threads may make calls using the same proxy object.
 class Proxy {
  public:
-  Proxy(std::shared_ptr<Messenger> messenger, const Sockaddr& remote,
+  Proxy(std::shared_ptr<Messenger> messenger,
+        const Sockaddr& remote,
+        std::string hostname,
         std::string service_name);
+
   ~Proxy();
 
   // Call a remote method asynchronously.

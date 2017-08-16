@@ -56,11 +56,14 @@ class Sockaddr {
 
   uint32_t HashCode() const;
 
+  // Returns the dotted-decimal string '1.2.3.4' of the host component of this address.
   std::string host() const;
 
   void set_port(int port);
   int port() const;
   const struct sockaddr_in& addr() const;
+
+  // Returns the stringified address in '1.2.3.4:<port>' format.
   std::string ToString() const;
 
   // Returns true if the address is 0.0.0.0

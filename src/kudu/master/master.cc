@@ -276,7 +276,7 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
                              ServerEntryPB* e) {
   Sockaddr sockaddr;
   RETURN_NOT_OK(SockaddrFromHostPort(hostport, &sockaddr));
-  MasterServiceProxy proxy(messenger, sockaddr);
+  MasterServiceProxy proxy(messenger, sockaddr, hostport.host());
   GetMasterRegistrationRequestPB req;
   GetMasterRegistrationResponsePB resp;
   rpc::RpcController controller;

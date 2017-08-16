@@ -126,7 +126,7 @@ class MasterCertAuthorityTest : public KuduTest {
       if (!m->is_started()) {
         continue;
       }
-      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());
+      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr(), m->bound_rpc_addr().host());
 
       // All masters (including followers) should accept the heartbeat.
       ASSERT_OK(proxy.TSHeartbeat(req, &resp, &rpc));
@@ -156,7 +156,7 @@ class MasterCertAuthorityTest : public KuduTest {
       if (!m->is_started()) {
         continue;
       }
-      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr());
+      MasterServiceProxy proxy(messenger_, m->bound_rpc_addr(), m->bound_rpc_addr().host());
 
       // All masters (including followers) should accept the heartbeat.
       RETURN_NOT_OK(proxy.TSHeartbeat(req, &resp, &rpc));

@@ -120,8 +120,8 @@ class CreateTableStressTest : public KuduTest {
               .set_num_reactors(1)
               .set_max_negotiation_threads(1)
               .Build(&messenger_));
-    master_proxy_.reset(new MasterServiceProxy(messenger_,
-                                               cluster_->mini_master()->bound_rpc_addr()));
+    const auto& addr = cluster_->mini_master()->bound_rpc_addr();
+    master_proxy_.reset(new MasterServiceProxy(messenger_, addr, addr.host()));
     ASSERT_OK(CreateTabletServerMap(master_proxy_, messenger_, &ts_map_));
   }
 

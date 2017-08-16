@@ -203,7 +203,8 @@ class ExactlyOnceRpcTest : public RpcTestBase {
     // Set up server.
     StartTestServerWithGeneratedCode(&server_addr_);
     client_messenger_ = CreateMessenger("Client");
-    proxy_.reset(new CalculatorServiceProxy(client_messenger_, server_addr_));
+    proxy_.reset(new CalculatorServiceProxy(
+        client_messenger_, server_addr_, server_addr_.host()));
     test_picker_.reset(new TestServerPicker(proxy_.get()));
     request_tracker_.reset(new RequestTracker(kClientId));
     attempt_nos_ = 0;

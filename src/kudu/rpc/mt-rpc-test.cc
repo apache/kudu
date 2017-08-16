@@ -68,7 +68,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
                   Status* result, CountDownLatch* latch) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
     shared_ptr<Messenger> client_messenger(CreateMessenger("ClientSC"));
-    Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
+    Proxy p(client_messenger, server_addr, server_addr.host(),
+            GenericCalculatorService::static_service_name());
     *result = DoTestSyncCall(p, method_name);
     latch->CountDown();
   }
@@ -84,7 +85,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
       Sockaddr server_addr, const char* method_name, Status* last_result,
       const shared_ptr<Messenger>& messenger) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
-    Proxy p(messenger, server_addr, GenericCalculatorService::static_service_name());
+    Proxy p(messenger, server_addr, server_addr.host(),
+            GenericCalculatorService::static_service_name());
 
     int i = 0;
     while (true) {

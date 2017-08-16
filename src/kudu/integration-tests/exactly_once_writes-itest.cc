@@ -113,8 +113,8 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
   rpc::MessengerBuilder bld("Client");
   ASSERT_OK(bld.Build(&client_messenger));
 
-  std::unique_ptr<TabletServerServiceProxy> proxy(new TabletServerServiceProxy(client_messenger,
-                                                                               address));
+  std::unique_ptr<TabletServerServiceProxy> proxy(new TabletServerServiceProxy(
+      client_messenger, address, address.host()));
   for (int i = 0; i < num_batches; i++) {
     // Wait for all of the other writer threads to finish their attempts of the prior
     // batch before continuing on to the next one. This has two important effects:

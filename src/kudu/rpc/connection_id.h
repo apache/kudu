@@ -36,10 +36,14 @@ class ConnectionId {
   ConnectionId(const ConnectionId& other) = default;
 
   // Convenience constructor.
-  ConnectionId(const Sockaddr& remote, UserCredentials user_credentials);
+  ConnectionId(const Sockaddr& remote,
+               std::string hostname,
+               UserCredentials user_credentials);
 
   // The remote address.
   const Sockaddr& remote() const { return remote_; }
+
+  const std::string& hostname() const { return hostname_; }
 
   // The credentials of the user associated with this connection, if any.
   void set_user_credentials(UserCredentials user_credentials);
@@ -58,6 +62,10 @@ class ConnectionId {
  private:
   // Remember to update HashCode() and Equals() when new fields are added.
   Sockaddr remote_;
+
+  // The original host name before it was resolved to 'remote_'.
+  // This must be retained since it is used to compute Kerberos Service Principal Names (SPNs).
+  std::string hostname_;
 
   UserCredentials user_credentials_;
 };

@@ -60,6 +60,7 @@ TEST(SockaddrTest, Test) {
   Sockaddr addr;
   ASSERT_OK(addr.ParseString("1.1.1.1:12345", 12345));
   ASSERT_EQ(12345, addr.port());
+  ASSERT_EQ("1.1.1.1", addr.host());
 }
 
 TEST_F(NetUtilTest, TestParseAddresses) {

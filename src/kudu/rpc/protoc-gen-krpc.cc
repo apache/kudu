@@ -583,8 +583,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       Print(printer, *subs,
         "class $service_name$Proxy : public ::kudu::rpc::Proxy {\n"
         " public:\n"
-        "  $service_name$Proxy(const std::shared_ptr< ::kudu::rpc::Messenger>\n"
-        "                &messenger, const ::kudu::Sockaddr &sockaddr);\n"
+        "  $service_name$Proxy(std::shared_ptr<::kudu::rpc::Messenger>\n"
+        "                messenger, const ::kudu::Sockaddr &sockaddr,"
+        "                std::string hostname);\n"
         "  ~$service_name$Proxy();\n"
         "\n"
         );
@@ -645,9 +646,9 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
       Print(printer, *subs,
         "$service_name$Proxy::$service_name$Proxy(\n"
-        "   const std::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
-        "   const ::kudu::Sockaddr &remote)\n"
-        "  : Proxy(messenger, remote, \"$full_service_name$\") {\n"
+        "   std::shared_ptr< ::kudu::rpc::Messenger> messenger,\n"
+        "   const ::kudu::Sockaddr &remote, std::string hostname)\n"
+        "  : Proxy(std::move(messenger), remote, std::move(hostname), \"$full_service_name$\") {\n"
         "}\n"
         "\n"
         "$service_name$Proxy::~$service_name$Proxy() {\n"
