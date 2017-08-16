@@ -415,7 +415,7 @@ Status ReactorThread::FindOrStartConnection(const ConnectionId& conn_id,
   // Register the new connection in our map.
   *conn = new Connection(
       this, conn_id.remote(), std::move(new_socket), Connection::CLIENT, cred_policy);
-  (*conn)->set_local_user_credentials(conn_id.user_credentials());
+  (*conn)->set_outbound_connection_id(conn_id);
 
   // Kick off blocking client connection negotiation.
   Status s = StartConnectionNegotiation(*conn);
@@ -511,8 +511,7 @@ void ReactorThread::DestroyConnection(Connection *conn,
 
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
-    ConnectionId conn_id(conn->remote(), conn->local_user_credentials());
-    const auto range = client_conns_.equal_range(conn_id);
+    const auto range = client_conns_.equal_range(conn->outbound_connection_id());
     CHECK(range.first != range.second) << "Couldn't find connection " << conn->ToString();
     // The client_conns_ container is a multi-map.
     for (auto it = range.first; it != range.second;) {

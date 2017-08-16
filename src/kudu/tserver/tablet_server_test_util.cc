@@ -17,6 +17,8 @@
 
 #include "kudu/tserver/tablet_server_test_util.h"
 
+#include <string>
+
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.proxy.h"
@@ -36,10 +38,11 @@ void CreateTsClientProxies(const Sockaddr& addr,
                            gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
                            gscoped_ptr<ConsensusServiceProxy>* consensus_proxy,
                            gscoped_ptr<server::GenericServiceProxy>* generic_proxy) {
-  proxy->reset(new TabletServerServiceProxy(messenger, addr));
-  admin_proxy->reset(new TabletServerAdminServiceProxy(messenger, addr));
-  consensus_proxy->reset(new ConsensusServiceProxy(messenger, addr));
-  generic_proxy->reset(new server::GenericServiceProxy(messenger, addr));
+  const auto& host = addr.host();
+  proxy->reset(new TabletServerServiceProxy(messenger, addr, host));
+  admin_proxy->reset(new TabletServerAdminServiceProxy(messenger, addr, host));
+  consensus_proxy->reset(new ConsensusServiceProxy(messenger, addr, host));
+  generic_proxy->reset(new server::GenericServiceProxy(messenger, addr, host));
 }
 
 } // namespace tserver

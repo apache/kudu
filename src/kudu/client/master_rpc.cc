@@ -115,7 +115,8 @@ ConnectToMasterRpc::~ConnectToMasterRpc() {
 }
 
 void ConnectToMasterRpc::SendRpc() {
-  MasterServiceProxy proxy(retrier().messenger(), addr_);
+  // TODO(KUDU-2032): retain the hostname for addr_
+  MasterServiceProxy proxy(retrier().messenger(), addr_, addr_.host());
   rpc::RpcController* controller = mutable_retrier()->mutable_controller();
   // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
   // it doesn't seem to be.

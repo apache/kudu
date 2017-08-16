@@ -456,7 +456,7 @@ void ExternalMiniCluster::AssertNoCrashes() {
 Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
                                                   int min_tablet_count,
                                                   const MonoDelta& timeout) {
-  TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr());
+  TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr(), ts->bound_rpc_addr().host());
   ListTabletsRequestPB req;
   ListTabletsResponsePB resp;
 
@@ -571,8 +571,8 @@ std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() const {
 
 std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) const {
   CHECK_LT(idx, masters_.size());
-  return std::shared_ptr<MasterServiceProxy>(
-      new MasterServiceProxy(messenger_, CHECK_NOTNULL(master(idx))->bound_rpc_addr()));
+  const auto& addr = CHECK_NOTNULL(master(idx))->bound_rpc_addr();
+  return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
 }
 
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
@@ -593,7 +593,8 @@ Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
 Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
                                     const string& flag,
                                     const string& value) {
-  server::GenericServiceProxy proxy(messenger_, daemon->bound_rpc_addr());
+  const auto& addr = daemon->bound_rpc_addr();
+  server::GenericServiceProxy proxy(messenger_, addr, addr.host());
 
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromSeconds(30));
@@ -911,10 +912,11 @@ void ExternalDaemon::Shutdown() {
 
 void ExternalDaemon::FlushCoverage() {
 #ifndef COVERAGE_BUILD
-  return;
+  return; // NOLINT(*)
 #else
   LOG(INFO) << "Attempting to flush coverage for " << exe_ << " pid " << process_->pid();
-  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr());
+  server::GenericServiceProxy proxy(
+      messenger_, bound_rpc_addr(), bound_rpc_addr().host());
 
   server::FlushCoverageRequestPB req;
   server::FlushCoverageResponsePB resp;
@@ -933,7 +935,8 @@ void ExternalDaemon::CheckForLeaks() {
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
   LOG(INFO) << "Attempting to check leaks for " << exe_ << " pid " << process_->pid();
-  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr());
+  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr(), bound_rpc_addr().host());
+
   server::CheckLeaksRequestPB req;
   server::CheckLeaksResponsePB resp;
   rpc::RpcController rpc;
@@ -1101,8 +1104,8 @@ Status ExternalMaster::Restart() {
 }
 
 Status ExternalMaster::WaitForCatalogManager() {
-  unique_ptr<MasterServiceProxy> proxy(
-      new MasterServiceProxy(messenger_, bound_rpc_addr()));
+  unique_ptr<MasterServiceProxy> proxy(new MasterServiceProxy(
+      messenger_, bound_rpc_addr(), bound_rpc_addr().host()));
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kMasterCatalogManagerTimeoutSeconds) {

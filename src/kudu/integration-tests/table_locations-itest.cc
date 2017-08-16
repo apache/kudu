@@ -66,8 +66,8 @@ class TableLocationsTest : public KuduTest {
     // Create a client proxy to the master.
     MessengerBuilder bld("Client");
     ASSERT_OK(bld.Build(&client_messenger_));
-    proxy_.reset(new MasterServiceProxy(client_messenger_,
-                                        cluster_->mini_master()->bound_rpc_addr()));
+    const auto& addr = cluster_->mini_master()->bound_rpc_addr();
+    proxy_.reset(new MasterServiceProxy(client_messenger_, addr, addr.host()));
   }
 
   void TearDown() override {

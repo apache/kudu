@@ -241,8 +241,8 @@ class MasterStressTest : public KuduTest {
 
   Status WaitForMasterUpAndRunning(const shared_ptr<Messenger>& messenger,
                                    ExternalMaster* master) {
-    unique_ptr<MasterServiceProxy> proxy(
-        new MasterServiceProxy(messenger, master->bound_rpc_addr()));
+    const auto& addr = master->bound_rpc_addr();
+    unique_ptr<MasterServiceProxy> proxy(new MasterServiceProxy(messenger, addr, addr.host()));
     while (true) {
       ListTablesRequestPB req;
       ListTablesResponsePB resp;

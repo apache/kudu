@@ -670,7 +670,8 @@ void KuduClient::Data::ConnectedToClusterCb(
 
     if (status.ok()) {
       leader_master_hostport_ = HostPort(leader_addr);
-      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr));
+      // TODO(KUDU-2032): retain the original hostname passed by caller.
+      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_addr.host()));
     }
   }
 

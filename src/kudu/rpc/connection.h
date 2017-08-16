@@ -126,15 +126,17 @@ class Connection : public RefCountedThreadSafe<Connection> {
   const Sockaddr &remote() const { return remote_; }
 
   // Set the user credentials for an outbound connection.
-  void set_local_user_credentials(UserCredentials creds) {
+  void set_outbound_connection_id(ConnectionId conn_id) {
     DCHECK_EQ(direction_, CLIENT);
-    local_user_credentials_ = std::move(creds);
+    DCHECK(!outbound_connection_id_);
+    outbound_connection_id_ = std::move(conn_id);
   }
 
   // Get the user credentials which will be used to log in.
-  const UserCredentials& local_user_credentials() const {
+  const ConnectionId& outbound_connection_id() const {
     DCHECK_EQ(direction_, CLIENT);
-    return local_user_credentials_;
+    DCHECK(outbound_connection_id_);
+    return *outbound_connection_id_;
   }
 
   // Credentials policy to start connection negotiation.
@@ -278,8 +280,9 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // The socket we're communicating on.
   std::unique_ptr<Socket> socket_;
 
-  // The credentials of the user operating on this connection (if a client user).
-  UserCredentials local_user_credentials_;
+  // The ConnectionId that serves as a key into the client connection map
+  // within this reactor. Only set in the case of outbound connections.
+  boost::optional<ConnectionId> outbound_connection_id_;
 
   // The authenticated remote user (if this is an inbound connection on the server).
   RemoteUser remote_user_;

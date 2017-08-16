@@ -81,7 +81,7 @@ Status MasterServiceProxyForHostPort(const HostPort& hostport,
                  << "resolves to " << addrs.size() << " different addresses. Using "
                  << addrs[0].ToString();
   }
-  proxy->reset(new MasterServiceProxy(messenger, addrs[0]));
+  proxy->reset(new MasterServiceProxy(messenger, addrs[0], hostport.host()));
   return Status::OK();
 }
 

@@ -48,7 +48,9 @@ namespace kudu {
 namespace rpc {
 
 Proxy::Proxy(std::shared_ptr<Messenger> messenger,
-             const Sockaddr& remote, string service_name)
+             const Sockaddr& remote,
+             string hostname,
+             string service_name)
     : service_name_(std::move(service_name)),
       messenger_(std::move(messenger)),
       is_started_(false) {
@@ -64,8 +66,9 @@ Proxy::Proxy(std::shared_ptr<Messenger> messenger,
         << s.ToString() << " before connecting to remote: " << remote.ToString();
   }
 
-  conn_id_.set_remote(remote);
-  conn_id_.mutable_user_credentials()->set_real_user(real_user);
+  UserCredentials creds;
+  creds.set_real_user(std::move(real_user));
+  conn_id_ = ConnectionId(remote, std::move(hostname), std::move(creds));
 }
 
 Proxy::~Proxy() {

@@ -66,7 +66,9 @@ class TabletCopyServiceTest : public TabletCopyTest {
   void SetUp() OVERRIDE {
     TabletCopyTest::SetUp();
     tablet_copy_proxy_.reset(
-        new TabletCopyServiceProxy(client_messenger_, mini_server_->bound_rpc_addr()));
+        new TabletCopyServiceProxy(
+            client_messenger_, mini_server_->bound_rpc_addr(),
+            mini_server_->bound_rpc_addr().host()));
   }
 
   Status DoBeginTabletCopySession(const string& tablet_id,

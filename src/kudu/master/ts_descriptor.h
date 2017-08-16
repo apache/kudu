@@ -124,7 +124,9 @@ class TSDescriptor {
   explicit TSDescriptor(std::string perm_id);
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
-  Status ResolveSockaddr(Sockaddr* addr) const;
+  // Returns the resolved address as well as the hostname associated with it
+  // in 'addr' and 'host'.
+  Status ResolveSockaddr(Sockaddr* addr, std::string* host) const;
 
   void DecayRecentReplicaCreationsUnlocked();
 
