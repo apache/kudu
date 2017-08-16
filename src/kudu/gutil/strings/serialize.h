@@ -9,8 +9,8 @@
 
 #include <string.h>
 
-#include <ext/hash_map>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -323,15 +323,15 @@ bool DictionaryParse(const std::string& encoded_str,
 //   Note: these routines are not meant for use with very large dictionaries.
 //   They are written for convenience and not efficiency.
 // --------------------------------------------------------------------------
-std::string DictionaryInt32Encode(const __gnu_cxx::hash_map<std::string, int32>* dictionary);
-std::string DictionaryInt64Encode(const __gnu_cxx::hash_map<std::string, int64>* dictionary);
-std::string DictionaryDoubleEncode(const __gnu_cxx::hash_map<std::string, double>* dictionary);
+std::string DictionaryInt32Encode(const std::unordered_map<std::string, int32>* dictionary);
+std::string DictionaryInt64Encode(const std::unordered_map<std::string, int64>* dictionary);
+std::string DictionaryDoubleEncode(const std::unordered_map<std::string, double>* dictionary);
 
-bool DictionaryInt32Decode(__gnu_cxx::hash_map<std::string, int32>* dictionary,
+bool DictionaryInt32Decode(std::unordered_map<std::string, int32>* dictionary,
                            const std::string& encoded_str);
-bool DictionaryInt64Decode(__gnu_cxx::hash_map<std::string, int64>* dictionary,
+bool DictionaryInt64Decode(std::unordered_map<std::string, int64>* dictionary,
                            const std::string& encoded_str);
-bool DictionaryDoubleDecode(__gnu_cxx::hash_map<std::string, double>* dictionary,
+bool DictionaryDoubleDecode(std::unordered_map<std::string, double>* dictionary,
                             const std::string& encoded_str);
 
 

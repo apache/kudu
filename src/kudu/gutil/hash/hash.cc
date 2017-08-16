@@ -182,16 +182,3 @@ uint64 FingerprintInterleavedImplementation(const char *s, uint32 len) {
   mix(d, e, f);
   return CombineFingerprintHalves(c, f);
 }
-
-// Extern template definitions.
-
-#if defined(__GNUC__)
-#include <ext/hash_set>
-namespace __gnu_cxx { // NOLINT(*)
-
-template class hash_set<std::string>;
-template class hash_map<std::string, std::string>;
-
-}  // namespace __gnu_cxx
-
-#endif

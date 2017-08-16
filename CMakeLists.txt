@@ -132,7 +132,8 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
 #  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned
 #    integers
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
-#  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
+#  -Wno-deprecated: we currently have a number of places using deprecated functions
+#     (mostly our own functions). TODO(todd) remove or individually suppress call sites.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated")
 #  - pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")

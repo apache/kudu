@@ -19,8 +19,8 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/hash/hash.h"
 
-using __gnu_cxx::hash_map;
-using __gnu_cxx::hash_set;
+using std::unordered_map;
+using std::unordered_set;
 using std::back_insert_iterator;
 using std::map;
 using std::numeric_limits;
@@ -125,7 +125,7 @@ namespace {
 // the following overloads:
 // - vector<string>           - for better performance
 // - map<string, string>      - to change append semantics
-// - hash_map<string, string> - to change append semantics
+// - unordered_map<string, string> - to change append semantics
 template <typename Container, typename Splitter>
 void AppendToImpl(Container* container, Splitter splitter) {
   Container c = splitter;  // Calls implicit conversion operator.
@@ -145,7 +145,7 @@ void AppendToImpl(vector<string>* container, Splitter splitter) {
   }
 }
 
-// Here we define two AppendToImpl() overloads for map<> and hash_map<>. Both of
+// Here we define two AppendToImpl() overloads for map<> and unordered_map<>. Both of
 // these overloads call through to this AppendToMap() function. This is needed
 // because inserting a duplicate key into a map does NOT overwrite the previous
 // value, which was not the behavior of the split1 Split*() functions. Consider
@@ -157,7 +157,7 @@ void AppendToImpl(vector<string>* container, Splitter splitter) {
 //   ASSERT_EQ(m["a"], "1");  // <-- "a" has value "1" not "2".
 //
 // Due to this behavior of map::insert, we can't rely on a normal std::inserter
-// for a maps. Instead, maps and hash_maps need to be special cased to implement
+// for a maps. Instead, maps and unordered_maps need to be special cased to implement
 // the desired append semantic of inserting an existing value overwrites the
 // previous value.
 //
@@ -179,7 +179,7 @@ void AppendToImpl(map<string, string>* map_container, Splitter splitter) {
 }
 
 template <typename Splitter>
-void AppendToImpl(hash_map<string, string>* map_container, Splitter splitter) {
+void AppendToImpl(unordered_map<string, string>* map_container, Splitter splitter) {
   AppendToMap(map_container, splitter);
 }
 
@@ -427,7 +427,7 @@ void SplitStringUsing(const string& full,
 }
 
 void SplitStringToHashsetUsing(const string& full, const char* delim,
-                               hash_set<string>* result) {
+                               unordered_set<string>* result) {
   AppendTo(result, strings::Split(full, AnyOf(delim), strings::SkipEmpty()));
 }
 
@@ -442,7 +442,7 @@ void SplitStringToMapUsing(const string& full, const char* delim,
 }
 
 void SplitStringToHashmapUsing(const string& full, const char* delim,
-                               hash_map<string, string>* result) {
+                               unordered_map<string, string>* result) {
   AppendTo(result, strings::Split(full, AnyOf(delim), strings::SkipEmpty()));
 }
 
@@ -595,8 +595,8 @@ void SplitStringWithEscapingToSet(const string &full,
 
 void SplitStringWithEscapingToHashset(const string &full,
                                       const strings::CharSet& delimiters,
-                                      hash_set<string> *result) {
-  std::insert_iterator< hash_set<string> > it(*result, result->end());
+                                      unordered_set<string> *result) {
+  std::insert_iterator< unordered_set<string> > it(*result, result->end());
   SplitStringWithEscapingToIterator(full, delimiters, false, &it);
 }
 

@@ -77,8 +77,8 @@
 #include <stdint.h>     // for uintptr_t
 #include <string.h>
 #include <algorithm>
-#include <ext/hash_map>
-#include <ext/hash_set>
+#include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <utility>
 
@@ -93,32 +93,6 @@
 #include "kudu/gutil/hash/jenkins_lookup2.h"
 #include "kudu/gutil/hash/legacy_hash.h"
 #include "kudu/gutil/hash/string_hash.h"
-
-namespace __gnu_cxx {
-
-
-// STLport and MSVC 10.0 above already define these.
-#if !defined(_STLP_LONG_LONG) && !(defined(_MSC_VER) && _MSC_VER >= 1600)
-
-#if defined(_MSC_VER)
-// MSVC's stl implementation with _MSC_VER less than 1600 doesn't have
-// this hash struct. STLport already defines this.
-template <typename T>
-struct hash {
-  size_t operator()(const T& t) const;
-};
-#endif  // defined(_MSC_VER)
-
-#endif  // !defined(_STLP_LONG_LONG) && !(defined(_MSC_VER) && _MSC_VER >= 1600)
-
-template<> struct hash<bool> {
-  size_t operator()(bool x) const { return static_cast<size_t>(x); }
-};
-
-
-}  // namespace __gnu_cxx
-
-
 
 // ----------------------------------------------------------------------
 // Fingerprint()
@@ -209,7 +183,7 @@ inline uint64 FingerprintCat(uint64 fp1, uint64 fp2) {
   return Hash64NumWithSeed(fp1, fp2);
 }
 
-namespace __gnu_cxx {
+namespace std {
 
 
 // This intended to be a "good" hash function.  It may change from time to time.
@@ -236,36 +210,6 @@ template<> struct hash<uint128> {
   static const size_t bucket_size = 4;  // These are required by MSVC
   static const size_t min_buckets = 8;  // 4 and 8 are defaults.
 };
-
-// Avoid collision with definition in port_hash.h (via port.h).
-#ifndef HAVE_DEFINED_HASH_FOR_POINTERS
-#define HAVE_DEFINED_HASH_FOR_POINTERS
-// Hash pointers as if they were int's, but bring more entropy to
-// the lower bits.
-template<class T> struct hash<T*> {
-  size_t operator()(T *x) const {
-    size_t k = reinterpret_cast<size_t>(x);
-    return k + (k >> 6);
-  }
-};
-#endif  // HAVE_DEFINED_HASH_FOR_POINTERS
-
-#if defined(__GNUC__)
-// Use our nice hash function for strings
-template<class _CharT, class _Traits, class _Alloc>
-struct hash<std::basic_string<_CharT, _Traits, _Alloc> > {
-  size_t operator()(const std::basic_string<_CharT, _Traits, _Alloc>& k) const {
-    return HashTo32(k.data(), static_cast<uint32>(k.length()));
-  }
-};
-
-// they don't define a hash for const string at all
-template<> struct hash<const std::string> {
-  size_t operator()(const std::string& k) const {
-    return HashTo32(k.data(), static_cast<uint32>(k.length()));
-  }
-};
-#endif  // defined(__GNUC__)
 
 // MSVC's STL requires an ever-so slightly different decl
 #if defined(STL_MSVC)
@@ -302,8 +246,8 @@ template<> struct hash<std::string> {
 template<class First, class Second>
 struct hash<pair<First, Second> > {
   size_t operator()(const pair<First, Second>& p) const {
-    size_t h1 = __gnu_cxx::hash<First>()(p.first);
-    size_t h2 = __gnu_cxx::hash<Second>()(p.second);
+    size_t h1 = std::hash<First>()(p.first);
+    size_t h2 = std::hash<Second>()(p.second);
     // The decision below is at compile time
     return (sizeof(h1) <= sizeof(uint32)) ?
             Hash32NumWithSeed(h1, h2)
@@ -319,7 +263,7 @@ struct hash<pair<First, Second> > {
 };
 
 
-}  // namespace __gnu_cxx
+}  // namespace std
 
 
 // If you want an excellent string hash function, and you don't mind if it
@@ -390,23 +334,5 @@ struct GoodFastHash<const std::basic_string<_CharT, _Traits, _Alloc> > {
   static const size_t bucket_size = 4;  // These are required by MSVC
   static const size_t min_buckets = 8;  // 4 and 8 are defaults.
 };
-
-// Extern template declarations.
-//
-// gcc only for now.  msvc and others: this technique is likely to work with
-// your compiler too.  changelists welcome.
-//
-// This technique is limited to template specializations whose hash key
-// functions are declared in this file.
-
-#if defined(__GNUC__)
-namespace __gnu_cxx {
-
-extern template class hash_set<std::string>;
-extern template class hash_map<std::string, std::string>;
-
-}  // namespace __gnu_cxx
-
-#endif  // defined(__GNUC__)
 
 #endif  // UTIL_HASH_HASH_H_

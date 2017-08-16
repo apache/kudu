@@ -66,6 +66,6 @@ ADD_EXPORTABLE_LIBRARY(gutil
   SRCS ${GUTIL_SRCS}
   DEPS ${GUTIL_LIBS}
   # Disable warnings which trigger a lot in the Google code:
-  COMPILE_FLAGS "-funsigned-char -Wno-deprecated -Wno-char-subscripts")
+  COMPILE_FLAGS "-funsigned-char -Wno-char-subscripts")
 
 add_kudu_test(strings/string_util-test)
