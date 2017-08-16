@@ -19,7 +19,6 @@ package org.apache.kudu.spark.kudu
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.sql.Timestamp
 
-import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.decode
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -36,7 +35,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
       oos.writeObject(value)
       stream.toByteArray
     } finally {
-      oos.close
+      oos.close()
     }
   }
 
@@ -45,7 +44,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
     try {
       ois.readObject
     } finally {
-      ois.close
+      ois.close()
     }
   }
 
@@ -61,7 +60,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
 
   test("Test basic kuduRDD") {
     val rows = insertRows(rowCount)
-    val scanList = kuduContext.kuduRDD(sc, "test", Seq("key", "c1_i", "c2_s", "c3_double",
+    val scanList = kuduContext.kuduRDD(ss.sparkContext, "test", Seq("key", "c1_i", "c2_s", "c3_double",
         "c4_long", "c5_bool", "c6_short", "c7_float", "c8_binary", "c9_unixtime_micros", "c10_byte"))
       .map(r => r.toSeq).collect()
     scanList.foreach(r => {
@@ -84,7 +83,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
 
   test("Test kudu-spark DataFrame") {
     insertRows(rowCount)
-    val sqlContext = new SQLContext(sc)
+    val sqlContext = ss.sqlContext
     val dataDF = sqlContext.read.options(Map("kudu.master" -> miniCluster.getMasterAddresses,
       "kudu.table" -> "test")).kudu
     dataDF.sort("key").select("c8_binary").first.get(0)

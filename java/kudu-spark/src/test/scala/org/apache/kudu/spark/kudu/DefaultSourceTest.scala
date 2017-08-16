@@ -67,13 +67,13 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
   before {
     rows = insertRows(rowCount)
 
-    sqlContext = new SQLContext(sc)
+    sqlContext = ss.sqlContext
 
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses)
 
-    sqlContext.read.options(kuduOptions).kudu.registerTempTable(tableName)
+    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(tableName)
   }
 
   test("table creation") {
@@ -213,7 +213,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
       "kudu.faultTolerantScan" -> "true")
 
     val table = "faultTolerantScanTest"
-    sqlContext.read.options(kuduOptions).kudu.registerTempTable(table)
+    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(table)
     val results = sqlContext.sql(s"SELECT * FROM $table").collectAsList()
     assert(results.size() == rowCount)
 
@@ -358,7 +358,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     val testTable = kuduClient.createTable(testTableName, schema, tableOptions)
 
     val kuduSession = kuduClient.newSession()
-    val chars = List('a', 'b', '乕', Char.MaxValue, '\0')
+    val chars = List('a', 'b', '乕', Char.MaxValue, '\u0000')
     val keys = for (x <- chars; y <- chars; z <- chars; w <- chars) yield Array(x, y, z, w).mkString
     keys.foreach { key =>
       val insert = testTable.newInsert
@@ -370,7 +370,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     val options: Map[String, String] = Map(
       "kudu.table" -> testTableName,
       "kudu.master" -> miniCluster.getMasterAddresses)
-    sqlContext.read.options(options).kudu.registerTempTable(testTableName)
+    sqlContext.read.options(options).kudu.createOrReplaceTempView(testTableName)
 
     val checkPrefixCount = { prefix: String =>
       val results = sqlContext.sql(s"SELECT key FROM $testTableName WHERE key LIKE '$prefix%'")
@@ -416,7 +416,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     val newOptions: Map[String, String] = Map(
       "kudu.table" -> insertTable,
       "kudu.master" -> miniCluster.getMasterAddresses)
-    sqlContext.read.options(newOptions).kudu.registerTempTable(insertTable)
+    sqlContext.read.options(newOptions).kudu.createOrReplaceTempView(insertTable)
 
     sqlContext.sql(s"INSERT INTO TABLE $insertTable SELECT * FROM $tableName")
     val results = sqlContext.sql(s"SELECT key FROM $insertTable").collectAsList()
@@ -435,7 +435,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     val newOptions: Map[String, String] = Map(
       "kudu.table" -> insertTable,
       "kudu.master" -> miniCluster.getMasterAddresses)
-    sqlContext.read.options(newOptions).kudu.registerTempTable(insertTable)
+    sqlContext.read.options(newOptions).kudu.createOrReplaceTempView(insertTable)
 
     try {
       sqlContext.sql(s"INSERT OVERWRITE TABLE $insertTable SELECT * FROM $tableName")

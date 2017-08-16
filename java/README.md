@@ -53,25 +53,8 @@ may be run with:
 
 $ mvn verify
 
-Building the Kudu-Spark integration for Spark 2.x with Scala 2.11
-------------------------------------------------------------
-
-The Spark integration builds for Spark 2.x and Scala 2.11 by default.
-Additionally, there is a build profile available for Spark 1.x with
-Scala 2.10: from the kudu-spark directory, run
-
-$ mvn clean package -P spark_2.10
-
-The two artifactIds are
-
-1. kudu-spark2_2.11 for Spark 2.x with Scala 2.11
-2. kudu-spark_2.10 for Spark 1.x with Scala 2.10
-
-WARNING: Support for Spark 1 is deprecated as of Kudu 1.5.0 and may be removed in
-the next minor release.
-
-WARNING: Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
-is Java 7 compatible. Spark 2.2 is the default dependency version as of Kudu 1.5.0.
+NOTE: Running the tests for the kudu-spark and kudu-spark-tools
+module requires Java 8.
 
 State of Eclipse integration
 ------------------------------------------------------------
@@ -174,14 +157,6 @@ may be run with:
 $ gradle integrationTest
 
 *Note:* Integration tests may depend on built Kudu binaries.
-
-## Building the Kudu-Spark integration
-
-Builds with Spark 2.x with Scala 2.11 (the default) or
-Spark 1.x with Scala 2.10.
-
-$ gradle :kudu-spark:assemble
-$ gradle :kudu-spark:assemble -PscalaVersions=2.10.6
 
 ## Installing to local maven repo
 

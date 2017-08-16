@@ -22,8 +22,8 @@ import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.{KuduClient, KuduSession, KuduTable}
 import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{Xoroshiro128PlusRandom, _}
 import org.apache.kudu.spark.kudu.KuduContext
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.{SparkConf, SparkContext, TaskContext}
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.{SparkConf, TaskContext}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.Try
@@ -150,10 +150,9 @@ object Generator {
     }
   }
 
-  def run(args: Args, sc: SparkContext): Unit = {
-
-    val kc = new KuduContext(args.masterAddrs, sc)
-    val applicationId = sc.applicationId
+  def run(args: Args, ss: SparkSession): Unit = {
+    val kc = new KuduContext(args.masterAddrs, ss.sparkContext)
+    val applicationId = ss.sparkContext.applicationId
 
     val client: KuduClient = kc.syncClient
     if (!client.tableExists(args.tableName)) {
@@ -164,14 +163,14 @@ object Generator {
     }
 
     // Run the generate tasks
-    sc.makeRDD(0 until args.tasks, args.tasks)
+    ss.sparkContext.makeRDD(0 until args.tasks, args.tasks)
       .foreach(_ => generate(args, applicationId, kc))
   }
 
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("Integration Test Big Linked List Generator")
-    val sc = new SparkContext(conf)
-    run(Args.parse(args), sc)
+    val ss = SparkSession.builder().config(conf).getOrCreate()
+    run(Args.parse(args), ss)
   }
 
   /**
@@ -179,8 +178,8 @@ object Generator {
     * so tests must create and manage their own.
     */
   @VisibleForTesting
-  def testMain(args: Array[String], sc: SparkContext): Unit = {
-    run(Args.parse(args), sc)
+  def testMain(args: Array[String], ss: SparkSession): Unit = {
+    run(Args.parse(args), ss)
   }
 
   def generate(args: Args,
@@ -332,9 +331,9 @@ object Verifier {
   }
 
   @VisibleForTesting
-  def run(args: Args, sc: SparkContext): Counts = {
+  def run(args: Args, ss: SparkSession): Counts = {
     import org.apache.kudu.spark.kudu._
-    val sql = new SQLContext(sc)
+    val sql = ss.sqlContext
 
     sql.read
        .option("kudu.master", args.masterAddrs)
@@ -414,16 +413,16 @@ object Verifier {
   }
 
   @VisibleForTesting
-  def testMain(arguments: Array[String], sc: SparkContext): Counts = {
-    run(Args.parse(arguments), sc)
+  def testMain(arguments: Array[String], ss: SparkSession): Counts = {
+    run(Args.parse(arguments), ss)
   }
 
   def main(arguments: Array[String]): Unit = {
     val args = Args.parse(arguments)
     val conf = new SparkConf().setAppName("Integration Test Big Linked List Generator")
-    val sc = new SparkContext(conf)
+    val ss = SparkSession.builder().config(conf).getOrCreate()
 
-    val counts = run(Args.parse(arguments), sc)
+    val counts = run(Args.parse(arguments), ss)
     verify(args.nodes, counts).map(fail)
   }
 }
@@ -432,7 +431,7 @@ object Looper {
   import IntegrationTestBigLinkedList.{LOG, fail}
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("Integration Test Big Linked List Looper")
-    val sc = new SparkContext(conf)
+    val ss = SparkSession.builder().config(conf).getOrCreate()
 
     val genArgs = Generator.Args.parse(args)
     var verifyArgs = Verifier.Args(masterAddrs = genArgs.masterAddrs,
@@ -440,8 +439,8 @@ object Looper {
     val nodesPerLoop = genArgs.tasks * genArgs.lists * genArgs.nodes
 
     for (n <- Stream.from(1)) {
-      Generator.run(genArgs, sc)
-      val count = Verifier.run(verifyArgs, sc)
+      Generator.run(genArgs, ss)
+      val count = Verifier.run(verifyArgs, ss)
       val expected = verifyArgs.nodes.map(_ + nodesPerLoop)
       Verifier.verify(expected, count).map(fail)
       verifyArgs = verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))

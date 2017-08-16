@@ -23,7 +23,6 @@ import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.spark.kudu._
-import org.apache.spark.sql.SQLContext
 import org.junit.Assert._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -36,8 +35,6 @@ import scala.collection.JavaConverters._
 class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
 
   private val TABLE_NAME: String = classOf[TestImportExportFiles].getName + "-" + System.currentTimeMillis
-  var sqlContext : SQLContext = _
-  var kuduOptions : Map[String, String] = _
 
   test("Spark Import Export") {
     val schema: Schema = {
@@ -60,11 +57,11 @@ class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
       "--format=csv",
       s"--master-addrs=${miniCluster.getMasterAddresses}",
       s"--path=${"target/"+TABLE_NAME+".csv"}",
-      s"--table-name=${TABLE_NAME}",
+      s"--table-name=$TABLE_NAME",
       "--delimiter=,",
       "--header=true",
-      "--inferschema=true"), sc)
-    val rdd = kuduContext.kuduRDD(sc, TABLE_NAME, List("key"))
+      "--inferschema=true"), ss)
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, TABLE_NAME, List("key"))
     assert(rdd.collect.length == 4)
     assertEquals(rdd.collect().mkString(","),"[1],[2],[3],[4]")
   }

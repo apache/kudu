@@ -19,11 +19,10 @@ package org.apache.kudu.spark.tools
 
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.spark.tools.ImportExportKudu.ArgsCls
-import org.apache.spark.sql.SQLContext
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.SparkConf
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.kudu.spark.kudu._
-import com.databricks.spark.avro
 import com.google.common.annotations.VisibleForTesting
 
 object ImportExportKudu {
@@ -93,21 +92,18 @@ object ImportExportKudu {
 
 object ImportExportFiles {
 
-  import ImportExportKudu.{LOG, fail}
+  import ImportExportKudu.fail
 
-  var sqlContext: SQLContext = _
-  var kuduOptions: Map[String, String] = _
-
-  def run(args: ArgsCls, sc: SparkContext, sqlContext: SQLContext): Unit = {
-    val kc = new KuduContext(args.masterAddrs, sc)
-    val applicationId = sc.applicationId
+  def run(args: ArgsCls, ss: SparkSession): Unit = {
+    val kc = new KuduContext(args.masterAddrs, ss.sparkContext)
+    val sqlContext = ss.sqlContext
 
     val client: KuduClient = kc.syncClient
     if (!client.tableExists(args.tableName)) {
       fail(args.tableName + s" table doesn't exist")
     }
 
-    kuduOptions = Map(
+    val kuduOptions = Map(
       "kudu.table" -> args.tableName,
       "kudu.master" -> args.masterAddrs)
 
@@ -126,7 +122,7 @@ object ImportExportFiles {
           case _ => fail(args.format + s"unknown argument given ")
         }
       case "export" =>
-        val df = sqlContext.read.options(kuduOptions).kudu.select(args.columns);
+        val df = sqlContext.read.options(kuduOptions).kudu.select(args.columns)
         args.format match {
           case "csv" =>
             df.write.format("com.databricks.spark.csv").option("header", args.header).option("delimiter",
@@ -140,20 +136,20 @@ object ImportExportFiles {
       case _ => fail(args.operation + s"unknown argument given ")
     }
   }
+
   /**
     * Entry point for testing. SparkContext is a singleton,
     * so tests must create and manage their own.
     */
   @VisibleForTesting
-  def testMain(args: Array[String], sc: SparkContext): Unit = {
-    sqlContext = new SQLContext(sc)
-    run(ArgsCls.parse(args), sc, sqlContext)
+  def testMain(args: Array[String], ss: SparkSession): Unit = {
+    run(ArgsCls.parse(args), ss)
   }
 
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("Import or Export CSV files from/to Kudu ")
-    val sc = new SparkContext(conf)
-    testMain(args, sc)
+    val ss = SparkSession.builder().config(conf).getOrCreate()
+    testMain(args, ss)
   }
 }
 

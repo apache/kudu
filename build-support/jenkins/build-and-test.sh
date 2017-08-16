@@ -375,7 +375,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
 
-  # Run the full Maven build (with Spark 2.x).
+  # Run the full Maven build.
   MVN_FLAGS="$MVN_FLAGS -B"
   MVN_FLAGS="$MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
   MVN_FLAGS="$MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
@@ -383,12 +383,6 @@ if [ "$BUILD_JAVA" == "1" ]; then
   if ! mvn $MVN_FLAGS clean verify ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Java build/test failed\n'
-
-  # If there are no failures, rerun the build with Spark 1.x with Scala 2.10.
-  # Note: this won't work if there are ever Spark integration tests!
-  elif ! mvn $MVN_FLAGS -Dtest="org.apache.kudu.spark.*.*" -DskipITs -Pspark_2.10 clean verify ; then
-    EXIT_STATUS=1
-    FAILURES="$FAILURES"$'Spark 1.x build/test failed\n'
   fi
 
   # Rerun the build using the Gradle build.

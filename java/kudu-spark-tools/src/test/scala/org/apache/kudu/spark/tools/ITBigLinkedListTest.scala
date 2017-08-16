@@ -38,7 +38,7 @@ class ITBigLinkedListTest extends FunSuite with TestContext with Matchers {
                              "--range-partitions=2",
                              "--replicas=1",
                             s"--master-addrs=${miniCluster.getMasterAddresses}"),
-                       sc)
+                       ss)
 
     // Insert bad nodes in order to test the verifier:
     //
@@ -75,7 +75,7 @@ class ITBigLinkedListTest extends FunSuite with TestContext with Matchers {
       }
     }
 
-    val counts = Verifier.testMain(Array(s"--master-addrs=${miniCluster.getMasterAddresses}"), sc)
+    val counts = Verifier.testMain(Array(s"--master-addrs=${miniCluster.getMasterAddresses}"), ss)
     assertEquals(2 * 2 * 10000, counts.referenced)
     assertEquals(1, counts.extrareferences)
     assertEquals(2, counts.unreferenced)

@@ -22,8 +22,6 @@
 ext {
   versions = [:]
   libs = [:]
-  // All supported scala versions.
-  scalaVersions = propertyWithDefault("scalaVersions", "2.11.11,2.10.6").split(",")
 }
 
 versions += [
@@ -48,8 +46,10 @@ versions += [
     parquet        : "1.9.0",
     pmd            : "5.8.1",
     protobuf       : "3.3.0",
+    scala          : "2.11.11",
     scalatest      : "3.0.3",
     slf4j          : "1.7.25",
+    spark          : "2.2.0",
     sparkAvro      : "3.2.0",
     yetus          : "0.5.0"
 ]
@@ -59,23 +59,11 @@ if (gradle.gradleVersion != versions.gradle) {
   println "Using gradle version $gradle.gradleVersion (Build defines $versions.gradle)"
 }
 
-// Set the Scala version.
-// The first Scala version in the scalaVersions list is the default.
-versions["scala"] = scalaVersions.first()
 // Add base Scala version
 versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("."))
 
-// Set the Spark version based on the Scala version.
-def spark1Version = "1.6.3"
-def spark2Version = "2.2.0"
-if ("$versions.scalaBase" == "2.10") {
-  versions["spark"] = spark1Version
-} else {
-  versions["spark"] = spark2Version
-}
+// Add base Spark version
 versions["sparkBase"] = versions.spark.substring(0, versions.spark.indexOf("."))
-// Log for debugging
-logger.info("Configuring Scala version: $versions.scala with Spark version: $versions.spark")
 
 libs += [
     async             : "com.stumbleupon:async:$versions.async",
