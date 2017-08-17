@@ -22,6 +22,7 @@
 #include <set>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/function.hpp>
@@ -140,7 +141,7 @@ class KuduClient::Data {
   //
   // See also: ConnectToClusterAsync.
   void ConnectedToClusterCb(const Status& status,
-                            const Sockaddr& leader_addr,
+                            const std::pair<Sockaddr, std::string>& leader_addr_and_name,
                             const master::ConnectToMasterResponsePB& connect_response);
 
   // Asynchronously sets 'master_proxy_' to the leader master by

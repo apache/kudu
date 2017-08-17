@@ -19,8 +19,12 @@
 
 #include "kudu/client/master_rpc.h"
 
-#include <boost/bind.hpp>
+#include <algorithm>
 #include <mutex>
+#include <ostream>
+#include <utility>
+
+#include <boost/bind.hpp>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -32,6 +36,7 @@
 #include "kudu/util/scoped_cleanup.h"
 
 
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -45,6 +50,7 @@ using kudu::master::MasterErrorPB;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
+using strings::Substitute;
 
 namespace kudu {
 namespace client {
@@ -65,7 +71,7 @@ class ConnectToMasterRpc : public rpc::Rpc {
   //
   // Invokes 'user_cb' upon failure or success of the RPC call.
   ConnectToMasterRpc(StatusCallback user_cb,
-                     const Sockaddr& addr,
+                     pair<Sockaddr, string> addr_with_name,
                      const MonoTime& deadline,
                      std::shared_ptr<rpc::Messenger> messenger,
                      ConnectToMasterResponsePB* out);
@@ -80,7 +86,9 @@ class ConnectToMasterRpc : public rpc::Rpc {
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
   const StatusCallback user_cb_;
-  const Sockaddr addr_;
+
+  // The resolved address to try to connect to, along with its original specified hostname.
+  const pair<Sockaddr, string> addr_with_name_;
 
   // Owned by the caller of this RPC, not this instance.
   ConnectToMasterResponsePB* out_;
@@ -93,20 +101,22 @@ class ConnectToMasterRpc : public rpc::Rpc {
   bool trying_old_rpc_ = false;
 };
 
-
-ConnectToMasterRpc::ConnectToMasterRpc(
-    StatusCallback user_cb, const Sockaddr& addr,const MonoTime& deadline,
-    shared_ptr<Messenger> messenger, ConnectToMasterResponsePB* out)
-    : Rpc(deadline, std::move(messenger)),
-      user_cb_(std::move(user_cb)),
-      addr_(addr),
-      out_(DCHECK_NOTNULL(out)) {}
+ConnectToMasterRpc::ConnectToMasterRpc(StatusCallback user_cb,
+    pair<Sockaddr, string> addr_with_name,
+    const MonoTime& deadline,
+    shared_ptr<Messenger> messenger,
+    ConnectToMasterResponsePB* out)
+      : Rpc(deadline, std::move(messenger)),
+        user_cb_(std::move(user_cb)),
+        addr_with_name_(std::move(addr_with_name)),
+        out_(DCHECK_NOTNULL(out)) {
+}
 
 ConnectToMasterRpc::~ConnectToMasterRpc() {
 }
 
 void ConnectToMasterRpc::SendRpc() {
-  MasterServiceProxy proxy(retrier().messenger(), addr_, addr_.host());
+  MasterServiceProxy proxy(retrier().messenger(), addr_with_name_.first, addr_with_name_.second);
   rpc::RpcController* controller = mutable_retrier()->mutable_controller();
   // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
   // it doesn't seem to be.
@@ -127,8 +137,9 @@ void ConnectToMasterRpc::SendRpc() {
 }
 
 string ConnectToMasterRpc::ToString() const {
-  return strings::Substitute("ConnectToMasterRpc(address: $0, num_attempts: $1)",
-                             addr_.ToString(), num_attempts());
+  return strings::Substitute("ConnectToMasterRpc(address: $0:$1, num_attempts: $2)",
+                             addr_with_name_.second, addr_with_name_.first.port(),
+                             num_attempts());
 }
 
 void ConnectToMasterRpc::SendRpcCb(const Status& status) {
@@ -189,32 +200,33 @@ void ConnectToMasterRpc::SendRpcCb(const Status& status) {
 ////////////////////////////////////////////////////////////
 
 ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
-                                         vector<Sockaddr> addrs,
+                                         vector<pair<Sockaddr, string>> addrs_with_names,
                                          MonoTime deadline,
                                          MonoDelta rpc_timeout,
                                          shared_ptr<Messenger> messenger)
     : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
-      addrs_(std::move(addrs)),
+      addrs_with_names_(std::move(addrs_with_names)),
       rpc_timeout_(rpc_timeout),
       pending_responses_(0),
       completed_(false) {
   DCHECK(deadline.Initialized());
 
   // Using resize instead of reserve to explicitly initialized the values.
-  responses_.resize(addrs_.size());
+  responses_.resize(addrs_with_names_.size());
 }
 
 ConnectToClusterRpc::~ConnectToClusterRpc() {
 }
 
 string ConnectToClusterRpc::ToString() const {
-  vector<string> sockaddr_str;
-  for (const Sockaddr& addr : addrs_) {
-    sockaddr_str.push_back(addr.ToString());
+  vector<string> addrs_str;
+  for (const auto& addr_with_name : addrs_with_names_) {
+    addrs_str.emplace_back(Substitute(
+        "$0:$1", addr_with_name.second, addr_with_name.first.port()));
   }
   return strings::Substitute("ConnectToClusterRpc(addrs: $0, num_attempts: $1)",
-                             JoinStrings(sockaddr_str, ","),
+                             JoinStrings(addrs_str, ","),
                              num_attempts());
 }
 
@@ -225,10 +237,10 @@ void ConnectToClusterRpc::SendRpc() {
                                                 rpc_deadline);
 
   std::lock_guard<simple_spinlock> l(lock_);
-  for (int i = 0; i < addrs_.size(); i++) {
+  for (int i = 0; i < addrs_with_names_.size(); i++) {
     ConnectToMasterRpc* rpc = new ConnectToMasterRpc(
         Bind(&ConnectToClusterRpc::SingleNodeCallback, this, i),
-        addrs_[i],
+        addrs_with_names_[i],
         actual_deadline,
         retrier().messenger(),
         &responses_[i]);
@@ -267,7 +279,7 @@ void ConnectToClusterRpc::SendRpcCb(const Status& status) {
   // We are not retrying.
   undo_completed.cancel();
   if (leader_idx_ != -1) {
-    user_cb_(status, addrs_[leader_idx_], responses_[leader_idx_]);
+    user_cb_(status, addrs_with_names_[leader_idx_], responses_[leader_idx_]);
   } else {
     user_cb_(status, {}, {});
   }
