@@ -904,6 +904,68 @@ TEST_F(TabletCopyITest, TestTabletCopyingDeletedTabletFails) {
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 }
 
+// Test that tablet copy clears the last-logged opid stored in the TabletMetadata.
+TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartCluster({"--enable_leader_failure_detection=false"},
+                         {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"}));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(3);
+  workload.Setup();
+
+  int leader_index = 0;
+  TServerDetails* leader = ts_map_[cluster_->tablet_server(leader_index)->uuid()];
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(leader, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, kTimeout));
+  }
+
+  // Elect a leader for term 1, then generate some data to copy.
+  ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
+  workload.Start();
+  const int kMinBatches = 10;
+  while (workload.batches_completed() < kMinBatches) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+
+  // No last-logged opid should initially be stored in the superblock.
+  tablet::TabletSuperBlockPB superblock_pb;
+  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
+  ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid());
+
+  // Now tombstone the leader.
+  ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+
+  // We should end up with a last-logged opid in the superblock.
+  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
+  ASSERT_TRUE(superblock_pb.has_tombstone_last_logged_opid());
+  consensus::OpId last_logged_opid = superblock_pb.tombstone_last_logged_opid();
+  ASSERT_EQ(1, last_logged_opid.term());
+  ASSERT_GT(last_logged_opid.index(), kMinBatches);
+
+  int follower_index = 1;
+  ASSERT_OK(itest::StartTabletCopy(leader, tablet_id,
+                                   cluster_->tablet_server(follower_index)->uuid(),
+                                   cluster_->tablet_server(follower_index)->bound_rpc_hostport(),
+                                   1, // We are in term 1.
+                                   kTimeout));
+  ASSERT_OK(itest::WaitUntilTabletRunning(leader, tablet_id, kTimeout));
+
+  // Ensure that the last-logged opid has been cleared from the superblock.
+  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
+  ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid());
+}
+
 // Test that the tablet copy thread pool being full results in throttling and
 // backpressure on the callers.
 TEST_F(TabletCopyITest, TestTabletCopyThrottling) {

@@ -717,6 +717,9 @@ uint32_t TabletMetadata::schema_version() const {
 
 void TabletMetadata::set_tablet_data_state(TabletDataState state) {
   std::lock_guard<LockType> l(data_lock_);
+  if (state == TABLET_DATA_READY) {
+    tombstone_last_logged_opid_ = boost::none;
+  }
   tablet_data_state_ = state;
 }
 

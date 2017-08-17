@@ -147,6 +147,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   }
 
   // Set / get the tablet copy / tablet data state.
+  // If set to TABLET_DATA_READY, also clears 'tombstone_last_logged_opid_'.
   void set_tablet_data_state(TabletDataState state);
   TabletDataState tablet_data_state() const;
 
