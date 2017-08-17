@@ -389,14 +389,17 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
 
 Status GetConfiguredPrincipal(string* principal) {
   string p = FLAGS_principal;
-  string hostname;
-  // Try to fill in either the FQDN or hostname.
-  if (!GetFQDN(&hostname).ok()) {
-    RETURN_NOT_OK(GetHostname(&hostname));
+  const auto& kHostToken = "_HOST";
+  if (p.find(kHostToken) != string::npos) {
+    string hostname;
+    // Try to fill in either the FQDN or hostname.
+    if (!GetFQDN(&hostname).ok()) {
+      RETURN_NOT_OK(GetHostname(&hostname));
+    }
+    // Hosts in principal names are canonicalized to lower-case.
+    std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
+    GlobalReplaceSubstring(kHostToken, hostname, &p);
   }
-  // Hosts in principal names are canonicalized to lower-case.
-  std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
-  GlobalReplaceSubstring("_HOST", hostname, &p);
   *principal = p;
   return Status::OK();
 }
