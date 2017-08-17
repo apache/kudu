@@ -16,9 +16,12 @@ Asynchronous Native Java Client for Kudu
 System Requirements
 ------------------------------------------------------------
 
-- Java 7
+- Java 7 or Java 8
 - Maven 3
 - MIT Kerberos (krb5)
+
+WARNING: Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in
+the next major release.
 
 Building the Client
 ------------------------------------------------------------
@@ -53,16 +56,19 @@ $ mvn verify
 Building the Kudu-Spark integration for Spark 2.x with Scala 2.11
 ------------------------------------------------------------
 
-The Spark integration builds for Spark 1.x and Scala 2.10 by default.
-Additionally, there is a build profile available for Spark 2.x with
-Scala 2.11: from the kudu-spark directory, run
+The Spark integration builds for Spark 2.x and Scala 2.11 by default.
+Additionally, there is a build profile available for Spark 1.x with
+Scala 2.10: from the kudu-spark directory, run
 
-$ mvn clean package -P spark2_2.11
+$ mvn clean package -P spark_2.10
 
 The two artifactIds are
 
-1. kudu-spark_2.10 for Spark 1.x with Scala 2.10
-2. kudu-spark2_2.11 for Spark 2.x with Scala 2.11
+1. kudu-spark2_2.11 for Spark 2.x with Scala 2.11
+2. kudu-spark_2.10 for Spark 1.x with Scala 2.10
+
+WARNING: Support for Spark 1 is deprecated as of Kudu 1.5.0 and may be removed in
+the next minor release.
 
 State of Eclipse integration
 ------------------------------------------------------------
