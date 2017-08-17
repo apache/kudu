@@ -17,6 +17,7 @@
 
 #include "kudu/security/init.h"
 
+#include <ctype.h>
 #include <krb5/krb5.h>
 
 #include <algorithm>
@@ -393,6 +394,8 @@ Status GetConfiguredPrincipal(string* principal) {
   if (!GetFQDN(&hostname).ok()) {
     RETURN_NOT_OK(GetHostname(&hostname));
   }
+  // Hosts in principal names are canonicalized to lower-case.
+  std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
   GlobalReplaceSubstring("_HOST", hostname, &p);
   *principal = p;
   return Status::OK();
