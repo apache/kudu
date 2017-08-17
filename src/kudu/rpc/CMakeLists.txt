@@ -51,6 +51,7 @@ set(KRPC_SRCS
     messenger.cc
     negotiation.cc
     outbound_call.cc
+    periodic.cc
     proxy.cc
     reactor.cc
     remote_method.cc
@@ -121,6 +122,7 @@ set(KUDU_TEST_LINK_LIBS rtest_krpc krpc rpc_header_proto security-test ${KUDU_MI
 ADD_KUDU_TEST(exactly_once_rpc-test)
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
 ADD_KUDU_TEST(negotiation-test)
+ADD_KUDU_TEST(periodic-test)
 ADD_KUDU_TEST(reactor-test)
 ADD_KUDU_TEST(request_tracker-test)
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
