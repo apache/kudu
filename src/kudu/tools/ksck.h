@@ -424,10 +424,11 @@ class Ksck {
   // Must first call FetchTableAndTabletInfo().
   Status ConnectToTabletServer(const std::shared_ptr<KsckTabletServer>& ts);
 
-  // Verifies that all the tables have contiguous tablets and that each tablet has enough replicas
-  // and a leader.
-  // Must first call FetchTableAndTabletInfo() and, if doing checks againt tablet
-  // servers (the default), must first call FetchInfoFromTabletServers().
+  // Verifies that all the tablets in all tables matching the filters have
+  // enough replicas, and that each tablet's view of the tablet's consensus
+  // matches every other tablet's and the master's.
+  // Must first call FetchTableAndTabletInfo() and, if doing checks against
+  // tablet servers (the default), must first call FetchInfoFromTabletServers().
   Status CheckTablesConsistency();
 
   // Verifies data checksums on all tablets by doing a scan of the database on each replica.
@@ -443,7 +444,36 @@ class Ksck {
     CONSENSUS_MISMATCH,
   };
 
-  bool VerifyTable(const std::shared_ptr<KsckTable>& table);
+  // Summarizes the result of VerifyTable().
+  struct TableSummary {
+    std::string name;
+    int healthy_tablets = 0;
+    int underreplicated_tablets = 0;
+    int consensus_mismatch_tablets = 0;
+    int unavailable_tablets = 0;
+
+    int TotalTablets() const {
+      return healthy_tablets + underreplicated_tablets +
+          consensus_mismatch_tablets + unavailable_tablets;
+    }
+
+    // Summarize the table's status with a tablet CheckResult.
+    // A table's status is determined by the health of the least healthy tablet.
+    CheckResult TableStatus() const {
+      if (unavailable_tablets > 0) {
+        return CheckResult::UNAVAILABLE;
+      }
+      if (consensus_mismatch_tablets > 0) {
+        return CheckResult::CONSENSUS_MISMATCH;
+      }
+      if (underreplicated_tablets > 0) {
+        return CheckResult::UNDER_REPLICATED;
+      }
+      return CheckResult::OK;
+    }
+  };
+
+  bool VerifyTable(const std::shared_ptr<KsckTable>& table, TableSummary* ts);
   bool VerifyTableWithTimeout(const std::shared_ptr<KsckTable>& table,
                               const MonoDelta& timeout,
                               const MonoDelta& retry_interval);

@@ -69,6 +69,7 @@ using std::setw;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -206,32 +207,62 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
 }
 
 Status Ksck::CheckTablesConsistency() {
-  int tables_checked = 0;
   int bad_tables_count = 0;
+  vector<TableSummary> table_summaries;
   for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
     if (!MatchesAnyPattern(table_filters_, table->name())) {
       VLOG(1) << "Skipping table " << table->name();
       continue;
     }
-    tables_checked++;
-    if (!VerifyTable(table)) {
+    TableSummary ts;
+    ts.name = table->name();
+    if (!VerifyTable(table, &ts)) {
       bad_tables_count++;
     }
+    table_summaries.emplace_back(std::move(ts));
     Out() << endl;
   }
 
-  if (tables_checked == 0) {
+  if (table_summaries.empty()) {
     Out() << "The cluster doesn't have any matching tables" << endl;
     return Status::OK();
   }
 
+  // Show unhealthy tablets at the bottom so they're easier to see;
+  // otherwise sort alphabetically.
+  std::sort(table_summaries.begin(), table_summaries.end(),
+            [](const TableSummary& left, const TableSummary& right) {
+              return std::make_pair(left.TableStatus() != CheckResult::OK, left.name) <
+                     std::make_pair(right.TableStatus() != CheckResult::OK, right.name);
+            });
+  Out() << "Table Summary" << endl;
+  DataTable table({ "Name", "Status", "Total Tablets",
+                    "Healthy", "Under-replicated", "Unavailable"});
+  for (const TableSummary& ts : table_summaries) {
+    string status;
+    switch (ts.TableStatus()) {
+      case CheckResult::OK:
+        status = "HEALTHY";
+        break;
+      case CheckResult::UNDER_REPLICATED:
+        status = "UNDER-REPLICATED";
+        break;
+      default:
+        status = "UNAVAILABLE";
+        break;
+    }
+    table.AddRow({ ts.name, status, to_string(ts.TotalTablets()),
+                   to_string(ts.healthy_tablets), to_string(ts.underreplicated_tablets),
+                   to_string(ts.consensus_mismatch_tablets + ts.unavailable_tablets) });
+  }
+  CHECK_OK(table.PrintTo(Out()));
+
   if (bad_tables_count == 0) {
-    Out() << Substitute("The metadata for $0 table(s) is HEALTHY", tables_checked) << endl;
+    Out() << Substitute("The metadata for $0 table(s) is HEALTHY", table_summaries.size()) << endl;
     return Status::OK();
   }
-  Warn() << Substitute("$0 out of $1 table(s) are not in a healthy state",
-                       bad_tables_count, tables_checked) << endl;
-  return Status::Corruption(Substitute("$0 table(s) are bad", bad_tables_count));
+  return Status::Corruption(Substitute("$0 out of $1 table(s) are bad",
+                                       bad_tables_count, table_summaries.size()));
 }
 
 // Class to act as a collector of scan results.
@@ -541,7 +572,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
   return Status::OK();
 }
 
-bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
+bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
   const auto all_tablets = table->tablets();
   vector<shared_ptr<KsckTablet>> tablets;
   std::copy_if(all_tablets.begin(), all_tablets.end(), std::back_inserter(tablets),
@@ -552,30 +583,47 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   int table_num_replicas = table->num_replicas();
   VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
                         tablets.size(), table->name(), table_num_replicas);
-
-  map<CheckResult, int> result_counts;
   for (const auto& tablet : tablets) {
     auto tablet_result = VerifyTablet(tablet, table_num_replicas);
-    result_counts[tablet_result]++;
+    switch (tablet_result) {
+      case CheckResult::OK:
+        ts->healthy_tablets++;
+        break;
+      case CheckResult::UNDER_REPLICATED:
+        ts->underreplicated_tablets++;
+        break;
+      case CheckResult::CONSENSUS_MISMATCH:
+        ts->consensus_mismatch_tablets++;
+        break;
+      case CheckResult::UNAVAILABLE:
+        ts->unavailable_tablets++;
+        break;
+    }
   }
-  if (result_counts[CheckResult::OK] == tablets.size()) {
+  if (ts->healthy_tablets == tablets.size()) {
     Out() << Substitute("Table $0 is $1 ($2 tablet(s) checked)",
                         table->name(),
                         Color(AnsiCode::GREEN, "HEALTHY"),
                         tablets.size()) << endl;
     return true;
   }
-  if (result_counts[CheckResult::UNAVAILABLE] > 0) {
+  if (ts->underreplicated_tablets > 0) {
     Out() << Substitute("Table $0 has $1 $2 tablet(s)",
                         table->name(),
-                        result_counts[CheckResult::UNAVAILABLE],
-                        Color(AnsiCode::RED, "unavailable")) << endl;
-  }
-  if (result_counts[CheckResult::UNDER_REPLICATED] > 0) {
-    Out() << Substitute("Table $0 has $1 $2 tablet(s)",
-                        table->name(),
-                        result_counts[CheckResult::UNDER_REPLICATED],
+                        ts->underreplicated_tablets,
                         Color(AnsiCode::YELLOW, "under-replicated")) << endl;
+  }
+  if (ts->consensus_mismatch_tablets > 0) {
+    Out() << Substitute("Table $0 has $1 tablet(s) $2",
+                        table->name(),
+                        ts->consensus_mismatch_tablets,
+                        Color(AnsiCode::YELLOW, "with mismatched consensus")) << endl;
+  }
+  if (ts->unavailable_tablets > 0) {
+    Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                        table->name(),
+                        ts->unavailable_tablets,
+                        Color(AnsiCode::RED, "unavailable")) << endl;
   }
   return false;
 }

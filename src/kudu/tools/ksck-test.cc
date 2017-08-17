@@ -302,7 +302,7 @@ TEST_F(KsckTest, TestBadTabletServer) {
   ASSERT_TRUE(s.IsNetworkError()) << "Status returned: " << s.ToString();
 
   s = ksck_->CheckTablesConsistency();
-  EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  EXPECT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "WARNING: Unable to connect to Tablet Server "
@@ -381,6 +381,11 @@ TEST_F(KsckTest, TestOneSmallReplicatedTableWithConsensusState) {
   FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name | Status  | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+---------+---------------+---------+------------------+-------------\n"
+      " test | HEALTHY | 3             | 3       | 0                | 0");
 }
 
 TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
@@ -393,7 +398,7 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
   cstate.mutable_committed_config()->add_peers()->set_permanent_uuid("ts-id-fake");
 
   Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |      Voters      | Current term | Config index | Committed?\n"
@@ -402,6 +407,11 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
       " A             | A*  B   C   D    | 0            |              | Yes\n"
       " B             | A*  B   C        | 0            |              | Yes\n"
       " C             | A*  B   C        | 0            |              | Yes");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |   Status    | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+-------------+---------------+---------+------------------+-------------\n"
+      " test | UNAVAILABLE | 3             | 2       | 0                | 1");
 }
 
 TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
@@ -414,7 +424,7 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
   cstate.mutable_committed_config()->mutable_peers()->RemoveLast();
 
   Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |    Voters    | Current term | Config index | Committed?\n"
@@ -423,6 +433,11 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
       " A             | A*  B        | 0            |              | Yes\n"
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |   Status    | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+-------------+---------------+---------+------------------+-------------\n"
+      " test | UNAVAILABLE | 3             | 2       | 0                | 1");
 }
 
 TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
@@ -435,7 +450,7 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
   cstate.set_leader_uuid("ts-id-1");
 
   Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |    Voters    | Current term | Config index | Committed?\n"
@@ -444,15 +459,25 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
       " A             | A   B*  C    | 0            |              | Yes\n"
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |   Status    | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+-------------+---------------+---------+------------------+-------------\n"
+      " test | UNAVAILABLE | 3             | 2       | 0                | 1");
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
   CreateOneOneTabletReplicatedBrokenTable();
   Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  EXPECT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "Tablet tablet-id-1 of table 'test' is under-replicated: "
                       "configuration has 2 replicas vs desired 3");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |      Status      | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+------------------+---------------+---------+------------------+-------------\n"
+      " test | UNDER-REPLICATED | 1             | 0       | 1                | 0");
 }
 
 TEST_F(KsckTest, TestMismatchedAssignments) {
@@ -462,20 +487,25 @@ TEST_F(KsckTest, TestMismatchedAssignments) {
   ASSERT_EQ(1, ts->tablet_status_map_.erase("tablet-id-2"));
 
   Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  EXPECT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "Tablet tablet-id-2 of table 'test' is under-replicated: "
                       "1 replica(s) not RUNNING\n"
                       "  ts-id-0 (<mock>): missing [LEADER]\n"
                       "  ts-id-1 (<mock>): RUNNING\n"
                       "  ts-id-2 (<mock>): RUNNING\n");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |      Status      | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+------------------+---------------+---------+------------------+-------------\n"
+      " test | UNDER-REPLICATED | 3             | 2       | 1                | 0");
 }
 
 TEST_F(KsckTest, TestTabletNotRunning) {
   CreateOneSmallReplicatedTableWithTabletNotRunning();
 
   Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  EXPECT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Tablet tablet-id-0 of table 'test' is unavailable: 3 replica(s) not RUNNING\n"
@@ -491,6 +521,11 @@ TEST_F(KsckTest, TestTabletNotRunning) {
       "    State:       FAILED\n"
       "    Data state:  TABLET_DATA_UNKNOWN\n"
       "    Last status: \n");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |   Status    | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+-------------+---------------+---------+------------------+-------------\n"
+      " test | UNAVAILABLE | 3             | 2       | 0                | 1");
 }
 
 // Test for a bug where we weren't properly handling a tserver not reported by the master.
@@ -502,8 +537,13 @@ TEST_F(KsckTest, TestMissingTserver) {
   // tablets from other tablet servers are listing the missing tablet server as a peer.
   EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
   Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 table(s) are bad", s.ToString());
+  ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |      Status      | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+------------------+---------------+---------+------------------+-------------\n"
+      " test | UNDER-REPLICATED | 3             | 0       | 3                | 0");
 }
 
 } // namespace tools
