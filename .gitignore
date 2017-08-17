@@ -31,8 +31,9 @@ oprofile_data
 .metadata/
 *.iml
 
-# VIM/emacs stuff
+# VIM/emacs/other editors stuff
 *.swp
+*.autosave
 *~
 
 # IDE cruft
