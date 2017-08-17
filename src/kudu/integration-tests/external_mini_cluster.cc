@@ -24,6 +24,7 @@
 #include <rapidjson/document.h>
 #include <string>
 #include <unordered_set>
+#include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
@@ -62,6 +63,7 @@ using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
 using rapidjson::Value;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
@@ -492,23 +494,23 @@ Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
 Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   scoped_refptr<ConnectToClusterRpc> rpc;
   Synchronizer sync;
-  vector<Sockaddr> addrs;
+  vector<pair<Sockaddr, string>> addrs_with_names;
   Sockaddr leader_master_addr;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
 
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
-    addrs.push_back(master->bound_rpc_addr());
+    addrs_with_names.emplace_back(master->bound_rpc_addr(), master->bound_rpc_addr().host());
   }
   const auto& cb = [&](const Status& status,
-                       const Sockaddr& leader_master,
+                       const pair<Sockaddr, string>& leader_master,
                        const master::ConnectToMasterResponsePB& resp) {
     if (status.ok()) {
-      leader_master_addr = leader_master;
+      leader_master_addr = leader_master.first;
     }
     sync.StatusCB(status);
   };
   rpc.reset(new ConnectToClusterRpc(cb,
-                                    std::move(addrs),
+                                    std::move(addrs_with_names),
                                     deadline,
                                     MonoDelta::FromSeconds(5),
                                     messenger_));

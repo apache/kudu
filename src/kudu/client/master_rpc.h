@@ -19,8 +19,10 @@
 #pragma once
 
 #include <functional>
-#include <vector>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
@@ -67,7 +69,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
  public:
   typedef std::function<void(
       const Status& status,
-      const Sockaddr& leader_master,
+      const std::pair<Sockaddr, std::string> leader_master,
       const master::ConnectToMasterResponsePB& connect_response)> LeaderCallback;
   // The host and port of the leader master server is stored in
   // 'leader_master', which must remain valid for the lifetime of this
@@ -77,7 +79,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
   // until 'deadline' passes. Each RPC has 'rpc_timeout' time to complete
   // before it times out and may be retried if 'deadline' has not yet passed.
   ConnectToClusterRpc(LeaderCallback user_cb,
-                      std::vector<Sockaddr> addrs,
+                      std::vector<std::pair<Sockaddr, std::string>> addrs_with_names,
                       MonoTime deadline,
                       MonoDelta rpc_timeout,
                       std::shared_ptr<rpc::Messenger> messenger,
@@ -103,8 +105,8 @@ class ConnectToClusterRpc : public rpc::Rpc,
 
   const LeaderCallback user_cb_;
 
-  // The addresses of the masters.
-  const std::vector<Sockaddr> addrs_;
+  // The addresses of the masters, along with their original specified names.
+  const std::vector<std::pair<Sockaddr, std::string>> addrs_with_names_;
 
   // The amount of time alloted to each GetMasterRegistration RPC.
   const MonoDelta rpc_timeout_;

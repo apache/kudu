@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/master_rpc.h"
@@ -50,6 +51,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/thread_restrictions.h"
 
+using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::string;
@@ -625,9 +627,12 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
 
 void KuduClient::Data::ConnectedToClusterCb(
     const Status& status,
-    const Sockaddr& leader_addr,
+    const pair<Sockaddr, string>& leader_addr_and_name,
     const master::ConnectToMasterResponsePB& connect_response,
     CredentialsPolicy cred_policy) {
+
+  const auto& leader_addr = leader_addr_and_name.first;
+  const auto& leader_hostname = leader_addr_and_name.second;
 
   // Ensure that all of the CAs reported by the master are trusted
   // in our local TLS configuration.
@@ -669,9 +674,8 @@ void KuduClient::Data::ConnectedToClusterCb(
     }
 
     if (status.ok()) {
-      leader_master_hostport_ = HostPort(leader_addr);
-      // TODO(KUDU-2032): retain the original hostname passed by caller.
-      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_addr.host()));
+      leader_master_hostport_ = HostPort(leader_hostname, leader_addr.port());
+      master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
     }
   }
 
@@ -694,12 +698,15 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
                                              CredentialsPolicy creds_policy) {
   DCHECK(deadline.Initialized());
 
-  vector<Sockaddr> master_sockaddrs;
+  vector<pair<Sockaddr, string>> master_addrs_with_names;
   for (const string& master_server_addr : master_server_addrs_) {
     vector<Sockaddr> addrs;
-    Status s;
-    // TODO: Do address resolution asynchronously as well.
-    s = ParseAddressList(master_server_addr, master::Master::kDefaultPort, &addrs);
+    HostPort hp;
+    Status s = hp.ParseString(master_server_addr, master::Master::kDefaultPort);
+    if (s.ok()) {
+      // TODO(todd): Do address resolution asynchronously as well.
+      s = hp.ResolveAddresses(&addrs);
+    }
     if (!s.ok()) {
       cb.Run(s);
       return;
@@ -714,7 +721,7 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
           << "Specified master server address '" << master_server_addr << "' "
           << "resolved to multiple IPs. Using " << addrs[0].ToString();
     }
-    master_sockaddrs.push_back(addrs[0]);
+    master_addrs_with_names.emplace_back(addrs[0], hp.host());
   }
 
   // This ensures that no more than one ConnectToClusterRpc of each credentials
@@ -761,7 +768,7 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
             std::placeholders::_2,
             std::placeholders::_3,
             creds_policy),
-        std::move(master_sockaddrs),
+        std::move(master_addrs_with_names),
         deadline,
         client->default_rpc_timeout(),
         messenger_,
