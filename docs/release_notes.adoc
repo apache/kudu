@@ -38,6 +38,10 @@
   storage format changes, downgrading to versions 1.3 or earlier is not
   supported and will result in an error.
 
+* Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
+  is Java 7 compatible. Spark 2.2 is the default dependency version as of
+  Kudu 1.5.0.
+
 [[rn_1.5.0_deprecations]]
 == Deprecations
 

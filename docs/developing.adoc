@@ -159,6 +159,9 @@ kuduContext.deleteTable("unwanted_table")
 
 === Spark Integration Known Issues and Limitations
 
+- Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
+  is Java 7 compatible. Spark 2.2 is the default dependency version as of
+  Kudu 1.5.0.
 - Kudu tables with a name containing upper case or non-ascii characters must be
   assigned an alternate name when registered as a temporary table.
 - Kudu tables with a column name containing upper case or non-ascii characters

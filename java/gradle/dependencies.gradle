@@ -67,7 +67,7 @@ versions["scalaBase"] = versions.scala.substring(0, versions.scala.lastIndexOf("
 
 // Set the Spark version based on the Scala version.
 def spark1Version = "1.6.3"
-def spark2Version = "2.1.1"
+def spark2Version = "2.2.0"
 if ("$versions.scalaBase" == "2.10") {
   versions["spark"] = spark1Version
 } else {

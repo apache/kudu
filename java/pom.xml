@@ -93,7 +93,7 @@
         <scala-2.11.version>2.11.11</scala-2.11.version>
         <scalatest.version>3.0.3</scalatest.version>
         <spark1.version>1.6.3</spark1.version>
-        <spark2.version>2.1.1</spark2.version>
+        <spark2.version>2.2.0</spark2.version>
 
         <!-- Misc variables -->
         <testdata.dir>target/testdata</testdata.dir>

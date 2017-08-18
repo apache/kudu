@@ -70,6 +70,9 @@ The two artifactIds are
 WARNING: Support for Spark 1 is deprecated as of Kudu 1.5.0 and may be removed in
 the next minor release.
 
+WARNING: Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
+is Java 7 compatible. Spark 2.2 is the default dependency version as of Kudu 1.5.0.
+
 State of Eclipse integration
 ------------------------------------------------------------
 

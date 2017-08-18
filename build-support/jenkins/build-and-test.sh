@@ -348,8 +348,8 @@ if [ "$BUILD_JAVA" == "1" ]; then
   echo Building and testing java...
   echo ------------------------------------------------------------
 
-  # Make sure we use JDK7
-  export JAVA_HOME=$JAVA7_HOME
+  # Make sure we use JDK8
+  export JAVA_HOME=$JAVA8_HOME
   export PATH=$JAVA_HOME/bin:$PATH
   pushd $SOURCE_ROOT/java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
