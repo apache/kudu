@@ -27,7 +27,7 @@
         <version>1.5.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>kudu-spark-tools</artifactId>
+    <artifactId>kudu-${spark.version.label}-tools_${scala.binary.version}</artifactId>
     <name>Kudu Spark Tools</name>
     <description>Collection of tools using Spark and Kudu</description>
 

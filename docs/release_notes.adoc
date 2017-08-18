@@ -42,6 +42,11 @@
   is Java 7 compatible. Spark 2.2 is the default dependency version as of
   Kudu 1.5.0.
 
+* The kudu-spark-tools module has been renamed to include the Spark and
+  Scala base versions. This matches the pattern used in the kudu-spark
+  module and artifacts. The kudu-spark-tools.jar is now called
+  kudu-spark2-tools_2.11.jar
+
 [[rn_1.5.0_deprecations]]
 == Deprecations
 
