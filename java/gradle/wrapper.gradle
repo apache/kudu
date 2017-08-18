@@ -30,9 +30,11 @@ task bootstrapWrapper() {
   // In the doLast block so this runs when the task is called and not during project configuration.
   doLast {
     def wrapperJarPath = "\$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
-    // Leverages the wrapper jar checked into the gradle project on github because the jar isn't available elsewhere.
-    def wrapperJarUrl = "https://raw.githubusercontent.com/gradle/gradle/v${versions.gradle}/gradle/wrapper/gradle-wrapper.jar"
 
+    // Add a trailing zero to the version if needed.
+    def fullVersion = versions.gradle.count(".") == 1 ? "${versions.gradle}.0" : versions.gradle
+    // Leverages the wrapper jar checked into the gradle project on github because the jar isn't available elsewhere.
+    def wrapperJarUrl = "https://raw.githubusercontent.com/gradle/gradle/v$fullVersion/gradle/wrapper/gradle-wrapper.jar"
 
     def boostrapString = """
       if [ ! -e $wrapperJarPath ]; then
