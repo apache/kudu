@@ -234,14 +234,14 @@ public class MiniKuduCluster implements AutoCloseable {
 
       commandLine.addAll(extraMasterFlags);
 
-      masterProcesses.put(port, configureAndStartProcess(port, commandLine));
-      commandLines.put(port, commandLine);
-
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
         pathsToDelete.add(flagsPath);
       }
       pathsToDelete.add(masterBaseDirPath);
+
+      masterProcesses.put(port, configureAndStartProcess(port, commandLine));
+      commandLines.put(port, commandLine);
     }
     // Return next port number.
     return ports.get(ports.size() - 1) + 1;
@@ -300,14 +300,14 @@ public class MiniKuduCluster implements AutoCloseable {
 
       commandLine.addAll(extraTserverFlags);
 
-      tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, commandLine));
-      commandLines.put(rpcPort, commandLine);
-
       if (flagsPath.startsWith(baseDirPath)) {
         // We made a temporary copy of the flags; delete them later.
         pathsToDelete.add(flagsPath);
       }
       pathsToDelete.add(tsBaseDirPath);
+
+      tserverProcesses.put(rpcPort, configureAndStartProcess(rpcPort, commandLine));
+      commandLines.put(rpcPort, commandLine);
     }
     // Return next port number.
     return ports.get(ports.size() - 1) + 1;
