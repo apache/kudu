@@ -22,7 +22,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|TSAN|DEBUG|RELEASE|COVERAGE|LINT
+#     Maybe be one of ASAN|TSAN|DEBUG|RELEASE|COVERAGE|LINT|IWYU
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -196,6 +196,9 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
   BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "LINT" ]; then
   CMAKE_BUILD=debug
+elif [ "$BUILD_TYPE" = "IWYU" ]; then
+  USE_CLANG=1
+  CMAKE_BUILD=debug
 else
   # Must be DEBUG or RELEASE
   CMAKE_BUILD=$BUILD_TYPE
@@ -222,15 +225,21 @@ fi
 CMAKE="$CMAKE $SOURCE_ROOT"
 $CMAKE
 
+# Create empty test logs or else Jenkins fails to archive artifacts, which
+# results in the build failing.
+mkdir -p Testing/Temporary
+mkdir -p $TEST_LOGDIR
+
 # Short circuit for LINT builds.
 if [ "$BUILD_TYPE" = "LINT" ]; then
-  # Create empty test logs or else Jenkins fails to archive artifacts, which
-  # results in the build failing.
-  mkdir -p Testing/Temporary
-  mkdir -p $TEST_LOGDIR
-
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
+fi
+
+# Just a plug for IWYU configuration: this branch does not have code to run
+# the include-what-you-use tool.
+if [ "$BUILD_TYPE" = "IWYU" ]; then
+  exit 0
 fi
 
 # Only enable test core dumps for certain build types.
