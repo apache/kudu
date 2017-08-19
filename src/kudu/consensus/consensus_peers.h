@@ -44,6 +44,7 @@ class ThreadPoolToken;
 
 namespace rpc {
 class Messenger;
+class PeriodicTimer;
 }
 
 namespace consensus {
@@ -111,9 +112,6 @@ class Peer : public std::enable_shared_from_this<Peer> {
                               std::shared_ptr<Peer>* peer);
 
  private:
-  // Returns the lowest possible jitter-induced heartbeat time delay.
-  static MonoDelta GetHeartbeatJitterLowerBound();
-
   Peer(RaftPeerPB peer_pb,
        std::string tablet_id,
        std::string leader_uuid,
@@ -148,17 +146,6 @@ class Peer : public std::enable_shared_from_this<Peer> {
   void ProcessResponseError(const Status& status);
 
   std::string LogPrefixUnlocked() const;
-
-  // Schedules the next heartbeat for this peer, optionally sending a heartbeat
-  // now if it makes sense to do so. Initially called from Init() to schedule
-  // the first heartbeat, and subsequently as a callback running on a reactor thread.
-  void ScheduleNextHeartbeatAndMaybeSignalRequest();
-
-  // Resets the next time that we should heartbeat to this peer. Does not
-  // perform any actual scheduling.
-  //
-  // Must be called with 'peer_lock_' held.
-  void UpdateNextHeartbeatTimeUnlocked();
 
   const std::string& tablet_id() const { return tablet_id_; }
 
@@ -195,11 +182,8 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // RaftConsensus owns this shared token and is responsible for destroying it.
   ThreadPoolToken* raft_pool_token_;
 
-  // The next time that a heartbeat should be sent to this peer.
-  MonoTime next_hb_time_;
-
-  // A PRNG, used to generate jittered heartbeat time.
-  Random rng_;
+  // Repeating timer responsible for scheduling heartbeats to this peer.
+  std::shared_ptr<rpc::PeriodicTimer> heartbeater_;
 
   // lock that protects Peer state changes, initialization, etc.
   mutable simple_spinlock peer_lock_;

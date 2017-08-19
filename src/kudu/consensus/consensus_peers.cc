@@ -39,6 +39,7 @@
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/periodic.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
@@ -47,8 +48,6 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/random.h"
-#include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
@@ -82,6 +81,7 @@ DECLARE_int32(raft_heartbeat_interval_ms);
 
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
+using kudu::rpc::PeriodicTimer;
 using kudu::rpc::RpcController;
 using kudu::tserver::TabletServerErrorPB;
 using std::shared_ptr;
@@ -129,19 +129,27 @@ Peer::Peer(RaftPeerPB peer_pb,
       queue_(queue),
       failed_attempts_(0),
       messenger_(std::move(messenger)),
-      raft_pool_token_(raft_pool_token),
-      rng_(GetRandomSeed32()) {
+      raft_pool_token_(raft_pool_token) {
 }
 
 Status Peer::Init() {
   {
     std::lock_guard<simple_spinlock> l(peer_lock_);
     queue_->TrackPeer(peer_pb_.permanent_uuid());
-    UpdateNextHeartbeatTimeUnlocked();
   }
 
-  // Schedule the first heartbeat.
-  ScheduleNextHeartbeatAndMaybeSignalRequest();
+  // Capture a weak_ptr reference into the functor so it can safely handle
+  // outliving the peer.
+  weak_ptr<Peer> w = shared_from_this();
+  heartbeater_ = PeriodicTimer::Create(
+      messenger_,
+      [w]() {
+        if (auto p = w.lock()) {
+          p->SignalRequest(true);
+        }
+      },
+      MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
+  heartbeater_->Start();
   return Status::OK();
 }
 
@@ -244,7 +252,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   if (req_has_ops) {
     // If we're actually sending ops there's no need to heartbeat for a while.
-    UpdateNextHeartbeatTimeUnlocked();
+    heartbeater_->Snooze();
   }
 
   MAYBE_FAULT(FLAGS_fault_crash_on_leader_request_fraction);
@@ -419,70 +427,12 @@ void Peer::Close() {
 
 Peer::~Peer() {
   Close();
+  if (heartbeater_) {
+    heartbeater_->Stop();
+  }
+
   // We don't own the ops (the queue does).
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
-}
-
-void Peer::ScheduleNextHeartbeatAndMaybeSignalRequest() {
-  // We must schedule the next callback with the lowest possible jittered
-  // time as the delay so that if SendNextRequest() resets the next heartbeat
-  // time with a very low value, the scheduled callback can still honor it.
-  //
-  // In effect, this means the callback period and the heartbeat period are
-  // decoupled from one another.
-  MonoDelta schedule_delay = GetHeartbeatJitterLowerBound();
-  bool signal_now = false;
-  {
-    std::lock_guard<simple_spinlock> l(peer_lock_);
-    if (closed_) {
-      // The peer was closed.
-      return;
-    }
-
-    MonoTime now = MonoTime::Now();
-    if (now < next_hb_time_) {
-      // It's not yet time to heartbeat. Reduce the scheduled delay if enough
-      // time has elapsed, but don't increase it.
-      schedule_delay = std::min(schedule_delay, next_hb_time_ - now);
-    } else {
-      // It's time to heartbeat. Although the next heartbeat time is set now,
-      // it may be set again when we get to SendNextRequest().
-      signal_now = true;
-      UpdateNextHeartbeatTimeUnlocked();
-    }
-  }
-
-  if (signal_now) {
-    SignalRequest(true);
-  }
-
-  // Capture a weak_ptr reference into the submitted functor so that we can
-  // safely handle the functor outliving its peer.
-  weak_ptr<Peer> w_this = shared_from_this();
-  messenger_->ScheduleOnReactor([w_this](const Status& s) {
-    if (!s.ok()) {
-      // The reactor was shut down.
-      return;
-    }
-    if (auto p = w_this.lock()) {
-      p->ScheduleNextHeartbeatAndMaybeSignalRequest();
-    }
-  }, schedule_delay);
-}
-
-MonoDelta Peer::GetHeartbeatJitterLowerBound() {
-  return MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms / 2);
-}
-
-void Peer::UpdateNextHeartbeatTimeUnlocked() {
-  DCHECK(peer_lock_.is_locked());
-
-  // We randomize the next heartbeat time between period/2 and period so
-  // multiple tablets on the same TS don't end up heartbeating in lockstep.
-  int64_t half_period_ms = GetHeartbeatJitterLowerBound().ToMilliseconds();
-  int64_t additional_jitter_ms = rng_.NextDoubleFraction() * half_period_ms;
-  next_hb_time_ =  MonoTime::Now() + MonoDelta::FromMilliseconds(
-      half_period_ms + additional_jitter_ms);
 }
 
 RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,

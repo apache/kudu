@@ -865,7 +865,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   // should have increased between 3 to 8 times.
   //
   // Why the variance? Heartbeat timing is jittered such that the period
-  // between heartbeats can be anywhere from half the interval to the full interval.
+  // between heartbeats can be anywhere from 3/4 to 5/4 the interval.
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 4LL));
 
   int repl0_final_count = follower0->update_calls_for_tests();
