@@ -897,8 +897,6 @@ void RaftConsensusITest::CreateClusterForCrashyNodesTests() {
 
   // Make leader elections faster so we get through more cycles of leaders.
   ts_flags.emplace_back("--raft_heartbeat_interval_ms=100");
-  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=50");
-  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=25");
 
   // Avoid preallocating segments since bootstrap is a little bit
   // faster if it doesn't have to scan forward through the preallocated
@@ -1003,8 +1001,6 @@ void RaftConsensusITest::CreateClusterForChurnyElectionsTests(
 #else
   ts_flags.emplace_back("--raft_heartbeat_interval_ms=1");
 #endif
-  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=1");
-  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=1");
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 

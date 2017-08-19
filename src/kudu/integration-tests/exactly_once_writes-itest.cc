@@ -286,8 +286,6 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
 
   // Make leader elections faster so we get through more cycles of leaders.
   ts_flags.emplace_back("--raft_heartbeat_interval_ms=200");
-  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=100");
-  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=50");
 
   // Avoid preallocating segments since bootstrap is a little bit
   // faster if it doesn't have to scan forward through the preallocated
@@ -318,8 +316,6 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyEl
 #else
   ts_flags.emplace_back("--raft_heartbeat_interval_ms=2");
 #endif
-  ts_flags.emplace_back("--leader_failure_monitor_check_mean_ms=2");
-  ts_flags.emplace_back("--leader_failure_monitor_check_stddev_ms=1");
 
   int num_batches = 200;
   if (AllowSlowTests()) {

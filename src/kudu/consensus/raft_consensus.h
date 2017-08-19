@@ -56,8 +56,6 @@ class optional;
 
 namespace kudu {
 
-class FailureDetector;
-class RandomizedFailureMonitor;
 
 typedef std::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
@@ -68,6 +66,10 @@ class Status;
 
 template <typename Sig>
 class Callback;
+
+namespace rpc {
+class PeriodicTimer;
+}
 
 namespace consensus {
 
@@ -172,10 +174,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   scoped_refptr<ConsensusRound> NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
       ConsensusReplicatedCallback replicated_cb);
-
-  // Call StartElection(), log a warning if the call fails (usually due to
-  // being shut down).
-  void ReportFailureDetected(const std::string& name, const Status& msg);
 
   // Called by a Leader to replicate an entry to the state machine.
   //
@@ -519,40 +517,42 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
+  //
+  // If 'delta' is set, it is used as the initial failure period. Otherwise,
+  // the minimum election timeout is used.
+  //
   // If the failure detector is already registered, has no effect.
-  Status EnsureFailureDetectorEnabled();
+  void EnableFailureDetector(boost::optional<MonoDelta> delta = boost::none);
 
-  // Untrack the current leader from failure detector.
-  // This typically happens when the local peer becomes leader.
-  // If the failure detector is already unregistered, has no effect.
-  Status EnsureFailureDetectorDisabled();
-
-  // Set the failure detector to an "expired" state, so that the next time
-  // the failure monitor runs it triggers an election.
-  // This is primarily intended to be used at startup time.
-  Status ExpireFailureDetector();
+  // Stop tracking the current leader for failures. This typically occurs when
+  // the local peer becomes leader.
+  //
+  // If the failure detector is already disabled, has no effect.
+  void DisableFailureDetector();
 
   // "Reset" the failure detector to indicate leader activity.
-  // The failure detector must currently be enabled.
-  // When this is called a failure is guaranteed not to be detected
-  // before 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
-  // 'FLAGS_raft_heartbeat_interval_ms' has elapsed.
-  Status SnoozeFailureDetector() WARN_UNUSED_RESULT;
-
-  // Like the above but adds 'additional_delta' to the default timeout
-  // period. If allow_logging is set to ALLOW_LOGGING, then this method
-  // will print a log message when called.
-  Status SnoozeFailureDetector(const MonoDelta& additional_delta,
-                               AllowLogging allow_logging) WARN_UNUSED_RESULT;
+  //
+  // When this is called a failure is guaranteed not to be detected before
+  // 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
+  // 'FLAGS_raft_heartbeat_interval_ms' has elapsed, unless 'delta' is set, in
+  // which case its value is used as the next failure period.
+  //
+  // If 'allow_logging' is set to ALLOW_LOGGING, then this method will print a
+  // log message when called.
+  //
+  // If the failure detector is unregistered, has no effect.
+  void SnoozeFailureDetector(AllowLogging allow_logging,
+                             boost::optional<MonoDelta> delta = boost::none);
 
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.
   MonoDelta MinimumElectionTimeout() const;
 
-  // Calculates an additional snooze delta for leader election.
-  // The additional delta increases exponentially with the difference
-  // between the current term and the term of the last committed
-  // operation.
+  // Calculates a snooze delta for leader election.
+  //
+  // The delta increases exponentially with the difference between the current
+  // term and the term of the last committed operation.
+  //
   // The maximum delta is capped by 'FLAGS_leader_failure_exp_backoff_max_delta_ms'.
   MonoDelta LeaderElectionExpBackoffDeltaUnlocked();
 
@@ -584,6 +584,13 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                              const RaftConfigPB& committed_config,
                              const std::string& reason);
 
+  // Called when the failure detector expires.
+  // Submits ReportFailureDetectedTask() to a thread pool.
+  void ReportFailureDetected();
+
+  // Call StartElection(), log a warning if the call fails (usually due to
+  // being shut down).
+  void ReportFailureDetectedTask();
 
   // Handle the completion of replication of a config change operation.
   // If 'status' is OK, this takes care of persisting the new configuration
@@ -735,10 +742,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   Random rng_;
 
-  // TODO(mpercy): Plumb this from ServerBase.
-  std::unique_ptr<RandomizedFailureMonitor> failure_monitor_;
-
-  scoped_refptr<FailureDetector> failure_detector_;
+  std::shared_ptr<rpc::PeriodicTimer> failure_detector_;
 
   // If any RequestVote() RPC arrives before this timestamp,
   // the request will be ignored. This prevents abandoned or partitioned
