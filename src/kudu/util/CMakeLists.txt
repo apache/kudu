@@ -134,7 +134,6 @@ set(UTIL_SRCS
   env.cc env_posix.cc env_util.cc
   errno.cc
   faststring.cc
-  failure_detector.cc
   fault_injection.cc
   file_cache.cc
   flags.cc
@@ -173,7 +172,6 @@ set(UTIL_SRCS
   pb_util-internal.cc
   process_memory.cc
   random_util.cc
-  resettable_heartbeater.cc
   rolling_log.cc
   rw_mutex.cc
   rwc_lock.cc
@@ -340,7 +338,6 @@ ADD_KUDU_TEST(easy_json-test)
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(env_util-test)
 ADD_KUDU_TEST(errno-test)
-ADD_KUDU_TEST(failure_detector-test)
 ADD_KUDU_TEST(faststring-test)
 ADD_KUDU_TEST(file_cache-test)
 ADD_KUDU_TEST(file_cache-stress-test RUN_SERIAL true)
@@ -375,7 +372,6 @@ ADD_KUDU_TEST(path_util-test)
 ADD_KUDU_TEST(process_memory-test RUN_SERIAL true)
 ADD_KUDU_TEST(random-test)
 ADD_KUDU_TEST(random_util-test)
-ADD_KUDU_TEST(resettable_heartbeater-test)
 ADD_KUDU_TEST(rle-test)
 ADD_KUDU_TEST(rolling_log-test)
 ADD_KUDU_TEST(rw_mutex-test)

@@ -134,7 +134,6 @@ BEGIN {
   muted["kudu/util/bit-util-test.cc"]
   muted["kudu/util/compression/compression-test.cc"]
   muted["kudu/util/env_util-test.cc"]
-  muted["kudu/util/failure_detector-test.cc"]
   muted["kudu/util/file_cache-stress-test.cc"]
   muted["kudu/util/group_varint-test.cc"]
   muted["kudu/util/minidump.cc"]
