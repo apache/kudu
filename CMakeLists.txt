@@ -100,6 +100,11 @@ set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 # just do it once here for all Kudu executables.
 set(CMAKE_ENABLE_EXPORTS true)
 
+# Always generate the compilation database file (compile_commands.json) for use
+# with various development tools, such as IWYU and Vim's YouCompleteMe plugin.
+# See http://clang.llvm.org/docs/JSONCompilationDatabase.html
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   if (${KUDU_USE_TSAN})
@@ -111,13 +116,6 @@ if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   if (NOT (${THIRDPARTY_SCRIPT_RESULT} EQUAL 0))
     message(FATAL_ERROR "Thirdparty was built unsuccessfully, terminating.")
   endif()
-endif()
-
-# Generate a Clang compile_commands.json "compilation database" file for use
-# with various development tools, such as Vim's YouCompleteMe plugin.
-# See http://clang.llvm.org/docs/JSONCompilationDatabase.html
-if ("$ENV{CMAKE_EXPORT_COMPILE_COMMANDS}" STREQUAL "1")
-  set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 endif()
 
 ############################################################
@@ -1049,6 +1047,13 @@ if (UNIX)
   # Incremental lint - only checks files changed since the last
   # merged upstream commit
   add_custom_target(ilint ${BUILD_SUPPORT_DIR}/lint.sh -c)
+endif (UNIX)
+
+############################################################
+# "make iwyu" target
+############################################################
+if (UNIX)
+  add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh)
 endif (UNIX)
 
 ############################################################

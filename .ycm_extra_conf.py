@@ -48,10 +48,6 @@ flags = get_flags()
 # compile_commands.json file to use that instead of 'flags'. See here for
 # more details: http://clang.llvm.org/docs/JSONCompilationDatabase.html
 #
-# You can get CMake to generate this file for you by adding:
-#   set( CMAKE_EXPORT_COMPILE_COMMANDS 1 )
-# to your CMakeLists.txt file.
-#
 # Most projects will NOT need to set this to anything; you can just change the
 # 'flags' list of compilation flags. Notice that YCM itself uses that approach.
 compilation_database_folder = ''
