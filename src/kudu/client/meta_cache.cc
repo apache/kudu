@@ -86,12 +86,6 @@ namespace client {
 
 namespace internal {
 
-namespace {
-const int kMaxReturnedTableLocations = 10;
-} // anonymous namespace
-
-////////////////////////////////////////////////////////////
-
 RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
   : uuid_(pb.permanent_uuid()) {
 
@@ -542,6 +536,7 @@ class LookupRpc : public Rpc {
             scoped_refptr<RemoteTablet>* remote_tablet,
             const MonoTime& deadline,
             shared_ptr<Messenger> messenger,
+            int max_returned_locations,
             bool is_exact_lookup);
   virtual ~LookupRpc();
   virtual void SendRpc() OVERRIDE;
@@ -597,6 +592,9 @@ class LookupRpc : public Rpc {
   // Whether this lookup has acquired a master lookup permit.
   bool has_permit_;
 
+  // The max number of tablets to fetch per round trip from the master
+  int max_returned_locations_;
+
   // If true, this lookup is for an exact tablet match with the requested
   // partition key. If false, the next tablet after the partition key should be
   // returned if the partition key falls in a non-covered partition range.
@@ -609,6 +607,7 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
                      scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
                      shared_ptr<Messenger> messenger,
+                     int max_returned_locations,
                      bool is_exact_lookup)
     : Rpc(deadline, std::move(messenger)),
       meta_cache_(meta_cache),
@@ -617,6 +616,7 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
       partition_key_(std::move(partition_key)),
       remote_tablet_(remote_tablet),
       has_permit_(false),
+      max_returned_locations_(max_returned_locations),
       is_exact_lookup_(is_exact_lookup) {
   DCHECK(deadline.Initialized());
 }
@@ -667,7 +667,7 @@ void LookupRpc::SendRpc() {
   // Fill out the request.
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
-  req_.set_max_returned_locations(kMaxReturnedTableLocations);
+  req_.set_max_returned_locations(max_returned_locations_);
 
   // The end partition key is left unset intentionally so that we'll prefetch
   // some additional tablets.
@@ -791,7 +791,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   if (new_status.ok()) {
     MetaCacheEntry entry;
-    new_status = meta_cache_->ProcessLookupResponse(*this, &entry);
+    new_status = meta_cache_->ProcessLookupResponse(*this, &entry, max_returned_locations_);
     if (entry.is_non_covered_range()) {
       new_status = Status::NotFound("No tablet covering the requested range partition",
                                     entry.DebugString(table_));
@@ -806,7 +806,8 @@ void LookupRpc::SendRpcCb(const Status& status) {
 }
 
 Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
-                                        MetaCacheEntry* cache_entry) {
+                                        MetaCacheEntry* cache_entry,
+                                        int max_returned_locations) {
   VLOG(2) << "Processing master response for " << rpc.ToString()
           << ". Response: " << pb_util::SecureShortDebugString(rpc.resp());
 
@@ -927,7 +928,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       InsertOrDie(&tablets_by_key, tablet_lower_bound, entry);
     }
 
-    if (!last_upper_bound.empty() && tablet_locations.size() < kMaxReturnedTableLocations) {
+    if (!last_upper_bound.empty() && tablet_locations.size() < max_returned_locations) {
       // There is a non-covered range between the last tablet and the end of the
       // partition key space, such as F.
 
@@ -1019,6 +1020,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_,
+                                 kFetchTabletsPerPointLookup,
                                  true);
   rpc->SendRpc();
 }
@@ -1027,7 +1029,8 @@ void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
                                         string partition_key,
                                         const MonoTime& deadline,
                                         scoped_refptr<RemoteTablet>* remote_tablet,
-                                        const StatusCallback& callback) {
+                                        const StatusCallback& callback,
+                                        int max_returned_locations) {
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
@@ -1035,6 +1038,7 @@ void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_,
+                                 max_returned_locations,
                                  false);
   rpc->SendRpc();
 }

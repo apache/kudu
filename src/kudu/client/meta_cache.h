@@ -64,6 +64,15 @@ class KuduTable;
 
 namespace internal {
 
+// The number of tablets to fetch from the master in a round trip when performing
+// a lookup of a single partition (e.g. for a write), or re-looking-up a tablet with
+// stale information.
+const int kFetchTabletsPerPointLookup = 10;
+// The number of tablets to fetch from the master when looking up a range of tablets.
+const int kFetchTabletsPerRangeLookup = 1000;
+
+////////////////////////////////////////////////////////////
+
 class LookupRpc;
 class MetaCache;
 class RemoteTablet;
@@ -384,7 +393,8 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
                                std::string partition_key,
                                const MonoTime& deadline,
                                scoped_refptr<RemoteTablet>* remote_tablet,
-                               const StatusCallback& callback);
+                               const StatusCallback& callback,
+                               int max_returned_locations = kFetchTabletsPerPointLookup);
 
   // Clears the non-covered range entries from a table's meta cache.
   void ClearNonCoveredRangeEntries(const std::string& table_id);
@@ -411,7 +421,9 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   // Called on the slow LookupTablet path when the master responds. Populates
   // the tablet caches and returns a reference to the first one.
-  Status ProcessLookupResponse(const LookupRpc& rpc, MetaCacheEntry* entry);
+  Status ProcessLookupResponse(const LookupRpc& rpc,
+                               MetaCacheEntry* cache_entry,
+                               int max_returned_locations);
 
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
