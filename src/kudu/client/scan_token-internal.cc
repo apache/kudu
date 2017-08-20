@@ -260,7 +260,8 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
                                                         partition_key,
                                                         deadline,
                                                         &tablet,
-                                                        sync.AsStatusCallback());
+                                                        sync.AsStatusCallback(),
+                                                        internal::kFetchTabletsPerRangeLookup);
     Status s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets in the table.
