@@ -265,18 +265,41 @@ class Connection extends SimpleChannelUpstreamHandler {
       try {
         Preconditions.checkState(state == State.NEGOTIATING);
         Preconditions.checkState(inflightMessages.isEmpty());
-
-        state = State.READY;
         negotiationResult = (Negotiator.Success) m;
-        List<QueuedMessage> queued = Preconditions.checkNotNull(queuedMessages);
-        // The queuedMessages should not be used anymore once the connection is negotiated.
-        queuedMessages = null;
-        // Send out all the enqueued messages. This is done while holding the lock to preserve
-        // the sequence of the already enqueued and being-enqueued-right-now messages and simplify
-        // the logic which checks for the consistency using Preconditions.checkXxx() methods.
-        for (final QueuedMessage qm : queued) {
-          sendCallToWire(qm.message, qm.cb);
+
+        // Before switching to the READY state, it's necessary to empty the queuedMessages. There
+        // might be concurrent activity on adding new messages into the queue if enqueueMessage()
+        // is called in the middle.
+        while (!queuedMessages.isEmpty()) {
+          // Register the messages into the inflightMessages before sending them to the wire. This
+          // is to be able to invoke appropriate callback when the response received. This should
+          // be done under the lock since the inflightMessages itself does not provide any
+          // concurrency guarantees.
+          List<QueuedMessage> queued = queuedMessages;
+          for (final QueuedMessage qm : queued) {
+            Callback<Void, CallResponseInfo> empty = inflightMessages.put(
+                qm.message.getHeaderBuilder().getCallId(), qm.cb);
+            Preconditions.checkState(empty == null);
+          }
+          queuedMessages = Lists.newArrayList();
+
+          lock.unlock();
+          try {
+            // Send out the enqueued messages while not holding the lock. This is to avoid
+            // deadlock if channelDisconnected/channelClosed event happens and cleanup() is called.
+            for (final QueuedMessage qm : queued) {
+              sendCallToWire(qm.message);
+            }
+          } finally {
+            lock.lock();
+          }
         }
+
+        assert queuedMessages.isEmpty();
+        queuedMessages = null;
+        // Set the state to READY -- that means the incoming messages should be no longer put into
+        // the queuedMessages, but sent to wire right away (see the enqueueMessage() for details).
+        state = State.READY;
       } finally {
         lock.unlock();
       }
@@ -477,11 +500,24 @@ class Connection extends SimpleChannelUpstreamHandler {
         return;
       }
 
-      // It's time to initiate sending the message over the wire.
-      sendCallToWire(msg, cb);
+      assert state == State.READY;
+      // Register the message into the inflightMessages before sending it to the wire.
+      final Callback<Void, CallResponseInfo> empty = inflightMessages.put(callId, cb);
+      Preconditions.checkState(empty == null);
     } finally {
       lock.unlock();
     }
+
+    // It's time to initiate sending the message over the wire. This is done outside of the lock
+    // to prevent deadlocks due to the reverse order of locking while working with Connection.lock
+    // and the lower-level Netty locks. The other order of taking those two locks could happen
+    // upon receiving ChannelDisconnected or ChannelClosed events. Upon receiving those events,
+    // the low-level Netty lock is held and the channelDisconnected()/channelClosed() methods
+    // would call the cleanup() method. In its turn, the cleanup() method tries to acquire the
+    // Connection.lock lock, while the low-level Netty lock might be already acquired.
+    //
+    // More details and an example of a stack trace is available in KUDU-1894 comments.
+    sendCallToWire(msg);
   }
 
   /**
@@ -561,18 +597,15 @@ class Connection extends SimpleChannelUpstreamHandler {
     }
   }
 
-  /** Start sending the message to the server over the wire. */
-  @GuardedBy("lock")
-  private void sendCallToWire(final RpcOutboundMessage msg, Callback<Void, CallResponseInfo> cb) {
-    Preconditions.checkState(lock.isHeldByCurrentThread());
-    Preconditions.checkState(state == State.READY);
-
+  /**
+   * Start sending the message to the server over the wire. It's crucial to not hold the lock
+   * while doing so: see enqueueMessage() and KUDU-1894 for details.
+   */
+  private void sendCallToWire(final RpcOutboundMessage msg) {
+    assert !lock.isHeldByCurrentThread();
     if (LOG.isTraceEnabled()) {
       LOG.trace("{} sending {}", getLogPrefix(), msg);
     }
-    final int callId = msg.getHeaderBuilder().getCallId();
-    final Callback<Void, CallResponseInfo> empty = inflightMessages.put(callId, cb);
-    Preconditions.checkState(empty == null);
     Channels.write(channel, msg);
   }
 
