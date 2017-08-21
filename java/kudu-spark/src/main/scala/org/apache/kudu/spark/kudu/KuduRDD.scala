@@ -87,6 +87,9 @@ private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row
   override def hasNext: Boolean = {
     while ((currentIterator != null && !currentIterator.hasNext && scanner.hasMoreRows) ||
            (scanner.hasMoreRows && currentIterator == null)) {
+      if (TaskContext.get().isInterrupted()) {
+        throw new RuntimeException("Kudu task interrupted")
+      }
       currentIterator = scanner.nextRows()
     }
     currentIterator.hasNext
