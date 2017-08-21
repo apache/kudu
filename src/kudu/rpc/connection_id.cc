@@ -21,6 +21,7 @@
 #include <cstddef>
 
 #include <boost/functional/hash/hash.hpp>
+#include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
 
