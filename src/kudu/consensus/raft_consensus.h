@@ -71,7 +71,6 @@ class Callback;
 
 namespace consensus {
 
-class ConsensusMetadata;
 class ConsensusMetadataManager;
 class ConsensusRound;
 class PeerProxyFactory;

@@ -17,11 +17,7 @@
 
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 
-#include <sys/stat.h>
-
 #include <algorithm>
-#include <ctime>
-#include <ostream>
 #include <set>
 
 #include <glog/logging.h>
@@ -34,6 +30,7 @@
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 

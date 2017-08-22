@@ -17,6 +17,7 @@
 #ifndef KUDU_TABLET_TABLET_METADATA_H
 #define KUDU_TABLET_TABLET_METADATA_H
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -24,10 +25,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/partition.h"
-#include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -40,16 +41,15 @@
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
 
-namespace boost {
-template <class T>
-class optional;
-}
-
 namespace kudu {
 
 class BlockIdPB;
 class FsManager;
 class Schema;
+
+namespace consensus {
+class OpId;
+}
 
 namespace tablet {
 

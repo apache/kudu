@@ -27,6 +27,7 @@
 #include <unordered_map>
 
 #include <boost/intrusive/list.hpp>
+#include <boost/optional/optional.hpp>
 #include <ev++.h>
 #include <glog/logging.h>
 
@@ -39,7 +40,6 @@
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/rpc/user_credentials.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"

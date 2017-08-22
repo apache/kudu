@@ -21,14 +21,15 @@
 #include <string>
 #include <unordered_map>
 
-#include <gtest/gtest.h>
-
-#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
+
+namespace client {
+class KuduClient;
+}
 
 namespace itest {
 struct TServerDetails;

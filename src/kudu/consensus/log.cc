@@ -32,7 +32,6 @@
 #include "kudu/consensus/log_metrics.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"

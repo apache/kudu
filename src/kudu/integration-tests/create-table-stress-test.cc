@@ -51,6 +51,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"

@@ -17,12 +17,11 @@
 
 #include "kudu/tserver/tablet_server_test_util.h"
 
-#include <string>
-
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/net/sockaddr.h"
 
 namespace kudu {
 namespace tserver {

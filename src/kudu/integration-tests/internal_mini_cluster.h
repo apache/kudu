@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,6 +32,8 @@ namespace kudu {
 
 class Env;
 class HostPort;
+class Status;
+
 namespace client {
 class KuduClient;
 class KuduClientBuilder;

@@ -52,6 +52,7 @@ namespace kudu {
 
 class MemTracker;
 class MemoryTrackingBufferAllocator;
+class MonoTime;
 class RowBlock;
 class RowBlockRow;
 class RowChangeList;

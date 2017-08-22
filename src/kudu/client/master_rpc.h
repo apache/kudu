@@ -31,10 +31,10 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/sockaddr.h"
 
 namespace kudu {
 
+class Sockaddr;
 class Status;
 
 namespace rpc {

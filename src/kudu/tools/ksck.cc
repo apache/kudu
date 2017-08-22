@@ -24,6 +24,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <type_traits>
 
 #include <boost/optional.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>

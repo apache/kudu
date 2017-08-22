@@ -18,6 +18,7 @@
 #include "kudu/integration-tests/log_verifier.h"
 
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -26,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
