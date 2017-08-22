@@ -308,7 +308,7 @@ class DataDirManager {
 
   // Finds the set of tablet_ids in the data dir specified by 'uuid_idx' and
   // returns a copy, returning an empty set if none are found.
-  std::set<std::string> FindTabletsByDataDirUuidIdx(uint16_t uuid_idx);
+  std::set<std::string> FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) const;
 
   // ==========================================================================
   // Directory Health
@@ -327,6 +327,9 @@ class DataDirManager {
 
   // Returns whether or not the 'uuid_idx' refers to a failed directory.
   bool IsDataDirFailed(uint16_t uuid_idx) const;
+
+  // Returns whether the tablet's data is spread across a failed directory.
+  bool IsTabletInFailedDir(const std::string& tablet_id) const;
 
   const std::set<uint16_t> GetFailedDataDirs() const {
     shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());

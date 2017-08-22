@@ -142,6 +142,7 @@ using internal::LogBlockContainer;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
 using std::map;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -482,7 +483,7 @@ class LogBlockContainer {
         (max_num_blocks_ && (total_blocks_ >= max_num_blocks_));
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
-  const DataDir* data_dir() const { return data_dir_; }
+  DataDir* data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
   bool read_only() const { return read_only_.Load(); }
 
@@ -1701,6 +1702,18 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
     if (lb->container()->read_only()) {
       return Status::IllegalState("container $0 is read-only",
                                   lb->container()->ToString());
+    }
+
+    // Return early if deleting a block in a failed directory.
+    set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
+    if (PREDICT_FALSE(!failed_dirs.empty())) {
+      uint16_t uuid_idx;
+      CHECK(dd_manager_->FindUuidIndexByDataDir(lb->container()->data_dir(), &uuid_idx));
+      if (ContainsKey(failed_dirs, uuid_idx)) {
+        LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
+                                            block_id.ToString());
+        return Status::IOError("Block is in a failed directory");
+      }
     }
     RemoveLogBlockUnlocked(it);
   }

@@ -22,6 +22,7 @@
 #include <mutex>
 #include <numeric>
 #include <ostream>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,6 +55,7 @@
 #include "kudu/util/status.h"
 
 using std::accumulate;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -589,7 +591,19 @@ Status FileBlockManager::Open(FsReport* report) {
 
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
+  set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
   for (const auto& dd : dd_manager_->data_dirs()) {
+    // Don't report failed directories.
+    // TODO(KUDU-2111): currently the FsReport only reports on containers for
+    // the log block manager. Implement some sort of reporting for failed
+    // directories as well.
+    if (PREDICT_FALSE(!failed_dirs.empty())) {
+      uint16_t uuid_idx;
+      CHECK(dd_manager_->FindUuidIndexByDataDir(dd.get(), &uuid_idx));
+      if (ContainsKey(failed_dirs, uuid_idx)) {
+        continue;
+      }
+    }
     // TODO(adar): probably too expensive to fill out the stats/checks.
     local_report.data_dirs.push_back(dd->dir());
   }
@@ -690,6 +704,17 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   CHECK(!read_only_);
+
+  // Return early if deleting a block in a failed directory.
+  set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
+  if (PREDICT_FALSE(!failed_dirs.empty())) {
+    uint16_t uuid_idx = internal::FileBlockLocation::GetDataDirIdx(block_id);
+    if (ContainsKey(failed_dirs, uuid_idx)) {
+      LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
+                                          block_id.ToString());
+      return Status::IOError("Block is in a failed directory");
+    }
+  }
 
   string path;
   if (!FindBlockPath(block_id, &path)) {

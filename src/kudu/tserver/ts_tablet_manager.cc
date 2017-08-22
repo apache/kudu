@@ -804,6 +804,14 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     return;
   }
 
+  // If the tablet is in a failed directory, don't bother bootstrapping.
+  if (fs_manager_->dd_manager()->IsTabletInFailedDir(tablet_id)) {
+    LOG(ERROR) << LogPrefix(tablet_id) << "aborting tablet bootstrap: tablet "
+                                          "has data in a failed directory";
+    s = Status::IOError("Tablet data is in a failed directory");
+    return;
+  }
+
   consensus::ConsensusBootstrapInfo bootstrap_info;
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
     // Disable tracing for the bootstrap, since this would result in

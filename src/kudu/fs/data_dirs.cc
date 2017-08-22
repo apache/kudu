@@ -63,7 +63,7 @@ DEFINE_int32(fs_target_data_dirs_per_tablet, 0,
               "tablet's data across. If greater than the number of data dirs "
               "available, data will be striped across those available. The "
               "default value 0 indicates striping should occur across all "
-              "data directories.");
+              "healthy data directories.");
 DEFINE_validator(fs_target_data_dirs_per_tablet,
     [](const char* /*n*/, int32_t v) { return v >= 0; });
 TAG_FLAG(fs_target_data_dirs_per_tablet, advanced);
@@ -636,10 +636,15 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
                                   "registered", tablet_id);
   }
   // Adjust the disk group size to fit within the total number of data dirs.
-  int group_target_size = std::min(FLAGS_fs_target_data_dirs_per_tablet,
-                                   static_cast<int>(data_dirs_.size()));
+  int group_target_size;
+  if (FLAGS_fs_target_data_dirs_per_tablet == 0) {
+    group_target_size = data_dirs_.size();
+  } else {
+    group_target_size = std::min(FLAGS_fs_target_data_dirs_per_tablet,
+                                 static_cast<int>(data_dirs_.size()));
+  }
   vector<uint16_t> group_indices;
-  if (group_target_size == 0 || mode == DirDistributionMode::ACROSS_ALL_DIRS) {
+  if (mode == DirDistributionMode::ACROSS_ALL_DIRS) {
     // If using all dirs, add all regardless of directory state.
     AppendKeysFromMap(data_dir_by_uuid_idx_, &group_indices);
   } else {
@@ -756,11 +761,14 @@ Status DataDirManager::GetDirsForGroupUnlocked(int target_size,
   DCHECK(dir_group_lock_.is_locked());
   vector<uint16_t> candidate_indices;
   for (auto& e : data_dir_by_uuid_idx_) {
+    if (ContainsKey(failed_data_dirs_, e.first)) {
+      continue;
+    }
     RETURN_NOT_OK(e.second->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
     // TODO(awong): If a disk is unhealthy at the time of group creation, the
     // resulting group may be below targeted size. Add functionality to resize
     // groups. See KUDU-2040 for more details.
-    if (!e.second->is_full() && !ContainsKey(failed_data_dirs_, e.first)) {
+    if (!e.second->is_full()) {
       candidate_indices.push_back(e.first);
     }
   }
@@ -804,10 +812,10 @@ bool DataDirManager::FindUuidByRoot(const string& root, string* uuid) const {
   return FindCopy(uuid_by_root_, root, uuid);
 }
 
-set<string> DataDirManager::FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) {
+set<string> DataDirManager::FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) const {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
-  set<string>* tablet_set_ptr = FindOrNull(tablets_by_uuid_idx_map_, uuid_idx);
+  const set<string>* tablet_set_ptr = FindOrNull(tablets_by_uuid_idx_map_, uuid_idx);
   if (tablet_set_ptr) {
     return *tablet_set_ptr;
   }
@@ -847,6 +855,16 @@ bool DataDirManager::IsDataDirFailed(uint16_t uuid_idx) const {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
   return ContainsKey(failed_data_dirs_, uuid_idx);
+}
+
+bool DataDirManager::IsTabletInFailedDir(const string& tablet_id) const {
+  const set<uint16_t> failed_dirs = GetFailedDataDirs();
+  for (uint16_t failed_dir : failed_dirs) {
+    if (ContainsKey(FindTabletsByDataDirUuidIdx(failed_dir), tablet_id)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void DataDirManager::RemoveUnhealthyDataDirsUnlocked(const vector<uint16_t>& uuid_indices,

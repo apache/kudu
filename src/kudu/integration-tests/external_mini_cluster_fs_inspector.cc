@@ -100,7 +100,7 @@ vector<string> ExternalMiniClusterFsInspector::ListTablets() {
 }
 
 vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string data_dir = cluster_->tablet_server(index)->data_dirs()[0];
   string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(meta_dir, &tablets));
@@ -142,7 +142,7 @@ int ExternalMiniClusterFsInspector::CountReplicasInMetadataDirs() {
   // tablet servers isn't easy.
   int count = 0;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    string data_dir = cluster_->tablet_server(i)->data_dir();
+    string data_dir = cluster_->tablet_server(i)->data_dirs()[0];
     count += CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName));
   }
   return count;
@@ -171,7 +171,7 @@ Status ExternalMiniClusterFsInspector::CheckNoData() {
 
 string ExternalMiniClusterFsInspector::GetTabletSuperBlockPathOnTS(int ts_index,
                                                                    const string& tablet_id) const {
-  string data_dir = cluster_->tablet_server(ts_index)->data_dir();
+  string data_dir = cluster_->tablet_server(ts_index)->data_dirs()[0];
   string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
   return JoinPathSegments(meta_dir, tablet_id);
 }
@@ -192,7 +192,7 @@ int64_t ExternalMiniClusterFsInspector::GetTabletSuperBlockMTimeOrDie(int ts_ind
 
 string ExternalMiniClusterFsInspector::GetConsensusMetadataPathOnTS(int index,
                                                                     const string& tablet_id) const {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string data_dir = cluster_->tablet_server(index)->data_dirs()[0];
   string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
   return JoinPathSegments(cmeta_dir, tablet_id);
 }
