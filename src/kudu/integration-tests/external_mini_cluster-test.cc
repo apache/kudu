@@ -78,27 +78,14 @@ void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   cluster.Shutdown();
 }
 
-TEST_F(ExternalMiniClusterTest, TestKerberosRenewal) {
-  if (!AllowSlowTests()) return;
-
-  ExternalMiniClusterOptions opts;
-  opts.enable_kerberos = true;
-  // Set the kerberos ticket lifetime as 5 seconds to force ticket renewal every 5 seconds.
-  opts.mini_kdc_options.ticket_lifetime = "15s";
-  opts.num_tablet_servers = 1;
-
-  SmokeTestKerberizedCluster(std::move(opts));
-}
-
 TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
   if (!AllowSlowTests()) return;
 
   ExternalMiniClusterOptions opts;
   opts.enable_kerberos = true;
-  // Set the kerberos ticket lifetime and the renew lifetime as 5 seconds each, to force the
-  // processes to acquire a new ticket instead of being able to renew the existing one.
+  // Set the kerberos ticket lifetime as 15 seconds to force ticket reacquisition every 15 seconds.
+  // Note that we do not renew tickets but always acquire a new one.
   opts.mini_kdc_options.ticket_lifetime = "15s";
-  opts.mini_kdc_options.renew_lifetime = "15s";
   opts.num_tablet_servers = 1;
 
   SmokeTestKerberizedCluster(std::move(opts));

@@ -108,12 +108,12 @@ GROUP_FLAG_VALIDATOR(keytab_permissions, &ValidateKeytabPermissions);
 // Global context for usage of the Krb5 library.
 krb5_context g_krb5_ctx;
 
-// Global instance of the context used by the kinit/renewal thread.
+// Global instance of the context used by the kinit/reacquire thread.
 KinitContext* g_kinit_ctx;
 
-// This lock is used to avoid a race while renewing the kerberos ticket.
+// This lock is used to avoid a race while reacquiring the kerberos ticket.
 // The race can occur between the time we reinitialize the cache and the
-// time when we actually store the renewed credential back in the cache.
+// time when we actually store the new credentials back in the cache.
 RWMutex* g_kerberos_reinit_lock;
 
 class KinitContext {
@@ -224,15 +224,15 @@ void RenewThread() {
 int32_t KinitContext::GetNextRenewInterval(uint32_t num_retries) {
   int32_t time_remaining = ticket_end_timestamp_ - time(nullptr);
 
-  // If the last ticket renewal was a failure, we back off our retry attempts exponentially.
+  // If the last ticket reacqusition was a failure, we back off our retry attempts exponentially.
   if (num_retries > 0) return GetBackedOffRenewInterval(time_remaining, num_retries);
 
   // If the time remaining between now and ticket expiry is:
-  // * > 10 minutes:   We attempt to renew the ticket between 5 seconds and 5 minutes before the
+  // * > 10 minutes:   We attempt to reacquire the ticket between 5 seconds and 5 minutes before the
   //                   ticket expires.
-  // * 5 - 10 minutes: We attempt to renew the ticket betwen 5 seconds and 1 minute before the
+  // * 5 - 10 minutes: We attempt to reacquire the ticket betwen 5 seconds and 1 minute before the
   //                   ticket expires.
-  // * < 5 minutes:    Attempt to renew the ticket every 'time_remaining'.
+  // * < 5 minutes:    Attempt to reacquire the ticket every 'time_remaining'.
   // The jitter is added to make sure that every server doesn't flood the KDC at the same time.
   random_device rd;
   mt19937 generator(rd());
@@ -275,7 +275,7 @@ Status KinitContext::DoRenewal() {
         krb5_free_cred_contents(g_krb5_ctx, &creds); });
     if (krb5_is_config_principal(g_krb5_ctx, creds.server)) continue;
 
-    // We only want to renew the TGT (Ticket Granting Ticket). Ignore all other tickets.
+    // We only want to reacquire the TGT (Ticket Granting Ticket). Ignore all other tickets.
     // This follows the same format as is_local_tgt() from krb5:src/clients/klist/klist.c
     if (creds.server->length != 2 ||
         data_eq(creds.server->data[1], principal_->realm) == 0 ||
@@ -284,58 +284,30 @@ Status KinitContext::DoRenewal() {
       continue;
     }
 
-    time_t now = time(nullptr);
-    time_t ticket_expiry = creds.times.endtime;
-    time_t renew_till = creds.times.renew_till;
-    time_t renew_deadline = renew_till - 30;
-
     krb5_creds new_creds;
     memset(&new_creds, 0, sizeof(krb5_creds));
     auto cleanup_new_creds = MakeScopedCleanup([&]() {
         krb5_free_cred_contents(g_krb5_ctx, &new_creds); });
-    // If the ticket has already expired or if there's only a short period before which the
-    // renew window closes, we acquire a new ticket.
-    if (ticket_expiry < now || renew_deadline < now) {
-      // Acquire a new ticket using the keytab. This ticket will automatically be put into the
-      // credential cache.
-      {
-        std::lock_guard<RWMutex> l(*g_kerberos_reinit_lock);
-        KRB5_RETURN_NOT_OK_PREPEND(krb5_get_init_creds_keytab(g_krb5_ctx, &new_creds, principal_,
-                                                              keytab_, 0 /* valid from now */,
-                                                              nullptr /* TKT service name */,
-                                                              opts_),
-                                   "Reacquire error: unable to login from keytab");
+    // Acquire a new ticket using the keytab. This ticket will automatically be put into the
+    // credential cache.
+    {
+      std::lock_guard<RWMutex> l(*g_kerberos_reinit_lock);
+      KRB5_RETURN_NOT_OK_PREPEND(krb5_get_init_creds_keytab(g_krb5_ctx, &new_creds, principal_,
+                                                            keytab_, 0 /* valid from now */,
+                                                            nullptr /* TKT service name */,
+                                                            opts_),
+                                 "Reacquire error: unable to login from keytab");
 #ifdef __APPLE__
-        // Heimdal krb5 doesn't have the 'krb5_get_init_creds_opt_set_out_ccache' option,
-        // so use this alternate route.
-        KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
-                                   "Reacquire error: could not init ccache");
+      // Heimdal krb5 doesn't have the 'krb5_get_init_creds_opt_set_out_ccache' option,
+      // so use this alternate route.
+      KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
+                                 "Reacquire error: could not init ccache");
 
-        KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_store_cred(g_krb5_ctx, ccache_, &creds),
-                                   "Reacquire error: could not store creds in cache");
+      KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_store_cred(g_krb5_ctx, ccache_, &creds),
+                                 "Reacquire error: could not store creds in cache");
 #endif
-      }
-      LOG(INFO) << "Successfully reacquired a new kerberos TGT";
-    } else {
-      // Renew existing ticket.
-      KRB5_RETURN_NOT_OK_PREPEND(krb5_get_renewed_creds(g_krb5_ctx, &new_creds, principal_,
-                                                        ccache_, nullptr),
-                                 "Failed to renew ticket");
-
-      {
-        // Take the write lock here so that any connections undergoing negotiation have to wait
-        // until the new credentials are placed in the cache.
-        std::lock_guard<RWMutex> l(*g_kerberos_reinit_lock);
-        // Clear existing credentials in cache.
-        KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
-                                   "Failed to re-initialize ccache");
-
-        // Store the new credentials in the cache.
-        KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_store_cred(g_krb5_ctx, ccache_, &new_creds),
-                                   "Failed to store credentials in ccache");
-      }
-      LOG(INFO) << "Successfully renewed kerberos TGT";
     }
+    LOG(INFO) << "Successfully reacquired a new kerberos TGT";
     ticket_end_timestamp_ = new_creds.times.endtime;
     break;
   }
@@ -509,9 +481,9 @@ Status InitKerberosForServer() {
   RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(FLAGS_keytab_file, principal), "unable to kinit");
 
   g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
-  scoped_refptr<Thread> renew_thread;
-  // Start the renewal thread.
-  RETURN_NOT_OK(Thread::Create("kerberos", "renewal thread", &RenewThread, &renew_thread));
+  scoped_refptr<Thread> reacquire_thread;
+  // Start the reacquire thread.
+  RETURN_NOT_OK(Thread::Create("kerberos", "reacquire thread", &RenewThread, &reacquire_thread));
 
   return Status::OK();
 }

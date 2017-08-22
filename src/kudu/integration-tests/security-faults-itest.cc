@@ -252,7 +252,7 @@ TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
 
   ASSERT_OK(cluster_->kdc()->Start());
 
-  // No renewal/re-acquire thread is run on the test client, so need to
+  // No re-acquire thread is run on the test client, so need to
   // re-acquire tickets explicitly.
   // TODO(aserbin): use constant instead of 'test-admin' string literal here
   ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));

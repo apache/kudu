@@ -35,8 +35,8 @@ namespace security {
 Status InitKerberosForServer();
 
 // Returns the process lock 'kerberos_reinit_lock'
-// This lock is acquired in write mode while the ticket is being renewed, and
-// acquired in read mode before using the SASL library which might require a ticket.
+// This lock is taken in write mode while the ticket is being reacquired, and
+// taken in read mode before using the SASL library which might require a ticket.
 RWMutex* KerberosReinitLock();
 
 // Return the full principal (user/host@REALM) that the server has used to
