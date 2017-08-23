@@ -14,9 +14,11 @@
 package org.apache.kudu.client;
 
 import com.google.common.net.HostAndPort;
+import org.junit.Assert;
 import org.junit.Test;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 public class TestServerInfo {
   /**
@@ -31,5 +33,54 @@ public class TestServerInfo {
     for (int i = 0; i < 100; ++i) {
       new ServerInfo(uuid, hap, ia);
     }
+  }
+
+  /**
+   * Test for KUDU-2103. Checks if the original hostnames is returned if unknown.
+   */
+  @Test
+  public void testGetAndCanonicalizeUnknownHostname() throws Exception {
+    installFakeDNS("master1.example.com", "server123.example.com", "10.1.2.3");
+
+    ServerInfo serverInfo = new ServerInfo(
+        "nevermind",
+        HostAndPort.fromHost("master2.example.com"),
+        InetAddress.getByName("10.1.2.3"));
+
+    Assert.assertEquals("master2.example.com", serverInfo.getAndCanonicalizeHostname());
+  }
+
+  /**
+   * Test for KUDU-2103. Checks if the canonical hostname is returned instead
+   * of the one it's set to.
+   */
+  @Test
+  public void testGetAndCanonicalizeHostname() throws Exception {
+    installFakeDNS("master1.example.com", "server123.example.com", "10.1.2.3");
+
+    ServerInfo serverInfo = new ServerInfo(
+        "nevermind",
+        HostAndPort.fromHost("master1.example.com"),
+        InetAddress.getByName("10.1.2.3"));
+
+    Assert.assertEquals("server123.example.com", serverInfo.getAndCanonicalizeHostname());
+  }
+
+  /**
+   * Helper method to install FakeDNS with the expected values for the tests
+   *
+   * @param alias alias to be set for forward resolution
+   * @param canonical canonical to be set for reverse resolution
+   * @param ip IP both hostnames point to
+   * @throws UnknownHostException if the "ip" is an unknown host
+   */
+  private void installFakeDNS(String alias, String canonical, String ip)
+      throws UnknownHostException {
+    FakeDNS fakeDNS = FakeDNS.getInstance();
+    fakeDNS.install();
+    InetAddress inetAddress = InetAddress.getByName(ip);
+    fakeDNS.addForwardResolution(alias, inetAddress);
+    fakeDNS.addForwardResolution(canonical, inetAddress);
+    fakeDNS.addReverseResolution(inetAddress, canonical);
   }
 }

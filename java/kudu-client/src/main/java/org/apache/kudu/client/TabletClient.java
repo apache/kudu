@@ -588,7 +588,7 @@ public class TabletClient extends SimpleChannelUpstreamHandler {
                                final ChannelStateEvent e) {
     assert chan != null;
     Channels.write(chan, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
-    Negotiator negotiator = new Negotiator(serverInfo.getHostname(),
+    Negotiator negotiator = new Negotiator(serverInfo.getAndCanonicalizeHostname(),
         kuduClient.getSecurityContext());
     ctx.getPipeline().addBefore(ctx.getName(), "negotiation", negotiator);
     negotiator.sendHello(chan);
