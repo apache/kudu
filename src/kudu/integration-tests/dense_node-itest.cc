@@ -218,10 +218,13 @@ TEST_F(DenseNodeTest, RunTest) {
   }
   if (FLAGS_measure_startup_wait_for_bootstrap) {
     LOG_TIMING(INFO, "bootstrapping tablets") {
+      LOG(INFO) << "waiting for tablets running";
       cluster_->WaitForTabletsRunning(cluster_->tablet_server(0),
                                       FLAGS_num_tablets,
                                       MonoDelta::FromSeconds(3600));
     }
+  } else {
+    LOG(INFO) << "not waiting for bootstrapping tablets (flag disabled)";
   }
   cluster_->Shutdown();
 
