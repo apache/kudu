@@ -1050,10 +1050,25 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
+# "make pb-gen": generate all protobuf source/header files
+############################################################
+if (UNIX)
+  add_custom_target(pb-gen)
+endif (UNIX)
+
+############################################################
+# "make krpc-gen": generate all KRPC source/header files
+############################################################
+if (UNIX)
+  add_custom_target(krpc-gen)
+endif (UNIX)
+
+############################################################
 # "make iwyu" target
 ############################################################
 if (UNIX)
   add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh)
+  add_dependencies(iwyu pb-gen krpc-gen)
 endif (UNIX)
 
 ############################################################

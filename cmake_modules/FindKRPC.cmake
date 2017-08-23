@@ -110,4 +110,8 @@ function(KRPC_GENERATE SRCS HDRS TGTS)
   set(${SRCS} ${${SRCS}} PARENT_SCOPE)
   set(${HDRS} ${${HDRS}} PARENT_SCOPE)
   set(${TGTS} ${${TGTS}} PARENT_SCOPE)
+
+  # The 'krpc-gen' is a high-level target in $KUDU_ROOT/CMakeLists.txt to
+  # generate all KRPC proxy/service stub files.
+  add_dependencies(krpc-gen ${${TGTS}})
 endfunction()

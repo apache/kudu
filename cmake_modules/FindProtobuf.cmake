@@ -188,6 +188,10 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS TGTS)
   set(${SRCS} ${${SRCS}} PARENT_SCOPE)
   set(${HDRS} ${${HDRS}} PARENT_SCOPE)
   set(${TGTS} ${${TGTS}} PARENT_SCOPE)
+
+  # The 'pb-gen' is a high-level target in $KUDU_ROOT/CMakeLists.txt to
+  # process protobuf definitions and generate corresponding header/source files.
+  add_dependencies(pb-gen ${${TGTS}})
 endfunction()
 
 
