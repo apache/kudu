@@ -473,6 +473,8 @@ TestOpType PickOpAtRandom(TestOpSets sets) {
       return kAllOps[rand() % kAllOps.size()];
     case PK_ONLY:
       return kPkOnlyOps[rand() % kPkOnlyOps.size()];
+    default:
+      LOG(FATAL) << "Unknown TestOpSets type: " << sets;
   }
 }
 

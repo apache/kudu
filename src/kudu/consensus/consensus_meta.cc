@@ -132,6 +132,7 @@ const RaftConfigPB& ConsensusMetadata::config_unlocked(RaftConfigState type) con
     case ACTIVE_CONFIG: return active_config_unlocked();
     case COMMITTED_CONFIG: return committed_config_unlocked();
     case PENDING_CONFIG: return pending_config_unlocked();
+    default: LOG(FATAL) << "Unknown RaftConfigState type: " << type;
   }
 }
 
