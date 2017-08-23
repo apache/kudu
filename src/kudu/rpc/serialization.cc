@@ -53,7 +53,7 @@ enum {
 };
 
 void SerializeMessage(const MessageLite& message, faststring* param_buf,
-                      int additional_size, bool use_cached_size) {
+                        int additional_size, bool use_cached_size) {
   int pb_size = use_cached_size ? message.GetCachedSize() : message.ByteSize();
   DCHECK_EQ(message.ByteSize(), pb_size);
   int recorded_size = pb_size + additional_size;
@@ -71,7 +71,7 @@ void SerializeMessage(const MessageLite& message, faststring* param_buf,
   uint8_t* dst = param_buf->data();
   dst = CodedOutputStream::WriteVarint32ToArray(recorded_size, dst);
   dst = message.SerializeWithCachedSizesToArray(dst);
-  DCHECK_EQ(dst, param_buf->data() + size_with_delim);
+  CHECK_EQ(dst, param_buf->data() + size_with_delim);
 }
 
 void SerializeHeader(const MessageLite& header,
@@ -101,32 +101,11 @@ void SerializeHeader(const MessageLite& header,
   dst = header.SerializeWithCachedSizesToArray(dst);
 
   // We should have used the whole buffer we allocated.
-  DCHECK_EQ(dst, header_buf->data() + header_tot_len);
-}
-
-void SerializeFooter(const MessageLite& footer,
-                     faststring* footer_buf) {
-  size_t footer_pb_len = footer.ByteSize();
-  size_t footer_tot_len = footer_pb_len + CodedOutputStream::VarintSize32(footer_pb_len);
-
-  footer_buf->resize(footer_tot_len);
-  uint8_t* dst = footer_buf->data();
-
-  dst = CodedOutputStream::WriteVarint32ToArray(footer_pb_len, dst);
-  dst = footer.SerializeWithCachedSizesToArray(dst);
-
-  DCHECK_EQ(dst, footer_buf->data() + footer_tot_len);
-}
-
-void IncrementMsgLength(size_t inc_len, faststring* header_buf) {
-  uint8_t* dst = header_buf->data();
-  uint32_t tot_len = NetworkByteOrder::Load32(dst);
-  NetworkByteOrder::Store32(dst, tot_len + inc_len);
+  CHECK_EQ(dst, header_buf->data() + header_tot_len);
 }
 
 Status ParseMessage(const Slice& buf,
                     MessageLite* parsed_header,
-                    MessageLite* parsed_footer,
                     Slice* parsed_main_message) {
 
   // First grab the total length
@@ -162,37 +141,20 @@ Status ParseMessage(const Slice& buf,
                               KUDU_REDACT(buf.ToDebugString()));
   }
 
-  int main_msg_offset = in.CurrentPosition();
-  DCHECK_GT(main_msg_offset, 0);
   if (PREDICT_FALSE(!in.Skip(main_msg_len))) {
     return Status::Corruption(
         StringPrintf("Invalid packet: data too short, expected %d byte main_msg", main_msg_len),
         KUDU_REDACT(buf.ToDebugString()));
   }
 
-  if (parsed_footer != nullptr) {
-    uint32_t footer_len = 0;
-    if (PREDICT_FALSE(!in.ReadVarint32(&footer_len))) {
-      return Status::Corruption("Invalid packet: missing footer delimiter",
-                                KUDU_REDACT(buf.ToDebugString()));
-    }
-
-    l = in.PushLimit(footer_len);
-    if (PREDICT_FALSE(!parsed_footer->ParseFromCodedStream(&in))) {
-      return Status::Corruption("Invalid packet: footer too short",
-                                KUDU_REDACT(buf.ToDebugString()));
-    }
-    in.PopLimit(l);
-  }
-
-  *parsed_main_message = Slice(buf.data() + main_msg_offset, main_msg_len);
-
   if (PREDICT_FALSE(in.BytesUntilLimit() > 0)) {
     return Status::Corruption(
-        StringPrintf("Invalid packet: %d extra bytes at end of packet",
-                     in.BytesUntilLimit()), KUDU_REDACT(buf.ToDebugString()));
+      StringPrintf("Invalid packet: %d extra bytes at end of packet", in.BytesUntilLimit()),
+      KUDU_REDACT(buf.ToDebugString()));
   }
 
+  *parsed_main_message = Slice(buf.data() + buf.size() - main_msg_len,
+                              main_msg_len);
   return Status::OK();
 }
 

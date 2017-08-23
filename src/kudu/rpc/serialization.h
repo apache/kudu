@@ -65,28 +65,13 @@ void SerializeHeader(const google::protobuf::MessageLite& header,
                      size_t param_len,
                      faststring* header_buf);
 
-// Serialize the request footer into a buffer which is allocated by this function.
-// In: 'footer' Protobuf footer to serialize,
-// Out: 'footer_buf' faststring to be populated with the serialized bytes.
-void SerializeFooter(const google::protobuf::MessageLite& footer,
-                     faststring* footer_buf);
-
-// Increment the total message length in a header after it was serialized initially.
-// In: 'inc_len' bytes to increment the total message length by.
-//     'header_buf' is the serialized PB buffer returned from SerializeHeader().
-//      Assumes that the first 4 bytes encode the total msg length in big endian order.
-void IncrementMsgLength(size_t inc_len,
-                        faststring* header_buf);
-
 // Deserialize the request.
 // In: data buffer Slice.
 // Out: parsed_header PB initialized,
-//      parsed_footer PB initialized if it's not NULL,
 //      parsed_main_message pointing to offset in original buffer containing
 //      the main payload.
 Status ParseMessage(const Slice& buf,
                     google::protobuf::MessageLite* parsed_header,
-                    google::protobuf::MessageLite* parsed_footer,
                     Slice* parsed_main_message);
 
 // Serialize the RPC connection header (magic number + flags).

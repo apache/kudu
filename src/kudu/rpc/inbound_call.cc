@@ -69,14 +69,7 @@ InboundCall::~InboundCall() {}
 Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
   TRACE_EVENT_FLOW_BEGIN0("rpc", "InboundCall", this);
   TRACE_EVENT0("rpc", "InboundCall::ParseFrom");
-  bool has_footer = conn_->RemoteSupportsFooter();
-  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_,
-      has_footer ? &footer_ : nullptr, &serialized_request_));
-
-  // If the transfer was already aborted, return.
-  if (PREDICT_FALSE(has_footer && footer_.has_aborted() && footer_.aborted())) {
-    return Status::Aborted("request footer has aborted flag set");
-  }
+  RETURN_NOT_OK(serialization::ParseMessage(transfer->data(), &header_, &serialized_request_));
 
   // Adopt the service/method info from the header as soon as it's available.
   if (PREDICT_FALSE(!header_.has_remote_method())) {

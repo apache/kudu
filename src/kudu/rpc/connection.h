@@ -130,7 +130,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   void QueueResponseForCall(gscoped_ptr<InboundCall> call);
 
   // Cancel an outbound call by removing any reference to it by CallAwaitingResponse
-  // in 'awaiting_response_'.
+  // in 'awaiting_responses_'.
   void CancelOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // The address of the remote end of the connection.
@@ -203,16 +203,6 @@ class Connection : public RefCountedThreadSafe<Connection> {
     remote_features_ = std::move(remote_features);
   }
 
-  // Returns true if the remote end has feature flag "REQUEST_FOOTERS".
-  // Always returns false before negotiation completes.
-  bool RemoteSupportsFooter() const {
-    // Note the negotiation thread may be writing to 'remote_features_' before
-    // 'negotiation_complete_' is set to true. It's not safe to read 'remote_features_'
-    // from the reactor thread when 'negotiation_complete_' is false.
-    return negotiation_complete_ &&
-        ContainsKey(remote_features_, RpcFeatureFlag::REQUEST_FOOTERS);
-  }
-
   void set_remote_user(RemoteUser user) {
     DCHECK_EQ(direction_, SERVER);
     remote_user_ = std::move(user);
@@ -250,13 +240,9 @@ class Connection : public RefCountedThreadSafe<Connection> {
     // Notification from libev that the call has timed out.
     void HandleTimeout(ev::timer &watcher, int revents);
 
-    Connection *conn = nullptr;
+    Connection *conn;
     std::shared_ptr<OutboundCall> call;
     ev::timer timeout_timer;
-
-    // The pending outbound transfer for this call. Set when an outbound call is
-    // enqueued. Set back to NULL once the transfer has been completely sent.
-    OutboundTransfer* transfer = nullptr;
 
     // We time out RPC calls in two stages. This is set to the amount of timeout
     // remaining after the next timeout fires. See Connection::QueueOutboundCall().
@@ -292,41 +278,10 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Set it to Failed.
   void HandleOutboundCallTimeout(CallAwaitingResponse *car);
 
-  // Perform some checks on 'transfer' for an outbound call before beginning
-  // transmission. The check could fail if:
-  // 1. the outbound call has already timed out or has been cancelled.
-  // 2. the remote server doesn't have all the required feature flags.
-  //
-  // If the checks pass, the outbound call is set to 'SENDING' state.
-  // Appends a footer to the outbound call if remote supports "REQUEST_FOOTERS".
-  //
-  // If the checks fail due to (1), the transfer is already aborted and callback
-  // has already been invoked. If it fails due to (2), the transfer is aborted
-  // and the outbound call's callback is called with the failure status.
-  //
-  // Returns true if all checks pass; returns false otherwise.
-  bool StartCallTransfer(OutboundTransfer *transfer);
-
-  // Cancel any outbound transfer associated with 'car' and abort it with 'status'.
-  // Called when an outbound call is cancelled or timed out. If the remote server
-  // doesn't support footer (e.g. older version of Kudu server), it's fatal for the
-  // call to have any non-empty sidecars. The reasoning is as follows:
-  //
-  // Up till the point footer is introduced, Kudu doesn't have any outbound call which
-  // uses client sidecars. If any future RPCs make use of client sidecars, the Kudu
-  // server code has to be updated to process the sidecars too, in which case the newer
-  // version of Kudu server should already be able to process footers.
-  void CancelOutboundTransfer(CallAwaitingResponse *car, const Status &status);
-
   // Queue a transfer for sending on this connection.
   // We will take ownership of the transfer.
   // This must be called from the reactor thread.
   void QueueOutbound(gscoped_ptr<OutboundTransfer> transfer);
-
-  // Remove the front transfer from the outbound transfers queue. If the transfer is
-  // associated with an outbound call, also clears the transfer reference from the
-  // associated CallAwaitingResponse.
-  void OutboundQueuePopFront();
 
   // Internal test function for injecting cancellation request when 'call'
   // reaches state specified in 'FLAGS_rpc_inject_cancellation_state'.

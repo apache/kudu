@@ -42,14 +42,13 @@ class Socket;
 
 namespace rpc {
 
-class OutboundCall;
 struct TransferCallbacks;
 
 class TransferLimits {
  public:
   enum {
     kMaxSidecars = 10,
-    kMaxPayloadSlices = kMaxSidecars + 3 // (header + msg + footer)
+    kMaxPayloadSlices = kMaxSidecars + 2 // (header + msg)
   };
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(TransferLimits);
@@ -138,17 +137,6 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // This triggers TransferCallbacks::NotifyTransferAborted.
   void Abort(const Status &status);
 
-  // Cancel the current transfer. If the transfer hasn't started yet, call Abort()
-  // with 'status'. If the transfer has started already, relinquish the sidecars
-  // associated with 'call' and send the remaining bytes as dummy bytes. When the
-  // transfer eventually finishes, NotifyTransferAborted() wll be called with 'status'.
-  void Cancel(const std::shared_ptr<OutboundCall> &call, const Status &status);
-
-  // Called right before the outbound transfer is sent for the first time to append
-  // a footer to the entire message. Only valid if the transfer is for an outbound
-  // call and the remote server has RPC feature flag "REQUEST_FOOTERS".
-  void AppendFooter(const std::shared_ptr<OutboundCall> &call);
-
   // send from our buffers into the sock
   Status SendBuffer(Socket &socket);
 
@@ -157,9 +145,6 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
 
   // Return true if the entire transfer has been sent.
   bool TransferFinished() const;
-
-  // Return true if the transfer has been aborted before completion.
-  bool TransferAborted() const;
 
   // Return the total number of bytes to be sent (including those already sent)
   int32_t TotalLength() const;
@@ -199,11 +184,7 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // In the case of call responses, kInvalidCallId
   int32_t call_id_;
 
-  // Set to true when the outbound transfer is aborted (e.g. time out, cancellation).
   bool aborted_;
-
-  // Status passed to NotifyTransferAborted() when the transfer is aborted.
-  Status status_;
 
   DISALLOW_COPY_AND_ASSIGN(OutboundTransfer);
 };

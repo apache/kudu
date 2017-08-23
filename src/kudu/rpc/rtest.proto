@@ -58,7 +58,8 @@ message SleepResponsePB {
 message SleepWithSidecarRequestPB {
   required uint32 sleep_micros = 1;
   required uint32 pattern = 2;
-  repeated uint32 sidecar_idx = 3;
+  required uint32 num_repetitions = 3;
+  required uint32 sidecar_idx = 4;
 }
 
 message SleepWithSidecarResponsePB {

@@ -504,9 +504,6 @@ Status ServerNegotiation::HandleNegotiate(const NegotiatePB& request) {
       server_features_.insert(TLS_AUTHENTICATION_ONLY);
     }
   }
-  if (ContainsKey(client_features_, REQUEST_FOOTERS)) {
-    server_features_.insert(REQUEST_FOOTERS);
-  }
 
   for (RpcFeatureFlag feature : server_features_) {
     response.add_supported_features(feature);

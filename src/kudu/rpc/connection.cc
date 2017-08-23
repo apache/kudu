@@ -234,44 +234,11 @@ void Connection::CallAwaitingResponse::HandleTimeout(ev::timer &watcher, int rev
   conn->HandleOutboundCallTimeout(this);
 }
 
-void Connection::CancelOutboundTransfer(CallAwaitingResponse *car, const Status &status) {
-  DCHECK(reactor_thread_->IsCurrentThread());
-  DCHECK(car->call);
-  const shared_ptr<OutboundCall>& call = car->call;
-  if (call->IsInTransmission()) {
-    DCHECK(call->call_id_assigned());
-    DCHECK(car->transfer != nullptr);
-    DCHECK(car->transfer->is_for_outbound_call());
-    if (call->IsOnOutboundQueue()) {
-      // If the transfer hasn't started yet, it should be safe to just call Abort().
-      car->transfer->Abort(status);
-    } else if (RemoteSupportsFooter()) {
-      car->transfer->Cancel(car->call, status);
-    } else {
-      // If the remote server doesn't support parsing footer, there is no way to safely
-      // cancel a mid-transmission trasfer with sidecars. It's fatal to have non-empty
-      // sidecars attached to the call as it may result in use-after-free of the sidecars.
-      // Please see the header comment for details.
-      CHECK(!call->HasNonEmptySidecars());
-    }
-  }
-}
-
 void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
   DCHECK(reactor_thread_->IsCurrentThread());
-
-  if (!car->call) {
-    // If cancellation callback is scheduled before the timeout callback is
-    // invoked, car->call may be nullptr.
-    return;
-  }
-
+  DCHECK(car->call);
   // The timeout timer is stopped by the car destructor exiting Connection::HandleCallResponse()
   DCHECK(!car->call->IsFinished());
-
-  // Cancel or abort any outbound transfer for this call so references to the sidecars
-  // can be relinquished.
-  CancelOutboundTransfer(car, Status::Aborted("timed out"));
 
   // Mark the call object as failed.
   car->call->SetTimedOut(negotiation_complete_ ? Phase::REMOTE_CALL
@@ -295,10 +262,7 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
 void Connection::CancelOutboundCall(const shared_ptr<OutboundCall> &call) {
   CallAwaitingResponse* car = FindPtrOrNull(awaiting_response_, call->call_id());
   if (car != nullptr) {
-    car->timeout_timer.stop();
-    // Cancel any outbound transfer for this call so references to the sidecars can be
-    // relinquished.
-    CancelOutboundTransfer(car, Status::Aborted("cancelled"));
+    // car->call may be NULL if the call has timed out already.
     DCHECK(!car->call || car->call.get() == call.get());
     car->call.reset();
   }
@@ -362,8 +326,8 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   // yet assigned a call ID.
   DCHECK(!call->call_id_assigned());
 
-  // We shouldn't reach this point if 'call' was cancelled.
-  DCHECK(!call->IsCancelled());
+  // We shouldn't reach this point if 'call' was requested to be cancelled.
+  DCHECK(!call->cancellation_requested());
 
   // Assign the call ID.
   int32_t call_id = GetNextCallId();
@@ -427,11 +391,9 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
   }
 
   TransferCallbacks *cb = new CallTransferCallbacks(call, this);
-  gscoped_ptr<OutboundTransfer>
-      transfer(OutboundTransfer::CreateForCallRequest(call_id, tmp_slices, n_slices, cb));
-  car->transfer = transfer.get();
   awaiting_response_[call_id] = car.release();
-  QueueOutbound(std::move(transfer));
+  QueueOutbound(gscoped_ptr<OutboundTransfer>(
+      OutboundTransfer::CreateForCallRequest(call_id, tmp_slices, n_slices, cb)));
 }
 
 // Callbacks for sending an RPC call response from the server.
@@ -448,7 +410,7 @@ struct ResponseTransferCallbacks : public TransferCallbacks {
   ~ResponseTransferCallbacks() {
     // Remove the call from the map.
     InboundCall *call_from_map = EraseKeyReturnValuePtr(
-        &conn_->calls_being_handled_, call_->call_id());
+      &conn_->calls_being_handled_, call_->call_id());
     DCHECK_EQ(call_from_map, call_.get());
   }
 
@@ -457,8 +419,8 @@ struct ResponseTransferCallbacks : public TransferCallbacks {
   }
 
   virtual void NotifyTransferAborted(const Status &status) OVERRIDE {
-    LOG(WARNING) << "Connection torn down before " << call_->ToString()
-                 << " could send its response: " << status.ToString();
+    LOG(WARNING) << "Connection torn down before " <<
+      call_->ToString() << " could send its response";
     delete this;
   }
 
@@ -581,11 +543,7 @@ void Connection::HandleIncomingCall(gscoped_ptr<InboundTransfer> transfer) {
 
   gscoped_ptr<InboundCall> call(new InboundCall(this));
   Status s = call->ParseFrom(std::move(transfer));
-  if (PREDICT_FALSE(s.IsAborted())) {
-    VLOG(2) << "Incoming call was aborted due to: "<< s.ToString();
-    return;
-  }
-  if (PREDICT_FALSE(!s.ok())) {
+  if (!s.ok()) {
     LOG(WARNING) << ToString() << ": received bad data: " << s.ToString();
     // TODO: shutdown? probably, since any future stuff on this socket will be
     // "unsynchronized"
@@ -610,7 +568,7 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
   CHECK_OK(resp->ParseFrom(std::move(transfer)));
 
   CallAwaitingResponse *car_ptr =
-      EraseKeyReturnValuePtr(&awaiting_response_, resp->call_id());
+    EraseKeyReturnValuePtr(&awaiting_response_, resp->call_id());
   if (PREDICT_FALSE(car_ptr == nullptr)) {
     LOG(WARNING) << ToString() << ": Got a response for call id " << resp->call_id() << " which "
                  << "was not pending! Ignoring.";
@@ -633,58 +591,6 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
   MaybeInjectCancellation(car->call);
 }
 
-bool Connection::StartCallTransfer(OutboundTransfer *transfer) {
-  DCHECK(!transfer->TransferStarted());
-  CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
-
-  // If the call has already timed out or has already been cancelled, the 'call'
-  // field would be set to NULL. In that case, don't bother sending it.
-  if (!car->call) {
-    DCHECK(transfer->TransferAborted());
-    return false;
-  }
-
-  DCHECK(!transfer->TransferAborted());
-  // If this is the start of the transfer, then check if the server has the
-  // required RPC flags. We have to wait until just before the transfer in
-  // order to ensure that the negotiation has taken place, so that the flags
-  // are available.
-  DCHECK(negotiation_complete_);
-  const set<RpcFeatureFlag>& required_features = car->call->required_rpc_features();
-  if (!includes(remote_features_.begin(), remote_features_.end(),
-                required_features.begin(), required_features.end())) {
-    Status s = Status::NotSupported("server does not support the required RPC features");
-    transfer->Abort(s);
-    car->call->SetFailed(s, Phase::REMOTE_CALL);
-    // Test cancellation when 'call_' is in 'FINISHED_ERROR' state.
-    MaybeInjectCancellation(car->call);
-    car->call.reset();
-    return false;
-  }
-
-  // The transfer is ready to be sent. Append a footer if the remote system supports it.
-  // It has to be done here because remote features cannot be determined until negotiation
-  // completes. We know for sure that negotiation has completed when we reach this point.
-  if (RemoteSupportsFooter()) {
-    transfer->AppendFooter(car->call);
-  }
-  car->call->SetSending();
-  // Test cancellation when 'call_' is in 'SENDING' state.
-  MaybeInjectCancellation(car->call);
-  return true;
-}
-
-void Connection::OutboundQueuePopFront() {
-  OutboundTransfer *transfer = &(outbound_transfers_.front());
-  // Remove all references to 'transfer' before deleting it.
-  if (transfer->is_for_outbound_call()) {
-    CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
-    car->transfer = nullptr;
-  }
-  outbound_transfers_.pop_front();
-  delete transfer;
-}
-
 void Connection::WriteHandler(ev::io &watcher, int revents) {
   DCHECK(reactor_thread_->IsCurrentThread());
 
@@ -695,6 +601,7 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
   }
   DVLOG(3) << ToString() << ": writeHandler: revents = " << revents;
 
+  OutboundTransfer *transfer;
   if (outbound_transfers_.empty()) {
     LOG(WARNING) << ToString() << " got a ready-to-write callback, but there is "
       "nothing to write.";
@@ -703,14 +610,45 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
   }
 
   while (!outbound_transfers_.empty()) {
-    OutboundTransfer *transfer = &(outbound_transfers_.front());
-    // Transfer for outbound call must call StartCallTransfer() before transmission can
-    // begin to append footer to the payload if the remote supports it.
-    if (!transfer->TransferStarted() &&
-        transfer->is_for_outbound_call() &&
-        !StartCallTransfer(transfer)) {
-      OutboundQueuePopFront();
-      continue;
+    transfer = &(outbound_transfers_.front());
+
+    if (!transfer->TransferStarted()) {
+
+      if (transfer->is_for_outbound_call()) {
+        CallAwaitingResponse* car = FindOrDie(awaiting_response_, transfer->call_id());
+        if (!car->call) {
+          // If the call has already timed out or has already been cancelled, the 'call'
+          // field would be set to NULL. In that case, don't bother sending it.
+          outbound_transfers_.pop_front();
+          transfer->Abort(Status::Aborted("already timed out or cancelled"));
+          delete transfer;
+          continue;
+        }
+
+        // If this is the start of the transfer, then check if the server has the
+        // required RPC flags. We have to wait until just before the transfer in
+        // order to ensure that the negotiation has taken place, so that the flags
+        // are available.
+        const set<RpcFeatureFlag>& required_features = car->call->required_rpc_features();
+        if (!includes(remote_features_.begin(), remote_features_.end(),
+                      required_features.begin(), required_features.end())) {
+          outbound_transfers_.pop_front();
+          Status s = Status::NotSupported("server does not support the required RPC features");
+          transfer->Abort(s);
+          car->call->SetFailed(s, negotiation_complete_ ? Phase::REMOTE_CALL
+                                                        : Phase::CONNECTION_NEGOTIATION);
+          // Test cancellation when 'call_' is in 'FINISHED_ERROR' state.
+          MaybeInjectCancellation(car->call);
+          car->call.reset();
+          delete transfer;
+          continue;
+        }
+
+        car->call->SetSending();
+
+        // Test cancellation when 'call_' is in 'SENDING' state.
+        MaybeInjectCancellation(car->call);
+      }
     }
 
     last_activity_time_ = reactor_thread_->cur_time();
@@ -720,11 +658,14 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
       reactor_thread_->DestroyConnection(this, status);
       return;
     }
+
     if (!transfer->TransferFinished()) {
       DVLOG(3) << ToString() << ": writeHandler: xfer not finished.";
       return;
     }
-    OutboundQueuePopFront();
+
+    outbound_transfers_.pop_front();
+    delete transfer;
   }
 
   // If we were able to write all of our outbound transfers,

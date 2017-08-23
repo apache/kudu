@@ -91,10 +91,6 @@ enum RpcFeatureFlag {
   // This is currently used for loopback connections only, so that compute
   // frameworks which schedule for locality don't pay encryption overhead.
   TLS_AUTHENTICATION_ONLY = 3;
-
-  // The RPC system is required to support parsing a footer in an incoming request.
-  // See RequestFooterPB below.
-  REQUEST_FOOTERS = 4;
 };
 
 // An authentication type. This is modeled as a oneof in case any of these
@@ -267,16 +263,6 @@ message RequestHeader {
   // These offsets are counted AFTER the message header, i.e., offset 0
   // is the first byte after the bytes for this protobuf.
   repeated uint32 sidecar_offsets = 16;
-}
-
-message RequestFooterPB {
-  // This flag indicates whether the incoming request has been aborted by the client
-  // and the request should be ignored.
-  optional bool aborted = 1 [ default = false ];
-
-  // Note that the footer is designed to be modified after the initial serialization
-  // and it will be re-serialized after modification. To avoid unexpected change in
-  // the total message size, keep to using fixed sized fields only in the footer.
 }
 
 message ResponseHeader {

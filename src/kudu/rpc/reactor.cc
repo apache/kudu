@@ -296,7 +296,7 @@ void ReactorThread::CancelOutboundCall(const shared_ptr<OutboundCall>& call) {
                      &conn)) {
     conn->CancelOutboundCall(call);
   }
-  call->Cancel(conn.get());
+  call->Cancel();
 }
 
 //
@@ -501,7 +501,7 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
   ThreadPool* negotiation_pool =
       reactor()->messenger()->negotiation_pool(conn->direction());
   RETURN_NOT_OK(negotiation_pool->SubmitClosure(
-      Bind(&Negotiation::RunNegotiation, conn, authentication, encryption, deadline)));
+        Bind(&Negotiation::RunNegotiation, conn, authentication, encryption, deadline)));
   return Status::OK();
 }
 

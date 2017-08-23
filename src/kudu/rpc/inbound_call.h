@@ -77,9 +77,9 @@ class InboundCall {
 
   // Parse an inbound call message.
   //
-  // This only deserializes the call header and footer, populating the 'header_',
-  // 'footer_' and 'serialized_request_' member variables. The actual call parameter
-  // is not deserialized, as this may be CPU-expensive, and this is called
+  // This only deserializes the call header, populating the 'header_' and
+  // 'serialized_request_' member variables. The actual call parameter is
+  // not deserialized, as this may be CPU-expensive, and this is called
   // from the reactor thread.
   Status ParseFrom(gscoped_ptr<InboundTransfer> transfer);
 
@@ -228,11 +228,8 @@ class InboundCall {
   // The connection on which this inbound call arrived.
   scoped_refptr<Connection> conn_;
 
-  // The header of the incoming call. Set by ParseFrom().
+  // The header of the incoming call. Set by ParseFrom()
   RequestHeader header_;
-
-  // The footer of the incoming call. Set by ParseFrom().
-  RequestFooterPB footer_;
 
   // The serialized bytes of the request param protobuf. Set by ParseFrom().
   // This references memory held by 'transfer_'.
