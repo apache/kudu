@@ -18,9 +18,12 @@
 package org.apache.kudu.client;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Throwables;
@@ -44,6 +47,12 @@ import sun.net.spi.nameservice.NameService;
 public class FakeDNS {
   static FakeDNS instance = new FakeDNS();
 
+  @GuardedBy("this")
+  private Map<String, InetAddress> forwardResolutions = new HashMap<>();
+
+  @GuardedBy("this")
+  private Map<InetAddress, String> reverseResolutions = new HashMap<>();
+
   /** whether the fake resolver has been installed */
   @GuardedBy("this")
   private boolean installed = false;
@@ -51,6 +60,14 @@ public class FakeDNS {
   private FakeDNS() {}
   public static FakeDNS getInstance() {
     return instance;
+  }
+
+  public synchronized void addForwardResolution(String hostname, InetAddress ip) {
+    forwardResolutions.put(hostname, ip);
+  }
+
+  public synchronized void addReverseResolution(InetAddress ip, String hostname) {
+    reverseResolutions.put(ip, hostname);
   }
 
   /**
@@ -74,6 +91,12 @@ public class FakeDNS {
     @Override
     public InetAddress[] lookupAllHostAddr(String host)
         throws UnknownHostException {
+
+      InetAddress inetAddress = forwardResolutions.get(host);
+      if (inetAddress != null) {
+        return new InetAddress[]{inetAddress};
+      }
+
       // JDK chains to the next provider automatically.
       throw new UnknownHostException();
     }
@@ -83,6 +106,12 @@ public class FakeDNS {
       if (addr[0] == 127) {
         return InetAddresses.toAddrString(InetAddress.getByAddress(addr));
       }
+
+      String hostname = reverseResolutions.get(InetAddress.getByAddress(addr));
+      if (hostname != null) {
+        return hostname;
+      }
+
       throw new UnknownHostException();
     }
   }

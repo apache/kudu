@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.base.Preconditions;
@@ -67,12 +68,15 @@ public class ServerInfo {
   }
 
   /**
-   * Returns this server's hostname. We might get many hostnames from the master for a single
-   * TS, and this is the one we picked to connect to originally.
-   * @return a string that contains this server's hostname
+   * Returns this server's canonical hostname.
+   * @return a string that contains this server's canonical hostname
    */
-  public String getHostname() {
-    return hostPort.getHost();
+  public String getAndCanonicalizeHostname() {
+    try {
+      return InetAddress.getByName(hostPort.getHost()).getCanonicalHostName().toLowerCase();
+    } catch (UnknownHostException e) {
+      return hostPort.getHost();
+    }
   }
 
   /**

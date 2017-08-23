@@ -220,7 +220,7 @@ class Connection extends SimpleChannelUpstreamHandler {
       lock.unlock();
     }
     Channels.write(channel, ChannelBuffers.wrappedBuffer(CONNECTION_HEADER));
-    Negotiator negotiator = new Negotiator(serverInfo.getHostname(), securityContext,
+    Negotiator negotiator = new Negotiator(serverInfo.getAndCanonicalizeHostname(), securityContext,
         (credentialsPolicy == CredentialsPolicy.PRIMARY_CREDENTIALS));
     ctx.getPipeline().addBefore(ctx.getName(), "negotiation", negotiator);
     negotiator.sendHello(channel);
