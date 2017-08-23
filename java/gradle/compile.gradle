@@ -19,14 +19,16 @@
 
 // Java Configuration
 tasks.withType(JavaCompile) {
-  sourceCompatibility = javaSourceCompatibility
+  sourceCompatibility = javaCompatibility
+  targetCompatibility = javaCompatibility
   options.encoding = encoding // make sure the encoding is defined by the project and not the system default.
   options.incremental = true // enable incremental compilation.
 }
 
 // Scala configuration
 tasks.withType(ScalaCompile) {
-  sourceCompatibility = javaSourceCompatibility
+  sourceCompatibility = javaCompatibility
+  targetCompatibility = javaCompatibility
   scalaCompileOptions.encoding = encoding // make sure the encoding is defined by the project and not the system default.
   scalaCompileOptions.additionalParameters = [
       // Emit warning and location for usages of features that should be imported explicitly.
