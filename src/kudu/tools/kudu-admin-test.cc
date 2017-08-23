@@ -377,8 +377,8 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   // we should see the tablet in TOMBSTONED state on these servers.
   ASSERT_OK(cluster_->tablet_server_by_uuid(leader_ts->uuid())->Restart());
   ASSERT_OK(cluster_->tablet_server_by_uuid(followers[1]->uuid())->Restart());
-  ASSERT_OK(WaitUntilTabletInState(leader_ts, tablet_id, tablet::SHUTDOWN, kTimeout));
-  ASSERT_OK(WaitUntilTabletInState(followers[1], tablet_id, tablet::SHUTDOWN, kTimeout));
+  ASSERT_OK(WaitUntilTabletInState(leader_ts, tablet_id, tablet::STOPPED, kTimeout));
+  ASSERT_OK(WaitUntilTabletInState(followers[1], tablet_id, tablet::STOPPED, kTimeout));
 }
 
 // Test unsafe config change when there is one leader survivor in the cluster.

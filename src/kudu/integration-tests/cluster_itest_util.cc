@@ -73,6 +73,8 @@ using consensus::OpIdType;
 using consensus::RaftPeerPB;
 using consensus::RunLeaderElectionResponsePB;
 using consensus::RunLeaderElectionRequestPB;
+using consensus::VoteRequestPB;
+using consensus::VoteResponsePB;
 using consensus::kInvalidOpIdIndex;
 using master::ListTabletServersResponsePB;
 using master::ListTabletServersResponsePB_Entry;
@@ -599,6 +601,33 @@ Status StartElection(const TServerDetails* replica,
       .CloneAndPrepend(Substitute("Code $0", TabletServerErrorPB::Code_Name(resp.error().code())));
   }
   return Status::OK();
+}
+
+Status RequestVote(const TServerDetails* replica,
+                   const std::string& tablet_id,
+                   const std::string& candidate_uuid,
+                   int64_t candidate_term,
+                   const consensus::OpId& last_logged_opid,
+                   boost::optional<bool> ignore_live_leader,
+                   boost::optional<bool> is_pre_election,
+                   const MonoDelta& timeout) {
+  DCHECK(last_logged_opid.IsInitialized());
+  VoteRequestPB req;
+  req.set_dest_uuid(replica->uuid());
+  req.set_tablet_id(tablet_id);
+  req.set_candidate_uuid(candidate_uuid);
+  req.set_candidate_term(candidate_term);
+  *req.mutable_candidate_status()->mutable_last_received() = last_logged_opid;
+  if (ignore_live_leader) req.set_ignore_live_leader(*ignore_live_leader);
+  if (is_pre_election) req.set_is_pre_election(*is_pre_election);
+  VoteResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(replica->consensus_proxy->RequestConsensusVote(req, &resp, &rpc));
+  if (resp.has_vote_granted() && resp.vote_granted()) return Status::OK();
+  if (resp.has_error()) return StatusFromPB(resp.error().status());
+  if (resp.has_consensus_error()) return StatusFromPB(resp.consensus_error().status());
+  return Status::IllegalState("Unknown error");
 }
 
 Status LeaderStepDown(const TServerDetails* replica,

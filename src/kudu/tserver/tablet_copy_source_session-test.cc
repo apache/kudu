@@ -119,14 +119,14 @@ class TabletCopyTest : public KuduTabletTest {
     CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     NO_FATALS(KuduTabletTest::SetUp());
     NO_FATALS(SetUpTabletReplica());
     NO_FATALS(PopulateTablet());
     NO_FATALS(InitSession());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     session_.reset();
     tablet_replica_->Shutdown();
     KuduTabletTest::TearDown();
@@ -137,37 +137,37 @@ class TabletCopyTest : public KuduTabletTest {
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                         *tablet()->schema(),
-                        0, // schema_version
-                        NULL, &log));
+                        /*schema_version=*/ 0,
+                        /*metric_entity=*/ nullptr,
+                        &log));
 
     scoped_refptr<MetricEntity> metric_entity =
       METRIC_ENTITY_tablet.Instantiate(&metric_registry_, CURRENT_TEST_NAME());
 
-    RaftPeerPB config_peer;
-    config_peer.set_permanent_uuid(fs_manager()->uuid());
-    config_peer.mutable_last_known_addr()->set_host("0.0.0.0");
-    config_peer.mutable_last_known_addr()->set_port(0);
-    config_peer.set_member_type(RaftPeerPB::VOTER);
+    // TODO(mpercy): Similar to code in tablet_replica-test, consider refactor.
+    RaftConfigPB config;
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
+    RaftPeerPB* config_peer = config.add_peers();
+    config_peer->set_permanent_uuid(fs_manager()->uuid());
+    config_peer->mutable_last_known_addr()->set_host("0.0.0.0");
+    config_peer->mutable_last_known_addr()->set_port(0);
+    config_peer->set_member_type(RaftPeerPB::VOTER);
 
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
         new ConsensusMetadataManager(fs_manager()));
+    scoped_refptr<ConsensusMetadata> cmeta;
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(),
+                                    config, consensus::kMinimumTerm, &cmeta));
 
     tablet_replica_.reset(
         new TabletReplica(tablet()->metadata(),
                           cmeta_manager,
-                          config_peer,
+                          *config_peer,
                           apply_pool_.get(),
                           Bind(&TabletCopyTest::TabletReplicaStateChangedCallback,
                                Unretained(this),
                                tablet()->tablet_id())));
-    // TODO(dralves) similar to code in tablet_replica-test, consider refactor.
-    RaftConfigPB config;
-    config.add_peers()->CopyFrom(config_peer);
-    config.set_opid_index(consensus::kInvalidOpIdIndex);
-
-    scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(),
-                                    config, consensus::kMinimumTerm, &cmeta));
+    ASSERT_OK(tablet_replica_->Init(raft_pool_.get()));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());
@@ -182,7 +182,6 @@ class TabletCopyTest : public KuduTabletTest {
                                      messenger,
                                      scoped_refptr<rpc::ResultTracker>(),
                                      log,
-                                     raft_pool_.get(),
                                      prepare_pool_.get()));
     ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
     ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));

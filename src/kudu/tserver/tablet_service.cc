@@ -162,6 +162,9 @@ using kudu::rpc::RpcContext;
 using kudu::rpc::RpcSidecar;
 using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaTransactionState;
+using kudu::tablet::TABLET_DATA_COPYING;
+using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TransactionCompletionCallback;
@@ -184,8 +187,8 @@ namespace tserver {
 
 namespace {
 
-// Lookup the given tablet, ensuring that it both exists and is RUNNING.
-// If it is not, responds to the RPC associated with 'context' after setting
+// Lookup the given tablet, only ensuring that it exists.
+// If it does not, responds to the RPC associated with 'context' after setting
 // resp->mutable_error() to indicate the failure reason.
 //
 // Returns true if successful.
@@ -195,24 +198,65 @@ bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
                                   RespClass* resp,
                                   rpc::RpcContext* context,
                                   scoped_refptr<TabletReplica>* replica) {
-  if (PREDICT_FALSE(!tablet_manager->GetTabletReplica(tablet_id, replica).ok())) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::NotFound("Tablet not found"),
+  Status s = tablet_manager->GetTabletReplica(tablet_id, replica);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_FOUND, context);
     return false;
   }
+  return true;
+}
 
+template<class RespClass>
+void RespondTabletNotRunning(const scoped_refptr<TabletReplica>& replica,
+                             tablet::TabletStatePB tablet_state,
+                             RespClass* resp,
+                             rpc::RpcContext* context) {
+  Status s = Status::IllegalState("Tablet not RUNNING",
+                                  tablet::TabletStatePB_Name(tablet_state));
+  auto error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+  if (replica->tablet_metadata()->tablet_data_state() == TABLET_DATA_TOMBSTONED ||
+      replica->tablet_metadata()->tablet_data_state() == TABLET_DATA_DELETED) {
+    // Treat tombstoned tablets as if they don't exist for most purposes.
+    // This takes precedence over failed, since we don't reset the failed
+    // status of a TabletReplica when deleting it. Only tablet copy does that.
+    error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
+  } else if (tablet_state == tablet::FAILED) {
+    s = s.CloneAndAppend(replica->error().ToString());
+    error_code = TabletServerErrorPB::TABLET_FAILED;
+  }
+  SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+}
+
+// Check if the replica is running.
+template<class RespClass>
+bool CheckTabletReplicaRunningOrRespond(const scoped_refptr<TabletReplica>& replica,
+                                        RespClass* resp,
+                                        rpc::RpcContext* context) {
   // Check RUNNING state.
-  tablet::TabletStatePB state = (*replica)->state();
+  tablet::TabletStatePB state = replica->state();
   if (PREDICT_FALSE(state != tablet::RUNNING)) {
-    Status s = Status::IllegalState("Tablet not RUNNING",
-                                    tablet::TabletStatePB_Name(state));
-    TabletServerErrorPB::Code code = TabletServerErrorPB::TABLET_NOT_RUNNING;
-    if (state == tablet::FAILED) {
-      s = s.CloneAndAppend((*replica)->error().ToString());
-      code = TabletServerErrorPB::TABLET_FAILED;
-    }
-    SetupErrorAndRespond(resp->mutable_error(), s, code, context);
+    RespondTabletNotRunning(replica, state, resp, context);
+    return false;
+  }
+  return true;
+}
+
+// Lookup the given tablet, ensuring that it both exists and is RUNNING.
+// If it is not, responds to the RPC associated with 'context' after setting
+// resp->mutable_error() to indicate the failure reason.
+//
+// Returns true if successful.
+template<class RespClass>
+bool LookupRunningTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
+                                         const string& tablet_id,
+                                         RespClass* resp,
+                                         rpc::RpcContext* context,
+                                         scoped_refptr<TabletReplica>* replica) {
+  if (!LookupTabletReplicaOrRespond(tablet_manager, tablet_id, resp, context, replica)) {
+    return false;
+  }
+  if (!CheckTabletReplicaRunningOrRespond(*replica, resp, context)) {
     return false;
   }
   return true;
@@ -253,14 +297,16 @@ template<class RespClass>
 bool GetConsensusOrRespond(const scoped_refptr<TabletReplica>& replica,
                            RespClass* resp,
                            rpc::RpcContext* context,
-                           shared_ptr<RaftConsensus>* consensus) {
-  *consensus = replica->shared_consensus();
-  if (!*consensus) {
-    Status s = Status::ServiceUnavailable("Raft Consensus unavailable. Tablet not running");
+                           shared_ptr<RaftConsensus>* consensus_out) {
+  shared_ptr<RaftConsensus> tmp_consensus = replica->shared_consensus();
+  if (!tmp_consensus) {
+    Status s = Status::ServiceUnavailable("Raft Consensus unavailable",
+                                          "Tablet replica not initialized");
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return false;
   }
+  *consensus_out = std::move(tmp_consensus);
   return true;
 }
 
@@ -620,8 +666,8 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DVLOG(3) << "Received Alter Schema RPC: " << SecureDebugString(*req);
 
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                                    &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                           context, &replica)) {
     return;
   }
 
@@ -786,8 +832,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
 
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                                    &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                           context, &replica)) {
     return;
   }
 
@@ -895,7 +941,8 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -926,15 +973,51 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RequestConsensusVote", req, resp, context)) {
     return;
   }
+
+  // Because the last-logged opid is stored in the TabletMetadata we go through
+  // the following dance:
+  // 1. Get a reference to the currently-registered TabletReplica.
+  // 2. Fetch (non-atomically) the current data state and last-logged opid from
+  //    the TabletMetadata.
+  // 3. If the data state is COPYING or TOMBSTONED, pass the last-logged opid
+  // from the TabletMetadata into RaftConsensus::RequestVote().
+  //
+  // The reason this sequence is safe to do without atomic locks is the
+  // RaftConsensus object associated with the TabletReplica will be Shutdown()
+  // and thus unable to vote if another TabletCopy operation comes between
+  // steps 1 and 3.
+  //
+  // TODO(mpercy): Move the last-logged opid into ConsensusMetadata to avoid
+  // this hacky plumbing. An additional benefit would be that we would be able
+  // to easily "tombstoned vote" while the tablet is bootstrapping.
+
   scoped_refptr<TabletReplica> replica;
   if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
     return;
   }
 
+  boost::optional<OpId> last_logged_opid;
+  tablet::TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
+
+  LOG(INFO) << "Received RequestConsensusVote() RPC: " << SecureShortDebugString(*req);
+
+  // We cannot vote while DELETED. This check is not racy because DELETED is a
+  // terminal state; it is not possible to transition out of DELETED.
+  if (data_state == TABLET_DATA_DELETED) {
+    RespondTabletNotRunning(replica, replica->state(), resp, context);
+    return;
+  }
+
+  // Attempt to vote while copying or tombstoned.
+  if (data_state == TABLET_DATA_COPYING || data_state == TABLET_DATA_TOMBSTONED) {
+    last_logged_opid = replica->tablet_metadata()->tombstone_last_logged_opid();
+  }
+
   // Submit the vote request directly to the consensus instance.
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  Status s = consensus->RequestVote(req, resp);
+
+  Status s = consensus->RequestVote(req, std::move(last_logged_opid), resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -952,8 +1035,8 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
-                                    &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -976,8 +1059,8 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
-                                    &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -1008,7 +1091,8 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -1034,7 +1118,8 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -1058,7 +1143,8 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
     return;
   }
   scoped_refptr<TabletReplica> replica;
-  if (!LookupTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context, &replica)) {
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
     return;
   }
 
@@ -1186,8 +1272,8 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   if (req->has_new_scan_request()) {
     const NewScanRequestPB& scan_pb = req->new_scan_request();
     scoped_refptr<TabletReplica> replica;
-    if (!LookupTabletReplicaOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
-                                      &replica)) {
+    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp,
+                                             context, &replica)) {
       return;
     }
     string scanner_id;
@@ -1297,8 +1383,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
     scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     const NewScanRequestPB& new_req = req->new_request();
     scoped_refptr<TabletReplica> replica;
-    if (!LookupTabletReplicaOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp, context,
-                                      &replica)) {
+    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp,
+                                             context, &replica)) {
       return;
     }
 

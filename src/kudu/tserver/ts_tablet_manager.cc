@@ -218,7 +218,8 @@ Status TSTabletManager::Init() {
       CHECK_OK(StartTabletStateTransitionUnlocked(meta->tablet_id(), "opening tablet", &deleter));
     }
 
-    scoped_refptr<TabletReplica> replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
+    scoped_refptr<TabletReplica> replica;
+    RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &replica));
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                             this, replica, deleter)));
   }
@@ -297,7 +298,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMetadata for tablet " + tablet_id);
-  scoped_refptr<TabletReplica> new_replica = CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
+  scoped_refptr<TabletReplica> new_replica;
+  RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &new_replica));
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -499,12 +501,15 @@ void TSTabletManager::RunTabletCopy(
             CheckLeaderTermNotLower(tablet_id, leader_term, opt_last_logged_opid->term()),
             TabletServerErrorPB::INVALID_CONFIG);
 
-        // Tombstone the tablet and store the last-logged OpId.
+        // Shut down the old TabletReplica so that it is no longer allowed to
+        // mutate the ConsensusMetadata.
         old_replica->Shutdown();
+
         // Note that this leaves the data dir manager without any references to
         // tablet_id. This is okay because the tablet_copy_client should
         // generate a new disk group during the call to Start().
-        //
+
+        // Tombstone the tablet and store the last-logged OpId.
         // TODO(mpercy): Because we begin shutdown of the tablet after we check our
         // last-logged term against the leader's term, there may be operations
         // in flight and it may be possible for the same check in the tablet
@@ -544,16 +549,21 @@ void TSTabletManager::RunTabletCopy(
   }
   CALLBACK_RETURN_NOT_OK(tc_client.Start(copy_source_addr, &meta));
 
-  // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
-  // state, and we need to tombtone the tablet if additional steps prior to
-  // getting to a TABLET_DATA_READY state fail.
+  // After calling TabletCopyClient::Start(), the superblock is persisted in
+  // TABLET_DATA_COPYING state. TabletCopyClient will automatically tombstone
+  // the tablet by implicitly calling Abort() on itself if it is destroyed
+  // prior to calling TabletCopyClient::Finish(), which if successful
+  // transitions the tablet into the TABLET_DATA_READY state.
 
-  // Registering a non-initialized TabletReplica offers visibility through the Web UI.
+  // Registering an unstarted TabletReplica allows for tombstoned voting and
+  // offers visibility through the Web UI.
   RegisterTabletReplicaMode mode = replacing_tablet ? REPLACEMENT_REPLICA : NEW_REPLICA;
-  scoped_refptr<TabletReplica> replica = CreateAndRegisterTabletReplica(meta, mode);
+  scoped_refptr<TabletReplica> replica;
+  CALLBACK_RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, mode, &replica));
 
   // Now we invoke the StartTabletCopy callback and respond success to the
-  // remote caller. Then we proceed to do most of the actual tablet copying work.
+  // remote caller, since StartTabletCopy() is an asynchronous RPC call. Then
+  // we proceed with the Tablet Copy process.
   cb(Status::OK(), TabletServerErrorPB::UNKNOWN_ERROR);
   cb = [](const Status&, TabletServerErrorPB::Code) {
     LOG(FATAL) << "Callback invoked twice from TSTabletManager::RunTabletCopy()";
@@ -561,7 +571,7 @@ void TSTabletManager::RunTabletCopy(
 
   // From this point onward, we do not notify the caller about progress or success.
 
-  // Download all of the remote files.
+  // Go through and synchronously download the remote blocks and WAL segments.
   Status s = tc_client.FetchAll(replica);
   if (!s.ok()) {
     LOG(WARNING) << LogPrefix(tablet_id) << "Tablet Copy: Unable to fetch data from remote peer "
@@ -580,14 +590,15 @@ void TSTabletManager::RunTabletCopy(
     return;
   }
 
-  // startup it's still in a valid, fully-copied state.
+  // Bootstrap and start the fully-copied tablet.
   OpenTablet(replica, deleter);
 }
 
 // Create and register a new TabletReplica, given tablet metadata.
-scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
+Status TSTabletManager::CreateAndRegisterTabletReplica(
     scoped_refptr<TabletMetadata> meta,
-    RegisterTabletReplicaMode mode) {
+    RegisterTabletReplicaMode mode,
+    scoped_refptr<TabletReplica>* replica_out) {
   const string& tablet_id = meta->tablet_id();
   scoped_refptr<TabletReplica> replica(
       new TabletReplica(std::move(meta),
@@ -597,8 +608,14 @@ scoped_refptr<TabletReplica> TSTabletManager::CreateAndRegisterTabletReplica(
                         Bind(&TSTabletManager::MarkTabletDirty,
                              Unretained(this),
                              tablet_id)));
+  Status s = replica->Init(server_->raft_pool());
+  if (PREDICT_FALSE(!s.ok())) {
+    replica->SetError(s);
+    replica->Shutdown();
+  }
   RegisterTablet(tablet_id, replica, mode);
-  return replica;
+  *replica_out = std::move(replica);
+  return Status::OK();
 }
 
 Status TSTabletManager::DeleteTablet(
@@ -641,8 +658,7 @@ Status TSTabletManager::DeleteTablet(
   // consensus and therefore the log is not available.
   TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
   bool tablet_deleted = (data_state == TABLET_DATA_DELETED ||
-                         data_state == TABLET_DATA_TOMBSTONED ||
-                         replica->state() == tablet::FAILED);
+                         data_state == TABLET_DATA_TOMBSTONED);
 
   // They specified an "atomic" delete. Check the committed config's opid_index.
   // TODO(mpercy): There's actually a race here between the check and shutdown,
@@ -665,7 +681,7 @@ Status TSTabletManager::DeleteTablet(
     }
   }
 
-  replica->Shutdown();
+  replica->Stop();
 
   boost::optional<OpId> opt_last_logged_opid;
   if (consensus) {
@@ -825,7 +841,6 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
                        server_->messenger(),
                        server_->result_tracker(),
                        log,
-                       server_->raft_pool(),
                        server_->tablet_prepare_pool());
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
@@ -939,12 +954,6 @@ Status TSTabletManager::GetTabletReplica(const string& tablet_id,
                                          scoped_refptr<tablet::TabletReplica>* replica) const {
   if (!LookupTablet(tablet_id, replica)) {
     return Status::NotFound("Tablet not found", tablet_id);
-  }
-  TabletDataState data_state = (*replica)->tablet_metadata()->tablet_data_state();
-  if (data_state != TABLET_DATA_READY) {
-    return Status::IllegalState("Tablet data state not TABLET_DATA_READY: " +
-                                TabletDataState_Name(data_state),
-                                tablet_id);
   }
   return Status::OK();
 }
@@ -1062,7 +1071,8 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   // allows us to permanently delete replica tombstones when a table gets
   // deleted.
   if (data_state == TABLET_DATA_TOMBSTONED) {
-    CreateAndRegisterTabletReplica(meta, NEW_REPLICA);
+    scoped_refptr<TabletReplica> dummy;
+    RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &dummy));
   }
 
   return Status::OK();

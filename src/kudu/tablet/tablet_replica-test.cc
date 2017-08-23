@@ -125,38 +125,37 @@ class TabletReplicaTest : public KuduTabletTest {
 
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "test-tablet");
 
-    RaftPeerPB config_peer;
-    config_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
-    config_peer.mutable_last_known_addr()->set_host("0.0.0.0");
-    config_peer.mutable_last_known_addr()->set_port(0);
-    config_peer.set_member_type(RaftPeerPB::VOTER);
+    RaftConfigPB config;
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
+
+    RaftPeerPB* config_peer = config.add_peers();
+    config_peer->set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
+    config_peer->mutable_last_known_addr()->set_host("0.0.0.0");
+    config_peer->mutable_last_known_addr()->set_port(0);
+    config_peer->set_member_type(RaftPeerPB::VOTER);
 
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
         new ConsensusMetadataManager(tablet()->metadata()->fs_manager()));
+
+    scoped_refptr<ConsensusMetadata> cmeta;
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm,
+                                    &cmeta));
 
     // "Bootstrap" and start the TabletReplica.
     tablet_replica_.reset(
       new TabletReplica(tablet()->shared_metadata(),
                         cmeta_manager,
-                        config_peer,
+                        *config_peer,
                         apply_pool_.get(),
                         Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
                              Unretained(this),
                              tablet()->tablet_id())));
-
+    ASSERT_OK(tablet_replica_->Init(raft_pool_.get()));
     // Make TabletReplica use the same LogAnchorRegistry as the Tablet created by the harness.
     // TODO(mpercy): Refactor TabletHarness to allow taking a
     // LogAnchorRegistry, while also providing TabletMetadata for consumption
     // by TabletReplica before Tablet is instantiated.
     tablet_replica_->log_anchor_registry_ = tablet()->log_anchor_registry_;
-
-    RaftConfigPB config;
-    config.add_peers()->CopyFrom(config_peer);
-    config.set_opid_index(consensus::kInvalidOpIdIndex);
-
-    scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm,
-                                    &cmeta));
   }
 
   Status StartReplica(const ConsensusBootstrapInfo& info) {
@@ -171,7 +170,6 @@ class TabletReplicaTest : public KuduTabletTest {
                                   messenger_,
                                   scoped_refptr<rpc::ResultTracker>(),
                                   log,
-                                  raft_pool_.get(),
                                   prepare_pool_.get());
   }
 

@@ -295,6 +295,10 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   CHECK(fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_,
                                                      superblock_->mutable_data_dir_group()));
 
+  // Create the ConsensusMetadata before returning from Start() so that it's
+  // possible to vote while we are copying the replica for the first time.
+  RETURN_NOT_OK(WriteConsensusMetadata());
+
   state_ = kStarted;
   if (meta) {
     *meta = meta_;
@@ -318,8 +322,6 @@ Status TabletCopyClient::Finish() {
   CHECK(meta_);
   CHECK_EQ(kStarted, state_);
   state_ = kFinished;
-
-  RETURN_NOT_OK(WriteConsensusMetadata());
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to TABLET_DATA_READY, since we checked above that the response

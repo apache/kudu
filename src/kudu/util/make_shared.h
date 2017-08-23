@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_UTIL_MAKE_SHARED_H_
-#define KUDU_UTIL_MAKE_SHARED_H_
+#pragma once
 
 #ifdef __GLIBCXX__
 #include <ext/alloc_traits.h>  // IWYU pragma: export
@@ -64,5 +63,3 @@
 #else
   #error "Need to implement ALLOW_MAKE_SHARED for your platform!"
 #endif
-
-#endif // KUDU_UTIL_MAKE_SHARED_H_

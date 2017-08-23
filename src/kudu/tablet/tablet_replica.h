@@ -93,6 +93,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                 ThreadPool* apply_pool,
                 Callback<void(const std::string& reason)> mark_dirty_clbk);
 
+  // Initializes RaftConsensus.
+  // This must be called before publishing the instance to other threads.
+  // If this fails, the TabletReplica instance remains in a NOT_INITIALIZED
+  // state.
+  Status Init(ThreadPool* raft_pool);
+
   // Starts the TabletReplica, making it available for Write()s. If this
   // TabletReplica is part of a consensus configuration this will connect it to other replicas
   // in the consensus configuration.
@@ -102,14 +108,19 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                std::shared_ptr<rpc::Messenger> messenger,
                scoped_refptr<rpc::ResultTracker> result_tracker,
                scoped_refptr<log::Log> log,
-               ThreadPool* raft_pool,
                ThreadPool* prepare_pool);
 
-  // Shutdown this tablet replica. If a shutdown is already in progress,
-  // blocks until that shutdown is complete.
+  // Synchronously transition this replica to STOPPED state from any other
+  // state. This also stops RaftConsensus. If a Stop() operation is already in
+  // progress, blocks until that operation is complete.
+  // See tablet/metadata.proto for a description of legal state transitions.
+  void Stop();
+
+  // Synchronously transition this replica to SHUTDOWN state from any other state.
+  // See tablet/metadata.proto for a description of legal state transitions.
   //
   // If 'error_' has been set to a non-OK status, the final state will be
-  // FAILED, and SHUTDOWN otherwise.
+  // FAILED instead of SHUTDOWN.
   void Shutdown();
 
   // Check that the tablet is in a RUNNING state.
@@ -176,17 +187,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Returns the current Raft configuration.
   const consensus::RaftConfigPB RaftConfig() const;
 
-  // If any peers in the consensus configuration lack permanent uuids, get them via an
-  // RPC call and update.
-  // TODO: move this to raft_consensus.h.
-  Status UpdatePermanentUuids();
-
   // Sets the tablet to a BOOTSTRAPPING state, indicating it is starting up.
-  void SetBootstrapping() {
-    std::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(NOT_STARTED, state_);
-    state_ = BOOTSTRAPPING;
-  }
+  void SetBootstrapping();
 
   // Set a user-readable status message about the tablet. This may appear on
   // the Web UI, for example.
@@ -287,14 +289,15 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   ~TabletReplica();
 
-  // Wait until the TabletReplica is fully in a FAILED or SHUTDOWN state.
-  void WaitUntilShutdown();
+  // Wait until the TabletReplica is fully in STOPPED, SHUTDOWN, or FAILED
+  // state.
+  void WaitUntilStopped();
 
-  // After bootstrap is complete and consensus is setup this initiates the transactions
-  // that were not complete on bootstrap.
-  // Not implemented yet. See .cc file.
-  Status StartPendingTransactions(consensus::RaftPeerPB::Role my_role,
-                                  const consensus::ConsensusBootstrapInfo& bootstrap_info);
+  std::string LogPrefix() const;
+  // Transition to another state. Requires that the caller hold 'lock_' if the
+  // object has already published to other threads. See tablet/metadata.proto
+  // for state descriptions and legal state transitions.
+  void set_state(TabletStatePB new_state);
 
   const scoped_refptr<TabletMetadata> meta_;
   const scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager_;

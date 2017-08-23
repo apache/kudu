@@ -260,9 +260,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Calls RegisterTablet() with the given 'mode' parameter after constructing
   // the TablerPeer object. See RegisterTablet() for details about the
   // semantics of 'mode' and the locking requirements.
-  scoped_refptr<tablet::TabletReplica> CreateAndRegisterTabletReplica(
-      scoped_refptr<tablet::TabletMetadata> meta,
-      RegisterTabletReplicaMode mode);
+  Status CreateAndRegisterTabletReplica(scoped_refptr<tablet::TabletMetadata> meta,
+                                        RegisterTabletReplicaMode mode,
+                                        scoped_refptr<tablet::TabletReplica>* replica_out);
 
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const std::string& tablet_id,

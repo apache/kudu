@@ -490,7 +490,7 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
   if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (!consensus) {
-    *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
+    *output << "Tablet " << EscapeForHtmlToString(id) << " not initialized";
     return;
   }
   consensus->DumpStatusHtml(*output);

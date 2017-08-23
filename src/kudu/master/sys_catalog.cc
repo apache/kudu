@@ -344,6 +344,12 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
       local_peer_pb_,
       master_->tablet_apply_pool(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
+  Status s = tablet_replica_->Init(master_->raft_pool());
+  if (!s.ok()) {
+    tablet_replica_->SetError(s);
+    tablet_replica_->Shutdown();
+    return s;
+  }
 
   scoped_refptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK(cmeta_manager_->Load(metadata->tablet_id(), &cmeta));
@@ -371,7 +377,6 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                                master_->messenger(),
                                                scoped_refptr<rpc::ResultTracker>(),
                                                log,
-                                               master_->raft_pool(),
                                                master_->tablet_prepare_pool()),
                         "Failed to Start() TabletReplica");
 

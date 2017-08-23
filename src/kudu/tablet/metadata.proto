@@ -131,13 +131,29 @@ message TabletSuperBlockPB {
   optional DataDirGroupPB data_dir_group = 15;
 }
 
-// The enum of tablet states.
-// Tablet states are sent in TabletReports and kept in TabletReplica.
+// Tablet states represent stages of a TabletReplica's object lifecycle and are
+// reported to the master via tablet reports.
+//
+// Legal state transitions for a single TabletReplica object:
+//
+// NOT_INITIALIZED -> INITIALIZED -> BOOTSTRAPPING -> RUNNING -> STOPPING -> STOPPED -> SHUTDOWN
+//             |              |                |                  ^ ^ ^
+//             |              |                |                  | | |
+//             |              |                +------------------+ | |
+//             |              +-------------------------------------+ |
+//             +------------------------------------------------------+
+//
+// Since a TabletReplica instance is replaced when a Tablet Copy operation
+// occurs, from a remote perspective it is possible for a tablet replica to
+// appear to transition from SHUTDOWN back to NOT_INITIALIZED.
 enum TabletStatePB {
   UNKNOWN = 999;
 
-  // Tablet has not yet started.
-  NOT_STARTED = 5;
+  // Tablet has not yet been initialized.
+  NOT_INITIALIZED = 6;
+
+  // Tablet has been initialized but not yet started.
+  INITIALIZED = 5;
 
   // Indicates the Tablet is bootstrapping, i.e. that the Tablet is not
   // available for RPC.
@@ -152,8 +168,11 @@ enum TabletStatePB {
   FAILED = 2;
 
   // The Tablet is shutting down, and will not accept further requests.
-  QUIESCING = 3;
+  STOPPING = 3;
 
-  // The Tablet has been stopped.
+  // The tablet has been stopped, possibly because it has been tombstoned.
+  STOPPED = 7;
+
+  // The Tablet has been completely shut down.
   SHUTDOWN = 4;
 }

@@ -44,6 +44,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
@@ -126,16 +127,14 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
     EXTERNAL_REQUEST
   };
 
-  RaftConsensus(ConsensusOptions options,
-                RaftPeerPB local_peer_pb,
-                scoped_refptr<ConsensusMetadataManager> cmeta_manager,
-                ThreadPool* raft_pool);
   ~RaftConsensus();
 
-  // Initializes the RaftConsensus object. This should be called before
-  // publishing this object to any thread other than the thread that invoked
-  // the constructor.
-  Status Init();
+  // Factory method to construct and initialize a RaftConsensus instance.
+  static Status Create(ConsensusOptions options,
+                       RaftPeerPB local_peer_pb,
+                       scoped_refptr<ConsensusMetadataManager> cmeta_manager,
+                       ThreadPool* raft_pool,
+                       std::shared_ptr<RaftConsensus>* consensus_out);
 
   // Starts running the Raft consensus algorithm.
   // Start() is not thread-safe. Calls to Start() should be externally
@@ -245,7 +244,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Messages sent from CANDIDATEs to voting peers to request their vote
   // in leader election.
+  //
+  // If 'tombstone_last_logged_opid' is set, this replica will attempt to vote
+  // in kInitialized and kStopped states, instead of just in the kRunning
+  // state.
   Status RequestVote(const VoteRequestPB* request,
+                     boost::optional<OpId> tombstone_last_logged_opid,
                      VoteResponsePB* response);
 
   // Implement a ChangeConfig() request.
@@ -265,6 +269,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns the current Raft role of this instance.
   RaftPeerPB::Role role() const;
 
+  // Returns the current term.
+  int64_t CurrentTerm() const;
+
   // Returns the uuid of this peer.
   // Thread-safe.
   const std::string& peer_uuid() const;
@@ -283,7 +290,14 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   void DumpStatusHtml(std::ostream& out) const;
 
-  // Stop running the Raft consensus algorithm.
+  // Transition to kStopped state. See State enum definition for details.
+  // This is a no-op if the tablet is already in kStopped or kShutdown state;
+  // otherwise, Raft will pass through the kStopping state on the way to
+  // kStopped.
+  void Stop();
+
+  // Transition to kShutdown state. See State enum definition for details.
+  // It is legal to call this method while in any lifecycle state.
   void Shutdown();
 
   // Makes this peer advance it's term (and step down if leader), for tests.
@@ -317,7 +331,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   log::RetentionIndexes GetRetentionIndexes();
 
  private:
-  friend class RefCountedThreadSafe<RaftConsensus>;
+  ALLOW_MAKE_SHARED(RaftConsensus);
   friend class RaftConsensusQuorumTest;
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind);
   FRIEND_TEST(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind);
@@ -325,26 +339,40 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   FRIEND_TEST(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty);
   FRIEND_TEST(RaftConsensusQuorumTest, TestRequestVote);
 
+  // RaftConsensus lifecycle states.
+  //
+  // Legal state transitions:
+  //
+  //   kNew -> kInitialized -+-> kRunning -> kStopping -> kStopped -> kShutdown
+  //                          `----------------^
+  //
   // NOTE: When adding / changing values in this enum, add the corresponding
-  // values to State_Name().
+  // values to State_Name() as well.
+  //
   enum State {
-    // RaftConsensus has been freshly constructed.
+    // The RaftConsensus object has been freshly constructed and is not yet
+    // initialized. A RaftConsensus object will never be made externally
+    // visible in this state.
     kNew,
 
-    // RaftConsensus has been initialized.
+    // Raft has been initialized. It cannot accept writes, but it may be able
+    // to vote. See RequestVote() for details.
     kInitialized,
 
-    // State signaling the replica accepts requests (from clients
-    // if leader, from leader if follower)
+    // Raft is running normally and will accept write requests and vote
+    // requests.
     kRunning,
 
-    // State signaling that the replica is shutting down and no longer accepting
-    // new transactions or commits.
-    kShuttingDown,
+    // Raft is in the process of stopping and will not accept writes. Voting
+    // may still be allowed. See RequestVote() for details.
+    kStopping,
 
-    // State signaling the replica is shut down and does not accept
-    // any more requests.
-    kShutDown,
+    // Raft is stopped and no longer accepting writes. However, voting may
+    // still be allowed; See RequestVote() for details.
+    kStopped,
+
+    // Raft is fully shut down and cannot accept writes or vote requests.
+    kShutdown,
   };
 
   // Control whether printing of log messages should be done for a particular
@@ -375,6 +403,19 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   using LockGuard = std::lock_guard<simple_spinlock>;
   using UniqueLock = std::unique_lock<simple_spinlock>;
+
+  RaftConsensus(ConsensusOptions options,
+                RaftPeerPB local_peer_pb,
+                scoped_refptr<ConsensusMetadataManager> cmeta_manager,
+                ThreadPool* raft_pool);
+
+  // Initializes the RaftConsensus object, including loading the consensus
+  // metadata.
+  Status Init();
+
+  // Change the lifecycle state of RaftConsensus. The definition of the State
+  // enum documents legal state transitions.
+  void SetStateUnlocked(State new_state);
 
   // Returns string description for State enum value.
   static const char* State_Name(State state);
@@ -658,7 +699,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                                 FlushToDisk flush) WARN_UNUSED_RESULT;
 
   // Returns the term set in the last config change round.
-  const int64_t GetCurrentTermUnlocked() const;
+  const int64_t CurrentTermUnlocked() const;
 
   // Accessors for the leader of the current term.
   std::string GetLeaderUuidUnlocked() const;
@@ -761,6 +802,9 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
+  // A flag to help us avoid taking a lock on the reactor thread if the object
+  // is already in kShutdown state.
+  // TODO(mpercy): Try to get rid of this extra flag.
   AtomicBool shutdown_;
 
   // The number of times Update() has been called, used for some test assertions.

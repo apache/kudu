@@ -817,14 +817,22 @@ TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
                                            TABLET_DATA_TOMBSTONED, boost::none, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
+  // Shut down the tablet server so it won't vote while tombstoned.
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
   NO_FATALS(WaitUntilTabletRunning(1, tablet_id));
   NO_FATALS(WaitUntilTabletRunning(2, tablet_id));
   ASSERT_OK(itest::StartElection(leader, tablet_id, timeout));
+  ASSERT_OK(itest::WaitUntilLeader(leader, tablet_id, timeout));
+
+  // Now restart the replica. It will get tablet copied by the leader.
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_READY }));
 
-  // The election history should have been wiped out.
+  // The election history should have been wiped out for the new term, since
+  // this node did not participate.
   ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(3, cmeta_pb.current_term());
   ASSERT_TRUE(!cmeta_pb.has_voted_for()) << SecureShortDebugString(cmeta_pb);
@@ -1066,7 +1074,8 @@ TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
         cluster_->tablet_server(0)->bound_http_hostport().ToString(),
         page,
         tablet_id), &buf));
-    ASSERT_STR_CONTAINS(buf.ToString(), tablet_id);
+    ASSERT_STR_CONTAINS(buf.ToString(), tablet_id)
+        << "Page: " << page << "; tablet_id: " << tablet_id;
   }
 }
 
@@ -1292,7 +1301,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
   for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     if (t.tablet_status().tablet_id() == tablet_id) {
-      ASSERT_EQ(tablet::SHUTDOWN, t.tablet_status().state());
+      ASSERT_EQ(tablet::STOPPED, t.tablet_status().state());
       ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
           << t.tablet_status().tablet_id() << " not tombstoned";
     }
@@ -1313,10 +1322,10 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
   // The tombstoned tablets will still show up in ListTablets(),
   // just with their data state set as TOMBSTONED. They should also be listed
-  // as NOT_STARTED because we restarted the server.
+  // as INITIALIZED because we restarted the server.
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
   for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
-    ASSERT_EQ(tablet::NOT_STARTED, t.tablet_status().state());
+    ASSERT_EQ(tablet::INITIALIZED, t.tablet_status().state());
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
         << t.tablet_status().tablet_id() << " not tombstoned";
   }

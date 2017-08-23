@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -32,6 +33,9 @@
 #include "kudu/util/status.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_macros.h"
+
+DEFINE_bool(test_dump_stacks_on_failure, true,
+            "Whether to dump ExternalMiniCluster process stacks on test failure");
 
 namespace kudu {
 
@@ -69,7 +73,7 @@ void ExternalMiniClusterITestBase::StopCluster() {
     return;
   }
 
-  if (HasFatalFailure()) {
+  if (HasFatalFailure() && FLAGS_test_dump_stacks_on_failure) {
     LOG(INFO) << "Found fatal failure";
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       if (!cluster_->tablet_server(i)->IsProcessAlive()) {

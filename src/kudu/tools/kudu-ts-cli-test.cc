@@ -86,7 +86,7 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
 
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(0, tablet_id, { tablet::TABLET_DATA_TOMBSTONED }));
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
-  ASSERT_OK(itest::WaitUntilTabletInState(ts, tablet_id, tablet::SHUTDOWN, timeout));
+  ASSERT_OK(itest::WaitUntilTabletInState(ts, tablet_id, tablet::STOPPED, timeout));
 }
 
 // Test dumping a tablet using kudu-ts-cli tool.

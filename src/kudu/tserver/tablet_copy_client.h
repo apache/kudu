@@ -205,7 +205,8 @@ class TabletCopyClient {
   scoped_refptr<tablet::TabletMetadata> meta_;
 
   // Local Consensus metadata file. This may initially be NULL if this is
-  // bootstrapping a new replica (rather than replacing an old one).
+  // bootstrapping a new replica (rather than replacing an old one) but it is
+  // guaranteed to be set after a successful call to Start().
   scoped_refptr<consensus::ConsensusMetadata> cmeta_;
 
   scoped_refptr<tablet::TabletReplica> tablet_replica_;

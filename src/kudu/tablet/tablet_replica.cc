@@ -115,7 +115,7 @@ TabletReplica::TabletReplica(
       log_anchor_registry_(new LogAnchorRegistry()),
       apply_pool_(apply_pool),
       mark_dirty_clbk_(std::move(mark_dirty_clbk)),
-      state_(NOT_STARTED),
+      state_(NOT_INITIALIZED),
       last_status_("Tablet initializing...") {
 }
 
@@ -127,13 +127,28 @@ TabletReplica::~TabletReplica() {
       << TabletStatePB_Name(state_);
 }
 
+Status TabletReplica::Init(ThreadPool* raft_pool) {
+  CHECK_EQ(NOT_INITIALIZED, state_);
+  TRACE("Creating consensus instance");
+  ConsensusOptions options;
+  options.tablet_id = meta_->tablet_id();
+  shared_ptr<RaftConsensus> consensus;
+  RETURN_NOT_OK(RaftConsensus::Create(std::move(options),
+                                      local_peer_pb_,
+                                      cmeta_manager_,
+                                      raft_pool,
+                                      &consensus));
+  consensus_ = std::move(consensus);
+  set_state(INITIALIZED);
+  return Status::OK();
+}
+
 Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
                             shared_ptr<Tablet> tablet,
                             scoped_refptr<clock::Clock> clock,
                             shared_ptr<Messenger> messenger,
                             scoped_refptr<ResultTracker> result_tracker,
                             scoped_refptr<Log> log,
-                            ThreadPool* raft_pool,
                             ThreadPool* prepare_pool) {
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
@@ -141,9 +156,11 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
   {
     std::lock_guard<simple_spinlock> state_change_guard(state_change_lock_);
 
+    scoped_refptr<MetricEntity> metric_entity;
+    gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
+    scoped_refptr<TimeManager> time_manager;
     {
       std::lock_guard<simple_spinlock> l(lock_);
-
       CHECK_EQ(BOOTSTRAPPING, state_);
 
       tablet_ = DCHECK_NOTNULL(std::move(tablet));
@@ -151,24 +168,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
       messenger_ = DCHECK_NOTNULL(std::move(messenger));
       result_tracker_ = std::move(result_tracker); // Passed null in tablet_replica-test
       log_ = DCHECK_NOTNULL(log); // Not moved because it's passed to RaftConsensus::Start() below.
-    }
 
-    // Unlock while we initialize RaftConsensus, which involves I/O.
-    TRACE("Creating consensus instance");
-    ConsensusOptions options;
-    options.tablet_id = meta_->tablet_id();
-    shared_ptr<RaftConsensus> consensus(std::make_shared<RaftConsensus>(std::move(options),
-                                                                        local_peer_pb_,
-                                                                        cmeta_manager_,
-                                                                        raft_pool));
-    RETURN_NOT_OK(consensus->Init());
-
-    scoped_refptr<MetricEntity> metric_entity;
-    gscoped_ptr<PeerProxyFactory> peer_proxy_factory;
-    scoped_refptr<TimeManager> time_manager;
-    {
-      std::lock_guard<simple_spinlock> l(lock_);
-      consensus_ = consensus;
       metric_entity = tablet_->GetMetricEntity();
       prepare_pool_token_ = prepare_pool->NewTokenWithMetrics(
           ThreadPool::ExecutionMode::SERIAL,
@@ -196,7 +196,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     // may invoke TabletReplica::StartReplicaTransaction() during startup, causing
     // a self-deadlock. We take a ref to members protected by 'lock_' before
     // unlocking.
-    RETURN_NOT_OK(consensus->Start(
+    RETURN_NOT_OK(consensus_->Start(
         bootstrap_info,
         std::move(peer_proxy_factory),
         log,
@@ -208,7 +208,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
     // Re-acquire 'lock_' to update our state variable.
     std::lock_guard<simple_spinlock> l(lock_);
     CHECK_EQ(BOOTSTRAPPING, state_); // We are still protected by 'state_change_lock_'.
-    state_ = RUNNING;
+    set_state(RUNNING);
   }
 
   // Because we changed the tablet state, we need to re-report the tablet to the master.
@@ -222,22 +222,17 @@ const consensus::RaftConfigPB TabletReplica::RaftConfig() const {
   return consensus_->CommittedConfig();
 }
 
-void TabletReplica::Shutdown() {
-
-  LOG(INFO) << "Initiating TabletReplica shutdown for tablet: " << tablet_id_;
-
-  TabletStatePB shutdown_type = SHUTDOWN;
+void TabletReplica::Stop() {
   {
     std::unique_lock<simple_spinlock> lock(lock_);
-    if (state_ == QUIESCING || state_ == SHUTDOWN || state_ == FAILED) {
+    if (state_ == STOPPING || state_ == STOPPED ||
+        state_ == SHUTDOWN || state_ == FAILED) {
       lock.unlock();
-      WaitUntilShutdown();
+      WaitUntilStopped();
       return;
     }
-    if (!error_.ok()) {
-      shutdown_type = FAILED;
-    }
-    state_ = QUIESCING;
+    LOG_WITH_PREFIX(INFO) << "stopping tablet replica";
+    set_state(STOPPING);
   }
 
   std::lock_guard<simple_spinlock> l(state_change_lock_);
@@ -248,7 +243,7 @@ void TabletReplica::Shutdown() {
   if (tablet_) tablet_->UnregisterMaintenanceOps();
   UnregisterMaintenanceOps();
 
-  if (consensus_) consensus_->Shutdown();
+  if (consensus_) consensus_->Stop();
 
   // TODO(KUDU-183): Keep track of the pending tasks and send an "abort" message.
   LOG_SLOW_EXECUTION(WARNING, 1000,
@@ -272,26 +267,71 @@ void TabletReplica::Shutdown() {
     tablet_->Shutdown();
   }
 
-  // Only update the replica state when all other components have shut down.
+  // Only mark the peer as STOPPED when all other components have shut down.
   {
     std::lock_guard<simple_spinlock> lock(lock_);
-    // Release mem tracker resources.
-    consensus_.reset();
     tablet_.reset();
-    state_ = shutdown_type;
+    set_state(STOPPED);
   }
 }
 
-void TabletReplica::WaitUntilShutdown() {
+void TabletReplica::Shutdown() {
+  Stop();
+  if (consensus_) consensus_->Shutdown();
+  std::lock_guard<simple_spinlock> lock(lock_);
+  if (state_ == SHUTDOWN || state_ == FAILED) return;
+  if (!error_.ok()) {
+    set_state(FAILED);
+    return;
+  }
+  set_state(SHUTDOWN);
+}
+
+void TabletReplica::WaitUntilStopped() {
   while (true) {
     {
       std::lock_guard<simple_spinlock> lock(lock_);
-      if (state_ == SHUTDOWN || state_ == FAILED) {
+      if (state_ == STOPPED || state_ == SHUTDOWN || state_ == FAILED) {
         return;
       }
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+}
+
+string TabletReplica::LogPrefix() const {
+  return meta_->LogPrefix();
+}
+
+void TabletReplica::set_state(TabletStatePB new_state) {
+  switch (new_state) {
+    case NOT_INITIALIZED:
+      LOG(FATAL) << "Cannot transition to NOT_INITIALIZED state";
+      return;
+    case INITIALIZED:
+      CHECK_EQ(NOT_INITIALIZED, state_);
+      break;
+    case BOOTSTRAPPING:
+      CHECK_EQ(INITIALIZED, state_);
+      break;
+    case RUNNING:
+      CHECK_EQ(BOOTSTRAPPING, state_);
+      break;
+    case STOPPING:
+      CHECK_NE(STOPPED, state_);
+      CHECK_NE(SHUTDOWN, state_);
+      break;
+    case STOPPED:
+      CHECK_EQ(STOPPING, state_);
+      break;
+    case SHUTDOWN: FALLTHROUGH_INTENDED;
+    case FAILED:
+      CHECK_EQ(STOPPED, state_) << TabletStatePB_Name(state_);
+      break;
+    default:
+      break;
+  }
+  state_ = new_state;
 }
 
 Status TabletReplica::CheckRunning() const {
@@ -320,7 +360,7 @@ Status TabletReplica::WaitUntilConsensusRunning(const MonoDelta& timeout) {
         has_consensus = true; // consensus_ is a set-once object.
       }
     }
-    if (cached_state == QUIESCING || cached_state == SHUTDOWN) {
+    if (cached_state == STOPPING || cached_state == STOPPED) {
       return Status::IllegalState(
           Substitute("The tablet is already shutting down or shutdown. State: $0",
                      TabletStatePB_Name(cached_state)));
@@ -388,6 +428,11 @@ Status TabletReplica::RunLogGC() {
     LOG(ERROR) << s.ToString();
   }
   return Status::OK();
+}
+
+void TabletReplica::SetBootstrapping() {
+  std::lock_guard<simple_spinlock> lock(lock_);
+  set_state(BOOTSTRAPPING);
 }
 
 void TabletReplica::SetStatusMessage(const std::string& status) {

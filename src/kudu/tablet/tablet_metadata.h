@@ -250,6 +250,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   RowSetMetadata *GetRowSetForTests(int64_t id);
 
+  // Return standard "T xxx P yyy" log prefix.
+  std::string LogPrefix() const;
+
  private:
   friend class RefCountedThreadSafe<TabletMetadata>;
   friend class MetadataTest;
@@ -303,9 +306,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Failures are logged, but are not fatal.
   void DeleteOrphanedBlocks(const std::vector<BlockId>& blocks);
 
-  // Return standard "T xxx P yyy" log prefix.
-  std::string LogPrefix() const;
-
   enum State {
     kNotLoadedYet,
     kNotWrittenYet,
@@ -355,6 +355,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Record of the last opid logged by the tablet before it was last
   // tombstoned. Has no meaning for non-tombstoned tablets.
+  // Protected by 'data_lock_'.
   boost::optional<consensus::OpId> tombstone_last_logged_opid_;
 
   // If this counter is > 0 then Flush() will not write any data to
