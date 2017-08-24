@@ -41,6 +41,10 @@ class ConsensusMetadataManager;
 class ConsensusStatePB;
 } // namespace consensus
 
+namespace fs {
+class BlockTransaction;
+} // namespace fs
+
 namespace rpc {
 class Messenger;
 class RpcController;
@@ -158,7 +162,8 @@ class TabletCopyClient {
 
   // Download the remote block specified by 'src_block_id'. 'num_blocks' should
   // be given as the total number of blocks there are to download (for logging
-  // purposes).
+  // purposes). Add the block to the given transaction, to close blocks belonging
+  // to a transaction together when the copying is complete.
   //
   // On success:
   // - 'dest_block_id' is set to the new ID of the downloaded block.
@@ -166,13 +171,17 @@ class TabletCopyClient {
   Status DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                  int num_blocks,
                                  int* block_count,
-                                 BlockIdPB* dest_block_id);
+                                 BlockIdPB* dest_block_id,
+                                 fs::BlockTransaction* transaction);
 
   // Download a single block.
-  // Data block is opened with options so that it will fsync() on close.
+  // Data block is opened with new ID. After downloading, the block is finalized
+  // and added to the given transaction.
   //
   // On success, 'new_block_id' is set to the new ID of the downloaded block.
-  Status DownloadBlock(const BlockId& old_block_id, BlockId* new_block_id);
+  Status DownloadBlock(const BlockId& old_block_id,
+                       BlockId* new_block_id,
+                       fs::BlockTransaction* transaction);
 
   // Download a single remote file. The block and WAL implementations delegate
   // to this method when downloading files.

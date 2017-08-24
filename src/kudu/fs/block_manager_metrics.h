@@ -36,6 +36,7 @@ struct BlockManagerMetrics {
   scoped_refptr<Counter> total_writable_blocks;
   scoped_refptr<Counter> total_bytes_read;
   scoped_refptr<Counter> total_bytes_written;
+  scoped_refptr<Counter> total_disk_sync;
 };
 
 } // namespace internal

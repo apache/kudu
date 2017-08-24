@@ -991,6 +991,7 @@ Status LogBlockContainer::FlushMetadata() {
 Status LogBlockContainer::SyncData() {
   DCHECK(!read_only());
   if (FLAGS_enable_data_block_fsync) {
+    if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
     RETURN_NOT_OK_HANDLE_ERROR(data_file_->Sync());
   }
   return Status::OK();
@@ -999,6 +1000,7 @@ Status LogBlockContainer::SyncData() {
 Status LogBlockContainer::SyncMetadata() {
   DCHECK(!read_only());
   if (FLAGS_enable_data_block_fsync) {
+    if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Sync());
   }
   return Status::OK();
@@ -1886,6 +1888,7 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
   }
 
   if (to_sync && FLAGS_enable_data_block_fsync) {
+    if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
     s = env_->SyncDir(container.data_dir()->dir());
 
     // If SyncDir fails, the container directory must be restored to

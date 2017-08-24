@@ -91,6 +91,7 @@ using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using env_util::CopyFile;
+using fs::BlockTransaction;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using rpc::Messenger;
@@ -458,6 +459,7 @@ Status TabletCopyClient::DownloadBlocks() {
   // as each block downloads.
   int block_count = 0;
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_remote_blocks << " data blocks...";
+  BlockTransaction transaction;
   for (const RowSetDataPB& src_rowset : remote_superblock_->rowsets()) {
     // Create rowset.
     RowSetDataPB* dst_rowset = superblock_->add_rowsets();
@@ -478,7 +480,7 @@ Status TabletCopyClient::DownloadBlocks() {
     for (const ColumnDataPB& src_col : src_rowset.columns()) {
       BlockIdPB new_block_id;
       RETURN_NOT_OK(DownloadAndRewriteBlock(src_col.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
+                                            &block_count, &new_block_id, &transaction));
       ColumnDataPB* dst_col = dst_rowset->add_columns();
       *dst_col = src_col;
       *dst_col->mutable_block() = new_block_id;
@@ -486,7 +488,7 @@ Status TabletCopyClient::DownloadBlocks() {
     for (const DeltaDataPB& src_redo : src_rowset.redo_deltas()) {
       BlockIdPB new_block_id;
       RETURN_NOT_OK(DownloadAndRewriteBlock(src_redo.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
+                                            &block_count, &new_block_id, &transaction));
       DeltaDataPB* dst_redo = dst_rowset->add_redo_deltas();
       *dst_redo = src_redo;
       *dst_redo->mutable_block() = new_block_id;
@@ -494,7 +496,7 @@ Status TabletCopyClient::DownloadBlocks() {
     for (const DeltaDataPB& src_undo : src_rowset.undo_deltas()) {
       BlockIdPB new_block_id;
       RETURN_NOT_OK(DownloadAndRewriteBlock(src_undo.block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
+                                            &block_count, &new_block_id, &transaction));
       DeltaDataPB* dst_undo = dst_rowset->add_undo_deltas();
       *dst_undo = src_undo;
       *dst_undo->mutable_block() = new_block_id;
@@ -502,18 +504,18 @@ Status TabletCopyClient::DownloadBlocks() {
     if (src_rowset.has_bloom_block()) {
       BlockIdPB new_block_id;
       RETURN_NOT_OK(DownloadAndRewriteBlock(src_rowset.bloom_block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
+                                            &block_count, &new_block_id, &transaction));
       *dst_rowset->mutable_bloom_block() = new_block_id;
     }
     if (src_rowset.has_adhoc_index_block()) {
       BlockIdPB new_block_id;
       RETURN_NOT_OK(DownloadAndRewriteBlock(src_rowset.adhoc_index_block(), num_remote_blocks,
-                                            &block_count, &new_block_id));
+                                            &block_count, &new_block_id, &transaction));
       *dst_rowset->mutable_adhoc_index_block() = new_block_id;
     }
   }
 
-  return Status::OK();
+  return transaction.CommitCreatedBlocks();
 }
 
 Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
@@ -563,13 +565,14 @@ Status TabletCopyClient::WriteConsensusMetadata() {
 Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                                  int num_blocks,
                                                  int* block_count,
-                                                 BlockIdPB* dest_block_id) {
+                                                 BlockIdPB* dest_block_id,
+                                                 BlockTransaction* transaction) {
   BlockId old_block_id(BlockId::FromPB(src_block_id));
   SetStatusMessage(Substitute("Downloading block $0 ($1/$2)",
                               old_block_id.ToString(),
                               *block_count + 1, num_blocks));
   BlockId new_block_id;
-  RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id),
+  RETURN_NOT_OK_PREPEND(DownloadBlock(old_block_id, &new_block_id, transaction),
       "Unable to download block with id " + old_block_id.ToString());
 
   new_block_id.CopyToPB(dest_block_id);
@@ -578,7 +581,8 @@ Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
 }
 
 Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
-                                       BlockId* new_block_id) {
+                                       BlockId* new_block_id,
+                                       BlockTransaction* transaction) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
 
   unique_ptr<WritableBlock> block;
@@ -593,7 +597,8 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
                                    old_block_id.ToString()));
 
   *new_block_id = block->id();
-  RETURN_NOT_OK_PREPEND(block->Close(), "Unable to close block");
+  RETURN_NOT_OK_PREPEND(block->Finalize(), "Unable to finalize block");
+  transaction->AddCreatedBlock(std::move(block));
   return Status::OK();
 }
 

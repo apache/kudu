@@ -390,6 +390,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
     // Safer to synchronize data first, then metadata.
     VLOG(3) << "Syncing block " << id();
     if (FLAGS_enable_data_block_fsync) {
+      if (block_manager_->metrics_) block_manager_->metrics_->total_disk_sync->Increment();
       sync = writer_->Sync();
     }
     if (sync.ok()) {
@@ -559,6 +560,7 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
   // Sync them.
   if (FLAGS_enable_data_block_fsync) {
     for (const string& s : to_sync) {
+      if (metrics_) metrics_->total_disk_sync->Increment();
       RETURN_NOT_OK_HANDLE_DISK_FAILURE(env_->SyncDir(s),
           error_manager_->RunErrorNotificationCb(location.data_dir()));
     }

@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -38,6 +39,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -53,6 +55,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
@@ -62,6 +65,12 @@
 using std::shared_ptr;
 using std::string;
 using std::vector;
+
+DECLARE_string(block_manager);
+
+METRIC_DECLARE_counter(block_manager_total_disk_sync);
+METRIC_DECLARE_counter(block_manager_total_writable_blocks);
+METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 
 namespace kudu {
 namespace tserver {
@@ -78,7 +87,13 @@ class TabletCopyClientTest : public TabletCopyTest {
   virtual void SetUp() OVERRIDE {
     NO_FATALS(TabletCopyTest::SetUp());
 
-    fs_manager_.reset(new FsManager(Env::Default(), GetTestPath("client_tablet")));
+    const string kTestDir = GetTestPath("client_tablet");
+    FsManagerOpts opts;
+    opts.wal_path = kTestDir;
+    opts.data_paths = { kTestDir };
+    metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
+    opts.metric_entity = metric_entity_;
+    fs_manager_.reset(new FsManager(Env::Default(), opts));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
@@ -101,6 +116,8 @@ class TabletCopyClientTest : public TabletCopyTest {
  protected:
   Status CompareFileContents(const string& path1, const string& path2);
 
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<TabletCopyClient> client_;
@@ -160,7 +177,9 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
 
   // Check that the client downloaded the block and verification passed.
   BlockId new_block_id;
-  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
+  fs::BlockTransaction transaction;
+  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id, &transaction));
+  ASSERT_OK(transaction.CommitCreatedBlocks());
 
   // Ensure it placed the block where we expected it to.
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
@@ -225,6 +244,15 @@ TEST_F(TabletCopyClientTest, TestVerifyData) {
 TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
+
+  // Verify the disk synchronization count.
+  if (FLAGS_block_manager == "log") {
+    ASSERT_EQ(3, down_cast<Counter*>(
+        metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
+  } else {
+    ASSERT_EQ(14, down_cast<Counter*>(
+        metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
+  }
 
   // After downloading blocks, verify that the old and remote and local
   // superblock point to the same number of blocks.
