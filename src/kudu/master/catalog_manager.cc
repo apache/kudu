@@ -2486,8 +2486,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
     DCHECK(!s.ok());
-    DCHECK_EQ(report.state(), tablet::FAILED);
-    LOG(WARNING) << "Tablet " << tablet->ToString() << " has failed on TS "
+    LOG(WARNING) << "Tablet " << tablet->ToString() << " experienced an error on TS "
                  << ts_desc->ToString() << ": " << s.ToString();
     return Status::OK();
   }

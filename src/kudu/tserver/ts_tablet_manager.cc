@@ -1011,9 +1011,9 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
   reported_tablet->set_tablet_id(tablet_id);
   reported_tablet->set_state(replica->state());
   reported_tablet->set_tablet_data_state(replica->tablet_metadata()->tablet_data_state());
-  if (replica->state() == tablet::FAILED) {
-    AppStatusPB* error_status = reported_tablet->mutable_error();
-    StatusToPB(replica->error(), error_status);
+  const Status& error = replica->error();
+  if (!error.ok()) {
+    StatusToPB(error, reported_tablet->mutable_error());
   }
   reported_tablet->set_schema_version(replica->tablet_metadata()->schema_version());
 
