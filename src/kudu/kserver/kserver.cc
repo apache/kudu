@@ -108,7 +108,9 @@ void KuduServer::Shutdown() {
   //
   // Note: prior to this call, it is assumed that any incoming RPCs deferred
   // from reactor threads have already been cleaned up.
-  messenger_->Shutdown();
+  if (messenger_) {
+    messenger_->Shutdown();
+  }
 
   // The shutdown order here shouldn't matter; shutting down the messenger
   // first ensures that all outstanding RaftConsensus instances are destroyed.

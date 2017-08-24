@@ -494,7 +494,9 @@ void ServerBase::Shutdown() {
     web_server_->Stop();
   }
   rpc_server_->Shutdown();
-  messenger_->Shutdown();
+  if (messenger_) {
+    messenger_->Shutdown();
+  }
 
   // Next, shut down remaining server components.
   stop_background_threads_latch_.CountDown();
