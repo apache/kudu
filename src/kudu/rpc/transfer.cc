@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <set>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -29,7 +30,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
-#include "kudu/rpc/outbound_call.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/socket.h"

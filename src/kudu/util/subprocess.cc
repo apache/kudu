@@ -30,6 +30,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <ostream>
@@ -49,6 +50,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"

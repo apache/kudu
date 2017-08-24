@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <ostream>
 #include <set>
-#include <type_traits>
 #include <unordered_map>
 
 #include <gflags/gflags_declare.h>
@@ -28,7 +27,7 @@
 
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"

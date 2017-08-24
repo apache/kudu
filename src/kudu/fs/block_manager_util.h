@@ -17,12 +17,11 @@
 
 #pragma once
 
-#include <set>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "kudu/util/path_util.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

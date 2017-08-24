@@ -39,6 +39,7 @@
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/negotiation.h"
+#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/server_negotiation.h"
 #include "kudu/util/countdown_latch.h"

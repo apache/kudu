@@ -16,8 +16,9 @@
 // under the License.
 
 #include <atomic>
-#include <functional>
+#include <cstdint>
 #include <memory>
+#include <string>
 
 #include <gtest/gtest.h>
 

@@ -20,8 +20,7 @@
 #include <functional>
 #include <memory>
 
-#include <boost/none.hpp>
-#include <boost/optional.hpp>
+#include <boost/optional/optional.hpp>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"

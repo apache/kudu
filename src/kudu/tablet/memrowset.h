@@ -45,6 +45,7 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -52,7 +53,6 @@ namespace kudu {
 
 class MemTracker;
 class MemoryTrackingBufferAllocator;
-class MonoTime;
 class RowBlock;
 class RowBlockRow;
 class RowChangeList;

@@ -33,7 +33,6 @@
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -50,6 +49,8 @@ class Env;
 class RWFile;
 
 namespace fs {
+class DataDir;
+class DataDirManager;
 class FsErrorManager;
 struct FsReport;
 

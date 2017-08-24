@@ -23,9 +23,10 @@
 
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
-#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/make_shared.h"

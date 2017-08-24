@@ -17,25 +17,30 @@
 
 #include "kudu/tools/tool_action.h"
 
+#include <algorithm>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <string>
-#include <utility>
+#include <unordered_map>
+#include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tools/tool_action_common.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
 DECLARE_string(columns);

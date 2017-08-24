@@ -20,14 +20,10 @@
 #include <cstring>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/cfile/cfile-test-base.h"
-#include "kudu/common/common.pb.h"
-#include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/move.h"
+#include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"

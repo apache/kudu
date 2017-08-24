@@ -18,9 +18,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -31,8 +33,10 @@
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -38,11 +38,10 @@
 #include "kudu/fs/file_block_manager.h" // IWYU pragma: keep
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/fs/log_block_manager.h"  // IWYU pragma: keep
 #include "kudu/fs/log_block_manager-test-util.h"
+#include "kudu/fs/log_block_manager.h"  // IWYU pragma: keep
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -95,9 +94,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace fs {
-
-class FileBlockManager;
-class LogBlockManager;
 
 // This test attempts to simulate how a TS might use the block manager:
 //

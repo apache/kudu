@@ -34,8 +34,6 @@
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/monotime.h"
-#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {

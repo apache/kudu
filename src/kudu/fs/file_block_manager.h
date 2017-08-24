@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "kudu/fs/block_manager.h"
-#include "kudu/fs/data_dirs.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/file_cache.h"
@@ -41,6 +40,7 @@ class MemTracker;
 class RandomAccessFile;
 
 namespace fs {
+class DataDirManager;
 class FsErrorManager;
 struct FsReport;
 

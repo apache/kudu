@@ -73,6 +73,8 @@ TAG_FLAG(default_composite_key_index_block_size_bytes, experimental);
 
 namespace kudu {
 
+class Mutex;
+
 namespace consensus {
 class OpId;
 }

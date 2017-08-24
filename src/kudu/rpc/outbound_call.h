@@ -55,7 +55,6 @@ namespace kudu {
 namespace rpc {
 
 class CallResponse;
-class Connection;
 class DumpRunningRpcsRequestPB;
 class RpcCallInProgressPB;
 class RpcController;

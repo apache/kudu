@@ -18,21 +18,25 @@
 #include "kudu/security/tls_handshake.h"
 
 #include <atomic>
-#include <functional>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <boost/optional.hpp>
-#include <gflags/gflags.h>
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/security/ca/cert_management.h"
+#include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/security-test-util.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

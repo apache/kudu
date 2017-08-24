@@ -15,13 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <string>
-
 #include <gtest/gtest.h>
 
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"

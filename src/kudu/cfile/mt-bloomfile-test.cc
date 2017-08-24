@@ -17,9 +17,19 @@
 
 #include "kudu/cfile/bloomfile-test-base.h"
 
+#include <cstdint>
+#include <vector>
+
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
+
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/thread.h"
 
 DEFINE_int32(benchmark_num_threads, 8, "Number of threads to use for the benchmark");
 

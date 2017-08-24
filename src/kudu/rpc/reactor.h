@@ -34,7 +34,6 @@
 #include "kudu/rpc/connection.h"
 #include "kudu/rpc/connection_id.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -52,6 +51,7 @@ typedef std::list<scoped_refptr<Connection>> conn_list_t;
 
 class DumpRunningRpcsRequestPB;
 class DumpRunningRpcsResponsePB;
+class OutboundCall;
 class Reactor;
 class ReactorThread;
 enum class CredentialsPolicy;

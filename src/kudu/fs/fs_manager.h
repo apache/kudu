@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -30,6 +29,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/error_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -49,7 +49,6 @@ class MetricEntity;
 namespace fs {
 
 class BlockManager;
-class DataDirManager;
 class ReadableBlock;
 class WritableBlock;
 struct FsReport;

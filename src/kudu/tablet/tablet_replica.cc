@@ -26,6 +26,8 @@
 #include <type_traits>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/clock/clock.h"
 #include "kudu/common/partition.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -45,6 +47,7 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"

@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -50,13 +51,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/status_callback.h"
 
-namespace boost {
-template <class T>
-class optional;
-}
-
 namespace kudu {
-
 
 typedef std::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;

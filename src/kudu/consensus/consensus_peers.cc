@@ -24,7 +24,6 @@
 #include <type_traits>
 #include <vector>
 
-#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -38,7 +37,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/periodic.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/fault_injection.h"

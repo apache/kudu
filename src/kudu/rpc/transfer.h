@@ -21,7 +21,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 
 #include <boost/intrusive/list_hook.hpp>

@@ -41,7 +41,6 @@ class Slice;
 namespace fs {
 
 class BlockManager;
-class DataDirManager;
 class FsErrorManager;
 struct FsReport;
 

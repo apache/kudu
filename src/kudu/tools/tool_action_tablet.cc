@@ -18,7 +18,6 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <fstream>  // IWYU pragma: keep
 #include <iostream>
 #include <memory>
@@ -37,6 +36,7 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"

@@ -23,6 +23,7 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/message.h>
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -42,12 +43,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
-
-namespace google {
-namespace protobuf {
-class Message;
-}
-}
 
 DECLARE_int64(tablet_transaction_memory_limit_mb);
 

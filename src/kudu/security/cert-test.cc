@@ -15,12 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <boost/optional.hpp>
-#include <boost/optional/optional_io.hpp>
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/security/cert.h"

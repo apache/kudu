@@ -16,19 +16,20 @@
 // under the License.
 
 #include <cstring>
-#include <functional>
-#include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"

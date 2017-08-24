@@ -25,7 +25,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h> // IWYU pragma: keep
-#include <gmock/gmock.h>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 #include "kudu/codegen/code_generator.h"

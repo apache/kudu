@@ -20,14 +20,12 @@
 #include <algorithm>
 #include <memory>
 #include <mutex>
-#include <utility>
 
-#include <boost/optional.hpp>
+#include <boost/function.hpp>
 #include <glog/logging.h>
 
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
