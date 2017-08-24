@@ -138,6 +138,10 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
 
   TestWorkload workload(cluster_.get());
+  // We need to allow timeouts because the client may maintain a connection
+  // with the rogue leader, which will result in a timeout.
+  workload.set_write_timeout_millis(5000);
+  workload.set_timeout_allowed(true);
   workload.Setup();
 
   // Figure out the tablet id of the created tablet.
@@ -151,14 +155,16 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
                                             tablet_id, timeout));
   }
 
+  LOG(INFO) << "loading data...";
+
   // Elect a leader for term 1, then run some data through the cluster.
   int zombie_leader_index = 1;
   string zombie_leader_uuid = cluster_->tablet_server(zombie_leader_index)->uuid();
   ASSERT_OK(itest::StartElection(ts_map_[zombie_leader_uuid], tablet_id, timeout));
   workload.Start();
-  while (workload.rows_inserted() < 100) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GE(workload.rows_inserted(), 100);
+  });
   workload.StopAndJoin();
 
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
@@ -167,10 +173,10 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // specifying an old term. That running server should reject the request.
   // We are essentially masquerading as a rogue leader here.
   Status s = itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
-                                         HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
-                                         0, // Say I'm from term 0.
-                                         timeout);
-  ASSERT_TRUE(s.IsInvalidArgument());
+                                    HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                                    /*caller_term=*/ 0, // Say I'm from term 0.
+                                    timeout);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "term 0, which is lower than last-logged term 1");
 
   // Now pause the actual leader so we can bring him back as a zombie later.
@@ -181,6 +187,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   string new_leader_uuid = cluster_->tablet_server(new_leader_index)->uuid();
   ASSERT_OK(itest::StartElection(ts_map_[new_leader_uuid], tablet_id, timeout));
   ASSERT_OK(itest::WaitUntilLeader(ts_map_[new_leader_uuid], tablet_id, timeout));
+  LOG(INFO) << "successfully elected new leader";
 
   unordered_map<string, TServerDetails*> active_ts_map = ts_map_;
   ASSERT_EQ(1, active_ts_map.erase(zombie_leader_uuid));
@@ -190,19 +197,26 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // leader's tablet copy request when we bring it back online.
   int log_index = workload.batches_completed() + 2; // 2 terms == 2 additional NO_OP entries.
   ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, log_index));
+
   // Write more rows to the new leader.
+  LOG(INFO) << "restarting workload...";
+  int64_t prev_inserted = workload.rows_inserted();
   workload.Start();
-  while (workload.rows_inserted() < 100) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GE(workload.rows_inserted(), prev_inserted + 100);
+  });
   workload.StopAndJoin();
 
   // Now kill the new leader and tombstone the replica on TS 0.
+  LOG(INFO) << "shutting down new leader" << new_leader_uuid << "...";
   cluster_->tablet_server(new_leader_index)->Shutdown();
+
+  LOG(INFO) << "tombstoning original follower...";
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
   // Zombies!!! Resume the rogue zombie leader.
   // He should attempt to tablet copy TS 0 but fail.
+  LOG(INFO) << "unpausing old (rogue) leader " << zombie_leader_uuid << "...";
   ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Resume());
 
   // Loop for a few seconds to ensure that the tablet doesn't transition to READY.
@@ -215,11 +229,13 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
+  LOG(INFO) << "the rogue leader was not able to tablet copy the tombstoned follower";
+
   // Force the rogue leader to step down.
   // Then, send a tablet copy start request from a "fake" leader that
   // sends an up-to-date term in the RB request but the actual term stored
   // in the copy source's consensus metadata would still be old.
-  LOG(INFO) << "Forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
+  LOG(INFO) << "forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
             << " to step down...";
   ASSERT_OK(itest::LeaderStepDown(ts_map_[zombie_leader_uuid], tablet_id, timeout));
   ExternalTabletServer* zombie_ets = cluster_->tablet_server(zombie_leader_index);
@@ -227,13 +243,12 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // rejecting the remote. We intend to make that part async though, so ignoring
   // this return value in this test.
   ignore_result(itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
-                                            HostPort(zombie_ets->bound_rpc_addr()),
-                                            2, // Say I'm from term 2.
-                                            timeout));
+                                       HostPort(zombie_ets->bound_rpc_addr()),
+                                       /* caller_term=*/ 2, // Say I'm from term 2.
+                                       timeout));
 
   // Wait another few seconds to be sure the tablet copy is rejected.
-  deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(5));
+  deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
     ASSERT_EQ(1, tablets.size());
