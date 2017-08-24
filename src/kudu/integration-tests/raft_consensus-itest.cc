@@ -1737,15 +1737,10 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     }
 
     // Ensure writes timeout while only a minority is alive.
-    //
-    // The SIGSTOP issued by Pause() is delivered asynchronously, so we may
-    // need to retry this a few times to see the timeout.
-    ASSERT_EVENTUALLY([&]{
-      Status s = WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
-                                    kTestRowKey, kTestRowIntVal, "foo",
-                                    MonoDelta::FromMilliseconds(100));
-      ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
-    });
+    Status s = WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
+                                  kTestRowKey, kTestRowIntVal, "foo",
+                                  MonoDelta::FromMilliseconds(100));
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
     // Step down.
     ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
@@ -1753,7 +1748,7 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     // Assert that elections time out without a live majority.
     // We specify a very short timeout here to keep the tests fast.
     ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
-    Status s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
+    s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
     LOG(INFO) << "Expected timeout encountered on election with weakened config: " << s.ToString();
 
@@ -1904,7 +1899,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   Status s = RemoveServer(leader_tserver, tablet_id_, tservers[1],
                           -1, MonoDelta::FromSeconds(1),
                           &error_code);
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Pause the leader, and restart the other servers.
   ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Pause());

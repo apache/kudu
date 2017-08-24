@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
@@ -160,6 +162,8 @@ class Subprocess {
   const std::string& argv0() const { return argv_[0]; }
 
  private:
+  FRIEND_TEST(SubprocessTest, TestGetProcfsState);
+
   enum State {
     kNotStarted,
     kRunning,
@@ -167,6 +171,20 @@ class Subprocess {
   };
   enum StreamMode {SHARED, DISABLED, PIPED};
   enum WaitMode {BLOCKING, NON_BLOCKING};
+
+  // Process state according to /proc/<pid>/stat.
+  enum class ProcfsState {
+    // "T  Stopped (on a signal) or (before Linux 2.6.33) trace stopped"
+    PAUSED,
+
+    // Every other process state.
+    RUNNING,
+  };
+
+  // Extracts the process state for /proc/<pid>/stat.
+  //
+  // Returns an error if /proc/</pid>/stat doesn't exist or if parsing failed.
+  static Status GetProcfsState(int pid, ProcfsState* state);
 
   Status DoWait(int* wait_status, WaitMode mode) WARN_UNUSED_RESULT;
   void SetFdShared(int stdfd, bool share);
