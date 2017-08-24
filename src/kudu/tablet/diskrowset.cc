@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <map>
-#include <mutex>
 #include <ostream>
 #include <vector>
 
@@ -82,8 +81,8 @@ class OpId;
 namespace tablet {
 
 using cfile::BloomFileWriter;
+using fs::BlockTransaction;
 using fs::CreateBlockOptions;
-using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
 using std::shared_ptr;
@@ -228,12 +227,12 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 Status DiskRowSetWriter::Finish() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
-  ScopedWritableBlockCloser closer;
-  RETURN_NOT_OK(FinishAndReleaseBlocks(&closer));
-  return closer.CloseBlocks();
+  BlockTransaction transaction;
+  RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
+  return transaction.CommitCreatedBlocks();
 }
 
-Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
+Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockTransaction* transaction) {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::FinishAndReleaseBlocks");
   CHECK(!finished_);
 
@@ -254,7 +253,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
 
   // Finish writing the columns themselves.
-  RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(closer));
+  RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(transaction));
 
   // Put the column data blocks in the metadata.
   std::map<ColumnId, BlockId> flushed_blocks;
@@ -262,7 +261,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   rowset_metadata_->SetColumnDataBlocks(flushed_blocks);
 
   if (ad_hoc_index_writer_ != nullptr) {
-    Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(closer);
+    Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(transaction);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish ad hoc index writer: " << s.ToString();
       return s;
@@ -270,7 +269,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   }
 
   // Finish bloom.
-  Status s = bloom_writer_->FinishAndReleaseBlock(closer);
+  Status s = bloom_writer_->FinishAndReleaseBlock(transaction);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to Finish bloom filter writer: " << s.ToString();
     return s;
@@ -421,7 +420,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   }
   CHECK_EQ(state_, kStarted);
 
-  Status writer_status = cur_writer_->FinishAndReleaseBlocks(&block_closer_);
+  Status writer_status = cur_writer_->FinishAndReleaseBlocks(&block_transaction_);
 
   // If no rows were written (e.g. due to an empty flush or a compaction with all rows
   // deleted), FinishAndReleaseBlocks(...) returns Aborted. In that case, we don't
@@ -437,7 +436,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
 
     // Commit the UNDO block. Status::Aborted() indicates that there
     // were no UNDOs written.
-    Status s = cur_undo_writer_->FinishAndReleaseBlock(&block_closer_);
+    Status s = cur_undo_writer_->FinishAndReleaseBlock(&block_transaction_);
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
@@ -446,7 +445,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     }
 
     // Same for the REDO block.
-    s = cur_redo_writer_->FinishAndReleaseBlock(&block_closer_);
+    s = cur_redo_writer_->FinishAndReleaseBlock(&block_transaction_);
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
@@ -473,7 +472,7 @@ Status RollingDiskRowSetWriter::Finish() {
   DCHECK_EQ(state_, kStarted);
 
   RETURN_NOT_OK(FinishCurrentWriter());
-  RETURN_NOT_OK(block_closer_.CloseBlocks());
+  RETURN_NOT_OK(block_transaction_.CommitCreatedBlocks());
 
   state_ = kFinished;
   return Status::OK();

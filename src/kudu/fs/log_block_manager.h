@@ -57,6 +57,7 @@ struct FsReport;
 namespace internal {
 class LogBlock;
 class LogBlockContainer;
+class LogWritableBlock;
 
 struct LogBlockManagerMetrics;
 } // namespace internal
@@ -150,8 +151,6 @@ struct LogBlockManagerMetrics;
 // - Implement garbage collection fallback for hole punching.
 // - Implement locality hints so that specific containers can be used for
 //   groups of blocks (i.e. an entire column).
-// - Unlock containers on FlushDataAsync() so that the workflow in
-//   BlockManagerTest::CloseManyBlocksTest can use just one container.
 // - Implement failure recovery (i.e. metadata truncation and other
 //   similarly recoverable errors).
 // - Evaluate and implement a solution for data integrity (e.g. per-block
@@ -181,19 +180,23 @@ class LogBlockManager : public BlockManager {
 
   Status DeleteBlock(const BlockId& block_id) override;
 
-  Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
+  Status CloseBlocks(const std::vector<std::unique_ptr<WritableBlock>>& blocks) override;
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
   FsErrorManager* error_manager() override { return error_manager_; }
 
  private:
+  FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
+  FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
+  FRIEND_TEST(LogBlockManagerTest, TestFinalizeBlock);
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
 
   friend class internal::LogBlockContainer;
+  friend class internal::LogWritableBlock;
 
   // Type for the actual block map used to store all live blocks.
   // We use sparse_hash_map<> here to reduce memory overhead.

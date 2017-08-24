@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -43,7 +44,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
@@ -76,6 +76,7 @@ DEFINE_int32(minimum_live_blocks_for_delete, 1000,
              "threads will not delete any");
 DEFINE_int32(block_group_size, 8, "Number of blocks to write per block "
              "group. Must be power of 2");
+DEFINE_int32(block_group_number, 2, "Total number of block groups.");
 DEFINE_int32(block_group_bytes, 32 * 1024,
              "Total amount of data (in bytes) to write per block group");
 DEFINE_int32(num_bytes_per_write, 32,
@@ -302,59 +303,67 @@ void BlockManagerStressTest<T>::WriterThread() {
   size_t num_bytes_written = 0;
   MonoDelta tight_loop(MonoDelta::FromSeconds(0));
   while (!ShouldStop(tight_loop)) {
-    vector<WritableBlock*> dirty_blocks;
-    ElementDeleter deleter(&dirty_blocks);
-    vector<Random> dirty_block_rands;
+    vector<unique_ptr<WritableBlock>> all_dirty_blocks;
+    for (int i = 0; i < FLAGS_block_group_number; i++) {
+      vector<unique_ptr<WritableBlock>> dirty_blocks;
+      vector<Random> dirty_block_rands;
 
-    // Create the blocks and write out the PRNG seeds.
-    for (int i = 0; i < FLAGS_block_group_size; i++) {
-      unique_ptr<WritableBlock> block;
-      CHECK_OK(bm_->CreateBlock(CreateBlockOptions({ test_tablet_name_ }), &block));
+      // Create the blocks and write out the PRNG seeds.
+      for (int j = 0; j < FLAGS_block_group_size; j++) {
+        unique_ptr<WritableBlock> block;
+        CHECK_OK(bm_->CreateBlock(CreateBlockOptions({test_tablet_name_}), &block));
 
-      const uint32_t seed = rand.Next() + 1;
-      Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));
-      CHECK_OK(block->Append(seed_slice));
+        const uint32_t seed = rand.Next() + 1;
+        Slice seed_slice(reinterpret_cast<const uint8_t*>(&seed), sizeof(seed));
+        CHECK_OK(block->Append(seed_slice));
 
-      dirty_blocks.push_back(block.release());
-      dirty_block_rands.emplace_back(seed);
-    }
-
-    // Write a large amount of data to the group of blocks.
-    //
-    // To emulate a real life workload, we pick the next block to write at
-    // random, and write a smaller chunk of data to it.
-    size_t total_dirty_bytes = 0;
-    while (total_dirty_bytes < FLAGS_block_group_bytes) {
-      // Pick the next block.
-      int next_block_idx = rand.Skewed(log2(dirty_blocks.size()));
-      WritableBlock* block = dirty_blocks[next_block_idx];
-      Random& rand = dirty_block_rands[next_block_idx];
-
-      // Write a small chunk of data.
-      faststring data;
-      while (data.length() < FLAGS_num_bytes_per_write) {
-        const uint32_t next_int = rand.Next();
-        data.append(&next_int, sizeof(next_int));
+        dirty_blocks.emplace_back(std::move(block));
+        dirty_block_rands.emplace_back(seed);
       }
-      CHECK_OK(block->Append(data));
-      total_dirty_bytes += data.length();
+
+      // Write a large amount of data to the group of blocks.
+      //
+      // To emulate a real life workload, we pick the next block to write at
+      // random, and write a smaller chunk of data to it.
+      size_t total_dirty_bytes = 0;
+      while (total_dirty_bytes < FLAGS_block_group_bytes) {
+        // Pick the next block.
+        int next_block_idx = rand.Skewed(log2(dirty_blocks.size()));
+        WritableBlock* block = dirty_blocks[next_block_idx].get();
+        Random& rand = dirty_block_rands[next_block_idx];
+
+        // Write a small chunk of data.
+        faststring data;
+        while (data.length() < FLAGS_num_bytes_per_write) {
+          const uint32_t next_int = rand.Next();
+          data.append(&next_int, sizeof(next_int));
+        }
+        CHECK_OK(block->Append(data));
+        total_dirty_bytes += data.length();
+      }
+
+      // Finalize the dirty blocks.
+      for (const auto& dirty_block : dirty_blocks) {
+        CHECK_OK(dirty_block->Finalize());
+      }
+
+      num_blocks_written += dirty_blocks.size();
+      num_bytes_written += total_dirty_bytes;
+
+      for (auto& dirty_block : dirty_blocks) {
+        all_dirty_blocks.emplace_back(std::move(dirty_block));
+      }
     }
 
     // Close all dirty blocks.
-    //
-    // We could close them implicitly when the blocks are destructed but
-    // this way we can check for errors.
-    CHECK_OK(bm_->CloseBlocks(dirty_blocks));
-
+    CHECK_OK(bm_->CloseBlocks(all_dirty_blocks));
     // Publish the now sync'ed blocks to readers and deleters.
     {
       std::lock_guard<simple_spinlock> l(lock_);
-      for (WritableBlock* block : dirty_blocks) {
+      for (const auto& block : all_dirty_blocks) {
         InsertOrDie(&written_blocks_, block->id(), 0);
       }
     }
-    num_blocks_written += dirty_blocks.size();
-    num_bytes_written += total_dirty_bytes;
   }
 
   total_blocks_written_.IncrementBy(num_blocks_written);
@@ -471,7 +480,7 @@ template <>
 int BlockManagerStressTest<FileBlockManager>::GetMaxFdCount() const {
   return FLAGS_block_manager_max_open_files +
       // Each open block exists outside the file cache.
-      (FLAGS_num_writer_threads * FLAGS_block_group_size) +
+      (FLAGS_num_writer_threads * FLAGS_block_group_size * FLAGS_block_group_number) +
       // Each reader thread can open a file outside the cache if its lookup
       // misses. It'll immediately evict an existing fd, but in that brief
       // window of time both fds may be open simultaneously.
@@ -484,7 +493,7 @@ int BlockManagerStressTest<LogBlockManager>::GetMaxFdCount() const {
       // If all containers are full, each open block could theoretically
       // result in a new container, which is two files briefly outside the
       // cache (before they are inserted and evict other cached files).
-      (FLAGS_num_writer_threads * FLAGS_block_group_size * 2);
+      (FLAGS_num_writer_threads * FLAGS_block_group_size * FLAGS_block_group_number * 2);
 }
 
 template <>
@@ -513,6 +522,7 @@ TYPED_TEST_CASE(BlockManagerStressTest, BlockManagers);
 TYPED_TEST(BlockManagerStressTest, StressTest) {
   OverrideFlagForSlowTests("test_duration_secs", "30");
   OverrideFlagForSlowTests("block_group_size", "16");
+  OverrideFlagForSlowTests("block_group_number", "10");
   OverrideFlagForSlowTests("num_inconsistencies", "128");
 
   const int kNumStarts = 3;

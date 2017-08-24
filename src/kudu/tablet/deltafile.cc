@@ -79,8 +79,8 @@ using cfile::BlockPointer;
 using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using cfile::ReaderOptions;
+using fs::BlockTransaction;
 using fs::ReadableBlock;
-using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 
 namespace tablet {
@@ -113,16 +113,16 @@ Status DeltaFileWriter::Start() {
 }
 
 Status DeltaFileWriter::Finish() {
-  ScopedWritableBlockCloser closer;
-  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
-  return closer.CloseBlocks();
+  BlockTransaction transaction;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
+  return transaction.CommitCreatedBlocks();
 }
 
-Status DeltaFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
+Status DeltaFileWriter::FinishAndReleaseBlock(BlockTransaction* transaction) {
   if (writer_->written_value_count() == 0) {
     return Status::Aborted("no deltas written");
   }
-  return writer_->FinishAndReleaseBlock(closer);
+  return writer_->FinishAndReleaseBlock(transaction);
 }
 
 Status DeltaFileWriter::DoAppendDelta(const DeltaKey &key,

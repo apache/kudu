@@ -22,7 +22,7 @@
 #include <ctime>
 #include <functional>
 #include <memory>
-#include <ostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -73,8 +73,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_string(block_cache_type);
-DECLARE_string(cfile_do_on_finish);
 DECLARE_bool(cfile_write_checksums);
 DECLARE_bool(cfile_verify_checksums);
 
@@ -936,22 +934,12 @@ TEST_P(TestCFileBothCacheTypes, TestReleaseBlock) {
   WriterOptions opts;
   CFileWriter w(opts, GetTypeInfo(STRING), false, std::move(sink));
   ASSERT_OK(w.Start());
-  fs::ScopedWritableBlockCloser closer;
-  ASSERT_OK(w.FinishAndReleaseBlock(&closer));
-  if (FLAGS_cfile_do_on_finish == "flush") {
-    ASSERT_EQ(1, closer.blocks().size());
-    ASSERT_EQ(WritableBlock::FLUSHING, closer.blocks()[0]->state());
-  } else if (FLAGS_cfile_do_on_finish == "close") {
-    ASSERT_EQ(0, closer.blocks().size());
-  } else if (FLAGS_cfile_do_on_finish == "nothing") {
-    ASSERT_EQ(1, closer.blocks().size());
-    ASSERT_EQ(WritableBlock::DIRTY, closer.blocks()[0]->state());
-  } else {
-    LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
-               << FLAGS_cfile_do_on_finish;
-  }
-  ASSERT_OK(closer.CloseBlocks());
-  ASSERT_EQ(0, closer.blocks().size());
+  fs::BlockTransaction transaction;
+  ASSERT_OK(w.FinishAndReleaseBlock(&transaction));
+  ASSERT_EQ(1, transaction.created_blocks().size());
+  ASSERT_EQ(WritableBlock::FINALIZED, transaction.created_blocks()[0]->state());
+  ASSERT_OK(transaction.CommitCreatedBlocks());
+  ASSERT_EQ(0, transaction.created_blocks().size());
 }
 
 TEST_P(TestCFileBothCacheTypes, TestLazyInit) {

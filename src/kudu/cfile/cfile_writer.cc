@@ -18,7 +18,6 @@
 #include "kudu/cfile/cfile_writer.h"
 
 #include <numeric>
-#include <string>
 #include <ostream>
 #include <utility>
 
@@ -54,30 +53,12 @@ DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
 TAG_FLAG(cfile_default_compression_codec, advanced);
 
-// The default value is optimized for throughput in the case that
-// there are multiple drives backing the tablet. By asynchronously
-// flushing each cfile before issuing any fsyncs, the IO across
-// disks is done in parallel.
-//
-// This increases throughput but can harm latency in the case that
-// there are few disks and the WAL is on the same disk as the
-// data blocks. The default is chosen based on the assumptions that:
-// - latency is leveled across machines by Raft
-// - latency-sensitive applications can devote a disk to the WAL
-// - super-sensitive applications can devote an SSD to the WAL.
-// - users could always change this to "close", which slows down throughput
-//   but may improve write latency.
-DEFINE_string(cfile_do_on_finish, "flush",
-              "What to do to cfile blocks when writing is finished. "
-              "Possible values are 'close', 'flush', or 'nothing'.");
-TAG_FLAG(cfile_do_on_finish, experimental);
-
 DEFINE_bool(cfile_write_checksums, true,
             "Write CRC32 checksums for each block");
 TAG_FLAG(cfile_write_checksums, evolving);
 
 using google::protobuf::RepeatedPtrField;
-using kudu::fs::ScopedWritableBlockCloser;
+using kudu::fs::BlockTransaction;
 using kudu::fs::WritableBlock;
 using std::accumulate;
 using std::pair;
@@ -221,12 +202,12 @@ Status CFileWriter::Start() {
 
 Status CFileWriter::Finish() {
   TRACE_EVENT0("cfile", "CFileWriter::Finish");
-  ScopedWritableBlockCloser closer;
-  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
-  return closer.CloseBlocks();
+  BlockTransaction transaction;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
+  return transaction.CommitCreatedBlocks();
 }
 
-Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
+Status CFileWriter::FinishAndReleaseBlock(BlockTransaction* transaction) {
   TRACE_EVENT0("cfile", "CFileWriter::FinishAndReleaseBlock");
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
@@ -290,17 +271,8 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   RETURN_NOT_OK_PREPEND(WriteRawData(footer_slices), "Couldn't write footer");
 
   // Done with this block.
-  if (FLAGS_cfile_do_on_finish == "flush") {
-    RETURN_NOT_OK(block_->FlushDataAsync());
-    closer->AddBlock(std::move(block_));
-  } else if (FLAGS_cfile_do_on_finish == "close") {
-    RETURN_NOT_OK(block_->Close());
-  } else if (FLAGS_cfile_do_on_finish == "nothing") {
-    closer->AddBlock(std::move(block_));
-  } else {
-    LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
-               << FLAGS_cfile_do_on_finish;
-  }
+  RETURN_NOT_OK(block_->Finalize());
+  transaction->AddCreatedBlock(std::move(block_));
   return Status::OK();
 }
 

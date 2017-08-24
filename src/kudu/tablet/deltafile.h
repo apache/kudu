@@ -64,8 +64,8 @@ struct ReaderOptions;
 } // namespace cfile
 
 namespace fs {
+class BlockTransaction;
 class ReadableBlock;
-class ScopedWritableBlockCloser;
 class WritableBlock;
 } // namespace fs
 
@@ -93,10 +93,12 @@ class DeltaFileWriter {
   // writer.
   Status Finish();
 
-  // Closes the delta file, releasing the underlying block to 'closer'.
+  // Closes the delta file, finalizing the underlying block and releasing
+  // it to 'transaction'.
+  //
   // Returns Status::Aborted() if no deltas were ever appended to this
   // writer.
-  Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
+  Status FinishAndReleaseBlock(fs::BlockTransaction* transaction);
 
   // Append a given delta to the file. This must be called in ascending order
   // of (key, timestamp) for REDOS and ascending order of key, descending order

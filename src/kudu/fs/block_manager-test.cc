@@ -20,7 +20,9 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <stdlib.h>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -43,11 +45,11 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
@@ -129,14 +131,14 @@ class BlockManagerTest : public KuduTest {
     int num_blocks = num_dirs * num_blocks_per_dir;
 
     // Write 'num_blocks' blocks to this data dir group.
-    ScopedWritableBlockCloser closer;
+    BlockTransaction transaction;
     for (int i = 0; i < num_blocks; i++) {
       unique_ptr<WritableBlock> written_block;
       ASSERT_OK(bm_->CreateBlock(opts, &written_block));
       ASSERT_OK(written_block->Append(kTestData));
-      closer.AddBlock(std::move(written_block));
+      transaction.AddCreatedBlock(std::move(written_block));
     }
-    ASSERT_OK(closer.CloseBlocks());
+    ASSERT_OK(transaction.CommitCreatedBlocks());
   }
 
  protected:
@@ -346,15 +348,15 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   const char* kTestData = "test data";
-  ScopedWritableBlockCloser closer;
+  BlockTransaction transaction;
   // Creates (numPaths * 2) containers.
   for (int j = 0; j < paths.size() * 2; j++) {
     unique_ptr<WritableBlock> block;
     ASSERT_OK(bm_->CreateBlock(opts, &block));
     ASSERT_OK(block->Append(kTestData));
-    closer.AddBlock(std::move(block));
+    transaction.AddCreatedBlock(std::move(block));
   }
-  ASSERT_OK(closer.CloseBlocks());
+  ASSERT_OK(transaction.CommitCreatedBlocks());
 
   // Verify the results. (numPaths * 2) containers were created, each
   // consisting of 2 files. Thus, there should be a total of
@@ -525,12 +527,8 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
     return;
   }
 
-  // Disable preallocation for this test as it creates many containers.
-  FLAGS_log_container_preallocate_bytes = 0;
-
   Random rand(SeedRandom());
-  vector<WritableBlock*> dirty_blocks;
-  ElementDeleter deleter(&dirty_blocks);
+  vector<unique_ptr<WritableBlock>> dirty_blocks;
   LOG_TIMING(INFO, Substitute("creating $0 blocks", kNumBlocks)) {
     for (int i = 0; i < kNumBlocks; i++) {
       // Create a block.
@@ -543,24 +541,14 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
         data[i] = rand.Next();
       }
       written_block->Append(Slice(data, sizeof(data)));
-
-      dirty_blocks.push_back(written_block.release());
+      written_block->Finalize();
+      dirty_blocks.emplace_back(std::move(written_block));
     }
   }
 
   LOG_TIMING(INFO, Substitute("closing $0 blocks", kNumBlocks)) {
     ASSERT_OK(this->bm_->CloseBlocks(dirty_blocks));
   }
-}
-
-// We can't really test that FlushDataAsync() "works", but we can test that
-// it doesn't break anything.
-TYPED_TEST(BlockManagerTest, FlushDataAsyncTest) {
-  unique_ptr<WritableBlock> written_block;
-  ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
-  string test_data = "test data";
-  ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->FlushDataAsync());
 }
 
 TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
@@ -577,11 +565,11 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
-  // Test FLUSHING->CLOSED transition.
+  // Test FINALIZED->CLOSED transition.
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
   ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->FlushDataAsync());
-  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
+  ASSERT_OK(written_block->Finalize());
+  ASSERT_EQ(WritableBlock::FINALIZED, written_block->state());
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
@@ -590,10 +578,10 @@ TYPED_TEST(BlockManagerTest, WritableBlockStateTest) {
   ASSERT_OK(written_block->Close());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
 
-  // Test FlushDataAsync() no-op.
+  // Test Finalize() no-op.
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
-  ASSERT_OK(written_block->FlushDataAsync());
-  ASSERT_EQ(WritableBlock::FLUSHING, written_block->state());
+  ASSERT_OK(written_block->Finalize());
+  ASSERT_EQ(WritableBlock::FINALIZED, written_block->state());
 
   // Test DIRTY->CLOSED transition.
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
@@ -639,7 +627,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
 
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
   ASSERT_OK(written_block->Append(test_data));
-  ASSERT_OK(written_block->FlushDataAsync());
+  ASSERT_OK(written_block->Finalize());
   ASSERT_OK(written_block->Abort());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
@@ -898,7 +886,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
       RETURN_NOT_OK(block->Append(test_data));
     }
 
-    RETURN_NOT_OK(block->FlushDataAsync());
+    RETURN_NOT_OK(block->Finalize());
     RETURN_NOT_OK(block->Close());
     *out = block->id();
     return Status::OK();
@@ -1015,6 +1003,93 @@ TYPED_TEST(BlockManagerTest, TestGetAllBlockIds) {
   std::sort(retrieved_ids.begin(), retrieved_ids.end(), BlockIdCompare());
 
   ASSERT_EQ(ids, retrieved_ids);
+}
+
+TYPED_TEST(BlockManagerTest, FinalizeTest) {
+  const string kTestData = "test data";
+  unique_ptr<WritableBlock> written_block;
+  ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block));
+  ASSERT_OK(written_block->Append(kTestData));
+  ASSERT_OK(written_block->Finalize());
+  ASSERT_OK(written_block->Close());
+}
+
+// Tests that WritableBlock::Close() is thread-safe for multiple
+// FINALIZED blocks.
+TYPED_TEST(BlockManagerTest, ConcurrentCloseFinalizedWritableBlockTest) {
+  const string kTestData = "test data";
+
+  // Create several blocks. For each block, Finalize() it after fully
+  // written, and then Close() it.
+  auto write_data = [&]() {
+    for (int i = 0; i < 5; i++) {
+      unique_ptr<WritableBlock> writer;
+      CHECK_OK(this->bm_->CreateBlock(this->test_block_opts_, &writer));
+      CHECK_OK(writer->Append(kTestData));
+      CHECK_OK(writer->Finalize());
+      SleepFor(MonoDelta::FromMilliseconds(rand() % 100));
+      CHECK_OK(writer->Close());
+    }
+  };
+
+  vector<std::thread> threads;
+  for (int i = 0; i < 100; i++) {
+    threads.emplace_back(write_data);
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  vector<BlockId> retrieved_ids;
+  ASSERT_OK(this->bm_->GetAllBlockIds(&retrieved_ids));
+  ASSERT_EQ(500, retrieved_ids.size());
+  for (const auto& id : retrieved_ids) {
+    unique_ptr<ReadableBlock> block;
+    ASSERT_OK(this->bm_->OpenBlock(id, &block));
+    uint64_t size;
+    ASSERT_OK(block->Size(&size));
+    uint8_t buf[size];
+    Slice slice(buf, size);
+    ASSERT_OK(block->Read(0, &slice));
+    ASSERT_EQ(kTestData, slice);
+  }
+
+  ASSERT_OK(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                     shared_ptr<MemTracker>(),
+                                     { GetTestDataDirectory() },
+                                     false /* create */));
+}
+
+TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
+  // Create a BlockTransaction. In this transaction,
+  // create some blocks and commit the writes all together.
+  const string kTestData = "test data";
+  BlockTransaction transaction;
+  vector<BlockId> block_ids;
+  for (int i = 0; i < 20; i++) {
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &writer));
+
+    // Write some data to it.
+    ASSERT_OK(writer->Append(kTestData));
+    ASSERT_OK(writer->Finalize());
+    block_ids.emplace_back(writer->id());
+    transaction.AddCreatedBlock(std::move(writer));
+  }
+  ASSERT_OK(transaction.CommitCreatedBlocks());
+
+  // Read the blocks and verify the content.
+  for (const auto& block : block_ids) {
+    unique_ptr<ReadableBlock> reader;
+    ASSERT_OK(this->bm_->OpenBlock(block, &reader));
+    uint64_t sz;
+    ASSERT_OK(reader->Size(&sz));
+    ASSERT_EQ(kTestData.length(), sz);
+    uint8_t scratch[kTestData.length()];
+    Slice data(scratch, kTestData.length());
+    ASSERT_OK(reader->Read(0, &data));
+    ASSERT_EQ(kTestData, data);
+  }
 }
 
 } // namespace fs

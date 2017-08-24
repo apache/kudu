@@ -17,6 +17,7 @@
 
 #include "kudu/fs/file_block_manager.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -24,7 +25,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -36,6 +36,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -47,7 +48,6 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/malloc.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
@@ -63,9 +63,9 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_bool(block_coalesce_close);
 DECLARE_bool(block_manager_lock_dirs);
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_string(block_manager_preflush_control);
 
 namespace kudu {
 namespace fs {
@@ -247,13 +247,16 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
 
-  virtual Status FlushDataAsync() OVERRIDE;
+  virtual Status Finalize() OVERRIDE;
 
   virtual size_t BytesAppended() const OVERRIDE;
 
   virtual State state() const OVERRIDE;
 
   void HandleError(const Status& s) const;
+
+  // Starts an asynchronous flush of dirty block data to disk.
+  Status FlushDataAsync();
 
  private:
   enum SyncMode {
@@ -347,14 +350,24 @@ Status FileWritableBlock::AppendV(const vector<Slice>& data) {
 }
 
 Status FileWritableBlock::FlushDataAsync() {
-  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)
-      << "Invalid state: " << state_;
-  if (state_ == DIRTY) {
-    VLOG(3) << "Flushing block " << id();
-    RETURN_NOT_OK_HANDLE_ERROR(writer_->Flush(WritableFile::FLUSH_ASYNC));
-  }
+  VLOG(3) << "Flushing block " << id();
+  RETURN_NOT_OK_HANDLE_ERROR(writer_->Flush(WritableFile::FLUSH_ASYNC));
+  return Status::OK();
+}
 
-  state_ = FLUSHING;
+Status FileWritableBlock::Finalize() {
+  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FINALIZED)
+      << "Invalid state: " << state_;
+
+  if (state_ == FINALIZED) {
+    return Status::OK();
+  }
+  VLOG(3) << "Finalizing block " << id();
+  if (state_ == DIRTY &&
+      FLAGS_block_manager_preflush_control == "finalize") {
+    FlushDataAsync();
+  }
+  state_ = FINALIZED;
   return Status::OK();
 }
 
@@ -373,7 +386,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
 
   Status sync;
   if (mode == SYNC &&
-      (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)) {
+      (state_ == CLEAN || state_ == DIRTY || state_ == FINALIZED)) {
     // Safer to synchronize data first, then metadata.
     VLOG(3) << "Syncing block " << id();
     if (FLAGS_enable_data_block_fsync) {
@@ -736,19 +749,21 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status FileBlockManager::CloseBlocks(const vector<WritableBlock*>& blocks) {
+Status FileBlockManager::CloseBlocks(const vector<unique_ptr<WritableBlock>>& blocks) {
   VLOG(3) << "Closing " << blocks.size() << " blocks";
-  if (FLAGS_block_coalesce_close) {
+  if (FLAGS_block_manager_preflush_control == "close") {
     // Ask the kernel to begin writing out each block's dirty data. This is
     // done up-front to give the kernel opportunities to coalesce contiguous
     // dirty pages.
-    for (WritableBlock* block : blocks) {
-      RETURN_NOT_OK(block->FlushDataAsync());
+    for (const auto& block : blocks) {
+      internal::FileWritableBlock* fwb =
+          down_cast<internal::FileWritableBlock*>(block.get());
+      RETURN_NOT_OK(fwb->FlushDataAsync());
     }
   }
 
   // Now close each block, waiting for each to become durable.
-  for (WritableBlock* block : blocks) {
+  for (const auto& block : blocks) {
     RETURN_NOT_OK(block->Close());
   }
   return Status::OK();

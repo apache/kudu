@@ -57,8 +57,8 @@ using std::vector;
 namespace kudu {
 namespace cfile {
 
+using fs::BlockTransaction;
 using fs::ReadableBlock;
-using fs::ScopedWritableBlockCloser;
 using fs::WritableBlock;
 
 // Generator for BloomFileReader::instance_nonce_.
@@ -113,16 +113,16 @@ Status BloomFileWriter::Start() {
 }
 
 Status BloomFileWriter::Finish() {
-  ScopedWritableBlockCloser closer;
-  RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
-  return closer.CloseBlocks();
+  BlockTransaction transaction;
+  RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
+  return transaction.CommitCreatedBlocks();
 }
 
-Status BloomFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
+Status BloomFileWriter::FinishAndReleaseBlock(BlockTransaction* transaction) {
   if (bloom_builder_.count() > 0) {
     RETURN_NOT_OK(FinishCurrentBloomBlock());
   }
-  return writer_->FinishAndReleaseBlock(closer);
+  return writer_->FinishAndReleaseBlock(transaction);
 }
 
 size_t BloomFileWriter::written_size() const {

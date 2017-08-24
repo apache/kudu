@@ -17,22 +17,19 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include <glog/logging.h>
-
-#include "kudu/fs/block_id.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class BlockId;
 class Env;
 class MemTracker;
 class MetricEntity;
@@ -66,11 +63,12 @@ class Block {
 // Close() is an expensive operation, as it must flush both dirty block data
 // and metadata to disk. The block manager API provides two ways to improve
 // Close() performance:
-// 1. FlushDataAsync() before Close(). If there's enough work to be done
-//    between the two calls, there will be less outstanding I/O to wait for
-//    during Close().
-// 2. CloseBlocks() on a group of blocks. This at least ensures that, when
-//    waiting on outstanding I/O, the waiting is done in parallel.
+// 1. Finalize() before Close(). When 'block_manager_preflush_control' is set
+//    to 'finalize', if there's enough work to be done between the two calls,
+//    there will be less outstanding I/O to wait for during Close().
+// 2. CloseBlocks() on a group of blocks. This ensures: 1) flushing of dirty
+//    blocks are grouped together if possible, resulting in less I/O.
+//    2) when waiting on outstanding I/O, the waiting is done in parallel.
 //
 // NOTE: if a WritableBlock is not explicitly Close()ed, it will be aborted
 // (i.e. deleted).
@@ -83,9 +81,9 @@ class WritableBlock : public Block {
     // There is some dirty data in the block.
     DIRTY,
 
-    // There is an outstanding flush operation asynchronously flushing
-    // dirty block data to disk.
-    FLUSHING,
+    // No more data may be written to the block, but it is not yet guaranteed
+    // to be durably stored on disk.
+    FINALIZED,
 
     // The block is closed. No more operations can be performed on it.
     CLOSED
@@ -119,16 +117,15 @@ class WritableBlock : public Block {
   // outstanding data to reach the disk.
   virtual Status AppendV(const std::vector<Slice>& data) = 0;
 
-  // Begins an asynchronous flush of dirty block data to disk.
+  // Signals that the block will no longer receive writes. Does not guarantee
+  // durability; Close() must still be called for that.
   //
-  // This is purely a performance optimization for Close(); if there is
-  // other work to be done between the final Append() and the future
-  // Close(), FlushDataAsync() will reduce the amount of time spent waiting
-  // for outstanding I/O to complete in Close(). This is analogous to
-  // readahead or prefetching.
-  //
-  // Data may not be written to the block after FlushDataAsync() is called.
-  virtual Status FlushDataAsync() = 0;
+  // When 'block_manager_preflush_control' is set to 'finalize', it also begins an
+  // asynchronous flush of dirty block data to disk. If there is other work
+  // to be done between the final Append() and the future Close(),
+  // Finalize() will reduce the amount of time spent waiting for outstanding
+  // I/O to complete in Close(). This is analogous to readahead or prefetching.
+  virtual Status Finalize() = 0;
 
   // Returns the number of bytes successfully appended via Append().
   virtual size_t BytesAppended() const = 0;
@@ -245,7 +242,8 @@ class BlockManager {
   // Close() for each block but may be optimized for groups of blocks.
   //
   // On success, guarantees that outstanding data is durable.
-  virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) = 0;
+  virtual Status CloseBlocks(
+      const std::vector<std::unique_ptr<WritableBlock>>& blocks) = 0;
 
   // Retrieves the IDs of all blocks under management by this block manager.
   // These include ReadableBlocks as well as WritableBlocks.
@@ -260,42 +258,37 @@ class BlockManager {
   virtual FsErrorManager* error_manager() = 0;
 };
 
-// Closes a group of blocks.
-//
-// Blocks must be closed explicitly via CloseBlocks(), otherwise they will
-// be deleted in the in the destructor.
-class ScopedWritableBlockCloser {
+// Group a set of block creations together in a transaction. This has two
+// major motivations: 1) the underlying block manager can optimize
+// synchronization for a batch of blocks if possible to achieve better
+// performance. 2) to be able to track all blocks in one logical operation.
+class BlockTransaction {
  public:
-  ScopedWritableBlockCloser() {}
-
-  ~ScopedWritableBlockCloser() {
-    for (WritableBlock* block : blocks_) {
-      WARN_NOT_OK(block->Abort(), strings::Substitute(
-          "Failed to abort block with id $0", block->id().ToString()));
-    }
-    STLDeleteElements(&blocks_);
+  void AddCreatedBlock(std::unique_ptr<WritableBlock> block) {
+    created_blocks_.emplace_back(std::move(block));
   }
 
-  void AddBlock(std::unique_ptr<WritableBlock> block) {
-    blocks_.push_back(block.release());
-  }
-
-  Status CloseBlocks() {
-    if (blocks_.empty()) {
+  // Commit all the created blocks and close them together.
+  // On success, guarantees that outstanding data is durable.
+  Status CommitCreatedBlocks() {
+    if (created_blocks_.empty()) {
       return Status::OK();
     }
-    ElementDeleter deleter(&blocks_);
 
     // We assume every block is using the same block manager, so any
     // block's manager will do.
-    BlockManager* bm = blocks_[0]->block_manager();
-    return bm->CloseBlocks(blocks_);
+    BlockManager* bm = created_blocks_[0]->block_manager();
+    Status s = bm->CloseBlocks(created_blocks_);
+    if (s.ok()) created_blocks_.clear();
+    return s;
   }
 
-  const std::vector<WritableBlock*>& blocks() const { return blocks_; }
+  const std::vector<std::unique_ptr<WritableBlock>>& created_blocks() const {
+    return created_blocks_;
+  }
 
  private:
-  std::vector<WritableBlock*> blocks_;
+  std::vector<std::unique_ptr<WritableBlock>> created_blocks_;
 };
 
 // Compute an upper bound for a file cache embedded within a block manager

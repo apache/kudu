@@ -35,8 +35,8 @@
 namespace kudu {
 
 namespace fs {
+class BlockTransaction;
 class ReadableBlock;
-class ScopedWritableBlockCloser;
 class WritableBlock;
 }
 
@@ -56,8 +56,9 @@ class BloomFileWriter {
   // Close the bloom's CFile, closing the underlying writable block.
   Status Finish();
 
-  // Close the bloom's CFile, releasing the underlying block to 'closer'.
-  Status FinishAndReleaseBlock(fs::ScopedWritableBlockCloser* closer);
+  // Close the bloom's CFile, finalizing the underlying block and
+  // releasing it to 'transaction'.
+  Status FinishAndReleaseBlock(fs::BlockTransaction* transaction);
 
   // Estimate the amount of data already written to this file.
   size_t written_size() const;

@@ -284,7 +284,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   BlockId saved_id;
   {
     Random rand(SeedRandom());
-    ScopedWritableBlockCloser closer;
+    BlockTransaction transaction;
     for (int i = 0; i < 10; i++) {
       unique_ptr<WritableBlock> b;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &b));
@@ -296,12 +296,13 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         data[i] = rand.Next();
       }
       b->Append(Slice(data, sizeof(data)));
-      closer.AddBlock(std::move(b));
+      ASSERT_OK(b->Finalize());
+      transaction.AddCreatedBlock(std::move(b));
     }
-    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 0));
+    // Metrics for full containers are updated after Finalize().
+    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 10));
 
-    // Only when the blocks are closed are the containers considered full.
-    ASSERT_OK(closer.CloseBlocks());
+    ASSERT_OK(transaction.CommitCreatedBlocks());
     ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 10 * 1024, 11, 10, 10));
   }
 
@@ -370,14 +371,14 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 
   // Create 4 containers, with the first four block IDs in the sequence.
   {
-    ScopedWritableBlockCloser closer;
+    BlockTransaction transaction;
     for (int i = 0; i < 4; i++) {
       unique_ptr<WritableBlock> writer;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
       block_ids.push_back(writer->id());
-      closer.AddBlock(std::move(writer));
+      transaction.AddCreatedBlock(std::move(writer));
     }
-    ASSERT_OK(closer.CloseBlocks());
+    ASSERT_OK(transaction.CommitCreatedBlocks());
   }
 
   // Create one more block, which should reuse the first container.
@@ -935,13 +936,14 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
 
   // Create several full containers.
   {
-    ScopedWritableBlockCloser closer;
+    BlockTransaction transaction;
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK(block->Append("a"));
-      closer.AddBlock(std::move(block));
+      transaction.AddCreatedBlock(std::move(block));
     }
+    ASSERT_OK(transaction.CommitCreatedBlocks());
   }
   vector<string> container_names;
   NO_FATALS(GetContainerNames(&container_names));
@@ -1127,12 +1129,12 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
 
   // Create some containers.
   {
-    ScopedWritableBlockCloser closer;
+    BlockTransaction transaction;
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK(block->Append("a"));
-      closer.AddBlock(std::move(block));
+      transaction.AddCreatedBlock(std::move(block));
     }
   }
   vector<string> container_names;
@@ -1342,6 +1344,49 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
   dd_manager_->FindUuidIndexByRoot(test_dirs[failed_idx], &uuid_idx);
   ASSERT_TRUE(ContainsKey(failed_dirs, uuid_idx));
   FLAGS_env_inject_eio = 0;
+}
+
+// Test Close() a FINALIZED block. Including,
+// 1) a container can be reused when the block is finalized.
+// 2) the block cannot be opened/found until close it.
+// 3) the same container is not marked as available twice.
+TEST_F(LogBlockManagerTest, TestFinalizeBlock) {
+  // Create 4 blocks.
+  vector<unique_ptr<WritableBlock>> blocks;
+  for (int i = 0; i < 4; i++) {
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    ASSERT_OK(writer->Append("test data"));
+    ASSERT_OK(writer->Finalize());
+    blocks.emplace_back(std::move(writer));
+  }
+  ASSERT_EQ(1, bm_->all_containers_by_name_.size());
+
+  for (const auto& block : blocks) {
+    // Open the block and verify they cannot be found.
+    ASSERT_TRUE(bm_->OpenBlock(block->id(), nullptr).IsNotFound());
+    ASSERT_OK(block->Close());
+  }
+
+  ASSERT_EQ(1, bm_->all_containers_by_name_.size());
+  // Ensure the same container has not been marked as available twice.
+  ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
+}
+
+TEST_F(LogBlockManagerTest, TestAbortBlock) {
+  unique_ptr<WritableBlock> writer;
+  ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+  ASSERT_OK(writer->Append("test data"));
+  ASSERT_OK(writer->Abort());
+  // Ensures the container is available after block's Abort().
+  ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
+
+  ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+  ASSERT_OK(writer->Append("test data"));
+  ASSERT_OK(writer->Finalize());
+  ASSERT_OK(writer->Abort());
+  // Ensures the container is available after block's Abort().
+  ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
 }
 
 } // namespace fs

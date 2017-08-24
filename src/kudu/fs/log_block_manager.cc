@@ -18,15 +18,16 @@
 #include "kudu/fs/log_block_manager.h"
 
 #include <algorithm>
-#include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <errno.h>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <ostream>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -45,6 +46,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -61,7 +63,6 @@
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -75,8 +76,8 @@
 #include "kudu/util/trace.h"
 
 DECLARE_bool(block_manager_lock_dirs);
-DECLARE_bool(block_coalesce_close);
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_string(block_manager_preflush_control);
 
 // TODO(unknown): How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
@@ -138,6 +139,7 @@ namespace fs {
 
 using internal::LogBlock;
 using internal::LogBlockContainer;
+using internal::LogWritableBlock;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
 using std::map;
@@ -246,11 +248,6 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
 // persisted.
 class LogWritableBlock : public WritableBlock {
  public:
-  enum SyncMode {
-    SYNC,
-    NO_SYNC
-  };
-
   LogWritableBlock(LogBlockContainer* container, BlockId block_id,
                    int64_t block_offset);
 
@@ -268,20 +265,28 @@ class LogWritableBlock : public WritableBlock {
 
   virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
 
-  virtual Status FlushDataAsync() OVERRIDE;
+  virtual Status Finalize() OVERRIDE;
 
   virtual size_t BytesAppended() const OVERRIDE;
 
   virtual State state() const OVERRIDE;
 
-  // Actually close the block, possibly synchronizing its dirty data and
-  // metadata to disk.
-  Status DoClose(SyncMode mode);
+  // Actually close the block, finalizing it if it has not yet been
+  // finalized. Also updates various metrics.
+  //
+  // This is called after synchronization of dirty data and metadata
+  // to disk.
+  void DoClose();
+
+  // Starts an asynchronous flush of dirty block data to disk.
+  Status FlushDataAsync();
 
   // Write this block's metadata to disk.
   //
   // Does not synchronize the written data; that takes place in Close().
   Status AppendMetadata();
+
+  LogBlockContainer* container() const { return container_; }
 
  private:
   // The owning container. Must outlive the block.
@@ -318,6 +323,11 @@ class LogWritableBlock : public WritableBlock {
 // functions are marked explicitly.
 class LogBlockContainer {
  public:
+  enum SyncMode {
+    SYNC,
+    NO_SYNC
+  };
+
   static const char* kMagic;
 
   // Creates a new block container in 'dir'.
@@ -340,15 +350,11 @@ class LogBlockContainer {
                      const std::string& id,
                      unique_ptr<LogBlockContainer>* container);
 
-  // Indicates that the writing of 'block' is finished. If successful,
-  // adds the block to the block manager's in-memory maps.
+  // Closes a set of blocks belonging to this container, possibly synchronizing
+  // the dirty data and metadata to disk.
   //
-  // Returns a status that is either the same as 's' (if !s.ok()) or
-  // potentially different (if s.ok() and FinishBlock() failed).
-  //
-  // After returning, this container has been released to the block manager
-  // and may no longer be used in the context of writing 'block'.
-  Status FinishBlock(const Status& s, WritableBlock* block);
+  // If successful, adds all blocks to the block manager's in-memory maps.
+  Status DoCloseBlocks(const vector<LogWritableBlock*>& blocks, SyncMode mode);
 
   // Frees the space associated with a block at 'offset' and 'length'. This
   // is a physical operation, not a logical one; a separate AppendMetadata()
@@ -439,20 +445,20 @@ class LogBlockContainer {
       std::vector<scoped_refptr<internal::LogBlock>>* dead_blocks,
       uint64_t* max_block_id);
 
-  // Updates internal bookkeeping state to reflect the creation of a block,
-  // marking this container as full if needed. Should only be called when a
-  // block is fully written, as it will round up the container data file's position.
-  //
-  // This function is thread unsafe.
+  // Updates internal bookkeeping state to reflect the creation of a block.
   void BlockCreated(const scoped_refptr<LogBlock>& block);
 
   // Updates internal bookkeeping state to reflect the deletion of a block.
   //
-  // Unlike BlockCreated(), this function is thread safe because block
-  // deletions can happen concurrently with creations.
+  // This function is thread safe because block deletions can happen concurrently
+  // with creations.
   //
   // Note: the container is not made "unfull"; containers remain sparse until deleted.
   void BlockDeleted(const scoped_refptr<LogBlock>& block);
+
+  // Finalizes a fully written block. It updates the container data file's position,
+  // truncates the container if full and marks the container as available.
+  void FinalizeBlock(int64_t block_offset, int64_t block_length);
 
   // Run a task on this container's data directory thread pool.
   //
@@ -471,15 +477,15 @@ class LogBlockContainer {
 
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
-  int64_t next_block_offset() const { return next_block_offset_; }
-  int64_t total_bytes() const { return total_bytes_; }
-  int64_t total_blocks() const { return total_blocks_; }
+  int64_t next_block_offset() const { return next_block_offset_.Load(); }
+  int64_t total_bytes() const { return total_bytes_.Load(); }
+  int64_t total_blocks() const { return total_blocks_.Load(); }
   int64_t live_bytes() const { return live_bytes_.Load(); }
   int64_t live_bytes_aligned() const { return live_bytes_aligned_.Load(); }
   int64_t live_blocks() const { return live_blocks_.Load(); }
   bool full() const {
-    return next_block_offset_ >= FLAGS_log_container_max_size ||
-        (max_num_blocks_ && (total_blocks_ >= max_num_blocks_));
+    return next_block_offset() >= FLAGS_log_container_max_size ||
+        (max_num_blocks_ && (total_blocks() >= max_num_blocks_));
   }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   DataDir* data_dir() const { return data_dir_; }
@@ -514,6 +520,14 @@ class LogBlockContainer {
       uint64_t* data_file_size,
       uint64_t* max_block_id);
 
+  // Updates this container data file's position based on the offset and length
+  // of a block, marking this container as full if needed. Should only be called
+  // when a block is fully written, as it will round up the container data file's
+  // position.
+  //
+  // This function is thread unsafe.
+  void UpdateNextBlockOffset(int64_t block_offset, int64_t block_length);
+
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
 
@@ -530,28 +544,22 @@ class LogBlockContainer {
   shared_ptr<RWFile> data_file_;
 
   // The offset of the next block to be written to the container.
-  int64_t next_block_offset_ = 0;
+  AtomicInt<int64_t> next_block_offset_;
 
   // The amount of data (post block alignment) written thus far to the container.
-  int64_t total_bytes_ = 0;
+  AtomicInt<int64_t> total_bytes_;
 
   // The number of blocks written thus far in the container.
-  int64_t total_blocks_ = 0;
+  AtomicInt<int64_t> total_blocks_;
 
   // The amount of data present in not-yet-deleted blocks of the container.
-  //
-  // Declared atomic because it is mutated from BlockDeleted().
   AtomicInt<int64_t> live_bytes_;
 
   // The amount of data (post block alignment) present in not-yet-deleted
   // blocks of the container.
-  //
-  // Declared atomic because it is mutated from BlockDeleted().
   AtomicInt<int64_t> live_bytes_aligned_;
 
   // The number of not-yet-deleted blocks in the container.
-  //
-  // Declared atomic because it is mutated from BlockDeleted().
   AtomicInt<int64_t> live_blocks_;
 
   // The metrics. Not owned by the log container; it has the same lifespan
@@ -577,6 +585,9 @@ LogBlockContainer::LogBlockContainer(
                                 data_dir)),
       metadata_file_(std::move(metadata_file)),
       data_file_(std::move(data_file)),
+      next_block_offset_(0),
+      total_bytes_(0),
+      total_blocks_(0),
       live_bytes_(0),
       live_bytes_aligned_(0),
       live_blocks_(0),
@@ -725,8 +736,8 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 Status LogBlockContainer::TruncateDataToNextBlockOffset() {
   if (full()) {
     VLOG(2) << Substitute("Truncating container $0 to offset $1",
-                          ToString(), next_block_offset_);
-    RETURN_NOT_OK_HANDLE_ERROR(data_file_->Truncate(next_block_offset_));
+                          ToString(), next_block_offset());
+    RETURN_NOT_OK_HANDLE_ERROR(data_file_->Truncate(next_block_offset()));
   }
   return Status::OK();
 }
@@ -836,6 +847,7 @@ Status LogBlockContainer::ProcessRecord(
       //
       // If we ignored deleted blocks, we would end up reusing the space
       // belonging to the last deleted block in the container.
+      UpdateNextBlockOffset(lb->offset(), lb->length());
       BlockCreated(lb);
 
       (*live_block_records)[block_id].Swap(record);
@@ -866,55 +878,45 @@ Status LogBlockContainer::ProcessRecord(
   return Status::OK();
 }
 
-Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
-  Status result_status = s;
-  auto cleanup = MakeScopedCleanup([&]() {
-    // Handle errors that have not been handled by marking the
-    // container as read-only to forbid future writes. Because
-    // the on-disk state may contain partial/complete data/metadata
-    // at this point, it is not safe to either overwrite it or
-    // append to it.
-    if (!result_status.ok()) {
-      SetReadOnly();
+Status LogBlockContainer::DoCloseBlocks(const vector<LogWritableBlock*>& blocks,
+                                        SyncMode mode) {
+  DCHECK(!read_only());
+  auto sync_blocks = [&]() -> Status {
+    if (mode == SYNC) {
+      VLOG(3) << "Syncing data file " << data_file_->filename();
+      RETURN_NOT_OK(SyncData());
     }
 
-    block_manager_->MakeContainerAvailable(this);
-  });
+    // Append metadata only after data is synced so that there's
+    // no chance of metadata landing on the disk before the data.
+    for (auto* block : blocks) {
+      RETURN_NOT_OK_PREPEND(block->AppendMetadata(),
+                            "unable to append block's metadata during close");
+    }
 
-  // Early return; 'cleanup' marks the container as read-only.
-  RETURN_NOT_OK(s);
+    if (mode == SYNC) {
+      VLOG(3) << "Syncing metadata file " << metadata_file_->filename();
+      RETURN_NOT_OK(SyncMetadata());
+    }
 
-  // A failure when syncing the container means the container (and its new
-  // blocks) may be missing the next time the on-disk state is reloaded. As
-  // such, it's not correct to add the block to in-memory state unless
-  // synchronization succeeds.
-  //
-  // On the other hand, the new blocks' metadata may be already on disk
-  // despite syncing failure.
-  //
-  // Thus, we consider the failure as fatal and mark the container
-  // 'read only'. See 'cleanup' above.
-  result_status = block_manager()->SyncContainer(*this);
-  RETURN_NOT_OK(result_status);
+    RETURN_NOT_OK(block_manager()->SyncContainer(*this));
 
-  scoped_refptr<LogBlock> lb = block_manager()->AddLogBlock(
-      this, block->id(), next_block_offset_, block->BytesAppended());
-  CHECK(lb);
-  BlockCreated(lb);
+    for (LogWritableBlock* block : blocks) {
+      if (blocks.size() > 1) DCHECK_EQ(block->state(), WritableBlock::State::FINALIZED);
+      block->DoClose();
+    }
+    return Status::OK();
+  };
 
-  // Truncate the container if it's now full; any left over preallocated space
-  // is no longer needed.
-  //
-  // Note that this take places _after_ the container has been synced to disk.
-  // That's OK; truncation isn't needed for correctness, and in the event of a
-  // crash or error, it will be retried at startup.
-  WARN_NOT_OK(TruncateDataToNextBlockOffset(),
-              "could not truncate excess preallocated space");
-
-  if (full() && block_manager()->metrics()) {
-    block_manager()->metrics()->full_containers->Increment();
+  Status s = sync_blocks();
+  if (!s.ok()) {
+    // Mark container as read-only to forbid further writes in case of
+    // failure. Because the on-disk state may contain partial/complete
+    // data/metadata at this point, it is not safe to either overwrite
+    // it or append to it.
+    SetReadOnly();
   }
-  return Status::OK();
+  return s;
 }
 
 Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
@@ -936,7 +938,7 @@ Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
 
 Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) {
   DCHECK(!read_only());
-  DCHECK_GE(offset, next_block_offset_);
+  DCHECK_GE(offset, next_block_offset());
 
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->WriteV(offset, data));
 
@@ -1041,9 +1043,29 @@ Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
   return Status::OK();
 }
 
-void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
+void LogBlockContainer::FinalizeBlock(int64_t block_offset, int64_t block_length) {
+  // Updates this container's next block offset before marking it as available
+  // to ensure thread safety while updating internal bookkeeping state.
+  UpdateNextBlockOffset(block_offset, block_length);
+
+  // Truncate the container if it's now full; any left over preallocated space
+  // is no longer needed.
+  //
+  // Note that depending on when FinalizeBlock() is called, this can take place
+  // _after_ the container has been synced to disk. That's OK; truncation isn't
+  // needed for correctness, and in the event of a crash or error, it will be
+  // retried at startup.
+  WARN_NOT_OK(TruncateDataToNextBlockOffset(),
+              "could not truncate excess preallocated space");
+  if (full() && block_manager_->metrics()) {
+    block_manager_->metrics()->full_containers->Increment();
+  }
+  block_manager_->MakeContainerAvailable(this);
+}
+
+void LogBlockContainer::UpdateNextBlockOffset(int64_t block_offset, int64_t block_length) {
   DCHECK(!read_only());
-  DCHECK_GE(block->offset(), 0);
+  DCHECK_GE(block_offset, 0);
 
   // The log block manager maintains block contiguity as an invariant, which
   // means accounting for the new block should be as simple as adding its
@@ -1056,27 +1078,26 @@ void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
   // boundary. This guarantees that the disk space can be reclaimed when
   // the block is deleted.
   int64_t new_next_block_offset = KUDU_ALIGN_UP(
-      block->offset() + block->length(),
+      block_offset + block_length,
       instance()->filesystem_block_size_bytes());
-  if (PREDICT_FALSE(new_next_block_offset < next_block_offset_)) {
-    LOG(WARNING) << Substitute(
-        "Container $0 unexpectedly tried to lower its next block offset "
-        "(from $1 to $2), ignoring",
-        ToString(), next_block_offset_, new_next_block_offset);
-  } else {
-    next_block_offset_ = new_next_block_offset;
-  }
-  total_bytes_ += block->fs_aligned_length();
-  total_blocks_++;
-  live_bytes_.IncrementBy(block->length());
-  live_bytes_aligned_.IncrementBy(block->fs_aligned_length());
-  live_blocks_.Increment();
+  next_block_offset_.StoreMax(new_next_block_offset);
 
   if (full()) {
     VLOG(1) << Substitute(
         "Container $0 with size $1 is now full, max size is $2",
-        ToString(), next_block_offset_, FLAGS_log_container_max_size);
+        ToString(), next_block_offset(), FLAGS_log_container_max_size);
   }
+}
+
+void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
+  DCHECK(!read_only());
+  DCHECK_GE(block->offset(), 0);
+
+  total_bytes_.IncrementBy(block->fs_aligned_length());
+  total_blocks_.Increment();
+  live_bytes_.IncrementBy(block->length());
+  live_bytes_aligned_.IncrementBy(block->fs_aligned_length());
+  live_blocks_.Increment();
 }
 
 void LogBlockContainer::BlockDeleted(const scoped_refptr<LogBlock>& block) {
@@ -1189,18 +1210,52 @@ LogWritableBlock::~LogWritableBlock() {
 }
 
 Status LogWritableBlock::Close() {
-  return DoClose(SYNC);
+  return container_->DoCloseBlocks({ this }, LogBlockContainer::SyncMode::SYNC);
 }
 
 Status LogWritableBlock::Abort() {
-  // Abort the operation for read-only container.
+  // Only updates metrics and block state for read-only container.
   if (container_->read_only()) {
+    if (state_ != CLOSED) {
+      state_ = CLOSED;
+      if (container_->metrics()) {
+        container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
+        container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
+            block_length_);
+      }
+    }
     return Status::Aborted("container $0 is read-only", container_->ToString());
   }
 
-  RETURN_NOT_OK(DoClose(NO_SYNC));
+  // Close the block and then delete it. Theoretically, we could do nothing
+  // for Abort() other than updating metrics and block state. Here is the
+  // reasoning why it would be safe to do so. Currently, failures in block
+  // creation can happen at various stages:
+  // 1) before the block is finalized (either in CLEAN or DIRTY state). It is
+  //    safe to do nothing, as the block is not yet finalized and next block
+  //    will overwrite the dirty data.
+  // 2) after the block is finalized but before the metadata is successfully
+  //    appended. That means the container's internal bookkeeping has been
+  //    updated and the data could be durable. Doing nothing can result in
+  //    data-consuming gaps in containers, but these gaps can be cleaned up
+  //    by hole repunching at start up.
+  // 3) after metadata is appended. If we do nothing, this can result in
+  //    orphaned blocks if the metadata is durable. But orphaned blocks can be
+  //    garbage collected later.
+  //
+  // TODO(Hao): implement a fine-grained abort handling.
+  // However it is better to provide a fine-grained abort handling to
+  // avoid large chunks of data-consuming gaps and orphaned blocks. A
+  // possible way to do so is,
+  // 1) for per block abort, if the block state is FINALIZED, do hole
+  //    punching.
+  // 2) for BlockTransaction abort, DoCloseBlock() should append metadata
+  //    for deletion and coalescing hole punching for blocks in the same
+  //    container.
 
-  // DoClose() has unlocked the container; it may be locked by someone else.
+  RETURN_NOT_OK(container_->DoCloseBlocks({ this }, LogBlockContainer::SyncMode::NO_SYNC));
+
+  // DoCloseBlocks() has unlocked the container; it may be locked by someone else.
   // But block_manager_ is immutable, so this is safe.
   return container_->block_manager()->DeleteBlock(id());
 }
@@ -1219,7 +1274,15 @@ Status LogWritableBlock::Append(const Slice& data) {
 
 Status LogWritableBlock::AppendV(const vector<Slice>& data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY)
-  << "Invalid state: " << state_;
+      << "Invalid state: " << state_;
+
+  // This could be true if Finalize() is successful but DoCloseBlocks() is not.
+  // That means the container is read-only but marked as available. Another
+  // block can actually try to write to it.
+  if (container_->read_only()) {
+    return Status::IllegalState(Substitute("container $0 is read-only",
+                                           container_->ToString()));
+  }
 
   // Calculate the amount of data to write
   size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
@@ -1227,10 +1290,8 @@ Status LogWritableBlock::AppendV(const vector<Slice>& data) {
                                   return sum + curr.size();
                                 });
 
-  // The metadata change is deferred to Close() or FlushDataAsync(),
-  // whichever comes first. We can't do it now because the block's
-  // length is still in flux.
-
+  // The metadata change is deferred to Close(). We can't do
+  // it now because the block's length is still in flux.
   int64_t cur_block_offset = block_offset_ + block_length_;
   RETURN_NOT_OK(container_->EnsurePreallocated(cur_block_offset, data_size));
 
@@ -1249,34 +1310,32 @@ Status LogWritableBlock::AppendV(const vector<Slice>& data) {
 }
 
 Status LogWritableBlock::FlushDataAsync() {
-  Status s;
-  auto cleanup = MakeScopedCleanup([&]() {
-    // Mark container as read-only to avoid further
-    // writes in case of failure, as it is not safe to
-    // either overwrite the unsuccessful writes or
-    // append to it. Note that we do not care the failure
-    // of FlushData(), since the corresponding metadata
-    // has not been appended yet.
-    if (!s.ok()) {
-      container_->SetReadOnly();
-    }
-  });
+  VLOG(3) << "Flushing block " << id();
+  RETURN_NOT_OK(container_->FlushData(block_offset_, block_length_));
+  return Status::OK();
+}
 
-  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)
+Status LogWritableBlock::Finalize() {
+  DCHECK(state_ == CLEAN || state_ == DIRTY || state_ == FINALIZED)
       << "Invalid state: " << state_;
-  if (state_ == DIRTY) {
-    VLOG(3) << "Flushing block " << id();
-    RETURN_NOT_OK(container_->FlushData(block_offset_, block_length_));
 
-    s = AppendMetadata();
-    RETURN_NOT_OK_PREPEND(s, "Unable to append block metadata");
-
-    // TODO(unknown): Flush just the range we care about.
-    s = container_->FlushMetadata();
-    RETURN_NOT_OK(s);
+  if (state_ == FINALIZED) {
+    return Status::OK();
   }
 
-  state_ = FLUSHING;
+  auto cleanup = MakeScopedCleanup([&]() {
+    container_->FinalizeBlock(block_offset_, block_length_);
+    state_ = FINALIZED;
+  });
+
+  VLOG(3) << "Finalizing block " << id();
+  if (state_ == DIRTY &&
+      FLAGS_block_manager_preflush_control == "finalize") {
+    // We do not mark the container as read-only if FlushDataAsync() fails
+    // since the corresponding metadata has not yet been appended.
+    RETURN_NOT_OK(FlushDataAsync());
+  }
+
   return Status::OK();
 }
 
@@ -1284,56 +1343,30 @@ size_t LogWritableBlock::BytesAppended() const {
   return block_length_;
 }
 
-
 WritableBlock::State LogWritableBlock::state() const {
   return state_;
 }
 
-Status LogWritableBlock::DoClose(SyncMode mode) {
-  if (state_ == CLOSED) {
-    return Status::OK();
+void LogWritableBlock::DoClose() {
+  if (state_ == CLOSED) return;
+
+  if (container_->metrics()) {
+    container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
+    container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
+        block_length_);
   }
 
-  // Tracks the first failure (if any).
-  //
-  // It's important that any subsequent failures mutate 's' before
-  // returning. Otherwise 'cleanup' won't properly provide the first
-  // failure to LogBlockContainer::FinishBlock().
-  //
-  // Note also that when 'cleanup' goes out of scope it may mutate 's'.
-  Status s;
-  {
-    auto cleanup = MakeScopedCleanup([&]() {
-        if (container_->metrics()) {
-          container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
-          container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
-              BytesAppended());
-        }
-
-        state_ = CLOSED;
-        s = container_->FinishBlock(s, this);
-      });
-    // FlushDataAsync() was not called; append the metadata now.
-    if (state_ == CLEAN || state_ == DIRTY) {
-      s = AppendMetadata();
-      RETURN_NOT_OK_PREPEND(s, "Unable to flush block during close");
-    }
-
-    if (mode == SYNC &&
-        (state_ == CLEAN || state_ == DIRTY || state_ == FLUSHING)) {
-      VLOG(3) << "Syncing block " << id();
-
-      // TODO(unknown): Sync just this block's dirty data.
-      s = container_->SyncData();
-      RETURN_NOT_OK(s);
-
-      // TODO(unknown): Sync just this block's dirty metadata.
-      s = container_->SyncMetadata();
-      RETURN_NOT_OK(s);
-    }
+  // Finalize() was not called; this indicates we should
+  // finalize the block.
+  if (state_ == CLEAN || state_ == DIRTY) {
+    container_->FinalizeBlock(block_offset_, block_length_);
   }
 
-  return s;
+  scoped_refptr<LogBlock> lb = container_->block_manager()->AddLogBlock(
+      container_, block_id_, block_offset_, block_length_);
+  CHECK(lb);
+  container_->BlockCreated(lb);
+  state_ = CLOSED;
 }
 
 Status LogWritableBlock::AppendMetadata() {
@@ -1659,9 +1692,9 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     new_block_id.SetId(next_block_id_.Increment());
   } while (!TryUseBlockId(new_block_id));
 
-  block->reset(new internal::LogWritableBlock(container,
-                                              new_block_id,
-                                              container->next_block_offset()));
+  block->reset(new LogWritableBlock(container,
+                                    new_block_id,
+                                    container->next_block_offset()));
   VLOG(3) << "Created block " << (*block)->id() << " in container "
           << container->ToString();
   return Status::OK();
@@ -1699,8 +1732,8 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
 
     lb = it->second;
     if (lb->container()->read_only()) {
-      return Status::IllegalState("container $0 is read-only",
-                                  lb->container()->ToString());
+      return Status::IllegalState(Substitute("container $0 is read-only",
+                                             lb->container()->ToString()));
     }
 
     // Return early if deleting a block in a failed directory.
@@ -1741,20 +1774,28 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
+Status LogBlockManager::CloseBlocks(const std::vector<unique_ptr<WritableBlock>>& blocks) {
   VLOG(3) << "Closing " << blocks.size() << " blocks";
-  if (FLAGS_block_coalesce_close) {
-    // Ask the kernel to begin writing out each block's dirty data. This is
-    // done up-front to give the kernel opportunities to coalesce contiguous
-    // dirty pages.
-    for (WritableBlock* block : blocks) {
-      RETURN_NOT_OK(block->FlushDataAsync());
+
+  unordered_map<LogBlockContainer*, vector<LogWritableBlock*>> created_block_map;
+  for (const auto& block : blocks) {
+    LogWritableBlock* lwb = down_cast<LogWritableBlock*>(block.get());
+
+    if (FLAGS_block_manager_preflush_control == "close") {
+      // Ask the kernel to begin writing out each block's dirty data. This is
+      // done up-front to give the kernel opportunities to coalesce contiguous
+      // dirty pages.
+      RETURN_NOT_OK(lwb->FlushDataAsync());
     }
+    created_block_map[lwb->container()].emplace_back(lwb);
   }
 
-  // Now close each block, waiting for each to become durable.
-  for (WritableBlock* block : blocks) {
-    RETURN_NOT_OK(block->Close());
+  // Close all blocks and sync the blocks belonging to the same
+  // container together to reduce fsync() usage, waiting for them
+  // to become durable.
+  for (const auto& entry : created_block_map) {
+    RETURN_NOT_OK(entry.first->DoCloseBlocks(entry.second,
+                                             LogBlockContainer::SyncMode::SYNC));
   }
   return Status::OK();
 }

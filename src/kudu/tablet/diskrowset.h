@@ -105,9 +105,9 @@ class DiskRowSetWriter {
   // If no rows were written, returns Status::Aborted().
   Status Finish();
 
-  // Closes the CFiles, releasing the underlying blocks to 'closer'.
-  // If no rows were written, returns Status::Aborted().
-  Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
+  // Closes the CFiles, finalizing the underlying blocks and releasing
+  // them to 'transaction'. If no rows were written, returns Status::Aborted().
+  Status FinishAndReleaseBlocks(fs::BlockTransaction* transaction);
 
   // The base DiskRowSetWriter never rolls. This method is necessary for tests
   // which are templatized on the writer type.
@@ -267,9 +267,9 @@ class RollingDiskRowSetWriter {
   int64_t written_count_;
   uint64_t written_size_;
 
-  // Syncs and closes all outstanding blocks when the rolling writer is
-  // destroyed.
-  fs::ScopedWritableBlockCloser block_closer_;
+  // Syncs and commits all writes of outstanding blocks when the rolling
+  // writer is destroyed.
+  fs::BlockTransaction block_transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };

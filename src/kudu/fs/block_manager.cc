@@ -29,9 +29,26 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 
-DEFINE_bool(block_coalesce_close, false,
-            "Coalesce synchronization of data during CloseBlocks()");
-TAG_FLAG(block_coalesce_close, experimental);
+// The default value is optimized for throughput in the case that
+// there are multiple drives backing the tablet. By asynchronously
+// flushing each block before issuing any fsyncs, the IO across
+// disks is done in parallel.
+//
+// This increases throughput but can harm latency in the case that
+// there are few disks and the WAL is on the same disk as the
+// data blocks. The default is chosen based on the assumptions that:
+// - latency is leveled across machines by Raft
+// - latency-sensitive applications can devote a disk to the WAL
+// - super-sensitive applications can devote an SSD to the WAL.
+// - users could always change this to "never", which slows down
+//   throughput but may improve write latency.
+DEFINE_string(block_manager_preflush_control, "finalize",
+              "Controls when to pre-flush a block. Valid values are 'finalize', "
+              "'close', or 'never'. If 'finalize', blocks will be pre-flushed "
+              "when writing is finished. If 'close', blocks will be pre-flushed "
+              "when their transaction is committed. If 'never', blocks will "
+              "never be pre-flushed but still be flushed when closed.");
+TAG_FLAG(block_manager_preflush_control, experimental);
 
 DEFINE_bool(block_manager_lock_dirs, true,
             "Lock the data block directories to prevent concurrent usage. "

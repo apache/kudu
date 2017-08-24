@@ -88,7 +88,7 @@ class FileBlockManager : public BlockManager {
 
   Status DeleteBlock(const BlockId& block_id) override;
 
-  Status CloseBlocks(const std::vector<WritableBlock*>& blocks) override;
+  Status CloseBlocks(const std::vector<std::unique_ptr<WritableBlock>>& blocks) override;
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 

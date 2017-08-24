@@ -40,7 +40,7 @@ class CFileWriter;
 } // namespace cfile
 
 namespace fs {
-class ScopedWritableBlockCloser;
+class BlockTransaction;
 } // namespace fs
 
 namespace tablet {
@@ -68,9 +68,9 @@ class MultiColumnWriter {
   // The file's blocks may be retrieved using FlushedBlocks().
   Status Finish();
 
-  // Close the in-progress CFiles, releasing the underlying writable blocks
-  // to 'closer'.
-  Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
+  // Close the in-progress CFiles, finalizing the underlying writable
+  // blocks and releasing them to 'transaction'.
+  Status FinishAndReleaseBlocks(fs::BlockTransaction* transaction);
 
   // Return the number of bytes written so far.
   size_t written_size() const;
