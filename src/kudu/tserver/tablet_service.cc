@@ -1030,7 +1030,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
 void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                         ChangeConfigResponsePB* resp,
                                         RpcContext* context) {
-  VLOG(2) << "Received ChangeConfig RPC: " << SecureDebugString(*req);
+  VLOG(1) << "Received ChangeConfig RPC: " << SecureDebugString(*req);
   if (!CheckUuidMatchOrRespond(tablet_manager_, "ChangeConfig", req, resp, context)) {
     return;
   }
@@ -1054,7 +1054,8 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
 void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB* req,
                                               UnsafeChangeConfigResponsePB* resp,
                                               RpcContext* context) {
-  VLOG(2) << "Received UnsafeChangeConfig RPC: " << SecureDebugString(*req);
+  LOG(INFO) << "Received UnsafeChangeConfig RPC: " << SecureDebugString(*req)
+            << " from " << context->requestor_string();
   if (!CheckUuidMatchOrRespond(tablet_manager_, "UnsafeChangeConfig", req, resp, context)) {
     return;
   }
@@ -1078,7 +1079,7 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
                                            GetNodeInstanceResponsePB* resp,
                                            rpc::RpcContext* context) {
-  DVLOG(3) << "Received Get Node Instance RPC: " << SecureDebugString(*req);
+  VLOG(1) << "Received Get Node Instance RPC: " << SecureDebugString(*req);
   resp->mutable_node_instance()->CopyFrom(tablet_manager_->NodeInstance());
   context->RespondSuccess();
 }
@@ -1086,7 +1087,8 @@ void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,
 void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* req,
                                              RunLeaderElectionResponsePB* resp,
                                              rpc::RpcContext* context) {
-  DVLOG(3) << "Received Run Leader Election RPC: " << SecureDebugString(*req);
+  LOG(INFO) << "Received Run Leader Election RPC: " << SecureDebugString(*req)
+            << " from " << context->requestor_string();
   if (!CheckUuidMatchOrRespond(tablet_manager_, "RunLeaderElection", req, resp, context)) {
     return;
   }
@@ -1113,7 +1115,8 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
 void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
                                           LeaderStepDownResponsePB* resp,
                                           RpcContext* context) {
-  DVLOG(3) << "Received Leader stepdown RPC: " << SecureDebugString(*req);
+  LOG(INFO) << "Received LeaderStepDown RPC: " << SecureDebugString(*req)
+            << " from " << context->requestor_string();
   if (!CheckUuidMatchOrRespond(tablet_manager_, "LeaderStepDown", req, resp, context)) {
     return;
   }

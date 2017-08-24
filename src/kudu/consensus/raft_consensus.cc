@@ -404,7 +404,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       return Status::OK();
     }
     if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
-      SnoozeFailureDetector(DO_NOT_LOG); // Reduce election noise while in this state.
+      SnoozeFailureDetector();
       return Status::IllegalState("Not starting election: Node is currently "
                                   "a non-participant in the raft config",
                                   SecureShortDebugString(cmeta_->ActiveConfig()));
@@ -417,7 +417,7 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
     // We do not disable the election timer while running an election, so that
     // if the election times out, we will try again.
     MonoDelta timeout = LeaderElectionExpBackoffDeltaUnlocked();
-    SnoozeFailureDetector(ALLOW_LOGGING, timeout);
+    SnoozeFailureDetector(string("starting election"), timeout);
 
     // Increment the term and vote for ourselves, unless it's a pre-election.
     if (mode != PRE_ELECTION) {
@@ -495,17 +495,19 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   LockGuard l(lock_);
   RETURN_NOT_OK(CheckRunningUnlocked());
   if (cmeta_->active_role() != RaftPeerPB::LEADER) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting request to step down while not leader";
     resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
     StatusToPB(Status::IllegalState("Not currently leader"),
                resp->mutable_error()->mutable_status());
     // We return OK so that the tablet service won't overwrite the error code.
     return Status::OK();
   }
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received request to step down";
   RETURN_NOT_OK(BecomeReplicaUnlocked());
 
   // Snooze the failure detector for an extra leader failure timeout.
   // This should ensure that a different replica is elected leader after this one steps down.
-  SnoozeFailureDetector(ALLOW_LOGGING, MonoDelta::FromMilliseconds(
+  SnoozeFailureDetector(string("explicit stepdown request"), MonoDelta::FromMilliseconds(
       2 * MinimumElectionTimeout().ToMilliseconds()));
   return Status::OK();
 }
@@ -1195,7 +1197,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Snooze the failure detector as soon as we decide to accept the message.
     // We are guaranteed to be acting as a FOLLOWER at this point by the above
     // sanity check.
-    SnoozeFailureDetector(DO_NOT_LOG);
+    SnoozeFailureDetector();
 
     // We update the lag metrics here in addition to after appending to the queue so the
     // metrics get updated even when the operation is rejected.
@@ -1370,7 +1372,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // If just waiting for our log append to finish lets snooze the timer.
       // We don't want to fire leader election because we're waiting on our own log.
       if (s.IsTimedOut()) {
-        SnoozeFailureDetector(DO_NOT_LOG);
+        SnoozeFailureDetector();
       }
     } while (s.IsTimedOut());
     RETURN_NOT_OK(s);
@@ -1992,7 +1994,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
   // persist our vote to disk. We use an exponential backoff to avoid too much
   // split-vote contention when nodes display high latencies.
   MonoDelta backoff = LeaderElectionExpBackoffDeltaUnlocked();
-  SnoozeFailureDetector(ALLOW_LOGGING, backoff);
+  SnoozeFailureDetector(string("vote granted"), backoff);
 
   if (!request->is_pre_election()) {
     // Persist our vote to disk.
@@ -2003,7 +2005,7 @@ Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request
 
   // Give peer time to become leader. Snooze one more time after persisting our
   // vote. When disk latency is high, this should help reduce churn.
-  SnoozeFailureDetector(DO_NOT_LOG, backoff);
+  SnoozeFailureDetector(/*reason_for_log=*/boost::none, backoff);
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
                           GetRequestVoteLogPrefixUnlocked(*request),
@@ -2192,7 +2194,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     // - When we lose or otherwise we can fall into a cycle, where everyone keeps
     //   triggering elections but no election ever completes because by the time they
     //   finish another one is triggered already.
-    SnoozeFailureDetector(ALLOW_LOGGING, LeaderElectionExpBackoffDeltaUnlocked());
+    SnoozeFailureDetector(string("election complete"), LeaderElectionExpBackoffDeltaUnlocked());
 
     if (result.decision == VOTE_DENIED) {
       failed_elections_since_stable_leader_++;
@@ -2447,13 +2449,14 @@ void RaftConsensus::DisableFailureDetector() {
   }
 }
 
-void RaftConsensus::SnoozeFailureDetector(AllowLogging allow_logging,
+void RaftConsensus::SnoozeFailureDetector(boost::optional<string> reason_for_log,
                                           boost::optional<MonoDelta> delta) {
   if (PREDICT_TRUE(failure_detector_ && FLAGS_enable_leader_failure_detection)) {
-    if (allow_logging == ALLOW_LOGGING) {
+    if (reason_for_log) {
       LOG(INFO) << LogPrefixThreadSafe()
-                << Substitute("Snoozing failure detection for $0",
-                              delta ? delta->ToString() : "election timeout");
+                << Substitute("Snoozing failure detection for $0 ($1)",
+                              delta ? delta->ToString() : "election timeout",
+                              *reason_for_log);
     }
 
     if (!delta) {

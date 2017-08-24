@@ -36,6 +36,7 @@
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -338,35 +339,42 @@ Status ChangeLeader(const client::sp::shared_ptr<KuduClient>& client, const stri
   int64 current_term = -1;
   MonoTime deadline = MonoTime::Now() + timeout;
 
-  // First, check the leader and, if it's the old leader, ask it to step down.
-  // Repeat until we time out or get a different leader.
   while (MonoTime::Now() < deadline) {
     RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, old_leader_uuid,
                                     client->default_admin_operation_timeout(), &cstate));
-
-    if (cstate.current_term() > current_term && cstate.has_leader_uuid()) {
-      current_term = cstate.current_term();
-      if (cstate.leader_uuid() != old_leader_uuid) {
-        break;
+    if (!cstate.leader_uuid().empty()) {
+      if (cstate.current_term() > current_term) {
+        // There is a new term with an elected leader.
+        current_term = cstate.current_term();
+        VLOG(1) << "Leader changed in term " << current_term << " to new uuid "
+                << cstate.leader_uuid();
+        // If the elected leader is still the old one, ask it to step down (potentially
+        // repeatedly if it keeps getting re-elected).
+        if (cstate.leader_uuid() == old_leader_uuid) {
+          RETURN_NOT_OK(DoLeaderStepDown(client, tablet_id, old_leader_uuid, old_leader_hp));
+        }
       }
-      RETURN_NOT_OK(DoLeaderStepDown(client, tablet_id, old_leader_uuid, old_leader_hp));
-    }
-    SleepFor(MonoDelta::FromMilliseconds(1000));
-  }
-
-  // Second, once we have a new leader, wait for it to assert leadership by replicating an op
-  // in the current term to the old leader.
-  OpId opid;
-  while (MonoTime::Now() < deadline) {
-    RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, old_leader_uuid, old_leader_hp,
-                                       client->default_admin_operation_timeout(), &opid));
-    if (opid.term() == current_term) {
-      return Status::OK();
+      // If our current leader is not the old leader, check to see if it has asserted its
+      // leadership by replicating an op in its term to the old leader.
+      if (cstate.leader_uuid() != old_leader_uuid) {
+        OpId opid;
+        RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, old_leader_uuid, old_leader_hp,
+                                           client->default_admin_operation_timeout(), &opid));
+        if (opid.term() == current_term) {
+          return Status::OK();
+        }
+        VLOG(1) << "Term " << current_term << " leader " << cstate.leader_uuid()
+                << " has not yet committed an op in its term on old leader "
+                << old_leader_uuid
+                << " (committed=" << opid << ")";
+      }
     }
     SleepFor(MonoDelta::FromMilliseconds(500));
   }
 
-  return Status::TimedOut("unable to change leadership in time");
+  return Status::TimedOut(Substitute(
+      "waiting for old leader $0 ($1) to step down and new leader to be elected",
+      old_leader_uuid, old_leader_hp.ToString()));
 }
 
 Status MoveReplica(const RunnerContext &context) {

@@ -370,13 +370,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
     kShutdown,
   };
 
-  // Control whether printing of log messages should be done for a particular
-  // function call.
-  enum AllowLogging {
-    DO_NOT_LOG = 0,
-    ALLOW_LOGGING = 1,
-  };
-
   // Enum for the 'flush' argument to SetCurrentTermUnlocked() below.
   enum FlushToDisk {
     SKIP_FLUSH_TO_DISK,
@@ -573,11 +566,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // 'FLAGS_raft_heartbeat_interval_ms' has elapsed, unless 'delta' is set, in
   // which case its value is used as the next failure period.
   //
-  // If 'allow_logging' is set to ALLOW_LOGGING, then this method will print a
-  // log message when called.
+  // If 'reason_for_log' is set, then this method will print a log message when called.
   //
   // If the failure detector is unregistered, has no effect.
-  void SnoozeFailureDetector(AllowLogging allow_logging,
+  void SnoozeFailureDetector(boost::optional<std::string> reason_for_log = boost::none,
                              boost::optional<MonoDelta> delta = boost::none);
 
   // Return the minimum election timeout. Due to backoff and random
