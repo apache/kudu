@@ -651,8 +651,33 @@ endfunction()
 # net/net_util-test). Either way, the last component must be a globally
 # unique name.
 #
-# Arguments after the test name will be passed to set_tests_properties().
+# Additional optional arguments:
+#
+#   TIMEOUT <secs>
+#       Sets a timeout for running this test.
+#
+#       NOTE: this only affects the test timeout when run via 'ctest'.
+#       Jenkins builds typically execute tests using dist-test, and that
+#       does not respect these timeouts. If a test suite is long enough
+#       to require a bumped timeout, consider enabling sharding of the
+#       test by adding it to the NUM_SHARDS_BY_TEST dictionary in dist_test.py.
+#
+# Any other arguments will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
+  # Parse out properties for which we have special handling.
+  set(options)
+  set(one_value_args TIMEOUT)
+  set(multi_value_args)
+  cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
+  if(NOT ARG_TIMEOUT)
+    # Default to 15 minutes.
+    # NOTE: this should be kept in sync with the default value of KUDU_TEST_TIMEOUT
+    # in build-support/run-test.sh
+    set(ARG_TIMEOUT 900)
+  endif()
+  # Any unrecognized arguments go into ${ARG_UNPARSED_ARGUMENTS}, which we forward
+  # along as properties down below.
+
   if(NO_TESTS)
     return()
   endif()
@@ -679,9 +704,23 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
 
   add_test(${TEST_NAME}
     ${BUILD_SUPPORT_DIR}/run-test.sh ${TEST_PATH})
-  if(ARGN)
-    set_tests_properties(${TEST_NAME} PROPERTIES ${ARGN})
+  if(ARG_UNPARSED_ARGUMENTS)
+    set_tests_properties(${TEST_NAME} PROPERTIES ${ARG_UNPARSED_ARGUMENTS})
   endif()
+  # Set the ctest timeout to be a bit longer than the timeout we pass to
+  # our test wrapper. This gives the test wrapper some opportunity to do
+  # things like dump stacks, compress the log, etc.
+  math(EXPR EXTENDED_TIMEOUT "${ARG_TIMEOUT} + 30")
+
+  # Add the configured timeout to the environment for the test wrapper.
+  get_test_property(${TEST_NAME} ENVIRONMENT CUR_TEST_ENV)
+  if(NOT CUR_TEST_ENV)
+    set(CUR_TEST_ENV "")
+  endif()
+  list(APPEND CUR_TEST_ENV "KUDU_TEST_TIMEOUT=${ARG_TIMEOUT}")
+  set_tests_properties(${TEST_NAME} PROPERTIES
+    TIMEOUT ${EXTENDED_TIMEOUT}
+    ENVIRONMENT "${CUR_TEST_ENV}")
 endfunction()
 
 # A wrapper for add_dependencies() that is compatible with NO_TESTS.

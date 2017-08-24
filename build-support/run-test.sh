@@ -114,6 +114,9 @@ export LSAN_OPTIONS
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.
+#
+# NOTE: this should be kept in sync with the default value of ARG_TIMEOUT
+# in the definition of ADD_KUDU_TEST in the top-level CMakeLists.txt.
 KUDU_TEST_TIMEOUT=${KUDU_TEST_TIMEOUT:-900}
 
 # Allow for collecting core dumps.
