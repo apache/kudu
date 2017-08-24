@@ -123,7 +123,7 @@ class FileBlockManager : public BlockManager {
 
   // For generating block IDs.
   ThreadSafeRandom rand_;
-  AtomicInt<int64_t> next_block_id_;
+  AtomicInt<uint64_t> next_block_id_;
 
   // Protects 'dirty_dirs_'.
   mutable simple_spinlock lock_;
