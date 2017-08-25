@@ -47,6 +47,27 @@
 #include "kudu/util/status.h"
 #include "kudu/util/user.h"
 
+// Hard code OpenSSL flag values from OpenSSL 1.0.1e[1][2] when compiling
+// against OpenSSL 1.0.0 and below. We detect when running against a too-old
+// version of OpenSSL using these definitions at runtime so that Kudu has full
+// functionality when run against a new OpenSSL version, even if it's compiled
+// against an older version.
+//
+// [1]: https://github.com/openssl/openssl/blob/OpenSSL_1_0_1e/ssl/ssl.h#L605-L609
+// [2]: https://github.com/openssl/openssl/blob/OpenSSL_1_0_1e/ssl/tls1.h#L166-L172
+#ifndef SSL_OP_NO_TLSv1
+#define SSL_OP_NO_TLSv1 0x04000000U
+#endif
+#ifndef SSL_OP_NO_TLSv1_1
+#define SSL_OP_NO_TLSv1_1 0x10000000U
+#endif
+#ifndef TLS1_1_VERSION
+#define TLS1_1_VERSION 0x0302
+#endif
+#ifndef TLS1_2_VERSION
+#define TLS1_2_VERSION 0x0303
+#endif
+
 using strings::Substitute;
 using std::string;
 using std::unique_lock;
@@ -113,22 +134,25 @@ Status TlsContext::Init() {
   //   https://tools.ietf.org/html/rfc7525#section-3.3
   auto options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
 
+  auto max_supported_tls_version = SSLv23_method()->version;
+  DCHECK_GE(max_supported_tls_version, TLS1_VERSION);
+
   if (boost::iequals(tls_min_protocol_, "TLSv1.2")) {
-#if OPENSSL_VERSION_NUMBER < 0x10001000L
-    return Status::InvalidArgument(
-        "--rpc_tls_min_protocol=TLSv1.2 is not be supported on this platform. "
-        "TLSv1 is the latest supported TLS protocol.");
-#else
+    if (max_supported_tls_version < TLS1_2_VERSION) {
+      return Status::InvalidArgument(
+          "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
+          "this platform does no support TLSv1.2");
+    }
+
     options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
-#endif
   } else if (boost::iequals(tls_min_protocol_, "TLSv1.1")) {
-#if OPENSSL_VERSION_NUMBER < 0x10001000L
-    return Status::InvalidArgument(
-        "--rpc_tls_min_protocol=TLSv1.1 is not be supported on this platform. "
-        "TLSv1 is the latest supported TLS protocol.");
-#else
+    if (max_supported_tls_version < TLS1_1_VERSION) {
+      return Status::InvalidArgument(
+          "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
+          "this platform does no support TLSv1.1");
+    }
+
     options |= SSL_OP_NO_TLSv1;
-#endif
   } else if (!boost::iequals(tls_min_protocol_, "TLSv1")) {
     return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
                                    tls_min_protocol_);
