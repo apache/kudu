@@ -22,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
 #include <unordered_map>
@@ -43,9 +44,11 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -70,6 +73,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -81,6 +85,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
@@ -1079,7 +1084,6 @@ TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
   }
 }
 
-
 TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   // Speed up heartbeating so that the unknown tablet is detected faster.
   vector<string> extra_ts_flags = { "--heartbeat_interval_ms=10" };
@@ -1149,7 +1153,140 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
     ASSERT_GE(num_delete_attempts, 1);
     ASSERT_OK(CheckTabletDeletedOnTS(0, tablet_id, SUPERBLOCK_NOT_EXPECTED));
   });
+}
 
+// Ensure that the master doesn't try to delete tombstoned tablets.
+// Regression test for KUDU-2114.
+TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "This test sleeps for several seconds and only runs in slow-test mode";
+    return;
+  }
+
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartCluster({}, {}, /*num_tablet_servers=*/ 4));
+  const int kNumReplicas = 3;
+
+  // Create a table on the cluster. We're just using TestWorkload
+  // as a convenient way to create it.
+  TestWorkload(cluster_.get()).Setup();
+
+  // The table should have replicas on three tservers.
+  ASSERT_OK(inspect_->WaitForReplicaCount(kNumReplicas));
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                                     kTimeout, &table_locations));
+  ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
+  string tablet_id;
+  std::set<string> replicas;
+  for (const auto& t : table_locations.tablet_locations()) {
+    tablet_id = t.tablet_id();
+    for (const auto& r : t.replicas()) {
+      replicas.insert(r.ts_info().permanent_uuid());
+    }
+  }
+
+  LOG(INFO) << "finding leader...";
+
+  // Find leader.
+  TServerDetails* leader = nullptr;
+  ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader));
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader, tablet_id, COMMITTED_OPID, kTimeout));
+
+  LOG(INFO) << "replacing replica...";
+
+  // Prepare to replace a replica.
+  TServerDetails* to_add = nullptr;
+  TServerDetails* to_remove = nullptr;
+  int to_remove_index = -1;
+  ASSERT_NE(nullptr, leader);
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    TServerDetails* ts = ts_map_[cluster_->tablet_server(i)->uuid()];
+    if (!ContainsKey(replicas, cluster_->tablet_server(i)->uuid())) {
+      to_add = ts;
+    } else {
+      if (ts == leader) continue;
+      to_remove = ts;
+      to_remove_index = i;
+    }
+  }
+  ASSERT_NE(nullptr, to_add);
+  ASSERT_NE(nullptr, to_remove);
+
+  // Do the config changes and wait for the master to delete the old node.
+  ASSERT_OK(AddServer(leader, tablet_id, to_add, RaftPeerPB::VOTER, boost::none, kTimeout));
+  ASSERT_OK(RemoveServer(leader, tablet_id, to_remove, boost::none, kTimeout));
+
+  LOG(INFO) << "waiting for no data on ts...";
+
+  // Most of the time, we will only get 1 deletion attempt when a replica is
+  // evicted, but to avoid flakiness in this test we leave some slack for a
+  // couple more due to multiple requests coming in at once, such as the config
+  // change plus a couple of heartbeats from the evicted node. If we set this
+  // to 1, this test ends up being a few percent flaky under stress.
+  const int kMaxDeleteAttemptsPerEviction = 3;
+
+  // 'to_remove' should eventually have no tablets and the metrics should show
+  // a deleted tablet.
+  ASSERT_EVENTUALLY([&] {
+    inspect_->WaitForNoDataOnTS(to_remove_index, kTimeout);
+
+    int64_t num_delete_attempts;
+    ASSERT_OK(cluster_->tablet_server(to_remove_index)->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.tabletserver",
+        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+        "total_count", &num_delete_attempts));
+    ASSERT_GE(num_delete_attempts, 1);
+    ASSERT_LE(num_delete_attempts, kMaxDeleteAttemptsPerEviction);
+  });
+
+  // Wait for the metrics to change without restarting, and then do the same
+  // check after a restart, to test both the code paths in the master (one
+  // related to config change, one related to receiving a full tablet report).
+  for (int i = 0; i < 2; i++) {
+    LOG(INFO) << "iter " << i << "...";
+    int max_expected_deletes = kMaxDeleteAttemptsPerEviction;
+    if (i == 1) {
+      LOG(INFO) << "restarting cluster...";
+      cluster_->Shutdown();
+      ASSERT_OK(cluster_->Restart());
+      max_expected_deletes = 0; // There should be no attempts in this case.
+    }
+
+    LOG(INFO) << "waiting for metrics...";
+
+    SCOPED_TRACE(i);
+    SCOPED_TRACE(max_expected_deletes);
+
+    int64_t prev_heartbeats;
+    ASSERT_OK(cluster_->master()->GetInt64Metric(
+        &METRIC_ENTITY_server, "kudu.master",
+        &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
+        "total_count",
+        &prev_heartbeats));
+
+    // Wait until several heartbeats have been received by the master.
+    // We should still have the expected number of delete requests.
+    SCOPED_LOG_TIMING(INFO, "waiting for heartbeats");
+    ASSERT_EVENTUALLY([&] {
+      int64_t num_delete_attempts;
+      ASSERT_OK(cluster_->tablet_server(to_remove_index)->GetInt64Metric(
+          &METRIC_ENTITY_server, "kudu.tabletserver",
+          &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
+          "total_count",
+          &num_delete_attempts));
+      ASSERT_LE(num_delete_attempts, max_expected_deletes);
+
+      int64_t num_heartbeats;
+      ASSERT_OK(cluster_->master()->GetInt64Metric(
+          &METRIC_ENTITY_server, "kudu.master",
+          &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
+          "total_count",
+          &num_heartbeats));
+      const int kHeartbeatsToWait = 3;
+      ASSERT_GE(num_heartbeats, prev_heartbeats + (kNumReplicas * kHeartbeatsToWait));
+    });
+  }
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.

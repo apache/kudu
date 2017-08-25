@@ -2477,7 +2477,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     tablet_needs_alter = true;
   }
 
-
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
     DCHECK(!s.ok());
@@ -2486,21 +2485,22 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  // The report will not have a consensus_state if it is in the
-  // middle of starting up, such as during tablet bootstrap.
+  // The report may have a consensus_state even when tombstoned.
   if (report.has_consensus_state()) {
     const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.consensus_state();
     ConsensusStatePB cstate = report.consensus_state();
 
-    // Check if we got a report from a tablet that is no longer part of the raft
-    // config. If so, tombstone it. We only tombstone replicas that include a
-    // committed raft config in their report that has an opid_index strictly
-    // less than the latest reported committed config, and (obviously) who are
-    // not members of the latest config. This prevents us from spuriously
-    // deleting replicas that have just been added to a pending config and are
-    // in the process of catching up to the log entry where they were added to
-    // the config.
+    // Check if we got a report from a tablet that is no longer part of the Raft
+    // config, but is not already TOMBSTONED / DELETED. If so, tombstone it. We
+    // only tombstone replicas that include a committed raft config in their
+    // report that has an opid_index strictly less than the latest reported
+    // committed config, and (obviously) who are not members of the latest
+    // config. This prevents us from spuriously deleting replicas that have
+    // just been added to a pending config and are in the process of catching
+    // up to the log entry where they were added to the config.
     if (FLAGS_master_tombstone_evicted_tablet_replicas &&
+        report.tablet_data_state() != TABLET_DATA_TOMBSTONED &&
+        report.tablet_data_state() != TABLET_DATA_DELETED &&
         cstate.committed_config().opid_index() < prev_cstate.committed_config().opid_index() &&
         !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.committed_config())) {
       SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
@@ -2528,9 +2528,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       DCHECK_EQ(SysTabletsEntryPB::CREATING, tablet_lock.data().pb.state())
           << Substitute("Tablet in unexpected state: $0: $1", tablet->ToString(),
                         SecureShortDebugString(tablet_lock.data().pb));
-      // Mark the tablet as running
-      // TODO: we could batch the IO onto a background thread, or at least
-      // across multiple tablets in the same report.
+      // Mark the tablet as running.
+      // TODO(matteo): we could batch the IO onto a background thread, or at
+      // least across multiple tablets in the same report.
       VLOG(1) << Substitute("Tablet $0 is now online", tablet->ToString());
       tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::RUNNING,
                                             "Tablet reported with an active leader");
