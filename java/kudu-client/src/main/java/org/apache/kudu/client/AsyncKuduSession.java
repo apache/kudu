@@ -543,6 +543,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     Buffer fullBuffer = null;
     try {
       synchronized (monitor) {
+        Deferred<Void> notification = flushNotification.get();
         if (activeBuffer == null) {
           // If the active buffer is null then we recently flushed. Check if there
           // is an inactive buffer available to replace as the active.
@@ -554,7 +555,7 @@ public class AsyncKuduSession implements SessionConfiguration {
             // This can happen if the user writes into a buffer, flushes it, writes
             // into the second, flushes it, and immediately tries to write again.
             throw new PleaseThrottleException(statusServiceUnavailable,
-                                              null, operation, flushNotification.get());
+                                              null, operation, notification);
           }
         }
 
@@ -582,7 +583,7 @@ public class AsyncKuduSession implements SessionConfiguration {
               Status statusServiceUnavailable =
                   Status.ServiceUnavailable("All buffers are currently flushing");
               throw new PleaseThrottleException(statusServiceUnavailable,
-                                                null, operation, flushNotification.get());
+                                                null, operation, notification);
             }
           }
 
@@ -600,7 +601,7 @@ public class AsyncKuduSession implements SessionConfiguration {
                   Status.ServiceUnavailable("The previous buffer hasn't been flushed and the " +
                       "current buffer is over the low watermark, please retry later");
               throw new PleaseThrottleException(statusServiceUnavailable,
-                                                null, operation, flushNotification.get());
+                                                null, operation, notification);
             }
           }
 
