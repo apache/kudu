@@ -48,7 +48,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
@@ -742,7 +741,6 @@ class PosixRWFile : public RWFile {
       : filename_(std::move(fname)),
         fd_(fd),
         sync_on_close_(sync_on_close),
-        pending_sync_(false),
         is_on_xfs_(false),
         closed_(false) {}
 
@@ -765,7 +763,6 @@ class PosixRWFile : public RWFile {
 
   virtual Status WriteV(uint64_t offset, const vector<Slice> &data) OVERRIDE {
     Status s = DoWriteV(fd_, filename_, offset, data);
-    pending_sync_.Store(true);
     return s;
   }
 
@@ -862,10 +859,6 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status Sync() OVERRIDE {
-    if (!pending_sync_.CompareAndSwap(true, false)) {
-      return Status::OK();
-    }
-
     TRACE_EVENT1("io", "PosixRWFile::Sync", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     LOG_SLOW_EXECUTION(WARNING, 1000, Substitute("sync call for $0", filename())) {
@@ -993,7 +986,6 @@ class PosixRWFile : public RWFile {
   const bool sync_on_close_;
 
   GoogleOnceDynamic once_;
-  AtomicBool pending_sync_;
   bool is_on_xfs_;
   bool closed_;
 };
