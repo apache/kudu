@@ -31,6 +31,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.security.cert.Certificate;
 import java.util.List;
@@ -52,7 +53,6 @@ import javax.security.sasl.SaslException;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -60,6 +60,7 @@ import com.google.common.collect.Sets;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.ietf.jgss.GSSException;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
@@ -106,7 +107,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   static final int CONNECTION_CTX_CALL_ID = -3;
   static final int SASL_CALL_ID = -33;
 
-  private static enum State {
+  private enum State {
     INITIAL,
     AWAIT_NEGOTIATE,
     AWAIT_TLS_HANDSHAKE,
@@ -221,8 +222,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   @Override
-  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt)
-      throws Exception {
+  public void messageReceived(ChannelHandlerContext ctx, MessageEvent evt) throws IOException {
     Object m = evt.getMessage();
     if (!(m instanceof CallResponse)) {
       ctx.sendUpstream(evt);
@@ -231,8 +231,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     handleResponse(ctx.getChannel(), (CallResponse)m);
   }
 
-  private void handleResponse(Channel chan, CallResponse callResponse)
-      throws IOException {
+  private void handleResponse(Channel chan, CallResponse callResponse) throws IOException {
     final RpcHeader.ResponseHeader header = callResponse.getHeader();
     if (header.getIsError()) {
       final RpcHeader.ErrorStatusPB.Builder errBuilder = RpcHeader.ErrorStatusPB.newBuilder();
@@ -270,8 +269,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void handleSaslMessage(Channel chan, NegotiatePB response)
-      throws IOException {
+  private void handleSaslMessage(Channel chan, NegotiatePB response) throws IOException {
     switch (response.getStep()) {
       case SASL_CHALLENGE:
         handleChallengeResponse(chan, response);
@@ -298,8 +296,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     return saslBuilder.build();
   }
 
-  private void handleNegotiateResponse(Channel chan, RpcHeader.NegotiatePB response) throws
-      SaslException, SSLException {
+  private void handleNegotiateResponse(Channel chan,
+                                       RpcHeader.NegotiatePB response) throws IOException {
     Preconditions.checkState(response.getStep() == NegotiateStep.NEGOTIATE,
         "Expected NEGOTIATE message, got {}", response.getStep());
 
@@ -343,7 +341,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void chooseAndInitializeSaslMech(NegotiatePB response) throws SaslException {
+  private void chooseAndInitializeSaslMech(NegotiatePB response) throws NonRecoverableException {
     // Gather the set of server-supported mechanisms.
     Set<String> serverMechs = Sets.newHashSet();
     for (RpcHeader.NegotiatePB.SaslMechanism mech : response.getSaslMechanismsList()) {
@@ -367,6 +365,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       if ("GSSAPI".equals(clientMech)) {
         props.put(Sasl.QOP, "auth-int");
       }
+
       try {
         saslClient = Sasl.createSaslClient(new String[]{ clientMech },
                                            null,
@@ -378,14 +377,26 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         break;
       } catch (SaslException e) {
         errorsByMech.put(clientMech, e.getMessage());
-        saslClient = null;
       }
     }
-    if (chosenMech == null) {
-      throw new SaslException("unable to negotiate a matching mechanism. Errors: [" +
-                              Joiner.on(",").withKeyValueSeparator(": ").join(errorsByMech) +
-                              "]");
+
+    if (chosenMech != null) {
+      LOG.debug("SASL mechanism {} chosen for peer {}", chosenMech, remoteHostname);
+      return;
     }
+
+    // TODO(KUDU-1948): when the Java client has an option to require security, detect the case
+    // where the server is configured without Kerberos and the client requires it.
+    String message;
+    if (serverMechs.size() == 1 && serverMechs.contains("GSSAPI")) {
+      // Give a better error diagnostic for common case of an unauthenticated client connecting
+      // to a secure server.
+      message = "Server requires Kerberos, but this client is not authenticated (kinit)";
+    } else {
+      message = "Unable to negotiate a matching mechanism. Errors: [" +
+                Joiner.on(", ").withKeyValueSeparator(": ").join(errorsByMech) + "]";
+    }
+    throw new NonRecoverableException(Status.ConfigurationError(message));
   }
 
   private AuthenticationTypePB.TypeCase chooseAuthenticationType(NegotiatePB response) {
@@ -454,8 +465,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
    * Handle an inbound message during the TLS handshake. If this message
    * causes the handshake to complete, triggers the beginning of SASL initiation.
    */
-  private void handleTlsMessage(Channel chan, NegotiatePB response)
-      throws IOException {
+  private void handleTlsMessage(Channel chan, NegotiatePB response) throws IOException {
     Preconditions.checkState(response.getStep() == NegotiateStep.TLS_HANDSHAKE);
     Preconditions.checkArgument(!response.getTlsHandshake().isEmpty(),
         "empty TLS message from server");
@@ -529,7 +539,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         .build());
   }
 
-  private void startAuthentication(Channel chan) throws SaslException {
+  private void startAuthentication(Channel chan) throws SaslException, NonRecoverableException {
     switch (chosenAuthnType) {
       case SASL:
         sendSaslInitiate(chan);
@@ -556,8 +566,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleTokenExchangeResponse(Channel chan,
-                                           NegotiatePB response) throws SaslException {
+  private void handleTokenExchangeResponse(Channel chan, NegotiatePB response)
+      throws SaslException {
     Preconditions.checkArgument(response.getStep() == NegotiateStep.TOKEN_EXCHANGE,
         "expected TOKEN_EXCHANGE, got step: {}", response.getStep());
 
@@ -565,7 +575,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     finish(chan);
   }
 
-  private void sendSaslInitiate(Channel chan) throws SaslException {
+  private void sendSaslInitiate(Channel chan) throws SaslException, NonRecoverableException {
     RpcHeader.NegotiatePB.Builder builder = RpcHeader.NegotiatePB.newBuilder();
     if (saslClient.hasInitialResponse()) {
       byte[] initialResponse = evaluateChallenge(new byte[0]);
@@ -577,8 +587,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     sendSaslMessage(chan, builder.build());
   }
 
-  private void handleChallengeResponse(Channel chan, RpcHeader.NegotiatePB response) throws
-      SaslException {
+  private void handleChallengeResponse(Channel chan, RpcHeader.NegotiatePB response)
+      throws SaslException, NonRecoverableException {
     byte[] saslToken = evaluateChallenge(response.getToken().toByteArray());
     if (saslToken == null) {
       throw new IllegalStateException("Not expecting an empty token");
@@ -592,7 +602,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   /**
    * Verify the channel bindings included in 'response'. This is used only
    * for GSSAPI-authenticated connections over TLS.
-   * @throws RuntimeException on failure to verify
+   * @throws SSLPeerUnverifiedException on failure to verify
    */
   private void verifyChannelBindings(NegotiatePB response) throws IOException {
     byte[] expected = SecurityUtil.getEndpointChannelBindings(peerCert);
@@ -671,18 +681,33 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     return new RpcOutboundMessage(header, pb);
   }
 
-  private byte[] evaluateChallenge(final byte[] challenge) throws SaslException {
+  private byte[] evaluateChallenge(final byte[] challenge)
+      throws SaslException, NonRecoverableException {
     try {
       return Subject.doAs(securityContext.getSubject(),
           new PrivilegedExceptionAction<byte[]>() {
-          @Override
-          public byte[] run() throws Exception {
-            return saslClient.evaluateChallenge(challenge);
-          }
-        });
-    } catch (Exception e) {
-      Throwables.throwIfInstanceOf(e, SaslException.class);
-      throw new RuntimeException(e);
+            @Override
+            public byte[] run() throws SaslException {
+              return saslClient.evaluateChallenge(challenge);
+            }
+          });
+    } catch (PrivilegedActionException e) {
+      // This cast is safe because the action above only throws checked SaslException.
+      SaslException saslException = (SaslException) e.getCause();
+
+      // TODO(KUDU-2121): We should never get to this point if the client does not have
+      // Kerberos credentials, but it seems that on certain platforms it can happen.
+      // So, we try and determine whether the evaluateChallenge failed due to missing
+      // credentials, and return a nicer error message if so.
+      Throwable cause = saslException.getCause();
+      if (cause instanceof GSSException &&
+          ((GSSException) cause).getMajor() == GSSException.NO_CRED) {
+        throw new NonRecoverableException(
+            Status.ConfigurationError(
+                "Server requires Kerberos, but this client is not authenticated (kinit)"),
+            saslException);
+      }
+      throw saslException;
     }
   }
 
