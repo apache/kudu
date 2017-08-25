@@ -93,10 +93,10 @@ class SysCatalogTest : public KuduTest {
   gscoped_ptr<MasterServiceProxy> proxy_;
 };
 
-class TableLoader : public TableVisitor {
+class TestTableLoader : public TableVisitor {
  public:
-  TableLoader() {}
-  ~TableLoader() { Reset(); }
+  TestTableLoader() {}
+  ~TestTableLoader() { Reset(); }
 
   void Reset() {
     for (TableInfo* ti : tables) {
@@ -134,7 +134,7 @@ static bool MetadatasEqual(C* ti_a, C* ti_b) {
 // Test the sys-catalog tables basic operations (add, update, delete,
 // visit)
 TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
-  TableLoader loader;
+  TestTableLoader loader;
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(0, loader.tables.size());
 
@@ -222,10 +222,10 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
   }
 }
 
-class TabletLoader : public TabletVisitor {
+class TestTabletLoader : public TabletVisitor {
  public:
-  TabletLoader() {}
-  ~TabletLoader() { Reset(); }
+  TestTabletLoader() {}
+  ~TestTabletLoader() { Reset(); }
 
   void Reset() {
     for (TabletInfo* ti : tablets) {
@@ -276,7 +276,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
   SysCatalogTable* sys_catalog = master_->catalog_manager()->sys_catalog();
 
-  TabletLoader loader;
+  TestTabletLoader loader;
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
   ASSERT_EQ(0, loader.tablets.size());
 

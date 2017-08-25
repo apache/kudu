@@ -68,12 +68,14 @@ struct MasterOptions;
 // data must be loaded into memory before the tablets data.
 class TableVisitor {
  public:
+  virtual ~TableVisitor() = default;
   virtual Status VisitTable(const std::string& table_id,
                             const SysTablesEntryPB& metadata) = 0;
 };
 
 class TabletVisitor {
  public:
+  virtual ~TabletVisitor() = default;
   virtual Status VisitTablet(const std::string& table_id,
                              const std::string& tablet_id,
                              const SysTabletsEntryPB& metadata) = 0;
@@ -85,6 +87,7 @@ class TabletVisitor {
 // by current or former master leader.
 class TskEntryVisitor {
  public:
+  virtual ~TskEntryVisitor() = default;
   virtual Status Visit(const std::string& entry_id,
                        const SysTskEntryPB& metadata) = 0;
 };
