@@ -229,12 +229,6 @@ Kudu has a few known security limitations:
 
 // TODO(danburkert): add JIRA links for each of these.
 
-Long-lived Tokens:: The Java Kudu client does not automatically request fresh
-authn tokens after initial token expiration, so long-lived Java clients in
-secure clusters are not supported. However, the C++ Kudu client does
-automatically request fresh authn tokens, so long-lived C++ clients
-(i.e. beyond authn token lifetime) in secure clusters are supported.
-
 Custom Kerberos Principal:: Kudu does not support setting a custom service
 principal for Kudu processes. The principal must be 'kudu'.
 
