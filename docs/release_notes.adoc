@@ -30,6 +30,10 @@
 
 [[rn_1.5.0]]
 
+* link:https://issues.apache.org/jira/browse/KUDU-2013[KUDU-2013]
+  The Java Kudu client now automatically requests new authentication tokens
+  after expiration. So, long-lived Java clients are now supported.
+
 [[rn_1.5.0_upgrade_notes]]
 == Upgrade Notes
 
