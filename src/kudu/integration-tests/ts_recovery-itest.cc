@@ -273,7 +273,7 @@ TEST_P(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
   NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
-  work.set_write_timeout_millis(100);
+  work.set_write_timeout_millis(1000);
   work.set_timeout_allowed(true);
   work.set_payload_bytes(10000); // make logs roll without needing lots of ops.
   work.Setup();
