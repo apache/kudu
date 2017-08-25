@@ -239,6 +239,7 @@ fi
 # Just a plug for IWYU configuration: this branch does not have code to run
 # the include-what-you-use tool.
 if [ "$BUILD_TYPE" = "IWYU" ]; then
+  echo "IWYU is a no-op configuration in this branch" | tee $TEST_LOGDIR/iwyu.log
   exit 0
 fi
 
