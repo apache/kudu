@@ -63,6 +63,11 @@
 [[rn_1.5.0_new_features]]
 == New features
 
+* Kudu server web UIs have a new configuration dashboard (/config) which gives a
+  a high level view of important security configuration values. The dashboard
+  gives administrators a quick way to validate security settings. More types of
+  configuration will be added in the future.
+
 == Optimizations and improvements
 
 [[rn_1.5.0_fixed_issues]]
