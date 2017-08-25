@@ -394,7 +394,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
   # Rerun the build using the Gradle build.
   # Note: We just ensure we can assemble and don't rerun the tests.
   if [ "$BUILD_GRADLE" == "1" ]; then
-     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain"
+     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon"
      if ! ./gradlew $GRADLE_FLAGS clean assemble; then
        EXIT_STATUS=1
        FAILURES="$FAILURES"$'Java Gradle build failed\n'
