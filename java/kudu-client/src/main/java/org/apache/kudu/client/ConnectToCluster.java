@@ -216,8 +216,8 @@ final class ConnectToCluster {
       if (allUnrecoverable) {
         // This will stop retries.
         String msg = String.format("Couldn't find a valid master in (%s). " +
-            "Exceptions received: %s", allHosts,
-            Joiner.on(",").join(Lists.transform(
+            "Exceptions received: [%s]", allHosts,
+            Joiner.on(", ").join(Lists.transform(
                 exceptionsReceived, Functions.toStringFunction())));
         Status s = Status.ServiceUnavailable(msg);
         responseD.callback(new NonRecoverableException(s));

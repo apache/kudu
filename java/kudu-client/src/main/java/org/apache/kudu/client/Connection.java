@@ -238,20 +238,18 @@ class Connection extends SimpleChannelUpstreamHandler {
 
   /** {@inheritDoc} */
   @Override
-  public void channelDisconnected(final ChannelHandlerContext ctx,
-                                  final ChannelStateEvent e) throws Exception {
+  public void channelDisconnected(final ChannelHandlerContext ctx, final ChannelStateEvent e) {
     // No need to call super.channelDisconnected(ctx, e) -- there should be nobody in the upstream
     // pipeline after Connection itself. So, just handle the disconnection event ourselves.
-    cleanup("connection disconnected");
+    cleanup(new RecoverableException(Status.NetworkError("connection disconnected")));
   }
 
   /** {@inheritDoc} */
   @Override
-  public void channelClosed(final ChannelHandlerContext ctx,
-                            final ChannelStateEvent e) throws Exception {
+  public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent e) {
     // No need to call super.channelClosed(ctx, e) -- there should be nobody in the upstream
     // pipeline after Connection itself. So, just handle the close event ourselves.
-    cleanup("connection closed");
+    cleanup(new RecoverableException(Status.NetworkError("connection closed")));
   }
 
   /** {@inheritDoc} */
@@ -382,36 +380,48 @@ class Connection extends SimpleChannelUpstreamHandler {
 
   /** {@inheritDoc} */
   @Override
-  public void exceptionCaught(final ChannelHandlerContext ctx,
-                              final ExceptionEvent event) {
-    final Throwable e = event.getCause();
-    final Channel c = event.getChannel();
+  public void exceptionCaught(final ChannelHandlerContext ctx, final ExceptionEvent event) {
+    Throwable e = event.getCause();
+    Channel c = event.getChannel();
 
-    if (e instanceof RejectedExecutionException) {
-      LOG.warn("{} RPC rejected by the executor: {} (ignore if shutting down)", getLogPrefix(), e);
+    KuduException error;
+    if (e instanceof KuduException) {
+      error = (KuduException) e;
+    } else if (e instanceof RejectedExecutionException) {
+      String message = String.format("%s RPC rejected by the executor (ignore if shutting down)",
+                                     getLogPrefix());
+      error = new RecoverableException(Status.NetworkError(message), e);
+      LOG.warn(message, e);
     } else if (e instanceof ReadTimeoutException) {
-      LOG.debug("{} encountered a read timeout; closing the channel", getLogPrefix());
+      String message = String.format("%s encountered a read timeout; closing the channel",
+                                     getLogPrefix());
+      error = new RecoverableException(Status.NetworkError(message), e);
+      LOG.debug(message);
     } else if (e instanceof ClosedChannelException) {
-      if (!explicitlyDisconnected) {
-        LOG.info("{} lost connection to peer", getLogPrefix());
-      }
-    } else if (e instanceof SSLException && explicitlyDisconnected) {
+      String message = String.format(
+          explicitlyDisconnected ? "%s disconnected from peer" : "%s lost connection to peer",
+          getLogPrefix());
+      error = new RecoverableException(Status.NetworkError(message), e);
+      LOG.info(message, e);
+    } else {
+      String message = String.format("%s unexpected exception from downstream on %s",
+                                     getLogPrefix(), c);
+      error = new RecoverableException(Status.NetworkError(message), e);
+
       // There's a race in Netty where, when we call Channel.close(), it tries
       // to send a TLS 'shutdown' message and enters a shutdown state. If another
       // thread races to send actual data on the channel, then Netty will get a
       // bit confused that we are trying to send data and misinterpret it as a
       // renegotiation attempt, and throw an SSLException. So, we just ignore any
-      // SSLException if we've already attempted to close.
-    } else {
-      LOG.error("{} unexpected exception from downstream on {}: {}", getLogPrefix(), c, e);
+      // SSLException if we've already attempted to close, otherwise log the error.
+      if (!(e instanceof SSLException) || !explicitlyDisconnected) {
+        LOG.error(message, e);
+      }
     }
 
+    cleanup(error);
     if (c.isOpen()) {
-      // Calling Channels.close() will trigger channelClosed(), which will call cleanup().
       Channels.close(c);
-    } else {
-      // Presumably a connection timeout: initiating the clean-up directly from here.
-      cleanup(e.getMessage());
     }
   }
 
@@ -615,9 +625,9 @@ class Connection extends SimpleChannelUpstreamHandler {
    * callbacks. The callee is supposed to handle the error and retry sending the messages,
    * if needed.
    *
-   * @param errorMessage a string to describe the cause of the cleanup
+   * @param error the exception which caused the connection cleanup
    */
-  private void cleanup(final String errorMessage) {
+  private void cleanup(KuduException error) {
     List<QueuedMessage> queued;
     Map<Integer, Callback<Void, CallResponseInfo>> inflight;
 
@@ -636,7 +646,8 @@ class Connection extends SimpleChannelUpstreamHandler {
         needNewAuthnToken = negotiationFailure.status.getCode().equals(
             RpcHeader.ErrorStatusPB.RpcErrorCodePB.FATAL_INVALID_AUTHENTICATION_TOKEN);
       }
-      LOG.debug("{} cleaning up while in state {} due to: {}", getLogPrefix(), state, errorMessage);
+      LOG.debug("{} cleaning up while in state {} due to: {}",
+                getLogPrefix(), state, error.getMessage());
 
       queued = queuedMessages;
       queuedMessages = null;
@@ -648,14 +659,13 @@ class Connection extends SimpleChannelUpstreamHandler {
     } finally {
       lock.unlock();
     }
-    final Status error = Status.NetworkError(getLogPrefix() + " " +
-        (errorMessage == null ? "connection reset" : errorMessage));
-    final RecoverableException exception =
-        needNewAuthnToken ? new InvalidAuthnTokenException(error) : new RecoverableException(error);
+    if (needNewAuthnToken) {
+      error = new InvalidAuthnTokenException(error.getStatus());
+    }
 
     for (Callback<Void, CallResponseInfo> cb : inflight.values()) {
       try {
-        cb.call(new CallResponseInfo(null, exception));
+        cb.call(new CallResponseInfo(null, error));
       } catch (Exception e) {
         LOG.warn("{} exception while aborting in-flight call: {}", getLogPrefix(), e);
       }
@@ -664,7 +674,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     if (queued != null) {
       for (QueuedMessage qm : queued) {
         try {
-          qm.cb.call(new CallResponseInfo(null, exception));
+          qm.cb.call(new CallResponseInfo(null, error));
         } catch (Exception e) {
           LOG.warn("{} exception while aborting enqueued call: {}", getLogPrefix(), e);
         }

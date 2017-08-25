@@ -39,24 +39,22 @@ public class TestSecurity extends BaseKuduTest {
    * be able to authenticate to the masters and tablet servers using tokens.
    */
   @Test
-  public void testImportExportAuthenticationCredentials() throws InterruptedException, Exception {
+  public void testImportExportAuthenticationCredentials() throws Exception {
     byte[] authnData = client.exportAuthenticationCredentials().join();
     assertNotNull(authnData);
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     try {
-      KuduClient newClient = new KuduClient.KuduClientBuilder(masterAddresses)
-          .defaultAdminOperationTimeoutMs(2000)
-          .build();
+      KuduClient newClient = new KuduClient.KuduClientBuilder(masterAddresses).build();
 
       // Test that a client with no credentials cannot list servers.
       try {
         newClient.listTabletServers();
         Assert.fail("should not have been able to connect to a secure cluster " +
             "with no credentials");
-      } catch (Exception e) {
-        // Expected.
-        // TODO(todd): assert on the particular exception type and error string
+      } catch (NonRecoverableException e) {
+        Assert.assertTrue(e.getMessage().contains(
+            "Server requires Kerberos, but this client is not authenticated"));
       }
 
       // If we import the authentication data from the old authenticated client,
@@ -72,5 +70,4 @@ public class TestSecurity extends BaseKuduTest {
       System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
     }
   }
-
 }
