@@ -119,6 +119,20 @@ on wire compatibility between Kudu 1.5 and versions earlier than 1.3:
 Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
 documentation.
 
+[[rn_1.5.0_contributors]]
+
+Kudu 1.5 includes contributions from twenty-four people, including six
+first-time contributors:
+
+  - Abhishek Talluri
+  - Edward Fancher
+  - Michael Ho
+  - Sam Okrent
+  - Sandish Kumar
+  - Sri Sai Kumar Ravipati
+
+Thanks!
+
 [[resources_and_next_steps]]
 
 == Resources
