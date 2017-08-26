@@ -87,6 +87,14 @@
   tablet servers. The local replica data size tool summarizes the space usage of
   a tablet, breaking it down by type of file, column, and rowset.
 
+* kudu-client-tools now supports exporting CSV files and importing
+  Apache Parquet files. This feature is unstable and may change APIs and
+  functionality in future releases.
+
+* kudu-spark-tools now supports importing and exporting CSV, Apache Avro and
+  Apache Parquet files. This feature is unstable and may change APIs and
+  functionality in future releases.
+
 == Optimizations and improvements
 
 * Kudu 1.5's log block manager now performs disk synchronization in batches.
