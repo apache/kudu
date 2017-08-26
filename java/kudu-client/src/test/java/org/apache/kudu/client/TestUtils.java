@@ -199,30 +199,6 @@ public class TestUtils {
   }
 
   /**
-   * Finds the next free UDP port, starting with the one passed. Keep in mind the
-   * time-of-check-time-of-use nature of this method, the returned port might become occupied
-   * after it was checked for availability.
-   * @param startPort first port to be probed
-   * @return a currently usable port
-   * @throws IOException IOE is thrown if we can't close a socket we tried to open or if we run
-   * out of ports to try
-   */
-  public static int findFreeUdpPort(int startPort) throws IOException {
-    DatagramSocket ds;
-    for (int i = startPort; i < 65536; i++) {
-      try {
-        SocketAddress address = new InetSocketAddress(getUniqueLocalhost(), i);
-        ds = new DatagramSocket(address);
-      } catch (SocketException e) {
-        continue;
-      }
-      ds.close();
-      return i;
-    }
-    throw new IOException("Ran out of ports");
-  }
-
-  /**
    * Finds a specified number of parts, starting with one passed. Keep in mind the
    * time-of-check-time-of-use nature of this method.
    * @see {@link #findFreePort(int)}
