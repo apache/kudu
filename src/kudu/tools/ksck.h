@@ -290,10 +290,11 @@ class KsckTabletServer {
 
  protected:
   friend class KsckTest;
-  FRIEND_TEST(KsckTest, TestMismatchedAssignments);
   FRIEND_TEST(KsckTest, TestConsensusConflictExtraPeer);
-  FRIEND_TEST(KsckTest, TestConsensusConflictMissingPeer);
   FRIEND_TEST(KsckTest, TestConsensusConflictDifferentLeader);
+  FRIEND_TEST(KsckTest, TestConsensusConflictMissingPeer);
+  FRIEND_TEST(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict);
+  FRIEND_TEST(KsckTest, TestMismatchedAssignments);
 
   enum State {
     kUninitialized,
