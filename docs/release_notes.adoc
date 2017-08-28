@@ -67,9 +67,13 @@
   startup. This feature is experimental; by default, Kudu will crash if it
   experiences a disk failure. When enabled, tablets with any data on the failed
   disk will not be opened and will be replicated as needed. To enable this, set
-  the `--suicide_on_eio` flag to `false`. Note that the first configured data
-  directory and the WAL directory cannot currently tolerate disk failures, and
-  disk failures during run-time are still fatal.
+  the `--suicide_on_eio` flag to `false`. There is additionally a configurable
+  tradeoff beteween a newly added tablet's tolerance to disk failures and its
+  parallelization of I/O via the `--fs_target_data_dirs_per_tablet` flag.
+  Tablets that are spread across fewer disks are less likely to be affected by
+  a disk failure, at the cost of reduced parallelism. Note that the first
+  configured data directory and the WAL directory cannot currently tolerate
+  disk failures, and disk failures during run-time are still fatal.
 
 * Kudu server web UIs have a new configuration dashboard (/config) which gives a
   a high level view of important security configuration values. The dashboard
