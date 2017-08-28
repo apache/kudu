@@ -543,16 +543,48 @@ TEST_F(KsckTest, TestTabletNotRunning) {
 }
 
 // Test for a bug where we weren't properly handling a tserver not reported by the master.
-TEST_F(KsckTest, TestMissingTserver) {
+TEST_F(KsckTest, TestMasterNotReportingTabletServer) {
   CreateOneSmallReplicatedTable();
 
   // Delete a tablet server from the master's list. This simulates a situation
-  // where the master is starting and hasn't listed all tablet servers yet, but
-  // tablets from other tablet servers are listing the missing tablet server as a peer.
+  // where the master is starting and doesn't list all tablet servers yet, but
+  // tablets from other tablet servers are listing a missing tablet server as a peer.
   EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
   Status s = RunKsck();
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "Table Summary\n"
+      " Name |      Status      | Total Tablets | Healthy | Under-replicated | Unavailable\n"
+      "------+------------------+---------------+---------+------------------+-------------\n"
+      " test | UNDER-REPLICATED | 3             | 0       | 3                | 0");
+}
+
+// KUDU-2113: Test for a bug where we weren't properly handling a tserver not
+// reported by the master when there was also a consensus conflict.
+TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
+  CreateOneSmallReplicatedTable();
+
+  // Delete a tablet server from the cluster's list as in TestMasterNotReportingTabletServer.
+  EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
+
+  // Now engineer a consensus conflict.
+  const shared_ptr<KsckTabletServer>& ts = FindOrDie(master_->tablet_servers_, "ts-id-1");
+  auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
+                                  std::make_pair("ts-id-1", "tablet-id-1"));
+  cstate.set_leader_uuid("ts-id-1");
+
+  Status s = RunKsck();
+  ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "The consensus matrix is:\n"
+      " Config source |         Voters         | Current term | Config index | Committed?\n"
+      "---------------+------------------------+--------------+--------------+------------\n"
+      " master        | A*  B   C              |              |              | Yes\n"
+      " A             | [config not available] |              |              | \n"
+      " B             | A   B*  C              | 0            |              | Yes\n"
+      " C             | A*  B   C              | 0            |              | Yes");
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "Table Summary\n"
       " Name |      Status      | Total Tablets | Healthy | Under-replicated | Unavailable\n"
