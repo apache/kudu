@@ -63,6 +63,14 @@
 [[rn_1.5.0_new_features]]
 == New features
 
+* Kudu 1.5 tablet servers are now optionally able to tolerate disk failures at
+  startup. This feature is experimental; by default, Kudu will crash if it
+  experiences a disk failure. When enabled, tablets with any data on the failed
+  disk will not be opened and will be replicated as needed. To enable this, set
+  the `--suicide_on_eio` flag to `false`. Note that the first configured data
+  directory and the WAL directory cannot currently tolerate disk failures, and
+  disk failures during run-time are still fatal.
+
 * Kudu server web UIs have a new configuration dashboard (/config) which gives a
   a high level view of important security configuration values. The dashboard
   gives administrators a quick way to validate security settings. More types of
