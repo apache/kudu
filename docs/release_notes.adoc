@@ -81,6 +81,10 @@
   configuration will be added in the future.
 
 == Optimizations and improvements
+* Kudu 1.5's log block manager now performs disk synchronization in batches.
+  This optimization can significantly reduce the time taken to copy tablet data
+  from one server to another; in one case tablet copy time was reduced by 35%.
+  It also improves the general performance of flushes and compactions.
 
 [[rn_1.5.0_fixed_issues]]
 == Fixed Issues
