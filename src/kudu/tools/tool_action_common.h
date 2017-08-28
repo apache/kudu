@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
@@ -34,6 +35,8 @@ class function;
 } // namespace boost
 
 namespace kudu {
+
+class faststring;
 
 namespace client {
 class KuduClient;
@@ -165,6 +168,69 @@ class LeaderMasterProxy {
 
  private:
   client::sp::shared_ptr<client::KuduClient> client_;
+};
+
+// Facilitates sending and receiving messages with the tool control shell.
+//
+// May be used by a subprocess communicating with the shell via pipe, or by the
+// shell itself to read/write messages via stdin/stdout respectively.
+class ControlShellProtocol {
+ public:
+  enum class SerializationMode {
+    // Each message is serialized as a four byte little-endian size followed by
+    // the protobuf-encoded message itself.
+    PB,
+
+    // Each message is serialized into a protobuf-like JSON representation
+    // terminated with a newline character.
+    JSON,
+  };
+
+  // Whether the provided fds are closed at class destruction time.
+  enum class CloseMode {
+    CLOSE_ON_DESTROY,
+    NO_CLOSE_ON_DESTROY,
+  };
+
+  // Constructs a new protocol instance.
+  //
+  // If 'close_mode' is CLOSE_ON_DESTROY, the instance has effectively taken
+  // control of 'read_fd' and 'write_fd' and the caller shouldn't use them.
+  ControlShellProtocol(SerializationMode serialization_mode,
+                       CloseMode close_mode,
+                       int read_fd,
+                       int write_fd);
+
+  ~ControlShellProtocol();
+
+  // Receives a protobuf message, blocking if the pipe is empty.
+  //
+  // Returns EndOfFile if the writer on the other end of the pipe was closed.
+  //
+  // Returns an error if serialization_mode_ is PB and the received message
+  // sizes exceeds kMaxMessageBytes.
+  template <class M>
+  Status ReceiveMessage(M* message);
+
+  // Sends a protobuf message, blocking if the pipe is full.
+  //
+  // Returns EndOfFile if the reader on the other end of the pipe was closed.
+  template <class M>
+  Status SendMessage(const M& message);
+
+ private:
+  // Private helpers to drive actual pipe reading and writing.
+  Status DoRead(faststring* buf);
+  Status DoWrite(const faststring& buf);
+
+  static const int kMaxMessageBytes;
+
+  const SerializationMode serialization_mode_;
+  const CloseMode close_mode_;
+  const int read_fd_;
+  const int write_fd_;
+
+  DISALLOW_COPY_AND_ASSIGN(ControlShellProtocol);
 };
 
 } // namespace tools

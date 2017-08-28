@@ -25,6 +25,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <tuple>  // IWYU pragma: keep
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -85,6 +86,8 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tools/tool.pb.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -381,6 +384,7 @@ TEST_F(ToolTest, TestHelpXML) {
       "remote_replica",
       "table",
       "tablet",
+      "test",
       "tserver",
       "wal",
       "dump",
@@ -404,6 +408,7 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "remote_replica.*tablet replicas on a Kudu Tablet Server",
       "table.*Kudu tables",
       "tablet.*Kudu tablets",
+      "test.*test actions",
       "tserver.*Kudu Tablet Server",
       "wal.*write-ahead log"
   };
@@ -524,6 +529,12 @@ TEST_F(ToolTest, TestModeHelp) {
         "leader_step_down.*Force the tablet's leader replica to step down"
     };
     NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
+  }
+  {
+    const vector<string> kTestModeRegexes = {
+        "mini_cluster.*Spawn a control shell"
+    };
+    NO_FATALS(RunTestHelp("test", kTestModeRegexes));
   }
   {
     const vector<string> kChangeConfigModeRegexes = {
@@ -1739,6 +1750,321 @@ TEST_F(ToolTest, TestMasterList) {
 
   ASSERT_STR_CONTAINS(out, master->uuid());
   ASSERT_STR_CONTAINS(out, master->bound_rpc_hostport().ToString());
+}
+
+// This test is parameterized on the serialization mode and Kerberos.
+class ControlShellToolTest :
+    public ToolTest,
+    public ::testing::WithParamInterface<std::tuple<ControlShellProtocol::SerializationMode,
+                                                    bool>> {
+ public:
+  virtual void SetUp() override {
+    ToolTest::SetUp();
+
+    // Start the control shell.
+    string mode;
+    switch (serde_mode()) {
+      case ControlShellProtocol::SerializationMode::JSON: mode = "json"; break;
+      case ControlShellProtocol::SerializationMode::PB: mode = "pb"; break;
+      default: LOG(FATAL) << "Unknown serialization mode";
+    }
+    shell_.reset(new Subprocess({
+      tool_path_,
+      "test",
+      "mini_cluster",
+      Substitute("--serialization=$0", mode)
+    }));
+    shell_->ShareParentStdin(false);
+    shell_->ShareParentStdout(false);
+    ASSERT_OK(shell_->Start());
+
+    // Start the protocol interface.
+    proto_.reset(new ControlShellProtocol(serde_mode(),
+                                          ControlShellProtocol::CloseMode::CLOSE_ON_DESTROY,
+                                          shell_->ReleaseChildStdoutFd(),
+                                          shell_->ReleaseChildStdinFd()));
+  }
+
+  virtual void TearDown() override {
+    if (proto_) {
+      // Stopping the protocol interface will close the fds, causing the shell
+      // to exit on its own.
+      proto_.reset();
+      ASSERT_OK(shell_->Wait());
+      int exit_status;
+      ASSERT_OK(shell_->GetExitStatus(&exit_status));
+      ASSERT_EQ(0, exit_status);
+    }
+    ToolTest::TearDown();
+  }
+
+ protected:
+  // Send a control message to the shell and receive its response.
+  Status SendReceive(const ControlShellRequestPB& req, ControlShellResponsePB* resp) {
+    RETURN_NOT_OK(proto_->SendMessage(req));
+    RETURN_NOT_OK(proto_->ReceiveMessage(resp));
+    if (resp->has_error()) {
+      return StatusFromPB(resp->error());
+    }
+    return Status::OK();
+  }
+
+  ControlShellProtocol::SerializationMode serde_mode() const {
+    return ::testing::get<0>(GetParam());
+  }
+
+  bool enable_kerberos() const {
+    return ::testing::get<1>(GetParam());
+  }
+
+  unique_ptr<Subprocess> shell_;
+  unique_ptr<ControlShellProtocol> proto_;
+};
+
+INSTANTIATE_TEST_CASE_P(SerializationModes, ControlShellToolTest,
+                        ::testing::Combine(::testing::Values(
+                            ControlShellProtocol::SerializationMode::PB,
+                            ControlShellProtocol::SerializationMode::JSON),
+                                           ::testing::Bool()));
+
+TEST_P(ControlShellToolTest, TestControlShell) {
+  const int kNumMasters = 1;
+  const int kNumTservers = 3;
+
+  // Create an illegal cluster first, to make sure that the shell continues to
+  // work in the event of an error.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_num_masters(4);
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "only one or three masters are supported");
+  }
+
+  // Create a cluster.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_data_root(JoinPathSegments(
+        test_dir_, "minicluster-data"));
+    req.mutable_create_cluster()->set_num_masters(kNumMasters);
+    req.mutable_create_cluster()->set_num_tservers(kNumTservers);
+    req.mutable_create_cluster()->set_enable_kerberos(enable_kerberos());
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Try creating a second cluster. It should fail.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_create_cluster()->set_data_root(JoinPathSegments(
+        test_dir_, "minicluster-data"));
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "cluster already created");
+  }
+
+  // Start it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_start_cluster();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Get the masters.
+  vector<DaemonInfoPB> masters;
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_get_masters();
+    ASSERT_OK(SendReceive(req, &resp));
+    ASSERT_TRUE(resp.has_get_masters());
+    ASSERT_EQ(kNumMasters, resp.get_masters().masters_size());
+    masters.assign(resp.get_masters().masters().begin(),
+                   resp.get_masters().masters().end());
+  }
+
+  if (enable_kerberos()) {
+    // Set up the KDC environment variables so that a client can authenticate
+    // to this cluster.
+    //
+    // Normally this is handled automatically by the cluster's MiniKdc, but
+    // since the cluster is running in a subprocess, we have to do it manually.
+    unordered_map<string, string> kdc_env_vars;
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_get_kdc_env_vars();
+    ASSERT_OK(SendReceive(req, &resp));
+    ASSERT_TRUE(resp.has_get_kdc_env_vars());
+    for (const auto& e : resp.get_kdc_env_vars().env_vars()) {
+      PCHECK(setenv(e.first.c_str(), e.second.c_str(), 1) == 0);
+    }
+  } else {
+    // get_kdc_env_vars should fail on a non-Kerberized cluster.
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_get_kdc_env_vars();
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+    Status s = StatusFromPB(resp.error());
+    ASSERT_TRUE(s.IsNotFound());
+    ASSERT_STR_CONTAINS(s.ToString(), "kdc not found");
+  }
+
+  // Create a table.
+  {
+    client::KuduClientBuilder client_builder;
+    for (const auto& e : masters) {
+      HostPort hp;
+      ASSERT_OK(HostPortFromPB(e.bound_rpc_address(), &hp));
+      client_builder.add_master_server_addr(hp.ToString());
+    }
+    shared_ptr<client::KuduClient> client;
+    ASSERT_OK(client_builder.Build(&client));
+    client::KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("foo")
+              ->Type(client::KuduColumnSchema::INT32)
+              ->NotNull()
+              ->PrimaryKey();
+    client::KuduSchema schema;
+    ASSERT_OK(schema_builder.Build(&schema));
+    unique_ptr<client::KuduTableCreator> table_creator(
+        client->NewTableCreator());
+    ASSERT_OK(table_creator->table_name("test")
+              .schema(&schema)
+              .set_range_partition_columns({ "foo" })
+              .Create());
+  }
+
+  // Get the tservers.
+  vector<DaemonInfoPB> tservers;
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_get_tservers();
+    ASSERT_OK(SendReceive(req, &resp));
+    ASSERT_TRUE(resp.has_get_tservers());
+    ASSERT_EQ(kNumTservers, resp.get_tservers().tservers_size());
+    tservers.assign(resp.get_tservers().tservers().begin(),
+                    resp.get_tservers().tservers().end());
+  }
+
+  // Stop a tserver.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_stop_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Restart it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_start_daemon()->mutable_id() = tservers[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Stop a master.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_stop_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Restart it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_start_daemon()->mutable_id() = masters[0].id();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Restart some non-existent daemons.
+  vector<DaemonIdentifierPB> daemons_to_restart;
+  {
+    // Unknown daemon type.
+    DaemonIdentifierPB id;
+    id.set_type(UNKNOWN_DAEMON);
+    daemons_to_restart.emplace_back(std::move(id));
+  }
+  {
+    // Tablet server #5.
+    DaemonIdentifierPB id;
+    id.set_type(TSERVER);
+    id.set_index(5);
+    daemons_to_restart.emplace_back(std::move(id));
+  }
+  {
+    // Master without an index.
+    DaemonIdentifierPB id;
+    id.set_type(MASTER);
+    daemons_to_restart.emplace_back(std::move(id));
+  }
+  if (!enable_kerberos()) {
+    // KDC for a non-Kerberized cluster.
+    DaemonIdentifierPB id;
+    id.set_type(KDC);
+    daemons_to_restart.emplace_back(std::move(id));
+  }
+  for (const auto& daemon : daemons_to_restart) {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    *req.mutable_start_daemon()->mutable_id() = daemon;
+    ASSERT_OK(proto_->SendMessage(req));
+    ASSERT_OK(proto_->ReceiveMessage(&resp));
+    ASSERT_TRUE(resp.has_error());
+  }
+
+  // Stop the cluster.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_stop_cluster();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  // Restart it.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_start_cluster();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
+
+  if (enable_kerberos()) {
+    // Restart the KDC.
+    {
+      ControlShellRequestPB req;
+      ControlShellResponsePB resp;
+      req.mutable_stop_daemon()->mutable_id()->set_type(KDC);
+      ASSERT_OK(SendReceive(req, &resp));
+    }
+    {
+      ControlShellRequestPB req;
+      ControlShellResponsePB resp;
+      req.mutable_start_daemon()->mutable_id()->set_type(KDC);
+      ASSERT_OK(SendReceive(req, &resp));
+    }
+  }
+
+  // Destroy the cluster.
+  {
+    ControlShellRequestPB req;
+    ControlShellResponsePB resp;
+    req.mutable_destroy_cluster();
+    ASSERT_OK(SendReceive(req, &resp));
+  }
 }
 
 } // namespace tools

@@ -1,0 +1,173 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+syntax = "proto2";
+package kudu.tools;
+
+option java_package = "org.apache.kudu.tools";
+
+import "kudu/common/common.proto";
+import "kudu/common/wire_protocol.proto";
+
+// Creates a new ExternalMiniCluster.
+//
+// The below fields generally map to options from ExternalMiniClusterOptions.
+// If not provided, the defaults from that class will be used instead.
+//
+// Only one cluster may be created at a time.
+message CreateClusterRequestPB {
+  // The desired number of masters.
+  //
+  // Currently only one or three masters are supported.
+  optional int32 num_masters = 1;
+
+  // The desired number of tablet servers.
+  optional int32 num_tservers = 2;
+
+  // Whether or not the cluster should be Kerberized.
+  optional bool enable_kerberos = 3;
+
+  // The directory where the cluster's data and logs should be placed.
+  optional string data_root = 4;
+
+  // Any additional gflags for masters or tablet servers. Each should be in a
+  // a format that's expected by gflag (i.e. "--foo=bar").
+  repeated string extra_master_flags = 5;
+  repeated string extra_tserver_flags = 6;
+}
+
+// Destroys a cluster created via 'create_cluster'.
+message DestroyClusterRequestPB {}
+
+// Starts all daemons in a newly created cluster, or restart all daemons
+// in a stopped cluster.
+//
+// No-op for already started clusters.
+message StartClusterRequestPB {}
+
+// Stops a cluster.
+//
+// No-op for already stopped clusters.
+message StopClusterRequestPB {}
+
+// Type of daemon managed in a cluster.
+enum DaemonType {
+  UNKNOWN_DAEMON = 0;
+  MASTER = 1;
+  TSERVER = 2;
+  KDC = 3;
+}
+
+// Identifier for a cluster daemon, unique to the cluster.
+message DaemonIdentifierPB {
+  // Whether the daemon is amaster, tserver, or whatever.
+  optional DaemonType type = 1;
+
+  // Index of the daemon in the cluster, if the cluster has multiple daemons
+  // of this type.
+  optional uint32 index = 2;
+}
+
+// Restart a stopped daemon.
+message StartDaemonRequestPB {
+  // The identifier of the daemon to be restarted. This identifier is unique
+  // and immutable for the lifetime of the cluster.
+  optional DaemonIdentifierPB id = 1;
+}
+
+// Stops a started daemon.
+//
+// No-op for already stopped daemons.
+message StopDaemonRequestPB {
+  // The identifier for the daemon to be stopped. This identifier is unique
+  // and immutable for the lifetime of the cluster.
+  optional DaemonIdentifierPB id = 1;
+}
+
+// Daemon information.
+message DaemonInfoPB {
+  // Unique identifier of the daemon.
+  optional DaemonIdentifierPB id = 1;
+
+  // Daemon's bound RPC address.
+  optional HostPortPB bound_rpc_address = 2;
+}
+
+// Response to a GetMastersRequestPB.
+message GetMastersResponsePB {
+  // List of masters.
+  repeated DaemonInfoPB masters = 1;
+}
+
+// Gets information on each started master.
+message GetMastersRequestPB {}
+
+// Response to a GetTServersRequestPB.
+message GetTServersResponsePB {
+  // List of tablet servers.
+  repeated DaemonInfoPB tservers = 1;
+}
+
+// Gets information on each started tablet server.
+message GetTServersRequestPB {}
+
+// Response to a GetKDCEnvVarsRequestPB.
+message GetKDCEnvVarsResponsePB {
+
+  // Environment variables, mapped from key to value.
+  map<string, string> env_vars = 1;
+}
+
+// Gets all environment variables another process may need in order to
+// communicate with this cluster's KDC.
+//
+// It is an error to call this on a non-Kerberized cluster.
+message GetKDCEnvVarsRequestPB {}
+
+// Sent by the control shell in response to a control shell command request.
+message ControlShellResponsePB {
+
+  // Only set if there was some kind of shell-side error.
+  optional AppStatusPB error = 1;
+
+  // The command response. Only set for commands that actually expect a response.
+  oneof response {
+    GetMastersResponsePB get_masters = 2;
+    GetTServersResponsePB get_tservers = 3;
+    GetKDCEnvVarsResponsePB get_kdc_env_vars = 4;
+  }
+}
+
+// Command sent to the control shell.
+//
+// Because the control shell communicates via pipe and not krpc, we can't make
+// use of service dispatch and must instead multiplex all command requests and
+// responses via ControlShellRequestPB and ControlShellResponsePB respectively.
+message ControlShellRequestPB {
+
+  // The command request.
+  oneof request {
+    CreateClusterRequestPB create_cluster = 1;
+    DestroyClusterRequestPB destroy_cluster = 2;
+    StartClusterRequestPB start_cluster = 3;
+    StopClusterRequestPB stop_cluster = 4;
+    StartDaemonRequestPB start_daemon = 5;
+    StopDaemonRequestPB stop_daemon = 6;
+    GetMastersRequestPB get_masters = 7;
+    GetTServersRequestPB get_tservers = 8;
+    GetKDCEnvVarsRequestPB get_kdc_env_vars = 9;
+  }
+}

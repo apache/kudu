@@ -162,7 +162,9 @@ Status MiniKdc::Start() {
 }
 
 Status MiniKdc::Stop() {
-  CHECK(kdc_process_);
+  if (!kdc_process_) {
+    return Status::OK();
+  }
   VLOG(1) << "Stopping KDC";
   unique_ptr<Subprocess> proc(kdc_process_.release());
   RETURN_NOT_OK(proc->Kill(SIGKILL));

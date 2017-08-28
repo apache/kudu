@@ -16,18 +16,40 @@
 # under the License.
 
 set(LINK_LIBS
-  kudu_client
-  log
+  cfile
   consensus
-  tserver
+  gutil
+  kudu_client
   kudu_common
   kudu_fs
   kudu_util
-  gutil
-  cfile
+  log
   tablet
+  tserver
   ${KUDU_BASE_LIBS}
 )
+
+#######################################
+# tool_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  TOOL_PROTO_SRCS TOOL_PROTO_HDRS TOOL_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES tool.proto)
+
+add_library(tool_proto
+  ${TOOL_PROTO_SRCS}
+  ${TOOL_PROTO_HDRS})
+target_link_libraries(tool_proto
+  kudu_common_proto
+  protobuf
+  wire_protocol_proto)
+
+#######################################
+# kudu_tools_util
+#######################################
 
 add_library(kudu_tools_util
   color.cc
@@ -36,11 +58,20 @@ add_library(kudu_tools_util
   tool_action_common.cc
 )
 target_link_libraries(kudu_tools_util
+  tool_proto
   ${LINK_LIBS})
+
+#######################################
+# create-demo-table
+#######################################
 
 add_executable(create-demo-table create-demo-table.cc)
 target_link_libraries(create-demo-table
   ${LINK_LIBS})
+
+#######################################
+# ksck
+#######################################
 
 add_library(ksck
     ksck.cc
@@ -56,6 +87,10 @@ target_link_libraries(ksck
   ${KUDU_BASE_LIBS}
 )
 
+#######################################
+# kudu
+#######################################
+
 add_executable(kudu
   tool_action_cluster.cc
   tool_action_fs.cc
@@ -66,6 +101,7 @@ add_executable(kudu
   tool_action_remote_replica.cc
   tool_action_table.cc
   tool_action_tablet.cc
+  tool_action_test.cc
   tool_action_tserver.cc
   tool_action_wal.cc
   tool_main.cc
@@ -83,10 +119,16 @@ target_link_libraries(kudu
   kudu_util
   log
   master
+  mini_cluster
   tablet
+  tool_proto
   tserver
   ${KUDU_BASE_LIBS}
 )
+
+#######################################
+# kudu_tools_test_util
+#######################################
 
 add_library(kudu_tools_test_util
   tool_test_util.cc
@@ -94,6 +136,10 @@ add_library(kudu_tools_test_util
 target_link_libraries(kudu_tools_test_util
   kudu_util
 )
+
+#######################################
+# Unit tests
+#######################################
 
 set(KUDU_TEST_LINK_LIBS
   ksck

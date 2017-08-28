@@ -228,7 +228,11 @@ class ExternalMiniCluster : public MiniCluster {
   std::vector<ExternalDaemon*> daemons() const;
 
   MiniKdc* kdc() const {
-    return CHECK_NOTNULL(kdc_.get());
+    return kdc_.get();
+  }
+
+  const std::string& data_root() const {
+    return opts_.data_root;
   }
 
   int num_tablet_servers() const override {
@@ -424,6 +428,8 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // crash from SIGABRT.
   Status WaitForFatal(const MonoDelta& timeout) const;
 
+  virtual Status Start() = 0;
+  virtual Status Restart() = 0;
   virtual void Shutdown();
 
   // Delete files specified by 'wal_dir_' and 'data_dirs_'.
@@ -539,11 +545,11 @@ class ExternalMaster : public ExternalDaemon {
  public:
   explicit ExternalMaster(ExternalDaemonOptions opts);
 
-  Status Start();
+  virtual Status Start() override;
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  Status Restart() WARN_UNUSED_RESULT;
+  virtual Status Restart() override WARN_UNUSED_RESULT;
 
   // Blocks until the master's catalog manager is initialized and responding to
   // RPCs.
@@ -561,11 +567,11 @@ class ExternalTabletServer : public ExternalDaemon {
   ExternalTabletServer(ExternalDaemonOptions opts,
                        std::vector<HostPort> master_addrs);
 
-  Status Start();
+  virtual Status Start() override;
 
   // Restarts the daemon.
   // Requires that it has previously been shutdown.
-  Status Restart() WARN_UNUSED_RESULT;
+  virtual Status Restart() override WARN_UNUSED_RESULT;
 
  private:
   const std::vector<HostPort> master_addrs_;
