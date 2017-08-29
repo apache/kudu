@@ -80,7 +80,15 @@
   gives administrators a quick way to validate security settings. More types of
   configuration will be added in the future.
 
+* The `kudu` command line tool has two new features: `kudu tablet move` and
+  `kudu local_replica data_size`. The tablet move tool moves a tablet replica
+  from one tablet server to another, under the condition that the tablet is
+  healthy. An operator can use this tool to rebalance tablet replicas between
+  tablet servers. The local replica data size tool summarizes the space usage of
+  a tablet, breaking it down by type of file, column, and rowset.
+
 == Optimizations and improvements
+
 * Kudu 1.5's log block manager now performs disk synchronization in batches.
   This optimization can significantly reduce the time taken to copy tablet data
   from one server to another; in one case tablet copy time was reduced by 35%.
@@ -93,6 +101,14 @@
   to self-heal in more edge-case scenarios, such as when tablet copy operations
   fail. See link:https://issues.apache.org/jira/browse/KUDU-871[KUDU-871] for
   details.
+
+* The tablet on-disk size metric has been made more accurate. Previously, the
+  metric included only REDO deltas; it now counts all deltas. Additionally, the
+  metric includes the size of bloomfiles, ad hoc indexes, and the tablet
+  superblock. WAL segments and consensus metadata are still not counted. The
+  latter is very small compared to the size of data, but the former may be
+  significant depending on the workload (this will be resolved in a future
+  release).
 
 [[rn_1.5.0_fixed_issues]]
 == Fixed Issues
