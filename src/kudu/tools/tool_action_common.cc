@@ -58,7 +58,6 @@
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/util/jsonwriter.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"

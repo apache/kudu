@@ -34,7 +34,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"

@@ -37,7 +37,6 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.pb.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random_util.h"

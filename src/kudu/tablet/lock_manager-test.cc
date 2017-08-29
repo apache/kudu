@@ -32,7 +32,6 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/util/env.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"

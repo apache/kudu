@@ -43,7 +43,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 

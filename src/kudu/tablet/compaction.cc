@@ -55,7 +55,6 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 
 using kudu::clock::HybridClock;

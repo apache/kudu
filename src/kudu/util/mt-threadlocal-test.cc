@@ -33,7 +33,6 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"

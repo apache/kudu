@@ -29,7 +29,6 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
-#include "kudu/util/make_shared.h"
 
 using std::shared_ptr;
 using std::string;

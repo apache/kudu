@@ -32,7 +32,6 @@
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/join.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"

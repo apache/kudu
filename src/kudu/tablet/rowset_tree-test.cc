@@ -30,7 +30,6 @@
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"

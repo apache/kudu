@@ -51,7 +51,6 @@
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"

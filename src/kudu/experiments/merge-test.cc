@@ -23,7 +23,6 @@
 
 #include <gflags/gflags.h>
 
-#include "kudu/util/make_shared.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_int32(num_lists, 3, "Number of lists to merge");

@@ -57,7 +57,6 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/jsonreader.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"

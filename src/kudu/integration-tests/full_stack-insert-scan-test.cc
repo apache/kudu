@@ -53,7 +53,6 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"

@@ -43,7 +43,6 @@
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/util/env.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
