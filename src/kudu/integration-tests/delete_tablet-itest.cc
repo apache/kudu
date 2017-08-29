@@ -15,13 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
@@ -43,7 +47,11 @@
 
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 
+using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TabletReplica;
+using std::atomic;
+using std::string;
+using std::thread;
 using std::vector;
 
 namespace kudu {
@@ -53,7 +61,7 @@ class DeleteTabletITest : public MiniClusterITestBase {
 
 // Test deleting a failed replica. Regression test for KUDU-1607.
 TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
-  NO_FATALS(StartCluster(1)); // 1 TS.
+  NO_FATALS(StartCluster(/*num_tablet_servers=*/ 1));
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup();
@@ -109,6 +117,51 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
     mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
     ASSERT_EQ(0, tablet_replicas.size());
   });
+}
+
+// Test that a leader election will not cause a crash when a tablet is deleted.
+// Regression test for KUDU-2118.
+TEST_F(DeleteTabletITest, TestLeaderElectionDuringDeleteTablet) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumTablets = 10;
+  NO_FATALS(StartCluster());
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+  vector<string> tablet_ids;
+  ASSERT_EVENTUALLY([&] {
+    tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+    ASSERT_EQ(kNumTablets, tablet_ids.size()) << tablet_ids;
+  });
+
+  // Start threads that start leader elections.
+  vector<thread> threads;
+  atomic<bool> running(true);
+  auto* ts = ts_map_[cluster_->mini_tablet_server(0)->uuid()];
+  for (const string& tablet_id : tablet_ids) {
+    threads.emplace_back([ts, tablet_id, &running, &kTimeout] {
+      while (running) {
+        itest::StartElection(ts, tablet_id, kTimeout); // Ignore result.
+      }
+    });
+  }
+
+  // Sequentially delete all of the tablets.
+  for (const string& tablet_id : tablet_ids) {
+    ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, boost::none, kTimeout));
+  }
+
+  // Wait until all tablets are deleted.
+  ASSERT_EVENTUALLY([&] {
+    tablet_ids = cluster_->mini_tablet_server(0)->ListTablets();
+    ASSERT_EQ(0, tablet_ids.size()) << tablet_ids;
+  });
+
+  // Stop all the election threads.
+  running = false;
+  for (auto& t : threads) {
+    t.join();
+  }
 }
 
 } // namespace kudu
