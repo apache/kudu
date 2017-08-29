@@ -99,6 +99,7 @@ class TokenVerifier {
 };
 
 // Result of a token verification.
+// Values added to this enum must also be added to VerificationResultToString().
 enum class VerificationResult {
   // The signature is valid and the token is not expired.
   VALID,

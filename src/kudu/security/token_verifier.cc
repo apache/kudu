@@ -25,6 +25,8 @@
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/security/token.pb.h"
@@ -160,6 +162,9 @@ const char* VerificationResultToString(VerificationResult r) {
       return "authentication token signed with unknown key";
     case security::VerificationResult::INCOMPATIBLE_FEATURE:
       return "authentication token uses incompatible feature";
+    default:
+      LOG(FATAL) << "unexpected VerificationResult value: "
+                 << static_cast<int>(r);
   }
 }
 
