@@ -141,6 +141,7 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+using tablet::TABLET_DATA_COPYING;
 
 static const int kConsensusRpcTimeoutForTests = 50;
 
@@ -446,6 +447,8 @@ void RaftConsensusITest::AddFlagsForLogRolls(vector<string>* extra_tserver_flags
   extra_tserver_flags->push_back("--log_max_segments_to_retain=3");
   extra_tserver_flags->push_back("--maintenance_manager_polling_interval_ms=100");
   extra_tserver_flags->push_back("--log_target_replay_size_mb=1");
+  // We write 128KB cells in CauseFollowerToFallBehindLogGC(): bump the limit.
+  extra_tserver_flags->push_back("--max_cell_size_bytes=1000000");
 }
 
 // Test that we can retrieve the permanent uuid of a server running
@@ -831,8 +834,6 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   vector<string> ts_flags = {
     // Disable follower eviction to maintain the original intent of this test.
     "--evict_failed_followers=false",
-    // We write 128KB cells in this test, so bump the limit.
-    "--max_cell_size_bytes=1000000"
   };
   AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
   NO_FATALS(BuildAndStart(ts_flags));
@@ -2813,10 +2814,7 @@ TEST_F(RaftConsensusITest, TestHammerOneRow) {
 // Test that followers that fall behind the leader's log GC threshold are
 // evicted from the config.
 TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
-  vector<string> ts_flags = {
-    // We write 128KB cells in this test, so bump the limit.
-    "--max_cell_size_bytes=1000000"
-  };
+  vector<string> ts_flags;
   AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
   vector<string> master_flags = {
     "--master_add_server_when_underreplicated=false",
@@ -2840,13 +2838,71 @@ TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
   ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 2));
 }
 
+// Have a replica fall behind the leader's log, then fail a tablet copy. It
+// should still be able to vote in leader elections.
+TEST_F(RaftConsensusITest, TestTombstonedVoteAfterFailedTabletCopy) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+  vector<string> ts_flags;
+  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
+  const vector<string> kMasterFlags = {
+    "--master_add_server_when_underreplicated=false",
+  };
+  NO_FATALS(BuildAndStart(ts_flags, kMasterFlags));
+
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_EQ(3, FLAGS_num_replicas);
+  ASSERT_EQ(3, active_tablet_servers.size());
+
+  string leader_uuid;
+  int64_t orig_term;
+  string follower_uuid;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+
+  // Wait for the abandoned follower to be evicted.
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(2, tablet_servers_[leader_uuid],
+                                                tablet_id_, kTimeout));
+  ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, 2));
+
+  // Now the follower is evicted and will be tombstoned.
+  // We'll add it back to the config and then crash the follower during the
+  // resulting tablet copy.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(follower_uuid),
+            "tablet_copy_fault_crash_on_fetch_all", "1.0"));
+  auto* leader_ts = tablet_servers_[leader_uuid];
+  auto* follower_ts = tablet_servers_[follower_uuid];
+  ASSERT_OK(itest::AddServer(leader_ts, tablet_id_, follower_ts, RaftPeerPB::VOTER,
+                             boost::none, kTimeout));
+  ASSERT_OK(cluster_->tablet_server_by_uuid(follower_uuid)->WaitForInjectedCrash(kTimeout));
+
+  // Shut down the rest of the cluster, then only bring back the node we
+  // crashed, plus one other node. The tombstoned replica should still be able
+  // to vote and the tablet should come online.
+  cluster_->Shutdown();
+
+  int follower_idx = cluster_->tablet_server_index_by_uuid(follower_uuid);
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(follower_idx, tablet_id_, { TABLET_DATA_COPYING }));
+
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(leader_uuid)->Restart());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(follower_uuid)->Restart());
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.Setup();
+  workload.Start();
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GE(workload.rows_inserted(), 100);
+  });
+  workload.StopAndJoin();
+}
+
 // Test that, after followers are evicted from the config, the master re-adds a new
 // replica for that follower and it eventually catches back up.
 TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
-  vector<string> ts_flags = {
-    // We write 128KB cells in this test, so bump the limit.
-    "--max_cell_size_bytes=1000000"
-  };
+  vector<string> ts_flags;
   AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
   NO_FATALS(BuildAndStart(ts_flags));
 

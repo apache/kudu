@@ -203,7 +203,9 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
     }
     rowsets_.clear();
     tablet_data_state_ = delete_type;
-    tombstone_last_logged_opid_ = last_logged_opid;
+    if (last_logged_opid) {
+      tombstone_last_logged_opid_ = last_logged_opid;
+    }
   }
 
   // Keep a copy of the old data dir group in case of flush failure.
