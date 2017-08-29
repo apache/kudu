@@ -1091,7 +1091,7 @@ Status TSTabletManager::DeleteTabletData(
     const scoped_refptr<TabletMetadata>& meta,
     const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
     TabletDataState delete_type,
-    const boost::optional<OpId>& last_logged_opid) {
+    boost::optional<OpId> last_logged_opid) {
   const string& tablet_id = meta->tablet_id();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "Deleting tablet data with delete state "
@@ -1105,6 +1105,7 @@ Status TSTabletManager::DeleteTabletData(
   // Note: Passing an unset 'last_logged_opid' will retain the last_logged_opid
   // that was previously in the metadata.
   RETURN_NOT_OK(meta->DeleteTabletData(delete_type, last_logged_opid));
+  last_logged_opid = meta->tombstone_last_logged_opid();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
             << "tablet deleted: last-logged OpId: "
             << (last_logged_opid ? OpIdToString(*last_logged_opid) : "(unknown)");

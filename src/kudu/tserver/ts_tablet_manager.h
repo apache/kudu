@@ -188,7 +188,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
       const scoped_refptr<tablet::TabletMetadata>& meta,
       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,
       tablet::TabletDataState delete_type,
-      const boost::optional<consensus::OpId>& last_logged_opid);
+      boost::optional<consensus::OpId> last_logged_opid);
 
   // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
   void FailTabletsInDataDir(const std::string& uuid);

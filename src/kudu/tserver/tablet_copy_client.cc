@@ -53,6 +53,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
@@ -77,6 +78,12 @@ DEFINE_int32(tablet_copy_dowload_file_inject_latency_ms, 0,
              "Injects latency into the loop that downloads files, causing tablet copy "
              "to take much longer. For use in tests only.");
 TAG_FLAG(tablet_copy_dowload_file_inject_latency_ms, hidden);
+
+DEFINE_double(tablet_copy_fault_crash_on_fetch_all, 0.0,
+              "Fraction of the time that the server will crash when FetchAll() "
+              "is called on the TabletCopyClient. (For testing only!)");
+TAG_FLAG(tablet_copy_fault_crash_on_fetch_all, unsafe);
+TAG_FLAG(tablet_copy_fault_crash_on_fetch_all, runtime);
 
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 
@@ -309,6 +316,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
 
 Status TabletCopyClient::FetchAll(const scoped_refptr<TabletReplica>& tablet_replica) {
   CHECK_EQ(kStarted, state_);
+
+  MAYBE_FAULT(FLAGS_tablet_copy_fault_crash_on_fetch_all);
 
   tablet_replica_ = tablet_replica;
 
