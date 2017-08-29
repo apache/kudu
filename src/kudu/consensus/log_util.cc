@@ -42,7 +42,6 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/pb_util.h"
 
 DEFINE_int32(log_segment_size_mb, 8,

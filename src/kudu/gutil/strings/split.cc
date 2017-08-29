@@ -19,7 +19,6 @@
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strtoint.h"
-#include "kudu/util/make_shared.h"
 
 using std::unordered_map;
 using std::unordered_set;

@@ -66,7 +66,6 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"

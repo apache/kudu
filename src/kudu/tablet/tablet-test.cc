@@ -55,7 +55,6 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"

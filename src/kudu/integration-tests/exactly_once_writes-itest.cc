@@ -44,7 +44,6 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"

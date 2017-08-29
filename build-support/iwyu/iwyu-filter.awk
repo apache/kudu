@@ -54,6 +54,17 @@
 #       that IWYU would produce different results if run against release, not
 #       debug build. However, we plan to use the tool only with debug builds.
 #
+#     NOTE:
+#       As of now, the appropriate command line for IWYU for Kudu is
+#       IWYU="`pwd`/../../thirdparty/clang-toolchain/bin/include-what-you-use; \
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all-private.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-extra.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gtest.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/glog.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gflags.imp;\
+#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/libstdcpp.imp"
+#
 #  2. Run make, separating the output from the IWYU tool into a separate file
 #     (it's possible to use piping the output from the tool to the script
 #      but having a file is good for future reference, if necessary):

@@ -42,7 +42,6 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/countdown_latch.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/sockaddr.h"

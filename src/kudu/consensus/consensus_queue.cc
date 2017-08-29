@@ -48,7 +48,6 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/url-coding.h"

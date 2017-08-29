@@ -29,7 +29,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
-#include "kudu/util/make_shared.h"
 
 using std::vector;
 
