@@ -389,7 +389,10 @@ void Peer::ProcessTabletCopyResponse() {
   if (success) {
     lock.unlock();
     queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
-  } else {
+  } else if (!tc_response_.has_error() ||
+              tc_response_.error().code() != TabletServerErrorPB::TabletServerErrorPB::THROTTLED) {
+    // THROTTLED is a common response after a tserver with many replicas fails;
+    // logging it would generate a great deal of log spam.
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
                                       << (controller_.status().ok() ?
                                           SecureShortDebugString(tc_response_) :
