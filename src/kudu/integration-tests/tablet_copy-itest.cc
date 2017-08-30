@@ -40,6 +40,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
@@ -55,6 +56,7 @@
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -87,9 +89,13 @@ DEFINE_int32(test_delete_leader_num_writer_threads, 1,
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::ConsensusMetadataPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForNumTabletServers;
+using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
@@ -1082,6 +1088,78 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   ASSERT_GT(num_inprogress, 0);
   LOG(INFO) << "Number of Service unavailable responses: " << num_service_unavailable;
   LOG(INFO) << "Number of in progress responses: " << num_inprogress;
+}
+
+// Test that a failed tablet copy of a brand-new replica results in still being
+// able to vote while tombstoned.
+TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  // We want all tablet copy attempts to fail after initial setup.
+  NO_FATALS(StartCluster({"--tablet_copy_early_session_timeout_prob=1.0"}, {},
+                         /*num_tablet_servers=*/ 4));
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                                     kTimeout, &table_locations));
+  ASSERT_EQ(1, table_locations.tablet_locations_size());
+  string tablet_id = table_locations.tablet_locations(0).tablet_id();
+  set<string> replica_uuids;
+  for (const auto& replica : table_locations.tablet_locations(0).replicas()) {
+    replica_uuids.insert(replica.ts_info().permanent_uuid());
+  }
+
+  TServerDetails* leader_ts;
+  ASSERT_OK(itest::FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+  ASSERT_OK(itest::WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout));
+
+  string new_replica_uuid;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    if (!ContainsKey(replica_uuids, cluster_->tablet_server(i)->uuid())) {
+      new_replica_uuid = cluster_->tablet_server(i)->uuid();
+      break;
+    }
+  }
+  ASSERT_FALSE(new_replica_uuid.empty());
+  auto* new_replica_ts = ts_map_[new_replica_uuid];
+
+  // Adding a server will trigger a tablet copy.
+  ASSERT_OK(itest::AddServer(leader_ts, tablet_id, new_replica_ts, RaftPeerPB::VOTER,
+                             boost::none, kTimeout));
+
+  // Wait until the new replica has done its initial download, and has either
+  // failed or is about to fail (the check is nondeterministic) plus has
+  // persisted its cmeta.
+  int new_replica_idx = cluster_->tablet_server_index_by_uuid(new_replica_uuid);
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(inspect_->CheckTabletDataStateOnTS(new_replica_idx, tablet_id,
+                                                 { TABLET_DATA_COPYING, TABLET_DATA_TOMBSTONED }));
+    ConsensusMetadataPB cmeta_pb;
+    ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(new_replica_idx, tablet_id, &cmeta_pb));
+  });
+
+  // Restart the cluster with 3 voters instead of 4, including the new replica
+  // that should be tombstoned. It should be able to vote and get the leader up
+  // and running.
+  cluster_->Shutdown();
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    // Remove the "early timeout" flag.
+    cluster_->tablet_server(i)->mutable_flags()->pop_back();
+  }
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(new_replica_uuid)->Restart());
+  auto iter = replica_uuids.cbegin();
+  ASSERT_OK(cluster_->tablet_server_by_uuid(*iter)->Restart());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(*++iter)->Restart());
+
+  // Now wait until we can write.
+  workload.Start();
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GE(workload.rows_inserted(), 100);
+  });
+  workload.StopAndJoin();
 }
 
 // This test uses CountBlocksUnderManagement() which only works with the
