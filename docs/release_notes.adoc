@@ -118,6 +118,17 @@
   significant depending on the workload (this will be resolved in a future
   release).
 
+* The number of threads used by the Kudu Tablet Server has been further reduced.
+  Previously, each follower tablet replica used a dedicated thread to detect
+  leader tablet replica failures, and each leader replica used one dedicated
+  thread per follower to send Raft heartbeats to that follower. The work
+  performed by these dedicated threads has been reassigned to other threads.
+  Other improvements were made to facilitate better thread sharing by tablets.
+  For the purpose of capacity planning, expect the Kudu Tablet Server to create
+  one thread for every five "cold" (i.e. those not servicing writes) tablets,
+  and an additional three threads for every "hot" tablet. This will be further
+  improved upon in future Kudu releases.
+
 [[rn_1.5.0_fixed_issues]]
 == Fixed Issues
 
