@@ -34,6 +34,7 @@
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
@@ -106,6 +107,7 @@ namespace tserver {
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
+using consensus::MakeOpId;
 using consensus::OpId;
 using env_util::CopyFile;
 using fs::BlockTransaction;
@@ -307,6 +309,11 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
         "Could not replace superblock with COPYING data state");
     CHECK_OK(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_));
   } else {
+    // HACK: Set the initial tombstoned last-logged OpId to 1.0 when copying a
+    // replica for the first time, so that if the tablet copy fails, the
+    // tombstoned replica will still be able to vote.
+    // TODO(mpercy): Give this particular OpId a name.
+    *superblock_->mutable_tombstone_last_logged_opid() = MakeOpId(1, 0);
     Partition partition;
     Partition::FromPB(superblock_->partition(), &partition);
     PartitionSchema partition_schema;
