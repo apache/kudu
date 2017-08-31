@@ -247,7 +247,6 @@ Then open `cov_html/coverage.html` in your web browser.
 
 === Running lint checks
 
-
 Kudu uses cpplint.py from Google to enforce coding style guidelines. You can run the
 lint checks via cmake using the `ilint` target:
 
@@ -272,6 +271,23 @@ $ make tidy
 
 This will scan any changes in the latest commit in the local tree. At the time
 of writing, it will not scan any changes that are not locally committed.
+
+=== Running include-what-you-use (IWYU) checks
+
+Kudu uses the https://github.com/include-what-you-use/include-what-you-use[IWYU]
+tool to keep the set of headers in the C++ source files consistent. For more
+information on what _consistent_ means, see
+https://github.com/include-what-you-use/include-what-you-use/blob/master/docs/WhyIWYU.md[_Why IWYU_].
+
+You can run the IWYU checks via cmake using the `iwyu` target:
+
+[source,bash]
+----
+$ make iwyu
+----
+
+This will scan any file which is dirty in your working tree, or changed since the last
+gerrit-integrated upstream change in your git log.
 
 === Building Kudu documentation
 
@@ -407,7 +423,7 @@ on writing code, though it may affect your ability to build from within Eclipse.
 1. https://cmake.org/pipermail/cmake-developers/2011-November/014153.html
 2. http://public.kitware.com/Bug/view.php?id=15102
 
-= Export Control Notice
+== Export Control Notice
 
 This distribution uses cryptographic software and may be subject to export controls.
 Please refer to docs/export_control.adoc for more information.
