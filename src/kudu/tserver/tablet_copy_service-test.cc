@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/tserver/tablet_copy-test-base.h"
 
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -74,6 +75,7 @@ using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;
+using std::atomic;
 using std::thread;
 using std::vector;
 
@@ -250,17 +252,25 @@ TEST_F(TabletCopyServiceTest, TestBeginConcurrently) {
   const int kNumThreads = 5;
   vector<thread> threads;
   vector<tablet::TabletSuperBlockPB> sblocks(kNumThreads);
+  atomic<int> num_successful(0);
   for (int i = 0 ; i < kNumThreads; i++) {
-    threads.emplace_back([this, &sblocks, i]{
+    threads.emplace_back([this, &num_successful, &sblocks, i] {
+      while (true) {
         string session_id;
-        CHECK_OK(DoBeginValidTabletCopySession(&session_id, &sblocks[i]));
-        CHECK(!session_id.empty());
-      });
+        Status s = DoBeginValidTabletCopySession(&session_id, &sblocks[i]);
+        if (s.ok()) {
+          ++num_successful;
+          CHECK(!session_id.empty());
+          return;
+        }
+      }
+    });
   }
   for (auto& t : threads) {
     t.join();
   }
-  // Verify that all threads got the same result.
+  // Verify that all threads eventually got the same result.
+  ASSERT_EQ(kNumThreads, num_successful);
   for (int i = 1; i < threads.size(); i++) {
     ASSERT_EQ(SecureDebugString(sblocks[i]), SecureDebugString(sblocks[0]));
   }

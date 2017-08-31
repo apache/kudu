@@ -18,23 +18,26 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_TEST_BASE_H_
 #define KUDU_TSERVER_TABLET_SERVER_TEST_BASE_H_
 
-#include <algorithm>
 #include <assert.h>
-#include <gtest/gtest.h>
-#include <iostream>
-#include <memory>
 #include <signal.h>
 #include <stdint.h>
-#include <string>
 #include <sys/mman.h>
 #include <sys/types.h>
+
+#include <algorithm>
+#include <iostream>
+#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -160,7 +163,8 @@ class TabletServerTestBase : public KuduTest {
   void ResetClientProxies() {
     CreateTsClientProxies(mini_server_->bound_rpc_addr(),
                           client_messenger_,
-                          &proxy_, &admin_proxy_, &consensus_proxy_, &generic_proxy_);
+                          &tablet_copy_proxy_, &proxy_, &admin_proxy_, &consensus_proxy_,
+                          &generic_proxy_);
   }
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
@@ -465,6 +469,7 @@ class TabletServerTestBase : public KuduTest {
 
   gscoped_ptr<MiniTabletServer> mini_server_;
   scoped_refptr<tablet::TabletReplica> tablet_replica_;
+  gscoped_ptr<TabletCopyServiceProxy> tablet_copy_proxy_;
   gscoped_ptr<TabletServerServiceProxy> proxy_;
   gscoped_ptr<TabletServerAdminServiceProxy> admin_proxy_;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;

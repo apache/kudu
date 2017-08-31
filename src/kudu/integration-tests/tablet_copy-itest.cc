@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <set>
 #include <string>
@@ -113,8 +114,12 @@ using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
 using kudu::tserver::TabletCopyClient;
+using std::atomic;
+using std::lock_guard;
+using std::mutex;
 using std::set;
 using std::string;
+using std::thread;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -1682,6 +1687,80 @@ TEST_F(TabletCopyITest, TestTabletStateMetricsDuringTabletCopy) {
     ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)) +
                  CountBootstrappingTablets(cluster_->tablet_server(follower_index)));
   });
+}
+
+// Test that tablet copy session initialization can handle concurrency when
+// there is latency during session initialization. This is a regression test
+// for KUDU-2124.
+TEST_F(TabletCopyITest, TestBeginTabletCopySessionConcurrency) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  MonoDelta kInjectedLatency = MonoDelta::FromMilliseconds(1000);
+
+  // Inject latency during session initialization. This should show up in
+  // TabletCopyService::BeginTabletCopySession() RPC calls.
+  NO_FATALS(StartCluster({Substitute("--tablet_copy_session_inject_latency_on_init_ms=$0",
+                                     kInjectedLatency.ToMilliseconds())},
+                         {}, /*num_tablet_servers=*/ 1));
+
+  // Create a bunch of tablets to operate on at once.
+  const int kNumTablets = 10;
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.set_num_tablets(kNumTablets);
+  workload.Setup();
+
+  auto ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  vector<string> tablet_ids;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(itest::ListRunningTabletIds(ts, kTimeout, &tablet_ids));
+    ASSERT_EQ(kNumTablets, tablet_ids.size());
+  });
+
+  // Spin up a bunch of threads simultaneously trying to begin tablet copy
+  // sessions on all of the tablets.
+  const int kNumThreads = kNumTablets * 5;
+  mutex m;
+  vector<MonoDelta> success_latencies; // Latency of successful opens.
+  vector<MonoDelta> failure_latencies; // Latency of failed opens.
+  vector<thread> threads;
+  for (int i = 0; i < kNumThreads; i++) {
+    string tablet_id = tablet_ids[i % kNumTablets];
+    threads.emplace_back([&, ts, tablet_id] {
+      while (true) {
+        MonoTime start = MonoTime::Now();
+        Status s = itest::BeginTabletCopySession(ts, tablet_id, "dummy-uuid", kTimeout);
+        MonoDelta duration = MonoTime::Now() - start;
+        lock_guard<mutex> l(m);
+        if (s.ok()) {
+          success_latencies.push_back(duration);
+          return;
+        }
+        failure_latencies.push_back(duration);
+        VLOG(1) << tablet_id << ": " << s.ToString();
+      }
+    });
+  }
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  // All of the successfully initialized tablet sessions should have taken at
+  // least the amount of time that we slept for.
+  int num_slower_than_latency = 0;
+  for (const auto& lat : success_latencies) {
+    if (lat >= kInjectedLatency) num_slower_than_latency++;
+  }
+  // We should have had exactly # tablets sessions that were slow due to the
+  // latency injection.
+  ASSERT_EQ(kNumTablets, num_slower_than_latency);
+
+  // All of the failed tablet session initialization sessions should have been
+  // relatively quicker than our injected latency, demonstrating that they did
+  // not wait on the session lock.
+  for (const auto& lat : failure_latencies) {
+    ASSERT_LT(lat, kInjectedLatency);
+  }
 }
 
 } // namespace kudu

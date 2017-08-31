@@ -41,7 +41,9 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
@@ -95,9 +97,10 @@ using tserver::CreateTsClientProxies;
 using tserver::ListTabletsResponsePB;
 using tserver::DeleteTabletRequestPB;
 using tserver::DeleteTabletResponsePB;
-using tserver::TabletServerAdminServiceProxy;
+using tserver::BeginTabletCopySessionRequestPB;
+using tserver::BeginTabletCopySessionResponsePB;
+using tserver::TabletCopyErrorPB;
 using tserver::TabletServerErrorPB;
-using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
@@ -296,6 +299,7 @@ Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
 
     CreateTsClientProxies(addresses[0],
                           messenger,
+                          &peer->tablet_copy_proxy,
                           &peer->tserver_proxy,
                           &peer->tserver_admin_proxy,
                           &peer->consensus_proxy,
@@ -991,6 +995,29 @@ Status StartTabletCopy(const TServerDetails* ts,
       *error_code = resp.error().code();
     }
     return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status BeginTabletCopySession(const TServerDetails* ts,
+                              const string& tablet_id,
+                              const string& caller_uuid,
+                              const MonoDelta& timeout,
+                              TabletCopyErrorPB::Code* error_code) {
+  BeginTabletCopySessionRequestPB req;
+  BeginTabletCopySessionResponsePB resp;
+  req.set_tablet_id(tablet_id);
+  req.set_requestor_uuid(caller_uuid);
+
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  RETURN_NOT_OK(ts->tablet_copy_proxy->BeginTabletCopySession(req, &resp, &rpc));
+  if (rpc.error_response()) {
+    const TabletCopyErrorPB& error =
+      rpc.error_response()->GetExtension(TabletCopyErrorPB::tablet_copy_error_ext);
+    if (error_code) *error_code = error.code();
+    return StatusFromPB(error.status());
   }
   return Status::OK();
 }

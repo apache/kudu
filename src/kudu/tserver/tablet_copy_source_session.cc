@@ -45,7 +45,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/mutex.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
@@ -65,6 +65,12 @@ METRIC_DEFINE_gauge_int32(server, tablet_copy_open_source_sessions,
                           "Open Table Copy Source Sessions",
                           kudu::MetricUnit::kSessions,
                           "Number of currently open tablet copy source sessions on this server");
+
+DEFINE_int32(tablet_copy_session_inject_latency_on_init_ms, 0,
+             "How much latency (in ms) to inject when a tablet copy session is initialized. "
+             "(For testing only!)");
+TAG_FLAG(tablet_copy_session_inject_latency_on_init_ms, unsafe);
+TAG_FLAG(tablet_copy_session_inject_latency_on_init_ms, hidden);
 
 namespace kudu {
 namespace tserver {
@@ -111,8 +117,16 @@ TabletCopySourceSession::~TabletCopySourceSession() {
 }
 
 Status TabletCopySourceSession::Init() {
-  MutexLock l(session_lock_);
-  CHECK(!initted_);
+  return init_once_.Init(&TabletCopySourceSession::InitOnce, this);
+}
+
+Status TabletCopySourceSession::InitOnce() {
+  // Inject latency during Init() for testing purposes.
+  if (PREDICT_FALSE(FLAGS_tablet_copy_session_inject_latency_on_init_ms > 0)) {
+    TRACE("Injecting $0ms of latency due to --tablet_copy_session_inject_latency_on_init_ms",
+          FLAGS_tablet_copy_session_inject_latency_on_init_ms);
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_session_inject_latency_on_init_ms));
+  }
 
   RETURN_NOT_OK(tablet_replica_->CheckRunning());
 
@@ -136,7 +150,7 @@ Status TabletCopySourceSession::Init() {
       TabletMetadata::CollectBlockIdPBs(tablet_superblock_);
   for (const BlockIdPB& block_id : data_blocks) {
     VLOG(1) << "Opening block " << pb_util::SecureDebugString(block_id);
-    RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
+    RETURN_NOT_OK(OpenBlock(BlockId::FromPB(block_id)));
   }
 
   // Get the latest opid in the log at this point in time so we can re-anchor.
@@ -158,7 +172,7 @@ Status TabletCopySourceSession::Init() {
   }
   reader->GetSegmentsSnapshot(&log_segments_);
   for (const scoped_refptr<ReadableLogSegment>& segment : log_segments_) {
-    RETURN_NOT_OK(OpenLogSegmentUnlocked(segment->header().sequence_number()));
+    RETURN_NOT_OK(OpenLogSegment(segment->header().sequence_number()));
   }
 
   // Look up the committed consensus state.
@@ -186,17 +200,14 @@ Status TabletCopySourceSession::Init() {
   LOG(INFO) << Substitute(
       "T $0 P $1: Tablet Copy: opened $2 blocks and $3 log segments",
       tablet_id, consensus->peer_uuid(), data_blocks.size(), log_segments_.size());
-  initted_ = true;
   return Status::OK();
 }
 
 const std::string& TabletCopySourceSession::tablet_id() const {
-  DCHECK(initted_);
   return tablet_replica_->tablet_id();
 }
 
 const std::string& TabletCopySourceSession::requestor_uuid() const {
-  DCHECK(initted_);
   return requestor_uuid_;
 }
 
@@ -288,6 +299,7 @@ Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
                                              uint64_t offset, int64_t client_maxlen,
                                              string* data, int64_t* block_file_size,
                                              TabletCopyErrorPB::Code* error_code) {
+  DCHECK(init_once_.initted());
   ImmutableReadableBlockInfo* block_info;
   RETURN_NOT_OK(FindBlock(block_id, &block_info, error_code));
 
@@ -307,6 +319,7 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                    uint64_t offset, int64_t client_maxlen,
                                                    std::string* data, int64_t* log_file_size,
                                                    TabletCopyErrorPB::Code* error_code) {
+  DCHECK(init_once_.initted());
   ImmutableRandomAccessFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
@@ -319,7 +332,7 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
 }
 
 bool TabletCopySourceSession::IsBlockOpenForTests(const BlockId& block_id) const {
-  MutexLock l(session_lock_);
+  DCHECK(init_once_.initted());
   return ContainsKey(blocks_, block_id);
 }
 
@@ -343,9 +356,7 @@ static Status AddImmutableFileToMap(Collection* const cache,
   return Status::OK();
 }
 
-Status TabletCopySourceSession::OpenBlockUnlocked(const BlockId& block_id) {
-  session_lock_.AssertAcquired();
-
+Status TabletCopySourceSession::OpenBlock(const BlockId& block_id) {
   unique_ptr<ReadableBlock> block;
   Status s = fs_manager_->OpenBlock(block_id, &block);
   if (PREDICT_FALSE(!s.ok())) {
@@ -374,18 +385,14 @@ Status TabletCopySourceSession::OpenBlockUnlocked(const BlockId& block_id) {
 Status TabletCopySourceSession::FindBlock(const BlockId& block_id,
                                          ImmutableReadableBlockInfo** block_info,
                                          TabletCopyErrorPB::Code* error_code) {
-  Status s;
-  MutexLock l(session_lock_);
   if (!FindCopy(blocks_, block_id, block_info)) {
     *error_code = TabletCopyErrorPB::BLOCK_NOT_FOUND;
-    s = Status::NotFound("Block not found", block_id.ToString());
+    return Status::NotFound("Block not found", block_id.ToString());
   }
-  return s;
+  return Status::OK();
 }
 
-Status TabletCopySourceSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
-  session_lock_.AssertAcquired();
-
+Status TabletCopySourceSession::OpenLogSegment(uint64_t segment_seqno) {
   scoped_refptr<log::ReadableLogSegment> log_segment;
   int position = -1;
   if (!log_segments_.empty()) {
@@ -412,7 +419,6 @@ Status TabletCopySourceSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
 Status TabletCopySourceSession::FindLogSegment(uint64_t segment_seqno,
                                               ImmutableRandomAccessFileInfo** file_info,
                                               TabletCopyErrorPB::Code* error_code) {
-  MutexLock l(session_lock_);
   if (!FindCopy(logs_, segment_seqno, file_info)) {
     *error_code = TabletCopyErrorPB::WAL_SEGMENT_NOT_FOUND;
     return Status::NotFound(Substitute("Segment with sequence number $0 not found",

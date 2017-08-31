@@ -144,10 +144,12 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
                     context);
 
   scoped_refptr<TabletCopySourceSession> session;
+  bool new_session;
   {
     MutexLock l(sessions_lock_);
     const SessionEntry* session_entry = FindOrNull(sessions_, session_id);
-    if (!session_entry) {
+    new_session = session_entry == nullptr;
+    if (new_session) {
       LOG_WITH_PREFIX(INFO) << Substitute(
           "Beginning new tablet copy session on tablet $0 from peer $1"
           " at $2: session id = $3",
@@ -155,10 +157,6 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
       session.reset(new TabletCopySourceSession(tablet_replica, session_id,
                                                 requestor_uuid, fs_manager_,
                                                 &tablet_copy_metrics_));
-      RPC_RETURN_NOT_OK(session->Init(),
-                        TabletCopyErrorPB::UNKNOWN_ERROR,
-                        Substitute("Error beginning tablet copy session for tablet $0", tablet_id),
-                        context);
       InsertOrDie(&sessions_, session_id, { session, GetNewExpireTime() });
     } else {
       session = session_entry->session;
@@ -169,6 +167,32 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
     }
     ResetSessionExpirationUnlocked(session_id);
   }
+
+  if (!new_session && !session->IsInitialized()) {
+    RPC_RETURN_NOT_OK(
+        Status::ServiceUnavailable("tablet copy session for tablet $0 is initializing",
+                                   tablet_id),
+        TabletCopyErrorPB::UNKNOWN_ERROR,
+        "try again later",
+        context);
+  }
+
+  // Ensure that the session initialization succeeds. If the initialization
+  // fails, then remove it from the sessions map.
+  Status status = session->Init();
+  if (!status.ok()) {
+    MutexLock l(sessions_lock_);
+    SessionEntry* session_entry = FindOrNull(sessions_, session_id);
+    // Identity check the session to ensure that other interleaved threads have
+    // not already removed the failed session, and replaced it with a new one.
+    if (session_entry && session == session_entry->session) {
+      sessions_.erase(session_id);
+    }
+  }
+  RPC_RETURN_NOT_OK(status,
+                    TabletCopyErrorPB::UNKNOWN_ERROR,
+                    Substitute("Error beginning tablet copy session for tablet $0", tablet_id),
+                    context);
 
   resp->set_responder_uuid(fs_manager_->uuid());
   resp->set_session_id(session_id);
@@ -240,6 +264,15 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
     ResetSessionExpirationUnlocked(session_id);
   }
 
+  if (!session->IsInitialized()) {
+    RPC_RETURN_NOT_OK(
+        Status::ServiceUnavailable("tablet copy session for tablet $0 is initializing",
+                                   session->tablet_id()),
+        TabletCopyErrorPB::UNKNOWN_ERROR,
+        "try again later",
+        context);
+  }
+
   MAYBE_FAULT(FLAGS_fault_crash_on_handle_tc_fetch_data);
 
   uint64_t offset = req->offset();
@@ -281,7 +314,7 @@ void TabletCopyServiceImpl::FetchData(const FetchDataRequestPB* req,
 
 void TabletCopyServiceImpl::EndTabletCopySession(
         const EndTabletCopySessionRequestPB* req,
-        EndTabletCopySessionResponsePB* resp,
+        EndTabletCopySessionResponsePB* /*resp*/,
         rpc::RpcContext* context) {
   {
     MutexLock l(sessions_lock_);

@@ -40,6 +40,8 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tserver/tablet_copy.pb.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -78,6 +80,7 @@ namespace itest {
 struct TServerDetails {
   NodeInstancePB instance_id;
   ServerRegistrationPB registration;
+  gscoped_ptr<tserver::TabletCopyServiceProxy> tablet_copy_proxy;
   gscoped_ptr<tserver::TabletServerServiceProxy> tserver_proxy;
   gscoped_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
@@ -372,6 +375,13 @@ Status StartTabletCopy(const TServerDetails* ts,
                        int64_t caller_term,
                        const MonoDelta& timeout,
                        tserver::TabletServerErrorPB::Code* error_code = nullptr);
+
+// Begin a tablet copy session on the remote.
+Status BeginTabletCopySession(const TServerDetails* ts,
+                              const std::string& tablet_id,
+                              const std::string& caller_uuid,
+                              const MonoDelta& timeout,
+                              tserver::TabletCopyErrorPB::Code* error_code = nullptr);
 
 } // namespace itest
 } // namespace kudu

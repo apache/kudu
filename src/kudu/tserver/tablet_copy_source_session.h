@@ -30,15 +30,15 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/env.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/util/metrics.h"
-#include "kudu/util/mutex.h"
+#include "kudu/util/once.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -107,8 +107,13 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Initialize the session, including anchoring files (TODO) and fetching the
   // tablet superblock and list of WAL segments.
   //
-  // Must not be called more than once.
+  // Must be called before accessing block state.
   Status Init();
+
+  // Returns true if this session has been initialized.
+  bool IsInitialized() const {
+    return init_once_.initted();
+  }
 
   // Return ID of tablet corresponding to this session.
   const std::string& tablet_id() const;
@@ -138,17 +143,17 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                             TabletCopyErrorPB::Code* error_code);
 
   const tablet::TabletSuperBlockPB& tablet_superblock() const {
-    DCHECK(initted_);
+    DCHECK(init_once_.initted());
     return tablet_superblock_;
   }
 
   const consensus::ConsensusStatePB& initial_cstate() const {
-    DCHECK(initted_);
+    DCHECK(init_once_.initted());
     return initial_cstate_;
   }
 
   const log::SegmentSequence& log_segments() const {
-    DCHECK(initted_);
+    DCHECK(init_once_.initted());
     return log_segments_;
   }
 
@@ -167,8 +172,11 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
 
   ~TabletCopySourceSession();
 
+  // Internal helper method for Init().
+  Status InitOnce();
+
   // Open the block and add it to the block map.
-  Status OpenBlockUnlocked(const BlockId& block_id);
+  Status OpenBlock(const BlockId& block_id);
 
   // Look up cached block information.
   Status FindBlock(const BlockId& block_id,
@@ -176,7 +184,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                    TabletCopyErrorPB::Code* error_code);
 
   // Snapshot the log segment's length and put it into segment map.
-  Status OpenLogSegmentUnlocked(uint64_t segment_seqno);
+  Status OpenLogSegment(uint64_t segment_seqno);
 
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(uint64_t segment_seqno,
@@ -186,26 +194,23 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Unregister log anchor, if it's registered.
   Status UnregisterAnchorIfNeededUnlocked();
 
-  scoped_refptr<tablet::TabletReplica> tablet_replica_;
+  const scoped_refptr<tablet::TabletReplica> tablet_replica_;
   const std::string session_id_;
   const std::string requestor_uuid_;
   FsManager* const fs_manager_;
 
-  mutable Mutex session_lock_;
-  bool initted_ = false;
-  BlockMap blocks_; // Protected by session_lock_.
-  LogMap logs_;     // Protected by session_lock_.
+  // Protects concurrent access to Init().
+  KuduOnceDynamic init_once_;
+
+  // The following fields are initialized during Init():
+  BlockMap blocks_;
+  LogMap logs_;
   ValueDeleter blocks_deleter_;
   ValueDeleter logs_deleter_;
-
   tablet::TabletSuperBlockPB tablet_superblock_;
-
   consensus::ConsensusStatePB initial_cstate_;
-
-  // The sequence of log segments that will be sent in the course of this
-  // session.
+  // The sequence of log segments that will be sent in the course of this session.
   log::SegmentSequence log_segments_;
-
   log::LogAnchor log_anchor_;
 
   TabletCopySourceMetrics* tablet_copy_metrics_;

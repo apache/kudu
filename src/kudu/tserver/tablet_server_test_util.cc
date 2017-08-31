@@ -19,6 +19,7 @@
 
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tserver/tablet_copy.proxy.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/net/sockaddr.h"
@@ -32,12 +33,14 @@ using std::shared_ptr;
 
 void CreateTsClientProxies(const Sockaddr& addr,
                            const shared_ptr<Messenger>& messenger,
-                           gscoped_ptr<TabletServerServiceProxy>* proxy,
+                           gscoped_ptr<TabletCopyServiceProxy>* tablet_copy_proxy,
+                           gscoped_ptr<TabletServerServiceProxy>* tablet_server_proxy,
                            gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
                            gscoped_ptr<ConsensusServiceProxy>* consensus_proxy,
                            gscoped_ptr<server::GenericServiceProxy>* generic_proxy) {
   const auto& host = addr.host();
-  proxy->reset(new TabletServerServiceProxy(messenger, addr, host));
+  tablet_copy_proxy->reset(new TabletCopyServiceProxy(messenger, addr, host));
+  tablet_server_proxy->reset(new TabletServerServiceProxy(messenger, addr, host));
   admin_proxy->reset(new TabletServerAdminServiceProxy(messenger, addr, host));
   consensus_proxy->reset(new ConsensusServiceProxy(messenger, addr, host));
   generic_proxy->reset(new server::GenericServiceProxy(messenger, addr, host));
