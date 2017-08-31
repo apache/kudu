@@ -260,6 +260,19 @@ This will scan any file which is dirty in your working tree, or changed since th
 gerrit-integrated upstream change in your git log. If you really want to do a full
 scan of the source tree, you may use the `lint` target instead.
 
+=== Running clang-tidy checks
+
+Kudu also uses the clang-tidy tool from LLVM to enforce coding style
+guidelines. You can run the tidy checks via cmake using the `tidy` target:
+
+[source,bash]
+----
+$ make tidy
+----
+
+This will scan any changes in the latest commit in the local tree. At the time
+of writing, it will not scan any changes that are not locally committed.
+
 === Building Kudu documentation
 
 Kudu's documentation is written in asciidoc and lives in the _docs_ subdirectory.
