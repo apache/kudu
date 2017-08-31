@@ -29,16 +29,23 @@ task wrapper(type: Wrapper) {
 task bootstrapWrapper() {
   // In the doLast block so this runs when the task is called and not during project configuration.
   doLast {
-    def wrapperJarPath = "\$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
+    def wrapperBasePath = "\$APP_HOME/gradle/wrapper"
+    def wrapperJarPath = wrapperBasePath + "/gradle-wrapper.jar"
+    def wrapperPropertiesPath = wrapperBasePath + "/gradle-wrapper.properties"
 
     // Add a trailing zero to the version if needed.
     def fullVersion = versions.gradle.count(".") == 1 ? "${versions.gradle}.0" : versions.gradle
     // Leverages the wrapper jar checked into the gradle project on github because the jar isn't available elsewhere.
-    def wrapperJarUrl = "https://raw.githubusercontent.com/gradle/gradle/v$fullVersion/gradle/wrapper/gradle-wrapper.jar"
+    def wrapperBaseUrl = "https://raw.githubusercontent.com/gradle/gradle/v$fullVersion/gradle/wrapper"
+    def wrapperJarUrl = wrapperBaseUrl + "/gradle-wrapper.jar"
+    def wrapperPropertiesUrl = wrapperBaseUrl + "/gradle-wrapper.properties"
 
-    def boostrapString = """
+    def bootstrapString = """
       if [ ! -e $wrapperJarPath ]; then
          curl -o $wrapperJarPath $wrapperJarUrl
+      fi
+      if [ ! -e $wrapperPropertiesPath ]; then
+         curl -o $wrapperPropertiesPath $wrapperPropertiesUrl
       fi
       """.stripIndent()
 
@@ -49,7 +56,7 @@ task bootstrapWrapper() {
       wrapperLines.each { line ->
         // Print the wrapper bootstrap before the first usage of the wrapper jar.
         if (!bootstrapWritten && line.contains("gradle-wrapper.jar")) {
-          out.println(boostrapString)
+          out.println(bootstrapString)
           bootstrapWritten = true
         }
         out.println(line)

@@ -28,6 +28,7 @@ dependency-reduced-pom.xml
 # Gradle build artifacts
 .gradle
 build
+gradle/wrapper
 
 # IntelliJ
 *.ipr

@@ -560,6 +560,7 @@ src/kudu/server/url-coding.cc (some portions): Boost software license
 
 www/bootstrap: Apache 2.0 license
 java/kudu-client/src/main/java/org/apache/kudu/util/{Slice,Slices}.java: Apache 2.0 license
+java/gradlew: Apache 2.0 license
   - See above for full text.
 
 ================================================================================
