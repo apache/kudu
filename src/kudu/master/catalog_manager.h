@@ -26,6 +26,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -214,7 +215,7 @@ struct PersistentTableInfo {
 class TableInfo : public RefCountedThreadSafe<TableInfo> {
  public:
   typedef PersistentTableInfo cow_state;
-  typedef std::map<std::string, TabletInfo*> TabletInfoMap;
+  typedef std::map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
 
   explicit TableInfo(std::string table_id);
 
@@ -223,25 +224,16 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Return the table's ID. Does not require synchronization.
   const std::string& id() const { return table_id_; }
 
-  // Add a tablet to this table.
-  void AddTablet(TabletInfo *tablet);
-  // Add multiple tablets to this table.
-  void AddTablets(const std::vector<TabletInfo*>& tablets);
-
   // Atomically add and remove multiple tablets from this table.
   void AddRemoveTablets(const std::vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                         const std::vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
 
-  // Return true if tablet with 'partition_key_start' has been
-  // removed from 'tablet_map_' below.
-  bool RemoveTablet(const std::string& partition_key_start);
-
   // This only returns tablets which are in RUNNING state.
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
-                         std::vector<scoped_refptr<TabletInfo> > *ret) const;
+                         std::vector<scoped_refptr<TabletInfo>>* ret) const;
 
   // Adds all tablets to the vector in partition key sorted order.
-  void GetAllTablets(std::vector<scoped_refptr<TabletInfo> > *ret) const;
+  void GetAllTablets(std::vector<scoped_refptr<TabletInfo>>* ret) const;
 
   // Access the persistent metadata. Typically you should use
   // TableMetadataLock to gain access to this data.
@@ -265,7 +257,11 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // Returns a snapshot copy of the table info's tablet map.
   TabletInfoMap tablet_map() const {
     shared_lock<rw_spinlock> l(lock_);
-    return tablet_map_;
+    TabletInfoMap ret;
+    for (const auto& e : tablet_map_) {
+      ret.emplace(e.first, make_scoped_refptr(e.second));
+    }
+    return ret;
   }
 
   // Returns the number of tablets.
@@ -283,8 +279,11 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   const std::string table_id_;
 
   // Sorted index of tablet start partition-keys to TabletInfo.
-  // The TabletInfo objects are owned by the CatalogManager.
-  TabletInfoMap tablet_map_;
+  //
+  // Every TabletInfo has a strong backpointer to its TableInfo, so these
+  // pointers must be raw.
+  typedef std::map<std::string, TabletInfo*> RawTabletInfoMap;
+  RawTabletInfoMap tablet_map_;
 
   // Protects tablet_map_ and pending_tasks_
   mutable rw_spinlock lock_;
@@ -639,14 +638,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
   // "dirty" state field.
-  TableInfo* CreateTableInfo(const CreateTableRequestPB& req,
-                             const Schema& schema,
-                             const PartitionSchema& partition_schema);
+  scoped_refptr<TableInfo> CreateTableInfo(const CreateTableRequestPB& req,
+                                           const Schema& schema,
+                                           const PartitionSchema& partition_schema);
 
   // Helper for creating the initial TabletInfo state.
   // Leaves the tablet "write locked" with the new info in the
   // "dirty" state field.
-  scoped_refptr<TabletInfo> CreateTabletInfo(TableInfo* table,
+  scoped_refptr<TabletInfo> CreateTabletInfo(const scoped_refptr<TableInfo>& table,
                                              const PartitionPB& partition);
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
@@ -691,7 +690,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                ColumnId* next_col_id);
 
   Status ApplyAlterPartitioningSteps(const TableMetadataLock& l,
-                                     TableInfo* table,
+                                     const scoped_refptr<TableInfo>& table,
                                      const Schema& client_schema,
                                      std::vector<AlterTableRequestPB::Step> steps,
                                      std::vector<scoped_refptr<TabletInfo>>* tablets_to_add,
@@ -707,7 +706,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // servers to select the N replicas, return Status::InvalidArgument.
   //
   // This method is called by "ProcessPendingAssignments()".
-  Status SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
+  Status SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
+                                 const scoped_refptr<TabletInfo>& tablet);
 
   // Select N Replicas from the online tablet servers
   // and populate the consensus configuration object.
@@ -717,17 +717,17 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                       int nreplicas,
                       consensus::RaftConfigPB *config);
 
-  void HandleAssignPreparingTablet(TabletInfo* tablet,
+  void HandleAssignPreparingTablet(const scoped_refptr<TabletInfo>& tablet,
                                    DeferredAssignmentActions* deferred);
 
   // Assign tablets and send CreateTablet RPCs to tablet servers.
   // The out param 'new_tablets' should have any newly-created TabletInfo
   // objects appended to it.
-  void HandleAssignCreatingTablet(TabletInfo* tablet,
+  void HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>& tablet,
                                   DeferredAssignmentActions* deferred,
-                                  std::vector<scoped_refptr<TabletInfo> >* new_tablets);
+                                  std::vector<scoped_refptr<TabletInfo>>* new_tablets);
 
-  Status HandleTabletSchemaVersionReport(TabletInfo *tablet,
+  Status HandleTabletSchemaVersionReport(const scoped_refptr<TabletInfo>& tablet,
                                          uint32_t version);
 
   // Send the "create tablet request" to all peers of a particular tablet.

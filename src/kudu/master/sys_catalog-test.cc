@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -95,29 +96,22 @@ class SysCatalogTest : public KuduTest {
 
 class TestTableLoader : public TableVisitor {
  public:
-  TestTableLoader() {}
-  ~TestTableLoader() { Reset(); }
-
   void Reset() {
-    for (TableInfo* ti : tables) {
-      ti->Release();
-    }
     tables.clear();
   }
 
-  virtual Status VisitTable(const std::string& table_id,
+  virtual Status VisitTable(const string& table_id,
                             const SysTablesEntryPB& metadata) OVERRIDE {
     // Setup the table info
-    TableInfo *table = new TableInfo(table_id);
-    TableMetadataLock l(table, TableMetadataLock::WRITE);
+    scoped_refptr<TableInfo> table = new TableInfo(table_id);
+    TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
     l.Commit();
-    table->AddRef();
-    tables.push_back(table);
+    tables.emplace_back(std::move(table));
     return Status::OK();
   }
 
-  vector<TableInfo* > tables;
+  vector<scoped_refptr<TableInfo>> tables;
 };
 
 static bool PbEquals(const google::protobuf::Message& a, const google::protobuf::Message& b) {
@@ -125,9 +119,10 @@ static bool PbEquals(const google::protobuf::Message& a, const google::protobuf:
 }
 
 template<class C>
-static bool MetadatasEqual(C* ti_a, C* ti_b) {
-  MetadataLock<C> l_a(ti_a, MetadataLock<C>::READ);
-  MetadataLock<C> l_b(ti_a, MetadataLock<C>::READ);
+static bool MetadatasEqual(const scoped_refptr<C>& ti_a,
+                           const scoped_refptr<C>& ti_b) {
+  MetadataLock<C> l_a(ti_a.get(), MetadataLock<C>::READ);
+  MetadataLock<C> l_b(ti_b.get(), MetadataLock<C>::READ);
   return PbEquals(l_a.data().pb, l_b.data().pb);
 }
 
@@ -158,7 +153,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   loader.Reset();
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
-  ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
+  ASSERT_TRUE(MetadatasEqual(table, loader.tables[0]));
 
   // Update the table
   {
@@ -174,7 +169,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   loader.Reset();
   ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
-  ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
+  ASSERT_TRUE(MetadatasEqual(table, loader.tables[0]));
 
   // Delete the table
   loader.Reset();
@@ -224,40 +219,34 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
 
 class TestTabletLoader : public TabletVisitor {
  public:
-  TestTabletLoader() {}
-  ~TestTabletLoader() { Reset(); }
-
   void Reset() {
-    for (TabletInfo* ti : tablets) {
-      ti->Release();
-    }
     tablets.clear();
   }
 
-  virtual Status VisitTablet(const std::string& table_id,
-                             const std::string& tablet_id,
+  virtual Status VisitTablet(const string& /*table_id*/,
+                             const string& tablet_id,
                              const SysTabletsEntryPB& metadata) OVERRIDE {
     // Setup the tablet info
-    TabletInfo *tablet = new TabletInfo(nullptr, tablet_id);
-    TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
+    scoped_refptr<TabletInfo> tablet = new TabletInfo(nullptr, tablet_id);
+    TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
     l.Commit();
-    tablet->AddRef();
-    tablets.push_back(tablet);
+    tablets.emplace_back(std::move(tablet));
     return Status::OK();
   }
 
-  vector<TabletInfo *> tablets;
+  vector<scoped_refptr<TabletInfo>> tablets;
 };
 
 // Create a new TabletInfo. The object is in uncommitted
 // state.
-static TabletInfo *CreateTablet(TableInfo *table,
-                                const string& tablet_id,
-                                const string& start_key,
-                                const string& end_key) {
-  TabletInfo *tablet = new TabletInfo(table, tablet_id);
-  TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
+static scoped_refptr<TabletInfo> CreateTablet(
+    const scoped_refptr<TableInfo>& table,
+    const string& tablet_id,
+    const string& start_key,
+    const string& end_key) {
+  scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
+  TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
   l.mutable_data()->pb.set_state(SysTabletsEntryPB::PREPARING);
   l.mutable_data()->pb.mutable_partition()->set_partition_key_start(start_key);
   l.mutable_data()->pb.mutable_partition()->set_partition_key_end(end_key);
@@ -270,9 +259,9 @@ static TabletInfo *CreateTablet(TableInfo *table,
 // visit)
 TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
   scoped_refptr<TableInfo> table(new TableInfo("abc"));
-  scoped_refptr<TabletInfo> tablet1(CreateTablet(table.get(), "123", "a", "b"));
-  scoped_refptr<TabletInfo> tablet2(CreateTablet(table.get(), "456", "b", "c"));
-  scoped_refptr<TabletInfo> tablet3(CreateTablet(table.get(), "789", "c", "d"));
+  scoped_refptr<TabletInfo> tablet1(CreateTablet(table, "123", "a", "b"));
+  scoped_refptr<TabletInfo> tablet2(CreateTablet(table, "456", "b", "c"));
+  scoped_refptr<TabletInfo> tablet3(CreateTablet(table, "789", "c", "d"));
 
   SysCatalogTable* sys_catalog = master_->catalog_manager()->sys_catalog();
 
@@ -282,54 +271,40 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
   // Add tablet1 and tablet2
   {
-    std::vector<TabletInfo*> tablets;
-    tablets.push_back(tablet1.get());
-    tablets.push_back(tablet2.get());
-
     loader.Reset();
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
     SysCatalogTable::Actions actions;
-    actions.tablets_to_add = tablets;
+    actions.tablets_to_add = { tablet1, tablet2 };
     ASSERT_OK(sys_catalog->Write(actions));
     l1.Commit();
     l2.Commit();
 
     ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
-    ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
-    ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
+    ASSERT_TRUE(MetadatasEqual(tablet1, loader.tablets[0]));
+    ASSERT_TRUE(MetadatasEqual(tablet2, loader.tablets[1]));
   }
 
   // Update tablet1
   {
-    std::vector<TabletInfo*> tablets;
-    tablets.push_back(tablet1.get());
-
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
     SysCatalogTable::Actions actions;
-    actions.tablets_to_update = tablets;
+    actions.tablets_to_update = { tablet1 };
     ASSERT_OK(sys_catalog->Write(actions));
     l1.Commit();
 
     loader.Reset();
     ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
-    ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
-    ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
+    ASSERT_TRUE(MetadatasEqual(tablet1, loader.tablets[0]));
+    ASSERT_TRUE(MetadatasEqual(tablet2, loader.tablets[1]));
   }
 
   // Add tablet3 and Update tablet1 and tablet2
   {
-    std::vector<TabletInfo *> to_add;
-    std::vector<TabletInfo *> to_update;
-
     TabletMetadataLock l3(tablet3.get(), TabletMetadataLock::WRITE);
-    to_add.push_back(tablet3.get());
-    to_update.push_back(tablet1.get());
-    to_update.push_back(tablet2.get());
-
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::REPLACED);
     TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
@@ -337,8 +312,8 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
     loader.Reset();
     SysCatalogTable::Actions actions;
-    actions.tablets_to_add = to_add;
-    actions.tablets_to_update = to_update;
+    actions.tablets_to_add = { tablet3 };
+    actions.tablets_to_update = { tablet1, tablet2 };
     ASSERT_OK(sys_catalog->Write(actions));
 
     l1.Commit();
@@ -347,24 +322,20 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
     ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(3, loader.tablets.size());
-    ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
-    ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
-    ASSERT_TRUE(MetadatasEqual(tablet3.get(), loader.tablets[2]));
+    ASSERT_TRUE(MetadatasEqual(tablet1, loader.tablets[0]));
+    ASSERT_TRUE(MetadatasEqual(tablet2, loader.tablets[1]));
+    ASSERT_TRUE(MetadatasEqual(tablet3, loader.tablets[2]));
   }
 
   // Delete tablet1 and tablet3 tablets
   {
-    std::vector<TabletInfo*> tablets;
-    tablets.push_back(tablet1.get());
-    tablets.push_back(tablet3.get());
-
     loader.Reset();
     SysCatalogTable::Actions actions;
-    actions.tablets_to_delete = tablets;
+    actions.tablets_to_delete = { tablet1, tablet3 };
     ASSERT_OK(master_->catalog_manager()->sys_catalog()->Write(actions));
     ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
     ASSERT_EQ(1, loader.tablets.size());
-    ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[0]));
+    ASSERT_TRUE(MetadatasEqual(tablet2, loader.tablets[0]));
   }
 }
 

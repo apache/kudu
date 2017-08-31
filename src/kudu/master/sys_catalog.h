@@ -26,11 +26,11 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/master/catalog_manager.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/status.h"
 
@@ -60,8 +60,6 @@ class SysCertAuthorityEntryPB;
 class SysTablesEntryPB;
 class SysTabletsEntryPB;
 class SysTskEntryPB;
-class TableInfo;
-class TabletInfo;
 struct MasterOptions;
 
 // The SysCatalogTable has two separate visitors because the tables
@@ -148,12 +146,12 @@ class SysCatalogTable {
   struct Actions {
     Actions();
 
-    TableInfo* table_to_add;
-    TableInfo* table_to_update;
-    TableInfo* table_to_delete;
-    std::vector<TabletInfo*> tablets_to_add;
-    std::vector<TabletInfo*> tablets_to_update;
-    std::vector<TabletInfo*> tablets_to_delete;
+    scoped_refptr<TableInfo> table_to_add;
+    scoped_refptr<TableInfo> table_to_update;
+    scoped_refptr<TableInfo> table_to_delete;
+    std::vector<scoped_refptr<TabletInfo>> tablets_to_add;
+    std::vector<scoped_refptr<TabletInfo>> tablets_to_update;
+    std::vector<scoped_refptr<TabletInfo>> tablets_to_delete;
   };
   Status Write(const Actions& actions);
 
@@ -237,25 +235,23 @@ class SysCatalogTable {
 
   // Tablet related private methods.
 
-  // Add dirty tablet data to the given row operations.
-  Status AddTabletsToPB(const std::vector<TabletInfo*>& tablets,
-                        RowOperationsPB::Type op_type,
-                        RowOperationsPB* ops) const;
-
   // Initializes the RaftPeerPB for the local peer.
   // Crashes due to an invariant check if the rpc server is not running.
   void InitLocalRaftPeerPB();
 
   // Add an operation to a write adding/updating/deleting a table or tablet.
-  void ReqAddTable(tserver::WriteRequestPB* req, const TableInfo* table);
-  void ReqUpdateTable(tserver::WriteRequestPB* req, const TableInfo* table);
-  void ReqDeleteTable(tserver::WriteRequestPB* req, const TableInfo* table);
+  void ReqAddTable(tserver::WriteRequestPB* req,
+                   const scoped_refptr<TableInfo>& table);
+  void ReqUpdateTable(tserver::WriteRequestPB* req,
+                      const scoped_refptr<TableInfo>& table);
+  void ReqDeleteTable(tserver::WriteRequestPB* req,
+                      const scoped_refptr<TableInfo>& table);
   void ReqAddTablets(tserver::WriteRequestPB* req,
-                     const std::vector<TabletInfo*>& tablets);
+                     const std::vector<scoped_refptr<TabletInfo>>& tablets);
   void ReqUpdateTablets(tserver::WriteRequestPB* req,
-                        const std::vector<TabletInfo*>& tablets);
+                        const std::vector<scoped_refptr<TabletInfo>>& tablets);
   void ReqDeleteTablets(tserver::WriteRequestPB* req,
-                        const std::vector<TabletInfo*>& tablets);
+                        const std::vector<scoped_refptr<TabletInfo>>& tablets);
 
   static std::string TskSeqNumberToEntryId(int64_t seq_number);
 

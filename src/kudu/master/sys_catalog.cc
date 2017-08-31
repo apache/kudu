@@ -44,6 +44,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
@@ -508,7 +509,8 @@ Status SysCatalogTable::Write(const Actions& actions) {
 // Table related methods
 // ==================================================================
 
-void SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqAddTable(WriteRequestPB* req,
+                                  const scoped_refptr<TableInfo>& table) {
   VLOG(2) << "Adding table " << table->id() << " in catalog: " <<
       SecureShortDebugString(table->metadata().dirty().pb);
 
@@ -523,7 +525,8 @@ void SysCatalogTable::ReqAddTable(WriteRequestPB* req, const TableInfo* table) {
   enc.Add(RowOperationsPB::INSERT, row);
 }
 
-void SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqUpdateTable(WriteRequestPB* req,
+                                     const scoped_refptr<TableInfo>& table) {
   string diff;
   if (ArePBsEqual(table->metadata().state().pb,
                   table->metadata().dirty().pb,
@@ -544,7 +547,8 @@ void SysCatalogTable::ReqUpdateTable(WriteRequestPB* req, const TableInfo* table
   enc.Add(RowOperationsPB::UPDATE, row);
 }
 
-void SysCatalogTable::ReqDeleteTable(WriteRequestPB* req, const TableInfo* table) {
+void SysCatalogTable::ReqDeleteTable(WriteRequestPB* req,
+                                     const scoped_refptr<TableInfo>& table) {
   KuduPartialRow row(&schema_);
   CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
   CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, table->id()));
@@ -726,11 +730,11 @@ Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
 // ==================================================================
 
 void SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
-                                    const vector<TabletInfo*>& tablets) {
+                                    const vector<scoped_refptr<TabletInfo>>& tablets) {
   faststring metadata_buf;
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
-  for (auto tablet : tablets) {
+  for (const auto& tablet : tablets) {
     VLOG(2) << "Adding tablet " << tablet->tablet_id() << " in catalog: "
             << SecureShortDebugString(tablet->metadata().dirty().pb);
     pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
@@ -742,11 +746,11 @@ void SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
 }
 
 void SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
-                                       const vector<TabletInfo*>& tablets) {
+                                       const vector<scoped_refptr<TabletInfo>>& tablets) {
   faststring metadata_buf;
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
-  for (auto tablet : tablets) {
+  for (const auto& tablet : tablets) {
     string diff;
     if (ArePBsEqual(tablet->metadata().state().pb,
                     tablet->metadata().dirty().pb,
@@ -765,10 +769,10 @@ void SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
 }
 
 void SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
-                                       const vector<TabletInfo*>& tablets) {
+                                       const vector<scoped_refptr<TabletInfo>>& tablets) {
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
-  for (auto tablet : tablets) {
+  for (const auto& tablet : tablets) {
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);
