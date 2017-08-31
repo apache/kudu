@@ -157,6 +157,16 @@ kuduContext.tableExists("another_table")
 kuduContext.deleteTable("unwanted_table")
 ----
 
+=== Using Spark with a Secure Kudu Cluster
+
+The Kudu Spark integration is able to operate on secure Kudu clusters which have
+authentication and encryption enabled, but the submitter of the Spark job must
+provide the proper credentials. For Spark jobs using the default 'client' deploy
+mode, the submitting user must have an active Kerberos ticket granted through
+`kinit`. For Spark jobs using the 'cluster' deploy mode, a Kerberos principal
+name and keytab location must be provided through the `--principal` and
+`--keytab` arguments to `spark2-submit`.
+
 === Spark Integration Known Issues and Limitations
 
 - Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
