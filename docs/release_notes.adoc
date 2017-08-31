@@ -28,12 +28,6 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.5.0]]
-
-* link:https://issues.apache.org/jira/browse/KUDU-2013[KUDU-2013]
-  The Java Kudu client now automatically requests new authentication tokens
-  after expiration. So, long-lived Java clients are now supported.
-
 [[rn_1.5.0_upgrade_notes]]
 == Upgrade Notes
 
@@ -46,10 +40,15 @@
   is Java 7 compatible. Spark 2.2 is the default dependency version as of
   Kudu 1.5.0.
 
-* The kudu-spark-tools module has been renamed to include the Spark and
-  Scala base versions. This matches the pattern used in the kudu-spark
-  module and artifacts. The kudu-spark-tools.jar is now called
-  kudu-spark2-tools_2.11.jar
+* The kudu-spark-tools module has been renamed to kudu-spark2-tools_2.11 in
+  order to include the Spark and Scala base versions. This matches the pattern
+  used in the kudu-spark module and artifacts.
+
+* To improve security, world-readable Kerberos keytab files are no longer
+  accepted by default. Set `--allow_world_readable_credentials=true` to override
+  this behavior. See
+  link:https://issues.apache.org/jira/browse/KUDU-1955[KUDU-1955] for additional
+  details.
 
 [[rn_1.5.0_deprecations]]
 == Deprecations
@@ -57,35 +56,35 @@
 * Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in
   the next major release.
 
-* Support for Spark 1 is deprecated as of Kudu 1.5.0 and may be removed in
-  the next minor release.
+* Support for Spark 1 (kudu-spark_2.10) is deprecated as of Kudu 1.5.0 and may
+  be removed in the next minor release.
 
 [[rn_1.5.0_new_features]]
 == New features
 
-* Kudu 1.5 tablet servers are now optionally able to tolerate disk failures at
+* Tablet servers are now optionally able to tolerate disk failures at
   startup. This feature is experimental; by default, Kudu will crash if it
   experiences a disk failure. When enabled, tablets with any data on the failed
   disk will not be opened and will be replicated as needed. To enable this, set
-  the `--suicide_on_eio` flag to `false`. There is additionally a configurable
-  tradeoff beteween a newly added tablet's tolerance to disk failures and its
+  the `--suicide_on_eio` flag to `false`. Additionally, there is a configurable
+  tradeoff between a newly added tablet's tolerance to disk failures and its
   parallelization of I/O via the `--fs_target_data_dirs_per_tablet` flag.
-  Tablets that are spread across fewer disks are less likely to be affected by
-  a disk failure, at the cost of reduced parallelism. Note that the first
-  configured data directory and the WAL directory cannot currently tolerate
-  disk failures, and disk failures during run-time are still fatal.
+  Tablets that are spread across fewer disks are less likely to be affected by a
+  disk failure, at the cost of reduced parallelism. Note that the first
+  configured data directory and the WAL directory cannot currently tolerate disk
+  failures, and disk failures during run-time are still fatal.
 
-* Kudu server web UIs have a new configuration dashboard (/config) which gives a
-  a high level view of important security configuration values. The dashboard
-  gives administrators a quick way to validate security settings. More types of
-  configuration will be added in the future.
+* Kudu server web UIs have a new configuration dashboard (/config) which
+  provides a high level summary of important security configuration values, such
+  as whether RPC authentication is required, or web server HTTPS encryption is
+  enabled. Other types of configuration will be added in future releases.
 
 * The `kudu` command line tool has two new features: `kudu tablet move` and
-  `kudu local_replica data_size`. The tablet move tool moves a tablet replica
+  `kudu local_replica data_size`. The 'tablet move' tool moves a tablet replica
   from one tablet server to another, under the condition that the tablet is
   healthy. An operator can use this tool to rebalance tablet replicas between
-  tablet servers. The local replica data size tool summarizes the space usage of
-  a tablet, breaking it down by type of file, column, and rowset.
+  tablet servers. The 'local replica data size' tool summarizes the space usage
+  of a tablet, breaking it down by type of file, column, and rowset.
 
 * kudu-client-tools now supports exporting CSV files and importing
   Apache Parquet files. This feature is unstable and may change APIs and
@@ -97,12 +96,12 @@
 
 == Optimizations and improvements
 
-* Kudu 1.5's log block manager now performs disk synchronization in batches.
+* The log block manager now performs disk synchronization in batches.
   This optimization can significantly reduce the time taken to copy tablet data
-  from one server to another; in one case tablet copy time was reduced by 35%.
+  from one server to another; in one case tablet copy time is reduced by 35%.
   It also improves the general performance of flushes and compactions.
 
-* A new feature referred to as "tombstoned voting" was added to the Raft
+* A new feature referred to as "tombstoned voting" is added to the Raft
   consensus subsystem to allow tablet replicas in the `TABLET_DATA_TOMBSTONED`
   state to vote in tablet leader elections. This feature increases Kudu's
   stability and availability by improving the likelihood that Kudu will be able
@@ -118,19 +117,34 @@
   significant depending on the workload (this will be resolved in a future
   release).
 
-* The number of threads used by the Kudu Tablet Server has been further reduced.
+* The number of threads used by the Kudu tablet server has been further reduced.
   Previously, each follower tablet replica used a dedicated thread to detect
   leader tablet replica failures, and each leader replica used one dedicated
   thread per follower to send Raft heartbeats to that follower. The work
   performed by these dedicated threads has been reassigned to other threads.
   Other improvements were made to facilitate better thread sharing by tablets.
-  For the purpose of capacity planning, expect the Kudu Tablet Server to create
+  For the purpose of capacity planning, expect the Kudu tablet server to create
   one thread for every five "cold" (i.e. those not servicing writes) tablets,
   and an additional three threads for every "hot" tablet. This will be further
   improved upon in future Kudu releases.
 
 [[rn_1.5.0_fixed_issues]]
 == Fixed Issues
+
+* The Java Kudu client now automatically requests new authentication tokens
+  after expiration. As a result, long-lived Java clients are now supported. See
+  link:https://issues.apache.org/jira/browse/KUDU-2013[KUDU-2013] for more
+  details.
+
+* Multiple Kerberos compatibility bugs have been fixed, including support
+  for environments with disabled reverse DNS, FreeIPA compatibility, principal
+  names including uppercase characters, and hosts without a FQDN.
+
+* A bug in the binary prefix decoder which could cause a tablet server 'check'
+  assertion crash has been fixed. The crash could only be triggered in very
+  specific scenarios; see
+  link:https://issues.apache.org/jira/browse/KUDU-2085[KUDU-2085] for additional
+  details.
 
 [[rn_1.5.0_wire_compatibility]]
 == Wire Protocol compatibility
@@ -139,11 +153,11 @@ Kudu 1.5.0 is wire-compatible with previous versions of Kudu:
 
 * Kudu 1.5 clients may connect to servers running Kudu 1.0 or later. If the client uses
   features that are not available on the target server, an error will be returned.
-* Kudu 1.0 clients may connect to servers running Kudu 1.5 with the exception of the
-  below-mentioned restrictions regarding secure clusters.
 * Rolling upgrade between Kudu 1.4 and Kudu 1.5 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
+* Kudu 1.0 clients may connect to servers running Kudu 1.5 with the exception of the
+  below-mentioned restrictions regarding secure clusters.
 
 The authentication features introduced in Kudu 1.3 place the following limitations
 on wire compatibility between Kudu 1.5 and versions earlier than 1.3:
@@ -158,6 +172,7 @@ on wire compatibility between Kudu 1.5 and versions earlier than 1.3:
 
 [[rn_1.5.0_client_compatibility]]
 === Client Library Compatibility
+
 * The Kudu 1.5 Java client library is API- and ABI-compatible with Kudu 1.4. Applications
   written against Kudu 1.4 will compile and run against the Kudu 1.5 client library and
   vice-versa, unless one of the following newly added APIs is used:
@@ -166,7 +181,7 @@ on wire compatibility between Kudu 1.5 and versions earlier than 1.3:
   Applications written and compiled against the Kudu 1.4 client library will run without
   modification against the Kudu 1.5 client library. Applications written and compiled
   against the Kudu 1.5 client library will run without modification against the Kudu 1.4
-  client library unless they use one of the following new APIs:
+  client library.
 
 * The Kudu 1.5 Python client is API-compatible with Kudu 1.4. Applications
   written against Kudu 1.4 will continue to run against the Kudu 1.5 client
@@ -179,6 +194,7 @@ Please refer to the link:known_issues.html[Known Issues and Limitations] section
 documentation.
 
 [[rn_1.5.0_contributors]]
+== Contributors
 
 Kudu 1.5 includes contributions from twenty-four people, including six
 first-time contributors:
@@ -193,7 +209,6 @@ first-time contributors:
 Thanks!
 
 [[resources_and_next_steps]]
-
 == Resources
 
 - link:http://kudu.apache.org[Kudu Website]
