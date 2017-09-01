@@ -42,10 +42,10 @@ GERRIT_PASSWORD = os.getenv('TIDYBOT_PASSWORD')
 
 GERRIT_URL = "https://gerrit.cloudera.org"
 
-def run_tidy(sha="HEAD"):
+def run_tidy(sha="HEAD", is_rev_range=False):
     patch_file = tempfile.NamedTemporaryFile()
     cmd = [
-        "git", "show", sha,
+        "git", "diff" if is_rev_range else "show", sha,
         "--src-prefix=%s/" % ROOT,
         "--dst-prefix=%s/" % ROOT]
     subprocess.check_call(cmd,
@@ -159,8 +159,15 @@ if __name__ == "__main__":
         description="Run clang-tidy on a patch, optionally posting warnings as comments to gerrit")
     parser.add_argument("-n", "--no-gerrit", action="store_true",
                         help="Whether to run locally i.e. (no interaction with gerrit)")
-    parser.add_argument('rev', help="The git revision to process")
+    parser.add_argument("--rev-range", action="store_true",
+                        default=False,
+                        help="Whether the revision specifies the 'rev..' range")
+    parser.add_argument('rev', help="The git revision (or range of revisions) to process")
     args = parser.parse_args()
+
+    if args.rev_range and not args.no_gerrit:
+        print >>sys.stderr, "--rev-range works only with --no-gerrit"
+        sys.exit(1)
 
     # Find the gerrit revision URL, if applicable.
     if not args.no_gerrit:
@@ -168,7 +175,7 @@ if __name__ == "__main__":
         print revision_url
 
     # Run clang-tidy and parse the output.
-    clang_output = run_tidy(args.rev)
+    clang_output = run_tidy(args.rev, args.rev_range)
     logging.info("Clang output")
     logging.info(clang_output)
     if args.no_gerrit:

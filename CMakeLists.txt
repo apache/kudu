@@ -1114,7 +1114,7 @@ endif (UNIX)
 # "make tidy" target
 ############################################################
 if (UNIX)
-  add_custom_target(tidy ${BUILD_SUPPORT_DIR}/clang_tidy_gerrit.py -n HEAD)
+  add_custom_target(tidy ${BUILD_SUPPORT_DIR}/tidy.sh)
   add_dependencies(tidy pb-gen krpc-gen)
 endif (UNIX)
 
