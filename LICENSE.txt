@@ -555,6 +555,8 @@ cmake_modules/FindProtobuf.cmake: BSD 3-clause license, build-only
 src/kudu/util (HdrHistogram-related classes): public domain
 src/kudu/gutil/valgrind.h: Hybrid BSD (half BSD, half zlib)
   - See the file headers for full license text.
+build-support/iwyu (some portions): LLVM Release License.
+  - See thirdparty/LICENSE.txt for full license text.
 
 src/kudu/server/url-coding.cc (some portions): Boost software license
 
