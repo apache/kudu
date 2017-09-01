@@ -53,6 +53,14 @@
             <version>${slf4j.version}</version>
         </dependency>
 
+        <!-- This artifact is in compile scope for convenience, as it is typically
+             not included in the Spark submit classpath by Spark platform providers. -->
+        <dependency>
+            <groupId>com.databricks</groupId>
+            <artifactId>spark-avro_${scala.binary.version}</artifactId>
+            <version>${sparkavro.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_${scala.binary.version}</artifactId>
@@ -97,11 +105,6 @@
             <version>${project.version}</version>
             <type>test-jar</type>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.databricks</groupId>
-            <artifactId>spark-avro_${scala.binary.version}</artifactId>
-            <version>${sparkavro.version}</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
