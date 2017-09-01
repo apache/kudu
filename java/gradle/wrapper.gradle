@@ -41,6 +41,7 @@ task bootstrapWrapper() {
     def wrapperPropertiesUrl = wrapperBaseUrl + "/gradle-wrapper.properties"
 
     def bootstrapString = """
+      mkdir -p $wrapperBasePath
       if [ ! -e $wrapperJarPath ]; then
          curl -o $wrapperJarPath $wrapperJarUrl
       fi
