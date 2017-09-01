@@ -37,14 +37,15 @@ namespace rpc {
 class PeriodicTimerTest : public KuduTest,
                           public ::testing::WithParamInterface<double> {
  public:
+  // In TSAN builds it takes a long time to de-schedule a thread. Also,
+  // the actual time that thread spends sleeping in SleepFor() scenarios
+  // might be much longer than requested. Setting the task period to be long
+  // enough allows for more stable behavior of the test, so no flakiness
+  // is observed even under substantial load. Otherwise it would be necessary
+  // to introduce additional logic to verify that the actual timings satisfy
+  // the implicit constraints of the test scenarios below.
   PeriodicTimerTest()
-      :
-#ifdef THREAD_SANITIZER
-        // TSAN tends to deschedule threads for long periods of time.
-        period_ms_(200),
-#else
-        period_ms_(20),
-#endif
+      : period_ms_(200),
         counter_(0) {
   }
 
