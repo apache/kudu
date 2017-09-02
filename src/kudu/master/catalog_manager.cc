@@ -4241,7 +4241,7 @@ TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table, string tablet_id)
     : tablet_id_(std::move(tablet_id)),
       table_(table),
       last_create_tablet_time_(MonoTime::Now()),
-      reported_schema_version_(0) {}
+      reported_schema_version_(NOT_YET_REPORTED) {}
 
 TabletInfo::~TabletInfo() {
 }
@@ -4256,16 +4256,38 @@ MonoTime TabletInfo::last_create_tablet_time() const {
   return last_create_tablet_time_;
 }
 
-bool TabletInfo::set_reported_schema_version(uint32_t version) {
-  std::lock_guard<simple_spinlock> l(lock_);
-  if (version > reported_schema_version_) {
-    reported_schema_version_ = version;
-    return true;
+void TabletInfo::set_reported_schema_version(int64_t version) {
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+
+    // Fast path: there's no schema version change.
+    if (version <= reported_schema_version_) {
+      return;
+    }
   }
-  return false;
+
+  // Slow path: we have a schema version change.
+  //
+  // We need to hold both the table and tablet locks to make the change. By
+  // convention, the table lock is always acquired first.
+  std::lock_guard<rw_spinlock> table_l(table_->lock_);
+  std::lock_guard<simple_spinlock> tablet_l(lock_);
+
+  // Check again in case the schema version changed underneath us.
+  int64_t old_version = reported_schema_version_;
+  if (version <= old_version) {
+    return;
+  }
+
+  // Perform the changes.
+  VLOG(3) << Substitute("$0: schema version changed from $1 to $2",
+                        ToString(), old_version, version);
+  reported_schema_version_ = version;
+  table_->DecrementSchemaVersionCountUnlocked(old_version);
+  table_->IncrementSchemaVersionCountUnlocked(version);
 }
 
-uint32_t TabletInfo::reported_schema_version() const {
+int64_t TabletInfo::reported_schema_version() const {
   std::lock_guard<simple_spinlock> l(lock_);
   return reported_schema_version_;
 }
@@ -4300,6 +4322,7 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
   for (const auto& tablet : tablets_to_drop) {
     const auto& lower_bound = tablet->metadata().state().pb.partition().partition_key_start();
     CHECK(EraseKeyReturnValuePtr(&tablet_map_, lower_bound) != nullptr);
+    DecrementSchemaVersionCountUnlocked(tablet->reported_schema_version());
   }
   for (const auto& tablet : tablets_to_add) {
     TabletInfo* old = nullptr;
@@ -4308,11 +4331,20 @@ void TableInfo::AddRemoveTablets(const vector<scoped_refptr<TabletInfo>>& tablet
                          tablet.get(), &old)) {
       VLOG(1) << Substitute("Replaced tablet $0 with $1",
                             old->tablet_id(), tablet->tablet_id());
+      DecrementSchemaVersionCountUnlocked(old->reported_schema_version());
+
       // TODO(unknown): can we assert that the replaced tablet is not in Running state?
       // May be a little tricky since we don't know whether to look at its committed or
       // uncommitted state.
     }
+    IncrementSchemaVersionCountUnlocked(tablet->reported_schema_version());
   }
+
+#ifndef NDEBUG
+  if (tablet_map_.empty()) {
+    DCHECK(schema_version_counts_.empty());
+  }
+#endif
 }
 
 void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
@@ -4345,15 +4377,18 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {
   shared_lock<rw_spinlock> l(lock_);
-  for (const auto& e : tablet_map_) {
-    if (e.second->reported_schema_version() < version) {
-      VLOG(3) << Substitute("Table $0 ALTER in progress due to tablet $1 "
-          "because reported schema $2 < expected $3", table_id_,
-          e.second->ToString(), e.second->reported_schema_version(), version);
-      return true;
-    }
+  auto it = schema_version_counts_.begin();
+  if (it == schema_version_counts_.end()) {
+    // The table has no tablets.
+    return false;
   }
-  return false;
+  DCHECK_GT(it->second, 0);
+
+  // 'it->first' is either NOT_YET_REPORTED (if at least one tablet has yet to
+  // report), or it's the lowest schema version belonging to at least one
+  // tablet. The numeric value of NOT_YET_REPORTED is -1 so we can compare it
+  // to 'version' either way.
+  return it->first < static_cast<int64_t>(version);
 }
 
 bool TableInfo::IsCreateInProgress() const {
@@ -4419,6 +4454,27 @@ void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo>>* ret) const {
   shared_lock<rw_spinlock> l(lock_);
   for (const auto& e : tablet_map_) {
     ret->emplace_back(make_scoped_refptr(e.second));
+  }
+}
+
+void TableInfo::IncrementSchemaVersionCountUnlocked(int64_t version) {
+  DCHECK(lock_.is_write_locked());
+  schema_version_counts_[version]++;
+}
+
+void TableInfo::DecrementSchemaVersionCountUnlocked(int64_t version) {
+  DCHECK(lock_.is_write_locked());
+
+  // The schema version map invariant is that every tablet should be
+  // represented. To enforce this, if the decrement reduces a particular key's
+  // value to 0, we must erase the key too.
+  auto it = schema_version_counts_.find(version);
+  DCHECK(it != schema_version_counts_.end())
+      << Substitute("$0 not in schema version map", version);
+  DCHECK_GT(it->second, 0);
+  it->second--;
+  if (it->second == 0) {
+    schema_version_counts_.erase(it);
   }
 }
 

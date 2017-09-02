@@ -138,6 +138,14 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
 
+  enum {
+    // Schema version when the tablet has yet to report.
+    //
+    // This value must be less than all possible schema versions. -1 is
+    // appropriate; schema versions range from 0 to UINT32_MAX.
+    NOT_YET_REPORTED = -1L
+  };
+
   TabletInfo(const scoped_refptr<TableInfo>& table, std::string tablet_id);
 
   const std::string& tablet_id() const { return tablet_id_; }
@@ -152,9 +160,14 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   void set_last_create_tablet_time(const MonoTime& ts);
   MonoTime last_create_tablet_time() const;
 
-  // Accessors for the last reported schema version
-  bool set_reported_schema_version(uint32_t version);
-  uint32_t reported_schema_version() const;
+  // Sets the reported schema version to 'version' provided it's not already
+  // equal to or greater than it.
+  //
+  // Also reflects the version change to the table's schema version map.
+  void set_reported_schema_version(int64_t version);
+
+  // Simple accessor for reported_schema_version_.
+  int64_t reported_schema_version() const;
 
   // No synchronization needed.
   std::string ToString() const;
@@ -176,7 +189,9 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   MonoTime last_create_tablet_time_;
 
   // Reported schema version (in-memory only).
-  uint32_t reported_schema_version_;
+  //
+  // Set to NOT_YET_REPORTED when the tablet hasn't yet reported.
+  int64_t reported_schema_version_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletInfo);
 };
@@ -272,9 +287,15 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
  private:
   friend class RefCountedThreadSafe<TableInfo>;
+  friend class TabletInfo;
   ~TableInfo();
 
-  void AddTabletUnlocked(TabletInfo* tablet);
+  // Increments or decrements the value for the key 'version' in
+  // 'schema_version_counts'.
+  //
+  // Must be called with 'lock_' held for writing.
+  void IncrementSchemaVersionCountUnlocked(int64_t version);
+  void DecrementSchemaVersionCountUnlocked(int64_t version);
 
   const std::string table_id_;
 
@@ -285,13 +306,19 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   typedef std::map<std::string, TabletInfo*> RawTabletInfoMap;
   RawTabletInfoMap tablet_map_;
 
-  // Protects tablet_map_ and pending_tasks_
+  // Protects tablet_map_, pending_tasks_, and schema_version_counts_.
   mutable rw_spinlock lock_;
 
   CowObject<PersistentTableInfo> metadata_;
 
   // List of pending tasks (e.g. create/alter tablet requests)
   std::unordered_set<MonitoredTask*> pending_tasks_;
+
+  // Map of schema version to the number of tablets that reported that version.
+  //
+  // All tablets are represented here regardless of whether they've reported.
+  // Tablets yet to report will count towards the special NOT_YET_REPORTED key.
+  std::map<int64_t, int64_t> schema_version_counts_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
