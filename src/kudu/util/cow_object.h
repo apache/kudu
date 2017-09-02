@@ -14,13 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_COW_OBJECT_H
-#define KUDU_UTIL_COW_OBJECT_H
+#pragma once
+
+#include <algorithm>
+#include <memory>
 
 #include <glog/logging.h>
-#include <algorithm>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/rwc_lock.h"
 
@@ -46,12 +46,12 @@ class CowObject {
     lock_.ReadUnlock();
   }
 
-  // Lock the object for write (preventing concurrent mutators), and make a safe
-  // copy of the object to mutate.
+  // Lock the object for write (preventing concurrent mutators).
+  //
+  // We defer making a dirty copy of the state to mutable_dirty() so that the
+  // copy can be avoided if no dirty changes are actually made.
   void StartMutation() {
     lock_.WriteLock();
-    // Clone our object.
-    dirty_state_.reset(new State(state_));
   }
 
   // Abort the current mutation. This drops the write lock without applying any
@@ -65,8 +65,11 @@ class CowObject {
   // blocks any concurrent readers or writers, swaps in the new version of the
   // State, and then drops the commit lock.
   void CommitMutation() {
+    if (!dirty_state_) {
+      AbortMutation();
+      return;
+    }
     lock_.UpgradeToCommitLock();
-    CHECK(dirty_state_);
     std::swap(state_, *dirty_state_);
     dirty_state_.reset();
     lock_.CommitUnlock();
@@ -87,18 +90,24 @@ class CowObject {
   // Should only be called by a thread who previously called StartMutation().
   State* mutable_dirty() {
     DCHECK(lock_.HasWriteLock());
-    return DCHECK_NOTNULL(dirty_state_.get());
+    if (!dirty_state_) {
+      dirty_state_.reset(new State(state_));
+    }
+    return dirty_state_.get();
   }
 
   const State& dirty() const {
-    return *DCHECK_NOTNULL(dirty_state_.get());
+    if (!dirty_state_) {
+      return state_;
+    }
+    return *dirty_state_.get();
   }
 
  private:
   mutable RWCLock lock_;
 
   State state_;
-  gscoped_ptr<State> dirty_state_;
+  std::unique_ptr<State> dirty_state_;
 
   DISALLOW_COPY_AND_ASSIGN(CowObject);
 };
@@ -216,4 +225,3 @@ class CowLock {
 };
 
 } // namespace kudu
-#endif /* KUDU_UTIL_COW_OBJECT_H */

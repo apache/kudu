@@ -2420,8 +2420,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
   DCHECK(tablet->table()); // guaranteed by TabletLoader
 
-  // TODO: we don't actually need to do the COW here until we see we're going
-  // to change the state. Can we change CowedObject to lazily do the copy?
   TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
   TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
 
