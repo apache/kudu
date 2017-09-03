@@ -91,6 +91,10 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_full_containers);
 namespace kudu {
 namespace fs {
 
+namespace internal {
+class LogBlockContainer;
+} // namespace internal
+
 class LogBlockManagerTest : public KuduTest {
  public:
   LogBlockManagerTest() :
@@ -1371,6 +1375,43 @@ TEST_F(LogBlockManagerTest, TestFinalizeBlock) {
   ASSERT_EQ(1, bm_->all_containers_by_name_.size());
   // Ensure the same container has not been marked as available twice.
   ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
+}
+
+// Test available log container selection is LIFO.
+TEST_F(LogBlockManagerTest, TestLIFOContainerSelection) {
+  // Create 4 blocks and 4 opened containers that are not full.
+  vector<unique_ptr<WritableBlock>> blocks;
+  for (int i = 0; i < 4; i++) {
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    writer->Append("test data");
+    blocks.emplace_back(std::move(writer));
+  }
+  for (const auto& block : blocks) {
+    ASSERT_OK(block->Close());
+  }
+  ASSERT_EQ(4, bm_->all_containers_by_name_.size());
+
+  blocks.clear();
+  // Create some other blocks, and finalize each block after write.
+  // The first available container in the queue will be reused every time.
+  internal::LogBlockContainer* container =
+      bm_->available_containers_by_data_dir_.begin()->second.front();
+  for (int i = 0; i < 4; i++) {
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    writer->Append("test data");
+    ASSERT_OK(writer->Finalize());
+    // After finalizing the written block, the used container will be
+    // available again and can be reused for the following created block.
+    ASSERT_EQ(container,
+              bm_->available_containers_by_data_dir_.begin()->second.front());
+    blocks.emplace_back(std::move(writer));
+  }
+  for (const auto& block : blocks) {
+    ASSERT_OK(block->Close());
+  }
+  ASSERT_EQ(4, bm_->all_containers_by_name_.size());
 }
 
 TEST_F(LogBlockManagerTest, TestAbortBlock) {

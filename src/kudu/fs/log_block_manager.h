@@ -190,6 +190,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
   FRIEND_TEST(LogBlockManagerTest, TestFinalizeBlock);
+  FRIEND_TEST(LogBlockManagerTest, TestLIFOContainerSelection);
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);

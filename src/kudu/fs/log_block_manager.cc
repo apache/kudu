@@ -1876,7 +1876,7 @@ void LogBlockManager::MakeContainerAvailableUnlocked(LogBlockContainer* containe
   if (container->full() || container->read_only()) {
     return;
   }
-  available_containers_by_data_dir_[container->data_dir()].push_back(container);
+  available_containers_by_data_dir_[container->data_dir()].push_front(container);
 }
 
 Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {

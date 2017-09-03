@@ -58,7 +58,7 @@
 #define ASSERT_REMOTE_ERROR(status, err, code, str) \
     ASSERT_NO_FATAL_FAILURE(AssertRemoteError(status, err, code, str))
 
-DECLARE_uint64(tablet_copy_idle_timeout_ms);
+DECLARE_uint64(tablet_copy_idle_timeout_sec);
 DECLARE_uint64(tablet_copy_timeout_poll_period_ms);
 
 using std::string;
@@ -223,7 +223,7 @@ TEST_F(TabletCopyServiceTest, TestSimpleBeginEndSession) {
                                                &segment_seqnos));
   // Basic validation of returned params.
   ASSERT_FALSE(session_id.empty());
-  ASSERT_EQ(FLAGS_tablet_copy_idle_timeout_ms, idle_timeout_millis);
+  ASSERT_EQ(FLAGS_tablet_copy_idle_timeout_sec * 1000, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
   // We should have number of segments = number of rolls + 1 (due to the active segment).
   ASSERT_EQ(kNumLogRolls + 1, segment_seqnos.size());
@@ -489,7 +489,7 @@ TEST_F(TabletCopyServiceTest, TestFetchLog) {
 TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
   // This flag should be seen by the service due to TSO.
   // We have also reduced the timeout polling frequency in SetUp().
-  FLAGS_tablet_copy_idle_timeout_ms = 1; // Expire the session almost immediately.
+  FLAGS_tablet_copy_idle_timeout_sec = 0; // Expire the session immediately.
 
   // Start session.
   string session_id;

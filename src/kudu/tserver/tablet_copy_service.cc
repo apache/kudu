@@ -56,10 +56,11 @@
     } \
   } while (false)
 
-DEFINE_uint64(tablet_copy_idle_timeout_ms, 180000,
+DEFINE_uint64(tablet_copy_idle_timeout_sec, 600,
               "Amount of time without activity before a tablet copy "
-              "session will expire, in millis");
-TAG_FLAG(tablet_copy_idle_timeout_ms, hidden);
+              "session will expire, in seconds");
+TAG_FLAG(tablet_copy_idle_timeout_sec, advanced);
+TAG_FLAG(tablet_copy_idle_timeout_sec, evolving);
 
 DEFINE_uint64(tablet_copy_timeout_poll_period_ms, 10000,
               "How often the tablet_copy service polls for expired "
@@ -97,7 +98,7 @@ using tablet::TabletReplica;
 namespace tserver {
 
 static MonoTime GetNewExpireTime() {
-  return MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_tablet_copy_idle_timeout_ms);
+  return MonoTime::Now() + MonoDelta::FromSeconds(FLAGS_tablet_copy_idle_timeout_sec);
 }
 
 TabletCopyServiceImpl::TabletCopyServiceImpl(
@@ -171,7 +172,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
 
   resp->set_responder_uuid(fs_manager_->uuid());
   resp->set_session_id(session_id);
-  resp->set_session_idle_timeout_millis(FLAGS_tablet_copy_idle_timeout_ms);
+  resp->set_session_idle_timeout_millis(FLAGS_tablet_copy_idle_timeout_sec * 1000);
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
   resp->mutable_initial_cstate()->CopyFrom(session->initial_cstate());
 
