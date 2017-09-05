@@ -261,14 +261,14 @@ class Connection extends SimpleChannelUpstreamHandler {
     if (m instanceof Negotiator.Success) {
       lock.lock();
       try {
-        Preconditions.checkState(state == State.NEGOTIATING);
-        Preconditions.checkState(inflightMessages.isEmpty());
         negotiationResult = (Negotiator.Success) m;
+        Preconditions.checkState(state == State.TERMINATED || inflightMessages.isEmpty());
 
         // Before switching to the READY state, it's necessary to empty the queuedMessages. There
         // might be concurrent activity on adding new messages into the queue if enqueueMessage()
         // is called in the middle.
-        while (!queuedMessages.isEmpty()) {
+        while (state != State.TERMINATED && !queuedMessages.isEmpty()) {
+
           // Register the messages into the inflightMessages before sending them to the wire. This
           // is to be able to invoke appropriate callback when the response received. This should
           // be done under the lock since the inflightMessages itself does not provide any
@@ -292,8 +292,13 @@ class Connection extends SimpleChannelUpstreamHandler {
             lock.lock();
           }
         }
+        // The connection may have been terminated while the lock was dropped.
+        if (state == State.TERMINATED) {
+          return;
+        }
 
-        assert queuedMessages.isEmpty();
+        Preconditions.checkState(state == State.NEGOTIATING);
+
         queuedMessages = null;
         // Set the state to READY -- that means the incoming messages should be no longer put into
         // the queuedMessages, but sent to wire right away (see the enqueueMessage() for details).
