@@ -775,7 +775,9 @@ TEST_F(ToolTest, TestPbcTools) {
   // Test 'edit' with an unsuccessful edit.
   {
     string stdout, stderr;
-    Status s = DoEdit("/bin/false", &stdout, &stderr);
+    string path;
+    ASSERT_OK(GetExecutablePath("false", {}, &path));
+    Status s = DoEdit(path, &stdout, &stderr);
     ASSERT_FALSE(s.ok());
     ASSERT_EQ("", stdout);
     ASSERT_EQ("Aborted: editor returned non-zero exit code", stderr);
