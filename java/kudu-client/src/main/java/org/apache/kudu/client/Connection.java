@@ -214,6 +214,9 @@ class Connection extends SimpleChannelUpstreamHandler {
                                final ChannelStateEvent e) {
     lock.lock();
     try {
+      if (state == State.TERMINATED) {
+        return;
+      }
       Preconditions.checkState(state == State.CONNECTING);
       state = State.NEGOTIATING;
     } finally {
@@ -313,6 +316,9 @@ class Connection extends SimpleChannelUpstreamHandler {
     if (m instanceof Negotiator.Failure) {
       lock.lock();
       try {
+        if (state == State.TERMINATED) {
+          return;
+        }
         Preconditions.checkState(state == State.NEGOTIATING);
         Preconditions.checkState(inflightMessages.isEmpty());
 
@@ -347,6 +353,9 @@ class Connection extends SimpleChannelUpstreamHandler {
     Callback<Void, CallResponseInfo> responseCbk;
     lock.lock();
     try {
+      if (state == State.TERMINATED) {
+        return;
+      }
       Preconditions.checkState(state == State.READY);
       responseCbk = inflightMessages.remove(callId);
     } finally {
@@ -408,20 +417,23 @@ class Connection extends SimpleChannelUpstreamHandler {
           getLogPrefix());
       error = new RecoverableException(Status.NetworkError(message), e);
       LOG.info(message, e);
-    } else {
-      String message = String.format("%s unexpected exception from downstream on %s",
-                                     getLogPrefix(), c);
-      error = new RecoverableException(Status.NetworkError(message), e);
-
+    } else if (e instanceof SSLException && explicitlyDisconnected) {
       // There's a race in Netty where, when we call Channel.close(), it tries
       // to send a TLS 'shutdown' message and enters a shutdown state. If another
       // thread races to send actual data on the channel, then Netty will get a
       // bit confused that we are trying to send data and misinterpret it as a
       // renegotiation attempt, and throw an SSLException. So, we just ignore any
       // SSLException if we've already attempted to close, otherwise log the error.
-      if (!(e instanceof SSLException) || !explicitlyDisconnected) {
-        LOG.error(message, e);
-      }
+      error = new RecoverableException(Status.NetworkError(
+          String.format("%s disconnected from peer", getLogPrefix())));
+    } else {
+      // If the connection was explicitly disconnected via a call to disconnect(), we should
+      // have either gotten a ClosedChannelException or an SSLException.
+      assert !explicitlyDisconnected;
+      String message = String.format("%s unexpected exception from downstream on %s",
+                                     getLogPrefix(), c);
+      error = new RecoverableException(Status.NetworkError(message), e);
+      LOG.error(message, e);
     }
 
     cleanup(error);
