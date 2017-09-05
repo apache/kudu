@@ -82,6 +82,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const PartitionSchema& partition_schema,
                           const Partition& partition,
                           const TabletDataState& initial_tablet_data_state,
+                          boost::optional<consensus::OpId> tombstone_last_logged_opid,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk.
@@ -102,6 +103,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const PartitionSchema& partition_schema,
                              const Partition& partition,
                              const TabletDataState& initial_tablet_data_state,
+                             boost::optional<consensus::OpId> tombstone_last_logged_opid,
                              scoped_refptr<TabletMetadata>* metadata);
 
   static std::vector<BlockIdPB> CollectBlockIdPBs(
@@ -262,13 +264,14 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Constructor for creating a new tablet.
   //
-  // TODO: get rid of this many-arg constructor in favor of just passing in a
-  // SuperBlock, which already contains all of these fields.
+  // TODO(todd): get rid of this many-arg constructor in favor of just passing
+  // in a SuperBlock, which already contains all of these fields.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id,
                  std::string table_name, std::string table_id,
                  const Schema& schema, PartitionSchema partition_schema,
                  Partition partition,
-                 const TabletDataState& tablet_data_state);
+                 const TabletDataState& tablet_data_state,
+                 boost::optional<consensus::OpId> tombstone_last_logged_opid);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id);

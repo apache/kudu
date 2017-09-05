@@ -185,6 +185,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Delete the tablet using the specified delete_type as the final metadata
   // state. Deletes the on-disk data, metadata, as well as all WAL segments.
+  //
+  // If set, 'last_logged_opid' will be persisted in the
+  // 'tombstone_last_logged_opid' field in the tablet metadata. Otherwise, if
+  // 'last_logged_opid' is equal to boost::none, the tablet metadata will
+  // retain its previous value of 'tombstone_last_logged_opid', if any.
   static Status DeleteTabletData(
       const scoped_refptr<tablet::TabletMetadata>& meta,
       const scoped_refptr<consensus::ConsensusMetadataManager>& cmeta_manager,

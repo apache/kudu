@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/message_differencer.h>
@@ -49,6 +50,7 @@
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
@@ -238,6 +240,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   schema, partition_schema,
                                                   partitions[0],
                                                   tablet::TABLET_DATA_READY,
+                                                  /*tombstone_last_logged_opid=*/ boost::none,
                                                   &metadata));
 
   RaftConfigPB config;

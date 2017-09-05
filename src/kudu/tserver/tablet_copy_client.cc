@@ -301,11 +301,18 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                      copy_peer_uuid));
     }
 
+    // Retain the last-logged OpId from the previous tombstone in case this
+    // tablet copy is aborted.
+    if (last_logged_opid) {
+      *superblock_->mutable_tombstone_last_logged_opid() = *last_logged_opid;
+    }
+
     // Remove any existing orphaned blocks and WALs from the tablet, and
     // set the data state to 'COPYING'.
     RETURN_NOT_OK_PREPEND(
         TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
-                                          tablet::TABLET_DATA_COPYING, boost::none),
+                                          tablet::TABLET_DATA_COPYING,
+                                          /*last_logged_opid=*/ boost::none),
         "Could not replace superblock with COPYING data state");
     CHECK_OK(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_));
   } else {
@@ -327,7 +334,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             schema,
                                             partition_schema,
                                             partition,
-                                            tablet::TABLET_DATA_COPYING,
+                                            superblock_->tablet_data_state(),
+                                            superblock_->tombstone_last_logged_opid(),
                                             &meta_));
   }
   CHECK(fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_,
@@ -369,6 +377,7 @@ Status TabletCopyClient::Finish() {
   LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
   SetStatusMessage("Replacing tablet superblock");
   superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
+  superblock_->clear_tombstone_last_logged_opid();
   RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {
@@ -397,7 +406,8 @@ Status TabletCopyClient::Abort() {
   // Delete all of the tablet data, including blocks and WALs.
   RETURN_NOT_OK_PREPEND(
       TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
-                                        tablet::TABLET_DATA_TOMBSTONED, boost::none),
+                                        tablet::TABLET_DATA_TOMBSTONED,
+                                        /*last_logged_opid=*/ boost::none),
       LogPrefix() + "Failed to tombstone tablet after aborting tablet copy");
 
   SetStatusMessage(Substitute("Tombstoned tablet $0: Tablet copy aborted", tablet_id_));

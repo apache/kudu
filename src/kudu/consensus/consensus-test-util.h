@@ -48,8 +48,8 @@
 
 #define ASSERT_OPID_EQ(left, right) \
   do { \
-    const OpId& TOKENPASTE2(_left, __LINE__) = (left); \
-    const OpId& TOKENPASTE2(_right, __LINE__) = (right); \
+    const consensus::OpId& TOKENPASTE2(_left, __LINE__) = (left); \
+    const consensus::OpId& TOKENPASTE2(_right, __LINE__) = (right); \
     if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right, __LINE__))) { \
       FAIL() << "Expected: " \
             << pb_util::SecureShortDebugString(TOKENPASTE2(_left, __LINE__)) << "\n" \

@@ -86,6 +86,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const PartitionSchema& partition_schema,
                                  const Partition& partition,
                                  const TabletDataState& initial_tablet_data_state,
+                                 boost::optional<OpId> tombstone_last_logged_opid,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -105,7 +106,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        schema,
                                                        partition_schema,
                                                        partition,
-                                                       initial_tablet_data_state));
+                                                       initial_tablet_data_state,
+                                                       std::move(tombstone_last_logged_opid)));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -130,6 +132,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const PartitionSchema& partition_schema,
                                     const Partition& partition,
                                     const TabletDataState& initial_tablet_data_state,
+                                    boost::optional<OpId> tombstone_last_logged_opid,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -139,13 +142,13 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
         schema.ToString()));
     }
     return Status::OK();
-  } else if (s.IsNotFound()) {
+  }
+  if (s.IsNotFound()) {
     return CreateNew(fs_manager, tablet_id, table_name, table_id, schema,
                      partition_schema, partition, initial_tablet_data_state,
-                     metadata);
-  } else {
-    return s;
+                     std::move(tombstone_last_logged_opid), metadata);
   }
+  return s;
 }
 
 vector<BlockIdPB> TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock) {
@@ -266,7 +269,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                string table_name, string table_id,
                                const Schema& schema, PartitionSchema partition_schema,
                                Partition partition,
-                               const TabletDataState& tablet_data_state)
+                               const TabletDataState& tablet_data_state,
+                               boost::optional<OpId> tombstone_last_logged_opid)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -279,6 +283,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       table_name_(std::move(table_name)),
       partition_schema_(std::move(partition_schema)),
       tablet_data_state_(tablet_data_state),
+      tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
       num_flush_pins_(0),
       needs_flush_(false),
       pre_flush_callback_(Bind(DoNothingStatusClosure)) {

@@ -40,10 +40,12 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -72,6 +74,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -93,12 +96,17 @@ using kudu::client::KuduTableCreator;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusMetadataPB;
+using kudu::consensus::MakeOpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForNumTabletServers;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::ListTabletsResponsePB_StatusAndSchemaPB;
 using kudu::tserver::TabletCopyClient;
@@ -967,16 +975,16 @@ TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
-  // No last-logged opid should initially be stored in the superblock.
+  // No last-logged opid should initially be stored in the superblock on a brand-new tablet.
   tablet::TabletSuperBlockPB superblock_pb;
-  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
+  ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb));
   ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid());
 
   // Now tombstone the leader.
   ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
 
   // We should end up with a last-logged opid in the superblock.
-  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
+  ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb));
   ASSERT_TRUE(superblock_pb.has_tombstone_last_logged_opid());
   consensus::OpId last_logged_opid = superblock_pb.tombstone_last_logged_opid();
   ASSERT_EQ(1, last_logged_opid.term());
@@ -988,11 +996,15 @@ TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
                                    cluster_->tablet_server(follower_index)->bound_rpc_hostport(),
                                    1, // We are in term 1.
                                    kTimeout));
-  ASSERT_OK(itest::WaitUntilTabletRunning(leader, tablet_id, kTimeout));
 
-  // Ensure that the last-logged opid has been cleared from the superblock.
-  inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb);
-  ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid());
+  ASSERT_EVENTUALLY([&] {
+    // Ensure that the last-logged opid has been cleared from the superblock
+    // once it persists the TABLET_DATA_READY state to disk.
+    ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb));
+    ASSERT_EQ(TABLET_DATA_READY, superblock_pb.tablet_data_state());
+    ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid())
+        << SecureShortDebugString(superblock_pb);
+  });
 }
 
 // Test that the tablet copy thread pool being full results in throttling and
@@ -1097,13 +1109,24 @@ TEST_F(TabletCopyITest, TestTabletCopyThrottling) {
   LOG(INFO) << "Number of in progress responses: " << num_inprogress;
 }
 
+class TabletCopyFailureITest : public TabletCopyITest,
+                               public ::testing::WithParamInterface<const char*> {
+};
+// Trigger tablet copy failures a couple different ways: session timeout and
+// crash. We want all tablet copy attempts to fail after initial setup.
+const char* kTabletCopyFailureITestFlags[] = {
+  "--tablet_copy_early_session_timeout_prob=1.0",
+  "--tablet_copy_fault_crash_on_fetch_all=1.0"
+};
+INSTANTIATE_TEST_CASE_P(FailureCause, TabletCopyFailureITest,
+                        ::testing::ValuesIn(kTabletCopyFailureITestFlags));
+
 // Test that a failed tablet copy of a brand-new replica results in still being
 // able to vote while tombstoned.
-TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
+TEST_P(TabletCopyFailureITest, TestTabletCopyNewReplicaFailureCanVote) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
-  // We want all tablet copy attempts to fail after initial setup.
-  NO_FATALS(StartCluster({"--tablet_copy_early_session_timeout_prob=1.0"}, {},
-                         /*num_tablet_servers=*/ 4));
+  const string& failure_flag = GetParam();
+  NO_FATALS(StartCluster({failure_flag}, {}, /*num_tablet_servers=*/ 4));
   TestWorkload workload(cluster_.get());
   workload.Setup();
 
@@ -1118,10 +1141,6 @@ TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
     replica_uuids.insert(replica.ts_info().permanent_uuid());
   }
 
-  TServerDetails* leader_ts;
-  ASSERT_OK(itest::FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
-  ASSERT_OK(itest::WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout));
-
   string new_replica_uuid;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     if (!ContainsKey(replica_uuids, cluster_->tablet_server(i)->uuid())) {
@@ -1132,9 +1151,16 @@ TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
   ASSERT_FALSE(new_replica_uuid.empty());
   auto* new_replica_ts = ts_map_[new_replica_uuid];
 
-  // Adding a server will trigger a tablet copy.
-  ASSERT_OK(itest::AddServer(leader_ts, tablet_id, new_replica_ts, RaftPeerPB::VOTER,
-                             boost::none, kTimeout));
+  // Allow retries in case the tablet leadership is unstable.
+  ASSERT_EVENTUALLY([&] {
+    TServerDetails* leader_ts;
+    ASSERT_OK(itest::FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+    ASSERT_OK(itest::WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout));
+
+    // Adding a server will trigger a tablet copy.
+    ASSERT_OK(itest::AddServer(leader_ts, tablet_id, new_replica_ts, RaftPeerPB::VOTER,
+                              boost::none, kTimeout));
+  });
 
   // Wait until the new replica has done its initial download, and has either
   // failed or is about to fail (the check is nondeterministic) plus has
@@ -1155,6 +1181,16 @@ TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
     // Remove the "early timeout" flag.
     cluster_->tablet_server(i)->mutable_flags()->pop_back();
   }
+
+  TabletSuperBlockPB superblock;
+  ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(new_replica_idx, tablet_id, &superblock));
+  LOG(INFO) << "Restarting tablet servers. New replica TS UUID: " << new_replica_uuid
+            << ", tablet data state: "
+            << tablet::TabletDataState_Name(superblock.tablet_data_state())
+            << ", last-logged opid: " << superblock.tombstone_last_logged_opid();
+  ASSERT_TRUE(superblock.has_tombstone_last_logged_opid());
+  ASSERT_OPID_EQ(MakeOpId(1, 0), superblock.tombstone_last_logged_opid());
+
   ASSERT_OK(cluster_->master()->Restart());
   ASSERT_OK(cluster_->tablet_server_by_uuid(new_replica_uuid)->Restart());
   auto iter = replica_uuids.cbegin();
@@ -1167,6 +1203,85 @@ TEST_F(TabletCopyITest, TestTabletCopyNewReplicaFailureCanVote) {
     ASSERT_GE(workload.rows_inserted(), 100);
   });
   workload.StopAndJoin();
+}
+
+// Test that a failed tablet copy over a tombstoned replica retains the
+// last-logged OpId from the tombstoned replica.
+TEST_P(TabletCopyFailureITest, TestFailedTabletCopyRetainsLastLoggedOpId) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const string& tablet_copy_failure_flag = GetParam();
+  NO_FATALS(StartCluster({"--enable_leader_failure_detection=false",
+                          tablet_copy_failure_flag},
+                         {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"}));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+
+  int first_leader_index = 0;
+  TServerDetails* first_leader = ts_map_[cluster_->tablet_server(first_leader_index)->uuid()];
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(first_leader, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, kTimeout));
+  }
+
+  // Elect a leader for term 1, then generate some data to copy.
+  ASSERT_OK(itest::StartElection(first_leader, tablet_id, kTimeout));
+  workload.Start();
+  const int kMinBatches = 10;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_GE(workload.batches_completed(), kMinBatches);
+  });
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+
+  // Tombstone the first leader.
+  ASSERT_OK(itest::DeleteTablet(first_leader, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                kTimeout));
+
+  // We should end up with a last-logged opid in the superblock of the first leader.
+  tablet::TabletSuperBlockPB superblock_pb;
+  ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(first_leader_index, tablet_id, &superblock_pb));
+  ASSERT_TRUE(superblock_pb.has_tombstone_last_logged_opid());
+  consensus::OpId last_logged_opid = superblock_pb.tombstone_last_logged_opid();
+  ASSERT_EQ(1, last_logged_opid.term());
+  ASSERT_GT(last_logged_opid.index(), kMinBatches);
+  int64_t initial_mtime = inspect_->GetTabletSuperBlockMTimeOrDie(first_leader_index, tablet_id);
+
+  // Elect a new leader.
+  int second_leader_index = 1;
+  TServerDetails* second_leader = ts_map_[cluster_->tablet_server(second_leader_index)->uuid()];
+  ASSERT_OK(itest::StartElection(second_leader, tablet_id, kTimeout));
+
+  // The second leader will initiate a tablet copy on the first leader. Wait
+  // for it to fail (via crash or abort).
+  ASSERT_EVENTUALLY([&] {
+    // Superblock must have been modified.
+    int64_t cur_mtime = inspect_->GetTabletSuperBlockMTimeOrDie(first_leader_index, tablet_id);
+    ASSERT_GT(cur_mtime, initial_mtime);
+    ASSERT_OK(inspect_->CheckTabletDataStateOnTS(first_leader_index, tablet_id,
+                                                 { TABLET_DATA_COPYING, TABLET_DATA_TOMBSTONED }));
+  });
+
+  // Bounce the cluster to get rid of leaders and reach a steady state.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
+
+  // After failing the tablet copy, we should retain the old tombstoned
+  // tablet's last-logged opid.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(first_leader_index, tablet_id, &superblock_pb));
+    ASSERT_EQ(TABLET_DATA_TOMBSTONED, superblock_pb.tablet_data_state());
+    ASSERT_TRUE(superblock_pb.has_tombstone_last_logged_opid())
+        << SecureShortDebugString(superblock_pb);
+    ASSERT_OPID_EQ(last_logged_opid, superblock_pb.tombstone_last_logged_opid());
+  });
 }
 
 // This test uses CountBlocksUnderManagement() which only works with the
@@ -1185,9 +1300,9 @@ class BadTabletCopyITest : public TabletCopyITest,
 // server.
 const char* kFlagFaultOnFetch = "fault_crash_on_handle_tc_fetch_data";
 const char* kFlagEarlyTimeout = "tablet_copy_early_session_timeout_prob";
-const char* tablet_copy_failure_flags[] = { kFlagFaultOnFetch, kFlagEarlyTimeout };
+const char* kBadTabletCopyITestFlags[] = { kFlagFaultOnFetch, kFlagEarlyTimeout };
 INSTANTIATE_TEST_CASE_P(FaultFlags, BadTabletCopyITest,
-                        ::testing::ValuesIn(tablet_copy_failure_flags));
+                        ::testing::ValuesIn(kBadTabletCopyITestFlags));
 
 void BadTabletCopyITest::LoadTable(TestWorkload* workload, int min_rows, int min_blocks) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);

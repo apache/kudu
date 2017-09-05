@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -125,6 +126,7 @@ class BootstrapTest : public LogTestBase {
                                                partition.first,
                                                partition.second,
                                                TABLET_DATA_READY,
+                                               /*tombstone_last_logged_opid=*/ boost::none,
                                                meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
     if ((*meta)->GetRowSetForTests(0) != nullptr) {

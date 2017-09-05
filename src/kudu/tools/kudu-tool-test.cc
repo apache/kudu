@@ -1021,7 +1021,9 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   scoped_refptr<TabletMetadata> meta;
   TabletMetadata::CreateNew(&fs, kTestTablet, kTestTableName, kTestTableId,
                   kSchemaWithIds, partition.first, partition.second,
-                  tablet::TABLET_DATA_READY, &meta);
+                  tablet::TABLET_DATA_READY,
+                  /*tombstone_last_logged_opid=*/ boost::none,
+                  &meta);
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "
                                              "--fs_wal_dir=$1 "
