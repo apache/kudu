@@ -80,6 +80,8 @@ public class ITClientStress extends BaseKuduTest {
         cla.getAppendedText().contains("NullPointerException"));
     assertFalse("log contained SSLException",
         cla.getAppendedText().contains("SSLException"));
+    assertFalse("log contained IllegalStateException",
+        cla.getAppendedText().contains("IllegalStateException"));
   }
 
   /**
