@@ -258,7 +258,7 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
   clear_pending_config_unlocked();
 }
 
-Status ConsensusMetadata::Flush(FlushMode mode) {
+Status ConsensusMetadata::Flush(FlushMode flush_mode) {
   lock_guard<Mutex> l(lock_);
   MAYBE_FAULT(FLAGS_fault_crash_before_cmeta_flush);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
@@ -283,7 +283,7 @@ Status ConsensusMetadata::Flush(FlushMode mode) {
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
       fs_manager_->env(), meta_file_path, pb_,
-      mode == OVERWRITE ? pb_util::OVERWRITE : pb_util::NO_OVERWRITE,
+      flush_mode == OVERWRITE ? pb_util::OVERWRITE : pb_util::NO_OVERWRITE,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL
@@ -309,12 +309,23 @@ Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const std::string& peer_uuid,
                                  const RaftConfigPB& config,
                                  int64_t current_term,
+                                 ConsensusMetadataCreateMode create_mode,
                                  scoped_refptr<ConsensusMetadata>* cmeta_out) {
+
   scoped_refptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   cmeta->set_committed_config(config);
   cmeta->set_current_term(current_term);
-  RETURN_NOT_OK(cmeta->Flush(NO_OVERWRITE)); // Create() should not clobber.
-  cmeta_out->swap(cmeta);
+
+  if (create_mode == ConsensusMetadataCreateMode::FLUSH_ON_CREATE) {
+    RETURN_NOT_OK(cmeta->Flush(NO_OVERWRITE)); // Create() should not clobber.
+  } else {
+    // Sanity check: ensure that there is no cmeta file currently on disk.
+    const string& path = fs_manager->GetConsensusMetadataPath(tablet_id);
+    if (fs_manager->env()->FileExists(path)) {
+      return Status::AlreadyPresent(Substitute("File $0 already exists", path));
+    }
+  }
+  if (cmeta_out) *cmeta_out = std::move(cmeta);
   return Status::OK();
 }
 
@@ -327,7 +338,7 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
                                                  fs_manager->GetConsensusMetadataPath(tablet_id),
                                                  &cmeta->pb_));
   cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
-  cmeta_out->swap(cmeta);
+  if (cmeta_out) *cmeta_out = std::move(cmeta);
   return Status::OK();
 }
 

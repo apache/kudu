@@ -35,7 +35,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -83,7 +82,6 @@ namespace tablet {
 
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
@@ -137,9 +135,7 @@ class TabletReplicaTest : public KuduTabletTest {
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
         new ConsensusMetadataManager(tablet()->metadata()->fs_manager()));
 
-    scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm,
-                                    &cmeta));
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm));
 
     // "Bootstrap" and start the TabletReplica.
     tablet_replica_.reset(

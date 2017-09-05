@@ -37,6 +37,11 @@ namespace consensus {
 class ConsensusMetadataManager; // IWYU pragma: keep
 class ConsensusMetadataTest;    // IWYU pragma: keep
 
+enum class ConsensusMetadataCreateMode {
+  FLUSH_ON_CREATE,
+  NO_FLUSH_ON_CREATE,
+};
+
 // Provides methods to read, write, and persist consensus-related metadata.
 // This partly corresponds to Raft Figure 2's "Persistent state on all servers".
 //
@@ -144,7 +149,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   void MergeCommittedConsensusStatePB(const ConsensusStatePB& cstate);
 
   // Persist current state of the protobuf to disk.
-  Status Flush(FlushMode mode = OVERWRITE);
+  Status Flush(FlushMode flush_mode = OVERWRITE);
 
   int64_t flush_count_for_tests() const {
     return flush_count_for_tests_;
@@ -155,6 +160,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   friend class ConsensusMetadataManager;
 
   FRIEND_TEST(ConsensusMetadataTest, TestCreateLoad);
+  FRIEND_TEST(ConsensusMetadataTest, TestDeferredCreateLoad);
   FRIEND_TEST(ConsensusMetadataTest, TestCreateNoOverwrite);
   FRIEND_TEST(ConsensusMetadataTest, TestFailedLoad);
   FRIEND_TEST(ConsensusMetadataTest, TestFlush);
@@ -166,13 +172,18 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
                     std::string peer_uuid);
 
   // Create a ConsensusMetadata object with provided initial state.
-  // Encoded PB is flushed to disk before returning.
+  // If 'create_mode' is set to FLUSH_ON_CREATE, the encoded PB is flushed to
+  // disk before returning. Otherwise, if 'create_mode' is set to
+  // NO_FLUSH_ON_CREATE, the caller must explicitly call Flush() on the
+  // returned object to get the bytes onto disk.
   static Status Create(FsManager* fs_manager,
                        const std::string& tablet_id,
                        const std::string& peer_uuid,
                        const RaftConfigPB& config,
                        int64_t current_term,
-                       scoped_refptr<ConsensusMetadata>* cmeta_out);
+                       ConsensusMetadataCreateMode create_mode =
+                           ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                       scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Load a ConsensusMetadata object from disk.
   // Returns Status::NotFound if the file could not be found. May return other
@@ -180,7 +191,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   static Status Load(FsManager* fs_manager,
                      const std::string& tablet_id,
                      const std::string& peer_uuid,
-                     scoped_refptr<ConsensusMetadata>* cmeta_out);
+                     scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Delete the ConsensusMetadata file associated with the given tablet from
   // disk. Returns Status::NotFound if the on-disk data is not found.

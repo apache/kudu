@@ -33,7 +33,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -88,10 +87,10 @@ class BlockIdPB;
 
 namespace tserver {
 
-using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
+using consensus::kMinimumTerm;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
@@ -153,9 +152,7 @@ class TabletCopyTest : public KuduTabletTest {
 
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(
         new ConsensusMetadataManager(fs_manager()));
-    scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(),
-                                    config, consensus::kMinimumTerm, &cmeta));
+    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, kMinimumTerm));
 
     tablet_replica_.reset(
         new TabletReplica(tablet()->metadata(),

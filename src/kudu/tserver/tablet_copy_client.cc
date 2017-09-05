@@ -86,6 +86,13 @@ DEFINE_double(tablet_copy_fault_crash_on_fetch_all, 0.0,
 TAG_FLAG(tablet_copy_fault_crash_on_fetch_all, unsafe);
 TAG_FLAG(tablet_copy_fault_crash_on_fetch_all, runtime);
 
+DEFINE_double(tablet_copy_fault_crash_before_write_cmeta, 0.0,
+              "Fraction of the time that the server will crash before the "
+              "TabletCopyClient persists the ConsensusMetadata file. "
+              "(For testing only!)");
+TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, unsafe);
+TAG_FLAG(tablet_copy_fault_crash_before_write_cmeta, runtime);
+
 DECLARE_int32(tablet_copy_transfer_chunk_size_bytes);
 
 METRIC_DEFINE_counter(server, tablet_copy_bytes_fetched,
@@ -318,7 +325,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
     // HACK: Set the initial tombstoned last-logged OpId to 1.0 when copying a
     // replica for the first time, so that if the tablet copy fails, the
     // tombstoned replica will still be able to vote.
-    // TODO(mpercy): Give this particular OpId a name.
+    // TODO(KUDU-2122): Give this particular OpId a name.
     *superblock_->mutable_tombstone_last_logged_opid() = MakeOpId(1, 0);
     Partition partition;
     Partition::FromPB(superblock_->partition(), &partition);
@@ -592,13 +599,13 @@ Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
 }
 
 Status TabletCopyClient::WriteConsensusMetadata() {
+  MAYBE_FAULT(FLAGS_tablet_copy_fault_crash_before_write_cmeta);
+
   // If we didn't find a previous consensus meta file, create one.
   if (!cmeta_) {
-    scoped_refptr<ConsensusMetadata> cmeta;
     return cmeta_manager_->Create(tablet_id_,
                                   remote_cstate_->committed_config(),
-                                  remote_cstate_->current_term(),
-                                  &cmeta);
+                                  remote_cstate_->current_term());
   }
 
   // Otherwise, update the consensus metadata to reflect the config and term

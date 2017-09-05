@@ -256,8 +256,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   }
 
   string tablet_id = metadata->tablet_id();
-  scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, consensus::kMinimumTerm, &cmeta),
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, consensus::kMinimumTerm),
                         "Unable to persist consensus metadata for tablet " + tablet_id);
 
   return SetupTablet(metadata);

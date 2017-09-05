@@ -74,7 +74,9 @@ TEST_F(ConsensusMetadataManagerTest, TestCreateLoad) {
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Create a new ConsensusMetadata instance.
-  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm, &cmeta));
+  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm,
+                                   ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                                   &cmeta));
 
   // Load it back.
   ASSERT_OK(cmeta_manager_->Load(kTabletId, &cmeta));
@@ -85,33 +87,73 @@ TEST_F(ConsensusMetadataManagerTest, TestCreateLoad) {
       << DiffRaftConfigs(config_, cmeta->CommittedConfig());
 }
 
+// Test the LoadOrCreate() API.
+TEST_F(ConsensusMetadataManagerTest, TestLoadOrCreate) {
+  // Initial Load() should fail due to non-existence.
+  Status s = cmeta_manager_->Load(kTabletId);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  {
+    // Create as needed (this call will perform the creation).
+    scoped_refptr<ConsensusMetadata> cmeta;
+    ASSERT_OK(cmeta_manager_->LoadOrCreate(kTabletId, config_, kInitialTerm,
+                                           ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                                           &cmeta));
+    ASSERT_TRUE(cmeta); // Ensure that the create path returns a valid cmeta.
+  }
+
+  // Load (this should not need to perform the creation).
+  scoped_refptr<ConsensusMetadata> cmeta;
+  ASSERT_OK(cmeta_manager_->LoadOrCreate(kTabletId,
+                                         /*config=*/ RaftConfigPB(), // Empty config.
+                                         /*initial_term=*/ 123,      // Different term.
+                                         ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                                         &cmeta));
+  ASSERT_TRUE(cmeta); // Ensure that the load path returns a valid cmeta.
+
+  // Ensure we got the results of what we requested to create in our first
+  // LoadOrCreate() call, above, not the second call.
+  ASSERT_EQ(kInitialTerm, cmeta->current_term());
+  ASSERT_TRUE(MessageDifferencer::Equals(config_, cmeta->CommittedConfig()))
+      << DiffRaftConfigs(config_, cmeta->CommittedConfig());
+}
+
 // Test Delete.
 TEST_F(ConsensusMetadataManagerTest, TestDelete) {
   // Create a ConsensusMetadata instance.
-  scoped_refptr<ConsensusMetadata> cmeta;
-  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm, &cmeta));
+  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm));
 
   // Now delete it.
   ASSERT_OK(cmeta_manager_->Delete(kTabletId));
 
   // Can't load it because it's gone.
-  Status s = cmeta_manager_->Load(kTabletId, &cmeta);
+  Status s = cmeta_manager_->Load(kTabletId);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+}
+
+// Test attempting to create multiple "unflushed" cmeta instances.
+TEST_F(ConsensusMetadataManagerTest, TestCreateMultipleUnFlushedCMetas) {
+  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm,
+                                   ConsensusMetadataCreateMode::NO_FLUSH_ON_CREATE));
+  Status s = cmeta_manager_->Create(kTabletId, config_, kInitialTerm,
+                                    ConsensusMetadataCreateMode::NO_FLUSH_ON_CREATE);
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "exists");
 }
 
 // Test that we can't clobber (overwrite) an existing cmeta.
 TEST_F(ConsensusMetadataManagerTest, TestNoClobber) {
   // Create a ConsensusMetadata instance.
-  {
-    scoped_refptr<ConsensusMetadata> cmeta;
-    ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm, &cmeta));
-  }
+  ASSERT_OK(cmeta_manager_->Create(kTabletId, config_, kInitialTerm));
 
-  // Creating it again should fail.
-  scoped_refptr<ConsensusMetadata> cmeta;
-  Status s = cmeta_manager_->Create(kTabletId, config_, kInitialTerm, &cmeta);
-  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "already exists");
+  // Creating it again should fail, both in FLUSH_ON_CREATE and
+  // NO_FLUSH_ON_CREATE modes.
+  for (auto create_mode : { ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                            ConsensusMetadataCreateMode::NO_FLUSH_ON_CREATE }) {
+    Status s = cmeta_manager_->Create(kTabletId, config_, kInitialTerm, create_mode);
+    ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "already exists");
+  }
 }
 
 } // namespace consensus

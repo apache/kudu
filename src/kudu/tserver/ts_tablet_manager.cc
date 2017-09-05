@@ -124,6 +124,7 @@ class Tablet;
 }
 
 using consensus::ConsensusMetadata;
+using consensus::ConsensusMetadataCreateMode;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::OpIdToString;
@@ -296,8 +297,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletReplica and RaftConsensus implementation.
-  scoped_refptr<ConsensusMetadata> cmeta;
-  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, kMinimumTerm, &cmeta),
+  RETURN_NOT_OK_PREPEND(cmeta_manager_->Create(tablet_id, config, kMinimumTerm),
                         "Unable to create new ConsensusMetadata for tablet " + tablet_id);
   scoped_refptr<TabletReplica> new_replica;
   RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &new_replica));
@@ -1071,6 +1071,27 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   if (data_state == TABLET_DATA_COPYING) {
     // We tombstone tablets that failed to copy.
     data_state = TABLET_DATA_TOMBSTONED;
+  }
+
+  if (data_state == TABLET_DATA_TOMBSTONED) {
+    // It is possible for tombstoned replicas to legitimately not have a cmeta
+    // file as a result of crashing during a first tablet copy, or failing a
+    // tablet copy operation in an older version of Kudu. Not having a cmeta
+    // file results in those tombstoned replicas being unable to vote in Raft
+    // leader elections. We remedy this by creating a cmeta object (with an
+    // empty config) at startup time. The empty config is safe for a tombstoned
+    // replica, because the config doesn't affect a replica's ability to vote
+    // in a leader election. Additionally, if the tombstoned replica were ever
+    // to be overwritten by a tablet copy operation, that would also result in
+    // overwriting the config stored in the local cmeta with a valid Raft
+    // config. Finally, all of this assumes that the nonexistence of a cmeta
+    // file guarantees that the replica has never voted in a leader election.
+    //
+    // As an optimization, the cmeta is created with the NO_FLUSH_ON_CREATE
+    // flag, meaning that it will only be flushed to disk if the replica ever
+    // votes.
+    RETURN_NOT_OK(cmeta_manager_->LoadOrCreate(tablet_id, RaftConfigPB(), kMinimumTerm,
+                                               ConsensusMetadataCreateMode::NO_FLUSH_ON_CREATE));
   }
 
   if (!skip_deletion) {

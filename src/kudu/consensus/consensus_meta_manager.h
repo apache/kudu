@@ -20,6 +20,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
@@ -29,7 +30,6 @@ class FsManager;
 class Status;
 
 namespace consensus {
-class ConsensusMetadata;
 class RaftConfigPB;
 
 // API and implementation for a consensus metadata "manager" that controls
@@ -53,16 +53,30 @@ class ConsensusMetadataManager : public RefCountedThreadSafe<ConsensusMetadataMa
   // Returns an error if a ConsensusMetadata instance with that key already exists.
   Status Create(const std::string& tablet_id,
                 const RaftConfigPB& config,
-                int64_t current_term,
+                int64_t initial_term,
+                ConsensusMetadataCreateMode create_mode =
+                    ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
                 scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Load the ConsensusMetadata instance keyed by 'tablet_id'.
-  // Returns an error if it cannot be found.
+  // Returns an error if it cannot be found, either in 'cmeta_cache_' or on
+  // disk.
   Status Load(const std::string& tablet_id,
-              scoped_refptr<ConsensusMetadata>* cmeta_out);
+              scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
+
+  // Load the ConsensusMetadata instance keyed by 'tablet_id' if it exists,
+  // otherwise create it using the given parameters 'config' and
+  // 'initial_term'. If the instance already exists, those parameters are
+  // ignored.
+  Status LoadOrCreate(const std::string& tablet_id,
+                      const RaftConfigPB& config,
+                      int64_t initial_term,
+                      ConsensusMetadataCreateMode create_mode =
+                          ConsensusMetadataCreateMode::FLUSH_ON_CREATE,
+                      scoped_refptr<ConsensusMetadata>* cmeta_out = nullptr);
 
   // Permanently delete the ConsensusMetadata instance keyed by 'tablet_id'.
-  // Returns Status::NotFound if the instance cannot be found.
+  // Returns Status::NotFound if the instance does not exist on disk.
   // Returns another error if the cmeta instance exists but cannot be deleted
   // for some reason, perhaps due to a permissions or I/O-related issue.
   Status Delete(const std::string& tablet_id);
