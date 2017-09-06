@@ -21,10 +21,14 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
-#include "kudu/util/env.h"
-#include "kudu/util/random.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/random.h"
+
+using std::string;
 
 namespace kudu {
 
@@ -40,6 +44,13 @@ void RandomString(void* dest, size_t n, Random* rng) {
     }
   }
   memcpy(cdest + i, &random, n - i);
+}
+
+string RandomString(size_t n, Random* rng) {
+  faststring s;
+  s.resize(n);
+  RandomString(s.data(), n, rng);
+  return s.ToString();
 }
 
 uint32_t GetRandomSeed32() {

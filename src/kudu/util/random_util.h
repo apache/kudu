@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <stdint.h>
 
+#include <string>
+
 namespace kudu {
 
 class Random;
@@ -29,6 +31,9 @@ class Random;
 // Note RandomString() does not null-terminate its strings, though '\0' could
 // be written to dest with the same probability as any other byte.
 void RandomString(void* dest, size_t n, Random* rng);
+
+// Same as the above, but returns the string.
+std::string RandomString(size_t n, Random* rng);
 
 // Generate a 32-bit random seed from several sources, including timestamp,
 // pid & tid.

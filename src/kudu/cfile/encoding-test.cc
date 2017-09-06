@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <ostream>
@@ -44,7 +45,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -89,15 +89,17 @@ class TestEncoding : public KuduTest {
   }
 
   // Insert a given number of strings into the provided BlockBuilder.
+  //
+  // The strings are generated using the provided 'formatter' function.
   template<class BuilderType>
   static Slice CreateBinaryBlock(BuilderType *sbb,
                                  int num_items,
-                                 const char *fmt_str) {
-    vector<unique_ptr<string>> to_insert;
+                                 const std::function<string(int)>& formatter) {
+    vector<string> to_insert(num_items);
     vector<Slice> slices;
-    for (uint i = 0; i < num_items; i++) {
-      to_insert.emplace_back(new string(StringPrintf(fmt_str, i)));
-      slices.emplace_back(to_insert.back()->data());
+    for (int i = 0; i < num_items; i++) {
+      to_insert[i] = formatter(i);
+      slices.emplace_back(to_insert[i]);
     }
 
     int rem = slices.size();
@@ -126,7 +128,8 @@ class TestEncoding : public KuduTest {
     BuilderType sbb(opts.get());
     // Insert "hello 0" through "hello 9"
     const uint kCount = 10;
-    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
+    Slice s = CreateBinaryBlock(
+        &sbb, kCount, std::bind(StringPrintf, "hello %d", std::placeholders::_1));
     DecoderType sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -180,7 +183,8 @@ class TestEncoding : public KuduTest {
     BinaryPrefixBlockBuilder sbb(opts.get());
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
-    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %03d");
+    Slice s = CreateBinaryBlock(
+        &sbb, kCount, std::bind(StringPrintf, "hello %03d", std::placeholders::_1));
     BinaryPrefixBlockDecoder sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -251,44 +255,34 @@ class TestEncoding : public KuduTest {
     }
   }
 
-  // Create a printf-style format string of the form 'XXXXXXXX%d' where the 'X' characters
-  // are random bytes (not including '%', possibly including non-printable characters).
-  static string RandomFormatString(Random* r) {
-    char buf[8];
-    RandomString(buf, arraysize(buf), r);
-    string format_string(buf, arraysize(buf));
-    for (int i = 0; i < format_string.size(); i++) {
-      if (format_string[i] == '%') {
-        format_string[i] = 'x';
-      }
-    }
-    return format_string + "%d";
-  }
-
   template<class BuilderType, class DecoderType>
   void TestBinaryBlockRoundTrip() {
     gscoped_ptr<WriterOptions> opts(NewWriterOptions());
     BuilderType sbb(opts.get());
 
-    // Generate a random format string which uses some binary data.
+    auto seed = SeedRandom();
+    Random r(seed);
+
+    // For each row, generate random data based on this run's seed.
     // Using random data helps the ability to trigger bugs like KUDU-2085.
-    Random r(SeedRandom());
-    const string& format_string = RandomFormatString(&r);
-    const auto& GenTestString = [&](int x) {
-      return StringPrintf(format_string.c_str(), x);
+    const auto& GenTestString = [seed](int i) {
+      Random local_rng(seed + i);
+      int len = local_rng.Uniform(8);
+      return RandomString(len, &local_rng);
     };
 
-    // Use a random number of elements. This is necessary to trigger bugs
-    // like KUDU-2085 that only occur in specific cases such as when
-    // the number of elements is a multiple of the 'restart interval'
-    // in prefix-encoded blocks.
-    const uint kCount = r.Uniform(1000);
-    Slice s = CreateBinaryBlock(&sbb, kCount, format_string.c_str());
+    // Use a random number of elements (but at least 1).
+    //
+    // This is necessary to trigger bugs like KUDU-2085 that only occur in specific cases
+    // such as when the number of elements is a multiple of the 'restart interval' in
+    // prefix-encoded blocks.
+    const uint kCount = r.Uniform(1000) + 1;
+    Slice s = CreateBinaryBlock(&sbb, kCount, GenTestString);
 
     LOG(INFO) << "Block: " << HexDump(s);
 
-    // the slice should take at least a few bytes per entry
-    ASSERT_GT(s.size(), kCount * 2u);
+    // The encoded data should take at least 1 byte per entry.
+    ASSERT_GT(s.size(), kCount);
 
     // Check first/last keys
     Slice key;
@@ -480,7 +474,8 @@ class TestEncoding : public KuduTest {
     const uint kCount = 10;
     size_t sbsize;
 
-    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
+    Slice s = CreateBinaryBlock(
+        &sbb, kCount, std::bind(StringPrintf, "hello %d", std::placeholders::_1));
     do {
       sbsize = s.size();
 
