@@ -254,8 +254,8 @@ $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
   or an alias in /etc/hosts. The alias should be an abstract representation of the master (e.g.
   `master-1`).
 +
-WARNING: Without DNS aliases it is not possible to recover from permanent master failures, and as
-such it is highly recommended.
+WARNING: Without DNS aliases it is not possible to recover from permanent master failures without
+bringing the cluster down for maintenance, and as such, it is highly recommended.
 +
 . Perform the following preparatory steps for each new master:
 * Choose an unused machine in the cluster. The master generates very little load so it can be
@@ -267,6 +267,7 @@ such it is highly recommended.
 * Choose and record the port the master should use for RPCs.
 * Optional: configure a DNS alias for the master (e.g. `master-2`, `master-3`, etc).
 
+[[perform-the-migration]]
 ==== Perform the migration
 
 . Stop all the Kudu processes in the entire cluster.
@@ -379,11 +380,12 @@ master.
 
 Due to https://issues.apache.org/jira/browse/KUDU-1620[KUDU-1620], it is not possible to perform
 this workflow without also restarting the live masters. As such, the workflow requires a
-maintenance window, albeit a brief one as masters generally restart quickly.
+maintenance window, albeit a potentially brief one if the cluster was set up with DNS aliases.
 
-WARNING: Kudu does not yet support Raft configuration changes for masters. As such, it is only
-possible to replace a master if the deployment was created with DNS aliases. See the
-<<migrate_to_multi_master,multi-master migration workflow>> for more details.
+WARNING: Kudu does not yet support live Raft configuration changes for masters. As such, it is only
+possible to replace a master if the deployment was created with DNS aliases or if every node in the
+cluster is first shut down. See the <<migrate_to_multi_master,multi-master migration workflow>> for
+more details on deploying with DNS aliases.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
 using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
@@ -392,6 +394,11 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 `kudu`.
 
 ==== Prepare for the recovery
+
+. If the deployment was configured without DNS aliases perform the following steps:
+* Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+  will be unavailable.
+* Shut down all Kudu tablet server processes in the cluster.
 
 . Ensure that the dead master is well and truly dead. Take whatever steps needed to prevent it from
   accidentally restarting; this can be quite dangerous for the cluster post-recovery.
@@ -503,14 +510,75 @@ $ kudu local_replica copy_from_remote --fs_wal_dir=/var/lib/kudu/master 00000000
   master's alias.
 * Add the port number (separated by a colon) if using a non-default RPC port value.
 
-. Reconfigure the DNS alias for the dead master to point at the replacement master.
+. If the cluster was set up with DNS aliases, reconfigure the DNS alias for the dead master to point
+  at the replacement master.
+
+. If the cluster was set up without DNS aliases, perform the following steps:
+* Stop the remaining live masters.
+* Rewrite the Raft configurations on these masters to include the replacement master. See Step 4 of
+  <<perform-the-migration, Perform the Migration>> for more details.
 
 . Start the replacement master.
 
-. Restart the existing live masters. This results in a brief availability outage, but it should
-  last only as long as it takes for the masters to come back up.
+. Restart the remaining masters in the new multi-master deployment. While the masters are shut down,
+  there will be an availability outage, but it should last only as long as it takes for the masters
+  to come back up.
 
 Congratulations, the dead master has been replaced! To verify that all masters are working properly,
+consider performing the following sanity checks:
+
+* Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
+  be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+  contents of /masters on each master should be the same.
+
+* Run a Kudu system check (ksck) on the cluster using the `kudu` command line
+  tool. See <<ksck>> for more details.
+
+=== Removing Kudu Masters from a Multi-Master Deployment
+
+In the event that a multi-master deployment has been overallocated nodes, the following steps should
+be taken to remove the unwanted masters.
+
+WARNING: In planning the new multi-master configuration, keep in mind that the number of masters
+should be odd and that three or five node master configurations are recommended.
+
+WARNING: Dropping the number of masters below the number of masters currently needed for a Raft
+majority can incur data loss. To mitigate this, ensure that the leader master is not removed during
+this process.
+
+==== Prepare for the removal
+
+. Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.
+
+. Identify the UUID and RPC address current leader of the multi-master deployment by visiting the
+`/masters` page of any master's web UI. This master must not be removed during this process; its
+removal may result in severe data loss.
+
+. Stop all the Kudu processes in the entire cluster.
+
+. If using CM, remove the unwanted Kudu master.
+
+==== Perform the removal
+
+. Rewrite the Raft configuration on the remaining masters to include only the remaining masters. See
+Step 4 of <<perform-the-migration,Perform the Migration>> for more details.
+
+. Remove the data directories and WAL directory on the unwanted masters. This is a precaution to
+ensure that they cannot start up again and interfere with the new multi-master deployment.
+
+. Modify the value of the `master_addresses` configuration parameter for the masters of the new
+multi-master deployment. If migrating to a single-master deployment, the `master_addresses` flag
+should be omitted entirely.
+
+. Start all of the masters that were not removed.
+
+. Modify the value of the `tserver_master_addrs` configuration parameter for the tablet servers to
+remove any unwanted masters.
+
+. Start all of the tablet servers.
+
+Congratulations, the masters have now been removed! To verify that all masters are working properly,
 consider performing the following sanity checks:
 
 * Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
