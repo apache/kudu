@@ -501,6 +501,18 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
     return metric_map_.size();
   }
 
+  // Mark this entity as unpublished. This will cause the registry to retire its metrics
+  // and unregister it.
+  void Unpublish() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    published_ = false;
+  }
+
+  bool published() {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return published_;
+  }
+
  private:
   friend class MetricRegistry;
   friend class RefCountedThreadSafe<MetricEntity>;
@@ -522,11 +534,14 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // Map from metric name to Metric object. Protected by lock_.
   MetricMap metric_map_;
 
-  // The key/value attributes. Protected by lock_
+  // The key/value attributes. Protected by lock_.
   AttributeMap attributes_;
 
   // The set of metrics which should never be retired. Protected by lock_.
   std::vector<scoped_refptr<Metric> > never_retire_metrics_;
+
+  // Whether this entity is published. Protected by lock_.
+  bool published_;
 };
 
 // Base class to allow for putting all metrics into a single container.

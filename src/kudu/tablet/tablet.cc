@@ -299,6 +299,9 @@ void Tablet::Shutdown() {
   std::lock_guard<rw_spinlock> lock(component_lock_);
   components_ = nullptr;
   state_ = kShutdown;
+  if (metric_entity_) {
+    metric_entity_->Unpublish();
+  }
 
   // In the case of deleting a tablet, we still keep the metadata around after
   // ShutDown(), and need to flush the metadata to indicate that the tablet is deleted.

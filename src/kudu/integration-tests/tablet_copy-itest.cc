@@ -124,10 +124,12 @@ using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
+METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateConsensus);
 METRIC_DECLARE_counter(glog_info_messages);
 METRIC_DECLARE_counter(glog_warning_messages);
 METRIC_DECLARE_counter(glog_error_messages);
+METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(tablet_copy_bytes_fetched);
 METRIC_DECLARE_counter(tablet_copy_bytes_sent);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
@@ -1624,6 +1626,17 @@ int64_t CountBootstrappingTablets(ExternalTabletServer *ets) {
       &ret));
   return ret;
 }
+
+int64_t CountRowsInserted(ExternalTabletServer *ets) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+      &METRIC_ENTITY_tablet,
+      nullptr,
+      &METRIC_rows_inserted,
+      "value",
+      &ret));
+  return ret;
+}
 } // anonymous namespace
 
 // Check that state metrics work during tablet copy.
@@ -1676,16 +1689,67 @@ TEST_F(TabletCopyITest, TestTabletStateMetricsDuringTabletCopy) {
   });
 
   // Wait for the tablet to be revived via tablet copy.
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
-      follower_index, tablet_id,
-      { tablet::TABLET_DATA_READY },
-      kTimeout));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
+                                                 { tablet::TABLET_DATA_READY },
+                                                 kTimeout));
 
   // State: 1 running or bootstrapping tablet.
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)) +
                  CountBootstrappingTablets(cluster_->tablet_server(follower_index)));
   });
+}
+
+TEST_F(TabletCopyITest, TestMetricsResetAfterRevival) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kTsIndex = 1; // Pick a random TS.
+  NO_FATALS(StartCluster());
+
+  // Populate the tablet with some data.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Ensure all the servers agree before we proceed.
+  ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
+                                  workload.batches_completed()));
+
+  // Find the leader so we can tombstone a follower, which makes the test faster and more focused.
+  int leader_index;
+  int follower_index;
+  ASSERT_EVENTUALLY([&]() {
+    TServerDetails* leader_ts;
+    TServerDetails* follower_ts;
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+    leader_index = cluster_->tablet_server_index_by_uuid(leader_ts->uuid());
+    follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
+    follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
+
+    // Make sure the metrics reflect that some rows have been inserted.
+    ASSERT_GT(CountRowsInserted(cluster_->tablet_server(follower_index)), 0);
+
+    // Tombstone the tablet on the follower.
+    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
+                                  TABLET_DATA_TOMBSTONED,
+                                  boost::none, kTimeout));
+  });
+
+  // Wait for the tablet to be revived via tablet copy.
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
+                                                 { tablet::TABLET_DATA_READY },
+                                                 kTimeout));
+
+  // The rows inserted should have reset back to 0.
+  ASSERT_EQ(0, CountRowsInserted(cluster_->tablet_server(follower_index)));
 }
 
 // Test that tablet copy session initialization can handle concurrency when

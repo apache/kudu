@@ -2609,5 +2609,52 @@ TEST_F(TabletServerTest, TestDataDirGroupsCreated) {
   ASSERT_TRUE(md.Compare(orig_group, new_group));
 }
 
+TEST_F(TabletServerTest, TestNoMetricsForTombstonedTablet) {
+  // Force the metrics to be retired immediately.
+  FLAGS_metrics_retirement_age_ms = 0;
+
+  scoped_refptr<TabletReplica> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+
+  // Insert one row and check the insertion is recorded in the metrics.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  scoped_refptr<Counter> rows_inserted =
+      METRIC_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
+  int64_t num_rows_running = rows_inserted->value();
+  ASSERT_EQ(1, num_rows_running);
+
+  // Tombstone the tablet.
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
+  req.set_tablet_id(kTabletId);
+  req.set_delete_type(tablet::TABLET_DATA_TOMBSTONED);
+  {
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // It takes three calls to /jsonmetricz for the tablet metrics to go away, based on the
+  // policy in MetricRegistry::RetireOldMetrics:
+  // 1. The entity's metrics are returned, but also marked for retirement.
+  // 2. The entity's metrics are returned, but also retired (causing the entity to be retired).
+  // 3. The metrics aren't returned-- the entity has been removed from the metrics registry.
+  EasyCurl c;
+  faststring buf;
+  for (int i = 0; i < 3; i++) {
+    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/jsonmetricz",
+                                             mini_server_->bound_http_addr().ToString()),
+                         &buf));
+    if (i < 2) {
+      ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
+    } else {
+      ASSERT_STR_NOT_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
+    }
+  }
+}
+
 } // namespace tserver
 } // namespace kudu

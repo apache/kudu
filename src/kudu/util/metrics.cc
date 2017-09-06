@@ -164,7 +164,8 @@ MetricEntity::MetricEntity(const MetricEntityPrototype* prototype,
                            std::string id, AttributeMap attributes)
     : prototype_(prototype),
       id_(std::move(id)),
-      attributes_(std::move(attributes)) {}
+      attributes_(std::move(attributes)),
+      published_(true) {}
 
 MetricEntity::~MetricEntity() {
 }
@@ -264,7 +265,7 @@ void MetricEntity::RetireOldMetrics() {
   for (auto it = metric_map_.begin(); it != metric_map_.end();) {
     const scoped_refptr<Metric>& metric = it->second;
 
-    if (PREDICT_TRUE(!metric->HasOneRef())) {
+    if (PREDICT_TRUE(!metric->HasOneRef() && published_)) {
       // The metric is still in use. Note that, in the case of "NeverRetire()", the metric
       // will have a ref-count of 2 because it is reffed by the 'never_retire_metrics_'
       // collection.
@@ -278,8 +279,8 @@ void MetricEntity::RetireOldMetrics() {
     }
 
     if (!metric->retire_time_.Initialized()) {
-      VLOG(3) << "Metric " << it->first << " has become un-referenced. Will retire after "
-              << "the retention interval";
+      VLOG(3) << "Metric " << it->first << " has become un-referenced or unpublished. "
+              << "Will retire after the retention interval";
       // This is the first time we've seen this metric as retirable.
       metric->retire_time_ =
           now + MonoDelta::FromMilliseconds(FLAGS_metrics_retirement_age_ms);
@@ -358,8 +359,10 @@ void MetricRegistry::RetireOldMetrics() {
   for (auto it = entities_.begin(); it != entities_.end();) {
     it->second->RetireOldMetrics();
 
-    if (it->second->num_metrics() == 0 && it->second->HasOneRef()) {
-      // No metrics and no external references to this entity, so we can retire it.
+    if (it->second->num_metrics() == 0 &&
+        (it->second->HasOneRef() || !it->second->published())) {
+      // This entity has no metrics and either has no more external references or has
+      // been marked as unpublished, so we can remove it.
       // Unlike retiring the metrics themselves, we don't wait for any timeout
       // to retire them -- we assume that that timed retention has been satisfied
       // by holding onto the metrics inside the entity.
@@ -476,6 +479,9 @@ scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
   if (!e) {
     e = new MetricEntity(prototype, id, initial_attributes);
     InsertOrDie(&entities_, id, e);
+  } else if (!e->published()) {
+    e = new MetricEntity(prototype, id, initial_attributes);
+    entities_[id] = e;
   } else {
     e->SetAttributes(initial_attributes);
   }
