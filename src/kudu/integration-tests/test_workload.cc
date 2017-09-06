@@ -271,9 +271,26 @@ void TestWorkload::Setup() {
         .set_range_partition_columns({ "key" })
         .split_rows(splits)
         .Create();
-    if (!s.ok() && !s.IsAlreadyPresent() && !s.IsServiceUnavailable()) {
-      // TODO(KUDU-1537): Should be fixed with Exactly Once semantics.
-      LOG(FATAL) << s.ToString();
+    if (!s.ok()) {
+      if (!s.IsAlreadyPresent() && !s.IsServiceUnavailable()) {
+        // TODO(KUDU-1537): Should be fixed with Exactly Once semantics.
+        LOG(FATAL) << s.ToString();
+      }
+
+      // If Create() failed in a non-fatal way, we still need to wait for the
+      // table to finish creating.
+      MonoTime deadline(MonoTime::Now() + client_->default_admin_operation_timeout());
+      while (true) {
+        bool still_creating;
+        CHECK_OK(client_->IsCreateTableInProgress(table_name_, &still_creating));
+        if (!still_creating) {
+          break;
+        }
+        if (MonoTime::Now() > deadline) {
+          LOG(FATAL) << "Timed out waiting for table to finish creating";
+        }
+        SleepFor(MonoDelta::FromMilliseconds(10));
+      }
     }
   } else {
     KuduSchema existing_schema;
