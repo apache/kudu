@@ -721,3 +721,10 @@ build_sparsehash() {
   rsync -av --delete sparsehash/ $PREFIX/include/sparsehash/
   popd
 }
+
+build_sparsepp() {
+  # This library is header-only, so we just copy the headers
+  pushd $SPARSEPP_SOURCE
+  rsync -av --delete sparsepp/ $PREFIX/include/sparsepp/
+  popd
+}

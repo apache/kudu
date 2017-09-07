@@ -94,6 +94,7 @@ else
       "boost")        F_BOOST=1 ;;
       "breakpad")     F_BREAKPAD=1 ;;
       "sparsehash")   F_SPARSEHASH=1 ;;
+      "sparsepp")     F_SPARSEPP=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -230,6 +231,10 @@ fi
 
 if [ -n "$F_COMMON" -o -n "$F_SPARSEHASH" ]; then
   build_sparsehash
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_SPARSEPP" ]; then
+  build_sparsepp
 fi
 
 ### Build C dependencies without instrumentation

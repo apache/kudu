@@ -325,5 +325,15 @@ if [ ! -d "$SPARSEHASH_SOURCE" ]; then
   popd
 fi
 
+SPARSEPP_PATCHLEVEL=0
+delete_if_wrong_patchlevel $SPARSEPP_SOURCE $SPARSEPP_PATCHLEVEL
+if [ ! -d "$SPARSEPP_SOURCE" ]; then
+  fetch_and_expand sparsepp-${SPARSEPP_VERSION}.tar.gz
+  pushd $SPARSEPP_SOURCE
+  touch patchlevel-$SPARSEPP_PATCHLEVEL
+  popd
+fi
+
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

@@ -188,3 +188,14 @@ BREAKPAD_SOURCE=$TP_SOURCE_DIR/$BREAKPAD_NAME
 SPARSEHASH_VERSION=47a55825ca3b35eab1ca22b7ab82b9544e32a9af
 SPARSEHASH_NAME=sparsehash-c11-$SPARSEHASH_VERSION
 SPARSEHASH_SOURCE=$TP_SOURCE_DIR/$SPARSEHASH_NAME
+
+# Hash of the sparsepp git revision to use.
+# (from https://github.com/greg7mdp/sparsepp)
+#
+# To re-build this tarball use the following in the sparsepp repo:
+#  export NAME=sparsepp-$(git rev-parse HEAD)
+#  git archive HEAD --prefix=$NAME/ -o /tmp/$NAME.tar.gz
+#  s3cmd put -P /tmp/$NAME.tar.gz s3://cloudera-thirdparty-libs/$NAME.tar.gz
+SPARSEPP_VERSION=824860bb76893d163efbcff330734b9f62eecb17
+SPARSEPP_NAME=sparsepp-$SPARSEPP_VERSION
+SPARSEPP_SOURCE=$TP_SOURCE_DIR/$SPARSEPP_NAME

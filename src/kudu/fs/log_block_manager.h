@@ -28,8 +28,8 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>  // IWYU pragma: keep
-#include <sparsehash/sparse_hash_map>
 #include <gtest/gtest_prod.h>
+#include <sparsepp/spp.h>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -203,7 +203,7 @@ class LogBlockManager : public BlockManager {
   // We use sparse_hash_map<> here to reduce memory overhead.
   typedef MemTrackerAllocator<
       std::pair<const BlockId, scoped_refptr<internal::LogBlock>>> BlockAllocator;
-  typedef google::sparse_hash_map<
+  typedef spp::sparse_hash_map<
       BlockId,
       scoped_refptr<internal::LogBlock>,
       BlockIdHash,
