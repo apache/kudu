@@ -73,8 +73,8 @@
 #include <linux/falloc.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
-#include <linux/kernel.h>
 #include <linux/magic.h>
+#include <linux/sysinfo.h>
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #include <sys/vfs.h>  // IWYU pragma: keep
@@ -168,12 +168,12 @@ DEFINE_bool(env_use_ioctl_hole_punch_on_xfs, true,
 TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, advanced);
 TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, experimental);
 
-DEFINE_bool(suicide_on_eio, true,
+DEFINE_bool(crash_on_eio, true,
             "Kill the process if an I/O operation results in EIO. If false, "
             "I/O resulting in EIOs will return the status IOError and leave "
             "error-handling up to the caller.");
-TAG_FLAG(suicide_on_eio, advanced);
-TAG_FLAG(suicide_on_eio, experimental);
+TAG_FLAG(crash_on_eio, advanced);
+TAG_FLAG(crash_on_eio, experimental);
 
 DEFINE_bool(never_fsync, false,
             "Never fsync() anything to disk. This is used by certain test cases to "
@@ -308,7 +308,7 @@ Status IOError(const std::string& context, int err_number) {
     case EOPNOTSUPP:
       return Status::NotSupported(context, ErrnoToString(err_number), err_number);
     case EIO:
-      if (FLAGS_suicide_on_eio) {
+      if (FLAGS_crash_on_eio) {
         // TODO(awong): This is very, very coarse-grained. A more comprehensive
         // approach is described in KUDU-616.
         LOG(FATAL) << "Fatal I/O error, context: " << context;

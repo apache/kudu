@@ -66,7 +66,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(never_fsync);
-DECLARE_bool(suicide_on_eio);
+DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_int32(env_inject_short_read_bytes);
 DECLARE_int32(env_inject_short_write_bytes);
@@ -1046,7 +1046,7 @@ TEST_F(TestEnv, TestGetExtentMap) {
 
 TEST_F(TestEnv, TestInjectEIO) {
   // Use two files to fail with.
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   const string kTestRWPath1 = GetTestPath("test_env_rw_file1");
   unique_ptr<RWFile> rw1;
   ASSERT_OK(env_->NewRWFile(kTestRWPath1, &rw1));

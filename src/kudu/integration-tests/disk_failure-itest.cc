@@ -89,7 +89,7 @@ TEST_F(DiskFailureITest, TestFailDuringServerStartup) {
   vector<string> extra_flags = {
       Substitute("--env_inject_eio_globs=$0", JoinPathSegments(failed_dir, "**")),
       "--env_inject_eio=1.0",
-      "--suicide_on_eio=false",
+      "--crash_on_eio=false",
   };
   ts->mutable_flags()->insert(ts->mutable_flags()->begin(), extra_flags.begin(), extra_flags.end());
   ts->Shutdown();

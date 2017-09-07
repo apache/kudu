@@ -58,7 +58,7 @@ using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_bool(suicide_on_eio);
+DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(umask);
@@ -271,7 +271,7 @@ TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
   // canonicalization by failing the dirname.
   vector<string> data_roots = JoinPathSegmentsV(data_paths, "root");
 
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
 
   // Fail a directory, avoiding the metadata directory.
@@ -296,7 +296,7 @@ TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 
   // Now fail one of the directories.
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
   FLAGS_env_inject_eio_globs = JoinPathSegments(Substitute("$0,$0", data_paths[1]), "**");
   ReinitFsManager(wal_path, data_roots);

@@ -76,7 +76,7 @@ DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_string(block_manager);
 DECLARE_double(env_inject_eio);
-DECLARE_bool(suicide_on_eio);
+DECLARE_bool(crash_on_eio);
 
 // Generic block manager metrics.
 METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
@@ -870,7 +870,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
   FLAGS_log_container_preallocate_bytes = 8 * 1024;
 
   // Force some file operations to fail.
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 0.1;
 
   // Compact log block manager metadata aggressively at startup; injected

@@ -72,7 +72,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(cache_force_single_shard);
-DECLARE_bool(suicide_on_eio);
+DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
@@ -1329,7 +1329,7 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
   bm_.reset(CreateBlockManager(nullptr));
 
   // Fail one of the directories, chosen randomly.
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1;
   int failed_idx = Random(SeedRandom()).Next() % kNumDirs;
   FLAGS_env_inject_eio_globs = JoinPathSegments(test_dirs[failed_idx], "**");

@@ -50,7 +50,7 @@ using std::vector;
 using std::unique_ptr;
 using strings::Substitute;
 
-DECLARE_bool(suicide_on_eio);
+DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_int32(fs_data_dirs_full_disk_cache_seconds);
 DECLARE_int32(fs_target_data_dirs_per_tablet);
@@ -395,7 +395,7 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
       DataDirManagerOptions(), &dd_manager_));
 
   // Kill the first non-metadata directory.
-  FLAGS_suicide_on_eio = false;
+  FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
   FLAGS_env_inject_eio_globs = JoinPathSegments(test_roots_[1], "**");
 
