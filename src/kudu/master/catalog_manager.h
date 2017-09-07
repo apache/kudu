@@ -318,6 +318,9 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   //
   // All tablets are represented here regardless of whether they've reported.
   // Tablets yet to report will count towards the special NOT_YET_REPORTED key.
+  //
+  // The contents of this map are equivalent to iterating over every table in
+  // tablet_map_ and summing up the tablets' reported schema versions.
   std::map<int64_t, int64_t> schema_version_counts_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
@@ -689,11 +692,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status HandleReportedTablet(TSDescriptor* ts_desc,
                               const ReportedTabletPB& report,
                               ReportedTabletUpdatesPB *report_updates);
-
+  // Performs metadata updates and sends RPCs based on the Raft-related changes
+  // to 'tablet' described in 'report'.
+  //
+  // 'table_lock' must be held for reading and 'tablet_lock' for writing.
   Status HandleRaftConfigChanged(const ReportedTabletPB& report,
                                  const scoped_refptr<TabletInfo>& tablet,
-                                 TabletMetadataLock* tablet_lock,
-                                 TableMetadataLock* table_lock);
+                                 const TableMetadataLock& table_lock,
+                                 TabletMetadataLock* tablet_lock);
 
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
@@ -744,15 +750,19 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                       int nreplicas,
                       consensus::RaftConfigPB *config);
 
+  // Handles 'tablet' currently in the PREPARING state.
+  //
+  // Transitions it to the CREATING state and prepares CreateTablet RPCs.
   void HandleAssignPreparingTablet(const scoped_refptr<TabletInfo>& tablet,
                                    DeferredAssignmentActions* deferred);
 
-  // Assign tablets and send CreateTablet RPCs to tablet servers.
-  // The out param 'new_tablets' should have any newly-created TabletInfo
-  // objects appended to it.
+  // Handles 'tablet' currently in the CREATING state.
+  //
+  // If a CreateTablet RPC timed out, marks 'tablet' as REPLACED and replaces
+  // it with a new CREATING tablet, which is written to in 'new_tablet'.
   void HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>& tablet,
                                   DeferredAssignmentActions* deferred,
-                                  std::vector<scoped_refptr<TabletInfo>>* new_tablets);
+                                  scoped_refptr<TabletInfo>* new_tablet);
 
   Status HandleTabletSchemaVersionReport(const scoped_refptr<TabletInfo>& tablet,
                                          uint32_t version);

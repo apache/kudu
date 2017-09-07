@@ -584,7 +584,7 @@ class ScopedTabletInfoCommitter {
     }
   };
 
-  // Must be defined before begin()/end() below.
+  // Must be defined before tablets() below.
   typedef set<scoped_refptr<TabletInfo>, TabletInfoCompare> TabletSet;
 
  public:
@@ -630,6 +630,8 @@ class ScopedTabletInfoCommitter {
       for (const auto& t : tablets_) {
         t->mutable_metadata()->CommitMutation();
       }
+
+      tablets_.clear();
       state_ = UNLOCKED;
     }
   }
@@ -640,17 +642,16 @@ class ScopedTabletInfoCommitter {
     tablets_.insert(new_tablets.begin(), new_tablets.end());
   }
 
-  // These methods allow the class to be used in range-based for loops.
-  const TabletSet::iterator begin() const {
-    return tablets_.begin();
-  }
-  const TabletSet::iterator end() const {
-    return tablets_.end();
-  }
+  const TabletSet& tablets() const { return tablets_; }
 
  private:
+  // Tablets tracked by this committer, stored in tablet ID order.
   TabletSet tablets_;
+
+  // Current state of the committer.
   State state_;
+
+  // Whether the committer has been aborted.
   bool aborted_;
 };
 
@@ -1642,7 +1643,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     committer.AddTablets(tablets);
     committer.LockTabletsForWriting();
 
-    for (const auto& t : committer) {
+    for (const auto& t : committer.tablets()) {
       t->mutable_metadata()->mutable_dirty()->set_state(
           SysTabletsEntryPB::DELETED, deletion_msg);
     }
@@ -1651,7 +1652,8 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     TRACE("Removing table and tablets from system table");
     SysCatalogTable::Actions actions;
     actions.table_to_update = table;
-    actions.tablets_to_update.assign(committer.begin(), committer.end());
+    actions.tablets_to_update.assign(committer.tablets().begin(),
+                                     committer.tablets().end());
     Status s = sys_catalog_->Write(actions);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("An error occurred while updating sys tables: $0",
@@ -2592,7 +2594,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                             final_report->consensus_state().current_term());
 
       RETURN_NOT_OK(HandleRaftConfigChanged(*final_report, tablet,
-                                            &tablet_lock, &table_lock));
+                                            table_lock, &tablet_lock));
 
     }
   }
@@ -2628,8 +2630,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 Status CatalogManager::HandleRaftConfigChanged(
     const ReportedTabletPB& report,
     const scoped_refptr<TabletInfo>& tablet,
-    TabletMetadataLock* tablet_lock,
-    TableMetadataLock* table_lock) {
+    const TableMetadataLock& table_lock,
+    TabletMetadataLock* tablet_lock) {
 
   DCHECK(tablet_lock->is_write_locked());
   ConsensusStatePB prev_cstate = tablet_lock->mutable_data()->pb.consensus_state();
@@ -2656,7 +2658,7 @@ Status CatalogManager::HandleRaftConfigChanged(
 
   // If the config is under-replicated, add a server to the config.
   if (FLAGS_master_add_server_when_underreplicated &&
-      CountVoters(cstate.committed_config()) < table_lock->data().pb.num_replicas()) {
+      CountVoters(cstate.committed_config()) < table_lock.data().pb.num_replicas()) {
     SendAddServerRequest(tablet, cstate);
   }
 
@@ -3648,7 +3650,7 @@ void CatalogManager::HandleAssignPreparingTablet(const scoped_refptr<TabletInfo>
 
 void CatalogManager::HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>& tablet,
                                                 DeferredAssignmentActions* deferred,
-                                                vector<scoped_refptr<TabletInfo> >* new_tablets) {
+                                                scoped_refptr<TabletInfo>* new_tablet) {
   MonoDelta time_since_updated =
       MonoTime::Now() - tablet->last_create_tablet_time();
   int64_t remaining_timeout_ms =
@@ -3689,7 +3691,7 @@ void CatalogManager::HandleAssignCreatingTablet(const scoped_refptr<TabletInfo>&
                         tablet->tablet_id(), replacement->tablet_id(),
                         tablet->table()->ToString());
 
-  new_tablets->emplace_back(std::move(replacement));
+  new_tablet->swap(replacement);
 }
 
 // TODO(unknown): we could batch the IO onto a background thread.
@@ -3739,14 +3741,14 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // Take write locks on all tablets to be processed, and ensure that they are
   // unlocked at the end of this scope.
-  ScopedTabletInfoCommitter unlocker_in(ScopedTabletInfoCommitter::UNLOCKED);
-  unlocker_in.AddTablets(tablets);
-  unlocker_in.LockTabletsForWriting();
+  ScopedTabletInfoCommitter committer_in(ScopedTabletInfoCommitter::UNLOCKED);
+  committer_in.AddTablets(tablets);
+  committer_in.LockTabletsForWriting();
 
   // Any tablets created by the helper functions will also be created in a
   // locked state, so we must ensure they are unlocked before we return to
   // avoid deadlocks.
-  ScopedTabletInfoCommitter unlocker_out(ScopedTabletInfoCommitter::LOCKED);
+  ScopedTabletInfoCommitter committer_out(ScopedTabletInfoCommitter::LOCKED);
 
   DeferredAssignmentActions deferred;
 
@@ -3763,9 +3765,11 @@ Status CatalogManager::ProcessPendingAssignments(
 
       case SysTabletsEntryPB::CREATING:
       {
-        vector<scoped_refptr<TabletInfo>> new_tablets;
-        HandleAssignCreatingTablet(tablet, &deferred, &new_tablets);
-        unlocker_out.AddTablets(new_tablets);
+        scoped_refptr<TabletInfo> new_tablet;
+        HandleAssignCreatingTablet(tablet, &deferred, &new_tablet);
+        if (new_tablet) {
+          committer_out.AddTablets({ std::move(new_tablet) });
+        }
         break;
       }
       default:
@@ -3816,19 +3820,19 @@ Status CatalogManager::ProcessPendingAssignments(
         << "Aborting the current task due to error: " << s.ToString();
     // If there was an error, abort any mutations started by the
     // current task.
-    unlocker_out.Abort();
-    unlocker_in.Abort();
+    committer_out.Abort();
+    committer_in.Abort();
     return s;
   }
 
   // Expose tablet metadata changes before the new tablets themselves.
-  unlocker_out.Commit();
-  unlocker_in.Commit();
+  committer_out.Commit();
+  committer_in.Commit();
   {
     std::lock_guard<LockType> l(lock_);
-    for (const auto& new_tablet : unlocker_out) {
-      new_tablet->table()->AddRemoveTablets({ new_tablet }, {});
-      tablet_map_[new_tablet->tablet_id()] = new_tablet;
+    for (const auto& t : deferred.tablets_to_add) {
+      t->table()->AddRemoveTablets({ t }, {});
+      tablet_map_[t->tablet_id()] = t;
     }
   }
 
