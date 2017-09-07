@@ -59,6 +59,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h" // IWYU pragma: keep
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -78,6 +79,7 @@ DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(block_manager_max_open_files);
 DECLARE_int64(log_container_max_blocks);
+DECLARE_string(block_manager_preflush_control);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
@@ -776,6 +778,51 @@ TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
   // Kernel from el6.9 development post-fix: not buggy.
   ASSERT_FALSE(LogBlockManager::IsBuggyEl6Kernel("2.6.32-674.0.0.el6.x86_64"));
 }
+
+#ifdef NDEBUG
+
+// Simple micro-benchmark which creates a large number of blocks and then
+// times the startup of the LBM.
+//
+// This is simplistic in several ways compared to a typical workload:
+// - only one data directory (typical servers have several)
+// - minimal number of containers, each of which is entirely full
+//   (typical workloads end up writing to several containers at once
+//    due to concurrent write operations such as multiple MM threads
+//    flushing)
+// - no deleted blocks to process
+//
+// However it still can be used to micro-optimize the startup process.
+TEST_F(LogBlockManagerTest, StartupBenchmark) {
+  // Disable preflushing since this can slow down our writes. In particular,
+  // since we write such small blocks in this test, each block will likely
+  // begin on the same 4KB page as the prior one we wrote, and due to the
+  // "stable page writes" feature, each block will thus end up waiting
+  // on the writeback of the prior one.
+  //
+  // See http://yoshinorimatsunobu.blogspot.com/2014/03/how-syncfilerange-really-works.html
+  // for details.
+  FLAGS_block_manager_preflush_control = "never";
+  const int kNumBlocks = AllowSlowTests() ? 1000000 : 1000;
+  // Creates 'kNumBlocks' blocks with minimal data.
+  {
+    BlockTransaction transaction;
+    for (int i = 0; i < kNumBlocks; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
+      ASSERT_OK_FAST(block->Append("x"));
+      ASSERT_OK_FAST(block->Finalize());
+      transaction.AddCreatedBlock(std::move(block));
+    }
+    ASSERT_OK(transaction.CommitCreatedBlocks());
+  }
+  for (int i = 0; i < 10; i++) {
+    LOG_TIMING(INFO, "reopening block manager") {
+      ASSERT_OK(ReopenBlockManager());
+    }
+  }
+}
+#endif
 
 TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
   int64_t limit_1024 = LogBlockManager::LookupBlockLimit(1024);

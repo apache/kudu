@@ -25,6 +25,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "kudu/gutil/hash/hash.h"
 #include "kudu/gutil/stringprintf.h"
 
 namespace kudu {
