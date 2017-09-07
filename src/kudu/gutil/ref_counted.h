@@ -7,6 +7,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <utility>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
@@ -235,17 +236,26 @@ class scoped_refptr {
       ptr_->AddRef();
   }
 
+  // Copy constructor.
   scoped_refptr(const scoped_refptr<T>& r) : ptr_(r.ptr_) {
     if (ptr_)
       ptr_->AddRef();
   }
 
+  // Copy conversion constructor.
   template <typename U>
   scoped_refptr(const scoped_refptr<U>& r) : ptr_(r.get()) {
     if (ptr_)
       ptr_->AddRef();
   }
 
+  // Move constructor. This is required in addition to the conversion
+  // constructor below in order for clang to warn about pessimizing moves.
+  scoped_refptr(scoped_refptr&& r) : ptr_(r.get()) {
+    r.ptr_ = nullptr;
+  }
+
+  // Move conversion constructor.
   template <typename U>
   scoped_refptr(scoped_refptr<U>&& r) : ptr_(r.get()) {
     r.ptr_ = nullptr;
@@ -296,13 +306,13 @@ class scoped_refptr {
   }
 
   scoped_refptr<T>& operator=(scoped_refptr<T>&& r) {
-    scoped_refptr<T>(r).swap(*this);
+    scoped_refptr<T>(std::move(r)).swap(*this);
     return *this;
   }
 
   template <typename U>
   scoped_refptr<T>& operator=(scoped_refptr<U>&& r) {
-    scoped_refptr<T>(r).swap(*this);
+    scoped_refptr<T>(std::move(r)).swap(*this);
     return *this;
   }
 
