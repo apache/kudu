@@ -2467,6 +2467,34 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     tablet_needs_alter = true;
   }
 
+  // Check if we got a report from a tablet that is no longer part of the Raft
+  // config, but is not already TOMBSTONED / DELETED. If so, tombstone it.
+  //
+  // If the report includes a committed raft config, a delete is only sent if
+  // the opid_index is strictly less than the latest reported committed config.
+  // This prevents us from spuriously deleting replicas that have just been
+  // added to a pending config and are in the process of catching up to the log
+  // entry where they were added to the config.
+  const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.consensus_state();
+  const int64_t prev_opid_index = prev_cstate.committed_config().opid_index();
+  const int64_t report_opid_index = report.has_consensus_state() ?
+      report.consensus_state().committed_config().opid_index() : consensus::kInvalidOpIdIndex;
+  if (FLAGS_master_tombstone_evicted_tablet_replicas &&
+      report.tablet_data_state() != TABLET_DATA_TOMBSTONED &&
+      report.tablet_data_state() != TABLET_DATA_DELETED &&
+      !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.committed_config()) &&
+      report_opid_index < prev_opid_index) {
+    const string delete_msg = report_opid_index == consensus::kInvalidOpIdIndex ?
+        "Replica has no consensus available" :
+        Substitute("Replica with old config index $0", report_opid_index);
+    SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED, prev_opid_index,
+        tablet->table(), ts_desc->permanent_uuid(),
+        Substitute("$0 (current committed config index is $1)", delete_msg, prev_opid_index));
+    return Status::OK();
+  }
+
+  // If the tablet has an error and doesn't need to be deleted, there's not
+  // much we can do.
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
     DCHECK(!s.ok());
@@ -2477,30 +2505,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
   // The report may have a consensus_state even when tombstoned.
   if (report.has_consensus_state()) {
-    const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.consensus_state();
     ConsensusStatePB cstate = report.consensus_state();
-
-    // Check if we got a report from a tablet that is no longer part of the Raft
-    // config, but is not already TOMBSTONED / DELETED. If so, tombstone it. We
-    // only tombstone replicas that include a committed raft config in their
-    // report that has an opid_index strictly less than the latest reported
-    // committed config, and (obviously) who are not members of the latest
-    // config. This prevents us from spuriously deleting replicas that have
-    // just been added to a pending config and are in the process of catching
-    // up to the log entry where they were added to the config.
-    if (FLAGS_master_tombstone_evicted_tablet_replicas &&
-        report.tablet_data_state() != TABLET_DATA_TOMBSTONED &&
-        report.tablet_data_state() != TABLET_DATA_DELETED &&
-        cstate.committed_config().opid_index() < prev_cstate.committed_config().opid_index() &&
-        !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.committed_config())) {
-      SendDeleteReplicaRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
-                               prev_cstate.committed_config().opid_index(),
-                               tablet->table(), ts_desc->permanent_uuid(),
-                               Substitute("Replica from old config with index $0 (latest is $1)",
-                                          cstate.committed_config().opid_index(),
-                                          prev_cstate.committed_config().opid_index()));
-      return Status::OK();
-    }
 
     // If the reported leader is not a member of the committed config, then we
     // disregard the leader state.

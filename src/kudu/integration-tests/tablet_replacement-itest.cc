@@ -20,6 +20,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -139,6 +140,79 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   // didn't end up tombstoning the replica.
   SleepFor(MonoDelta::FromSeconds(3));
   ASSERT_OK(inspect_->CheckTabletDataStateOnTS(kFollowerIndex, tablet_id, { TABLET_DATA_READY }));
+}
+
+// Test for KUDU-2138: ensure that the master will tombstone failed tablets
+// that have previously been evicted.
+TEST_F(TabletReplacementITest, TestMasterTombstoneFailedEvictedReplicaOnReport) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumServers = 4;
+  NO_FATALS(StartCluster({"--follower_unavailable_considered_failed_sec=5"},
+      {"--master_tombstone_evicted_tablet_replicas=false"}, kNumServers));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup(); // Easy way to create a new tablet.
+
+  // Determine the tablet id.
+  string tablet_id;
+  ASSERT_EVENTUALLY([&] {
+      vector<string> tablets = inspect_->ListTablets();
+      ASSERT_FALSE(tablets.empty());
+      tablet_id = tablets[0];
+  });
+
+  // Determine which tablet servers have data. One should be empty.
+  unordered_map<string, itest::TServerDetails*> active_ts_map = ts_map_;
+  int empty_server_idx = -1;
+  string empty_ts_uuid;
+  consensus::ConsensusMetadataPB cmeta_pb;
+  for (int i = 0; i < kNumServers; i++) {
+    consensus::ConsensusMetadataPB cmeta_pb;
+    if (inspect_->ReadConsensusMetadataOnTS(i, tablet_id, &cmeta_pb).IsNotFound()) {
+      empty_ts_uuid = cluster_->tablet_server(i)->uuid();
+      ASSERT_EQ(1, active_ts_map.erase(empty_ts_uuid));
+      empty_server_idx = i;
+      break;
+    }
+  }
+  ASSERT_NE(empty_server_idx, -1);
+
+  // Wait until all replicas are up and running.
+  for (const auto& e : active_ts_map) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(e.second, tablet_id, kTimeout));
+  }
+
+  // Select a replica to fail by shutting it down and mucking with its
+  // metadata. When it restarts, it will fail to open.
+  int idx_to_fail = (empty_server_idx + 1) % kNumServers;
+  auto* ts = cluster_->tablet_server(idx_to_fail);
+  ts->Shutdown();
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(idx_to_fail, tablet_id, &cmeta_pb));
+  cmeta_pb.set_current_term(-1);
+  ASSERT_OK(inspect_->WriteConsensusMetadataOnTS(idx_to_fail, tablet_id, cmeta_pb));
+
+  // Wait until the replica is evicted and replicated to the empty server.
+  ASSERT_OK(WaitUntilTabletInState(ts_map_[empty_ts_uuid],
+                                   tablet_id,
+                                   tablet::RUNNING,
+                                   kTimeout));
+
+  // Restart the tserver and ensure the tablet is failed.
+  ASSERT_OK(ts->Restart());
+  ASSERT_OK(WaitUntilTabletInState(ts_map_[ts->uuid()],
+                                   tablet_id,
+                                   tablet::FAILED,
+                                   kTimeout));
+
+  // Upon restarting, the master will request a report and notice the failed
+  // replica. Wait for the master to tombstone the failed follower.
+  cluster_->master()->Shutdown();
+  cluster_->master()->mutable_flags()->emplace_back(
+      "--master_tombstone_evicted_tablet_replicas=true");
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(idx_to_fail, tablet_id,
+                                                 { TABLET_DATA_TOMBSTONED },
+                                                 kTimeout));
 }
 
 // Ensure that the Master will tombstone a replica if it reports in with an old
