@@ -17,18 +17,25 @@
 # specific language governing permissions and limitations
 # under the License.
 
+set -e
+set -o pipefail
+
 ROOT=$(cd $(dirname $BASH_SOURCE)/../..; pwd)
 
-IWYU_LOG=$(mktemp -t kudu-iwyu.XXXXXX)
-trap "rm -f $IWYU_LOG" EXIT
-
 # Build the list of updated files which are of IWYU interest.
+# Since '-e' is set, transform the exit code from the grep accordingly:
+# grep returns 1 if no lines were selected.
 file_list_tmp=$(git diff --name-only \
-    $($ROOT/build-support/get-upstream-commit.sh) | grep -E '\.(c|cc|h)$')
+    $($ROOT/build-support/get-upstream-commit.sh) | \
+    (grep -E '\.(c|cc|h)$' || [ $? -eq 1 ]))
 if [ -z "$file_list_tmp" ]; then
   echo "IWYU verification: no updates on related files, declaring success"
   exit 0
 fi
+
+IWYU_LOG=$(mktemp -t kudu-iwyu.XXXXXX)
+UNFILTERED_IWYU_LOG=${IWYU_LOG}.unfiltered
+trap "rm -f $IWYU_LOG $UNFILTERED_IWYU_LOG" EXIT
 
 # Adjust the path for every element in the list. The iwyu_tool.py normalizes
 # paths (via realpath) to match the records from the compilation database.
@@ -47,13 +54,19 @@ IWYU_ARGS="\
     --mapping_file=$IWYU_MAPPINGS_PATH/gtest.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/libstdcpp.imp"
 
-PATH="$PATH:$PWD/../../thirdparty/clang-toolchain/bin" \
+if ! PATH="$PATH:$PWD/../../thirdparty/clang-toolchain/bin" \
     python $ROOT/build-support/iwyu/iwyu_tool.py -p . $IWYU_FILE_LIST -- \
-    $IWYU_ARGS | awk -f $ROOT/build-support/iwyu/iwyu-filter.awk | \
-    tee $IWYU_LOG
+    $IWYU_ARGS > $UNFILTERED_IWYU_LOG 2>&1; then
+  echo "IWYU verification: failed to run the tool, see below for details"
+  cat $UNFILTERED_IWYU_LOG
+  exit 2
+fi
 
+awk -f $ROOT/build-support/iwyu/iwyu-filter.awk $UNFILTERED_IWYU_LOG | \
+    tee $IWYU_LOG
 if [ -s "$IWYU_LOG" ]; then
-  # The output is not empty: the changelist needs correction.
+  # The output is not empty: IWYU finds the set of headers to be inconsistent.
+  echo "IWYU verification: changelist needs correction, see above for details"
   exit 1
 fi
 

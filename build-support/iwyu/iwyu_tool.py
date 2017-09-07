@@ -135,11 +135,10 @@ FORMATTERS = {
     'clang': clang_formatter
 }
 
-def get_output(cwd, command):
+def get_output(cwd, args):
     """ Run the given command and return its output as a string. """
-    process = subprocess.Popen(command,
+    process = subprocess.Popen(args=args,
                                cwd=cwd,
-                               shell=True,
                                stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT)
     return process.communicate()[0].decode("utf-8").splitlines()
@@ -154,14 +153,16 @@ def run_iwyu(cwd, compile_command, iwyu_args, verbose, formatter):
     else:
         clang_args = []
 
-    iwyu_args = ['-Xiwyu ' + a for a in iwyu_args]
-    command = ['include-what-you-use'] + clang_args + iwyu_args
-    command = '%s %s' % (' '.join(command), args.strip())
+    extra_args = []
+    for a in iwyu_args:
+        extra_args += ['-Xiwyu', a]
+
+    cmd_args = ['include-what-you-use'] + clang_args + extra_args + args.split()
 
     if verbose:
-        print('%s:' % command)
+        print('{}'.format(cmd_args))
 
-    formatter(get_output(cwd, command))
+    formatter(get_output(cwd, cmd_args))
 
 
 def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
