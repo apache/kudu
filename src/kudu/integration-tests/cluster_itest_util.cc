@@ -840,7 +840,8 @@ Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& ma
 Status WaitForNumTabletsOnTS(TServerDetails* ts,
                              int count,
                              const MonoDelta& timeout,
-                             vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
+                             vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets,
+                             boost::optional<tablet::TabletStatePB> state) {
   // If the user doesn't care about collecting the resulting tablets, collect into a local
   // vector.
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets_local;
@@ -850,6 +851,15 @@ Status WaitForNumTabletsOnTS(TServerDetails* ts,
   MonoTime deadline = MonoTime::Now() + timeout;
   while (true) {
     s = ListTablets(ts, MonoDelta::FromSeconds(10), tablets);
+    if (s.ok() && state) {
+      tablets->erase(
+          std::remove_if(tablets->begin(), tablets->end(),
+                         [&] (const ListTabletsResponsePB::StatusAndSchemaPB& t) {
+                           return t.tablet_status().state() != state;
+                         }),
+          tablets->end());
+    }
+
     if (s.ok() && tablets->size() == count) break;
     if (MonoTime::Now() > deadline) break;
     SleepFor(MonoDelta::FromMilliseconds(10));

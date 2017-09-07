@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -31,6 +32,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
@@ -52,7 +54,9 @@ using kudu::itest::WaitUntilTabletRunning;
 using kudu::tablet::TabletDataState;
 using kudu::tserver::ListTabletsResponsePB;
 using std::string;
+using std::thread;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -263,6 +267,55 @@ TEST_F(TabletCopyClientSessionITest, TestCopyFromCrashedSource) {
   ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
                             std::numeric_limits<int64_t>::max(), kDefaultTimeout));
   ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
+}
+
+// Regression for KUDU-2125: ensure that a heavily loaded source cluster can
+// satisfy many concurrent tablet copies.
+TEST_F(TabletCopyClientSessionITest, TestTabletCopyWithBusySource) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+  const int kNumTablets = 20;
+
+  NO_FATALS(PrepareClusterForTabletCopy({ Substitute("--num_tablets_to_copy_simultaneously=$0",
+                                                     kNumTablets) },
+                                        {},
+                                        kNumTablets));
+
+  // Tune down the RPC capacity on the source server to ensure
+  // ERROR_SERVER_TOO_BUSY errors occur.
+  cluster_->tablet_server(0)->mutable_flags()->emplace_back("--rpc_service_queue_length=1");
+  cluster_->tablet_server(0)->mutable_flags()->emplace_back("--rpc_num_service_threads=1");
+
+  // Restart the TS for the new flags to take effect.
+  cluster_->tablet_server(0)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(0)->Restart());
+
+  TServerDetails* ts0 = ts_map_[cluster_->tablet_server(0)->uuid()];
+  TServerDetails* ts1 = ts_map_[cluster_->tablet_server(1)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts0, kNumTablets, kDefaultTimeout,
+                                  &tablets, tablet::TabletStatePB::RUNNING));
+  ASSERT_EQ(kNumTablets, tablets.size());
+
+  HostPort src_addr;
+  ASSERT_OK(HostPortFromPB(ts0->registration.rpc_addresses(0), &src_addr));
+
+  vector<thread> threads;
+  for (const auto& tablet : tablets) {
+    threads.emplace_back(thread([&] {
+      const string& tablet_id = tablet.tablet_status().tablet_id();
+      // Run tablet copy.
+      CHECK_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+                               std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+      CHECK_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
+    }));
+  }
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
 }
 
 } // namespace kudu

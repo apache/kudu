@@ -59,9 +59,11 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "
@@ -151,8 +153,9 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       state_(kInitialized),
       replace_tombstoned_tablet_(false),
       tablet_replica_(nullptr),
-      session_idle_timeout_millis_(0),
+      session_idle_timeout_millis_(FLAGS_tablet_copy_begin_session_timeout_ms),
       start_time_micros_(0),
+      rng_(GetRandomSeed32()),
       tablet_copy_metrics_(tablet_copy_metrics) {
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->Increment();
@@ -239,14 +242,13 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   req.set_tablet_id(tablet_id_);
 
   rpc::RpcController controller;
-  controller.set_timeout(MonoDelta::FromMilliseconds(
-      FLAGS_tablet_copy_begin_session_timeout_ms));
 
   // Begin the tablet copy session with the remote peer.
   BeginTabletCopySessionResponsePB resp;
-  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginTabletCopySession(req, &resp, &controller),
-                               controller,
-                               "Unable to begin tablet copy session");
+  RETURN_NOT_OK_PREPEND(SendRpcWithRetry(&controller, [&] {
+    return proxy_->BeginTabletCopySession(req, &resp, &controller);
+  }), "unable to begin tablet copy session");
+
   string copy_peer_uuid = resp.has_responder_uuid()
       ? resp.responder_uuid() : "(unknown uuid)";
   if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
@@ -456,16 +458,15 @@ Status TabletCopyClient::EndRemoteSession() {
     return Status::OK();
   }
 
-  rpc::RpcController controller;
-  controller.set_timeout(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_begin_session_timeout_ms));
-
   EndTabletCopySessionRequestPB req;
   req.set_session_id(session_id_);
   req.set_is_success(true);
   EndTabletCopySessionResponsePB resp;
-  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->EndTabletCopySession(req, &resp, &controller),
-                               controller,
-                               "Failure ending tablet copy session");
+
+  rpc::RpcController controller;
+  RETURN_NOT_OK_PREPEND(SendRpcWithRetry(&controller, [&] {
+    return proxy_->EndTabletCopySession(req, &resp, &controller);
+  }), "failure ending tablet copy session");
 
   return Status::OK();
 }
@@ -669,19 +670,19 @@ Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(session_idle_timeout_millis_));
   FetchDataRequestPB req;
+  req.set_session_id(session_id_);
+  req.mutable_data_id()->CopyFrom(data_id);
+  req.set_max_length(FLAGS_tablet_copy_transfer_chunk_size_bytes);
 
   bool done = false;
   while (!done) {
-    controller.Reset();
-    req.set_session_id(session_id_);
-    req.mutable_data_id()->CopyFrom(data_id);
     req.set_offset(offset);
-    req.set_max_length(FLAGS_tablet_copy_transfer_chunk_size_bytes);
 
+    // Request the next data chunk.
     FetchDataResponsePB resp;
-    RETURN_NOT_OK_UNWIND_PREPEND(proxy_->FetchData(req, &resp, &controller),
-                                controller,
-                                "Unable to fetch data from remote");
+    RETURN_NOT_OK_PREPEND(SendRpcWithRetry(&controller, [&] {
+          return proxy_->FetchData(req, &resp, &controller);
+    }), "unable to fetch data from remote");
 
     // Sanity-check for corruption.
     RETURN_NOT_OK_PREPEND(VerifyData(offset, resp.chunk()),
@@ -697,12 +698,11 @@ Status TabletCopyClient::DownloadFile(const DataIdPB& data_id,
       SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_copy_download_file_inject_latency_ms));
     }
 
-    if (offset + resp.chunk().data().size() == resp.chunk().total_data_length()) {
-      done = true;
-    }
-    offset += resp.chunk().data().size();
+    auto chunk_size = resp.chunk().data().size();
+    done = offset + chunk_size == resp.chunk().total_data_length();
+    offset += chunk_size;
     if (tablet_copy_metrics_) {
-      tablet_copy_metrics_->bytes_fetched->IncrementBy(resp.chunk().data().size());
+      tablet_copy_metrics_->bytes_fetched->IncrementBy(chunk_size);
     }
   }
 
@@ -714,6 +714,12 @@ Status TabletCopyClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
   if (offset != chunk.offset()) {
     return Status::InvalidArgument("Offset did not match what was asked for",
         Substitute("$0 vs $1", offset, chunk.offset()));
+  }
+
+  // Verify that the chunk does not overflow the total data length.
+  if (offset + chunk.data().length() > chunk.total_data_length()) {
+    return Status::InvalidArgument("Chunk exceeds total block data length",
+        Substitute("$0 vs $1", offset + chunk.data().length(), chunk.total_data_length()));
   }
 
   // Verify the checksum.
@@ -729,6 +735,35 @@ Status TabletCopyClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
 string TabletCopyClient::LogPrefix() {
   return Substitute("T $0 P $1: tablet copy: ",
                     tablet_id_, fs_manager_->uuid());
+}
+
+template<typename F>
+Status TabletCopyClient::SendRpcWithRetry(rpc::RpcController* controller, F f) {
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(session_idle_timeout_millis_);
+  for (int attempt = 1;; attempt++) {
+    controller->Reset();
+    controller->set_deadline(deadline);
+    Status s = UnwindRemoteError(f(), *controller);
+
+    // Retry after a backoff period if the error is retriable.
+    const rpc::ErrorStatusPB* err = controller->error_response();
+    if (!s.ok() && err && (err->code() == rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
+                           err->code() == rpc::ErrorStatusPB::ERROR_UNAVAILABLE)) {
+
+      // Polynomial backoff with 50% jitter.
+      double kJitterPct = 0.5;
+      int32_t kBackoffBaseMs = 10;
+      MonoDelta backoff = MonoDelta::FromMilliseconds(
+          (1 - kJitterPct + (kJitterPct * rng_.NextDoubleFraction()))
+          * kBackoffBaseMs * attempt * attempt);
+      if (MonoTime::Now() + backoff > deadline) {
+        return Status::TimedOut("unable to fetch data from remote");
+      }
+      SleepFor(backoff);
+      continue;
+    }
+    return s;
+  }
 }
 
 } // namespace tserver

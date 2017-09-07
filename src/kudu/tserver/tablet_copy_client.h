@@ -29,6 +29,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -204,6 +205,11 @@ class TabletCopyClient {
 
   Status VerifyData(uint64_t offset, const DataChunkPB& resp);
 
+  // Runs the provided functor, which must send an RPC and return the result
+  // status, until it succeeds, times out, or fails with a non-retriable error.
+  template<typename F>
+  Status SendRpcWithRetry(rpc::RpcController* controller, F f);
+
   // Return standard log prefix.
   std::string LogPrefix();
 
@@ -236,6 +242,8 @@ class TabletCopyClient {
   std::unique_ptr<consensus::ConsensusStatePB> remote_cstate_;
   std::vector<uint64_t> wal_seqnos_;
   int64_t start_time_micros_;
+
+  Random rng_;
 
   TabletCopyClientMetrics* tablet_copy_metrics_;
 

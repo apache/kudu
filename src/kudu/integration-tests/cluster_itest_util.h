@@ -33,6 +33,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -45,11 +47,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 class HostPort;
@@ -320,12 +317,15 @@ Status WaitForNumVotersInConfigOnMaster(
     const MonoDelta& timeout);
 
 // Repeatedly invoke ListTablets(), waiting for up to 'timeout' time for the
-// specified 'count' number of replicas.
+// specified 'count' number of replicas. If 'state' is provided, the replicas
+// must also be in the specified state for the wait to be considered
+// successful.
 Status WaitForNumTabletsOnTS(
     TServerDetails* ts,
     int count,
     const MonoDelta& timeout,
-    std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets);
+    std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets,
+    boost::optional<tablet::TabletStatePB> state = boost::none);
 
 // Check if the tablet is in the specified state.
 Status CheckIfTabletInState(TServerDetails* ts,
