@@ -4326,14 +4326,33 @@ void TabletInfo::set_reported_schema_version(int64_t version) {
 
   // Slow path: we have a schema version change.
   //
-  // We need to hold both the table and tablet locks to make the change. By
-  // convention, the table lock is always acquired first.
+  // We need to hold both the table and tablet spinlocks to make the change. By
+  // convention, table locks are always acquired first.
+  //
+  // We also need to hold the tablet metadata lock in order to read the partition
+  // key, but it's OK to make a local copy of it (and release the lock) because
+  // the key is immutable.
+  string key_start;
+  {
+    TabletMetadataLock l(this, TabletMetadataLock::READ);
+    key_start = l.data().pb.partition().partition_key_start();
+  }
   std::lock_guard<rw_spinlock> table_l(table_->lock_);
   std::lock_guard<simple_spinlock> tablet_l(lock_);
 
   // Check again in case the schema version changed underneath us.
   int64_t old_version = reported_schema_version_;
   if (version <= old_version) {
+    return;
+  }
+
+  // Check that we weren't dropped from the table before acquiring the table lock.
+  //
+  // We also have to compare the returned object to 'this' in case our entry in
+  // the map was replaced with a new tablet (i.e. DROP RANGE PARTITION followed
+  // by ADD RANGE PARTITION).
+  auto* t = FindPtrOrNull(table_->tablet_map_, key_start);
+  if (!t || t != this) {
     return;
   }
 
