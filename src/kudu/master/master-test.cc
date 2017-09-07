@@ -602,7 +602,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: range partition lower bound must be "
-                        "less than or equal to the upper bound");
+                        "less than the upper bound");
   }
   { // Lower bound equals upper bound.
     KuduPartialRow bound_lower(&kTableSchema);
@@ -614,7 +614,7 @@ TEST_F(MasterTest, TestCreateTableCheckRangeInvariants) {
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: range partition lower bound must be "
-                        "less than or equal to the upper bound");
+                        "less than the upper bound");
   }
   { // Split equals lower bound
     KuduPartialRow bound_lower(&kTableSchema);

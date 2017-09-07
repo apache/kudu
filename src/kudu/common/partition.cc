@@ -285,7 +285,7 @@ Status PartitionSchema::EncodeRangeBounds(const vector<pair<KuduPartialRow,
 
     if (!lower.empty() && !upper.empty() && lower >= upper) {
       return Status::InvalidArgument(
-          "range partition lower bound must be less than or equal to the upper bound",
+          "range partition lower bound must be less than the upper bound",
           RangePartitionDebugString(bound.first, bound.second));
     }
     range_partitions->emplace_back(std::move(lower), std::move(upper));
