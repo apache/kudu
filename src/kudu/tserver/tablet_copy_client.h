@@ -24,9 +24,10 @@
 
 #include <gtest/gtest_prod.h>
 
+#include "kudu/fs/block_manager.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
@@ -42,10 +43,6 @@ class ConsensusMetadata;
 class ConsensusMetadataManager;
 class ConsensusStatePB;
 } // namespace consensus
-
-namespace fs {
-class BlockTransaction;
-} // namespace fs
 
 namespace rpc {
 class Messenger;
@@ -115,11 +112,13 @@ class TabletCopyClient {
 
   // Runs a "full" tablet copy, copying the physical layout of a tablet
   // from the leader of the specified consensus configuration.
+  // Adds all downloaded blocks during copying to the tablet copy's transaction,
+  // which will be closed together at Finish().
   Status FetchAll(const scoped_refptr<tablet::TabletReplica>& tablet_replica);
 
-  // After downloading all files successfully, write out the completed
-  // replacement superblock. Must be called after Start() and FetchAll().
-  // Must not be called after Abort().
+  // After downloading all files successfully, commit all downloaded blocks.
+  // Write out the completed replacement superblock.
+  // Must be called after Start() and FetchAll(). Must not be called after Abort().
   Status Finish();
 
   // Abort an in-progress transfer and immediately delete the data blocks and
@@ -165,7 +164,8 @@ class TabletCopyClient {
   // Count the number of blocks on the remote (from 'remote_superblock_').
   int CountRemoteBlocks() const;
 
-  // Download all blocks belonging to a tablet sequentially.
+  // Download all blocks belonging to a tablet sequentially. Add all
+  // downloaded blocks to the tablet copy's transaction.
   //
   // Blocks are given new IDs upon creation. On success, 'superblock_'
   // is populated to reflect the new block IDs.
@@ -173,8 +173,8 @@ class TabletCopyClient {
 
   // Download the remote block specified by 'src_block_id'. 'num_blocks' should
   // be given as the total number of blocks there are to download (for logging
-  // purposes). Add the block to the given transaction, to close blocks belonging
-  // to a transaction together when the copying is complete.
+  // purposes). Add the block to the tablet copy's transaction, to close blocks
+  // belonging to the transaction together when the copying is complete.
   //
   // On success:
   // - 'dest_block_id' is set to the new ID of the downloaded block.
@@ -182,17 +182,15 @@ class TabletCopyClient {
   Status DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
                                  int num_blocks,
                                  int* block_count,
-                                 BlockIdPB* dest_block_id,
-                                 fs::BlockTransaction* transaction);
+                                 BlockIdPB* dest_block_id);
 
   // Download a single block.
   // Data block is opened with new ID. After downloading, the block is finalized
-  // and added to the given transaction.
+  // and added to the tablet copy's transaction.
   //
   // On success, 'new_block_id' is set to the new ID of the downloaded block.
   Status DownloadBlock(const BlockId& old_block_id,
-                       BlockId* new_block_id,
-                       fs::BlockTransaction* transaction);
+                       BlockId* new_block_id);
 
   // Download a single remote file. The block and WAL implementations delegate
   // to this method when downloading files.
@@ -240,6 +238,9 @@ class TabletCopyClient {
   int64_t start_time_micros_;
 
   TabletCopyClientMetrics* tablet_copy_metrics_;
+
+  // Block transaction for the tablet copy.
+  fs::BlockTransaction transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };

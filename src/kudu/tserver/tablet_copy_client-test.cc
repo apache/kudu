@@ -69,8 +69,6 @@ using std::vector;
 DECLARE_string(block_manager);
 
 METRIC_DECLARE_counter(block_manager_total_disk_sync);
-METRIC_DECLARE_counter(block_manager_total_writable_blocks);
-METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 
 namespace kudu {
 namespace tserver {
@@ -178,9 +176,8 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
 
   // Check that the client downloaded the block and verification passed.
   BlockId new_block_id;
-  fs::BlockTransaction transaction;
-  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id, &transaction));
-  ASSERT_OK(transaction.CommitCreatedBlocks());
+  ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
+  ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
 
   // Ensure it placed the block where we expected it to.
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
@@ -243,8 +240,9 @@ TEST_F(TabletCopyClientTest, TestVerifyData) {
 }
 
 TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
-  // Download all the blocks.
+  // Download and commit all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
+  ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
 
   // Verify the disk synchronization count.
   if (FLAGS_block_manager == "log") {
@@ -337,6 +335,7 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
   int num_blocks_downloaded = 0;
   if (download_blocks == kDownloadBlocks) {
     ASSERT_OK(client_->DownloadBlocks());
+    ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
     num_blocks_downloaded = num_remote_blocks;
   }
 
