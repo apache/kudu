@@ -580,8 +580,9 @@ message GetTableSchemaResponsePB {
   // The ID of the table.
   optional bytes table_id = 4;
 
-  // True if the create operation is completed, false otherwise.
-  optional bool create_table_done = 6;
+  // DEPRECATED: unset as of Kudu 1.6. Clients wishing to know whether a table
+  // is created should use the IsCreateTableDone RPC.
+  optional bool create_table_done = 6 [deprecated=true];
 
   // The table name.
   optional string table_name = 7;

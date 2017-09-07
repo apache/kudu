@@ -74,8 +74,6 @@ using master::CatalogManager;
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;
 using master::GetTableLocationsResponsePB;
-using master::GetTableSchemaRequestPB;
-using master::GetTableSchemaResponsePB;
 using master::IsCreateTableDoneRequestPB;
 using master::IsCreateTableDoneResponsePB;
 using master::MiniMaster;
@@ -125,17 +123,6 @@ void CreateTableForTesting(MiniMaster* mini_master,
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
   ASSERT_TRUE(is_table_created);
-
-  {
-    GetTableSchemaRequestPB req;
-    GetTableSchemaResponsePB resp;
-    req.mutable_table()->set_table_name(table_name);
-    CatalogManager* catalog = mini_master->master()->catalog_manager();
-    CatalogManager::ScopedLeaderSharedLock l(catalog);
-    ASSERT_OK(l.first_failed_status());
-    ASSERT_OK(catalog->GetTableSchema(&req, &resp));
-    ASSERT_TRUE(resp.create_table_done());
-  }
 
   GetTableLocationsResponsePB resp;
   ASSERT_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
