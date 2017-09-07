@@ -284,7 +284,7 @@ class LogBlockManager : public BlockManager {
   // Must hold 'lock_'.
   //
   // Returns true if the LogBlock was successfully added, false if it was already present.
-  bool AddLogBlockUnlocked(const scoped_refptr<internal::LogBlock>& lb);
+  bool AddLogBlockUnlocked(scoped_refptr<internal::LogBlock> lb);
 
   // Removes the given LogBlock from in-memory data structures. Must hold 'lock_'.
   void RemoveLogBlockUnlocked(const BlockMap::iterator& it);

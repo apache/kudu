@@ -1934,10 +1934,15 @@ scoped_refptr<LogBlock> LogBlockManager::AddLogBlock(
   return nullptr;
 }
 
-bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
+bool LogBlockManager::AddLogBlockUnlocked(scoped_refptr<LogBlock> lb) {
   DCHECK(lock_.is_locked());
 
-  if (!InsertIfNotPresent(&blocks_by_block_id_, lb->block_id(), lb)) {
+  // InsertIfNotPresent doesn't use move semantics, so instead we just
+  // insert an empty scoped_refptr and assign into it down below rather
+  // than using the utility function.
+  scoped_refptr<LogBlock>* entry_ptr = &blocks_by_block_id_[lb->block_id()];
+  if (*entry_ptr) {
+    // Already have an entry for this block ID.
     return false;
   }
 
@@ -1951,6 +1956,8 @@ bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
     metrics()->blocks_under_management->Increment();
     metrics()->bytes_under_management->IncrementBy(lb->length());
   }
+
+  *entry_ptr = std::move(lb);
   return true;
 }
 
@@ -2200,14 +2207,15 @@ void LogBlockManager::OpenDataDir(DataDir* dir,
       // memory in a local and add it to the mem-tracker in a single increment
       // at the end of this loop.
       int64_t mem_usage = 0;
-      for (const UntrackedBlockMap::value_type& e : live_blocks) {
-        if (!AddLogBlockUnlocked(e.second)) {
+      for (UntrackedBlockMap::value_type& e : live_blocks) {
+        int block_mem = kudu_malloc_usable_size(e.second.get());
+        if (!AddLogBlockUnlocked(std::move(e.second))) {
           // TODO(adar): track as an inconsistency?
           LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
                      << " which already is alive from another container when "
                      << " processing container " << container->ToString();
         }
-        mem_usage += kudu_malloc_usable_size(e.second.get());
+        mem_usage += block_mem;
       }
 
       mem_tracker_->Consume(mem_usage);
