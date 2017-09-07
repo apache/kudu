@@ -73,11 +73,11 @@ using std::vector;
 
 namespace kudu {
 
-class TombstonedVotingITest : public MiniClusterITestBase {
+class TombstonedVotingIMCITest : public MiniClusterITestBase {
 };
 
 // Ensure that a tombstoned replica cannot vote after we call Shutdown() on it.
-TEST_F(TombstonedVotingITest, TestNoVoteAfterShutdown) {
+TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
   // This test waits for several seconds, so only run it in slow mode.
   if (!AllowSlowTests()) return;
 
@@ -151,7 +151,7 @@ TEST_F(TombstonedVotingITest, TestNoVoteAfterShutdown) {
 
 // Test that a tombstoned replica will vote correctly.
 // This is implemented by directly exercising the RPC API with different vote request parameters.
-TEST_F(TombstonedVotingITest, TestVotingLogic) {
+TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
   // This test waits for several seconds, so only run it in slow mode.
   if (!AllowSlowTests()) return;
 
@@ -250,7 +250,7 @@ TEST_F(TombstonedVotingITest, TestVotingLogic) {
 }
 
 // Disable tombstoned voting and ensure that an election that would require it fails.
-TEST_F(TombstonedVotingITest, TestNoVoteIfTombstonedVotingDisabled) {
+TEST_F(TombstonedVotingIMCITest, TestNoVoteIfTombstonedVotingDisabled) {
   // This test waits for several seconds, so only run it in slow mode.
   if (!AllowSlowTests()) return;
 
@@ -301,7 +301,7 @@ TEST_F(TombstonedVotingITest, TestNoVoteIfTombstonedVotingDisabled) {
 // Test that a replica will not vote while tombstoned if it was deleted while
 // the last-logged opid was unknown. This may occur if a tablet is tombstoned
 // while in a FAILED state.
-TEST_F(TombstonedVotingITest, TestNoVoteIfNoLastLoggedOpId) {
+TEST_F(TombstonedVotingIMCITest, TestNoVoteIfNoLastLoggedOpId) {
   if (!AllowSlowTests()) return; // This test waits for several seconds.
 
   FLAGS_allow_unsafe_replication_factor = true; // Allow an even replication factor.
@@ -386,15 +386,15 @@ enum RestartAfterTombstone {
   kRestart,
 };
 
-class TsRecoveryTombstonedITest : public MiniClusterITestBase,
-                                  public ::testing::WithParamInterface<RestartAfterTombstone> {
+class TsRecoveryTombstonedIMCITest : public MiniClusterITestBase,
+                                     public ::testing::WithParamInterface<RestartAfterTombstone> {
 };
 
-INSTANTIATE_TEST_CASE_P(Restart, TsRecoveryTombstonedITest,
+INSTANTIATE_TEST_CASE_P(Restart, TsRecoveryTombstonedIMCITest,
                         ::testing::Values(kNoRestart, kRestart));
 
 // Basic tombstoned voting test.
-TEST_P(TsRecoveryTombstonedITest, TestTombstonedVoter) {
+TEST_P(TsRecoveryTombstonedIMCITest, TestTombstonedVoter) {
   const RestartAfterTombstone to_restart = GetParam();
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 
