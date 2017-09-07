@@ -46,12 +46,14 @@ done
 
 IWYU_MAPPINGS_PATH="$ROOT/build-support/iwyu/mappings"
 IWYU_ARGS="\
+    --max_line_length=256 \
     --mapping_file=$IWYU_MAPPINGS_PATH/boost-all.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/boost-all-private.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/boost-extra.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/gflags.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/glog.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/gtest.imp \
+    --mapping_file=$IWYU_MAPPINGS_PATH/kudu.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/libstdcpp.imp"
 
 if ! PATH="$PATH:$PWD/../../thirdparty/clang-toolchain/bin" \

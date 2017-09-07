@@ -26,22 +26,34 @@
 #   https://github.com/include-what-you-use/include-what-you-use/blob/master/docs/IWYUMappings.md
 #
 # We are using mappings for the boost library (comes with IWYU) and a few
-# custom mappings for gflags, glog, and gtest libraries to address some IWYU
-# quirks (hopefully, those should be resolved as IWYU gets better).
+# custom mappings for gflags, glog, gtest and other libraries to address some
+# IWYU quirks (hopefully, those should be resolved as IWYU gets better).
+# The kudu.imp mappings file is used to provide Kudu-specific mappings.
 #
-# Usage:
+# To run the IWYU tool on every C++ source file in the project,
+# use the recipe below.
+#
 #  1. Run the CMake with -DCMAKE_CXX_INCLUDE_WHAT_YOU_USE=<iwyu_cmd_line>
 #
 #     The path to the IWYU binary should be absolute. The path to the binary
 #     and the command-line options should be separated by semicolon
 #     (that's for feeding it into CMake list variables).
 #
-#     E.g., from the build directory (line breaks are just for readability):
+#     Below is the set of commands to run from the build directory to configure
+#     the build accordingly (line breaks are for better readability):
 #
 #     CC=../../thirdparty/clang-toolchain/bin/clang
 #     CXX=../../thirdparty/clang-toolchain/bin/clang++
-#     IWYU="`pwd`../../thirdparty/clang-toolchain/bin/include-what-you-use;\
-#       -Xiwyu;--mapping_file=`pwd`../../build-support/iwyu/mappings/map.imp"
+#     IWYU="`pwd`/../../thirdparty/clang-toolchain/bin/include-what-you-use;\
+#       -Xiwyu;--max_line_length=256;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all-private.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-extra.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gtest.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/glog.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gflags.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/kudu.imp;\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/libstdcpp.imp"
 #
 #     ../../build-support/enable_devtoolset.sh \
 #       env CC=$CC CXX=$CXX \
@@ -52,18 +64,7 @@
 #     NOTE:
 #       Since the Kudu code has some 'ifdef NDEBUG' directives, it's possible
 #       that IWYU would produce different results if run against release, not
-#       debug build. However, we plan to use the tool only with debug builds.
-#
-#     NOTE:
-#       As of now, the appropriate command line for IWYU for Kudu is
-#       IWYU="`pwd`/../../thirdparty/clang-toolchain/bin/include-what-you-use; \
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-all-private.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/boost-extra.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gtest.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/glog.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gflags.imp;\
-#         -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/libstdcpp.imp"
+#       debug build. As of now, the tool is used in debug builds only.
 #
 #  2. Run make, separating the output from the IWYU tool into a separate file
 #     (it's possible to use piping the output from the tool to the script

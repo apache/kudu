@@ -30,6 +30,7 @@ oprofile_data
 .kdev4/
 .metadata/
 *.iml
+README.html
 
 # VIM/emacs/other editors stuff
 *.swp
