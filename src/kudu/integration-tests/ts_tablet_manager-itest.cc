@@ -131,7 +131,8 @@ TEST_F(TsTabletManagerITest, TestFailedTabletsAreReplaced) {
   work.Setup();
   work.Start();
 
-  // Insert data until until the tablet becomes visible to the server.
+  // Insert data until the tablet becomes visible to the server.
+  // We'll operate on the first tablet server, chosen arbitrarily.
   MiniTabletServer* ts = cluster->mini_tablet_server(0);
   string tablet_id;
   ASSERT_EVENTUALLY([&] {
@@ -139,8 +140,20 @@ TEST_F(TsTabletManagerITest, TestFailedTabletsAreReplaced) {
     ASSERT_EQ(1, tablet_ids.size());
     tablet_id = tablet_ids[0];
   });
+
+  // Wait until the replica is running before failing it.
+  const auto wait_until_running = [&]() {
+    AssertEventually([&]{
+      scoped_refptr<TabletReplica> replica;
+      ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
+      ASSERT_EQ(replica->state(), tablet::RUNNING);
+    }, MonoDelta::FromSeconds(60));
+    NO_PENDING_FATALS();
+  };
+  wait_until_running();
+
   {
-    // Fail one of the replicas (the first one, chosen arbitrarily).
+    // Inject an error to the replica. Shutting it down will leave it FAILED.
     scoped_refptr<TabletReplica> replica;
     ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
     replica->SetError(Status::IOError("INJECTED ERROR: tablet failed"));
@@ -149,11 +162,7 @@ TEST_F(TsTabletManagerITest, TestFailedTabletsAreReplaced) {
   }
 
   // Ensure the tablet eventually is replicated.
-  ASSERT_EVENTUALLY([&]{
-    scoped_refptr<TabletReplica> replica;
-    ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
-    ASSERT_EQ(replica->state(), tablet::RUNNING);
-  });
+  wait_until_running();
   work.StopAndJoin();
 }
 
