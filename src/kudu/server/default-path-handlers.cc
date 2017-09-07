@@ -167,7 +167,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
   *output << Substitute("  <tr><th>Memory limit</th><td>$0</td></tr>\n",
                         HumanReadableNumBytes::ToString(hard_limit));
   if (hard_limit > 0) {
-    double percentage = 100 * static_cast<double>(current_consumption / hard_limit);
+    double percentage = 100 * static_cast<double>(current_consumption) / hard_limit;
     *output << Substitute("  <tr><th>Percentage consumed</th><td>$0%</td></tr>\n",
                           StringPrintf("%.2f", percentage));
   }
