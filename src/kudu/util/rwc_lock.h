@@ -115,6 +115,10 @@ class RWCLock {
   void CommitUnlock();
 
  private:
+  // Variants of the functions above that must be called with lock_ held.
+  bool HasReadersUnlocked() const;
+  bool HasWriteLockUnlocked() const;
+
   // Lock which protects reader_count_ and write_locked_.
   // Additionally, while the commit lock is held, the
   // locking thread holds this mutex, which prevents any new
@@ -126,7 +130,7 @@ class RWCLock {
 
 #ifndef NDEBUG
   static const int kBacktraceBufSize = 1024;
-  int64_t last_writer_tid_;
+  int64_t writer_tid_;
   int64_t last_writelock_acquire_time_;
   char last_writer_backtrace_[kBacktraceBufSize];
 #endif // NDEBUG

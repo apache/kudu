@@ -57,13 +57,16 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     string tablet_id = Substitute("tablet-$0-$1", start_key, end_key);
 
     scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
-    TabletMetadataLock meta_lock(tablet.get(), TabletMetadataLock::WRITE);
+    {
+      TabletMetadataLock meta_lock(tablet.get(), TabletMetadataLock::WRITE);
+      PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
+      partition->set_partition_key_start(start_key);
+      partition->set_partition_key_end(end_key);
+      meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
+      meta_lock.Commit();
+    }
 
-    PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
-    partition->set_partition_key_start(start_key);
-    partition->set_partition_key_end(end_key);
-    meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
-    meta_lock.Commit();
+    TabletMetadataLock meta_lock(tablet.get(), TabletMetadataLock::READ);
     table->AddRemoveTablets({ tablet }, {});
     tablets.push_back(tablet);
   }
@@ -89,8 +92,6 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     ASSERT_EQ(tablet_id, (*tablets_in_range.begin())->tablet_id());
     LOG(INFO) << "Key " << start_key << " found in tablet " << tablet_id;
   }
-
-  table->AddRemoveTablets({}, tablets);
 }
 
 TEST(TestTSDescriptor, TestReplicaCreationsDecay) {

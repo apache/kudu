@@ -57,6 +57,7 @@ class CowObject {
   // Abort the current mutation. This drops the write lock without applying any
   // changes made to the mutable copy.
   void AbortMutation() {
+    DCHECK(lock_.HasWriteLock());
     dirty_state_.reset();
     lock_.WriteUnlock();
   }
@@ -65,6 +66,7 @@ class CowObject {
   // blocks any concurrent readers or writers, swaps in the new version of the
   // State, and then drops the commit lock.
   void CommitMutation() {
+    DCHECK(lock_.HasWriteLock());
     if (!dirty_state_) {
       AbortMutation();
       return;
@@ -97,6 +99,7 @@ class CowObject {
   }
 
   const State& dirty() const {
+    DCHECK(lock_.HasWriteLock());
     if (!dirty_state_) {
       return state_;
     }

@@ -240,6 +240,9 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   const std::string& id() const { return table_id_; }
 
   // Atomically add and remove multiple tablets from this table.
+  //
+  // Tablet locks in READ mode or greater must be held for all tablets to be
+  // added or dropped.
   void AddRemoveTablets(const std::vector<scoped_refptr<TabletInfo>>& tablets_to_add,
                         const std::vector<scoped_refptr<TabletInfo>>& tablets_to_drop);
 

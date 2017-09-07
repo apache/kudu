@@ -347,10 +347,13 @@ class TabletLoader : public TabletVisitor {
     // Add the tablet to the tablet manager.
     catalog_manager_->tablet_map_[tablet->tablet_id()] = tablet;
 
-    // Add the tablet to the Tablet.
+    // Add the tablet to the table.
     bool is_deleted = l.mutable_data()->is_deleted();
     l.Commit();
     if (!is_deleted) {
+      // Need to use a new tablet lock here because AddRemoveTablets() reads
+      // from clean state, which is uninitialized for these brand new tablets.
+      TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
       table->AddRemoveTablets({ tablet }, {});
       LOG(INFO) << Substitute("Loaded metadata for tablet $0 (table $1)",
                               tablet_id, table->ToString());
@@ -1475,6 +1478,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   //    It's not yet in any global maps; that will happen in step g below.
   table = CreateTableInfo(req, schema, partition_schema);
   vector<scoped_refptr<TabletInfo>> tablets;
+  auto abort_mutations = MakeScopedCleanup([&table, &tablets]() {
+    table->mutable_metadata()->AbortMutation();
+    for (const auto& e : tablets) {
+      e->mutable_metadata()->AbortMutation();
+    }
+  });
   for (const Partition& partition : partitions) {
     PartitionPB partition_pb;
     partition.ToPB(&partition_pb);
@@ -1512,9 +1521,22 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   for (const auto& tablet : tablets) {
     tablet->mutable_metadata()->CommitMutation();
   }
-  table->AddRemoveTablets(tablets, {});
+  abort_mutations.cancel();
 
-  // g. Make the new table and tablets visible in the catalog.
+  // g. Add the tablets to the table.
+  //
+  // We can't reuse the above WRITE tablet locks for this because
+  // AddRemoveTablets() will read from the clean state, which is empty for
+  // these brand new tablets.
+  for (const auto& tablet : tablets) {
+    tablet->metadata().ReadLock();
+  }
+  table->AddRemoveTablets(tablets, {});
+  for (const auto& tablet : tablets) {
+    tablet->metadata().ReadUnlock();
+  }
+
+  // h. Make the new table and tablets visible in the catalog.
   {
     std::lock_guard<LockType> l(lock_);
 
@@ -1789,6 +1811,11 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 
   TableInfo::TabletInfoMap existing_tablets = table->tablet_map();
   TableInfo::TabletInfoMap new_tablets;
+  auto abort_mutations = MakeScopedCleanup([&new_tablets]() {
+    for (const auto& e : new_tablets) {
+      e.second->mutable_metadata()->AbortMutation();
+    }
+  });
 
   for (const auto& step : steps) {
     vector<DecodedRowOperation> ops;
@@ -1917,6 +1944,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
             tablets_to_drop->emplace_back(existing_iter->second);
             existing_tablets.erase(existing_iter);
           } else if (found_new) {
+            new_iter->second->mutable_metadata()->AbortMutation();
             new_tablets.erase(new_iter);
           } else {
             return Status::InvalidArgument(
@@ -1936,6 +1964,7 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
   for (auto& tablet : new_tablets) {
     tablets_to_add->emplace_back(std::move(tablet.second));
   }
+  abort_mutations.cancel();
   return Status::OK();
 }
 
@@ -2185,7 +2214,18 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   //    are impossible.
   //  * the new tablets can not heartbeat yet, since they don't get created
   //    until further down.
+  //
+  // We acquire new READ locks for tablets_to_add because we've already
+  // committed our WRITE locks above, and reordering the operations such that
+  // the WRITE locks could be reused would open a short window wherein
+  // uninitialized tablet state is published to the world.
+  for (const auto& tablet : tablets_to_add) {
+    tablet->metadata().ReadLock();
+  }
   table->AddRemoveTablets(tablets_to_add, tablets_to_drop);
+  for (const auto& tablet : tablets_to_add) {
+    tablet->metadata().ReadUnlock();
+  }
 
   // Commit state change for dropped tablets. This comes after removing the
   // tablets from their associated tables so that if a GetTableLocations or
@@ -3828,10 +3868,19 @@ Status CatalogManager::ProcessPendingAssignments(
   // Expose tablet metadata changes before the new tablets themselves.
   committer_out.Commit();
   committer_in.Commit();
+
+  for (const auto& t : deferred.tablets_to_add) {
+    // We can't reuse the WRITE tablet locks from committer_out for this
+    // because AddRemoveTablets() will read from the clean state, which is
+    // empty for these brand new tablets.
+    TabletMetadataLock l(t.get(), TabletMetadataLock::READ);
+    t->table()->AddRemoveTablets({ t }, {});
+  }
+
+  // Acquire the global lock to publish the new tablets.
   {
     std::lock_guard<LockType> l(lock_);
     for (const auto& t : deferred.tablets_to_add) {
-      t->table()->AddRemoveTablets({ t }, {});
       tablet_map_[t->tablet_id()] = t;
     }
   }

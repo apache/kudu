@@ -35,14 +35,15 @@ RWCLock::RWCLock()
     write_locked_(false) {
 #else
     write_locked_(false),
-    last_writer_tid_(0),
+    writer_tid_(0),
     last_writelock_acquire_time_(0) {
   last_writer_backtrace_[0] = '\0';
 #endif // NDEBUG
 }
 
 RWCLock::~RWCLock() {
-  CHECK_EQ(reader_count_, 0);
+  DCHECK(!HasReaders());
+  DCHECK(!HasWriteLock());
 }
 
 void RWCLock::ReadLock() {
@@ -52,7 +53,7 @@ void RWCLock::ReadLock() {
 
 void RWCLock::ReadUnlock() {
   MutexLock l(lock_);
-  DCHECK_GT(reader_count_, 0);
+  DCHECK(HasReadersUnlocked());
   reader_count_--;
   if (reader_count_ == 0) {
     no_readers_.Signal();
@@ -61,13 +62,23 @@ void RWCLock::ReadUnlock() {
 
 bool RWCLock::HasReaders() const {
   MutexLock l(lock_);
+  return HasReadersUnlocked();
+}
+
+bool RWCLock::HasReadersUnlocked() const {
+  lock_.AssertAcquired();
   return reader_count_ > 0;
 }
 
 bool RWCLock::HasWriteLock() const {
   MutexLock l(lock_);
+  return HasWriteLockUnlocked();
+}
+
+bool RWCLock::HasWriteLockUnlocked() const {
+  lock_.AssertAcquired();
 #ifndef NDEBUG
-  return last_writer_tid_ == Thread::CurrentThreadId();
+  return writer_tid_ == Thread::CurrentThreadId();
 #else
   return write_locked_;
 #endif
@@ -81,7 +92,7 @@ void RWCLock::WriteLock() {
   }
 #ifndef NDEBUG
   last_writelock_acquire_time_ = GetCurrentTimeMicros();
-  last_writer_tid_ = Thread::CurrentThreadId();
+  writer_tid_ = Thread::CurrentThreadId();
   HexStackTraceToString(last_writer_backtrace_, kBacktraceBufSize);
 #endif // NDEBUG
   write_locked_ = true;
@@ -89,9 +100,10 @@ void RWCLock::WriteLock() {
 
 void RWCLock::WriteUnlock() {
   MutexLock l(lock_);
-  DCHECK(write_locked_);
+  DCHECK(HasWriteLockUnlocked());
   write_locked_ = false;
 #ifndef NDEBUG
+  writer_tid_ = 0;
   last_writer_backtrace_[0] = '\0';
 #endif // NDEBUG
   no_mutators_.Signal();
@@ -99,20 +111,22 @@ void RWCLock::WriteUnlock() {
 
 void RWCLock::UpgradeToCommitLock() {
   lock_.lock();
-  DCHECK(write_locked_);
+  DCHECK(HasWriteLockUnlocked());
   while (reader_count_ > 0) {
     no_readers_.Wait();
   }
-  DCHECK(write_locked_);
+  DCHECK(HasWriteLockUnlocked());
 
   // Leaves the lock held, which prevents any new readers
   // or writers.
 }
 
 void RWCLock::CommitUnlock() {
-  DCHECK_EQ(0, reader_count_);
+  DCHECK(!HasReadersUnlocked());
+  DCHECK(HasWriteLockUnlocked());
   write_locked_ = false;
 #ifndef NDEBUG
+  writer_tid_ = 0;
   last_writer_backtrace_[0] = '\0';
 #endif // NDEBUG
   no_mutators_.Broadcast();
