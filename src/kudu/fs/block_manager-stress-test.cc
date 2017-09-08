@@ -406,7 +406,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
     CHECK_OK(block->Size(&block_size));
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[block_size]);
     Slice data(scratch.get(), block_size);
-    CHECK_OK(block->Read(0, &data));
+    CHECK_OK(block->Read(0, data));
 
     // The first 4 bytes correspond to the PRNG seed.
     CHECK(data.size() >= 4);

@@ -63,15 +63,14 @@ class CountingReadableBlock : public ReadableBlock {
     return block_->Size(sz);
   }
 
-  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    std::vector<Slice> results = { *result };
-    return ReadV(offset, &results);
+  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
+    return ReadV(offset, ArrayView<Slice>(&result, 1));
   }
 
-  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const OVERRIDE {
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE {
     RETURN_NOT_OK(block_->ReadV(offset, results));
     // Calculate the read amount of data
-    size_t length = std::accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+    size_t length = std::accumulate(results.begin(), results.end(), static_cast<size_t>(0),
                                [&](int sum, const Slice& curr) {
                                  return sum + curr.size();
                                });

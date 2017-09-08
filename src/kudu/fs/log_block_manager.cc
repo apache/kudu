@@ -57,6 +57,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/alignment.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -142,6 +143,7 @@ using internal::LogBlockContainer;
 using internal::LogWritableBlock;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
+using std::accumulate;
 using std::map;
 using std::set;
 using std::shared_ptr;
@@ -263,7 +265,7 @@ class LogWritableBlock : public WritableBlock {
 
   virtual Status Append(const Slice& data) OVERRIDE;
 
-  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
+  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE;
 
   virtual Status Finalize() OVERRIDE;
 
@@ -376,13 +378,13 @@ class LogBlockContainer {
   Status WriteData(int64_t offset, const Slice& data);
 
   // See RWFile::WriteV()
-  Status WriteVData(int64_t offset, const vector<Slice>& data);
+  Status WriteVData(int64_t offset, ArrayView<const Slice> data);
 
   // See RWFile::Read().
-  Status ReadData(int64_t offset, Slice* result) const;
+  Status ReadData(int64_t offset, Slice result) const;
 
   // See RWFile::ReadV().
-  Status ReadVData(int64_t offset, vector<Slice>* results) const;
+  Status ReadVData(int64_t offset, ArrayView<Slice> results) const;
 
   // Appends 'pb' to this container's metadata file.
   //
@@ -933,10 +935,10 @@ Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
 }
 
 Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
-  return WriteVData(offset, { data });
+  return WriteVData(offset, ArrayView<const Slice>(&data, 1));
 }
 
-Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) {
+Status LogBlockContainer::WriteVData(int64_t offset, ArrayView<const Slice> data) {
   DCHECK(!read_only());
   DCHECK_GE(offset, next_block_offset());
 
@@ -955,12 +957,12 @@ Status LogBlockContainer::WriteVData(int64_t offset, const vector<Slice>& data) 
   return Status::OK();
 }
 
-Status LogBlockContainer::ReadData(int64_t offset, Slice* result) const {
+Status LogBlockContainer::ReadData(int64_t offset, Slice result) const {
   DCHECK_GE(offset, 0);
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->Read(offset, result));
   return Status::OK();
 }
-Status LogBlockContainer::ReadVData(int64_t offset, vector<Slice>* results) const {
+Status LogBlockContainer::ReadVData(int64_t offset, ArrayView<Slice> results) const {
   DCHECK_GE(offset, 0);
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->ReadV(offset, results));
   return Status::OK();
@@ -1271,10 +1273,10 @@ BlockManager* LogWritableBlock::block_manager() const {
 }
 
 Status LogWritableBlock::Append(const Slice& data) {
-  return AppendV({ data });
+  return AppendV(ArrayView<const Slice>(&data, 1));
 }
 
-Status LogWritableBlock::AppendV(const vector<Slice>& data) {
+Status LogWritableBlock::AppendV(ArrayView<const Slice> data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY)
       << "Invalid state: " << state_;
 
@@ -1401,9 +1403,9 @@ class LogReadableBlock : public ReadableBlock {
 
   virtual Status Size(uint64_t* sz) const OVERRIDE;
 
-  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
+  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
 
-  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE;
 
   virtual size_t memory_footprint() const OVERRIDE;
 
@@ -1459,15 +1461,14 @@ Status LogReadableBlock::Size(uint64_t* sz) const {
   return Status::OK();
 }
 
-Status LogReadableBlock::Read(uint64_t offset, Slice* result) const {
-  vector<Slice> results = { *result };
-  return ReadV(offset, &results);
+Status LogReadableBlock::Read(uint64_t offset, Slice result) const {
+  return ReadV(offset, ArrayView<Slice>(&result, 1));
 }
 
-Status LogReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {
+Status LogReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const {
   DCHECK(!closed_.Load());
 
-  size_t read_length = accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+  size_t read_length = accumulate(results.begin(), results.end(), static_cast<size_t>(0),
                                   [&](int sum, const Slice& curr) {
                                     return sum + curr.size();
                                   });

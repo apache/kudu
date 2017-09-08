@@ -83,6 +83,7 @@ BEGIN {
   # ignored. Eventually, this list should become empty as soon as all the valid
   # suggestions are addressed and invalid ones are taken care either by proper
   # IWYU pragmas or adding special mappings (e.g. like boost mappings).
+  muted["kudu/cfile/cfile_reader.h"]
   muted["kudu/cfile/cfile_writer.h"]
   muted["kudu/client/client-internal.h"]
   muted["kudu/client/client-test.cc"]

@@ -132,7 +132,7 @@ class TabletCopyTest : public TabletServerTestBase {
     RETURN_NOT_OK(block->Size(&size));
     scratch->resize(size);
     *slice = Slice(scratch->data(), size);
-    RETURN_NOT_OK(block->Read(0, slice));
+    RETURN_NOT_OK(block->Read(0, *slice));
     return Status::OK();
   }
 

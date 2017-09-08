@@ -258,8 +258,7 @@ class FileCacheStressTest : public KuduTest {
     uint64_t off = file_size > 0 ? rand->Uniform(file_size) : 0;
     size_t len = file_size > 0 ? rand->Uniform(file_size - off) : 0;
     unique_ptr<uint8_t[]> scratch(new uint8_t[len]);
-    Slice s(scratch.get(), len);
-    RETURN_NOT_OK(file->Read(off, &s));
+    RETURN_NOT_OK(file->Read(off, Slice(scratch.get(), len)));
 
     (*metrics)[BaseName(file->filename())]["read"]++;
     return Status::OK();

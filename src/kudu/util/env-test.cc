@@ -158,8 +158,7 @@ class TestEnv : public KuduTest {
   void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
     unique_ptr<uint8_t[]> scratch(new uint8_t[n]);
     Slice s(scratch.get(), n);
-    ASSERT_OK(raf->Read(offset, &s));
-    ASSERT_EQ(n, s.size());
+    ASSERT_OK(raf->Read(offset, s));
     ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
   }
 
@@ -440,7 +439,7 @@ TEST_F(TestEnv, TestTruncate) {
   ASSERT_OK(env_->NewRandomAccessFile(test_path, &raf));
   unique_ptr<uint8_t[]> scratch(new uint8_t[size]);
   Slice s(scratch.get(), size);
-  ASSERT_OK(raf->Read(0, &s));
+  ASSERT_OK(raf->Read(0, s));
   const uint8_t* data = s.data();
   for (int i = 0; i < size; i++) {
     ASSERT_EQ(0, data[i]) << "Not null at position " << i;
@@ -481,11 +480,7 @@ TEST_F(TestEnv, TestReadFully) {
   FLAGS_env_inject_short_read_bytes = kReadLength / 2;
 
   // Verify that Read fully reads the whole requested data.
-  ASSERT_OK(raf->Read(0, &s));
-  ASSERT_EQ(s.data(), scratch.get()) << "Should have returned a contiguous copy";
-  ASSERT_EQ(kReadLength, s.size());
-
-  // Verify that the data read was correct.
+  ASSERT_OK(raf->Read(0, s));
   VerifyTestData(s, 0);
 
   // Turn short reads off again
@@ -493,7 +488,7 @@ TEST_F(TestEnv, TestReadFully) {
 
   // Verify that Read fails with an IOError at EOF.
   Slice s2(scratch.get(), 200);
-  Status status = raf->Read(kFileSize - 100, &s2);
+  Status status = raf->Read(kFileSize - 100, s2);
   ASSERT_FALSE(status.ok());
   ASSERT_TRUE(status.IsIOError());
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
@@ -521,7 +516,7 @@ TEST_F(TestEnv, TestReadVFully) {
   FLAGS_env_inject_short_read_bytes = 3;
 
   // Verify that Read fully reads the whole requested data.
-  ASSERT_OK(file->ReadV(0, &results));
+  ASSERT_OK(file->ReadV(0, results));
   ASSERT_EQ(result1, "abcde");
   ASSERT_EQ(result2, "12345");
 
@@ -529,7 +524,7 @@ TEST_F(TestEnv, TestReadVFully) {
   FLAGS_env_inject_short_read_bytes = 0;
 
   // Verify that Read fails with an IOError at EOF.
-  Status status = file->ReadV(5, &results);
+  Status status = file->ReadV(5, results);
   ASSERT_FALSE(status.ok());
   ASSERT_TRUE(status.IsIOError());
   ASSERT_STR_CONTAINS(status.ToString(), "EOF");
@@ -561,7 +556,7 @@ TEST_F(TestEnv, TestIOVMax) {
   FLAGS_env_inject_short_read_bytes = 3;
 
   // Verify all the data is read
-  ASSERT_OK(file->ReadV(0, &results));
+  ASSERT_OK(file->ReadV(0, results));
   VerifyTestData(Slice(scratch, data_size), 0);
 }
 
@@ -647,7 +642,7 @@ TEST_F(TestEnv, TestReopen) {
   ASSERT_EQ(first.length() + second.length(), size);
   uint8_t scratch[size];
   Slice s(scratch, size);
-  ASSERT_OK(reader->Read(0, &s));
+  ASSERT_OK(reader->Read(0, s));
   ASSERT_EQ(first + second, s.ToString());
 }
 
@@ -833,7 +828,7 @@ TEST_F(TestEnv, TestRWFile) {
   // Read from it.
   uint8_t scratch[kTestData.length()];
   Slice result(scratch, kTestData.length());
-  ASSERT_OK(file->Read(0, &result));
+  ASSERT_OK(file->Read(0, result));
   ASSERT_EQ(result, kTestData);
   uint64_t sz;
   ASSERT_OK(file->Size(&sz));
@@ -847,7 +842,7 @@ TEST_F(TestEnv, TestRWFile) {
   uint8_t scratch2[size2];
   Slice result2(scratch2, size2);
   vector<Slice> results = { result1, result2 };
-  ASSERT_OK(file->ReadV(0, &results));
+  ASSERT_OK(file->ReadV(0, results));
   ASSERT_EQ(result1, "abc");
   ASSERT_EQ(result2, "de");
 
@@ -858,7 +853,7 @@ TEST_F(TestEnv, TestRWFile) {
   string kNewTestData = "aabcdebcdeabcde";
   uint8_t scratch3[kNewTestData.length()];
   Slice result3(scratch3, kNewTestData.length());
-  ASSERT_OK(file->Read(0, &result3));
+  ASSERT_OK(file->Read(0, result3));
 
   // Retest.
   ASSERT_EQ(result3, kNewTestData);
@@ -875,8 +870,8 @@ TEST_F(TestEnv, TestRWFile) {
   ASSERT_OK(env_->NewRWFile(opts, GetTestPath("foo"), &file));
   uint8_t scratch4[kNewTestData.length()];
   Slice result4(scratch4, kNewTestData.length());
-  ASSERT_OK(file->Read(0, &result4));
-  ASSERT_EQ(result3, kNewTestData);
+  ASSERT_OK(file->Read(0, result4));
+  ASSERT_EQ(result4, kNewTestData);
 }
 
 TEST_F(TestEnv, TestCanonicalize) {
@@ -1071,7 +1066,7 @@ TEST_F(TestEnv, TestInjectEIO) {
   // to of each's literal paths.
   FLAGS_env_inject_eio_globs = Substitute("$0,$1", kTestRWPath1, kTestRWPath2);
   Slice result;
-  s = rw1->Read(0, &result);
+  s = rw1->Read(0, result);
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "INJECTED FAILURE");
   s = rw2->Size(&size);

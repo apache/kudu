@@ -155,7 +155,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
     faststring scratch;
     scratch.resize(size);
     Slice slice(scratch.data(), size);
-    RETURN_NOT_OK(file->Read(0, &slice));
+    RETURN_NOT_OK(file->Read(0, slice));
     buf.append(slice.data(), slice.size());
   }
 

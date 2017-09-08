@@ -274,7 +274,7 @@ static Status ReadFileChunkToBuf(const Info* info,
   data->resize(response_data_size);
   uint8_t* buf = reinterpret_cast<uint8_t*>(const_cast<char*>(data->data()));
   Slice slice(buf, response_data_size);
-  Status s = info->Read(offset, &slice);
+  Status s = info->Read(offset, slice);
   if (PREDICT_FALSE(!s.ok())) {
     s = s.CloneAndPrepend(
         Substitute("Unable to read existing file for $0", data_name));

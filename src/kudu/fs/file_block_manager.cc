@@ -43,6 +43,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -245,7 +246,7 @@ class FileWritableBlock : public WritableBlock {
 
   virtual Status Append(const Slice& data) OVERRIDE;
 
-  virtual Status AppendV(const vector<Slice>& data) OVERRIDE;
+  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE;
 
   virtual Status Finalize() OVERRIDE;
 
@@ -330,10 +331,10 @@ const BlockId& FileWritableBlock::id() const {
 }
 
 Status FileWritableBlock::Append(const Slice& data) {
-  return AppendV({ data });
+  return AppendV(ArrayView<const Slice>(&data, 1));
 }
 
-Status FileWritableBlock::AppendV(const vector<Slice>& data) {
+Status FileWritableBlock::AppendV(ArrayView<const Slice> data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY) << "Invalid state: " << state_;
   RETURN_NOT_OK_HANDLE_ERROR(writer_->AppendV(data));
   RETURN_NOT_OK_HANDLE_ERROR(location_.data_dir()->RefreshIsFull(
@@ -438,9 +439,9 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual Status Size(uint64_t* sz) const OVERRIDE;
 
-  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE;
+  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
 
-  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE;
 
   virtual size_t memory_footprint() const OVERRIDE;
 
@@ -509,19 +510,18 @@ Status FileReadableBlock::Size(uint64_t* sz) const {
   return Status::OK();
 }
 
-Status FileReadableBlock::Read(uint64_t offset, Slice* result) const {
-  vector<Slice> results = { *result };
-  return ReadV(offset, &results);
+Status FileReadableBlock::Read(uint64_t offset, Slice result) const {
+  return ReadV(offset, ArrayView<Slice>(&result, 1));
 }
 
-Status FileReadableBlock::ReadV(uint64_t offset, vector<Slice>* results) const {
+Status FileReadableBlock::ReadV(uint64_t offset, ArrayView<Slice> results) const {
   DCHECK(!closed_.Load());
 
   RETURN_NOT_OK_HANDLE_ERROR(reader_->ReadV(offset, results));
 
   if (block_manager_->metrics_) {
     // Calculate the read amount of data
-    size_t bytes_read = accumulate(results->begin(), results->end(), static_cast<size_t>(0),
+    size_t bytes_read = accumulate(results.begin(), results.end(), static_cast<size_t>(0),
                                    [&](int sum, const Slice& curr) {
                                      return sum + curr.size();
                                    });

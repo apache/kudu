@@ -435,7 +435,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   ASSERT_EQ(test_data.length(), sz);
   uint8_t scratch[test_data.length()];
   Slice data(scratch, test_data.length());
-  ASSERT_OK(read_block->Read(0, &data));
+  ASSERT_OK(read_block->Read(0, data));
   ASSERT_EQ(test_data, data);
 
   // Read the data back into multiple slices
@@ -446,7 +446,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   uint8_t scratch2[size2];
   Slice data2(scratch2, size2);
   vector<Slice> results = { data1, data2 };
-  ASSERT_OK(read_block->ReadV(0, &results));
+  ASSERT_OK(read_block->ReadV(0, results));
   ASSERT_EQ(test_data.substr(0, size1), data1);
   ASSERT_EQ(test_data.substr(size1, size2), data2);
 
@@ -501,7 +501,7 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   // But we should still be able to read from the opened block.
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
   Slice data(scratch.get(), test_data.length());
-  ASSERT_OK(read_block->Read(0, &data));
+  ASSERT_OK(read_block->Read(0, data));
   ASSERT_EQ(test_data, data);
 }
 
@@ -677,7 +677,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_EQ(test_data.length(), sz);
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[test_data.length()]);
   Slice data(scratch.get(), test_data.length());
-  ASSERT_OK(read_block->Read(0, &data));
+  ASSERT_OK(read_block->Read(0, data));
   ASSERT_EQ(test_data, data);
   ASSERT_OK(read_block->Close());
   ASSERT_TRUE(new_bm->OpenBlock(written_block3->id(), nullptr)
@@ -776,7 +776,7 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     // The read is reflected in total_bytes_read.
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
     Slice data(scratch.get(), kTestData.length());
-    ASSERT_OK(reader->Read(0, &data));
+    ASSERT_OK(reader->Read(0, data));
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
         entity, 1, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
@@ -902,7 +902,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
     RETURN_NOT_OK(block->Size(&size));
     uint8_t buf[size];
     Slice slice(buf, size);
-    RETURN_NOT_OK(block->Read(0, &slice));
+    RETURN_NOT_OK(block->Read(0, slice));
 
     string data = slice.ToString();
     const string* string_to_check =
@@ -1050,7 +1050,7 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseFinalizedWritableBlockTest) {
     ASSERT_OK(block->Size(&size));
     uint8_t buf[size];
     Slice slice(buf, size);
-    ASSERT_OK(block->Read(0, &slice));
+    ASSERT_OK(block->Read(0, slice));
     ASSERT_EQ(kTestData, slice);
   }
 
@@ -1087,7 +1087,7 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
     ASSERT_EQ(kTestData.length(), sz);
     uint8_t scratch[kTestData.length()];
     Slice data(scratch, kTestData.length());
-    ASSERT_OK(reader->Read(0, &data));
+    ASSERT_OK(reader->Read(0, data));
     ASSERT_EQ(kTestData, data);
   }
 }

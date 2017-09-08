@@ -295,7 +295,7 @@ TYPED_TEST(FileCacheTest, TestHeavyReads) {
     uint64_t size;
     ASSERT_OK(f->Size(&size));
     Slice s(buf.get(), size);
-    ASSERT_OK(f->Read(0, &s));
+    ASSERT_OK(f->Read(0, s));
     ASSERT_EQ(data, s);
     ASSERT_LE(CountOpenFds(this->env_),
               this->initial_open_fds_ + kCacheCapacity);

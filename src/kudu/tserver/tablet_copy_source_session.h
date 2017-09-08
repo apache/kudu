@@ -38,12 +38,12 @@
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/once.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
 class FsManager;
-class Slice;
 
 namespace tablet {
 class TabletReplica;
@@ -69,7 +69,7 @@ struct ImmutableRandomAccessFileInfo {
                                 int64_t size)
       : readable(std::move(readable)), size(size) {}
 
-  Status Read(uint64_t offset, Slice* data) const {
+  Status Read(uint64_t offset, Slice data) const {
     return readable->Read(offset, data);
   }
 };
@@ -86,7 +86,7 @@ struct ImmutableReadableBlockInfo {
     size(size) {
   }
 
-  Status Read(uint64_t offset, Slice* data) const {
+  Status Read(uint64_t offset, Slice data) const {
     return readable->Read(offset, data);
   }
 };

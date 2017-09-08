@@ -46,6 +46,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
@@ -363,17 +364,18 @@ Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
   return Status::OK();
 }
 
-Status DoReadV(int fd, const string& filename, uint64_t offset, vector<Slice>* results) {
+Status DoReadV(int fd, const string& filename, uint64_t offset,
+               ArrayView<Slice> results) {
   MAYBE_RETURN_EIO(filename, IOError(Env::kInjectedFailureStatusMsg, EIO));
   ThreadRestrictions::AssertIOAllowed();
 
   // Convert the results into the iovec vector to request
   // and calculate the total bytes requested
   size_t bytes_req = 0;
-  size_t iov_size = results->size();
+  size_t iov_size = results.size();
   struct iovec iov[iov_size];
   for (size_t i = 0; i < iov_size; i++) {
-    Slice& result = (*results)[i];
+    Slice& result = results[i];
     bytes_req += result.size();
     iov[i] = { result.mutable_data(), result.size() };
   }
@@ -429,8 +431,7 @@ Status DoReadV(int fd, const string& filename, uint64_t offset, vector<Slice>* r
   return Status::OK();
 }
 
-Status DoWriteV(int fd, const string& filename, uint64_t offset,
-                const vector<Slice>& data) {
+Status DoWriteV(int fd, const string& filename, uint64_t offset, ArrayView<const Slice> data) {
   MAYBE_RETURN_EIO(filename, IOError(Env::kInjectedFailureStatusMsg, EIO));
   ThreadRestrictions::AssertIOAllowed();
 
@@ -563,12 +564,11 @@ class PosixRandomAccessFile: public RandomAccessFile {
       : filename_(std::move(fname)), fd_(fd) {}
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
-  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    vector<Slice> results = { *result };
-    return ReadV(offset, &results);
+  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
+    return DoReadV(fd_, filename_, offset, ArrayView<Slice>(&result, 1));
   }
 
-  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE {
     return DoReadV(fd_, filename_, offset, results);
   }
 
@@ -613,10 +613,10 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) OVERRIDE {
-    return AppendV({ data });
+    return AppendV(ArrayView<const Slice>(&data, 1));
   }
 
-  virtual Status AppendV(const vector<Slice> &data) OVERRIDE {
+  virtual Status AppendV(ArrayView<const Slice> data) OVERRIDE {
     ThreadRestrictions::AssertIOAllowed();
     RETURN_NOT_OK(DoWriteV(fd_, filename_, filesize_, data));
     // Calculate the amount of data written
@@ -747,20 +747,19 @@ class PosixRWFile : public RWFile {
     WARN_NOT_OK(Close(), "Failed to close " + filename_);
   }
 
-  virtual Status Read(uint64_t offset, Slice* result) const OVERRIDE {
-    vector<Slice> results = { *result };
-    return ReadV(offset, &results);
+  virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
+    return DoReadV(fd_, filename_, offset, ArrayView<Slice>(&result, 1));
   }
 
-  virtual Status ReadV(uint64_t offset, vector<Slice>* results) const OVERRIDE {
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const OVERRIDE {
     return DoReadV(fd_, filename_, offset, results);
   }
 
   virtual Status Write(uint64_t offset, const Slice& data) OVERRIDE {
-    return WriteV(offset, { data });
+    return WriteV(offset, ArrayView<const Slice>(&data, 1));
   }
 
-  virtual Status WriteV(uint64_t offset, const vector<Slice> &data) OVERRIDE {
+  virtual Status WriteV(uint64_t offset, ArrayView<const Slice> data) OVERRIDE {
     Status s = DoWriteV(fd_, filename_, offset, data);
     return s;
   }

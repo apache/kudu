@@ -244,7 +244,7 @@ Status DumpBlock(const RunnerContext& context) {
     int64_t chunk = std::min<int64_t>(size - offset, 64 * 1024);
     buf.resize(chunk);
     Slice s(buf);
-    RETURN_NOT_OK(block->Read(offset, &s));
+    RETURN_NOT_OK(block->Read(offset, s));
     offset += s.size();
     cout << s.ToString();
   }

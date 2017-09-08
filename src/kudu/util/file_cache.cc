@@ -34,6 +34,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
@@ -232,13 +233,13 @@ class Descriptor<RWFile> : public RWFile {
 
   ~Descriptor() = default;
 
-  Status Read(uint64_t offset, Slice* result) const override {
+  Status Read(uint64_t offset, Slice result) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->Read(offset, result);
   }
 
-  Status ReadV(uint64_t offset, vector<Slice>* results) const override {
+  Status ReadV(uint64_t offset, ArrayView<Slice> results) const override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->ReadV(offset, results);
@@ -250,7 +251,7 @@ class Descriptor<RWFile> : public RWFile {
     return opened.file()->Write(offset, data);
   }
 
-  Status WriteV(uint64_t offset, const vector<Slice> &data) override {
+  Status WriteV(uint64_t offset, ArrayView<const Slice> data) override {
     ScopedOpenedDescriptor<RWFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->WriteV(offset, data);
@@ -363,13 +364,13 @@ class Descriptor<RandomAccessFile> : public RandomAccessFile {
 
   ~Descriptor() = default;
 
-  Status Read(uint64_t offset, Slice* result) const override {
+  Status Read(uint64_t offset, Slice result) const override {
     ScopedOpenedDescriptor<RandomAccessFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->Read(offset, result);
   }
 
-  Status ReadV(uint64_t offset, vector<Slice>* results) const override {
+  Status ReadV(uint64_t offset, ArrayView<Slice> results) const override {
     ScopedOpenedDescriptor<RandomAccessFile> opened(&base_);
     RETURN_NOT_OK(ReopenFileIfNecessary(&opened));
     return opened.file()->ReadV(offset, results);

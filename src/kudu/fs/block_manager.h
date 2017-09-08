@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -115,7 +116,7 @@ class WritableBlock : public Block {
   //
   // Does not guarantee durability of 'data'; Close() must be called for all
   // outstanding data to reach the disk.
-  virtual Status AppendV(const std::vector<Slice>& data) = 0;
+  virtual Status AppendV(ArrayView<const Slice> data) = 0;
 
   // Signals that the block will no longer receive writes. Does not guarantee
   // durability; Close() must still be called for that.
@@ -150,13 +151,13 @@ class ReadableBlock : public Block {
   // returning an error if fewer bytes exist.
   // Sets "result" to the data that was read.
   // If an error was encountered, returns a non-OK status.
-  virtual Status Read(uint64_t offset, Slice* result) const = 0;
+  virtual Status Read(uint64_t offset, Slice result) const = 0;
 
   // Reads exactly the "results" aggregate bytes, based on each Slice's "size",
   // beginning from 'offset' in the block, returning an error if fewer bytes exist.
   // Sets each "result" to the data that was read.
   // If an error was encountered, returns a non-OK status.
-  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const = 0;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const = 0;
 
   // Returns the memory usage of this object including the object itself.
   virtual size_t memory_footprint() const = 0;

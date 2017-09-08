@@ -425,7 +425,7 @@ Status ReadableLogSegment::ReadHeader() {
 
   // Read and parse the log segment header.
   RETURN_NOT_OK_PREPEND(readable_file_->Read(kLogSegmentHeaderMagicAndHeaderLength,
-                                             &header_slice),
+                                             header_slice),
                         "Unable to read fully");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&header,
@@ -448,7 +448,7 @@ Status ReadableLogSegment::ReadHeader() {
 Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
   uint8_t scratch[kLogSegmentHeaderMagicAndHeaderLength];
   Slice slice(scratch, kLogSegmentHeaderMagicAndHeaderLength);
-  RETURN_NOT_OK(readable_file_->Read(0, &slice));
+  RETURN_NOT_OK(readable_file_->Read(0, slice));
   RETURN_NOT_OK(ParseHeaderMagicAndHeaderLength(slice, len));
   return Status::OK();
 }
@@ -533,7 +533,7 @@ Status ReadableLogSegment::ReadFooter() {
   LogSegmentFooterPB footer;
 
   // Read and parse the log segment footer.
-  RETURN_NOT_OK_PREPEND(readable_file_->Read(footer_offset, &footer_slice),
+  RETURN_NOT_OK_PREPEND(readable_file_->Read(footer_offset, footer_slice),
                         "Footer not found. Could not read fully.");
 
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&footer,
@@ -551,7 +551,7 @@ Status ReadableLogSegment::ReadFooterMagicAndFooterLength(uint32_t *len) {
 
   CHECK_GT(file_size(), kLogSegmentFooterMagicAndFooterLength);
   RETURN_NOT_OK(readable_file_->Read(file_size() - kLogSegmentFooterMagicAndFooterLength,
-                                     &slice));
+                                     slice));
 
   RETURN_NOT_OK(ParseFooterMagicAndFooterLength(slice, len));
   return Status::OK();
@@ -609,7 +609,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_va
        offset += kChunkSize - entry_header_size()) {
     int rem = std::min<int64_t>(file_size() - offset, kChunkSize);
     Slice chunk(buf.get(), rem);
-    RETURN_NOT_OK(readable_file()->Read(offset, &chunk));
+    RETURN_NOT_OK(readable_file()->Read(offset, chunk));
 
     // Optimization for the case where a chunk is all zeros -- this is common in the
     // case of pre-allocated files. This avoids a lot of redundant CRC calculation.
@@ -658,7 +658,7 @@ Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header,
   const size_t header_size = entry_header_size();
   uint8_t scratch[header_size];
   Slice slice(scratch, header_size);
-  RETURN_NOT_OK_PREPEND(readable_file()->Read(*offset, &slice),
+  RETURN_NOT_OK_PREPEND(readable_file()->Read(*offset, slice),
                         "Could not read log entry header");
 
   *status_detail = DecodeEntryHeader(slice, header);
@@ -736,7 +736,7 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t *offset,
   }
   tmp_buf->resize(buf_len);
   Slice entry_batch_slice(tmp_buf->data(), header.msg_length_compressed);
-  Status s =  readable_file()->Read(*offset, &entry_batch_slice);
+  Status s =  readable_file()->Read(*offset, entry_batch_slice);
 
   if (!s.ok()) return Status::IOError(Substitute("Could not read entry. Cause: $0",
                                                  s.ToString()));
@@ -857,10 +857,10 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data,
   InlineEncodeFixed32(&header_buf[12], crc::Crc32c(&header_buf[0], kEntryHeaderSizeV2 - 4));
 
   // Write the header to the file, followed by the batch data itself.
-  RETURN_NOT_OK(writable_file_->AppendV({
-                                            Slice(header_buf,
-                                                  arraysize(header_buf)),
-                                            data_to_write}));
+  Slice slices[2] = {
+    Slice(header_buf, arraysize(header_buf)),
+    data_to_write };
+  RETURN_NOT_OK(writable_file_->AppendV(slices));
   written_offset_ += arraysize(header_buf) + data_to_write.size();
   return Status::OK();
 }

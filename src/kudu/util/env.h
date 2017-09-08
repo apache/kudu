@@ -22,6 +22,7 @@
 
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -359,6 +360,7 @@ class SequentialFile {
 
   // Read up to "result.size" bytes from the file.
   // Sets "result.data" to the data that was read.
+  //
   // If an error was encountered, returns a non-OK status
   // and the contents of "result" are invalid.
   //
@@ -384,8 +386,9 @@ class RandomAccessFile {
   RandomAccessFile() { }
   virtual ~RandomAccessFile();
 
-  // Read up to "result.size" from the file starting at "offset".
-  // Sets "result.data" to the data that was read.
+  // Read "result.size" bytes from the file starting at "offset".
+  // Copies the resulting data into "result.data".
+  //
   // If an error was encountered, returns a non-OK status.
   //
   // This method will internally retry on EINTR and "short reads" in order to
@@ -393,11 +396,12 @@ class RandomAccessFile {
   // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status Read(uint64_t offset, Slice* result) const = 0;
+  virtual Status Read(uint64_t offset, Slice result) const = 0;
 
   // Reads up to the "results" aggregate size, based on each Slice's "size",
-  // from the file starting at 'offset'.
-  // Sets each "result.data" to the data that was read.
+  // from the file starting at 'offset'. The Slices must point to already-allocated
+  // buffers for the data to be written to.
+  //
   // If an error was encountered, returns a non-OK status.
   //
   // This method will internally retry on EINTR and "short reads" in order to
@@ -405,7 +409,7 @@ class RandomAccessFile {
   // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const = 0;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const = 0;
 
   // Returns the size of the file
   virtual Status Size(uint64_t *size) const = 0;
@@ -456,7 +460,7 @@ class WritableFile {
   //
   // For implementation specific quirks and details, see comments in
   // implementation source code (e.g., env_posix.cc)
-  virtual Status AppendV(const std::vector<Slice>& data) = 0;
+  virtual Status AppendV(ArrayView<const Slice> data) = 0;
 
   // Pre-allocates 'size' bytes for the file in the underlying filesystem.
   // size bytes are added to the current pre-allocated size or to the current
@@ -524,8 +528,8 @@ class RWFile {
 
   virtual ~RWFile();
 
-  // Read up to "result.size" from the file starting at "offset".
-  // Sets "result.data" to the data that was read.
+  // Read "result.size" bytes from the file starting at "offset".
+  // Copies the resulting data into "result.data".
   // If an error was encountered, returns a non-OK status.
   //
   // This method will internally retry on EINTR and "short reads" in order to
@@ -533,11 +537,12 @@ class RWFile {
   // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status Read(uint64_t offset, Slice* result) const = 0;
+  virtual Status Read(uint64_t offset, Slice result) const = 0;
 
   // Reads up to the "results" aggregate size, based on each Slice's "size",
-  // from the file starting at 'offset'.
-  // Sets each "result.data" to the data that was read.
+  // from the file starting at 'offset'. The Slices must point to already-allocated
+  // buffers for the data to be written to.
+  //
   // If an error was encountered, returns a non-OK status.
   //
   // This method will internally retry on EINTR and "short reads" in order to
@@ -545,13 +550,13 @@ class RWFile {
   // possible to read exactly 'length' bytes, an IOError is returned.
   //
   // Safe for concurrent use by multiple threads.
-  virtual Status ReadV(uint64_t offset, std::vector<Slice>* results) const = 0;
+  virtual Status ReadV(uint64_t offset, ArrayView<Slice> results) const = 0;
 
   // Writes 'data' to the file position given by 'offset'.
   virtual Status Write(uint64_t offset, const Slice& data) = 0;
 
-  // Writes the 'data' vector to the file position given by 'offset'.
-  virtual Status WriteV(uint64_t offset, const std::vector<Slice>& data) = 0;
+  // Writes the 'data' slices to the file position given by 'offset'.
+  virtual Status WriteV(uint64_t offset, ArrayView<const Slice> data) = 0;
 
   // Preallocates 'length' bytes for the file in the underlying filesystem
   // beginning at 'offset'. It is safe to preallocate the same range

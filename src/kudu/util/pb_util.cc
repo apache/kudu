@@ -189,7 +189,9 @@ bool IsSupportedContainerVersion(uint32_t version) {
 // Status::Incomplete.
 // If there is an unexpected short read, returns Status::Corruption.
 //
-// A Slice of the bytes read into 'scratch' is returned in 'result'.
+// A Slice of the bytes read into 'buf' is returned in 'result'.
+//
+// NOTE: the data in 'buf' may be modified even in the case of a failed read.
 template<typename ReadableFileType>
 Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
                            uint64_t* offset, uint64_t length,
@@ -207,7 +209,7 @@ Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
   // Perform the read.
   unique_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
   Slice s(local_scratch.get(), length);
-  RETURN_NOT_OK(reader->Read(*offset, &s));
+  RETURN_NOT_OK(reader->Read(*offset, s));
   CHECK_EQ(length, s.size()) // Should never trigger due to contract with reader APIs.
       << Substitute("Unexpected short read: Proto container file $0: Tried to read $1 bytes "
                     "but only read $2 bytes",

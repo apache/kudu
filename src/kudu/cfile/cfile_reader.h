@@ -54,6 +54,8 @@ class EncodedKey;
 class SelectionVector;
 class TypeInfo;
 
+template <typename T> class ArrayView;
+
 namespace cfile {
 
 class BinaryPlainBlockDecoder;
@@ -193,7 +195,7 @@ class CFileReader {
 
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
-  Status VerifyChecksum(const std::vector<Slice>& data, const Slice& checksum) const;
+  Status VerifyChecksum(ArrayView<const Slice> data, const Slice& checksum) const;
 
   // Returns the memory usage of the object including the object itself.
   size_t memory_footprint() const;

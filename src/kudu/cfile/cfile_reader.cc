@@ -48,6 +48,7 @@
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/coding.h"
@@ -207,7 +208,7 @@ Status CFileReader::ReadAndParseHeader() {
   // proper protobuf header.
   uint8_t mal_scratch[kMagicAndLengthSize];
   Slice mal(mal_scratch, kMagicAndLengthSize);
-  RETURN_NOT_OK_PREPEND(block_->Read(0, &mal),
+  RETURN_NOT_OK_PREPEND(block_->Read(0, mal),
                         "failed to read CFile pre-header");
   uint32_t header_size;
   RETURN_NOT_OK_PREPEND(ParseMagicAndLength(mal, &cfile_version_, &header_size),
@@ -230,10 +231,11 @@ Status CFileReader::ReadAndParseHeader() {
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
     results.push_back(checksum);
   }
-  RETURN_NOT_OK(block_->ReadV(off, &results));
+  RETURN_NOT_OK(block_->ReadV(off, results));
 
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
-    RETURN_NOT_OK(VerifyChecksum({ mal, header }, checksum));
+    Slice slices[] = { mal, header };
+    RETURN_NOT_OK(VerifyChecksum(slices, checksum));
   }
 
   // Parse the protobuf header.
@@ -259,7 +261,7 @@ Status CFileReader::ReadAndParseFooter() {
   // and the length of the actual protobuf footer.
   uint8_t mal_scratch[kMagicAndLengthSize];
   Slice mal(mal_scratch, kMagicAndLengthSize);
-  RETURN_NOT_OK(block_->Read(file_size_ - kMagicAndLengthSize, &mal));
+  RETURN_NOT_OK(block_->Read(file_size_ - kMagicAndLengthSize, mal));
   uint32_t footer_size;
   RETURN_NOT_OK(ParseMagicAndLength(mal, &cfile_version_, &footer_size));
 
@@ -279,9 +281,9 @@ Status CFileReader::ReadAndParseFooter() {
   // Read both the header and checksum in one call.
   // We read the checksum position in case one exists.
   // This is done to avoid the need for a follow up read call.
-  vector<Slice> results = { checksum, footer };
+  Slice results[2] = {checksum, footer};
   uint64_t off = file_size_ - kMagicAndLengthSize - footer_size - kChecksumSize;
-  RETURN_NOT_OK(block_->ReadV(off, &results));
+  RETURN_NOT_OK(block_->ReadV(off, results));
 
   // Parse the protobuf footer.
   // This needs to be done before validating the checksum since the
@@ -294,7 +296,8 @@ Status CFileReader::ReadAndParseFooter() {
   // Verify the footer checksum if needed.
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
     // If a checksum exists it was pre-read.
-    RETURN_NOT_OK(VerifyChecksum({ footer, mal }, checksum));
+    Slice slices[2] = {footer, mal};
+    RETURN_NOT_OK(VerifyChecksum(slices, checksum));
   }
 
   // Verify if the compression codec is available.
@@ -312,7 +315,7 @@ bool CFileReader::has_checksums() const {
   return footer_->incompatible_features() & IncompatibleFeatures::CHECKSUM;
 }
 
-Status CFileReader::VerifyChecksum(const std::vector<Slice>& data, const Slice& checksum) const {
+Status CFileReader::VerifyChecksum(ArrayView<const Slice> data, const Slice& checksum) const {
   uint32_t expected_checksum = DecodeFixed32(checksum.data());
   uint32_t checksum_value = 0;
   for (auto& d : data) {
@@ -466,16 +469,15 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   Slice checksum(checksum_scratch, kChecksumSize);
 
   // Read the data and checksum if needed.
-  vector<Slice> results = { block };
-  if (has_checksums() && FLAGS_cfile_verify_checksums) {
-    results.push_back(checksum);
-  }
-  RETURN_NOT_OK_PREPEND(block_->ReadV(ptr.offset(), &results),
+  Slice results_backing[] = { block, checksum };
+  bool read_checksum = has_checksums() && FLAGS_cfile_verify_checksums;
+  ArrayView<Slice> results(results_backing, read_checksum ? 2 : 1);
+  RETURN_NOT_OK_PREPEND(block_->ReadV(ptr.offset(), results),
                         Substitute("failed to read CFile block $0 at $1",
                                    block_id().ToString(), ptr.ToString()));
 
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
-    RETURN_NOT_OK_PREPEND(VerifyChecksum({ block }, checksum),
+    RETURN_NOT_OK_PREPEND(VerifyChecksum(ArrayView<const Slice>(&block, 1), checksum),
                           Substitute("checksum error on CFile block $0 at $1",
                                      block_id().ToString(), ptr.ToString()));
   }

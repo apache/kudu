@@ -368,7 +368,7 @@ class TestCFile : public CFileTestBase {
     RETURN_NOT_OK(source->Size(&file_size));
     uint8_t data_scratch[file_size];
     Slice data(data_scratch, file_size);
-    RETURN_NOT_OK(source->Read(0, &data));
+    RETURN_NOT_OK(source->Read(0, data));
 
     // Corrupt the data and write to a new block
     uint8_t orig = data.data()[corrupt_offset];
