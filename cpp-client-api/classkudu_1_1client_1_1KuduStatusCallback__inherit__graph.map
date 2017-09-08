@@ -1,4 +1,0 @@
-<map id="kudu::client::KuduStatusCallback" name="kudu::client::KuduStatusCallback">
-<area shape="rect" id="node2" href="$classkudu_1_1client_1_1KuduStatusFunctionCallback.html" title="The status callback that invokes a function by pointer with a single argument. " alt="" coords="219,5,384,47"/>
-<area shape="rect" id="node3" href="$classkudu_1_1client_1_1KuduStatusMemberCallback.html" title="The status callback that invokes a member function of an object. " alt="" coords="219,71,384,112"/>
-</map>

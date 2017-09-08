@@ -1,4 +1,0 @@
-<map id="kudu::client::KuduLoggingCallback" name="kudu::client::KuduLoggingCallback">
-<area shape="rect" id="node2" href="$classkudu_1_1client_1_1KuduLoggingFunctionCallback.html" title="The logging callback that invokes a function by pointer with a single argument. " alt="" coords="225,5,397,47"/>
-<area shape="rect" id="node3" href="$classkudu_1_1client_1_1KuduLoggingMemberCallback.html" title="The logging callback that invokes a member function of an object. " alt="" coords="225,71,397,112"/>
-</map>
