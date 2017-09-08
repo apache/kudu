@@ -401,7 +401,7 @@ Status DoReadV(int fd, const string& filename, uint64_t offset,
     }
     if (PREDICT_FALSE(r == 0)) {
       // EOF.
-      return Status::IOError(
+      return Status::EndOfFile(
           Substitute("EOF trying to read $0 bytes at offset $1", bytes_req, offset));
     }
     if (PREDICT_TRUE(r == rem)) {

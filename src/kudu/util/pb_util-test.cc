@@ -472,6 +472,7 @@ TEST_P(TestPBContainerVersions, TestInterleavedReadWrite) {
   ASSERT_OK(pb_reader.Open());
 
   for (int i = 0; i < 10; i++) {
+    SCOPED_TRACE(i);
     // Write a message and read it back.
     pb.set_value(i);
     ASSERT_OK(pb_writer->Append(pb));
