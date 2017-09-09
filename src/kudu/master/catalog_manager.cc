@@ -2549,6 +2549,15 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_consensus_state()) {
     ConsensusStatePB cstate = report.consensus_state();
 
+    // The Master only processes reports for replicas with committed consensus
+    // configurations since it needs the committed index to only cache the most
+    // up-to-date config. Since it's possible for TOMBSTONED replicas with no
+    // ConsensusMetadata on disk to be reported as having no committed config
+    // opid_index, we skip over those replicas.
+    if (!cstate.committed_config().has_opid_index()) {
+      return Status::OK();
+    }
+
     // If the reported leader is not a member of the committed config, then we
     // disregard the leader state.
     if (cstate.has_leader_uuid() &&
@@ -2571,15 +2580,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       VLOG(1) << Substitute("Tablet $0 is now online", tablet->ToString());
       tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::RUNNING,
                                             "Tablet reported with an active leader");
-    }
-
-    // The Master only accepts committed consensus configurations since it needs the committed index
-    // to only cache the most up-to-date config.
-    if (PREDICT_FALSE(!cstate.committed_config().has_opid_index())) {
-      string msg = Substitute("Missing opid_index in reported config: $0",
-                              SecureDebugString(report));
-      LOG(DFATAL) << msg;
-      return Status::InvalidArgument(msg);
     }
 
     bool modified_cstate = false;

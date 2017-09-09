@@ -34,10 +34,13 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_TSHeartbeat);
 
 using kudu::consensus::MakeOpId;
 using kudu::itest::TServerDetails;
@@ -52,10 +55,18 @@ namespace kudu {
 class TombstonedVotingITest : public ExternalMiniClusterITestBase {
 };
 
+Status CountMasterHeartbeatsRecvd(ExternalMaster* m, int64_t* count) {
+  return m->GetInt64Metric(&METRIC_ENTITY_server,
+                           "kudu.master",
+                           &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
+                           "total_count",
+                           count);
+}
+
 // Test that a replica that crashes during a first-time tablet copy after
 // persisting a superblock but before persisting a cmeta file will be
 // tombstoned and able to vote after the tablet server is restarted.
-// See KUDU-2123.
+// See KUDU-2123. This also serves as a regression test for KUDU-2141.
 TEST_F(TombstonedVotingITest, TestTombstonedReplicaWithoutCMetaCanVote) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 
@@ -161,6 +172,16 @@ TEST_F(TombstonedVotingITest, TestTombstonedReplicaWithoutCMetaCanVote) {
     // After voting yes, cmeta should exist.
     ASSERT_FALSE(inspect_->DoesConsensusMetaExistForTabletOnTS(new_replica_idx, tablet_id));
   });
+
+  // Ensure we have no crash due to the new config being reported. This is a
+  // regression test for KUDU-2141.
+  ASSERT_OK(cluster_->master()->Restart());
+  ASSERT_EVENTUALLY([&] {
+    int64_t heartbeat_count;
+    ASSERT_OK(CountMasterHeartbeatsRecvd(cluster_->master(), &heartbeat_count));
+    ASSERT_GE(heartbeat_count, 5); // Wait for 5 heartbeats from the only live TS.
+  });
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 } // namespace kudu
