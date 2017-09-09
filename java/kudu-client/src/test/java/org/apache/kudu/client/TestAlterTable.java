@@ -30,8 +30,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnSchema.CompressionAlgorithm;
@@ -41,8 +39,6 @@ import org.apache.kudu.Type;
 import org.apache.kudu.util.Pair;
 
 public class TestAlterTable extends BaseKuduTest {
-
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
   private String tableName;
 
   @Before
@@ -116,8 +112,6 @@ public class TestAlterTable extends BaseKuduTest {
         .addColumn("addNonNull", Type.INT32, 100)
         .addNullableColumn("addNullable", Type.INT32)
         .addNullableColumn("addNullableDef", Type.INT32, 200));
-    boolean done = syncClient.isAlterTableDone(tableName);
-    assertTrue(done);
 
     // Reopen table for the new schema.
     table = syncClient.openTable(tableName);
@@ -167,7 +161,6 @@ public class TestAlterTable extends BaseKuduTest {
         .changeCompressionAlgorithm(col.getName(), CompressionAlgorithm.SNAPPY)
         .changeEncoding(col.getName(), Encoding.RLE)
         .changeDefault(col.getName(), 0));
-    assertTrue(syncClient.isAlterTableDone(tableName));
 
     // Check for new values.
     table = syncClient.openTable(tableName);
@@ -185,8 +178,6 @@ public class TestAlterTable extends BaseKuduTest {
 
     syncClient.alterTable(tableName, new AlterTableOptions()
             .renameColumn("c0", "c0Key"));
-    boolean done = syncClient.isAlterTableDone(tableName);
-    assertTrue(done);
 
     // scanning with the old schema
     try {

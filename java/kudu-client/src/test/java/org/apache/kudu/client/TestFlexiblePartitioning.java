@@ -45,7 +45,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
   @Before
   public void setTableName() {
-    tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+    tableName = TestFlexiblePartitioning.class.getName() + "-" + System.currentTimeMillis();
   }
 
   private static Schema createSchema() {

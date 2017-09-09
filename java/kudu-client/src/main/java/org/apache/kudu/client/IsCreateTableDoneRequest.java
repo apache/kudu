@@ -17,24 +17,23 @@
 
 package org.apache.kudu.client;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
-
-import org.apache.kudu.master.Master;
+import org.apache.kudu.master.Master.IsCreateTableDoneRequestPB;
+import org.apache.kudu.master.Master.IsCreateTableDoneResponsePB;
+import org.apache.kudu.master.Master.TableIdentifierPB;
 import org.apache.kudu.util.Pair;
 
 /**
  * Package-private RPC that can only go to a master.
  */
 @InterfaceAudience.Private
-class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponsePB> {
+class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
+  private final TableIdentifierPB.Builder table;
 
-  private final String tableId;
-
-  IsCreateTableDoneRequest(KuduTable table, String tableId) {
-    super(table);
-    this.tableId = tableId;
+  IsCreateTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder table) {
+    super(masterTable);
+    this.table = table;
   }
 
   @Override
@@ -48,22 +47,23 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
   }
 
   @Override
-  Pair<Master.IsCreateTableDoneResponsePB, Object> deserialize(
+  Pair<IsCreateTableDoneResponse, Object> deserialize(
       final CallResponse callResponse, String tsUUID) throws KuduException {
-    Master.IsCreateTableDoneResponsePB.Builder builder = Master.IsCreateTableDoneResponsePB
-        .newBuilder();
+    IsCreateTableDoneResponsePB.Builder builder =
+        IsCreateTableDoneResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
-    Master.IsCreateTableDoneResponsePB resp = builder.build();
-    return new Pair<Master.IsCreateTableDoneResponsePB, Object>(
+    IsCreateTableDoneResponse resp =
+        new IsCreateTableDoneResponse(deadlineTracker.getElapsedMillis(),
+        tsUUID, builder.getDone());
+    return new Pair<IsCreateTableDoneResponse, Object>(
         resp, builder.hasError() ? builder.getError() : null);
   }
 
   @Override
   Message createRequestPB() {
-    final Master.IsCreateTableDoneRequestPB.Builder builder = Master
-        .IsCreateTableDoneRequestPB.newBuilder();
-    builder.setTable(Master.TableIdentifierPB.newBuilder().setTableId(
-        ByteString.copyFromUtf8(tableId)));
+    final IsCreateTableDoneRequestPB.Builder builder =
+        IsCreateTableDoneRequestPB.newBuilder();
+    builder.setTable(table);
     return builder.build();
   }
 }

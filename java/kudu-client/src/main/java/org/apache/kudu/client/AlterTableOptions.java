@@ -36,8 +36,8 @@ import org.apache.kudu.Type;
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
 public class AlterTableOptions {
-
   private final AlterTableRequestPB.Builder pb = AlterTableRequestPB.newBuilder();
+  private boolean wait = true;
 
   /**
    * Change a table's name.
@@ -357,6 +357,27 @@ public class AlterTableOptions {
   }
 
   /**
+   * Whether to wait for the table to be fully altered before this alter
+   * operation is considered to be finished.
+   * <p>
+   * If false, the alter will finish quickly, but a subsequent
+   * {@link KuduClient#openTable(String)} may return a {@link KuduTable} with
+   * an out-of-date schema.
+   * <p>
+   * If true, the alter will take longer, but the very next schema is guaranteed
+   * to be up-to-date.
+   * <p>
+   * If not provided, defaults to true.
+   * <p>
+   * @param wait whether to wait for the table to be fully altered
+   * @return this instance
+   */
+  public AlterTableOptions setWait(boolean wait) {
+    this.wait = wait;
+    return this;
+  }
+
+  /**
    * @return {@code true} if the alter table operation includes an add or drop partition operation
    */
   @InterfaceAudience.Private
@@ -369,5 +390,9 @@ public class AlterTableOptions {
    */
   AlterTableRequestPB.Builder getProtobuf() {
     return pb;
+  }
+
+  boolean shouldWait() {
+    return wait;
   }
 }

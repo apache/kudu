@@ -34,9 +34,10 @@ import org.apache.kudu.master.Master;
 @InterfaceStability.Evolving
 public class CreateTableOptions {
 
-  private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
   private final List<PartialRow> splitRows = Lists.newArrayList();
   private final List<RangePartition> rangePartitions = Lists.newArrayList();
+  private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
+  private boolean wait = true;
 
   /**
    * Add a set of hash partitions to the table.
@@ -186,6 +187,27 @@ public class CreateTableOptions {
     return this;
   }
 
+  /**
+   * Whether to wait for the table to be fully created before this create
+   * operation is considered to be finished.
+   * <p>
+   * If false, the create will finish quickly, but subsequent row operations
+   * may take longer as they may need to wait for portions of the table to be
+   * fully created.
+   * <p>
+   * If true, the create will take longer, but the speed of subsequent row
+   * operations will not be impacted.
+   * <p>
+   * If not provided, defaults to true.
+   * <p>
+   * @param wait whether to wait for the table to be fully created
+   * @return this instance
+   */
+  public CreateTableOptions setWait(boolean wait) {
+    this.wait = wait;
+    return this;
+  }
+
   Master.CreateTableRequestPB.Builder getBuilder() {
     if (!splitRows.isEmpty() || !rangePartitions.isEmpty()) {
       pb.setSplitRowsRangeBounds(new Operation.OperationsEncoder()
@@ -200,6 +222,10 @@ public class CreateTableOptions {
     } else {
       return ImmutableList.of(Master.MasterFeatures.RANGE_PARTITION_BOUNDS_VALUE);
     }
+  }
+
+  boolean shouldWait() {
+    return wait;
   }
 
   final class RangePartition {

@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.Schema;
+import org.apache.kudu.master.Master.TableIdentifierPB;
 
 /**
  * A synchronous and thread-safe client for Kudu.
@@ -86,6 +87,29 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Waits for all of the tablets in a table to be created, or until the
+   * default admin operation timeout is reached.
+   * @param name the table's name
+   * @return true if the table is done being created, or false if the default
+   *         admin operation timeout was reached.
+   * @throws KuduException for any error returned by sending RPCs to the master
+   *         (e.g. the table does not exist)
+   */
+  public boolean isCreateTableDone(String name) throws KuduException {
+    TableIdentifierPB.Builder table = TableIdentifierPB.newBuilder().setTableName(name);
+    Deferred<KuduTable> d = asyncClient.getDelayedIsCreateTableDoneDeferred(table, null, null);
+    try {
+      joinAndHandleException(d);
+    } catch (KuduException e) {
+      if (e.getStatus().isTimedOut()) {
+        return false;
+      }
+      throw e;
+    }
+    return true;
+  }
+
+  /**
    * Delete a table on the cluster with the specified name.
    * @param name the table's name
    * @return an rpc response object
@@ -98,11 +122,8 @@ public class KuduClient implements AutoCloseable {
 
   /**
    * Alter a table on the cluster as specified by the builder.
-   *
-   * When the method returns it only indicates that the master accepted the alter
-   * command, use {@link KuduClient#isAlterTableDone(String)} to know when the alter finishes.
-   * @param name the table's name, if this is a table rename then the old table name must be passed
-   * @param ato the alter table builder
+   * @param name the table's name (old name if the table is being renamed)
+   * @param ato the alter table options
    * @return an rpc response object
    * @throws KuduException if anything went wrong
    */
@@ -112,46 +133,26 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Helper method that checks and waits until the completion of an alter command.
-   * It will block until the alter command is done or the timeout is reached.
-   * @param name Table's name, if the table was renamed then that name must be checked against
-   * @return a boolean indicating if the table is done being altered
+   * Waits for all of the tablets in a table to be altered, or until the
+   * default admin operation timeout is reached.
+   * @param name the table's name
+   * @return true if the table is done being altered, or false if the default
+   *         admin operation timeout was reached.
    * @throws KuduException for any error returned by sending RPCs to the master
+   *         (e.g. the table does not exist)
    */
   public boolean isAlterTableDone(String name) throws KuduException {
-    long totalSleepTime = 0;
-    while (totalSleepTime < getDefaultAdminOperationTimeoutMs()) {
-      long start = System.currentTimeMillis();
-
-      try {
-        Deferred<IsAlterTableDoneResponse> d = asyncClient.isAlterTableDone(name);
-        IsAlterTableDoneResponse response;
-
-        response = d.join(AsyncKuduClient.SLEEP_TIME);
-        if (response.isDone()) {
-          return true;
-        }
-
-        // Count time that was slept and see if we need to wait a little more.
-        long elapsed = System.currentTimeMillis() - start;
-        // Don't oversleep the deadline.
-        if (totalSleepTime + AsyncKuduClient.SLEEP_TIME > getDefaultAdminOperationTimeoutMs()) {
-          return false;
-        }
-        // elapsed can be bigger if we slept about 500ms
-        if (elapsed <= AsyncKuduClient.SLEEP_TIME) {
-          LOG.debug("Alter not done, sleep " + (AsyncKuduClient.SLEEP_TIME - elapsed) +
-              " and slept " + totalSleepTime);
-          Thread.sleep(AsyncKuduClient.SLEEP_TIME - elapsed);
-          totalSleepTime += AsyncKuduClient.SLEEP_TIME;
-        } else {
-          totalSleepTime += elapsed;
-        }
-      } catch (Exception ex) {
-        throw KuduException.transformException(ex);
+    TableIdentifierPB.Builder table = TableIdentifierPB.newBuilder().setTableName(name);
+    Deferred<AlterTableResponse> d = asyncClient.getDelayedIsAlterTableDoneDeferred(table, null, null);
+    try {
+      joinAndHandleException(d);
+    } catch (KuduException e) {
+      if (e.getStatus().isTimedOut()) {
+        return false;
       }
+      throw e;
     }
-    return false;
+    return true;
   }
 
   /**
@@ -197,8 +198,7 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
-   * Open the table with the given name. If the table was just created, this
-   * method will block until all its tablets have also been created.
+   * Open the table with the given name.
    *
    * New range partitions created by other clients will immediately be available
    * after opening the table.

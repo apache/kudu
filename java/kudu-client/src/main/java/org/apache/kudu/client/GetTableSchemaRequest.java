@@ -21,10 +21,13 @@ import static org.apache.kudu.master.Master.GetTableSchemaRequestPB;
 import static org.apache.kudu.master.Master.GetTableSchemaResponsePB;
 import static org.apache.kudu.master.Master.TableIdentifierPB;
 
+import com.google.common.base.Preconditions;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.Schema;
+import org.apache.kudu.master.Master.TableIdentifierPB.Builder;
 import org.apache.kudu.util.Pair;
 
 /**
@@ -32,21 +35,30 @@ import org.apache.kudu.util.Pair;
  */
 @InterfaceAudience.Private
 public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
-  static final String GET_TABLE_SCHEMA = "GetTableSchema";
+  private final String id;
   private final String name;
 
 
-  GetTableSchemaRequest(KuduTable masterTable, String name) {
+  GetTableSchemaRequest(KuduTable masterTable, String id, String name) {
     super(masterTable);
+    Preconditions.checkArgument(id != null ^ name != null,
+        "Only one of table ID or the table name should be provided");
+    this.id = id;
     this.name = name;
   }
 
   @Override
   Message createRequestPB() {
-    final GetTableSchemaRequestPB.Builder builder = GetTableSchemaRequestPB.newBuilder();
-    TableIdentifierPB tableID =
-        TableIdentifierPB.newBuilder().setTableName(name).build();
-    builder.setTable(tableID);
+    final GetTableSchemaRequestPB.Builder builder =
+        GetTableSchemaRequestPB.newBuilder();
+    Builder identifierBuilder = TableIdentifierPB.newBuilder();
+    if (id != null) {
+      identifierBuilder.setTableId(ByteString.copyFromUtf8(id));
+    } else {
+      Preconditions.checkNotNull(name);
+      identifierBuilder.setTableName(name);
+    }
+    builder.setTable(identifierBuilder.build());
     return builder.build();
   }
 
@@ -57,7 +69,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
 
   @Override
   String method() {
-    return GET_TABLE_SCHEMA;
+    return "GetTableSchema";
   }
 
   @Override
@@ -71,8 +83,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
         tsUUID,
         schema,
         respBuilder.getTableId().toStringUtf8(),
-        ProtobufHelper.pbToPartitionSchema(respBuilder.getPartitionSchema(), schema),
-        respBuilder.getCreateTableDone());
+        ProtobufHelper.pbToPartitionSchema(respBuilder.getPartitionSchema(), schema));
     return new Pair<GetTableSchemaResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

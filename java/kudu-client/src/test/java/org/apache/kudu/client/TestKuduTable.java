@@ -32,16 +32,12 @@ import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestName;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 
 public class TestKuduTable extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
-
   @Rule
   public TestName name = new TestName();
 
@@ -73,8 +69,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=0, STRING value=NULL", rows.get(0));
 
     // Add a default, checking new rows see the new default and old rows remain the same.
-    AlterTableOptions ato = new AlterTableOptions().changeDefault("value", "pizza");
-    submitAlterAndCheck(ato, tableName);
+    syncClient.alterTable(tableName, new AlterTableOptions().changeDefault("value", "pizza"));
 
     insertDefaultRow(table, session, 1);
     rows = scanTableToStrings(table);
@@ -83,8 +78,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=1, STRING value=pizza", rows.get(1));
 
     // Change the default, checking new rows see the new default and old rows remain the same.
-    ato = new AlterTableOptions().changeDefault("value", "taco");
-    submitAlterAndCheck(ato, tableName);
+    syncClient.alterTable(tableName, new AlterTableOptions().changeDefault("value", "taco"));
 
     insertDefaultRow(table, session, 2);
 
@@ -95,8 +89,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=2, STRING value=taco", rows.get(2));
 
     // Remove the default, checking that new rows default to NULL and old rows remain the same.
-    ato = new AlterTableOptions().removeDefault("value");
-    submitAlterAndCheck(ato, tableName);
+    syncClient.alterTable(tableName, new AlterTableOptions().removeDefault("value"));
 
     insertDefaultRow(table, session, 3);
 
@@ -118,10 +111,10 @@ public class TestKuduTable extends BaseKuduTest {
         ColumnSchema.CompressionAlgorithm.NO_COMPRESSION,
         table.getSchema().getColumn("value").getCompressionAlgorithm());
 
-    ato = new AlterTableOptions().changeDesiredBlockSize("value", 8192)
+    syncClient.alterTable(tableName, new AlterTableOptions()
+        .changeDesiredBlockSize("value", 8192)
         .changeEncoding("value", ColumnSchema.Encoding.DICT_ENCODING)
-        .changeCompressionAlgorithm("value", ColumnSchema.CompressionAlgorithm.SNAPPY);
-    submitAlterAndCheck(ato, tableName);
+        .changeCompressionAlgorithm("value", ColumnSchema.CompressionAlgorithm.SNAPPY));
 
     KuduTable reopenedTable = syncClient.openTable(tableName);
     assertEquals("wrong block size post alter",
@@ -151,39 +144,35 @@ public class TestKuduTable extends BaseKuduTest {
     try {
 
       // Add a col.
-      AlterTableOptions ato = new AlterTableOptions().addColumn("testaddint", Type.INT32, 4);
-      submitAlterAndCheck(ato, tableName);
+      syncClient.alterTable(tableName,
+          new AlterTableOptions().addColumn("testaddint", Type.INT32, 4));
 
       // Rename that col.
-      ato = new AlterTableOptions().renameColumn("testaddint", "newtestaddint");
-      submitAlterAndCheck(ato, tableName);
+      syncClient.alterTable(tableName,
+          new AlterTableOptions().renameColumn("testaddint", "newtestaddint"));
 
       // Delete it.
-      ato = new AlterTableOptions().dropColumn("newtestaddint");
-      submitAlterAndCheck(ato, tableName);
+      syncClient.alterTable(tableName, new AlterTableOptions().dropColumn("newtestaddint"));
 
       String newTableName = tableName +"new";
 
       // Rename our table.
-      ato = new AlterTableOptions().renameTable(newTableName);
-      submitAlterAndCheck(ato, tableName, newTableName);
+      syncClient.alterTable(tableName, new AlterTableOptions().renameTable(newTableName));
 
       // Rename it back.
-      ato = new AlterTableOptions().renameTable(tableName);
-      submitAlterAndCheck(ato, newTableName, tableName);
+      syncClient.alterTable(newTableName, new AlterTableOptions().renameTable(tableName));
 
       // Add 3 columns, where one has default value, nullable and Timestamp with default value
-      ato = new AlterTableOptions()
+      syncClient.alterTable(tableName, new AlterTableOptions()
           .addColumn("testaddmulticolnotnull", Type.INT32, 4)
           .addNullableColumn("testaddmulticolnull", Type.STRING)
           .addColumn("testaddmulticolTimestampcol", Type.UNIXTIME_MICROS,
-              (System.currentTimeMillis() * 1000));
-      submitAlterAndCheck(ato, tableName);
+              (System.currentTimeMillis() * 1000)));
 
       // Try altering a table that doesn't exist.
       String nonExistingTableName = "table_does_not_exist";
       try {
-        syncClient.alterTable(nonExistingTableName, ato);
+        syncClient.alterTable(nonExistingTableName, new AlterTableOptions());
         fail("Shouldn't be able to alter a table that doesn't exist");
       } catch (KuduException ex) {
         assertTrue(ex.getStatus().isNotFound());
@@ -202,23 +191,6 @@ public class TestKuduTable extends BaseKuduTest {
       // we'll delete our table to ensure there's no interaction between them.
       syncClient.deleteTable(tableName);
     }
-  }
-
-  /**
-   * Helper method to submit an Alter and wait for it to happen, using the default table name to
-   * check.
-   */
-  private void submitAlterAndCheck(AlterTableOptions ato, String tableToAlter)
-      throws Exception {
-    submitAlterAndCheck(ato, tableToAlter, tableToAlter);
-  }
-
-  private void submitAlterAndCheck(AlterTableOptions ato,
-                                         String tableToAlter, String tableToCheck) throws
-      Exception {
-    AlterTableResponse alterResponse = syncClient.alterTable(tableToAlter, ato);
-    boolean done  = syncClient.isAlterTableDone(tableToCheck);
-    assertTrue(done);
   }
 
   /**
@@ -601,5 +573,48 @@ public class TestKuduTable extends BaseKuduTest {
       assertEquals(3, tablet.getReplicas().size());
     }
     return table;
+  }
+
+  @Test(timeout = 100000)
+  public void testAlterNoWait() throws Exception {
+    String tableName = name.getMethodName() + System.currentTimeMillis();
+    createTable(tableName, basicSchema, getBasicCreateTableOptions());
+
+    String oldName = "column2_i";
+    for (int i = 0; i < 10; i++) {
+      String newName = String.format("foo%d", i);
+      syncClient.alterTable(tableName, new AlterTableOptions()
+          .renameColumn(oldName, newName)
+          .setWait(false));
+
+      // Reload the schema and test for the existence of 'oldName'. Since we
+      // didn't wait for alter to finish, we should be able to find it. However,
+      // this is timing dependent: if the alter finishes before we reload the
+      // schema, loop and try again.
+      try {
+        syncClient.openTable(tableName).getSchema().getColumn(newName);
+        LOG.info("Alter finished too quickly (new column name {} is already " +
+            "visible), trying again", oldName);
+        oldName = newName;
+        continue;
+      } catch (IllegalArgumentException e) {}
+
+      try {
+        syncClient.openTable(tableName).getSchema().getColumn(newName);
+        fail(String.format("New column name %s should have been visible", newName));
+      } catch (IllegalArgumentException e) {}
+
+      // After waiting for the alter to finish and reloading the schema,
+      // the new column name should be visible.
+      syncClient.isAlterTableDone(tableName);
+      try {
+        syncClient.openTable(tableName).getSchema().getColumn(oldName);
+        fail(String.format("Old column name %s should have been visible", oldName));
+      } catch (IllegalArgumentException e) {}
+      syncClient.openTable(tableName).getSchema().getColumn(newName);
+      LOG.info("Test passed on attempt {}", i + 1);
+      return;
+    }
+    fail("Could not run test even after multiple attempts");
   }
 }

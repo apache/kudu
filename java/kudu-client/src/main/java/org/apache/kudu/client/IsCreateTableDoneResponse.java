@@ -20,24 +20,26 @@ package org.apache.kudu.client;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
+/**
+ * Response to an isCreateTableDone command. Describes whether the table is
+ * still being created.
+ */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class AlterTableResponse extends KuduRpcResponse {
+public class IsCreateTableDoneResponse extends KuduRpcResponse {
 
-  private String tableId;
+  private final boolean done;
 
-  /**
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
-   */
-  AlterTableResponse(long ellapsedMillis, String tsUUID, String tableId) {
-    super(ellapsedMillis, tsUUID);
-    this.tableId = tableId;
+  IsCreateTableDoneResponse(long elapsedMillis, String tsUUID, boolean done) {
+    super(elapsedMillis, tsUUID);
+    this.done = done;
   }
 
   /**
-   * @return the ID of the altered table
+   * Returns whether the table is done being created.
+   * @return whether table creation is finished
    */
-  public String getTableId() {
-    return tableId;
+  public boolean isDone() {
+    return done;
   }
 }

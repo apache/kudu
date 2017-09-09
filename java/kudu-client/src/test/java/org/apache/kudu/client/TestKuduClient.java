@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
+import com.stumbleupon.async.Deferred;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -688,7 +690,6 @@ public class TestKuduClient extends BaseKuduTest {
 
     // Drop a column
     syncClient.alterTable(tableName, new AlterTableOptions().dropColumn("a"));
-    assertTrue(syncClient.isAlterTableDone(tableName));
     try {
       token.intoScanner(syncClient);
       fail();
@@ -701,7 +702,6 @@ public class TestKuduClient extends BaseKuduTest {
         tableName,
         new AlterTableOptions().addColumn(
             new ColumnSchema.ColumnSchemaBuilder("a", Type.STRING).nullable(true).build()));
-    assertTrue(syncClient.isAlterTableDone(tableName));
     try {
       token.intoScanner(syncClient);
       fail();
@@ -716,7 +716,6 @@ public class TestKuduClient extends BaseKuduTest {
         new AlterTableOptions().dropColumn("a")
                                .addColumn(new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64)
                                                           .nullable(true).build()));
-    assertTrue(syncClient.isAlterTableDone(tableName));
     try {
       token.intoScanner(syncClient);
       fail();
@@ -732,7 +731,6 @@ public class TestKuduClient extends BaseKuduTest {
                                .addColumn(new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64)
                                                           .nullable(false)
                                                           .defaultValue(0L).build()));
-    assertTrue(syncClient.isAlterTableDone(tableName));
     token.intoScanner(syncClient);
   }
 
@@ -907,7 +905,6 @@ public class TestKuduClient extends BaseKuduTest {
       lower.addInt("key", 1);
       alter.addRangePartition(lower, upper);
       alterClient.alterTable(tableName, alter);
-      assertTrue(syncClient.isAlterTableDone(tableName));
     }
 
     // Count the number of tablets.  The result should still be the same, since
@@ -921,5 +918,55 @@ public class TestKuduClient extends BaseKuduTest {
     tokenBuilder = syncClient.newScanTokenBuilder(table);
     tokens = tokenBuilder.build();
     assertEquals(2, tokens.size());
+  }
+
+  @Test(timeout = 100000)
+  public void testCreateTableWithConcurrentInsert() throws Exception {
+    KuduTable table = syncClient.createTable(
+        tableName, createManyStringsSchema(), createTableOptions().setWait(false));
+
+    // Insert a row.
+    //
+    // It's very likely that the tablets are still being created, but the client
+    // should transparently retry the insert (and associated master lookup)
+    // until the operation succeeds.
+    Insert insert = table.newInsert();
+    insert.getRow().addString("key", "key_0");
+    insert.getRow().addString("c1", "c1_0");
+    insert.getRow().addString("c2", "c2_0");
+    KuduSession session = syncClient.newSession();
+    OperationResponse resp = session.apply(insert);
+    assertFalse(resp.hasRowError());
+
+    // This won't do anything useful (i.e. if the insert succeeds, we know the
+    // table has been created), but it's here for additional code coverage.
+    assertTrue(syncClient.isCreateTableDone(tableName));
+  }
+
+  @Test(timeout = 100000)
+  public void testCreateTableWithConcurrentAlter() throws Exception {
+    // Kick off an asynchronous table creation.
+    Deferred<KuduTable> d = client.createTable(tableName,
+        createManyStringsSchema(), createTableOptions());
+
+    // Rename the table that's being created to make sure it doesn't interfere
+    // with the "wait for all tablets to be created" behavior of createTable().
+    //
+    // We have to retry this in a loop because we might run before the table
+    // actually exists.
+    while (true) {
+      try {
+        syncClient.alterTable(tableName,
+            new AlterTableOptions().renameTable("foo"));
+        break;
+      } catch (KuduException e) {
+        if (!e.getStatus().isNotFound()) {
+          throw e;
+        }
+      }
+    }
+
+    // If createTable() was disrupted by the alterTable(), this will throw.
+    d.join();
   }
 }

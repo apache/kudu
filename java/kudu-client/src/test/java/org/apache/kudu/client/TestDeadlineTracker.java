@@ -50,27 +50,27 @@ public class TestDeadlineTracker {
     tracker.setDeadline(500);
     assertTrue(tracker.hasDeadline());
     assertFalse(tracker.timedOut());
-    assertFalse(tracker.wouldSleepingTimeout(499));
-    assertTrue(tracker.wouldSleepingTimeout(500));
-    assertTrue(tracker.wouldSleepingTimeout(501));
+    assertFalse(tracker.wouldSleepingTimeoutMillis(499));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(500));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(501));
     assertEquals(500, tracker.getMillisBeforeDeadline());
 
     // fast forward 200ms
     timeToReturn.set(200 * 1000000);
     assertTrue(tracker.hasDeadline());
     assertFalse(tracker.timedOut());
-    assertFalse(tracker.wouldSleepingTimeout(299));
-    assertTrue(tracker.wouldSleepingTimeout(300));
-    assertTrue(tracker.wouldSleepingTimeout(301));
+    assertFalse(tracker.wouldSleepingTimeoutMillis(299));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(300));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(301));
     assertEquals(300, tracker.getMillisBeforeDeadline());
 
     // fast forward another 400ms, so the RPC timed out
     timeToReturn.set(600 * 1000000);
     assertTrue(tracker.hasDeadline());
     assertTrue(tracker.timedOut());
-    assertTrue(tracker.wouldSleepingTimeout(299));
-    assertTrue(tracker.wouldSleepingTimeout(300));
-    assertTrue(tracker.wouldSleepingTimeout(301));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(299));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(300));
+    assertTrue(tracker.wouldSleepingTimeoutMillis(301));
     assertEquals(1, tracker.getMillisBeforeDeadline());
   }
 }

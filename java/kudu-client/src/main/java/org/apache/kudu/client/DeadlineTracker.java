@@ -106,14 +106,14 @@ public class DeadlineTracker {
   /**
    * Utility method to check if sleeping for a specified amount of time would put us past the
    * deadline.
-   * @param plannedSleepTime number of milliseconds for a planned sleep
+   * @param plannedSleepTimeMillis number of milliseconds for a planned sleep
    * @return if the planned sleeps goes past the deadline.
    */
-  public boolean wouldSleepingTimeout(long plannedSleepTime) {
+  public boolean wouldSleepingTimeoutMillis(long plannedSleepTimeMillis) {
     if (!hasDeadline()) {
       return false;
     }
-    return getMillisBeforeDeadline() - plannedSleepTime <= 0;
+    return getMillisBeforeDeadline() - plannedSleepTimeMillis <= 0;
   }
 
   /**

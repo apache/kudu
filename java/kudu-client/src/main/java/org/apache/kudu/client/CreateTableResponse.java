@@ -21,11 +21,20 @@ import org.apache.yetus.audience.InterfaceAudience;
 
 @InterfaceAudience.Private
 public class CreateTableResponse extends KuduRpcResponse {
+  private final String tableId;
 
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now.
    */
-  CreateTableResponse(long ellapsedMillis, String tsUUID) {
+  CreateTableResponse(long ellapsedMillis, String tsUUID, String tableId) {
     super(ellapsedMillis, tsUUID);
+    this.tableId = tableId;
+  }
+
+  /**
+   * @return the ID of the created table
+   */
+  public String getTableId() {
+    return tableId;
   }
 }
