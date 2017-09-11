@@ -563,6 +563,9 @@ message GetTableSchemaRequestPB {
 }
 
 message GetTableSchemaResponsePB {
+  // create_table_done (field number 6) was removed in Kudu 1.6.
+  reserved 6;
+
   // The error, if an error occurred with this request.
   optional MasterErrorPB error = 1;
 
@@ -579,10 +582,6 @@ message GetTableSchemaResponsePB {
 
   // The ID of the table.
   optional bytes table_id = 4;
-
-  // DEPRECATED: unset as of Kudu 1.6. Clients wishing to know whether a table
-  // is created should use the IsCreateTableDone RPC.
-  optional bool create_table_done = 6 [deprecated=true];
 
   // The table name.
   optional string table_name = 7;
