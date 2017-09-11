@@ -148,7 +148,7 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
 
   TabletInfo(const scoped_refptr<TableInfo>& table, std::string tablet_id);
 
-  const std::string& tablet_id() const { return tablet_id_; }
+  const std::string& id() const { return tablet_id_; }
   const scoped_refptr<TableInfo>& table() const { return table_; }
 
   // Access the persistent metadata. Typically you should use
@@ -334,16 +334,51 @@ template<class MetadataClass>
 class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
  public:
   typedef CowLock<typename MetadataClass::cow_state> super;
-  MetadataLock(MetadataClass* info, typename super::LockMode mode)
-    : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
+  MetadataLock(MetadataClass* info, LockMode mode)
+      : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
   }
-  MetadataLock(const MetadataClass* info, typename super::LockMode mode)
-    : super(&(DCHECK_NOTNULL(info))->metadata(), mode) {
+  MetadataLock(const MetadataClass* info, LockMode mode)
+      : super(&(DCHECK_NOTNULL(info))->metadata(), mode) {
   }
 };
 
-typedef MetadataLock<TabletInfo> TabletMetadataLock;
+// Helper to manage locking on the persistent metadata of multiple TabletInfo
+// or TableInfo objects.
+template<class MetadataClass>
+class MetadataGroupLock : public CowGroupLock<std::string,
+                                              typename MetadataClass::cow_state> {
+ public:
+  typedef CowGroupLock<std::string, typename MetadataClass::cow_state> super;
+  explicit MetadataGroupLock(LockMode mode)
+      : super(mode) {
+  }
+
+  void AddInfo(const MetadataClass& info) {
+    this->AddObject(info.id(), &info.metadata());
+  }
+
+  void AddMutableInfo(MetadataClass* info) {
+    this->AddMutableObject(info->id(), info->mutable_metadata());
+  }
+
+  void AddInfos(const std::vector<scoped_refptr<MetadataClass>>& infos) {
+    for (const auto& i : infos) {
+      AddInfo(*i);
+    }
+  }
+
+  void AddMutableInfos(const std::vector<scoped_refptr<MetadataClass>>& infos) {
+    for (const auto& i : infos) {
+      AddMutableInfo(i.get());
+    }
+  }
+};
+
+// Convenience aliases for the above lock guards.
 typedef MetadataLock<TableInfo> TableMetadataLock;
+typedef MetadataLock<TabletInfo> TabletMetadataLock;
+typedef MetadataGroupLock<TableInfo> TableMetadataGroupLock;
+typedef MetadataGroupLock<TabletInfo> TabletMetadataGroupLock;
 
 // The component of the master which tracks the state and location
 // of tables/tablets in the cluster.

@@ -38,6 +38,7 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
+#include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -104,7 +105,7 @@ class TestTableLoader : public TableVisitor {
                             const SysTablesEntryPB& metadata) OVERRIDE {
     // Setup the table info
     scoped_refptr<TableInfo> table = new TableInfo(table_id);
-    TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
+    TableMetadataLock l(table.get(), LockMode::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
     l.Commit();
     tables.emplace_back(std::move(table));
@@ -121,8 +122,8 @@ static bool PbEquals(const google::protobuf::Message& a, const google::protobuf:
 template<class C>
 static bool MetadatasEqual(const scoped_refptr<C>& ti_a,
                            const scoped_refptr<C>& ti_b) {
-  MetadataLock<C> l_a(ti_a.get(), MetadataLock<C>::READ);
-  MetadataLock<C> l_b(ti_b.get(), MetadataLock<C>::READ);
+  MetadataLock<C> l_a(ti_a.get(), LockMode::READ);
+  MetadataLock<C> l_b(ti_b.get(), LockMode::READ);
   return PbEquals(l_a.data().pb, l_b.data().pb);
 }
 
@@ -136,7 +137,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   // Create new table.
   scoped_refptr<TableInfo> table(new TableInfo("abc"));
   {
-    TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
+    TableMetadataLock l(table.get(), LockMode::WRITE);
     l.mutable_data()->pb.set_name("testtb");
     l.mutable_data()->pb.set_version(0);
     l.mutable_data()->pb.set_num_replicas(1);
@@ -157,7 +158,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
 
   // Update the table
   {
-    TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
+    TableMetadataLock l(table.get(), LockMode::WRITE);
     l.mutable_data()->pb.set_version(1);
     l.mutable_data()->pb.set_state(SysTablesEntryPB::REMOVED);
     SysCatalogTable::Actions actions;
@@ -185,21 +186,21 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
   scoped_refptr<TableInfo> table(new TableInfo("123"));
 
   // Mutate the table, under the write lock.
-  TableMetadataLock writer_lock(table.get(), TableMetadataLock::WRITE);
+  TableMetadataLock writer_lock(table.get(), LockMode::WRITE);
   writer_lock.mutable_data()->pb.set_name("foo");
 
   // Changes should not be visible to a reader.
   // The reader can still lock for read, since readers don't block
   // writers in the RWC lock.
   {
-    TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
+    TableMetadataLock reader_lock(table.get(), LockMode::READ);
     ASSERT_NE("foo", reader_lock.data().name());
   }
   writer_lock.mutable_data()->set_state(SysTablesEntryPB::RUNNING, "running");
 
 
   {
-    TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
+    TableMetadataLock reader_lock(table.get(), LockMode::READ);
     ASSERT_NE("foo", reader_lock.data().pb.name());
     ASSERT_NE("running", reader_lock.data().pb.state_msg());
     ASSERT_NE(SysTablesEntryPB::RUNNING, reader_lock.data().pb.state());
@@ -210,7 +211,7 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
 
   // Verify that the data is visible
   {
-    TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
+    TableMetadataLock reader_lock(table.get(), LockMode::READ);
     ASSERT_EQ("foo", reader_lock.data().pb.name());
     ASSERT_EQ("running", reader_lock.data().pb.state_msg());
     ASSERT_EQ(SysTablesEntryPB::RUNNING, reader_lock.data().pb.state());
@@ -228,7 +229,7 @@ class TestTabletLoader : public TabletVisitor {
                              const SysTabletsEntryPB& metadata) OVERRIDE {
     // Setup the tablet info
     scoped_refptr<TabletInfo> tablet = new TabletInfo(nullptr, tablet_id);
-    TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
+    TabletMetadataLock l(tablet.get(), LockMode::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
     l.Commit();
     tablets.emplace_back(std::move(tablet));
@@ -246,7 +247,7 @@ static scoped_refptr<TabletInfo> CreateTablet(
     const string& start_key,
     const string& end_key) {
   scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
-  TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
+  TabletMetadataLock l(tablet.get(), LockMode::WRITE);
   l.mutable_data()->pb.set_state(SysTabletsEntryPB::PREPARING);
   l.mutable_data()->pb.mutable_partition()->set_partition_key_start(start_key);
   l.mutable_data()->pb.mutable_partition()->set_partition_key_end(end_key);
@@ -272,8 +273,8 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
   // Add tablet1 and tablet2
   {
     loader.Reset();
-    TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
-    TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
+    TabletMetadataLock l1(tablet1.get(), LockMode::WRITE);
+    TabletMetadataLock l2(tablet2.get(), LockMode::WRITE);
     SysCatalogTable::Actions actions;
     actions.tablets_to_add = { tablet1, tablet2 };
     ASSERT_OK(sys_catalog->Write(actions));
@@ -288,7 +289,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
   // Update tablet1
   {
-    TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
+    TabletMetadataLock l1(tablet1.get(), LockMode::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
     SysCatalogTable::Actions actions;
     actions.tablets_to_update = { tablet1 };
@@ -304,10 +305,10 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
   // Add tablet3 and Update tablet1 and tablet2
   {
-    TabletMetadataLock l3(tablet3.get(), TabletMetadataLock::WRITE);
-    TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
+    TabletMetadataLock l3(tablet3.get(), LockMode::WRITE);
+    TabletMetadataLock l1(tablet1.get(), LockMode::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::REPLACED);
-    TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
+    TabletMetadataLock l2(tablet2.get(), LockMode::WRITE);
     l2.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
 
     loader.Reset();
@@ -344,7 +345,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
   scoped_refptr<TabletInfo> tablet(new TabletInfo(nullptr, "123"));
 
   // Mutate the tablet, the changes should not be visible
-  TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
+  TabletMetadataLock l(tablet.get(), LockMode::WRITE);
   PartitionPB* partition = l.mutable_data()->pb.mutable_partition();
   partition->set_partition_key_start("a");
   partition->set_partition_key_end("b");
@@ -352,7 +353,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
   {
     // Changes shouldn't be visible, and lock should still be
     // acquired even though the mutation is under way.
-    TabletMetadataLock read_lock(tablet.get(), TabletMetadataLock::READ);
+    TabletMetadataLock read_lock(tablet.get(), LockMode::READ);
     ASSERT_NE("a", read_lock.data().pb.partition().partition_key_start());
     ASSERT_NE("b", read_lock.data().pb.partition().partition_key_end());
     ASSERT_NE("running", read_lock.data().pb.state_msg());
@@ -365,7 +366,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
 
   // Verify that the data is visible
   {
-    TabletMetadataLock read_lock(tablet.get(), TabletMetadataLock::READ);
+    TabletMetadataLock read_lock(tablet.get(), LockMode::READ);
     ASSERT_EQ("a", read_lock.data().pb.partition().partition_key_start());
     ASSERT_EQ("b", read_lock.data().pb.partition().partition_key_end());
     ASSERT_EQ("running", read_lock.data().pb.state_msg());

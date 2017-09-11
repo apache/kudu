@@ -54,6 +54,7 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/server/monitored_task.h"
 #include "kudu/server/webui_util.h"
+#include "kudu/util/cow_object.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/monotime.h"
@@ -176,7 +177,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req, 
   int num_running_tables = 0;
   EasyJson tables_json = output->Set("tables", EasyJson::kArray);
   for (const scoped_refptr<TableInfo>& table : tables) {
-    TableMetadataLock l(table.get(), TableMetadataLock::READ);
+    TableMetadataLock l(table.get(), LockMode::READ);
     if (!l.data().is_running()) {
       continue;
     }
@@ -256,7 +257,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   PartitionSchema partition_schema;
   vector<scoped_refptr<TabletInfo>> tablets;
   {
-    TableMetadataLock l(table.get(), TableMetadataLock::READ);
+    TableMetadataLock l(table.get(), LockMode::READ);
     (*output)["name"] = l.data().name();
     (*output)["id"] = table_id;
     (*output)["version"] = l.data().pb.version();
@@ -293,7 +294,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   EasyJson tablets_detail_json = output->Set("tablets_detail", EasyJson::kArray);
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     vector<pair<TabletDetailPeerInfo, RaftPeerPB::Role>> sorted_replicas;
-    TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
+    TabletMetadataLock l(tablet.get(), LockMode::READ);
 
     // Count states for tablet summary.
     summary_states[SysTabletsEntryPB_State_Name(l.data().pb.state())]++;
@@ -305,7 +306,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         TabletDetailPeerInfo peer_info;
         shared_ptr<TSDescriptor> ts_desc;
         if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-          auto link_pair = TSDescToLinkPair(*ts_desc.get(), tablet->tablet_id());
+          auto link_pair = TSDescToLinkPair(*ts_desc.get(), tablet->id());
           peer_info.text = std::move(link_pair.first);
           peer_info.target = std::move(link_pair.second);
         } else {
@@ -337,7 +338,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     // Combine the tablet details and partition info for each tablet.
     EasyJson tablet_detail_json = tablets_detail_json.PushBack(EasyJson::kObject);
-    tablet_detail_json["id"] = tablet->tablet_id();
+    tablet_detail_json["id"] = tablet->id();
     tablet_detail_json["partition_cols"] = partition_schema.PartitionTableEntry(schema, partition);
     string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);

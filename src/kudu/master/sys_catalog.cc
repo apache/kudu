@@ -736,11 +736,11 @@ void SysCatalogTable::ReqAddTablets(WriteRequestPB* req,
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (const auto& tablet : tablets) {
-    VLOG(2) << "Adding tablet " << tablet->tablet_id() << " in catalog: "
+    VLOG(2) << "Adding tablet " << tablet->id() << " in catalog: "
             << SecureShortDebugString(tablet->metadata().dirty().pb);
     pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->id()));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::INSERT, row);
   }
@@ -759,11 +759,11 @@ void SysCatalogTable::ReqUpdateTablets(WriteRequestPB* req,
       // Short-circuit empty updates.
       continue;
     }
-    VLOG(2) << "Updating tablet " << tablet->tablet_id() << " in catalog: "
+    VLOG(2) << "Updating tablet " << tablet->id() << " in catalog: "
             << diff;
     pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->id()));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(RowOperationsPB::UPDATE, row);
   }
@@ -775,7 +775,7 @@ void SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
   RowOperationsPBEncoder enc(req->mutable_row_operations());
   for (const auto& tablet : tablets) {
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
-    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->tablet_id()));
+    CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
 }

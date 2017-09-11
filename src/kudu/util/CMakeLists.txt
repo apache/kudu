@@ -125,6 +125,7 @@ set(UTIL_SRCS
   cache_metrics.cc
   coding.cc
   condition_variable.cc
+  cow_object.cc
   crc.cc
   debug-util.cc
   debug/trace_event_impl.cc

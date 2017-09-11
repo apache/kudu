@@ -28,6 +28,7 @@
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/util/cow_object.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -58,7 +59,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
 
     scoped_refptr<TabletInfo> tablet = new TabletInfo(table, tablet_id);
     {
-      TabletMetadataLock meta_lock(tablet.get(), TabletMetadataLock::WRITE);
+      TabletMetadataLock meta_lock(tablet.get(), LockMode::WRITE);
       PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
       partition->set_partition_key_start(start_key);
       partition->set_partition_key_end(end_key);
@@ -66,7 +67,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
       meta_lock.Commit();
     }
 
-    TabletMetadataLock meta_lock(tablet.get(), TabletMetadataLock::READ);
+    TabletMetadataLock meta_lock(tablet.get(), LockMode::READ);
     table->AddRemoveTablets({ tablet }, {});
     tablets.push_back(tablet);
   }
@@ -89,7 +90,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     // Only one tablet should own this key.
     ASSERT_EQ(1, tablets_in_range.size());
     // The tablet with range start key matching 'start_key' should be the owner.
-    ASSERT_EQ(tablet_id, (*tablets_in_range.begin())->tablet_id());
+    ASSERT_EQ(tablet_id, (*tablets_in_range.begin())->id());
     LOG(INFO) << "Key " << start_key << " found in tablet " << tablet_id;
   }
 }
