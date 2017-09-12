@@ -48,7 +48,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
-DEFINE_int32(consensus_rpc_timeout_ms, 1000,
+DEFINE_int32(consensus_rpc_timeout_ms, 30000,
              "Timeout used for all consensus internal RPC communications.");
 TAG_FLAG(consensus_rpc_timeout_ms, advanced);
 
