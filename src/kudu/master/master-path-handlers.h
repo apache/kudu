@@ -19,6 +19,7 @@
 
 #include <iosfwd>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
@@ -50,16 +51,18 @@ class MasterPathHandlers {
   void HandleCatalogManager(const Webserver::WebRequest& req,
                             EasyJson* output);
   void HandleTablePage(const Webserver::WebRequest& req,
-                       std::ostringstream *output);
+                       EasyJson* output);
   void HandleMasters(const Webserver::WebRequest& req,
                      std::ostringstream* output);
   void HandleDumpEntities(const Webserver::WebRequest& req,
                           std::ostringstream* output);
 
-  // Convert the specified TSDescriptor to HTML, adding a link to the
-  // tablet server's own webserver if specified in 'desc'.
-  std::string TSDescriptorToHtml(const TSDescriptor& desc,
-                                 const std::string& tablet_id) const;
+  // Returns a pair (text, target) given a tserver's TSDescriptor and a tablet id.
+  // - text is the http host and port for the tserver, if available, or the tserver's uuid.
+  // - target is a url to to the tablet page for the tablet on the tserver's webui,
+  //   or an empty string if no http address is available for the tserver.
+  std::pair<std::string, std::string> TSDescToLinkPair(const TSDescriptor& desc,
+                                                       const std::string& tablet_id) const;
 
   // Convert the specified server registration to HTML, adding a link
   // to the server's own web server (if specified in 'reg') with
@@ -67,11 +70,12 @@ class MasterPathHandlers {
   std::string RegistrationToHtml(const ServerRegistrationPB& reg,
                                  const std::string& link_text) const;
 
+  // Return a CSV of master addresses suitable for display.
+  std::string MasterAddrsToCsv() const;
+
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);
 };
-
-void HandleTabletServersPage(const Webserver::WebRequest& req, std::ostringstream* output);
 
 } // namespace master
 } // namespace kudu

@@ -27,6 +27,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/monitored_task.h"
 #include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/easy_json.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/url-coding.h"
 
@@ -34,6 +35,25 @@ using std::string;
 using strings::Substitute;
 
 namespace kudu {
+
+void SchemaToJson(const Schema& schema, EasyJson* output) {
+  EasyJson schema_json = output->Set("columns", EasyJson::kArray);
+  for (int i = 0; i < schema.num_columns(); i++) {
+    const ColumnSchema& col = schema.column(i);
+    EasyJson col_json = schema_json.PushBack(EasyJson::kObject);
+    col_json["name"] = col.name();
+    col_json["is_key"] = schema.is_key_column(i);
+    col_json["id"] = Substitute("$0", schema.column_id(i));
+    col_json["type"] = col.TypeToString();
+    const ColumnStorageAttributes& attrs = col.attributes();
+    col_json["encoding"] = EncodingType_Name(attrs.encoding);
+    col_json["compression"] = CompressionType_Name(attrs.compression);
+    col_json["read_default"] = col.has_read_default() ?
+                                   col.Stringify(col.read_default_value()) : "-";
+    col_json["write_default"] = col.has_write_default() ?
+                                    col.Stringify(col.write_default_value()) : "-";
+  }
+}
 
 void HtmlOutputSchemaTable(const Schema& schema,
                            std::ostringstream* output) {
@@ -47,7 +67,7 @@ void HtmlOutputSchemaTable(const Schema& schema,
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
     const string& html_escaped_col_name = EscapeForHtmlToString(col.name());
-    const string& col_name = schema.is_key_column(col.name()) ?
+    const string& col_name = schema.is_key_column(i) ?
                                  Substitute("<u>$0</u>", html_escaped_col_name) :
                                  html_escaped_col_name;
     string read_default = "-";
@@ -74,48 +94,28 @@ void HtmlOutputSchemaTable(const Schema& schema,
   *output << "</tbody></table>\n";
 }
 
-void HtmlOutputImpalaSchema(const std::string& table_name,
-                            const Schema& schema,
-                            const string& master_addresses,
-                            std::ostringstream* output) {
-  *output << "<pre><code>\n";
-
-  // Escape table and column names with ` to avoid conflicts with Impala reserved words.
-  *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString("`" + table_name + "`")
-          << " STORED AS KUDU\n";
-  *output << "TBLPROPERTIES(\n";
-  *output << "  'kudu.table_name' = '";
-  *output << EscapeForHtmlToString(table_name) << "',\n";
-  *output << "  'kudu.master_addresses' = '";
-  *output << EscapeForHtmlToString(master_addresses) << "'";
-  *output << ");\n";
-  *output << "</code></pre>\n";
-}
-
-void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
-                        std::ostringstream* output) {
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Task Name</th><th>State</th><th>Time</th><th>Description</th></tr>\n";
+void TaskListToJson(const std::vector<scoped_refptr<MonitoredTask> >& tasks, EasyJson* output) {
+  EasyJson tasks_json = output->Set("tasks", EasyJson::kArray);
   for (const scoped_refptr<MonitoredTask>& task : tasks) {
-    string state;
+    EasyJson task_json = tasks_json.PushBack(EasyJson::kObject);
+    task_json["name"] = task->type_name();
     switch (task->state()) {
       case MonitoredTask::kStatePreparing:
-        state = "Preparing";
+        task_json["state"] = "Preparing";
         break;
       case MonitoredTask::kStateRunning:
-        state = "Running";
+        task_json["state"] = "Running";
         break;
       case MonitoredTask::kStateComplete:
-        state = "Complete";
+        task_json["state"] = "Complete";
         break;
       case MonitoredTask::kStateFailed:
-        state = "Failed";
+        task_json["state"] = "Failed";
         break;
       case MonitoredTask::kStateAborted:
-        state = "Aborted";
+        task_json["state"] = "Aborted";
         break;
     }
-
     double running_secs = 0;
     if (task->completion_timestamp().Initialized()) {
       running_secs =
@@ -123,14 +123,8 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
     } else if (task->start_timestamp().Initialized()) {
       running_secs = (MonoTime::Now() - task->start_timestamp()).ToSeconds();
     }
-
-    *output << Substitute(
-        "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td></tr>\n",
-        EscapeForHtmlToString(task->type_name()),
-        EscapeForHtmlToString(state),
-        EscapeForHtmlToString(HumanReadableElapsedTime::ToShortString(running_secs)),
-        EscapeForHtmlToString(task->description()));
+    task_json["time"] = HumanReadableElapsedTime::ToShortString(running_secs);
+    task_json["description"] = task->description();
   }
-  *output << "</table>\n";
 }
 } // namespace kudu

@@ -24,6 +24,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -170,6 +171,15 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 
 namespace {
 
+
+// Holds info about a peer for use in the tablet detail table.
+struct TabletDetailPeerInfo {
+  string text;
+  string target;
+  string role;
+  bool is_leader;
+};
+
 int RoleToSortIndex(RaftPeerPB::Role r) {
   switch (r) {
     case RaftPeerPB::LEADER: return 0;
@@ -177,8 +187,8 @@ int RoleToSortIndex(RaftPeerPB::Role r) {
   }
 }
 
-bool CompareByRole(const pair<string, RaftPeerPB::Role>& a,
-                   const pair<string, RaftPeerPB::Role>& b) {
+bool CompareByRole(const pair<TabletDetailPeerInfo, RaftPeerPB::Role>& a,
+                   const pair<TabletDetailPeerInfo, RaftPeerPB::Role>& b) {
   return RoleToSortIndex(a.second) < RoleToSortIndex(b.second);
 }
 
@@ -186,116 +196,102 @@ bool CompareByRole(const pair<string, RaftPeerPB::Role>& a,
 
 
 void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
-                                         ostringstream* output) {
+                                         EasyJson* output) {
   // Parse argument.
   string table_id;
   if (!FindCopy(req.parsed_args, "id", &table_id)) {
-    // TODO(wdb): webserver should give a way to return a non-200 response code
-    *output << "Missing 'id' argument";
+    // TODO(wdb): Webserver should give a way to return a non-200 response code.
+    (*output)["error"] = "Missing 'id' argument";
     return;
   }
 
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   if (!l.first_failed_status().ok()) {
-    *output << "Master is not ready: " << l.first_failed_status().ToString();
+    (*output)["error"] = Substitute("Master is not ready: ", l.first_failed_status().ToString());
     return;
   }
 
   scoped_refptr<TableInfo> table;
   Status s = master_->catalog_manager()->GetTableInfo(table_id, &table);
   if (!s.ok()) {
-    *output << "Master is not ready: " << s.ToString();
+    (*output)["error"] = Substitute("Master is not ready: ", s.ToString());
     return;
   }
 
   if (!table) {
-    *output << "Table not found";
+    (*output)["error"] = "Table not found";
     return;
   }
 
   Schema schema;
   PartitionSchema partition_schema;
-  string table_name;
-  vector<scoped_refptr<TabletInfo> > tablets;
+  vector<scoped_refptr<TabletInfo>> tablets;
   {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
-    table_name = l.data().name();
-    *output << "<h1>Table: " << EscapeForHtmlToString(table_name)
-            << " (" << EscapeForHtmlToString(table_id) << ")</h1>\n";
-
-    *output << "<table class='table table-striped'>\n";
-    *output << "  <tr><td>Version:</td><td>" << l.data().pb.version() << "</td></tr>\n";
+    (*output)["name"] = l.data().name();
+    (*output)["id"] = table_id;
+    (*output)["version"] = l.data().pb.version();
 
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    *output << "  <tr><td>State:</td><td>"
-            << state
-            << EscapeForHtmlToString(l.data().pb.state_msg())
-            << "</td></tr>\n";
-    *output << "</table>\n";
+    (*output)["state"] = state;
+    string state_msg = l.data().pb.state_msg();
+    if (!state_msg.empty()) {
+      (*output)["state_msg"] = state_msg;
+    }
 
-    SchemaFromPB(l.data().pb.schema(), &schema);
+    s = SchemaFromPB(l.data().pb.schema(), &schema);
+    if (!s.ok()) {
+      (*output)["error"] = Substitute("Unable to decode schema: ", s.ToString());
+      return;
+    }
     s = PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema);
     if (!s.ok()) {
-      *output << "Unable to decode partition schema: " << s.ToString();
+      (*output)["error"] =
+          Substitute("Unable to decode partition schema: ", s.ToString());
       return;
     }
     table->GetAllTablets(&tablets);
   }
 
-  *output << "<h3>Schema</h3>";
-  HtmlOutputSchemaTable(schema, output);
+  SchemaToJson(schema, output);
 
-  // Visit (& lock) each tablet once to build the partition schema, tablets summary,
-  // and tablets detail tables all at once.
+  // We have to collate partition schema and tablet information in order to set
+  // up the partition schema, tablet summary, and tablet detail tables.
   std::vector<string> range_partitions;
   map<string, int> summary_states;
-  std::ostringstream detail_output;
-
-  detail_output << "<h4>Detail</h4>\n";
-  detail_output << "<a href='#detail' data-toggle='collapse'>(toggle)</a>";
-  detail_output << "<div id='detail' class='collapse'>\n";
-  detail_output << "<table class='table table-striped table-hover'>\n";
-  detail_output << "  <thead><tr><th>Tablet ID</th>"
-                 << partition_schema.PartitionTableHeader(schema)
-                 << "<th>State</th><th>Message</th><th>Peers</th></tr></thead>\n";
-  detail_output << "<tbody>\n";
+  (*output)["detail_partition_schema_header"] = partition_schema.PartitionTableHeader(schema);
+  EasyJson tablets_detail_json = output->Set("tablets_detail", EasyJson::kArray);
   for (const scoped_refptr<TabletInfo>& tablet : tablets) {
-    vector<pair<string, RaftPeerPB::Role>> sorted_replicas;
+    vector<pair<TabletDetailPeerInfo, RaftPeerPB::Role>> sorted_replicas;
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
 
+    // Count states for tablet summary.
     summary_states[SysTabletsEntryPB_State_Name(l.data().pb.state())]++;
+
+    // Collect details about each tablet replica.
     if (l.data().pb.has_consensus_state()) {
       const ConsensusStatePB& cstate = l.data().pb.consensus_state();
       for (const auto& peer : cstate.committed_config().peers()) {
-        RaftPeerPB::Role role = GetConsensusRole(peer.permanent_uuid(), cstate);
-        string html;
-        string location_html;
+        TabletDetailPeerInfo peer_info;
         shared_ptr<TSDescriptor> ts_desc;
         if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-          location_html = TSDescriptorToHtml(*ts_desc.get(), tablet->tablet_id());
+          auto link_pair = TSDescToLinkPair(*ts_desc.get(), tablet->tablet_id());
+          peer_info.text = std::move(link_pair.first);
+          peer_info.target = std::move(link_pair.second);
         } else {
-          location_html = EscapeForHtmlToString(peer.permanent_uuid());
+          peer_info.text = peer.permanent_uuid();
         }
-        if (role == RaftPeerPB::LEADER) {
-          html = Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
-        } else {
-          html = Substitute("  <li>$0: $1</li>\n",
-                            RaftPeerPB_Role_Name(role), location_html);
-        }
-        sorted_replicas.emplace_back(html, role);
+        RaftPeerPB::Role role = GetConsensusRole(peer.permanent_uuid(), cstate);
+        peer_info.role = RaftPeerPB_Role_Name(role);
+        peer_info.is_leader = role == RaftPeerPB::LEADER;
+        sorted_replicas.emplace_back(std::make_pair(peer_info, role));
       }
     }
     std::sort(sorted_replicas.begin(), sorted_replicas.end(), &CompareByRole);
 
-    // Generate the RaftConfig table cell.
-    ostringstream raft_config_html;
-    raft_config_html << "<ul>\n";
-    for (const auto& e : sorted_replicas) {
-      raft_config_html << e.first;
-    }
-    raft_config_html << "</ul>\n";
-
+    // Generate a readable description of the partition of each tablet, used
+    // both for each tablet's details and the readable range partition schema.
     Partition partition;
     Partition::FromPB(l.data().pb.partition(), &partition);
 
@@ -304,75 +300,52 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     if (std::all_of(partition.hash_buckets().begin(),
                     partition.hash_buckets().end(),
                     [] (const int32_t& bucket) { return bucket == 0; })) {
-        range_partitions.emplace_back(
-            partition_schema.RangePartitionDebugString(partition.range_key_start(),
-                                                       partition.range_key_end(),
-                                                       schema));
+      range_partitions.emplace_back(
+          partition_schema.RangePartitionDebugString(partition.range_key_start(),
+                                                     partition.range_key_end(),
+                                                     schema));
     }
 
+    // Combine the tablet details and partition info for each tablet.
+    EasyJson tablet_detail_json = tablets_detail_json.PushBack(EasyJson::kObject);
+    tablet_detail_json["id"] = tablet->tablet_id();
+    tablet_detail_json["partition_cols"] = partition_schema.PartitionTableEntry(schema, partition);
     string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    detail_output << Substitute(
-        "<tr><th>$0</th>$1<td>$2</td><td>$3</td><td>$4</td></tr>\n",
-        tablet->tablet_id(),
-        partition_schema.PartitionTableEntry(schema, partition),
-        state,
-        EscapeForHtmlToString(l.data().pb.state_msg()),
-        raft_config_html.str());
+    tablet_detail_json["state"] = state;
+    tablet_detail_json["state_msg"] = l.data().pb.state_msg();
+    EasyJson peers_json = tablet_detail_json.Set("peers", EasyJson::kArray);
+    for (const auto& e : sorted_replicas) {
+      EasyJson peer_json = peers_json.PushBack(EasyJson::kObject);
+      peer_json["text"] = e.first.text;
+      if (!e.first.target.empty()) {
+        peer_json["target"] = e.first.target;
+      }
+      peer_json["role"] = e.first.role;
+      peer_json["is_leader"] = e.first.is_leader;
+    }
   }
-  detail_output << "</tbody></table></div>\n";
 
-  // Write out the partition schema and range bound information...
-  *output << "<h3>Partition Schema</h3>";
-  *output << "<pre>";
-  *output << EscapeForHtmlToString(partition_schema.DisplayString(schema, range_partitions));
-  *output << "</pre>";
+  (*output)["partition_schema"] = partition_schema.DisplayString(schema, range_partitions);
 
-  // ...then the summary table...
-  *output << "<h3>Tablets</h3>";
-  *output << "<h4>Summary</h4>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "<thead><tr><th>State</th><th>Count</th><th>Percentage</th></tr></thead>";
-  *output << "<tbody>\n";
+  EasyJson summary_json = output->Set("tablets_summary", EasyJson::kArray);
   for (const auto& entry : summary_states) {
-    double percentage = tablets.size() == 0 ? 0.0 : (100.0 * entry.second) / tablets.size();
-    *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
-                                 entry.first, entry.second, StringPrintf("%.2f", percentage));
+    EasyJson state_json = summary_json.PushBack(EasyJson::kObject);
+    state_json["state"] = entry.first;
+    state_json["count"] = entry.second;
+    double percentage = (100.0 * entry.second) / tablets.size();
+    state_json["percentage"] = tablets.empty() ? "0.0" : StringPrintf("%.2f", percentage);
   }
-  *output << "</tbody></table>\n";
 
-  // ...and finally the tablet detail table.
-  *output << detail_output.str();
+  // Used to make the Impala CREATE TABLE statement.
+  (*output)["master_addresses"] = MasterAddrsToCsv();
 
-  *output << "<h3>Impala CREATE TABLE statement</h3>\n";
-  string master_addresses;
-  if (master_->opts().IsDistributed()) {
-    vector<string> all_addresses;
-    all_addresses.reserve(master_->opts().master_addresses.size());
-    for (const HostPort& hp : master_->opts().master_addresses) {
-      all_addresses.push_back(hp.ToString());
-    }
-    master_addresses = JoinElements(all_addresses, ",");
-  } else {
-    Sockaddr addr = master_->first_rpc_address();
-    HostPort hp;
-    Status s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
-    if (s.ok()) {
-      master_addresses = hp.ToString();
-    } else {
-      LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
-      master_addresses = addr.ToString();
-    }
-  }
-  HtmlOutputImpalaSchema(table_name, schema, master_addresses, output);
-
-  *output << "<h3>Tasks</h3>";
-  std::vector<scoped_refptr<MonitoredTask> > task_list;
+  std::vector<scoped_refptr<MonitoredTask>> task_list;
   table->GetTaskList(&task_list);
-  HtmlOutputTaskList(task_list, output);
+  TaskListToJson(task_list, output);
 }
 
-void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
+void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
                                        ostringstream* output) {
   vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
@@ -599,7 +572,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
       "/tables", "Tables",
       boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
       is_styled, is_on_nav_bar);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
       "/table", "",
       boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
       is_styled, false);
@@ -614,22 +587,20 @@ Status MasterPathHandlers::Register(Webserver* server) {
   return Status::OK();
 }
 
-string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
-                                              const std::string& tablet_id) const {
+pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& desc,
+                                                          const string& tablet_id) const {
   ServerRegistrationPB reg;
   desc.GetRegistration(&reg);
-
-  if (reg.http_addresses().size() > 0) {
-    return Substitute("<a href=\"$0://$1:$2/tablet?id=$3\">$4:$5</a>",
-                      reg.https_enabled() ? "https" : "http",
-                      reg.http_addresses(0).host(),
-                      reg.http_addresses(0).port(),
-                      EscapeForHtmlToString(tablet_id),
-                      EscapeForHtmlToString(reg.http_addresses(0).host()),
-                      reg.http_addresses(0).port());
-  } else {
-    return EscapeForHtmlToString(desc.permanent_uuid());
+  if (reg.http_addresses().empty()) {
+    return std::make_pair(desc.permanent_uuid(), "");
   }
+  string text = Substitute("$0:$1", reg.http_addresses(0).host(), reg.http_addresses(0).port());
+  string target = Substitute("$0://$1:$2/tablet?id=$3",
+                             reg.https_enabled() ? "https" : "http",
+                             reg.http_addresses(0).host(),
+                             reg.http_addresses(0).port(),
+                             tablet_id);
+  return std::make_pair(std::move(text), std::move(target));
 }
 
 string MasterPathHandlers::RegistrationToHtml(
@@ -643,6 +614,25 @@ string MasterPathHandlers::RegistrationToHtml(
                            reg.http_addresses(0).port(), link_html);
   }
   return link_html;
+}
+
+string MasterPathHandlers::MasterAddrsToCsv() const {
+  if (master_->opts().IsDistributed()) {
+    vector<string> all_addresses;
+    all_addresses.reserve(master_->opts().master_addresses.size());
+    for (const HostPort& hp : master_->opts().master_addresses) {
+      all_addresses.push_back(hp.ToString());
+    }
+    return JoinElements(all_addresses, ",");
+  }
+  Sockaddr addr = master_->first_rpc_address();
+  HostPort hp;
+  Status s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
+  if (s.ok()) {
+    return hp.ToString();
+  }
+  LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
+  return addr.ToString();
 }
 
 } // namespace master

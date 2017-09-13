@@ -1,0 +1,143 @@
+{{!
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+}}
+{{#error}}
+  <div class="text-error">{{.}}</div>
+{{/error}}
+{{^error}}
+  <h2>Table: {{name}} ({{id}})</h2>
+  <table class="table table-striped">
+    <tbody>
+    <tr><td>Version:</td><td>{{version}}</td></tr>
+    <tr><td>State:</td><td>{{state}} {{#state_msg}}({{.}}){{/state_msg}}</td></tr>
+    </tbody>
+  </table>
+  <h3>Schema</h3>
+  <table class='table table-striped'>
+    <thead><tr>
+      <th>Column</th>
+      <th>ID</th>
+      <th>Type</th>
+      <th>Encoding</th>
+      <th>Compression</th>
+      <th>Read default</th>
+      <th>Write default</th>
+    </tr></thead>
+    <tbody>
+    {{#columns}}
+      <tr>
+        <th>{{#is_key}}<u>{{/is_key}}
+          {{name}}
+          {{#is_key}}</u>{{/is_key}}</th>
+        <td>{{id}}</a></td>
+        <td>{{type}}</td>
+        <td>{{encoding}}</td>
+        <td>{{compression}}</td>
+        <td>{{read_default}}</td>
+        <td>{{write_default}}</td>
+      </tr>
+    {{/columns}}
+    </tbody>
+  </table>
+
+  <h3>Partition Schema</h3>
+  <pre>{{partition_schema}}</pre>
+
+  <h3>Tablets</h3>
+  <h4>Summary</h4>
+
+  <table class='table table-striped'>
+    <thead><tr>
+      <th>State</th>
+      <th>Count</th>
+      <th>Percentage</th>
+    </tr></thead>
+    <tbody>
+    {{#tablets_summary}}
+      <tr>
+        <td>{{state}}</td>
+        <td>{{count}}</td>
+        <td>{{percentage}}</td>
+      </tr>
+    {{/tablets_summary}}
+    </tbody>
+  </table>
+
+  <h4>Detail</h4>
+  <a href='#detail' data-toggle='collapse'>(toggle)</a>
+  <div id='detail' class='collapse'>
+    <table class='table table-striped table-hover'>
+      <thead><tr>
+        <th>Tablet ID</th>
+        {{{detail_partition_schema_header}}}
+        <th>State</th>
+        <th>Message</th>
+        <th>Peers</th>
+      </tr></thead>
+      <tbody>
+      {{#tablets_detail}}
+        <tr>
+          <td>{{id}}</td>
+          {{{partition_cols}}}
+          <td>{{state}}</td>
+          <td>{{state_msg}}</td>
+          <td>
+            <ul>
+              {{#peers}}
+                <li>{{#is_leader}}<b>LEADER: </b>{{/is_leader}}
+                  {{^is_leader}}{{role}}: {{/is_leader}}
+                  {{#target}}<a href="{{{.}}}">{{/target}}
+                  {{text}}
+                  {{#target}}</a>{{/target}}
+                </li>
+              {{/peers}}
+            </ul>
+          </td>
+        </tr>
+      {{/tablets_detail}}
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Impala CREATE TABLE statement</h3>
+  {{! Unusual formatting below because <pre> preserves whitespace in the output. }}
+  <pre><code>CREATE EXTERNAL TABLE `{{name}}` STORED AS KUDU
+TBLPROPERTIES(
+    'kudu.table_name' = '{{name}}'
+    'kudu.master_addresses' = '{{master_addresses}}')</code></pre>
+
+  <h3>Tasks</h3>
+  <table class='table table-striped'>
+    <tr>
+      <th>Task Name</th>
+      <th>State</th>
+      <th>Time</th>
+      <th>Description</th>
+    </tr>
+    <tbody>
+    {{#tasks}}
+      <tr>
+        <td>{{name}}</td>
+        <td>{{state}}</td>
+        <td>{{time}}</td>
+        <td>{{description}}</td>
+      </tr>
+    {{/tasks}}
+    </tbody>
+  </table>
+{{/error}}
