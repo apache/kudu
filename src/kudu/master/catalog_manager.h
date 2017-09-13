@@ -39,7 +39,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
-#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
@@ -49,11 +48,6 @@
 #include "kudu/util/random.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
-
-namespace boost {
-template <class T>
-class optional;
-}
 
 namespace kudu {
 
@@ -568,8 +562,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // The RPC context is provided for logging/tracing purposes,
   // but this function does not itself respond to the RPC.
   Status ProcessTabletReport(TSDescriptor* ts_desc,
-                             const TabletReportPB& report,
-                             TabletReportUpdatesPB *report_update,
+                             const TabletReportPB& full_report,
+                             TabletReportUpdatesPB* full_report_update,
                              rpc::RpcContext* rpc);
 
   SysCatalogTable* sys_catalog() { return sys_catalog_.get(); }
@@ -728,20 +722,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status FindTable(const TableIdentifierPB& table_identifier,
                    scoped_refptr<TableInfo>* table_info);
 
-  // Handle one of the tablets in a tablet reported.
-  // Requires that the lock is already held.
-  Status HandleReportedTablet(TSDescriptor* ts_desc,
-                              const ReportedTabletPB& report,
-                              ReportedTabletUpdatesPB *report_updates);
-  // Performs metadata updates and sends RPCs based on the Raft-related changes
-  // to 'tablet' described in 'report'.
-  //
-  // 'table_lock' must be held for reading and 'tablet_lock' for writing.
-  Status HandleRaftConfigChanged(const ReportedTabletPB& report,
-                                 const scoped_refptr<TabletInfo>& tablet,
-                                 const TableMetadataLock& table_lock,
-                                 TabletMetadataLock* tablet_lock);
-
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
 
@@ -805,8 +785,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                   DeferredAssignmentActions* deferred,
                                   scoped_refptr<TabletInfo>* new_tablet);
 
-  Status HandleTabletSchemaVersionReport(const scoped_refptr<TabletInfo>& tablet,
-                                         uint32_t version);
+  void HandleTabletSchemaVersionReport(const scoped_refptr<TabletInfo>& tablet,
+                                       uint32_t version);
 
   // Send the "create tablet request" to all peers of a particular tablet.
   //.
@@ -827,10 +807,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Send the "alter table request" to all tablets of the specified table.
   void SendAlterTableRequest(const scoped_refptr<TableInfo>& table);
 
-  // Start the background task to send the AlterTable() RPC to the leader for this
-  // tablet.
-  void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
-
   // Send the "delete tablet request" to all replicas of all tablets of the
   // specified table.
   void SendDeleteTableRequest(const scoped_refptr<TableInfo>& table,
@@ -842,20 +818,6 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   void SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                const TabletMetadataLock& tablet_lock,
                                const std::string& deletion_msg);
-
-  // Send the "delete tablet request" to a particular replica (i.e. TS and
-  // tablet combination). The specified 'reason' will be logged on the TS.
-  void SendDeleteReplicaRequest(const std::string& tablet_id,
-                                tablet::TabletDataState delete_type,
-                                const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
-                                const scoped_refptr<TableInfo>& table,
-                                const std::string& ts_uuid,
-                                const std::string& reason);
-
-  // Start a task to change the config to add an additional voter because the
-  // specified tablet is under-replicated.
-  void SendAddServerRequest(const scoped_refptr<TabletInfo>& tablet,
-                            const consensus::ConsensusStatePB& cstate);
 
   std::string GenerateId() { return oid_generator_.Next(); }
 

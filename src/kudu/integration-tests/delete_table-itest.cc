@@ -1100,12 +1100,6 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
       .num_replicas(1)
       .Create());
 
-  // Figure out the tablet id of the created tablet.
-  const MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(WaitForNumTabletsOnTS(ts_map_.begin()->second, 1, timeout, &tablets));
-  const string& tablet_id = tablets[0].tablet_status().tablet_id();
-
   // Delete the master's metadata and start it back up. The tablet created
   // above is now unknown, but should not be deleted!
   cluster_->master()->Shutdown();
@@ -1116,6 +1110,8 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   // so that it can be found after the subsequent restart below.
   ASSERT_OK(cluster_->master()->WaitForCatalogManager());
 
+  // The master should not delete the tablet. Let's wait for at least one
+  // heartbeat to pass.
   int64_t num_delete_attempts;
   ASSERT_EVENTUALLY([&]() {
     int64_t num_heartbeats;
@@ -1130,30 +1126,6 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
       &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
       "total_count", &num_delete_attempts));
   ASSERT_EQ(0, num_delete_attempts);
-
-  // Now restart the master with orphan deletion enabled. The tablet should get
-  // deleted.
-  // We also need to restart the tablet server, or else the old tablet server
-  // won't be able to authenticate to the new master, due to it having a new
-  // CA certificate which the old tserver doesn't trust.
-  //
-  // TODO(KUDU-65): perhaps this is actually a feature? should we have tablet servers
-  // remember the CA cert persistently so that it's impossible to connect an
-  // old tserver to a new cluster?
-  cluster_->Shutdown();
-  cluster_->master()->mutable_flags()->push_back(
-      "--catalog_manager_delete_orphaned_tablets");
-  ASSERT_OK(cluster_->Restart());
-  ASSERT_EVENTUALLY([&]() {
-    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
-        &METRIC_ENTITY_server, "kudu.tabletserver",
-        &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
-        "total_count", &num_delete_attempts));
-    // Sometimes the tablet server has time to report the orphaned tablet multiple times
-    // before the delete succeeds. This is ok because tablet deletion is idempotent.
-    ASSERT_GE(num_delete_attempts, 1);
-    ASSERT_OK(CheckTabletDeletedOnTS(0, tablet_id, SUPERBLOCK_NOT_EXPECTED));
-  });
 }
 
 // Ensure that the master doesn't try to delete tombstoned tablets.
