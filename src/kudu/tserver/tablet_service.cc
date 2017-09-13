@@ -97,6 +97,7 @@
 #include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/trace_metrics.h"
+#include "kudu/util/website_util.h"
 
 DEFINE_int32(scanner_default_batch_size_bytes, 1024 * 1024,
              "The default size for batches of scan results");
@@ -861,8 +862,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   if (process_memory::SoftLimitExceeded(&capacity_pct)) {
     tablet->metrics()->leader_memory_pressure_rejections->Increment();
     string msg = StringPrintf(
-        "Soft memory limit exceeded (at %.2f%% of capacity)",
-        capacity_pct);
+        "Soft memory limit exceeded (at %.2f%% of capacity). See %s",
+        capacity_pct, KuduDocsTroubleshootingUrl().c_str());
     if (capacity_pct >= FLAGS_memory_limit_warn_threshold_percentage) {
       KLOG_EVERY_N_SECS(WARNING, 1) << "Rejecting Write request: " << msg << THROTTLE_MSG;
     } else {

@@ -59,6 +59,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/website_util.h"
 
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
@@ -370,7 +371,9 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     RETURN_NOT_OK_PREPEND(IsDirectoryEmpty(root.path, &is_empty),
                           "Unable to check if FSManager root is empty");
     if (!is_empty) {
-      return Status::AlreadyPresent("FSManager root is not empty", root.path);
+      return Status::AlreadyPresent(
+          Substitute("FSManager root is not empty. See $0", KuduDocsTroubleshootingUrl()),
+          root.path);
     }
   }
 

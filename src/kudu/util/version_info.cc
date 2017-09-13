@@ -36,7 +36,11 @@ string VersionInfo::GetGitHash() {
   return ret;
 }
 
-string VersionInfo::GetShortVersionString() {
+string VersionInfo::GetShortVersionInfo() {
+  return KUDU_VERSION_STRING;
+}
+
+string VersionInfo::GetVersionInfo() {
   return strings::Substitute("kudu $0 (rev $1)",
                              KUDU_VERSION_STRING,
                              GetGitHash());

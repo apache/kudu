@@ -196,6 +196,7 @@ set(UTIL_SRCS
   user.cc
   url-coding.cc
   version_info.cc
+  website_util.cc
   zlib.cc
 )
 

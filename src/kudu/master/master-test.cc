@@ -189,7 +189,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ServerRegistrationPB fake_reg;
   MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
   MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
-  fake_reg.set_software_version(VersionInfo::GetShortVersionString());
+  fake_reg.set_software_version(VersionInfo::GetVersionInfo());
 
   {
     TSHeartbeatRequestPB req;
@@ -339,7 +339,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_STREQ("my-ts-uuid", tablet_server["uuid"].GetString());
     ASSERT_TRUE(tablet_server["millis_since_heartbeat"].GetInt64() >= 0);
     ASSERT_EQ(true, tablet_server["live"].GetBool());
-    ASSERT_STREQ(VersionInfo::GetShortVersionString().c_str(),
+    ASSERT_STREQ(VersionInfo::GetVersionInfo().c_str(),
         tablet_server["version"].GetString());
   }
 

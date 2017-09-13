@@ -455,7 +455,7 @@ void ServerBase::ExcessLogFileDeleterThread() {
 
 std::string ServerBase::FooterHtml() const {
   return Substitute("<pre>$0\nserver uuid $1</pre>",
-                    VersionInfo::GetShortVersionString(),
+                    VersionInfo::GetVersionInfo(),
                     instance_pb_->permanent_uuid());
 }
 

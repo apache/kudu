@@ -167,8 +167,8 @@ class RegistrationTest : public KuduTest {
     ASSERT_STR_CONTAINS(buf_str, expected_uuid);
 
     // Should check that the TS software version is included on the page.
-    // tserver version should be the same as returned by GetShortVersionString()
-    ASSERT_STR_CONTAINS(buf_str, VersionInfo::GetShortVersionString());
+    // tserver version should be the same as returned by GetVersionInfo()
+    ASSERT_STR_CONTAINS(buf_str, VersionInfo::GetVersionInfo());
     if (contents != nullptr) {
       *contents = std::move(buf_str);
     }
@@ -248,7 +248,7 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
     SCOPED_TRACE(SecureShortDebugString(reg));
     ASSERT_TRUE(reg.has_software_version());
     ASSERT_STR_CONTAINS(reg.software_version(),
-                        VersionInfo::GetShortVersionString());
+                        VersionInfo::GetVersionInfo());
   }
 }
 

@@ -238,7 +238,7 @@ Status DisableOpenSSLInitialization() {
 }
 
 string GetShortVersionString() {
-  return VersionInfo::GetShortVersionString();
+  return VersionInfo::GetVersionInfo();
 }
 
 string GetAllVersionInfo() {

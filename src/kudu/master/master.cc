@@ -258,7 +258,7 @@ Status Master::InitMasterRegistration() {
     RETURN_NOT_OK(AddHostPortPBs(http_addrs, reg.mutable_http_addresses()));
     reg.set_https_enabled(web_server()->IsSecure());
   }
-  reg.set_software_version(VersionInfo::GetShortVersionString());
+  reg.set_software_version(VersionInfo::GetVersionInfo());
 
   registration_.Swap(&reg);
   registration_initialized_.store(true);

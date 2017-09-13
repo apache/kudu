@@ -28,8 +28,11 @@ class VersionInfoPB;
 // Static functions related to fetching information about the current build.
 class VersionInfo {
  public:
-  // Get a short version string ("kudu 1.2.3 (rev abcdef...)")
-  static std::string GetShortVersionString();
+  // Get a short version string ("1.2.3" or "1.9.3-SNAPSHOT").
+  static std::string GetShortVersionInfo();
+
+  // Get a version string ("kudu 1.2.3 (rev abcdef...)").
+  static std::string GetVersionInfo();
 
   // Get a multi-line string including version info, build time, etc.
   static std::string GetAllVersionInfo();
