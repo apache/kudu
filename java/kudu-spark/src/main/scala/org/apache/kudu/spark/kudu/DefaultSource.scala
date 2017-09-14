@@ -17,6 +17,7 @@
 
 package org.apache.kudu.spark.kudu
 
+import java.net.InetAddress
 import java.sql.Timestamp
 
 import scala.collection.JavaConverters._
@@ -49,6 +50,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   val OPERATION = "kudu.operation"
   val FAULT_TOLERANT_SCANNER = "kudu.faultTolerantScan"
 
+  def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
+
   /**
     * Construct a BaseRelation using the provided context and parameters.
     *
@@ -62,13 +65,12 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val tableName = parameters.getOrElse(TABLE_KEY,
       throw new IllegalArgumentException(
         s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
-    val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
+    val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
 
-    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType,
-      None)(sqlContext)
+    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType, None)(sqlContext)
   }
 
   /**
@@ -97,7 +99,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val tableName = parameters.getOrElse(TABLE_KEY,
       throw new IllegalArgumentException(s"Kudu table name must be specified in create options " +
         s"using key '$TABLE_KEY'"))
-    val kuduMaster = parameters.getOrElse(KUDU_MASTER, "localhost")
+    val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)

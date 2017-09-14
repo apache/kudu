@@ -17,9 +17,11 @@
 
 package org.apache.kudu.spark.tools
 
+import java.net.InetAddress
+
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.spark.tools.ImportExportKudu.ArgsCls
-import org.apache.spark.sql.{SQLContext, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.kudu.spark.kudu._
@@ -33,13 +35,15 @@ object ImportExportKudu {
     sys.exit(1)
   }
 
+  def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
+
   def usage: String =
     s"""
        | Usage: --operation=import/export --format=<data-format(csv,parquet,avro)> --master-addrs=<master-addrs> --path=<path> --table-name=<table-name>
        |    where
        |      operation: import or export data from or to Kudu tables, default: import
        |      format: specify the format of data want to import/export, the following formats are supported csv,parquet,avro default:csv
-       |      masterAddrs: comma separated addresses of Kudu master nodes, default: localhost
+       |      masterAddrs: comma separated addresses of Kudu master nodes, default: $defaultMasterAddrs
        |      path: path to input or output for import/export operation, default: file://
        |      tableName: table name to import/export, default: ""
        |      columns: columns name for select statement on export from kudu table, default: *
@@ -49,7 +53,7 @@ object ImportExportKudu {
 
   case class ArgsCls(operation: String = "import",
                      format: String = "csv",
-                     masterAddrs: String = "localhost",
+                     masterAddrs: String = defaultMasterAddrs,
                      path: String = "file://",
                      tableName: String = "",
                      columns: String = "*",

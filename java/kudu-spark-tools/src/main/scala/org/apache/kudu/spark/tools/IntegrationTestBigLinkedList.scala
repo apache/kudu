@@ -17,6 +17,8 @@
 
 package org.apache.kudu.spark.tools
 
+import java.net.InetAddress
+
 import com.google.common.annotations.VisibleForTesting
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.{KuduClient, KuduSession, KuduTable}
@@ -81,6 +83,8 @@ object IntegrationTestBigLinkedList {
     else s"${n}ns"
   }
 
+  def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
+
   def main(args: Array[String]): Unit = {
     if (args.isEmpty) { fail(usage) }
 
@@ -94,7 +98,7 @@ object IntegrationTestBigLinkedList {
 }
 
 object Generator {
-  import IntegrationTestBigLinkedList.{LOG, fail, nanosToHuman, parseIntFlag}
+  import IntegrationTestBigLinkedList.{LOG, defaultMasterAddrs, fail, nanosToHuman, parseIntFlag}
 
   def usage: String =
     s"""
@@ -108,7 +112,7 @@ object Generator {
        |      hashPartitions: number of hash partitions to create for the new linked list table, if it doesn't exist, default: 1
        |      rangePartitions: number of range partitions to create for the new linked list table, if it doesn't exist, default: 1
        |      replicas: number of replicas to create for the new linked list table, if it doesn't exist, default: 1
-       |      master-addrs: comma separated addresses of Kudu master nodes, default: localhost
+       |      master-addrs: comma separated addresses of Kudu master nodes, default: $defaultMasterAddrs
        |      table-name: the name of the linked list table, default: $DEFAULT_TABLE_NAME
      """.stripMargin
 
@@ -118,7 +122,7 @@ object Generator {
                   hashPartitions: Int = 1,
                   rangePartitions: Int = 1,
                   replicas: Int = 1,
-                  masterAddrs: String = "localhost",
+                  masterAddrs: String = defaultMasterAddrs,
                   tableName: String = DEFAULT_TABLE_NAME)
 
   object Args {
@@ -267,19 +271,19 @@ object Generator {
 }
 
 object Verifier {
-  import IntegrationTestBigLinkedList.{fail, parseLongFlag}
+  import IntegrationTestBigLinkedList.{defaultMasterAddrs, fail, parseLongFlag}
 
   def usage: String =
     s"""
        | Usage: verify --nodes=<nodes> --master-addrs=<master-addrs> --table-name=<table-name>
        |    where
        |      nodes: number of nodes expected to be in the linked list table
-       |      master-addrs: comma separated addresses of Kudu master nodes, default: localhost
+       |      master-addrs: comma separated addresses of Kudu master nodes, default: $defaultMasterAddrs
        |      table-name: the name of the linked list table, default: $DEFAULT_TABLE_NAME
      """.stripMargin
 
   case class Args(nodes: Option[Long] = None,
-                  masterAddrs: String = "localhost",
+                  masterAddrs: String = defaultMasterAddrs,
                   tableName: String = DEFAULT_TABLE_NAME)
 
   object Args {
