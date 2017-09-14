@@ -1001,6 +1001,8 @@ class Histogram : public Metric {
   uint64_t MaxValueForTests() const;
   double MeanValueForTests() const;
 
+  const HdrHistogram* histogram_for_tests() const { return histogram_.get(); }
+
  private:
   FRIEND_TEST(MetricsTest, SimpleHistogramTest);
   friend class MetricEntity;

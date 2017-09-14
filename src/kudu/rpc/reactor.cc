@@ -45,6 +45,7 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -84,6 +85,20 @@ DEFINE_bool(rpc_reopen_outbound_connections, false,
 TAG_FLAG(rpc_reopen_outbound_connections, unsafe);
 TAG_FLAG(rpc_reopen_outbound_connections, runtime);
 
+METRIC_DEFINE_histogram(server, reactor_load_percent,
+                        "Reactor Thread Load Percentage",
+                        kudu::MetricUnit::kUnits,
+                        "The percentage of time that the reactor is busy "
+                        "(not blocked awaiting network activity). If this metric "
+                        "shows significant samples nears 100%, increasing the "
+                        "number of reactors may be beneficial.", 100, 2);
+
+METRIC_DEFINE_histogram(server, reactor_active_latency_us,
+                        "Reactor Thread Active Latency",
+                        kudu::MetricUnit::kMicroseconds,
+                        "TODO", 1000000, 2);
+
+
 namespace kudu {
 namespace rpc {
 
@@ -121,6 +136,11 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
     coarse_timer_granularity_(bld.coarse_timer_granularity_),
     total_client_conns_cnt_(0),
     total_server_conns_cnt_(0) {
+
+  if (bld.metric_entity_) {
+    invoke_us_histogram_ = METRIC_reactor_active_latency_us.Instantiate(bld.metric_entity_);
+    load_percent_histogram_ = METRIC_reactor_load_percent.Instantiate(bld.metric_entity_);
+  }
 }
 
 Status ReactorThread::Init() {
@@ -139,8 +159,49 @@ Status ReactorThread::Init() {
   timer_.start(coarse_timer_granularity_.ToSeconds(),
                coarse_timer_granularity_.ToSeconds());
 
+  // Register our callbacks. ev++ doesn't provide handy wrappers for these.
+  ev_set_userdata(loop_, this);
+  ev_set_loop_release_cb(loop_, &ReactorThread::AboutToPollCb, &ReactorThread::PollCompleteCb);
+  ev_set_invoke_pending_cb(loop_, &ReactorThread::InvokePendingCb);
+
   // Create Reactor thread.
   return kudu::Thread::Create("reactor", "rpc reactor", &ReactorThread::RunThread, this, &thread_);
+}
+
+void ReactorThread::InvokePendingCb(struct ev_loop* loop) {
+  // Calculate the number of cycles spent calling our callbacks.
+  // This is called quite frequently so we use CycleClock rather than MonoTime
+  // since it's a bit faster.
+  int64_t start = CycleClock::Now();
+  ev_invoke_pending(loop);
+  int64_t dur_cycles = CycleClock::Now() - start;
+
+  // Contribute this to our histogram.
+  ReactorThread* thr = static_cast<ReactorThread*>(ev_userdata(loop));
+  if (thr->invoke_us_histogram_) {
+    thr->invoke_us_histogram_->Increment(dur_cycles * 1e6 / base::CyclesPerSecond());
+  }
+}
+
+void ReactorThread::AboutToPollCb(struct ev_loop* loop) noexcept {
+  // Store the current time in a member variable to be picked up below
+  // in PollCompleteCb.
+  ReactorThread* thr = static_cast<ReactorThread*>(ev_userdata(loop));
+  thr->cycle_clock_before_poll_ = CycleClock::Now();
+}
+
+void ReactorThread::PollCompleteCb(struct ev_loop* loop) noexcept {
+  // First things first, capture the time, so that this is as accurate as possible
+  int64_t cycle_clock_after_poll = CycleClock::Now();
+
+  // Record it in our accounting.
+  ReactorThread* thr = static_cast<ReactorThread*>(ev_userdata(loop));
+  DCHECK_NE(thr->cycle_clock_before_poll_, -1)
+      << "PollCompleteCb called without corresponding AboutToPollCb";
+
+  int64_t poll_cycles = cycle_clock_after_poll - thr->cycle_clock_before_poll_;
+  thr->cycle_clock_before_poll_ = -1;
+  thr->total_poll_cycles_ += poll_cycles;
 }
 
 void ReactorThread::Shutdown(Messenger::ShutdownMode mode) {
@@ -315,6 +376,20 @@ void ReactorThread::TimerHandler(ev::timer& /*watcher*/, int revents) {
     return;
   }
   cur_time_ = MonoTime::Now();
+
+  // Compute load percentage.
+  int64_t now_cycles = CycleClock::Now();
+  if (last_load_measurement_.time_cycles != -1) {
+    int64_t cycles_delta = (now_cycles - last_load_measurement_.time_cycles);
+    int64_t poll_cycles_delta = total_poll_cycles_ - last_load_measurement_.poll_cycles;
+    double poll_fraction = static_cast<double>(poll_cycles_delta) / cycles_delta;
+    double active_fraction = 1 - poll_fraction;
+    if (load_percent_histogram_) {
+      load_percent_histogram_->Increment(static_cast<int>(active_fraction * 100));
+    }
+  }
+  last_load_measurement_.time_cycles = now_cycles;
+  last_load_measurement_.poll_cycles = total_poll_cycles_;
 
   ScanIdleConnections();
 }

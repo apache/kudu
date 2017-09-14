@@ -30,11 +30,15 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc-test-base.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rtest.pb.h"
 #include "kudu/rpc/rtest.proxy.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/hdr_histogram.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -69,10 +73,11 @@ DEFINE_int32(run_seconds, 1, "Seconds to run the test");
 DECLARE_bool(rpc_encrypt_loopback_connections);
 DEFINE_bool(enable_encryption, false, "Whether to enable TLS encryption for rpc-bench");
 
+METRIC_DECLARE_histogram(reactor_load_percent);
+METRIC_DECLARE_histogram(reactor_active_latency_us);
+
 namespace kudu {
 namespace rpc {
-
-class Messenger;
 
 class RpcBench : public RpcTestBase {
  public:
@@ -98,6 +103,11 @@ class RpcBench : public RpcTestBase {
     float sys_cpu_micros_per_req = static_cast<float>(elapsed.system / 1000.0 / total_reqs);
     float csw_per_req = static_cast<float>(elapsed.context_switches) / total_reqs;
 
+    HdrHistogram reactor_load(*METRIC_reactor_load_percent.Instantiate(
+        server_messenger_->metric_entity())->histogram_for_tests());
+    HdrHistogram reactor_latency(*METRIC_reactor_active_latency_us.Instantiate(
+        server_messenger_->metric_entity())->histogram_for_tests());
+
     LOG(INFO) << "Mode:            " << (sync ? "Sync" : "Async");
     if (sync) {
       LOG(INFO) << "Client threads:   " << FLAGS_client_threads;
@@ -114,6 +124,14 @@ class RpcBench : public RpcTestBase {
     LOG(INFO) << "User CPU per req: " << user_cpu_micros_per_req << "us";
     LOG(INFO) << "Sys CPU per req:  " << sys_cpu_micros_per_req << "us";
     LOG(INFO) << "Ctx Sw. per req:  " << csw_per_req;
+    LOG(INFO) << "Server Reactor load (mean):     "
+              << reactor_load.MeanValue() << "%";
+    LOG(INFO) << "Server Reactor load (95p):      "
+              << reactor_load.ValueAtPercentile(95) << "%";
+    LOG(INFO) << "Server Reactor Latency (mean):  "
+              << reactor_latency.MeanValue() << "us";
+    LOG(INFO) << "Server Reactor Latency (95p):   "
+              << reactor_latency.ValueAtPercentile(95) << "us";
 
   }
 

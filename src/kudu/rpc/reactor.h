@@ -42,6 +42,7 @@
 
 namespace kudu {
 
+class Histogram;
 class Sockaddr;
 class Socket;
 
@@ -57,6 +58,7 @@ class ReactorThread;
 enum class CredentialsPolicy;
 
 // Simple metrics information from within a reactor.
+// TODO(todd): switch these over to use util/metrics.h style metrics.
 struct ReactorMetrics {
   // Number of client RPC connections currently connected.
   int32_t num_client_connections_;
@@ -204,6 +206,20 @@ class ReactorThread {
   // Run the main event loop of the reactor.
   void RunThread();
 
+  // When libev has noticed that it needs to wake up an application watcher,
+  // it calls this callback. The callback simply calls back into libev's
+  // ev_invoke_pending() to trigger all the watcher callbacks, but
+  // wraps it with latency measurements.
+  static void InvokePendingCb(struct ev_loop* loop);
+
+  // Similarly, libev calls these functions before/after invoking epoll_wait().
+  // We use these to measure the amount of time spent waiting.
+  //
+  // NOTE: 'noexcept' is required to avoid compilation errors due to libev's
+  // use of the same exception specification.
+  static void AboutToPollCb(struct ev_loop* loop) noexcept;
+  static void PollCompleteCb(struct ev_loop* loop) noexcept;
+
   // Find a connection to the given remote and returns it in 'conn'.
   // Returns true if a connection is found. Returns false otherwise.
   bool FindConnection(const ConnectionId& conn_id,
@@ -292,11 +308,31 @@ class ReactorThread {
   // Scan for idle connections on this granularity.
   const MonoDelta coarse_timer_granularity_;
 
+  // Metrics.
+  scoped_refptr<Histogram> invoke_us_histogram_;
+  scoped_refptr<Histogram> load_percent_histogram_;
+
   // Total number of client connections opened during Reactor's lifetime.
   uint64_t total_client_conns_cnt_;
 
   // Total number of server connections opened during Reactor's lifetime.
   uint64_t total_server_conns_cnt_;
+
+  // Set prior to calling epoll and then reset back to -1 after each invocation
+  // completes. Used for accounting total_poll_cycles_.
+  int64_t cycle_clock_before_poll_ = -1;
+
+  // The total number of cycles spent in epoll_wait() since this thread
+  // started.
+  int64_t total_poll_cycles_ = 0;
+
+  // Accounting for determining load average in each cycle of TimerHandler.
+  struct {
+    // The cycle-time at which the load average was last calculated.
+    int64_t time_cycles = -1;
+    // The value of total_poll_cycles_ at the last-recorded time.
+    int64_t poll_cycles = -1;
+  } last_load_measurement_;
 };
 
 // A Reactor manages a ReactorThread
