@@ -23,31 +23,47 @@ and outputs a TSV file including some metrics.
 This isn't meant to be used standalone as written, but rather as a template
 which is edited based on whatever metrics you'd like to extract. The set
 of metrics described below are just a starting point to work from.
+Uncomment the ones you are interested in, or add new ones.
 """
 
+from collections import Counter
 import gzip
+import heapq
+import itertools
 try:
   import simplejson as json
 except:
   import json
 import sys
 
+# Even if the input data has very frequent metrics, for graphing purposes we
+# may not want to look at such fine-grained data. This constant can be set
+# to drop samples which were measured within a given number of seconds
+# from the prior sample.
+GRANULARITY_SECS = 30
+
 # These metrics will be extracted "as-is" into the TSV.
 # The first element of each tuple is the metric name.
 # The second is the name that will be used in the TSV header line.
 SIMPLE_METRICS = [
-  ("server.generic_current_allocated_bytes", "heap_allocated"),
-  ("server.log_block_manager_bytes_under_management", "bytes_on_disk"),
-  ("tablet.memrowset_size", "mrs_size"),
-  ("server.block_cache_usage", "bc_usage"),
+  #  ("server.generic_current_allocated_bytes", "heap_allocated"),
+  #  ("server.log_block_manager_bytes_under_management", "bytes_on_disk"),
+  #  ("tablet.memrowset_size", "mrs_size"),
+  #  ("server.block_cache_usage", "bc_usage"),
 ]
 
 # These metrics will be extracted as per-second rates into the TSV.
 RATE_METRICS = [
-  ("server.block_manager_total_bytes_read", "bytes_r_per_sec"),
-  ("server.block_manager_total_bytes_written", "bytes_w_per_sec"),
-  ("server.block_cache_lookups", "bc_lookups_per_sec"),
-  ("tablet.rows_inserted", "inserts_per_sec"),
+  #  ("server.block_manager_total_bytes_read", "bytes_r_per_sec"),
+  #  ("server.block_manager_total_bytes_written", "bytes_w_per_sec"),
+  #  ("server.block_cache_lookups", "bc_lookups_per_sec"),
+  #  ("server.cpu_utime", "cpu_utime"),
+  #  ("server.cpu_stime", "cpu_stime"),
+  #  ("server.involuntary_context_switches", "invol_cs"),
+  #  ("server.voluntary_context_switches", "vol_cs"),
+  #  ("tablet.rows_inserted", "inserts_per_sec"),
+  #  ("tablet.rows_upserted", "upserts_per_sec"),
+  #  ("server.tcmalloc_contention_time", "tcmalloc_contention_time")
 ]
 
 # These metrics will be extracted as percentile metrics into the TSV.
@@ -55,12 +71,55 @@ RATE_METRICS = [
 # percentile numbers suffixed to the column name provided here (foo_p95,
 # foo_p99, etc)
 HISTOGRAM_METRICS = [
-  ("server.handler_latency_kudu_tserver_TabletServerService_Write", "write"),
-  ("tablet.log_append_latency", "log")
+  #  ("server.op_apply_run_time", "apply_run_time"),
+  #  ("server.handler_latency_kudu_tserver_TabletServerService_Write", "write"),
+  #  ("server.handler_latency_kudu_consensus_ConsensusService_UpdateConsensus", "cons_update"),
+  #  ("server.handler_latency_kudu_consensus_ConsensusService_RequestVote", "vote"),
+  #  ("server.handler_latency_kudu_tserver_TabletCopyService_FetchData", "fetch_data"),
+  #  ("tablet.bloom_lookups_per_op", "bloom_lookups"),
+  #  ("tablet.log_append_latency", "log"),
+  #  ("tablet.op_prepare_run_time", "prep"),
+  #  ("tablet.write_op_duration_client_propagated_consistency", "op_dur")
 ]
 
+# Get the set of metrics we actuall want to bother parsing from the log.
+PARSE_METRIC_KEYS = set(key for (key, _) in (SIMPLE_METRICS + RATE_METRICS + HISTOGRAM_METRICS))
+
+# The script always reports cache-hit metrics.
+PARSE_METRIC_KEYS.add("server.block_cache_hits_caching")
+PARSE_METRIC_KEYS.add("server.block_cache_misses_caching")
+
 NaN = float('nan')
-UNKNOWN_PERCENTILES = dict(p50=NaN, p95=NaN, p99=NaN, p999=NaN)
+UNKNOWN_PERCENTILES = dict(p50=NaN, p95=NaN, p99=NaN, p999=NaN, max=NaN)
+
+def merge_delta(m, delta):
+  """
+  Update (in-place) the metrics entry 'm' by merging another entry 'delta'.
+
+  Counts and sums are simply added.
+  Histograms require more complex processing: the 'values' array needs to be
+  merged and the then the delta's counts added to the corresponding buckets.
+  """
+
+  for k, v in delta.iteritems():
+    if k in ('name', 'values', 'counts', 'min', 'max', 'mean'):
+      continue
+    m[k] += v
+
+  # Merge counts.
+  if 'counts' in delta:
+    m_zip = itertools.izip(m.get('values', []), m.get('counts', []))
+    d_zip = itertools.izip(delta.get('values', []), delta.get('counts', []))
+    new_values = []
+    new_counts = []
+    i = 0
+    for value, counts in itertools.groupby(heapq.merge(m_zip, d_zip), lambda x: x[0]):
+      new_values[i] = value
+      new_counts[i] = sum(c for v, c in counts)
+      i += 1
+    m['counts'] = new_counts
+    m['values'] = new_values
+
 
 def json_to_map(j):
   """
@@ -68,15 +127,19 @@ def json_to_map(j):
   keyed by <entity>.<metric name>.
 
   The entity ID is currently ignored. If there is more than one
-  entity of a given type (eg tables), it is undefined which one
-  will be reflected in the output metrics.
-
-  TODO: add some way to specify a particular tablet to parse out.
+  entity of a given type (eg tablets), the metrics will be summed
+  together using 'merge_delta' above.
   """
   ret = {}
   for entity in j:
     for m in entity['metrics']:
-      ret[entity['type'] + "." + m['name']] = m
+      key = entity['type'] + "." + m['name']
+      if key not in PARSE_METRIC_KEYS:
+        continue
+      if key in ret:
+        merge_delta(ret[key], m)
+      else:
+        ret[key] = m
   return ret
 
 def delta(prev, cur, m):
@@ -98,7 +161,7 @@ def histogram_stats(prev, cur, m):
   p_dict = dict(zip(prev.get('values', []),
                     prev.get('counts', [])))
   c_zip = zip(cur.get('values', []),
-                    cur.get('counts', []))
+              cur.get('counts', []))
   delta_total = cur['total_count'] - prev['total_count']
   if delta_total == 0:
     return UNKNOWN_PERCENTILES
@@ -117,6 +180,8 @@ def histogram_stats(prev, cur, m):
       res['p99'] = cur_val
     if 'p999' not in res and percentile > 0.999:
       res['p999'] = cur_val
+    if cum_count == delta_total and delta_count != 0:
+      res['max'] = cur_val
   return res
 
 def cache_hit_ratio(prev, cur):
@@ -145,7 +210,7 @@ def process(prev, cur):
   calc_vals.extend(delta(prev, cur, metric)/delta_ts for (metric, _) in RATE_METRICS)
   for metric, _ in HISTOGRAM_METRICS:
     stats = histogram_stats(prev, cur, metric)
-    calc_vals.extend([stats['p50'], stats['p95'], stats['p99'], stats['p999']])
+    calc_vals.extend([stats['p50'], stats['p95'], stats['p99'], stats['p999'], stats['max']])
 
   print (cur['ts'] + prev['ts'])/2, \
         cache_ratio, \
@@ -160,6 +225,7 @@ def main(argv):
     simple_headers.append(header + "_p95")
     simple_headers.append(header + "_p99")
     simple_headers.append(header + "_p999")
+    simple_headers.append(header + "_max")
 
   print "time cache_hit_ratio", " ".join(simple_headers)
 
@@ -168,10 +234,15 @@ def main(argv):
       f = gzip.GzipFile(path)
     else:
       f = file(path)
-    for line in f:
+    for line_number, line in enumerate(f, start=1):
       (_, ts, metrics_json) = line.split(" ", 2)
       ts = float(ts) / 1000000.0
-      if prev_data and ts < prev_data['ts'] + 30:
+      prev_ts = prev_data['ts'] if prev_data else 0
+      # Enforce that the samples come in time-sorted order.
+      if ts <= prev_ts:
+        raise Exception("timestamps must be in ascending order (%f <= %f at %s:%d)"
+                        % (ts, prev_ts, path, line_number))
+      if prev_data and ts < prev_ts + GRANULARITY_SECS:
         continue
       data = json_to_map(json.loads(metrics_json))
       data['ts'] = ts
