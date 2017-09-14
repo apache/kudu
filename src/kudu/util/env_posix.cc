@@ -15,9 +15,6 @@
 #include <sys/uio.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-// IWYU pragma: no_include <asm/int-ll64.h>
-// IWYU pragma: no_include <asm/ioctl.h>
-// IWYU pragma: no_include <sys/statfs.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -73,12 +70,16 @@
 #include <linux/falloc.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
+#include <linux/kernel.h> // IWYU pragma: keep
 #include <linux/magic.h>
-#include <linux/sysinfo.h>
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #include <sys/vfs.h>  // IWYU pragma: keep
 #endif  // defined(__APPLE__)
+// IWYU pragma: no_include <asm/int-ll64.h>
+// IWYU pragma: no_include <asm/ioctl.h>
+// IWYU pragma: no_include <linux/sysinfo.h>
+// IWYU pragma: no_include <sys/statfs.h>
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
