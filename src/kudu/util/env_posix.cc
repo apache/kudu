@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -25,7 +26,6 @@
 #include <map>
 #include <memory>
 #include <numeric>
-#include <cerrno>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -36,21 +36,22 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/flags.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
@@ -61,7 +62,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
-#include "kudu/gutil/stringprintf.h"
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -70,16 +70,14 @@
 #include <linux/falloc.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
-#include <linux/kernel.h> // IWYU pragma: keep
+#include <linux/ioctl.h>
+#include <linux/kernel.h>
 #include <linux/magic.h>
+#include <linux/types.h>
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
-#include <sys/vfs.h>  // IWYU pragma: keep
+#include <sys/vfs.h>
 #endif  // defined(__APPLE__)
-// IWYU pragma: no_include <asm/int-ll64.h>
-// IWYU pragma: no_include <asm/ioctl.h>
-// IWYU pragma: no_include <linux/sysinfo.h>
-// IWYU pragma: no_include <sys/statfs.h>
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;

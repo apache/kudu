@@ -53,7 +53,8 @@
 #       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/glog.imp;\
 #       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/gflags.imp;\
 #       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/kudu.imp;\
-#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/libstdcpp.imp"
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/libstdcpp.imp\
+#       -Xiwyu;--mapping_file=`pwd`/../../build-support/iwyu/mappings/system-linux.imp"
 #
 #     ../../build-support/enable_devtoolset.sh \
 #       env CC=$CC CXX=$CXX \

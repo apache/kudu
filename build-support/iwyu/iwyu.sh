@@ -54,7 +54,8 @@ IWYU_ARGS="\
     --mapping_file=$IWYU_MAPPINGS_PATH/glog.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/gtest.imp \
     --mapping_file=$IWYU_MAPPINGS_PATH/kudu.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/libstdcpp.imp"
+    --mapping_file=$IWYU_MAPPINGS_PATH/libstdcpp.imp\
+    --mapping_file=$IWYU_MAPPINGS_PATH/system-linux.imp"
 
 if ! PATH="$PATH:$PWD/../../thirdparty/clang-toolchain/bin" \
     python $ROOT/build-support/iwyu/iwyu_tool.py -p . $IWYU_FILE_LIST -- \
