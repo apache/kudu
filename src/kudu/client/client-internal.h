@@ -53,9 +53,12 @@ class Sockaddr;
 
 namespace master {
 class AlterTableRequestPB;
+class AlterTableResponsePB;
 class ConnectToMasterResponsePB;
 class CreateTableRequestPB;
+class CreateTableResponsePB;
 class MasterServiceProxy;
+class TableIdentifierPB;
 } // namespace master
 
 namespace rpc {
@@ -96,17 +99,17 @@ class KuduClient::Data {
 
   Status CreateTable(KuduClient* client,
                      const master::CreateTableRequestPB& req,
-                     const KuduSchema& schema,
+                     master::CreateTableResponsePB* resp,
                      const MonoTime& deadline,
                      bool has_range_partition_bounds);
 
   Status IsCreateTableInProgress(KuduClient* client,
-                                 const std::string& table_name,
+                                 master::TableIdentifierPB table,
                                  const MonoTime& deadline,
-                                 bool *create_in_progress);
+                                 bool* create_in_progress);
 
   Status WaitForCreateTableToFinish(KuduClient* client,
-                                    const std::string& table_name,
+                                    master::TableIdentifierPB table,
                                     const MonoTime& deadline);
 
   Status DeleteTable(KuduClient* client,
@@ -115,16 +118,17 @@ class KuduClient::Data {
 
   Status AlterTable(KuduClient* client,
                     const master::AlterTableRequestPB& req,
+                    master::AlterTableResponsePB* resp,
                     const MonoTime& deadline,
                     bool has_add_drop_partition);
 
   Status IsAlterTableInProgress(KuduClient* client,
-                                const std::string& table_name,
+                                master::TableIdentifierPB table,
                                 const MonoTime& deadline,
-                                bool *alter_in_progress);
+                                bool* alter_in_progress);
 
   Status WaitForAlterTableToFinish(KuduClient* client,
-                                   const std::string& alter_name,
+                                   master::TableIdentifierPB table,
                                    const MonoTime& deadline);
 
   Status GetTableSchema(KuduClient* client,

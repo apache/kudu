@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -64,6 +65,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -2064,6 +2066,40 @@ TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
   ASSERT_EVENTUALLY([&]() {
     NO_FATALS(VerifyRows(0, kNumRows, C1_IS_DEADBEEF));
   });
+}
+
+TEST_F(AlterTableTest, TestRenameStillCreatingTable) {
+  const string kNewTableName = "foo";
+
+  // Start creating the table in a separate thread.
+  std::thread creator_thread([&](){
+    unique_ptr<KuduTableCreator> creator(client_->NewTableCreator());
+    CHECK_OK(creator->table_name(kNewTableName)
+             .schema(&schema_)
+             .set_range_partition_columns({ "c0" })
+             .num_replicas(1)
+             .Create());
+  });
+  auto cleanup = MakeScopedCleanup([&]() {
+    creator_thread.join();
+  });
+
+  // While the table is being created, change its name. We may have to retry a
+  // few times as this races with table creation.
+  //
+  // If the logic that waits for table creation to finish finds the table by
+  // name, this rename would cause it to fail and the test would crash.
+  while (true) {
+    unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(kNewTableName));
+    Status s = alterer->RenameTo("foo2")->Alter();
+    if (s.ok()) {
+      break;
+    }
+    if (!s.IsNotFound()) {
+      SCOPED_TRACE(s.ToString());
+      FAIL();
+    }
+  }
 }
 
 } // namespace kudu

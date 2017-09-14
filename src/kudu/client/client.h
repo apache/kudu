@@ -311,7 +311,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   the operation is in progress.
   /// @return Operation status.
   Status IsCreateTableInProgress(const std::string& table_name,
-                                 bool *create_in_progress);
+                                 bool* create_in_progress);
 
   /// Delete/drop a table.
   ///
@@ -337,7 +337,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   the operation is in progress.
   /// @return Operation status.
   Status IsAlterTableInProgress(const std::string& table_name,
-                                bool *alter_in_progress);
+                                bool* alter_in_progress);
   /// Get table's schema.
   ///
   /// @param [in] table_name

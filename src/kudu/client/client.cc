@@ -113,6 +113,7 @@ using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
 using kudu::master::MasterServiceProxy;
+using kudu::master::TableIdentifierPB;
 using kudu::master::TabletLocationsPB;
 using kudu::master::TSInfoPB;
 using kudu::rpc::Messenger;
@@ -364,9 +365,12 @@ KuduTableCreator* KuduClient::NewTableCreator() {
 }
 
 Status KuduClient::IsCreateTableInProgress(const string& table_name,
-                                           bool *create_in_progress) {
+                                           bool* create_in_progress) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  return data_->IsCreateTableInProgress(this, table_name, deadline, create_in_progress);
+  TableIdentifierPB table;
+  table.set_table_name(table_name);
+  return data_->IsCreateTableInProgress(this, std::move(table), deadline,
+                                        create_in_progress);
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
@@ -379,9 +383,12 @@ KuduTableAlterer* KuduClient::NewTableAlterer(const string& name) {
 }
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
-                                          bool *alter_in_progress) {
+                                          bool* alter_in_progress) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  return data_->IsAlterTableInProgress(this, table_name, deadline, alter_in_progress);
+  TableIdentifierPB table;
+  table.set_table_name(table_name);
+  return data_->IsAlterTableInProgress(this, std::move(table), deadline,
+                                       alter_in_progress);
 }
 
 Status KuduClient::GetTableSchema(const string& table_name,
@@ -706,6 +713,7 @@ Status KuduTableCreator::Create() {
 
   // Build request.
   CreateTableRequestPB req;
+  CreateTableResponsePB resp;
   req.set_name(data_->table_name_);
   if (data_->num_replicas_ != boost::none) {
     req.set_num_replicas(data_->num_replicas_.get());
@@ -750,10 +758,9 @@ Status KuduTableCreator::Create() {
   } else {
     deadline += data_->client_->default_admin_operation_timeout();
   }
-
   RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(data_->client_,
                                                            req,
-                                                           *data_->schema_,
+                                                           &resp,
                                                            deadline,
                                                            !data_->range_partition_bounds_.empty()),
                         Substitute("Error creating table $0 on the master",
@@ -761,8 +768,10 @@ Status KuduTableCreator::Create() {
 
   // Spin until the table is fully created, if requested.
   if (data_->wait_) {
+    TableIdentifierPB table;
+    table.set_table_id(resp.table_id());
     RETURN_NOT_OK(data_->client_->data_->WaitForCreateTableToFinish(data_->client_,
-                                                                    data_->table_name_,
+                                                                    table,
                                                                     deadline));
   }
 
@@ -1109,13 +1118,14 @@ KuduTableAlterer* KuduTableAlterer::wait(bool wait) {
 
 Status KuduTableAlterer::Alter() {
   AlterTableRequestPB req;
+  AlterTableResponsePB resp;
   RETURN_NOT_OK(data_->ToRequest(&req));
 
   MonoDelta timeout = data_->timeout_.Initialized() ?
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now() + timeout;
-  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, deadline,
+  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, &resp, deadline,
                                                   data_->has_alter_partitioning_steps));
 
   if (data_->has_alter_partitioning_steps) {
@@ -1139,9 +1149,15 @@ Status KuduTableAlterer::Alter() {
   }
 
   if (data_->wait_) {
-    string alter_name = data_->rename_to_.get_value_or(data_->table_name_);
+    if (!resp.has_table_id()) {
+      return Status::NotSupported("Alter Table succeeded but the server's "
+          "response did not include a table ID. This server is too old to wait "
+          "for alter table to finish");
+    }
+    TableIdentifierPB table;
+    table.set_table_id(resp.table_id());
     RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(
-        data_->client_, alter_name, deadline));
+        data_->client_, table, deadline));
   }
 
   return Status::OK();

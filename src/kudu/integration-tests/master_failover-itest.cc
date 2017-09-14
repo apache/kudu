@@ -25,7 +25,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
@@ -202,9 +201,13 @@ TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
   ASSERT_OK(cluster_->master(leader_idx)->Pause());
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
-  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(90);
-  ASSERT_OK(client_->data_->WaitForCreateTableToFinish(client_.get(),
-                                                       kTableName, deadline));
+  AssertEventually([&]() {
+    bool in_progress;
+    ASSERT_OK(client_->IsCreateTableInProgress(kTableName, &in_progress));
+    ASSERT_FALSE(in_progress);
+  }, MonoDelta::FromSeconds(90));
+  NO_PENDING_FATALS();
+
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
   ASSERT_EQ(0, CountTableRows(table.get()));
@@ -310,20 +313,12 @@ TEST_F(MasterFailoverTest, TestKUDU1374) {
   // 5. Leader master sees that all tablets in the table now have the new
   //    schema and ends the AlterTable() operation.
   // 6. The next IsAlterTableInProgress() call returns false.
-  MonoTime now = MonoTime::Now();
-  MonoTime deadline = now + MonoDelta::FromSeconds(90);
-  while (now < deadline) {
+  AssertEventually([&]() {
     bool in_progress;
     ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &in_progress));
-    if (!in_progress) {
-      break;
-    }
-
-    SleepFor(MonoDelta::FromMilliseconds(100));
-    now = MonoTime::Now();
-  }
-  ASSERT_TRUE(now < deadline)
-      << "Deadline elapsed before alter table completed";
+    ASSERT_FALSE(in_progress);
+  }, MonoDelta::FromSeconds(90));
+  NO_PENDING_FATALS();
 }
 
 TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {

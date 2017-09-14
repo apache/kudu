@@ -94,6 +94,7 @@ using master::ListTabletServersResponsePB;
 using master::MasterErrorPB;
 using master::MasterFeatures;
 using master::MasterServiceProxy;
+using master::TableIdentifierPB;
 using pb_util::SecureShortDebugString;
 using rpc::CredentialsPolicy;
 using rpc::ErrorStatusPB;
@@ -442,27 +443,26 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
 
 Status KuduClient::Data::CreateTable(KuduClient* client,
                                      const CreateTableRequestPB& req,
-                                     const KuduSchema& schema,
+                                     CreateTableResponsePB* resp,
                                      const MonoTime& deadline,
                                      bool has_range_partition_bounds) {
-  CreateTableResponsePB resp;
-
   vector<uint32_t> features;
   if (has_range_partition_bounds) {
     features.push_back(MasterFeatures::RANGE_PARTITION_BOUNDS);
   }
   return SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
-      deadline, client, req, &resp, "CreateTable",
+      deadline, client, req, resp, "CreateTable",
       &MasterServiceProxy::CreateTable, features);
 }
 
-Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
-                                                 const string& table_name,
-                                                 const MonoTime& deadline,
-                                                 bool *create_in_progress) {
+Status KuduClient::Data::IsCreateTableInProgress(
+    KuduClient* client,
+    TableIdentifierPB table,
+    const MonoTime& deadline,
+    bool* create_in_progress) {
   IsCreateTableDoneRequestPB req;
   IsCreateTableDoneResponsePB resp;
-  req.mutable_table()->set_table_name(table_name);
+  *req.mutable_table() = std::move(table);
 
   // TODO(aserbin): Add client rpc timeout and use
   // 'default_admin_operation_timeout_' as the default timeout for all
@@ -480,14 +480,15 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
   return Status::OK();
 }
 
-Status KuduClient::Data::WaitForCreateTableToFinish(KuduClient* client,
-                                                    const string& table_name,
-                                                    const MonoTime& deadline) {
+Status KuduClient::Data::WaitForCreateTableToFinish(
+    KuduClient* client,
+    TableIdentifierPB table,
+    const MonoTime& deadline) {
   return RetryFunc(deadline,
                    "Waiting on Create Table to be completed",
                    "Timed out waiting for Table Creation",
                    boost::bind(&KuduClient::Data::IsCreateTableInProgress,
-                               this, client, table_name, _1, _2));
+                               this, client, std::move(table), _1, _2));
 }
 
 Status KuduClient::Data::DeleteTable(KuduClient* client,
@@ -504,31 +505,32 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
 
 Status KuduClient::Data::AlterTable(KuduClient* client,
                                     const AlterTableRequestPB& req,
+                                    AlterTableResponsePB* resp,
                                     const MonoTime& deadline,
                                     bool has_add_drop_partition) {
   vector<uint32_t> required_feature_flags;
   if (has_add_drop_partition) {
     required_feature_flags.push_back(MasterFeatures::ADD_DROP_RANGE_PARTITIONS);
   }
-  AlterTableResponsePB resp;
   return SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
       deadline,
       client,
       req,
-      &resp,
+      resp,
       "AlterTable",
       &MasterServiceProxy::AlterTable,
       std::move(required_feature_flags));
 }
 
-Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
-                                                const string& table_name,
-                                                const MonoTime& deadline,
-                                                bool *alter_in_progress) {
+Status KuduClient::Data::IsAlterTableInProgress(
+    KuduClient* client,
+    TableIdentifierPB table,
+    const MonoTime& deadline,
+    bool* alter_in_progress) {
   IsAlterTableDoneRequestPB req;
   IsAlterTableDoneResponsePB resp;
+  *req.mutable_table() = std::move(table);
 
-  req.mutable_table()->set_table_name(table_name);
   RETURN_NOT_OK((
       SyncLeaderMasterRpc<IsAlterTableDoneRequestPB, IsAlterTableDoneResponsePB>(
           deadline,
@@ -542,15 +544,15 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
   return Status::OK();
 }
 
-Status KuduClient::Data::WaitForAlterTableToFinish(KuduClient* client,
-                                                   const string& alter_name,
-                                                   const MonoTime& deadline) {
+Status KuduClient::Data::WaitForAlterTableToFinish(
+    KuduClient* client,
+    TableIdentifierPB table,
+    const MonoTime& deadline) {
   return RetryFunc(deadline,
                    "Waiting on Alter Table to be completed",
                    "Timed out waiting for AlterTable",
                    boost::bind(&KuduClient::Data::IsAlterTableInProgress,
-                               this,
-                               client, alter_name, _1, _2));
+                               this, client, std::move(table), _1, _2));
 }
 
 Status KuduClient::Data::InitLocalHostNames() {
