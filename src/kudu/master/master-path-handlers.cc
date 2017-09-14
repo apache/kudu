@@ -43,6 +43,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -140,11 +141,33 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
   generate_table(dead_tserver_rows, "Dead Tablet Servers", output);
 }
 
-void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
-                                              EasyJson* output) {
+namespace {
+
+// Extracts the value of the 'redirects' parameter from 'req'; returns 0 if the
+// parameter doesn't exist or couldn't be parsed.
+int ExtractRedirectsFromRequest(const Webserver::WebRequest& req) {
+  string redirects_str;
+  int redirects = 0;
+  if (FindCopy(req.parsed_args, "redirects", &redirects_str)) {
+    if (!safe_strto32(redirects_str, &redirects)) {
+      return 0;
+    }
+  }
+  return redirects;
+}
+
+} // anonymous namespace
+
+void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req, EasyJson* output) {
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-  if (!l.first_failed_status().ok()) {
-    (*output)["error"] = Substitute("Master is not ready: $0",  l.first_failed_status().ToString());
+  if (!l.catalog_status().ok()) {
+    (*output)["error"] = Substitute("Master is not ready: $0",  l.catalog_status().ToString());
+    return;
+  }
+  if (!l.leader_status().ok()) {
+    // Track redirects to prevent a redirect loop.
+    int redirects = ExtractRedirectsFromRequest(req);
+    SetupLeaderMasterRedirect("tables?", redirects, output);
     return;
   }
 
@@ -206,15 +229,21 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   }
 
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
-  if (!l.first_failed_status().ok()) {
-    (*output)["error"] = Substitute("Master is not ready: ", l.first_failed_status().ToString());
+  if (!l.catalog_status().ok()) {
+    (*output)["error"] = Substitute("Master is not ready: $0", l.catalog_status().ToString());
+    return;
+  }
+  if (!l.leader_status().ok()) {
+    // Track redirects to prevent a redirect loop.
+    int redirects = ExtractRedirectsFromRequest(req);
+    SetupLeaderMasterRedirect(Substitute("table?id=$0", table_id), redirects, output);
     return;
   }
 
   scoped_refptr<TableInfo> table;
   Status s = master_->catalog_manager()->GetTableInfo(table_id, &table);
   if (!s.ok()) {
-    (*output)["error"] = Substitute("Master is not ready: ", s.ToString());
+    (*output)["error"] = Substitute("Master is not ready: $0", s.ToString());
     return;
   }
 
@@ -633,6 +662,50 @@ string MasterPathHandlers::MasterAddrsToCsv() const {
   }
   LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
   return addr.ToString();
+}
+
+Status MasterPathHandlers::GetLeaderMasterHttpAddr(string* leader_http_addr) const {
+  vector<ServerEntryPB> masters;
+  RETURN_NOT_OK_PREPEND(master_->ListMasters(&masters), "unable to list masters");
+  for (const auto& master : masters) {
+    if (master.has_error()) {
+      continue;
+    }
+    if (master.role() != RaftPeerPB::LEADER) {
+      continue;
+    }
+    const ServerRegistrationPB& reg = master.registration();
+    if (reg.http_addresses().empty()) {
+      return Status::NotFound("leader master has no http address");
+    }
+    *leader_http_addr = Substitute("$0://$1:$2",
+                                   reg.https_enabled() ? "https" : "http",
+                                   reg.http_addresses(0).host(),
+                                   reg.http_addresses(0).port());
+    return Status::OK();
+  }
+  return Status::NotFound("no leader master known to this master");
+}
+
+void MasterPathHandlers::SetupLeaderMasterRedirect(const string& path,
+                                                   int redirects,
+                                                   EasyJson* output) const {
+  // Allow 3 redirects.
+  const int max_redirects = 3;
+  (*output)["error"] = "Master is not the leader.";
+  if (redirects >= max_redirects) {
+    (*output)["redirect_error"] = "Too many redirects attempting to find the leader master.";
+    return;
+  }
+  string leader_http_addr;
+  Status s = GetLeaderMasterHttpAddr(&leader_http_addr);
+  if (!s.ok()) {
+    (*output)["redirect_error"] = Substitute("Unable to redirect to leader master: $0",
+                                             s.ToString());
+    return;
+  }
+  (*output)["leader_redirect"] = Substitute("$0/$1&redirects=$2",
+                                            leader_http_addr, path, redirects + 1);
 }
 
 } // namespace master

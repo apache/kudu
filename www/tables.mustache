@@ -20,6 +20,12 @@ under the License.
 {{#error}}
   <div class="text-error">{{.}}</div>
 {{/error}}
+{{#redirect_error}}
+  <div class="text-error">{{.}}</div>
+{{/redirect_error}}
+{{#leader_redirect}}
+  <div>You can find this page on the <a href="{{{.}}}">leader master's web UI</a>.</div>
+{{/leader_redirect}}
 {{^error}}
 There are {{num_tables}} tables
 <table class="table table-striped">

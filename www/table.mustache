@@ -19,6 +19,12 @@ under the License.
 {{#error}}
   <div class="text-error">{{.}}</div>
 {{/error}}
+{{#redirect_error}}
+  <div class="text-error">{{.}}</div>
+{{/redirect_error}}
+{{#leader_redirect}}
+  <div>You can find this page on the <a href="{{{.}}}">leader master's web UI</a>.</div>
+{{/leader_redirect}}
 {{^error}}
   <h2>Table: {{name}} ({{id}})</h2>
   <table class="table table-striped">
@@ -27,6 +33,7 @@ under the License.
     <tr><td>State:</td><td>{{state}} {{#state_msg}}({{.}}){{/state_msg}}</td></tr>
     </tbody>
   </table>
+
   <h3>Schema</h3>
   <table class='table table-striped'>
     <thead><tr>

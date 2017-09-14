@@ -73,6 +73,14 @@ class MasterPathHandlers {
   // Return a CSV of master addresses suitable for display.
   std::string MasterAddrsToCsv() const;
 
+  // If a leader master is known and has an http address, place it in leader_http_addr.
+  Status GetLeaderMasterHttpAddr(std::string* leader_http_addr) const;
+
+  // Adds the necessary properties to 'output' to set up a redirect to the leader master, or
+  // provide an error message if no redirect is possible.
+  // The redirect will link to <master web UI url>/path&redirects=(redirects + 1).
+  void SetupLeaderMasterRedirect(const std::string& path, int redirects, EasyJson* output) const;
+
   Master* master_;
   DISALLOW_COPY_AND_ASSIGN(MasterPathHandlers);
 };

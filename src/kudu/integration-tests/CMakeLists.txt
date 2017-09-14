@@ -104,7 +104,7 @@ ADD_KUDU_TEST(token_signer-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(ts_recovery-itest)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
-ADD_KUDU_TEST(webserver-stress-itest)
+ADD_KUDU_TEST(webserver-stress-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(write_throttling-itest)
 
 if (NOT APPLE)

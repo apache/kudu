@@ -44,7 +44,11 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
 #endif
   const int kNumTablets = 50;
 
-  ExternalMiniCluster cluster;
+  ExternalMiniClusterOptions opts;
+  opts.master_rpc_ports = { 11010, 11011, 11012 };
+  opts.num_masters = opts.master_rpc_ports.size();
+
+  ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 
   // Start pounding the master and tserver's web UIs.
