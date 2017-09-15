@@ -92,7 +92,6 @@ DEFINE_double(sys_catalog_fail_during_write, 0.0,
               "Fraction of the time when system table writes will fail");
 TAG_FLAG(sys_catalog_fail_during_write, hidden);
 
-using kudu::consensus::COMMITTED_CONFIG;
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusStatePB;
@@ -188,7 +187,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     RETURN_NOT_OK_PREPEND(cmeta_manager_->Load(tablet_id, &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
     ConsensusStatePB cstate = cmeta->ToConsensusStatePB();
-    RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config(), COMMITTED_CONFIG));
+    RETURN_NOT_OK(consensus::VerifyRaftConfig(cstate.committed_config()));
     CHECK(!cstate.has_pending_config());
 
     // Make sure the set of masters passed in at start time matches the set in
@@ -301,7 +300,7 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
     }
   }
 
-  RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config, consensus::COMMITTED_CONFIG));
+  RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config));
   VLOG(1) << "Distributed Raft configuration: " << SecureShortDebugString(resolved_config);
 
   *committed_config = resolved_config;

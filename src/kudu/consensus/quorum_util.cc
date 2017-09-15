@@ -134,9 +134,9 @@ RaftPeerPB::Role GetConsensusRole(const std::string& uuid, const ConsensusStateP
   return RaftPeerPB::NON_PARTICIPANT;
 }
 
-Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
+Status VerifyRaftConfig(const RaftConfigPB& config) {
   std::set<string> uuids;
-  if (config.peers_size() == 0) {
+  if (config.peers().empty()) {
     return Status::IllegalState(
         Substitute("RaftConfig must have at least one peer. RaftConfig: $0",
                    SecureShortDebugString(config)));
@@ -150,7 +150,7 @@ Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
   }
 
   for (const RaftPeerPB& peer : config.peers()) {
-    if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
+    if (!peer.has_permanent_uuid() || peer.permanent_uuid().empty()) {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
           " string. RaftConfig: $0", SecureShortDebugString(config)));
     }
@@ -190,9 +190,9 @@ Status VerifyConsensusState(const ConsensusStatePB& cstate) {
   if (!cstate.has_committed_config()) {
     return Status::IllegalState("ConsensusStatePB missing config", SecureShortDebugString(cstate));
   }
-  RETURN_NOT_OK(VerifyRaftConfig(cstate.committed_config(), COMMITTED_CONFIG));
+  RETURN_NOT_OK(VerifyRaftConfig(cstate.committed_config()));
   if (cstate.has_pending_config()) {
-    RETURN_NOT_OK(VerifyRaftConfig(cstate.pending_config(), PENDING_CONFIG));
+    RETURN_NOT_OK(VerifyRaftConfig(cstate.pending_config()));
   }
 
   if (!cstate.leader_uuid().empty()) {

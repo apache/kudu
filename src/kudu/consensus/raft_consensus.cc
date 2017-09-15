@@ -796,7 +796,7 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   std::lock_guard<simple_spinlock> lock(update_lock_);
   Status s = UpdateReplica(request, response);
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
-    if (request->ops_size() == 0) {
+    if (request->ops().empty()) {
       VLOG_WITH_PREFIX(1) << "Replica replied to status only request. Replica: "
                           << ToString() << ". Response: "
                           << SecureShortDebugString(*response);
@@ -1740,7 +1740,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   new_config.set_opid_index(replicate_opid_index);
 
   // Sanity check the new config. 'type' is irrelevant here.
-  Status s = VerifyRaftConfig(new_config, PENDING_CONFIG);
+  Status s = VerifyRaftConfig(new_config);
   if (!s.ok()) {
     *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument(Substitute("The resulting new config for tablet $0  "
@@ -2558,7 +2558,7 @@ Status RaftConsensus::CheckNoConfigChangePendingUnlocked() const {
 
 Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   DCHECK(lock_.is_locked());
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config, PENDING_CONFIG),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config),
                         "Invalid config to set as pending");
   if (!new_config.unsafe_config_change()) {
     CHECK(!cmeta_->has_pending_config())
@@ -2579,7 +2579,7 @@ Status RaftConsensus::SetCommittedConfigUnlocked(const RaftConfigPB& config_to_c
   TRACE_EVENT0("consensus", "RaftConsensus::SetCommittedConfigUnlocked");
   DCHECK(lock_.is_locked());
   DCHECK(config_to_commit.IsInitialized());
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config_to_commit, COMMITTED_CONFIG),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config_to_commit),
                         "Invalid config to set as committed");
 
   // Compare committed with pending configuration, ensure that they are the same.

@@ -59,7 +59,7 @@ message RaftPeerPB {
   // Permanent uuid is optional: RaftPeerPB/RaftConfigPB instances may
   // be created before the permanent uuid is known (e.g., when
   // manually specifying a configuration for Master/CatalogManager);
-  // permament uuid can be retrieved at a later time through RPC.
+  // permanent uuid can be retrieved at a later time through RPC.
   optional bytes permanent_uuid = 1;
   optional MemberType member_type = 2;
   optional HostPortPB last_known_addr = 3;
@@ -97,8 +97,8 @@ message ConsensusStatePB {
   // to a term check on the UpdateConsensus() RPC request.
   //
   // Whenever the local peer sees a new term, the leader flag is cleared until
-  // a new leader is acknowledged based on the above critera. Simply casting a
-  // vote for a peer is not sufficient to assume that that peer has won the
+  // a new leader is acknowledged based on the above criteria. Simply casting a
+  // vote for a peer is not sufficient to assume that the peer has won the
   // election, so we do not update this field based on our vote.
   //
   // The leader may be a part of the committed or the pending configuration (or both).
@@ -125,7 +125,7 @@ message ConsensusMetadataPB {
   // Whenever a new election is started, the candidate increments this by one
   // and requests votes from peers.
   //
-  // If any RPC or RPC response is received from another node containing a term higher
+  // If any RPC request or response is received from another node containing a term higher
   // than this one, the server should step down to FOLLOWER and set its current_term to
   // match the caller's term.
   //

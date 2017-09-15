@@ -267,7 +267,7 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
 
   flush_count_for_tests_++;
   // Sanity test to ensure we never write out a bad configuration.
-  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_CONFIG),
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config()),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
 
   // Create directories if needed.

@@ -24,7 +24,6 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-
 namespace consensus {
 
 enum RaftConfigState {
@@ -66,9 +65,7 @@ RaftPeerPB::Role GetConsensusRole(const std::string& uuid,
                                   const ConsensusStatePB& cstate);
 
 // Verifies that the provided configuration is well formed.
-// If type == COMMITTED_QUORUM, we enforce that opid_index is set.
-// If type == UNCOMMITTED_QUORUM, we enforce that opid_index is NOT set.
-Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type);
+Status VerifyRaftConfig(const RaftConfigPB& config);
 
 // Superset of checks performed by VerifyRaftConfig. Also ensures that the
 // leader is a configuration voter, if it is set, and that a valid term is set.
