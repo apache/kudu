@@ -17,8 +17,9 @@
 
 #pragma once
 
-#include <functional>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,10 +34,10 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
-#include "kudu/tserver/ts_tablet_manager_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -48,7 +49,6 @@ class optional;
 namespace kudu {
 
 class FsManager;
-class MetricRegistry;
 class NodeInstancePB;
 class Partition;
 class PartitionSchema;
@@ -201,8 +201,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
   void FailTabletsInDataDir(const std::string& uuid);
 
-  // Refresh the cached counts of tablet states, if the cache is old enough.
-  void RefreshTabletStateCache();
+  // Refresh the cached counts of tablet states, if the cache is old enough,
+  // and return the count for tablet state 'st'.
+  int RefreshTabletStateCacheAndReturnCount(tablet::TabletStatePB st);
 
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
@@ -313,18 +314,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Lock protecting tablet_map_, dirty_tablets_, state_,
   // transition_in_progress_, perm_deleted_tablet_ids_,
-  // tablet_manager_metrics_, and last_walked_.
+  // tablet_state_counts_, and last_walked_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
-
-  // Timestamp indicating the last time tablet_map_ was walked to count
-  // tablet states.
-  MonoTime last_walked_ = MonoTime::Min();
-
-  // Metrics container for the tablet manager; holds cached tablet states from tablet_map_.
-  TSTabletManagerMetrics tablet_manager_metrics_;
 
   // Permanently deleted tablet ids. If a tablet is removed with status
   // TABLET_DATA_DELETED then it is added to this map (until the next process
@@ -339,6 +333,13 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   TabletCopyClientMetrics tablet_copy_metrics_;
 
+  // Timestamp indicating the last time tablet_map_ was walked to count
+  // tablet states.
+  MonoTime last_walked_ = MonoTime::Min();
+
+  // Holds cached tablet states from tablet_map_.
+  std::map<tablet::TabletStatePB, int> tablet_state_counts_;
+
   TSTabletManagerStatePB state_;
 
   // Thread pool used to run tablet copy operations.
@@ -346,6 +347,8 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
   gscoped_ptr<ThreadPool> open_tablet_pool_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

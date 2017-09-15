@@ -116,6 +116,46 @@ DEFINE_int32(tablet_state_walk_min_period_ms, 1000,
              "tablet map to update tablet state counts.");
 TAG_FLAG(tablet_state_walk_min_period_ms, advanced);
 
+METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
+                          "Number of Not Initialized Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently not initialized");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_initialized,
+                          "Number of Initialized Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently initialized");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_bootstrapping,
+                          "Number of Bootstrapping Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently bootstrapping");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_running,
+                          "Number of Running Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently running");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_failed,
+                          "Number of Failed Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of failed tablets");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_stopping,
+                          "Number of Stopping Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently stopping");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_stopped,
+                          "Number of Stopped Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently stopped");
+
+METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
+                          "Number of Shut Down Tablets",
+                          kudu::MetricUnit::kTablets,
+                          "Number of tablets currently shut down");
+
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -159,8 +199,48 @@ TSTabletManager::TSTabletManager(TabletServer* server)
     server_(server),
     metric_registry_(server->metric_registry()),
     tablet_copy_metrics_(server->metric_entity()),
-    tablet_manager_metrics_(server->metric_entity(), this),
-    state_(MANAGER_INITIALIZING) {}
+    state_(MANAGER_INITIALIZING) {
+  METRIC_tablets_num_not_initialized.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::NOT_INITIALIZED))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_initialized.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::INITIALIZED))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_bootstrapping.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::BOOTSTRAPPING))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_running.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::RUNNING))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_failed.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::FAILED))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_stopping.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::STOPPING))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_stopped.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::STOPPED))
+      ->AutoDetach(&metric_detacher_);
+  METRIC_tablets_num_shutdown.InstantiateFunctionGauge(
+          server->metric_entity(),
+          Bind(&TSTabletManager::RefreshTabletStateCacheAndReturnCount,
+               Unretained(this), tablet::SHUTDOWN))
+      ->AutoDetach(&metric_detacher_);
+}
 
 TSTabletManager::~TSTabletManager() {
 }
@@ -1170,46 +1250,18 @@ void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
                            dd_manager->FindDataDirByUuidIndex(uuid_idx)->dir());
 }
 
-void TSTabletManager::RefreshTabletStateCache() {
+int TSTabletManager::RefreshTabletStateCacheAndReturnCount(tablet::TabletStatePB st) {
   MonoDelta period = MonoDelta::FromMilliseconds(FLAGS_tablet_state_walk_min_period_ms);
   std::lock_guard<rw_spinlock> lock(lock_);
-  // Cache is fresh enough; don't regenerate counts.
-  if (last_walked_ + period > MonoTime::Now()) {
-    return;
-  }
-  tablet_manager_metrics_.ResetTabletStateCounts();
-  for (const auto& entry : tablet_map_) {
-    switch (entry.second->state()) {
-      case tablet::NOT_INITIALIZED:
-        tablet_manager_metrics_.num_not_initialized++;
-        break;
-      case tablet::INITIALIZED:
-        tablet_manager_metrics_.num_initialized++;
-        break;
-      case tablet::BOOTSTRAPPING:
-        tablet_manager_metrics_.num_bootstrapping++;
-        break;
-      case tablet::RUNNING:
-        tablet_manager_metrics_.num_running++;
-        break;
-      case tablet::FAILED:
-        tablet_manager_metrics_.num_failed++;
-        break;
-      case tablet::STOPPING:
-        tablet_manager_metrics_.num_stopping++;
-        break;
-      case tablet::STOPPED:
-        tablet_manager_metrics_.num_stopped++;
-        break;
-      case tablet::SHUTDOWN:
-        tablet_manager_metrics_.num_shutdown++;
-        break;
-      case tablet::UNKNOWN:
-        // pass
-        break;
+  if (last_walked_ + period < MonoTime::Now()) {
+    // Old cache: regenerate counts.
+    tablet_state_counts_.clear();
+    for (const auto& entry : tablet_map_) {
+      tablet_state_counts_[entry.second->state()]++;
     }
+    last_walked_ = MonoTime::Now();
   }
-  last_walked_ = MonoTime::Now();
+  return FindWithDefault(tablet_state_counts_, st, 0);
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(
