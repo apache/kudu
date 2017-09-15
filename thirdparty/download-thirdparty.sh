@@ -139,14 +139,10 @@ if [ ! -d $GPERFTOOLS_SOURCE ]; then
   echo
 fi
 
-# We use a patchlevel=2 here to force a rebuild after changing CXXFLAGS.
-# The build itself isn't smart enough to know that this requires rebuilding.
-PROTOBUF_PATCHLEVEL=2
 delete_if_wrong_patchlevel $PROTOBUF_SOURCE $PROTOBUF_PATCHLEVEL
 if [ ! -d $PROTOBUF_SOURCE ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
   pushd $PROTOBUF_SOURCE
-  touch patchlevel-$PROTOBUF_PATCHLEVEL
   autoreconf -fvi
   popd
 fi

@@ -355,15 +355,10 @@ build_gmock() {
 
 build_protobuf() {
   PROTOBUF_BDIR=$TP_BUILD_DIR/$PROTOBUF_NAME$MODE_SUFFIX
-  # Do a clean build if the patchlevel changed.
-  if [ "$(cd $PROTOBUF_BDIR && ls patchlevel* ||:)" != \
-       "$(cd $PROTOBUF_SOURCE && ls patchlevel* ||:)" ]; then
-    rm -Rf $PROTOBUF_BDIR
-  fi
   mkdir -p $PROTOBUF_BDIR
   pushd $PROTOBUF_BDIR
   CFLAGS="$EXTRA_CFLAGS" \
-    CXXFLAGS="$EXTRA_CXXFLAGS -DPROTO_EXPERIMENTAL_ENABLE_MOVE" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
     LDFLAGS="$EXTRA_LDFLAGS" \
     LIBS="$EXTRA_LIBS" \
     $PROTOBUF_SOURCE/configure \
@@ -373,7 +368,6 @@ build_protobuf() {
     --prefix=$PREFIX
   fixup_libtool
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
-  cp $PROTOBUF_SOURCE/patchlevel* .
   popd
 }
 
