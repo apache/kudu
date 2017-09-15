@@ -180,7 +180,7 @@ bool IsSupportedContainerVersion(uint32_t version) {
   return false;
 }
 
-// Reads exactly 'length' bytes from the container file into 'scratch',
+// Reads exactly 'length' bytes from the container file into 'result',
 // validating that there is sufficient data in the file to read this length
 // before attempting to do so, and validating that it has read that length
 // after performing the read.
@@ -189,13 +189,11 @@ bool IsSupportedContainerVersion(uint32_t version) {
 // Status::Incomplete.
 // If there is an unexpected short read, returns Status::Corruption.
 //
-// A Slice of the bytes read into 'buf' is returned in 'result'.
-//
-// NOTE: the data in 'buf' may be modified even in the case of a failed read.
+// NOTE: the data in 'result' may be modified even in the case of a failed read.
 template<typename ReadableFileType>
 Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
                            uint64_t* offset, uint64_t length,
-                           Slice* result, unique_ptr<uint8_t[]>* scratch) {
+                           faststring* result) {
   // Validate the read length using the file size.
   if (*offset + length > file_size) {
     return Status::Incomplete("File size not large enough to be valid",
@@ -207,17 +205,9 @@ Status ValidateAndReadData(ReadableFileType* reader, uint64_t file_size,
   }
 
   // Perform the read.
-  unique_ptr<uint8_t[]> local_scratch(new uint8_t[length]);
-  Slice s(local_scratch.get(), length);
-  RETURN_NOT_OK(reader->Read(*offset, s));
-  CHECK_EQ(length, s.size()) // Should never trigger due to contract with reader APIs.
-      << Substitute("Unexpected short read: Proto container file $0: Tried to read $1 bytes "
-                    "but only read $2 bytes",
-                    reader->filename(), length, s.size());
-
+  result->resize(length);
+  RETURN_NOT_OK(reader->Read(*offset, Slice(*result)));
   *offset += length;
-  *result = s;
-  scratch->swap(local_scratch);
   return Status::OK();
 }
 
@@ -264,17 +254,16 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version, uint64_t* offset,
   // Version 2+ includes a checksum for the length field.
   uint64_t length_buflen = (version == 1) ? sizeof(uint32_t)
                                           : sizeof(uint32_t) + kPBContainerChecksumLen;
-  Slice len_and_cksum_slice;
-  unique_ptr<uint8_t[]> length_scratch;
+  faststring length_and_cksum_buf;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, length_buflen,
-                                            &len_and_cksum_slice, &length_scratch),
+                                            &length_and_cksum_buf),
                         Substitute("Could not read data length from proto container file $0 "
                                    "at offset $1", reader->filename(), *offset));
-  Slice length(len_and_cksum_slice.data(), sizeof(uint32_t));
+  Slice length(length_and_cksum_buf.data(), sizeof(uint32_t));
 
   // Versions >= 2 have an individual checksum for the data length.
   if (version >= 2) {
-    Slice length_checksum(len_and_cksum_slice.data() + sizeof(uint32_t), kPBContainerChecksumLen);
+    Slice length_checksum(length_and_cksum_buf.data() + sizeof(uint32_t), kPBContainerChecksumLen);
     RETURN_NOT_OK_PREPEND(ParseAndCompareChecksum(length_checksum.data(), { length }),
         CHECKSUM_ERR_MSG("Data length checksum does not match",
                          reader->filename(), tmp_offset - kPBContainerChecksumLen));
@@ -283,15 +272,14 @@ Status ReadPBStartingAt(ReadableFileType* reader, int version, uint64_t* offset,
 
   // Read body and checksum into buffer for checksum & parsing.
   uint64_t data_and_cksum_buflen = data_length + kPBContainerChecksumLen;
-  Slice body_and_cksum_slice;
-  unique_ptr<uint8_t[]> body_scratch;
+  faststring body_and_cksum_buf;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, data_and_cksum_buflen,
-                                            &body_and_cksum_slice, &body_scratch),
+                                            &body_and_cksum_buf),
                         Substitute("Could not read PB message data from proto container file $0 "
                                    "at offset $1",
                                    reader->filename(), tmp_offset));
-  Slice body(body_and_cksum_slice.data(), data_length);
-  Slice record_checksum(body_and_cksum_slice.data() + data_length, kPBContainerChecksumLen);
+  Slice body(body_and_cksum_buf.data(), data_length);
+  Slice record_checksum(body_and_cksum_buf.data() + data_length, kPBContainerChecksumLen);
 
   // Version 1 has a single checksum for length, body.
   // Version 2+ has individual checksums for length and body, respectively.
@@ -350,10 +338,9 @@ Status ParsePBFileHeader(ReadableFileType* reader, uint64_t* offset, int* versio
   // additional 4 bytes required by a V2+ header (vs V1) is still less than the
   // minimum number of bytes required for a V1 format data record.
   uint64_t tmp_offset = *offset;
-  Slice header;
-  unique_ptr<uint8_t[]> scratch;
+  faststring header;
   RETURN_NOT_OK_PREPEND(ValidateAndReadData(reader, file_size, &tmp_offset, kPBContainerV2HeaderLen,
-                                            &header, &scratch),
+                                            &header),
                         Substitute("Could not read header for proto container file $0",
                                    reader->filename()));
   Slice magic_and_version(header.data(), kPBContainerMagicLen + sizeof(uint32_t));
