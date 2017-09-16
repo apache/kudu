@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <string>
 #include <utility>

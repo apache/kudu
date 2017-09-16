@@ -22,6 +22,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <utility>
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <glog/logging.h>

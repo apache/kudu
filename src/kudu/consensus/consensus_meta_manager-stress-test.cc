@@ -17,7 +17,6 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -26,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

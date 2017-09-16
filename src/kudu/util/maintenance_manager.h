@@ -18,14 +18,13 @@
 #pragma once
 
 #include <cstdint>
-
-#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

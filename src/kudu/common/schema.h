@@ -52,14 +52,14 @@
   do { \
     DCHECK((s1).Equals((s2))) << "Schema " << (s1).ToString() \
                               << " does not match " << (s2).ToString(); \
-  } while (0);
+  } while (0)
 
 #define DCHECK_KEY_PROJECTION_SCHEMA_EQ(s1, s2) \
   do { \
     DCHECK((s1).KeyEquals((s2))) << "Key-Projection Schema " \
                                  << (s1).ToString() << " does not match " \
                                  << (s2).ToString(); \
-  } while (0);
+  } while (0)
 
 namespace kudu {
 

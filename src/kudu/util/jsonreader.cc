@@ -17,7 +17,7 @@
 
 #include "kudu/util/jsonreader.h"
 
-#include <algorithm>
+#include <utility>
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"

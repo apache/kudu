@@ -17,12 +17,12 @@
 
 #include "kudu/consensus/log.h"
 
-#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <utility>
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <gflags/gflags.h>

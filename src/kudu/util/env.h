@@ -22,7 +22,6 @@
 
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/array_view.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -38,6 +37,9 @@ class WritableFile;
 struct RandomAccessFileOptions;
 struct RWFileOptions;
 struct WritableFileOptions;
+
+template <typename T>
+class ArrayView;
 
 // Returned by Env::GetSpaceInfo().
 struct SpaceInfo {

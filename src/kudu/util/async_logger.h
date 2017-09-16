@@ -18,12 +18,12 @@
 
 #include "kudu/gutil/macros.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <ctime>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

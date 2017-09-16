@@ -25,6 +25,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -64,7 +65,6 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -80,9 +80,6 @@ DECLARE_bool(enable_leader_failure_detection);
 
 METRIC_DECLARE_entity(tablet);
 
-#define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
-  ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
-
 using kudu::pb_util::SecureShortDebugString;
 using kudu::log::Log;
 using kudu::log::LogEntryPB;
@@ -90,7 +87,6 @@ using kudu::log::LogOptions;
 using kudu::log::LogReader;
 using std::shared_ptr;
 using std::string;
-using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
@@ -609,13 +605,9 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   OpId last_op_id;
   vector<scoped_refptr<ConsensusRound>> rounds;
   shared_ptr<Synchronizer> commit_sync;
-  REPLICATE_SEQUENCE_OF_MESSAGES(1,
-                                 kLeaderIdx,
-                                 WAIT_FOR_ALL_REPLICAS,
-                                 DONT_COMMIT,
-                                 &last_op_id,
-                                 &rounds,
-                                 &commit_sync);
+  NO_FATALS(ReplicateSequenceOfMessages(
+      1, kLeaderIdx, WAIT_FOR_ALL_REPLICAS, DONT_COMMIT,
+      &last_op_id, &rounds, &commit_sync));
 
   // Commit the operation
   ASSERT_OK(CommitDummyMessage(kLeaderIdx, rounds[0].get(), &commit_sync));
@@ -652,13 +644,9 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   vector<scoped_refptr<ConsensusRound>> rounds;
   shared_ptr<Synchronizer> commit_sync;
 
-  REPLICATE_SEQUENCE_OF_MESSAGES(seq_size,
-                                 kLeaderIdx,
-                                 WAIT_FOR_ALL_REPLICAS,
-                                 DONT_COMMIT,
-                                 &last_op_id,
-                                 &rounds,
-                                 &commit_sync);
+  NO_FATALS(ReplicateSequenceOfMessages(
+      seq_size, kLeaderIdx, WAIT_FOR_ALL_REPLICAS, DONT_COMMIT,
+      &last_op_id, &rounds, &commit_sync));
 
   // Commit the operations, but wait for the replicates to finish first
   for (const scoped_refptr<ConsensusRound>& round : rounds) {
@@ -694,13 +682,9 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
 
     // If the locked replica would stop consensus we would hang here
     // as we wait for operations to be replicated to a majority.
-    ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(
-                              10,
-                              kLeaderIdx,
-                              WAIT_FOR_MAJORITY,
-                              COMMIT_ONE_BY_ONE,
-                              &last_replicate,
-                              &rounds));
+    NO_FATALS(ReplicateSequenceOfMessages(
+        10, kLeaderIdx, WAIT_FOR_MAJORITY, COMMIT_ONE_BY_ONE,
+        &last_replicate, &rounds));
 
     // Follower 1 should be fine (Were we to wait for follower0's replicate
     // this would hang here). We know he must have replicated but make sure
@@ -894,13 +878,9 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
   for (int current_config_size = kInitialNumPeers;
        current_config_size >= kInitialNumPeers - 1;
        current_config_size--) {
-    REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                   current_config_size - 1, // The index of the leader.
-                                   WAIT_FOR_ALL_REPLICAS,
-                                   COMMIT_ONE_BY_ONE,
-                                   &last_op_id,
-                                   &rounds,
-                                   &last_commit_sync);
+    NO_FATALS(ReplicateSequenceOfMessages(
+        10, current_config_size - 1, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+        &last_op_id, &rounds, &last_commit_sync));
 
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
@@ -934,13 +914,9 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
         << "Expected only one consensus metadata flush for a leader election";
 
     // ... replicating a set of messages to the new leader should now be possible.
-    REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                   current_config_size - 2, // The index of the new leader.
-                                   WAIT_FOR_MAJORITY,
-                                   COMMIT_ONE_BY_ONE,
-                                   &last_op_id,
-                                   &rounds,
-                                   &last_commit_sync);
+    NO_FATALS(ReplicateSequenceOfMessages(
+        10, current_config_size - 2, WAIT_FOR_MAJORITY, COMMIT_ONE_BY_ONE,
+        &last_op_id, &rounds, &last_commit_sync));
 
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
@@ -959,13 +935,9 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
   vector<scoped_refptr<ConsensusRound>> rounds;
-  REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                 2, // The index of the initial leader.
-                                 WAIT_FOR_ALL_REPLICAS,
-                                 COMMIT_ONE_BY_ONE,
-                                 &last_op_id,
-                                 &rounds,
-                                 &last_commit_sync);
+  NO_FATALS(ReplicateSequenceOfMessages(
+      10, 2, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds, &last_commit_sync));
 
   // Make sure the last operation is committed everywhere
   ASSERT_OK(last_commit_sync->Wait());
@@ -1027,13 +999,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
   vector<scoped_refptr<ConsensusRound>> rounds;
-  REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                 2, // The index of the initial leader.
-                                 WAIT_FOR_ALL_REPLICAS,
-                                 COMMIT_ONE_BY_ONE,
-                                 &last_op_id,
-                                 &rounds,
-                                 &last_commit_sync);
+  NO_FATALS(ReplicateSequenceOfMessages(
+      10, 2, WAIT_FOR_ALL_REPLICAS, COMMIT_ONE_BY_ONE,
+      &last_op_id, &rounds, &last_commit_sync));
 
   // Make sure the last operation is committed everywhere
   ASSERT_OK(last_commit_sync->Wait());

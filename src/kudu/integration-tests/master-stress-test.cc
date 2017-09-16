@@ -15,17 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"

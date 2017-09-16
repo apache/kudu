@@ -17,10 +17,10 @@
 
 #include "kudu/integration-tests/internal_mini_cluster.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <ostream>
 #include <unordered_set>
+#include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.pb.h"

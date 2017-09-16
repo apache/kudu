@@ -19,12 +19,12 @@
 #ifndef KUDU_CLIENT_META_CACHE_H
 #define KUDU_CLIENT_META_CACHE_H
 
-#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

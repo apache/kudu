@@ -17,7 +17,6 @@
 
 #include "kudu/fs/fs_manager.h"
 
-#include <algorithm>
 #include <cinttypes>
 #include <ctime>
 #include <deque>
@@ -25,6 +24,7 @@
 #include <map>
 #include <set>
 #include <unordered_set>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>

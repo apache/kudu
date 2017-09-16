@@ -17,12 +17,12 @@
 #ifndef KUDU_RPC_INBOUND_CALL_H
 #define KUDU_RPC_INBOUND_CALL_H
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

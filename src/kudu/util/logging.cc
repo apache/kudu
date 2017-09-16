@@ -18,12 +18,11 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <mutex>
-#include <type_traits> // IWYU pragma: keep
+#include <utility>
 
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid_io.hpp>

@@ -17,13 +17,13 @@
 
 #include "kudu/util/threadpool.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <boost/function.hpp> // IWYU pragma: keep
 #include <glog/logging.h>

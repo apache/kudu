@@ -17,12 +17,12 @@
 
 #include "kudu/tablet/transactions/transaction_driver.h"
 
-#include <algorithm>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <type_traits>
+#include <utility>
 
 #include <glog/logging.h>
 #include <google/protobuf/descriptor.h>

@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>

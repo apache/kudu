@@ -36,13 +36,13 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
 namespace kudu {
 
-class Histogram;
 class Sockaddr;
 class Socket;
 

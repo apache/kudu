@@ -16,32 +16,29 @@
 // under the License.
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
-#include "kudu/master/master.proxy.h"
-#include "kudu/master/master_cert_authority.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/rpc_controller.h"
-#include "kudu/security/crypto.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/util/make_shared.h"
-#include "kudu/util/pb_util.h"
-#include "kudu/util/slice.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 

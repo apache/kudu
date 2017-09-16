@@ -17,12 +17,12 @@
 
 #include "kudu/rpc/rpc-test-base.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

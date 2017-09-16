@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/util/metrics.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <map>

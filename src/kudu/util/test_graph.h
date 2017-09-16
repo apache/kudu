@@ -17,10 +17,10 @@
 #ifndef KUDU_TEST_GRAPH_COLLECTOR_H
 #define KUDU_TEST_GRAPH_COLLECTOR_H
 
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/macros.h"

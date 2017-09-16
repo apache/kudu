@@ -17,7 +17,6 @@
 
 #include "kudu/client/client.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <ostream>

@@ -16,8 +16,8 @@
 // under the License.
 #include "kudu/consensus/consensus_meta_manager.h"
 
-#include <algorithm>
 #include <mutex>
+#include <utility>
 
 #include <glog/logging.h>
 

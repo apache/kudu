@@ -25,11 +25,12 @@
 
 #include "kudu/gutil/atomicops-internals-x86.h"
 
-#include <string.h>
+#include <cstring>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/integral_types.h"
+// IWYU pragma: no_include "kudu/gutil/atomicops.h"
 
 // This file only makes sense with atomicops-internals-x86.h -- it
 // depends on structs that are defined in that file.  If atomicops.h

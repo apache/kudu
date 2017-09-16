@@ -17,10 +17,10 @@
 #ifndef KUDU_UTIL_WEBSERVER_H
 #define KUDU_UTIL_WEBSERVER_H
 
-#include <algorithm>
 #include <iosfwd>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/port.h"

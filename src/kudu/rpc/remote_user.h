@@ -16,8 +16,8 @@
 // under the License.
 #pragma once
 
-#include <algorithm>
 #include <string>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 

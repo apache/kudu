@@ -17,9 +17,9 @@
 
 #include "kudu/security/simple_acl.h"
 
-#include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"

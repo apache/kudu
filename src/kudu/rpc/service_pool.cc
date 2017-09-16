@@ -17,12 +17,12 @@
 
 #include "kudu/rpc/service_pool.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

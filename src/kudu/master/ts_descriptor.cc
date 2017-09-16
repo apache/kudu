@@ -17,11 +17,11 @@
 
 #include "kudu/master/ts_descriptor.h"
 
-#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include <ostream>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

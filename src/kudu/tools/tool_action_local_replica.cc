@@ -19,16 +19,20 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <list>
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include <boost/none.hpp>
+#include <boost/container/flat_map.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
@@ -39,8 +43,10 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -54,7 +60,9 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/sys_catalog.h"
@@ -68,6 +76,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/ts_tablet_manager.h"

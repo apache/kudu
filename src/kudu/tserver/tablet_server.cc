@@ -17,10 +17,10 @@
 
 #include "kudu/tserver/tablet_server.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <ostream>
 #include <type_traits>
+#include <utility>
 
 #include <glog/logging.h>
 

@@ -17,11 +17,11 @@
 
 #include "kudu/client/schema.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <unordered_map>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>

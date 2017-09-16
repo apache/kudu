@@ -84,12 +84,10 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status_callback.h"
-#include "kudu/util/stopwatch.h"  // IWYU pragma: keep
 #include "kudu/util/throttler.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"

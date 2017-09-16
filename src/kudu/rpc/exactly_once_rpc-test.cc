@@ -17,13 +17,13 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

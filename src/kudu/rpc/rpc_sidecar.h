@@ -17,12 +17,11 @@
 #ifndef KUDU_RPC_RPC_SIDECAR_H
 #define KUDU_RPC_RPC_SIDECAR_H
 
-#include <cstdint>
 #include <memory>
 
 #include <google/protobuf/repeated_field.h> // IWYU pragma: keep
+#include <google/protobuf/stubs/port.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {

@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
 #include <cerrno>
 #include <string>
+#include <utility>
 
 #include <gtest/gtest.h>
 

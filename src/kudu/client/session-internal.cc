@@ -17,9 +17,9 @@
 
 #include "kudu/client/session-internal.h"
 
-#include <algorithm>
 #include <memory>
 #include <mutex>
+#include <utility>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/function.hpp>

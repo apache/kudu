@@ -16,14 +16,14 @@
 // under the License.
 
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
-#include <memory>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
-#include <google/protobuf/message.h>
+#include <google/protobuf/message.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus.pb.h"

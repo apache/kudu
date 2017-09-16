@@ -16,10 +16,10 @@
 // under the License.
 
 #include <cstddef>
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>

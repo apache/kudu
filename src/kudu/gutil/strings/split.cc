@@ -4,6 +4,7 @@
 
 #include "kudu/gutil/strings/split.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>

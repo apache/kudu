@@ -17,10 +17,10 @@
 #include "kudu/gutil/hash/city.h"
 
 #include <sys/types.h>
+
 #include <algorithm>
 #include <iterator>
 #include <utility>
-#include <vector>
 
 #include <glog/logging.h>
 

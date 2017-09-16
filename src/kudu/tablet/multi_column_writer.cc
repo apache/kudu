@@ -17,10 +17,10 @@
 
 #include "kudu/tablet/multi_column_writer.h"
 
-#include <algorithm>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"

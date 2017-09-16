@@ -7,16 +7,15 @@
 
 #include "kudu/gutil/strings/util.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
-#include <ctime>           // for FastTimeToBuffer()
-
-#include <algorithm>
-#include <deque>
+#include <ctime>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -27,11 +26,7 @@
 #include "kudu/gutil/stl_util.h"  // for string_as_array, STLAppendToString
 #include "kudu/gutil/utf/utf.h"
 
-using std::copy;
-using std::max;
 using std::min;
-using std::reverse;
-using std::sort;
 using std::string;
 using std::swap;
 using std::vector;

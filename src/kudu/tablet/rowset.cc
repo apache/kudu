@@ -17,10 +17,10 @@
 
 #include "kudu/tablet/rowset.h"
 
-#include <algorithm>
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/common/generic_iterators.h"

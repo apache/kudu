@@ -17,13 +17,13 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <fstream>  // IWYU pragma: keep
 #include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

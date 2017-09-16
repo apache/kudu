@@ -17,10 +17,10 @@
 
 #include "kudu/rpc/rpc_controller.h"
 
-#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <utility>
 
 #include <glog/logging.h>
 

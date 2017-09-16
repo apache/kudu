@@ -17,11 +17,11 @@
 
 #include "kudu/server/server_base.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>

@@ -16,11 +16,11 @@
 // under the License.
 #include "kudu/tablet/tablet-test-util.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

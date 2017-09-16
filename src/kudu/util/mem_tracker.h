@@ -17,11 +17,11 @@
 #ifndef KUDU_UTIL_MEM_TRACKER_H
 #define KUDU_UTIL_MEM_TRACKER_H
 
-#include <algorithm>
 #include <cstdint>
 #include <list>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

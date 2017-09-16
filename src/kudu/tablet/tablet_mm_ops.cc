@@ -17,8 +17,8 @@
 
 #include "kudu/tablet/tablet_mm_ops.h"
 
-#include <algorithm>
 #include <mutex>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

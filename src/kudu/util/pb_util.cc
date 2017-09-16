@@ -23,15 +23,15 @@
 
 #include "kudu/util/pb_util.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <deque>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
-#include <ostream>  // IWYU pragma: keep
+#include <ostream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

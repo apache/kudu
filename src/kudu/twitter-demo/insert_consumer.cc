@@ -17,9 +17,9 @@
 
 #include "kudu/twitter-demo/insert_consumer.h"
 
-#include <algorithm>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

@@ -17,11 +17,11 @@
 
 #include "kudu/codegen/module_builder.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 

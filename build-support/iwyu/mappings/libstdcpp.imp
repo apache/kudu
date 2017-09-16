@@ -25,5 +25,9 @@
     { include: ["<ext/alloc_traits.h>", private, "<string>", public ] },
     { include: ["<ext/alloc_traits.h>", private, "<unordered_map>", public ] },
     { include: ["<ext/alloc_traits.h>", private, "<unordered_set>", public ] },
-    { include: ["<ext/alloc_traits.h>", private, "<vector>", public ] }
+    { include: ["<ext/alloc_traits.h>", private, "<vector>", public ] },
+    { symbol: ["std::equal_to", private, "<functional>", public ] },
+    { symbol: ["std::move", private, "<utility>", public ] },
+    { symbol: ["std::move", private, "<algorithm>", public ] },
+    { symbol: ["std::swap", private, "<utility>", public ] }
 ]

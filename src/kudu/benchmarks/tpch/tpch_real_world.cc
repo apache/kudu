@@ -37,19 +37,19 @@
 //    stops at soon as it gets the signal that we ran out of time or that there are no more rows to
 //    insert, so the last timing shouldn't be used.
 //
-// TODO Make the inserts multi-threaded. See Kudu-629 for the technique.
+// TODO(KUDU-629) Make the inserts multi-threaded.
 
-#include <stdlib.h>
 #include <sys/stat.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cinttypes>
 #include <csignal>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp>

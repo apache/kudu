@@ -8,9 +8,8 @@
 #define STRINGS_STRCAT_H_
 
 #include <cstring>
-
-#include <algorithm>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"

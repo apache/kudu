@@ -17,10 +17,10 @@
 
 #include "kudu/tserver/tablet_copy_client.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>

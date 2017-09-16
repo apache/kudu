@@ -17,11 +17,11 @@
 #ifndef KUDU_TABLET_LAYER_BASEDATA_H
 #define KUDU_TABLET_LAYER_BASEDATA_H
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/container/flat_map.hpp>

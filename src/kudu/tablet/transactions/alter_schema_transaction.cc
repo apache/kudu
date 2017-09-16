@@ -17,8 +17,8 @@
 
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 
-#include <algorithm>
 #include <memory>
+#include <utility>
 
 #include <glog/logging.h>
 

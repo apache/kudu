@@ -17,9 +17,9 @@
 
 #include "kudu/client/table_alterer-internal.h"
 
-#include <algorithm>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 

@@ -16,13 +16,12 @@
 // under the License.
 
 #include <cstddef>
-#include <memory>
 #include <ostream>
 #include <string>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <gperftools/malloc_extension.h>
+#include <gperftools/malloc_extension.h>  // IWYU pragma: keep
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"

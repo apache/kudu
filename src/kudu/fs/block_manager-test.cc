@@ -46,6 +46,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h" // IWYU pragma: keep
 #include "kudu/util/env.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"

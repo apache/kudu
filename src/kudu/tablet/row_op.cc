@@ -17,8 +17,8 @@
 
 #include "kudu/tablet/row_op.h"
 
-#include <algorithm>
 #include <type_traits>
+#include <utility>
 
 #include <glog/logging.h>
 

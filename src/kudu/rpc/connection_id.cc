@@ -17,8 +17,8 @@
 
 #include "kudu/rpc/connection_id.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <utility>
 
 #include <boost/functional/hash/hash.hpp>
 #include <glog/logging.h>

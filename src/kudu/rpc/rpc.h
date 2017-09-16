@@ -17,9 +17,9 @@
 #ifndef KUDU_RPC_RPC_H
 #define KUDU_RPC_RPC_H
 
-#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"

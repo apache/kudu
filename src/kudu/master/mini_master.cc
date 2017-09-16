@@ -17,9 +17,9 @@
 
 #include "kudu/master/mini_master.h"
 
-#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

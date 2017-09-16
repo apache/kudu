@@ -19,8 +19,8 @@
 
 #include <sys/uio.h>
 
-#include <algorithm>
 #include <cerrno>
+#include <utility>
 
 #include <glog/logging.h>
 #include <openssl/err.h>

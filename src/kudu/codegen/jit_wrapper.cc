@@ -17,7 +17,7 @@
 
 #include "kudu/codegen/jit_wrapper.h"
 
-#include <algorithm>
+#include <utility>
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 

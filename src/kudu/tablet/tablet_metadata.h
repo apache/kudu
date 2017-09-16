@@ -17,12 +17,12 @@
 #ifndef KUDU_TABLET_TABLET_METADATA_H
 #define KUDU_TABLET_TABLET_METADATA_H
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

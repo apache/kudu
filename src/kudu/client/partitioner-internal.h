@@ -16,9 +16,9 @@
 // under the License.
 #pragma once
 
-#include <algorithm>
 #include <map>
 #include <string>
+#include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"

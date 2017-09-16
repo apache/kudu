@@ -17,15 +17,14 @@
 
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/array_view.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -35,6 +34,9 @@ class Env;
 class MemTracker;
 class MetricEntity;
 class Slice;
+
+template <typename T>
+class ArrayView;
 
 namespace fs {
 

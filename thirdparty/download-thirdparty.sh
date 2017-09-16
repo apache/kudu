@@ -211,8 +211,16 @@ if [ ! -d $MUSTACHE_SOURCE ]; then
   fetch_and_expand mustache-${MUSTACHE_VERSION}.tar.gz
 fi
 
+GSG_PATCHLEVEL=1
+delete_if_wrong_patchlevel $GSG_SOURCE $GSG_PATCHLEVEL
 if [ ! -d $GSG_SOURCE ]; then
   fetch_and_expand google-styleguide-${GSG_VERSION}.tar.gz
+
+  pushd $GSG_SOURCE
+  patch -p1 < $TP_DIR/patches/google-styleguide-cpplint.patch
+  touch patchlevel-$GSG_PATCHLEVEL
+  popd
+  echo
 fi
 
 if [ ! -d $GCOVR_SOURCE ]; then

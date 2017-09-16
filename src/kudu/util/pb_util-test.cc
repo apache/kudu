@@ -15,22 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cstdint>
-#include <ostream>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
-#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/port.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pb_util_test.pb.h"

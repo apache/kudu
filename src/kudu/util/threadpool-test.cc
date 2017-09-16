@@ -17,7 +17,6 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <iterator>
@@ -27,6 +26,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep

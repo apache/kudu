@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -25,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

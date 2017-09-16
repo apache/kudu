@@ -17,9 +17,9 @@
 
 #include "kudu/client/scan_configuration.h"
 
-#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/client.h"

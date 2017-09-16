@@ -18,9 +18,9 @@
 #ifndef KUDU_TOOLS_KSCK_REMOTE_H
 #define KUDU_TOOLS_KSCK_REMOTE_H
 
-#include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"

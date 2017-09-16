@@ -17,9 +17,9 @@
 #ifndef KUDU_CFILE_BLOCK_CACHE_H
 #define KUDU_CFILE_BLOCK_CACHE_H
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>

@@ -5,7 +5,7 @@
 #include "kudu/gutil/cpu.h"
 
 #include <cstring>
-#include <algorithm>
+#include <utility>
 
 #include "kudu/gutil/integral_types.h"
 

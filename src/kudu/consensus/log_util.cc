@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/array_view.h" // IWYU pragma: keep
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/compression/compression.pb.h"

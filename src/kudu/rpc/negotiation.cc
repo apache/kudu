@@ -20,12 +20,12 @@
 #include <poll.h>
 #include <sys/socket.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <ctime>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>

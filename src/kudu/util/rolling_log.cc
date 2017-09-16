@@ -19,12 +19,12 @@
 
 #include <unistd.h>
 
-#include <algorithm>
 #include <ctime>
 #include <iomanip>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

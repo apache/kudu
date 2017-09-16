@@ -17,6 +17,7 @@
 
 #include "kudu/rpc/server_negotiation.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>

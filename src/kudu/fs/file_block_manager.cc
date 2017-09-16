@@ -17,7 +17,6 @@
 
 #include "kudu/fs/file_block_manager.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -25,6 +24,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>

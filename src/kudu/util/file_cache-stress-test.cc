@@ -31,10 +31,10 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/split.h"
@@ -52,23 +52,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-// Like CHECK_OK(), but dumps the contents of the cache before failing.
-//
-// The output of ToDebugString() tends to be long enough that LOG() truncates
-// it, so we must split it ourselves before logging.
-#define TEST_CHECK_OK(to_call) do {                                       \
-    const Status& _s = (to_call);                                         \
-    if (!_s.ok()) {                                                       \
-      LOG(INFO) << "Dumping cache contents";                              \
-      vector<string> lines = strings::Split(cache_->ToDebugString(), "\n", \
-                                            strings::SkipEmpty());        \
-      for (const auto& l : lines) {                                       \
-        LOG(INFO) << l;                                                   \
-      }                                                                   \
-    }                                                                     \
-    CHECK(_s.ok()) << "Bad status: " << _s.ToString();                    \
-  } while (0);
 
 DEFINE_int32(test_num_producer_threads, 1, "Number of producer threads");
 DEFINE_int32(test_num_consumer_threads, 4, "Number of consumer threads");
@@ -92,6 +75,24 @@ static const int kTestMaxOpenFiles = 100;
 
 template <class FileType>
 class FileCacheStressTest : public KuduTest {
+
+// Like CHECK_OK(), but dumps the contents of the cache before failing.
+//
+// The output of ToDebugString() tends to be long enough that LOG() truncates
+// it, so we must split it ourselves before logging.
+#define TEST_CHECK_OK(to_call) do {                                       \
+    const Status& _s = (to_call);                                         \
+    if (!_s.ok()) {                                                       \
+      LOG(INFO) << "Dumping cache contents";                              \
+      vector<string> lines = strings::Split(cache_->ToDebugString(), "\n",\
+                                            strings::SkipEmpty());        \
+      for (const auto& l : lines) {                                       \
+        LOG(INFO) << l;                                                   \
+      }                                                                   \
+    }                                                                     \
+    CHECK(_s.ok()) << "Bad status: " << _s.ToString();                    \
+  } while (0);
+
  public:
   typedef unordered_map<string, unordered_map<string, int>> MetricMap;
 

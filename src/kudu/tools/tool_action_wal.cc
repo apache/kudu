@@ -17,10 +17,10 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "kudu/consensus/log_util.h"
 #include "kudu/gutil/map-util.h"

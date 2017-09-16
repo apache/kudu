@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/tablet_bootstrap.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <iterator>
 #include <map>

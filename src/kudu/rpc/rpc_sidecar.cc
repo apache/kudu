@@ -17,8 +17,9 @@
 
 #include "kudu/rpc/rpc_sidecar.h"
 
-#include <algorithm>
 #include <cstdint>
+#include <memory>
+#include <utility>
 
 #include <google/protobuf/repeated_field.h>
 

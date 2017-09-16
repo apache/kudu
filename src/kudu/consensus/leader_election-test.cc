@@ -17,17 +17,17 @@
 
 #include "kudu/consensus/leader_election.h"
 
-#include <algorithm>
 #include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"

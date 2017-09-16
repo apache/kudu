@@ -17,10 +17,10 @@
 
 #include "kudu/tablet/deltafile.h"
 
-#include <algorithm>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>

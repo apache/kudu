@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -31,14 +32,12 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-#define ASSERT_VALUES_EQUAL(cmeta, opid_index, uuid, term) \
-  ASSERT_NO_FATAL_FAILURE(AssertValuesEqual(cmeta, opid_index, uuid, term))
 
 namespace kudu {
 namespace consensus {
@@ -101,7 +100,7 @@ TEST_F(ConsensusMetadataTest, TestCreateLoad) {
   // Load the file.
   scoped_refptr<ConsensusMetadata> cmeta;
   ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta));
-  ASSERT_VALUES_EQUAL(cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
+  NO_FATALS(AssertValuesEqual(cmeta, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
   ASSERT_GT(cmeta->on_disk_size(), 0);
 }
 
@@ -122,7 +121,7 @@ TEST_F(ConsensusMetadataTest, TestDeferredCreateLoad) {
   // Flush; now the file will be there.
   ASSERT_OK(writer->Flush());
   ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &reader));
-  ASSERT_VALUES_EQUAL(reader, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
+  NO_FATALS(AssertValuesEqual(reader, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
 }
 
 // Ensure that Create() will not overwrite an existing file.
@@ -160,7 +159,7 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
   {
     scoped_refptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
-    ASSERT_VALUES_EQUAL(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm);
+    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kInitialTerm));
     ASSERT_GT(cmeta->on_disk_size(), 0);
   }
 
@@ -170,7 +169,7 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
   {
     scoped_refptr<ConsensusMetadata> cmeta_read;
     ASSERT_OK(ConsensusMetadata::Load(&fs_manager_, kTabletId, fs_manager_.uuid(), &cmeta_read));
-    ASSERT_VALUES_EQUAL(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kNewTerm);
+    NO_FATALS(AssertValuesEqual(cmeta_read, kInvalidOpIdIndex, fs_manager_.uuid(), kNewTerm));
     ASSERT_EQ(cmeta_size, cmeta_read->on_disk_size());
   }
 }

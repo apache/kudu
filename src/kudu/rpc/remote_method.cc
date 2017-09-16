@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <ostream>
+#include <utility>
 
 #include <glog/logging.h>
 

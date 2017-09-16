@@ -17,8 +17,8 @@
 
 #include "kudu/client/replica-internal.h"
 
-#include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "kudu/client/client.h"
 

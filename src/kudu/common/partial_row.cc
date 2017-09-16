@@ -17,9 +17,9 @@
 
 #include "kudu/common/partial_row.h"
 
-#include <algorithm>
 #include <cstring>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 

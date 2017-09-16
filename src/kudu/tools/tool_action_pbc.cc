@@ -17,7 +17,6 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <fstream>  // IWYU pragma: keep
@@ -25,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

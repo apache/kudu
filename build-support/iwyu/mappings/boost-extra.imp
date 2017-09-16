@@ -17,6 +17,7 @@
 [
     { include: ["<boost/core/explicit_operator_bool.hpp>", private, "<boost/optional/optional.hpp>", public ] },
     { include: ["<boost/cstdint.hpp>", private, "<cstdint>", public ] },
+    { include: ["<boost/container/detail/std_fwd.hpp>", private, "<utility>", public ] },
     { include: ["<boost/none.hpp>", private, "<boost/optional/optional.hpp>", public ] },
     { include: ["<boost/optional/detail/optional_relops.hpp>", private, "<boost/optional/optional.hpp>", public ] },
     { include: ["<boost/optional/detail/optional_reference_spec.hpp>", private, "<boost/optional/optional.hpp>", public ] }

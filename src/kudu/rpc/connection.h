@@ -18,13 +18,13 @@
 #ifndef KUDU_RPC_CONNECTION_H
 #define KUDU_RPC_CONNECTION_H
 
-#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include <boost/intrusive/list.hpp>
 #include <boost/optional/optional.hpp>

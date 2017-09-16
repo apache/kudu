@@ -17,11 +17,11 @@
 
 #include "kudu/tools/tool_action.h"
 
-#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

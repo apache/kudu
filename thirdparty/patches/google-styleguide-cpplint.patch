@@ -1,0 +1,21 @@
+--- a/cpplint/cpplint.py	2017-09-19 22:24:22.000000000 -0700
++++ b/cpplint/cpplint.py	2017-09-19 22:24:52.000000000 -0700
+@@ -5488,7 +5488,7 @@
+     ('<stack>', ('stack',)),
+     ('<string>', ('char_traits', 'basic_string',)),
+     ('<tuple>', ('tuple',)),
+-    ('<utility>', ('pair',)),
++    ('<utility>', ('pair', 'swap',)),
+     ('<vector>', ('vector',)),
+ 
+     # gcc extensions.
+@@ -5501,8 +5501,7 @@
+ _RE_PATTERN_STRING = re.compile(r'\bstring\b')
+ 
+ _re_pattern_algorithm_header = []
+-for _template in ('copy', 'max', 'min', 'min_element', 'sort', 'swap',
+-                  'transform'):
++for _template in ('copy', 'max', 'min', 'min_element', 'sort', 'transform'):
+   # Match max<type>(..., ...), max(..., ...), but not foo->max, foo.max or
+   # type::max().
+   _re_pattern_algorithm_header.append(

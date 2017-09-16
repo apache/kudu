@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "kudu/fs/block_manager.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/malloc.h"
 
 namespace kudu {

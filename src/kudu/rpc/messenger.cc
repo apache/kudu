@@ -17,13 +17,13 @@
 
 #include "kudu/rpc/messenger.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>

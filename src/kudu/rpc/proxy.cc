@@ -17,9 +17,9 @@
 
 #include "kudu/rpc/proxy.h"
 
-#include <algorithm>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/core/ref.hpp>

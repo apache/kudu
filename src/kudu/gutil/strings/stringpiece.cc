@@ -4,12 +4,9 @@
 
 #include "kudu/gutil/strings/stringpiece.h"
 
+#include <algorithm>
 #include <climits>
 #include <cstring>
-
-#include <algorithm>
-#include <deque>
-#include <memory>
 #include <ostream>
 #include <string>
 
@@ -19,12 +16,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/memutil.h"
 
-using std::copy;
-using std::max;
 using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
 using std::string;
 
 namespace std {

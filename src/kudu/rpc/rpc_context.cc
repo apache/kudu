@@ -17,9 +17,9 @@
 
 #include "kudu/rpc/rpc_context.h"
 
-#include <algorithm>
 #include <memory>
 #include <ostream>
+#include <utility>
 
 #include <glog/logging.h>
 #include <google/protobuf/message.h>

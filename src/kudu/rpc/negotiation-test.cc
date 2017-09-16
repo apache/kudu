@@ -20,7 +20,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -28,6 +27,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

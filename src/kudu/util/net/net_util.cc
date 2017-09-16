@@ -22,7 +22,6 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <functional>

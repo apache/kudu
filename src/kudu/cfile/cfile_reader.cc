@@ -21,6 +21,7 @@
 #include <cstring>
 #include <memory>
 #include <ostream>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

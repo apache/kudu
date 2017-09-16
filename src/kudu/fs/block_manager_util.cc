@@ -16,11 +16,11 @@
 // under the License.
 #include "kudu/fs/block_manager_util.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <ostream>
 #include <set>
 #include <unordered_map>
+#include <utility>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>

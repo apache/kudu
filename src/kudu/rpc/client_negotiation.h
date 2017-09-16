@@ -17,11 +17,11 @@
 
 #pragma once
 
-#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>

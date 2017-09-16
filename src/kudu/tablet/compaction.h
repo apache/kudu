@@ -17,11 +17,11 @@
 #ifndef KUDU_TABLET_COMPACTION_H
 #define KUDU_TABLET_COMPACTION_H
 
-#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>

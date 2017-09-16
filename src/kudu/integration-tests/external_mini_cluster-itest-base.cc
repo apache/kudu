@@ -17,9 +17,9 @@
 
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 
-#include <algorithm>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>

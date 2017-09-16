@@ -16,9 +16,9 @@
 // under the License.
 #include "kudu/consensus/consensus_meta.h"
 
-#include <algorithm>
 #include <mutex>
 #include <ostream>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>

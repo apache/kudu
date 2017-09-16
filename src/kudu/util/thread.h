@@ -28,9 +28,9 @@
 #endif
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp>     // IWYU pragma: keep

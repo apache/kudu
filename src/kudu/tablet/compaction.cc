@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/compaction.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <memory>

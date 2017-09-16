@@ -15,12 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
