@@ -102,7 +102,8 @@ struct Tags {
 
 // Writes the last FLAGS_web_log_bytes of the INFO logfile to a webpage
 // Note to get best performance, set GLOG_logbuflevel=-1 to prevent log buffering
-static void LogsHandler(const Webserver::WebRequest& req, EasyJson* output) {
+static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   (*output)["raw"] = (req.parsed_args.find("raw") != req.parsed_args.end());
   string logfile;
   GetFullLogFilename(google::INFO, &logfile);
@@ -128,7 +129,9 @@ static void LogsHandler(const Webserver::WebRequest& req, EasyJson* output) {
 // escaped values. If --redact is set with 'flag', the values of flags tagged as
 // sensitive will be redacted. The values would not be HTML escaped if in the raw text
 // mode, e.g. "/varz?raw".
-static void FlagsHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
+static void FlagsHandler(const Webserver::WebRequest& req,
+                         Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -139,7 +142,9 @@ static void FlagsHandler(const Webserver::WebRequest& req, std::ostringstream* o
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
-static void MemUsageHandler(const Webserver::WebRequest& req, std::ostringstream* output) {
+static void MemUsageHandler(const Webserver::WebRequest& req,
+                            Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -157,7 +162,9 @@ static void MemUsageHandler(const Webserver::WebRequest& req, std::ostringstream
 }
 
 // Registered to handle "/mem-trackers", and prints out to handle memory tracker information.
-static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostringstream* output) {
+static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
+                               Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
   int64_t current_consumption = process_memory::CurrentConsumption();
   int64_t hard_limit = process_memory::HardLimit();
   *output << "<h1>Process memory usage</h1>\n";
@@ -203,7 +210,9 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/, std::ostrin
   *output << "</tbody></table>\n";
 }
 
-static void ConfigurationHandler(const Webserver::WebRequest& /* req */, EasyJson* output) {
+static void ConfigurationHandler(const Webserver::WebRequest& /* req */,
+                                 Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   EasyJson security_configs = output->Set("security_configs", EasyJson::kArray);
 
   EasyJson rpc_encryption = security_configs.PushBack(EasyJson::kObject);
@@ -255,7 +264,9 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
-                               const Webserver::WebRequest& req, std::ostringstream* output) {
+                               const Webserver::WebRequest& req,
+                               Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
   const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
   vector<string> requested_metrics;
   MetricJsonOptions opts;

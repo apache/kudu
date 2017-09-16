@@ -246,15 +246,15 @@ Status DoHandleRequest(Handler handler,
 
 void HandleRequest(Handler handler,
                    const Webserver::WebRequest& req,
-                   std::ostringstream* output) {
-  Status s = DoHandleRequest(handler, req, output);
+                   Webserver::PrerenderedWebResponse* resp) {
+  Status s = DoHandleRequest(handler, req, resp->output);
   if (!s.ok()) {
     LOG(WARNING) << "Tracing error for handler " << handler << ": "
                  << s.ToString();
     // The trace-viewer JS expects '##ERROR##' to indicate that an error
     // occurred. TODO: change the JS to bubble up the actual error message
     // to the user.
-    *output << "##ERROR##";
+    *resp->output << "##ERROR##";
   }
 }
 } // anonymous namespace

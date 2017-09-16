@@ -20,11 +20,13 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -83,8 +85,9 @@ namespace master {
 MasterPathHandlers::~MasterPathHandlers() {
 }
 
-void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
-                                             ostringstream* output) {
+void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*/,
+                                             Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   vector<std::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 
@@ -159,7 +162,9 @@ int ExtractRedirectsFromRequest(const Webserver::WebRequest& req) {
 
 } // anonymous namespace
 
-void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req, EasyJson* output) {
+void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
+                                              Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   CatalogManager::ScopedLeaderSharedLock l(master_->catalog_manager());
   if (!l.catalog_status().ok()) {
     (*output)["error"] = Substitute("Master is not ready: $0",  l.catalog_status().ToString());
@@ -220,11 +225,12 @@ bool CompareByRole(const pair<TabletDetailPeerInfo, RaftPeerPB::Role>& a,
 
 
 void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
-                                         EasyJson* output) {
+                                         Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   // Parse argument.
   string table_id;
   if (!FindCopy(req.parsed_args, "id", &table_id)) {
-    // TODO(wdb): Webserver should give a way to return a non-200 response code.
+    resp->status_code = HttpStatusCode::BadRequest;
     (*output)["error"] = "Missing 'id' argument";
     return;
   }
@@ -235,7 +241,10 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     return;
   }
   if (!l.leader_status().ok()) {
-    // Track redirects to prevent a redirect loop.
+    // It's possible to respond 307 Temporary Redirect and automatically redirect with
+    // a Location header, but this would likely confuse users about which master's web ui
+    // they are looking at. Instead, we show a link users can click to go to the leader master.
+    // We track redirects to prevent a redirect loop.
     int redirects = ExtractRedirectsFromRequest(req);
     SetupLeaderMasterRedirect(Substitute("table?id=$0", table_id), redirects, output);
     return;
@@ -244,11 +253,13 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   scoped_refptr<TableInfo> table;
   Status s = master_->catalog_manager()->GetTableInfo(table_id, &table);
   if (!s.ok()) {
+    resp->status_code = HttpStatusCode::ServiceUnavailable;
     (*output)["error"] = Substitute("Master is not ready: $0", s.ToString());
     return;
   }
 
   if (!table) {
+    resp->status_code = HttpStatusCode::NotFound;
     (*output)["error"] = "Table not found";
     return;
   }
@@ -376,7 +387,8 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
-                                       ostringstream* output) {
+                                       Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
   if (!s.ok()) {
@@ -516,8 +528,9 @@ void JsonError(const Status& s, ostringstream* out) {
 }
 } // anonymous namespace
 
-void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
-                                            ostringstream* output) {
+void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/,
+                                            Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   Status s = master_->catalog_manager()->CheckOnline();
   if (!s.ok()) {
     JsonError(s, output);

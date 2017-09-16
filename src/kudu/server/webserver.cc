@@ -28,6 +28,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -83,6 +84,27 @@ TAG_FLAG(webserver_x_frame_options, advanced);
 namespace {
   // Last error message from the webserver.
   string kWebserverLastErrMsg;
+
+  string HttpStatusCodeToString(kudu::HttpStatusCode code) {
+    switch (code) {
+      case kudu::HttpStatusCode::Ok:
+        return "200 OK";
+      case kudu::HttpStatusCode::BadRequest:
+        return "400 Bad Request";
+      case kudu::HttpStatusCode::NotFound:
+        return "404 Not Found";
+      case kudu::HttpStatusCode::LengthRequired:
+        return "411 Length Required";
+      case kudu::HttpStatusCode::RequestEntityTooLarge:
+        return "413 Request Entity Too Large";
+      case kudu::HttpStatusCode::InternalServerError:
+        return "500 Internal Server Error";
+      case kudu::HttpStatusCode::ServiceUnavailable:
+        return "503 Service Unavailable";
+    }
+    LOG(FATAL) << "Unexpected HTTP response code";
+  }
+
 }  // anonymous namespace
 
 namespace kudu {
@@ -99,8 +121,9 @@ Webserver::~Webserver() {
   STLDeleteValues(&path_handlers_);
 }
 
-void Webserver::RootHandler(const Webserver::WebRequest& /* args */, EasyJson* output) {
-  EasyJson path_handlers = output->Set("path_handlers", EasyJson::kArray);
+void Webserver::RootHandler(const Webserver::WebRequest& /* args */,
+                            Webserver::WebResponse* resp) {
+  EasyJson path_handlers = resp->output->Set("path_handlers", EasyJson::kArray);
   for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
       EasyJson path_handler = path_handlers.PushBack(EasyJson::kObject);
@@ -108,7 +131,7 @@ void Webserver::RootHandler(const Webserver::WebRequest& /* args */, EasyJson* o
       path_handler["alias"] = handler.second->alias();
     }
   }
-  (*output)["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
+  (*resp->output)["version_info"] = EscapeForHtmlToString(VersionInfo::GetAllVersionInfo());
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
@@ -360,12 +383,12 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
       if (!opts_.doc_root.empty() && opts_.enable_doc_root) {
         VLOG(2) << "HTTP File access: " << request_info->uri;
         return 0;
-      } else {
-        sq_printf(connection, "HTTP/1.1 404 Not Found\r\n"
-                  "Content-Type: text/plain\r\n\r\n");
-        sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
-        return 1;
       }
+      sq_printf(connection,
+                "HTTP/1.1 %s\r\nContent-Type: text/plain\r\n\r\n",
+                HttpStatusCodeToString(HttpStatusCode::NotFound).c_str());
+      sq_printf(connection, "No handler for URI %s\r\n\r\n", request_info->uri);
+      return 1;
     }
     handler = it->second;
   }
@@ -390,14 +413,18 @@ int Webserver::RunPathHandler(const PathHandler& handler,
     int32_t content_len = 0;
     if (content_len_str == nullptr ||
         !safe_strto32(content_len_str, &content_len)) {
-      sq_printf(connection, "HTTP/1.1 411 Length Required\r\n");
+      sq_printf(connection,
+                "HTTP/1.1 %s\r\n",
+                HttpStatusCodeToString(HttpStatusCode::LengthRequired).c_str());
       return 1;
     }
     if (content_len > FLAGS_webserver_max_post_length_bytes) {
-      // TODO: for this and other HTTP requests, we should log the
+      // TODO(wdb): for this and other HTTP requests, we should log the
       // remote IP, etc.
       LOG(WARNING) << "Rejected POST with content length " << content_len;
-      sq_printf(connection, "HTTP/1.1 413 Request Entity Too Large\r\n");
+      sq_printf(connection,
+                "HTTP/1.1 %s\r\n",
+                HttpStatusCodeToString(HttpStatusCode::RequestEntityTooLarge).c_str());
       return 1;
     }
 
@@ -409,7 +436,9 @@ int Webserver::RunPathHandler(const PathHandler& handler,
         LOG(WARNING) << "error reading POST data: expected "
                      << content_len << " bytes but only read "
                      << req.post_data.size();
-        sq_printf(connection, "HTTP/1.1 500 Internal Server Error\r\n");
+        sq_printf(connection,
+                  "HTTP/1.1 %s\r\n",
+                  HttpStatusCodeToString(HttpStatusCode::InternalServerError).c_str());
         return 1;
       }
 
@@ -423,7 +452,8 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   }
 
   ostringstream content;
-  handler.callback()(req, &content);
+  PrerenderedWebResponse resp { HttpStatusCode::Ok, HttpResponseHeaders{}, &content };
+  handler.callback()(req, &resp);
 
   string full_content;
   if (use_style) {
@@ -434,17 +464,24 @@ int Webserver::RunPathHandler(const PathHandler& handler,
     full_content = content.str();
   }
 
-  // Without styling, render the page as plain text
-  string headers = strings::Substitute(
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: $0\r\n"
-      "Content-Length: $1\r\n"
-      "X-Frame-Options: $2\r\n"
-      "\r\n",
-      use_style ? "text/html" : "text/plain",
-      full_content.length(),
-      FLAGS_webserver_x_frame_options);
-  // Make sure to use sq_write for printing the body; sq_printf truncates at 8kb
+  ostringstream headers_stream;
+  headers_stream << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp.status_code));
+  headers_stream << Substitute("Content-Type: $0\r\n", use_style ? "text/html" : "text/plain");
+  headers_stream << Substitute("Content-Length: $0\r\n", full_content.length());
+  headers_stream << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
+  std::unordered_set<string> invalid_headers{"Content-Type", "Content-Length", "X-Frame-Options"};
+  for (const auto& entry : resp.response_headers) {
+    // It's forbidden to override the above headers.
+    if (ContainsKey(invalid_headers, entry.first)) {
+      LOG(FATAL) << "Reserved header " << entry.first << " was overridden "
+          "by handler for " << handler.alias();
+    }
+    headers_stream << Substitute("$0: $1\r\n", entry.first, entry.second);
+  }
+  headers_stream << "\r\n";
+  string headers = headers_stream.str();
+
+  // Make sure to use sq_write for printing the body; sq_printf truncates at 8KB.
   sq_write(connection, headers.c_str(), headers.length());
   sq_write(connection, full_content.c_str(), full_content.length());
   return 1;
@@ -453,12 +490,15 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
   string render_path = (path == "/") ? "/home" : path;
-  auto wrapped_cb = [=](const WebRequest& args, ostringstream* output) {
+  auto wrapped_cb = [=](const WebRequest& args, PrerenderedWebResponse* rendered_resp) {
     EasyJson ej;
-    callback(args, &ej);
+    WebResponse resp { HttpStatusCode::Ok, HttpResponseHeaders{}, &ej };
+    callback(args, &resp);
     stringstream out;
     Render(render_path, ej, is_styled, &out);
-    (*output) << out.rdbuf();
+    rendered_resp->status_code = resp.status_code;
+    rendered_resp->response_headers = std::move(resp.response_headers);
+    *rendered_resp->output << out.rdbuf();
   };
   RegisterPrerenderedPathHandler(path, alias, wrapped_cb, is_styled, is_on_nav_bar);
 }

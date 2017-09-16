@@ -18,14 +18,24 @@
 #define KUDU_UTIL_WEB_CALLBACK_REGISTRY_H
 
 #include <iosfwd>
-#include <map>
 #include <string>
+#include <unordered_map>
 
 #include <boost/function.hpp>
 
 #include "kudu/util/easy_json.h"
 
 namespace kudu {
+
+enum class HttpStatusCode {
+  Ok, // 200
+  BadRequest, // 400
+  NotFound, // 404
+  LengthRequired, // 411
+  RequestEntityTooLarge, // 413
+  InternalServerError, // 500
+  ServiceUnavailable, // 503
+};
 
 // Interface for registering webserver callbacks.
 //
@@ -34,10 +44,10 @@ namespace kudu {
 // 1. Define a PathHandlerCallback that accepts an EasyJson
 //    object and fills out its fields with relevant information.
 // 2. Call RegisterPathHandler("/example/path", ...)
-// 3. Create the file $KUDU_HOME/www/example/path.mustache
+// 3. Create the file $KUDU_HOME/www/example/path.mustache.
 class WebCallbackRegistry {
  public:
-  typedef std::map<std::string, std::string> ArgumentMap;
+  typedef std::unordered_map<std::string, std::string> ArgumentMap;
 
   struct WebRequest {
     // The query string, parsed into key/value argument pairs.
@@ -53,13 +63,40 @@ class WebCallbackRegistry {
     std::string post_data;
   };
 
-  // A function that adds members to the JSON object 'output' to be
-  // rendered in an HTML template.
-  typedef boost::function<void (const WebRequest& args, EasyJson* output)>
+  typedef std::unordered_map<std::string, std::string> HttpResponseHeaders;
+
+  // A response to an HTTP request whose body is rendered by template.
+  struct WebResponse {
+    // Determines the status code of the HTTP response.
+    HttpStatusCode status_code;
+
+    // Additional headers added to the HTTP response.
+    HttpResponseHeaders response_headers;
+
+    // A JSON object to be rendered to HTML by a mustache template.
+    EasyJson* output;
+  };
+
+  // A response to an HTTP request.
+  struct PrerenderedWebResponse {
+    // Determines the status code of the HTTP response.
+    HttpStatusCode status_code;
+
+    // Additional headers added to the HTTP response.
+    HttpResponseHeaders response_headers;
+
+    // The fully-rendered HTML response body.
+    std::ostringstream* output;
+  };
+
+  // A function that handles an HTTP request where the response body will be rendered
+  // with a mustache template from the JSON object held by 'resp'.
+  typedef boost::function<void (const WebRequest& args, WebResponse* resp)>
       PathHandlerCallback;
 
-  // A function that streams fully rendered HTML to 'output'.
-  typedef boost::function<void (const WebRequest& args, std::ostringstream* output)>
+  // A function that handles an HTTP request, where the response body is the contents
+  // of the 'output' member of 'resp'.
+  typedef boost::function<void (const WebRequest& args, PrerenderedWebResponse* resp)>
       PrerenderedPathHandlerCallback;
 
   virtual ~WebCallbackRegistry() {}

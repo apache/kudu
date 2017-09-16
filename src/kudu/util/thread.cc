@@ -31,8 +31,9 @@
 #include <map>
 #include <memory>
 #include <sstream>
-#include <vector>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <boost/bind.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
@@ -220,8 +221,9 @@ class ThreadMgr {
   uint64_t ReadThreadsStarted();
   uint64_t ReadThreadsRunning();
 
-  // Webpage callback; prints all threads by category
-  void ThreadPathHandler(const WebCallbackRegistry::WebRequest& args, ostringstream* output);
+  // Webpage callback; prints all threads by category.
+  void ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
+                         WebCallbackRegistry::PrerenderedWebResponse* resp);
   void PrintThreadCategoryRows(const ThreadCategory& category, ostringstream* output);
 };
 
@@ -357,7 +359,8 @@ void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
 }
 
 void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
-    ostringstream* output) {
+                                  WebCallbackRegistry::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   MutexLock l(lock_);
   vector<const ThreadCategory*> categories_to_print;
   auto category_name = req.parsed_args.find("group");

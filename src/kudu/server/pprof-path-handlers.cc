@@ -22,8 +22,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
-#include <map>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -73,23 +73,26 @@ const int kPprofDefaultSampleSecs = 30; // pprof default sample time in seconds.
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by sending the executable path.
-static void PprofCmdLineHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofCmdLineHandler(const Webserver::WebRequest& /*req*/,
+                                Webserver::PrerenderedWebResponse* resp) {
   string executable_path;
   Env* env = Env::Default();
   WARN_NOT_OK(env->GetExecutablePath(&executable_path), "Failed to get executable path");
-  *output << executable_path;
+  *resp->output << executable_path;
 }
 
 // pprof asks for the url /pprof/heap to get heap information. This should be implemented
 // by calling HeapProfileStart(filename), continue to do work, and then, some number of
 // seconds later, call GetHeapProfile() followed by HeapProfilerStop().
-static void PprofHeapHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofHeapHandler(const Webserver::WebRequest& req,
+                             Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
 #ifndef TCMALLOC_ENABLED
-  (*output) << "Heap profiling is not available without tcmalloc.";
+  *output << "Heap profiling is not available without tcmalloc.";
 #else
   // Remote (on-demand) profiling is disabled if the process is already being profiled.
   if (FLAGS_enable_process_lifetime_heap_profiling) {
-    (*output) << "Heap profiling is running for the process lifetime.";
+    *output << "Heap profiling is running for the process lifetime.";
     return;
   }
 
@@ -104,7 +107,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, ostringstream* ou
   SleepFor(MonoDelta::FromSeconds(seconds));
   const char* profile = GetHeapProfile();
   HeapProfilerStop();
-  (*output) << profile;
+  *output << profile;
   delete profile;
 #endif
 }
@@ -112,9 +115,11 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, ostringstream* ou
 // pprof asks for the url /pprof/profile?seconds=XX to get cpu-profiling information.
 // The server should respond by calling ProfilerStart(), continuing to do its work,
 // and then, XX seconds later, calling ProfilerStop().
-static void PprofCpuProfileHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofCpuProfileHandler(const Webserver::WebRequest& req,
+                                   Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
 #ifndef TCMALLOC_ENABLED
-  (*output) << "CPU profiling is not available without tcmalloc.";
+  *output << "CPU profiling is not available without tcmalloc.";
 #else
   auto it = req.parsed_args.find("seconds");
   int seconds = kPprofDefaultSampleSecs;
@@ -128,10 +133,10 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, ostringstre
   ProfilerStop();
   ifstream prof_file(tmp_prof_file_name.c_str(), std::ios::in);
   if (!prof_file.is_open()) {
-    (*output) << "Unable to open cpu profile: " << tmp_prof_file_name;
+    *output << "Unable to open cpu profile: " << tmp_prof_file_name;
     return;
   }
-  (*output) << prof_file.rdbuf();
+  *output << prof_file.rdbuf();
   prof_file.close();
 #endif
 }
@@ -139,18 +144,21 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, ostringstre
 // pprof asks for the url /pprof/growth to get heap-profiling delta (growth) information.
 // The server should respond by calling:
 // MallocExtension::instance()->GetHeapGrowthStacks(&output);
-static void PprofGrowthHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofGrowthHandler(const Webserver::WebRequest& /*req*/,
+                               Webserver::PrerenderedWebResponse* resp) {
 #ifndef TCMALLOC_ENABLED
-  (*output) << "Growth profiling is not available without tcmalloc.";
+  *resp->output << "Growth profiling is not available without tcmalloc.";
 #else
   string heap_growth_stack;
   MallocExtension::instance()->GetHeapGrowthStacks(&heap_growth_stack);
-  (*output) << heap_growth_stack;
+  *resp->output << heap_growth_stack;
 #endif
 }
 
 // Lock contention profiling
-static void PprofContentionHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofContentionHandler(const Webserver::WebRequest& req,
+                                   Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
   int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), kPprofDefaultSampleSecs);
   int64_t discarded_samples = 0;
@@ -197,11 +205,12 @@ static void PprofContentionHandler(const Webserver::WebRequest& req, ostringstre
 // <hex address><tab><function name>
 // For instance:
 // 0x08b2dabd    _Update
-static void PprofSymbolHandler(const Webserver::WebRequest& req, ostringstream* output) {
+static void PprofSymbolHandler(const Webserver::WebRequest& req,
+                               Webserver::PrerenderedWebResponse* resp) {
   if (req.request_method == "GET") {
     // Per the above comment, pprof doesn't expect to know the actual number of symbols.
     // Any non-zero value indicates that we support symbol lookup.
-    (*output) << "num_symbols: 1";
+    *resp->output << "num_symbols: 1";
     return;
   }
 
@@ -223,7 +232,7 @@ static void PprofSymbolHandler(const Webserver::WebRequest& req, ostringstream* 
     }
     char symbol_buf[1024];
     if (google::Symbolize(reinterpret_cast<void*>(addr), symbol_buf, sizeof(symbol_buf))) {
-      *output << p << "\t" << symbol_buf << std::endl;
+      *resp->output << p << "\t" << symbol_buf << std::endl;
     } else {
       missing_symbols++;
     }

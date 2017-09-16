@@ -17,10 +17,10 @@
 
 #include "kudu/server/rpcz-path-handler.h"
 
-#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 
@@ -47,7 +47,8 @@ namespace kudu {
 namespace {
 
 void RpczPathHandler(const shared_ptr<Messenger>& messenger,
-                     const Webserver::WebRequest& req, ostringstream* output) {
+                     const Webserver::WebRequest& req,
+                     Webserver::PrerenderedWebResponse* resp) {
   DumpRunningRpcsResponsePB running_rpcs;
   {
     DumpRunningRpcsRequestPB dump_req;
@@ -63,7 +64,7 @@ void RpczPathHandler(const shared_ptr<Messenger>& messenger,
     messenger->rpcz_store()->DumpPB(dump_req, &sampled_rpcs);
   }
 
-  JsonWriter writer(output, JsonWriter::PRETTY);
+  JsonWriter writer(resp->output, JsonWriter::PRETTY);
   writer.StartObject();
   writer.String("running");
   writer.Protobuf(running_rpcs);

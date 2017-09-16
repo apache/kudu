@@ -20,11 +20,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -88,6 +90,7 @@ using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
 using std::endl;
 using std::map;
+using std::ostringstream;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -141,7 +144,8 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
 }
 
 void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebRequest& req,
-                                                      std::ostringstream* output) {
+                                                      Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   bool as_text = ContainsKey(req.parsed_args, "raw");
 
   vector<scoped_refptr<TabletReplica> > replicas;
@@ -179,7 +183,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
       }
 
       if (!as_text) {
-        (*output) << Substitute(
+        *output << Substitute(
           "<tr><th>$0</th><th>$1</th><th>$2</th><th>$3</th><th>$4</th></tr>\n",
           EscapeForHtmlToString(replica->tablet_id()),
           EscapeForHtmlToString(SecureShortDebugString(inflight_tx.op_id())),
@@ -187,12 +191,12 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
           total_time_str,
           EscapeForHtmlToString(description));
       } else {
-        (*output) << "Tablet: " << replica->tablet_id() << endl;
-        (*output) << "Op ID: " << SecureShortDebugString(inflight_tx.op_id()) << endl;
-        (*output) << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
-        (*output) << "Running: " << total_time_str;
-        (*output) << description << endl;
-        (*output) << endl;
+        *output << "Tablet: " << replica->tablet_id() << endl;
+        *output << "Op ID: " << SecureShortDebugString(inflight_tx.op_id()) << endl;
+        *output << "Type: " << OperationType_Name(inflight_tx.tx_type()) << endl;
+        *output << "Running: " << total_time_str;
+        *output << description << endl;
+        *output << endl;
       }
     }
   }
@@ -211,8 +215,9 @@ string TabletLink(const string& id) {
 
 } // anonymous namespace
 
-void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
-                                                 std::ostringstream *output) {
+void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*req*/,
+                                                 Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   vector<scoped_refptr<TabletReplica>> replicas;
   tserver_->tablet_manager()->GetTabletReplicas(&replicas);
 
@@ -284,7 +289,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                                                        replica->tablet_metadata()->schema());
 
       shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
-      (*output) << Substitute(
+      *output << Substitute(
           // Table name, tablet id, partition
           "<tr><td>$0</td><td>$1</td><td>$2</td>"
           // State, on-disk size, consensus configuration, last status
@@ -332,7 +337,7 @@ bool CompareByMemberType(const RaftPeerPB& a, const RaftPeerPB& b) {
 } // anonymous namespace
 
 string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& cstate) const {
-  std::ostringstream html;
+  ostringstream html;
 
   html << "<ul>\n";
   std::vector<RaftPeerPB> sorted_peers;
@@ -361,32 +366,36 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
 
 namespace {
 
-bool GetTabletID(const Webserver::WebRequest& req, string* id, std::ostringstream* out) {
+bool GetTabletID(const Webserver::WebRequest& req,
+                 string* id,
+                 Webserver::PrerenderedWebResponse* resp) {
   if (!FindCopy(req.parsed_args, "id", id)) {
-    // TODO: webserver should give a way to return a non-200 response code
-    (*out) << "Tablet missing 'id' argument";
+    resp->status_code = HttpStatusCode::BadRequest;
+    *resp->output << "Tablet missing 'id' argument";
     return false;
   }
   return true;
 }
 
-bool GetTabletReplica(TabletServer* tserver, const Webserver::WebRequest& req,
+bool GetTabletReplica(TabletServer* tserver, const Webserver::WebRequest& /*req*/,
                       scoped_refptr<TabletReplica>* replica, const string& tablet_id,
-                      std::ostringstream* out) {
+                      Webserver::PrerenderedWebResponse* resp) {
   if (!tserver->tablet_manager()->LookupTablet(tablet_id, replica)) {
-    (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
+    resp->status_code = HttpStatusCode::NotFound;
+    *resp->output << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
     return false;
   }
   return true;
 }
 
 bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica, const string& tablet_id,
-                         std::ostringstream* out) {
+                         Webserver::PrerenderedWebResponse* resp) {
   if (replica->state() == tablet::BOOTSTRAPPING) {
-    (*out) << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
-    return false;
+    resp->status_code = HttpStatusCode::ServiceUnavailable;
+    *resp->output << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
+    return true;
   }
-  return true;
+  return false;
 }
 
 // Returns true if the tablet_id was properly specified, the
@@ -394,20 +403,20 @@ bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica, const stri
 bool LoadTablet(TabletServer* tserver,
                 const Webserver::WebRequest& req,
                 string* tablet_id, scoped_refptr<TabletReplica>* replica,
-                std::ostringstream* out) {
-  if (!GetTabletID(req, tablet_id, out)) return false;
-  if (!GetTabletReplica(tserver, req, replica, *tablet_id, out)) return false;
-  if (!TabletBootstrapping(*replica, *tablet_id, out)) return false;
-  return true;
+                Webserver::PrerenderedWebResponse* resp) {
+  return GetTabletID(req, tablet_id, resp) &&
+      GetTabletReplica(tserver, req, replica, *tablet_id, resp) &&
+      !TabletBootstrapping(*replica, *tablet_id, resp);
 }
 
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req,
-                                                std::ostringstream *output) {
+                                                Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   string tablet_id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &tablet_id, &replica, output)) return;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
 
   string table_name = replica->tablet_metadata()->table_name();
   RaftPeerPB::Role role = RaftPeerPB::UNKNOWN_ROLE;
@@ -454,10 +463,11 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
 }
 
 void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& req,
-                                                   std::ostringstream* output) {
+                                                   Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   string id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
+  if (!LoadTablet(tserver_, req, &id, &replica, resp)) return;
   shared_ptr<Tablet> tablet = replica->shared_tablet();
   if (!tablet) {
     *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
@@ -471,10 +481,11 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& 
 }
 
 void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest& req,
-                                                    std::ostringstream* output) {
+                                                    Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   string tablet_id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &tablet_id, &replica, output)) return;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
 
   *output << "<h1>Log Anchors for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>"
           << std::endl;
@@ -484,10 +495,11 @@ void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest&
 }
 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
-                                                         std::ostringstream* output) {
+                                                         Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   string id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &id, &replica, output)) return;
+  if (!LoadTablet(tserver_, req, &id, &replica, resp)) return;
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (!consensus) {
     *output << "Tablet " << EscapeForHtmlToString(id) << " not initialized";
@@ -496,8 +508,9 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
   consensus->DumpStatusHtml(*output);
 }
 
-void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
-                                               std::ostringstream* output) {
+void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
+                                               Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
   *output << "<h1>Scans</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "<thead><tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
@@ -596,9 +609,9 @@ string TabletServerPathHandlers::IteratorStatsToHtml(const Schema& projection,
   return html.str();
 }
 
-void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& req,
-                                                    std::ostringstream* output) {
-
+void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& /*req*/,
+                                                    Webserver::PrerenderedWebResponse* resp) {
+  ostringstream* output = resp->output;
   *output << "<h3>Dashboards</h3>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <thead><tr><th>Dashboard</th><th>Description</th></tr></thead>\n";
@@ -622,7 +635,8 @@ string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
 }
 
 void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
-                                                            EasyJson* output) {
+                                                            Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   MaintenanceManager* manager = tserver_->maintenance_manager();
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);

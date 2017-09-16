@@ -17,7 +17,6 @@
 #ifndef KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
 #define KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
 
-#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -27,7 +26,6 @@
 
 namespace kudu {
 
-class EasyJson;
 class Schema;
 struct IteratorStats;
 
@@ -52,23 +50,23 @@ class TabletServerPathHandlers {
 
  private:
   void HandleScansPage(const Webserver::WebRequest& req,
-                       std::ostringstream* output);
+                       Webserver::PrerenderedWebResponse* resp);
   void HandleTabletsPage(const Webserver::WebRequest& req,
-                         std::ostringstream* output);
+                         Webserver::PrerenderedWebResponse* resp);
   void HandleTabletPage(const Webserver::WebRequest& req,
-                        std::ostringstream* output);
+                        Webserver::PrerenderedWebResponse* resp);
   void HandleTransactionsPage(const Webserver::WebRequest& req,
-                              std::ostringstream* output);
+                              Webserver::PrerenderedWebResponse* resp);
   void HandleTabletSVGPage(const Webserver::WebRequest& req,
-                           std::ostringstream* output);
+                           Webserver::PrerenderedWebResponse* resp);
   void HandleLogAnchorsPage(const Webserver::WebRequest& req,
-                            std::ostringstream* output);
+                            Webserver::PrerenderedWebResponse* resp);
   void HandleConsensusStatusPage(const Webserver::WebRequest& req,
-                                 std::ostringstream* output);
+                                 Webserver::PrerenderedWebResponse* resp);
   void HandleDashboardsPage(const Webserver::WebRequest& req,
-                            std::ostringstream* output);
+                            Webserver::PrerenderedWebResponse* resp);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
-                                    EasyJson* output);
+                                    Webserver::WebResponse* resp);
   std::string ConsensusStatePBToHtml(const consensus::ConsensusStatePB& cstate) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
   std::string IteratorStatsToHtml(const Schema& projection,

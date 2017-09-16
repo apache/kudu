@@ -63,10 +63,16 @@ class Webserver : public WebCallbackRegistry {
   // to the world. Requires that the server has been Start()ed.
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
 
+  // Register a route 'path' to be rendered via template.
+  // The appropriate template to use is determined by 'path'.
+  // If 'is_styled' is true, the page will be styled and include a header and footer.
+  // If 'is_on_nav_bar' is true, a link to the page will be placed on the navbar
+  // in the header of styled pages. The link text is given by 'alias'.
   void RegisterPathHandler(const std::string& path, const std::string& alias,
                            const PathHandlerCallback& callback,
                            bool is_styled, bool is_on_nav_bar) override;
 
+  // Register a route 'path'. See the RegisterPathHandler for details.
   void RegisterPrerenderedPathHandler(const std::string& path, const std::string& alias,
                                       const PrerenderedPathHandlerCallback& callback,
                                       bool is_styled,
@@ -77,6 +83,7 @@ class Webserver : public WebCallbackRegistry {
 
   // True if serving all traffic over SSL, false otherwise
   bool IsSecure() const;
+
  private:
   // Container class for a list of path handler callbacks for a single URL.
   class PathHandler {
@@ -144,7 +151,7 @@ class Webserver : public WebCallbackRegistry {
                                       const char* message);
 
   // Registered to handle "/", and prints a list of available URIs
-  void RootHandler(const WebRequest& args, EasyJson* output);
+  void RootHandler(const WebRequest& args, WebResponse* resp);
 
   // Builds a map of argument name to argument value from a typical URL argument
   // string (that is, "key1=value1&key2=value2.."). If no value is given for a

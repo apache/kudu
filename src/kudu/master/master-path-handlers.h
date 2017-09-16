@@ -17,7 +17,6 @@
 #ifndef KUDU_MASTER_MASTER_PATH_HANDLERS_H
 #define KUDU_MASTER_MASTER_PATH_HANDLERS_H
 
-#include <iosfwd>
 #include <string>
 #include <utility>
 
@@ -47,15 +46,15 @@ class MasterPathHandlers {
 
  private:
   void HandleTabletServers(const Webserver::WebRequest& req,
-                           std::ostringstream* output);
+                           Webserver::PrerenderedWebResponse* resp);
   void HandleCatalogManager(const Webserver::WebRequest& req,
-                            EasyJson* output);
+                            Webserver::WebResponse* resp);
   void HandleTablePage(const Webserver::WebRequest& req,
-                       EasyJson* output);
+                       Webserver::WebResponse* resp);
   void HandleMasters(const Webserver::WebRequest& req,
-                     std::ostringstream* output);
+                     Webserver::PrerenderedWebResponse* resp);
   void HandleDumpEntities(const Webserver::WebRequest& req,
-                          std::ostringstream* output);
+                          Webserver::PrerenderedWebResponse* resp);
 
   // Returns a pair (text, target) given a tserver's TSDescriptor and a tablet id.
   // - text is the http host and port for the tserver, if available, or the tserver's uuid.
