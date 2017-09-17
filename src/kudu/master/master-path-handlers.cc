@@ -86,63 +86,53 @@ MasterPathHandlers::~MasterPathHandlers() {
 }
 
 void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*/,
-                                             Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
-  vector<std::shared_ptr<TSDescriptor> > descs;
+                                             Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
+  vector<std::shared_ptr<TSDescriptor>> descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 
-  *output << "<h1>Tablet Servers</h1>\n";
-  *output << Substitute("<p>There are $0 registered tablet servers.</p>", descs.size());
+  (*output)["num_ts"] = std::to_string(descs.size());
 
+  // In mustache, when conditionally rendering a section of the template based
+  // on a key, the value becomes the context. In the subcontext, searches for
+  // keys used to display a value (e.g. {{my_key}}) recurse into the parent
+  // context-- but not when used to define a subsection (e.g. {{#my_list}}.
+  // Thus, we use a negative test {{^has_no_live_ts}} to decide if we
+  // should render the live and dead tablet server tables.
+  bool has_no_live_ts = true;
+  bool has_no_dead_ts = true;
+  output->Set("live_tservers", EasyJson::kArray);
+  output->Set("dead_tservers", EasyJson::kArray);
   map<string, array<int, 2>> version_counts;
-  vector<string> live_tserver_rows;
-  vector<string> dead_tserver_rows;
   for (const std::shared_ptr<TSDescriptor>& desc : descs) {
-    const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
+    string ts_key = desc->PresumedDead() ? "dead_tservers" : "live_tservers";
+    EasyJson ts_json = (*output)[ts_key].PushBack(EasyJson::kObject);
+
     ServerRegistrationPB reg;
     desc->GetRegistration(&reg);
-
-    string row = Substitute("<tr><th>$0</th><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
-                            RegistrationToHtml(reg, desc->permanent_uuid()),
-                            time_since_hb,
-                            EscapeForHtmlToString(pb_util::SecureShortDebugString(reg)));
-
-    if (desc->PresumedDead()) {
-      version_counts[reg.software_version()][1]++;
-      dead_tserver_rows.push_back(row);
-    } else {
-      version_counts[reg.software_version()][0]++;
-      live_tserver_rows.push_back(row);
+    ts_json["uuid"] = desc->permanent_uuid();
+    if (!reg.http_addresses().empty()) {
+      ts_json["target"] = Substitute("$0://$1:$2/",
+                                     reg.https_enabled() ? "https" : "http",
+                                     reg.http_addresses(0).host(),
+                                     reg.http_addresses(0).port());
     }
-
+    ts_json["time_since_hb"] = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
+    ts_json["registration"] = pb_util::SecureShortDebugString(reg);
+    version_counts[reg.software_version()][desc->PresumedDead() ? 1 : 0]++;
+    has_no_live_ts &= desc->PresumedDead();
+    has_no_dead_ts &= !desc->PresumedDead();
   }
+  (*output)["has_no_live_ts"] = has_no_live_ts;
+  (*output)["has_no_dead_ts"] = has_no_dead_ts;
 
-  *output << "<h3>Version Summary</h3>";
-  *output << "<table class='table table-striped'>\n";
-  *output << "<thead><tr><th>Version</th><th>Count (Live)</th><th>Count (Dead)</th></tr></thead>\n";
-  *output << "<tbody>\n";
+  output->Set("version_counts", EasyJson::kArray);
   for (const auto& entry : version_counts) {
-    *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
-                          entry.first, entry.second[0], entry.second[1]);
+    EasyJson version_count_json = (*output)["version_counts"].PushBack(EasyJson::kObject);
+    version_count_json["version"] = entry.first;
+    version_count_json["live"] = Substitute("$0", entry.second[0]);
+    version_count_json["dead"] = Substitute("$0", entry.second[1]);
   }
-  *output << "</tbody></table>\n";
-
-  *output << "<h3>" << "Registrations" << "</h3>\n";
-  auto generate_table = [](const vector<string>& rows,
-                           const string& header,
-                           std::ostream* output) {
-    if (!rows.empty()) {
-      *output << "<h4>" << header << "</h4>\n";
-      *output << "<table class='table table-striped'>\n";
-      *output << "<thead><tr><th>UUID</th><th>Time since heartbeat</th>"
-          "<th>Registration</th></tr></thead>\n";
-      *output << "<tbody>\n";
-      *output << JoinStrings(rows, "\n");
-      *output << "</tbody></table>\n";
-    }
-  };
-  generate_table(live_tserver_rows, "Live Tablet Servers", output);
-  generate_table(dead_tserver_rows, "Dead Tablet Servers", output);
 }
 
 namespace {
@@ -387,40 +377,35 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
-                                       Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+                                       Webserver::WebResponse* resp) {
+  EasyJson* output = resp->output;
   vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
   if (!s.ok()) {
-    s = s.CloneAndPrepend("Unable to list Masters");
-    LOG(WARNING) << s.ToString();
-    *output << "<h1>" << s.ToString() << "</h1>\n";
+    string msg = s.CloneAndPrepend("Unable to list Masters").ToString();
+    LOG(WARNING) << msg;
+    (*output)["error"] = msg;
     return;
   }
-  *output << "<h1> Masters </h1>\n";
-  *output <<  "<table class='table table-striped'>\n";
-  *output <<  "  <thead><tr><th>UUID</th><th>Role</th><th>Registration</th></tr></thead>\n";
-  *output << "<tbody>\n";
+  output->Set("masters", EasyJson::kArray);
   for (const ServerEntryPB& master : masters) {
+    EasyJson master_json = (*output)["masters"].PushBack(EasyJson::kObject);
     if (master.has_error()) {
       Status error = StatusFromPB(master.error());
-      *output << Substitute("  <tr><td colspan=2><font color='red'><b>$0</b></font></td></tr>\n",
-                            EscapeForHtmlToString(error.ToString()));
+      master_json["error"] = error.ToString();
       continue;
     }
-    string uuid_text = RegistrationToHtml(
-        master.registration(),
-        master.instance_id().permanent_uuid());
-    string reg_str = EscapeForHtmlToString(
-        pb_util::SecureShortDebugString(master.registration()));
-    *output << Substitute(
-        "  <tr><td>$0</td><td>$1</td><td><pre><code>$2</code></pre></td></tr>\n",
-        uuid_text,
-        master.has_role() ? RaftPeerPB_Role_Name(master.role()) : "N/A",
-        reg_str);
+    const ServerRegistrationPB& reg = master.registration();
+    master_json["uuid"] = master.instance_id().permanent_uuid();
+    if (!reg.http_addresses().empty()) {
+      master_json["target"] = Substitute("$0://$1:$2/",
+                                         reg.https_enabled() ? "https" : "http",
+                                         reg.http_addresses(0).host(),
+                                         reg.http_addresses(0).port());
+    }
+    master_json["role"] = master.has_role() ? RaftPeerPB_Role_Name(master.role()) : "N/A";
+    master_json["registration"] = pb_util::SecureShortDebugString(master.registration());
   }
-
-  *output << "</tbody></table>";
 }
 
 namespace {
@@ -607,7 +592,7 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
 Status MasterPathHandlers::Register(Webserver* server) {
   bool is_styled = true;
   bool is_on_nav_bar = true;
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
       "/tablet-servers", "Tablet Servers",
       boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
       is_styled, is_on_nav_bar);
@@ -619,7 +604,7 @@ Status MasterPathHandlers::Register(Webserver* server) {
       "/table", "",
       boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
       is_styled, false);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
       "/masters", "Masters",
       boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
       is_styled, is_on_nav_bar);
@@ -644,19 +629,6 @@ pair<string, string> MasterPathHandlers::TSDescToLinkPair(const TSDescriptor& de
                              reg.http_addresses(0).port(),
                              tablet_id);
   return std::make_pair(std::move(text), std::move(target));
-}
-
-string MasterPathHandlers::RegistrationToHtml(
-    const ServerRegistrationPB& reg,
-    const std::string& link_text) const {
-  string link_html = EscapeForHtmlToString(link_text);
-  if (reg.http_addresses().size() > 0) {
-    link_html = Substitute("<a href=\"$0://$1:$2/\">$3</a>",
-                           reg.https_enabled() ? "https" : "http",
-                           reg.http_addresses(0).host(),
-                           reg.http_addresses(0).port(), link_html);
-  }
-  return link_html;
 }
 
 string MasterPathHandlers::MasterAddrsToCsv() const {

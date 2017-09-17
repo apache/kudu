@@ -26,7 +26,6 @@
 
 namespace kudu {
 class EasyJson;
-class ServerRegistrationPB;
 
 namespace master {
 
@@ -46,13 +45,13 @@ class MasterPathHandlers {
 
  private:
   void HandleTabletServers(const Webserver::WebRequest& req,
-                           Webserver::PrerenderedWebResponse* resp);
+                           Webserver::WebResponse* resp);
   void HandleCatalogManager(const Webserver::WebRequest& req,
                             Webserver::WebResponse* resp);
   void HandleTablePage(const Webserver::WebRequest& req,
                        Webserver::WebResponse* resp);
   void HandleMasters(const Webserver::WebRequest& req,
-                     Webserver::PrerenderedWebResponse* resp);
+                     Webserver::WebResponse* resp);
   void HandleDumpEntities(const Webserver::WebRequest& req,
                           Webserver::PrerenderedWebResponse* resp);
 
@@ -62,12 +61,6 @@ class MasterPathHandlers {
   //   or an empty string if no http address is available for the tserver.
   std::pair<std::string, std::string> TSDescToLinkPair(const TSDescriptor& desc,
                                                        const std::string& tablet_id) const;
-
-  // Convert the specified server registration to HTML, adding a link
-  // to the server's own web server (if specified in 'reg') with
-  // anchor text 'link_text'.
-  std::string RegistrationToHtml(const ServerRegistrationPB& reg,
-                                 const std::string& link_text) const;
 
   // Return a CSV of master addresses suitable for display.
   std::string MasterAddrsToCsv() const;

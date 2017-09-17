@@ -16,34 +16,30 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 }}
-<h1>Tables</h1>
 {{#error}}
   <div class="text-error">{{.}}</div>
 {{/error}}
-{{#redirect_error}}
-  <div class="text-error">{{.}}</div>
-{{/redirect_error}}
-{{#leader_redirect}}
-  <div>You can find this page on the <a href="{{{.}}}">leader master's web UI</a>.</div>
-{{/leader_redirect}}
 {{^error}}
-There are {{num_tables}} tables.
-<table class="table table-striped">
-  <thead><tr>
-    <th>Table Name</th>
-    <th>Table Id</th>
-    <th>State</th>
-    <th>State Message</th>
-  </tr></thead>
-  <tbody>
-   {{#tables}}
-    <tr>
-      <th>{{name}}</th>
-      <td><a href="/table?id={{id}}">{{id}}</a></td>
-      <td>{{state}}</td>
-      <td>{{message}}</td>
-    </tr>
-   {{/tables}}
-  </tbody>
-</table>
+  <h2>Masters</h2>
+  <table class='table table-striped'>
+    <thead><tr>
+      <th>UUID</th>
+      <th>Role</th>
+      <th>Registration</th>
+    </tr></thead>
+    <tbody>
+    {{#masters}}
+      <tr>
+        {{#error}}
+          <td colspan=2><b style="color:red">{{error}}</b></td>
+        {{/error}}
+        {{^error}}
+          <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
+          <td>{{role}}</td>
+          <td><pre><code>{{registration}}</code></pre></td>
+        {{/error}}
+      </tr>
+    {{/masters}}
+    </tbody>
+  </table>
 {{/error}}
