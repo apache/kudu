@@ -18,6 +18,7 @@
 #include "kudu/tools/tool_action.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <fstream>  // IWYU pragma: keep
 #include <iostream>
 #include <memory>
@@ -37,7 +38,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -336,7 +336,7 @@ Status ChangeLeader(const client::sp::shared_ptr<KuduClient>& client, const stri
   ConsensusStatePB cstate;
   RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, old_leader_uuid,
                                   client->default_admin_operation_timeout(), &cstate));
-  int64 current_term = -1;
+  int64_t current_term = -1;
   MonoTime deadline = MonoTime::Now() + timeout;
 
   while (MonoTime::Now() < deadline) {

@@ -46,7 +46,6 @@
 #include "kudu/util/memory/overwrite.h"
 #include "kudu/util/mutex.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/singleton.h"
@@ -883,11 +882,11 @@ class GuaranteeMemory : public BufferAllocator {
   }
 
   virtual bool ReallocateInternal(size_t requested,
-                                  size_t minimal,
+                                  size_t /* minimal */,
                                   Buffer* buffer,
                                   BufferAllocator* originator) OVERRIDE {
-    int64 additional_memory = requested - (buffer != NULL ? buffer->size() : 0);
-    return additional_memory <= static_cast<int64>(Available())
+    int64_t additional_memory = requested - (buffer != NULL ? buffer->size() : 0);
+    return additional_memory <= static_cast<int64_t>(Available())
         && DelegateReallocate(&limit_, requested, requested,
                               buffer, originator);
   }

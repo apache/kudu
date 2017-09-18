@@ -43,7 +43,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -160,7 +159,7 @@ class ThreadMgr {
     thread_categories_.clear();
   }
 
-  static void SetThreadName(const std::string& name, int64 tid);
+  static void SetThreadName(const std::string& name, int64_t tid);
 
   Status StartInstrumentation(const scoped_refptr<MetricEntity>& metrics, WebCallbackRegistry* web);
 
@@ -226,7 +225,7 @@ class ThreadMgr {
   void PrintThreadCategoryRows(const ThreadCategory& category, ostringstream* output);
 };
 
-void ThreadMgr::SetThreadName(const string& name, int64 tid) {
+void ThreadMgr::SetThreadName(const string& name, int64_t tid) {
   // On linux we can get the thread names to show up in the debugger by setting
   // the process name for the LWP.  We don't want to do this for the main
   // thread because that would rename the process, causing tools like killall

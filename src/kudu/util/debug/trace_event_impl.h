@@ -20,11 +20,10 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
 
 // Older style trace macros with explicit id and extra data
@@ -83,9 +82,9 @@ class ConvertableToTraceFormat : public kudu::RefCountedThreadSafe<ConvertableTo
 };
 
 struct TraceEventHandle {
-  uint32 chunk_seq;
-  uint16 chunk_index;
-  uint16 event_index;
+  uint32_t chunk_seq;
+  uint16_t chunk_index;
+  uint16_t event_index;
 };
 
 const int kTraceMaxNumArgs = 2;
@@ -185,16 +184,16 @@ class BASE_EXPORT TraceEvent {
 // TraceBufferChunk is the basic unit of TraceBuffer.
 class BASE_EXPORT TraceBufferChunk {
  public:
-  TraceBufferChunk(uint32 seq)
+  explicit TraceBufferChunk(uint32_t seq)
       : next_free_(0),
         seq_(seq) {
   }
 
-  void Reset(uint32 new_seq);
+  void Reset(uint32_t new_seq);
   TraceEvent* AddTraceEvent(size_t* event_index);
   bool IsFull() const { return next_free_ == kTraceBufferChunkSize; }
 
-  uint32 seq() const { return seq_; }
+  uint32_t seq() const { return seq_; }
   size_t capacity() const { return kTraceBufferChunkSize; }
   size_t size() const { return next_free_; }
 
@@ -214,7 +213,7 @@ class BASE_EXPORT TraceBufferChunk {
  private:
   size_t next_free_;
   TraceEvent chunk_[kTraceBufferChunkSize];
-  uint32 seq_;
+  uint32_t seq_;
 };
 
 // TraceBuffer holds the events as they are collected.

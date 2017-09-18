@@ -329,7 +329,7 @@ Status FileCacheStressTest<RWFile>::WriteRandomChunk(
   uint64_t file_size;
   RETURN_NOT_OK(file->Size(&file_size));
   uint64_t off = file_size > 0 ? rand->Uniform(file_size) : 0;
-  uint8 buf[64];
+  uint8_t buf[64];
   RETURN_NOT_OK(file->Write(off, GenerateRandomChunk(buf, sizeof(buf), rand)));
   (*metrics)[BaseName(file->filename())]["write"]++;
   return Status::OK();

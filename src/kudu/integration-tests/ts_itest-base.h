@@ -405,7 +405,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, consensus::RECEIVED_OPID,
                                        MonoDelta::FromSeconds(10), &op_ids));
 
-    int64 max_index = 0;
+    int64_t max_index = 0;
     int max_replica_index = -1;
     for (int i = 0; i < op_ids.size(); i++) {
       if (op_ids[i].index() > max_index) {

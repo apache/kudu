@@ -226,8 +226,8 @@ class GenericCalculatorService : public ServiceIf {
     LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
 
-    uint32 pattern = req.pattern();
-    uint32 num_repetitions = req.num_repetitions();
+    uint32_t pattern = req.pattern();
+    uint32_t num_repetitions = req.num_repetitions();
     Slice sidecar;
     CHECK_OK(incoming->GetInboundSidecar(req.sidecar_idx(), &sidecar));
     CHECK_EQ(sidecar.size(), sizeof(uint32) * num_repetitions);

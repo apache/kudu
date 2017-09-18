@@ -22,7 +22,6 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
@@ -59,8 +58,8 @@ class BloomKeyProbe {
 
     // Use the top and bottom halves of the 64-bit hash
     // as the two independent hash functions for mixing.
-    h_1_ = static_cast<uint32>(h);
-    h_2_ = static_cast<uint32>(h >> 32);
+    h_1_ = static_cast<uint32_t>(h);
+    h_2_ = static_cast<uint32_t>(h >> 32);
   }
 
   const Slice &key() const { return key_; }

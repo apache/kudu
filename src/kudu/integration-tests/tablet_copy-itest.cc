@@ -50,7 +50,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -1587,8 +1586,8 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
       kTimeout));
 
   // Check that the final bytes fetched is equal to the final bytes sent, and both are positive.
-  int64 bytes_sent = TabletCopyBytesSent(cluster_->tablet_server(leader_index));
-  int64 bytes_fetched = TabletCopyBytesFetched(cluster_->tablet_server(follower_index));
+  int64_t bytes_sent = TabletCopyBytesSent(cluster_->tablet_server(leader_index));
+  int64_t bytes_fetched = TabletCopyBytesFetched(cluster_->tablet_server(follower_index));
   ASSERT_GT(bytes_sent, 0);
   ASSERT_EQ(bytes_sent, bytes_fetched);
 

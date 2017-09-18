@@ -26,7 +26,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
@@ -231,7 +230,7 @@ bool ContentionStacks::CollectSample(uint64_t* iterator, StackTrace* s, int64_t*
 }
 
 
-void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
+void SubmitSpinLockProfileData(const void *contendedlock, int64_t wait_cycles) {
   TRACE_COUNTER_INCREMENT("spinlock_wait_cycles", wait_cycles);
   bool profiling_enabled = base::subtle::Acquire_Load(&g_profiling_enabled);
   bool long_wait_time = wait_cycles > FLAGS_lock_contention_trace_threshold_cycles;
@@ -332,7 +331,7 @@ void StopSynchronizationProfiling() {
 // The hook expected by gutil is in the gutil namespace. Simply forward into the
 // kudu namespace so we don't need to qualify everything.
 namespace gutil {
-void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
+void SubmitSpinLockProfileData(const void *contendedlock, int64_t wait_cycles) {
   kudu::SubmitSpinLockProfileData(contendedlock, wait_cycles);
 }
 } // namespace gutil
@@ -343,7 +342,7 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
 // we risk a deadlock. So, this implementation just does the bare minimum to expose
 // tcmalloc contention.
 namespace base {
-void SubmitSpinLockProfileData(const void* contendedlock, int64 wait_cycles) {
+void SubmitSpinLockProfileData(const void* /* contendedlock */, int64_t wait_cycles) {
 #if !defined(__APPLE__)
   auto t = kudu::Trace::CurrentTrace();
   if (t) {

@@ -32,7 +32,6 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -58,7 +57,7 @@ class RowSetMetadata;
 typedef std::vector<std::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::unordered_set<int64_t> RowSetMetadataIds;
 
-extern const int64 kNoDurableMemStore;
+extern const int64_t kNoDurableMemStore;
 
 // Manages the "blocks tracking" for the specified tablet.
 //

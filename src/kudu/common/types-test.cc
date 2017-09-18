@@ -26,7 +26,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
@@ -47,7 +46,7 @@ TEST_F(TestTypes, TestTimestampPrinting) {
   const TypeInfo* info = GetTypeInfo(UNIXTIME_MICROS);
 
   // Test the minimum value
-  int64 time;
+  int64_t time;
   info->CopyMinValue(&time);
   string result;
   info->AppendDebugStringForValue(&time, &result);
@@ -75,7 +74,7 @@ TEST_F(TestTypes, TestTimestampPrinting) {
   result = "";
 
   // Test the maximum value.
-  time = MathLimits<int64>::kMax;
+  time = MathLimits<int64_t>::kMax;
   info->AppendDebugStringForValue(&time, &result);
   ASSERT_EQ("294247-01-10T04:00:54.775807Z", result);
   result = "";

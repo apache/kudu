@@ -26,7 +26,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/scan_spec.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
@@ -175,7 +174,7 @@ class ScanConfiguration {
   ScanSpec spec_;
 
   bool has_batch_size_bytes_;
-  uint32 batch_size_bytes_;
+  uint32_t batch_size_bytes_;
 
   KuduClient::ReplicaSelection selection_;
 

@@ -35,7 +35,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -89,7 +88,7 @@ Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stat
     return Status::IOError("Unrecognised /proc format");
   }
 
-  int64 tmp;
+  int64_t tmp;
   if (safe_strto64(splits[kUserTicks], &tmp)) {
     stats->user_ns = tmp * (1e9 / kTicksPerSec);
   }

@@ -16,6 +16,7 @@
 // under the License.
 
 #include <atomic>
+#include <cstdint>
 #include <ctime>
 #include <ostream>
 #include <string>
@@ -26,7 +27,6 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/barrier.h"
@@ -117,7 +117,7 @@ class CountingLogger : public google::base::Logger {
     flush_count_++;
   }
 
-  uint32 LogSize() override {
+  uint32_t LogSize() override {
     return 0;
   }
 

@@ -33,7 +33,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest-spi.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -64,7 +63,7 @@ namespace kudu {
 const char* kInvalidPath = "/dev/invalid-path-for-kudu-tests";
 static const char* const kSlowTestsEnvVariable = "KUDU_ALLOW_SLOW_TESTS";
 
-static const uint64 kTestBeganAtMicros = Env::Default()->NowMicros();
+static const uint64_t kTestBeganAtMicros = Env::Default()->NowMicros();
 
 // Global which production code can check to see if it is running
 // in a GTest environment (assuming the test binary links in this module,

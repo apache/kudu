@@ -286,7 +286,7 @@ class TraceBufferRingBuffer : public TraceBuffer {
   size_t queue_tail_;
 
   size_t current_iteration_index_;
-  uint32 current_chunk_seq_;
+  uint32_t current_chunk_seq_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceBufferRingBuffer);
 };
@@ -312,7 +312,7 @@ class TraceBufferVector : public TraceBuffer {
     ++in_flight_chunk_count_;
     // + 1 because zero chunk_seq is not allowed.
     return gscoped_ptr<TraceBufferChunk>(
-        new TraceBufferChunk(static_cast<uint32>(*index) + 1));
+        new TraceBufferChunk(static_cast<uint32_t>(*index) + 1));
   }
 
   virtual void ReturnChunk(size_t index,
@@ -426,7 +426,7 @@ TraceLog::ThreadLocalEventBuffer* TraceLog::PerThreadInfo::AtomicTakeBuffer() {
       0));
 }
 
-void TraceBufferChunk::Reset(uint32 new_seq) {
+void TraceBufferChunk::Reset(uint32_t new_seq) {
   for (size_t i = 0; i < next_free_; ++i)
     chunk_[i].Reset();
   next_free_ = 0;
@@ -476,14 +476,14 @@ class TraceLog::OptionalAutoLock {
 
 // Use this function instead of TraceEventHandle constructor to keep the
 // overhead of ScopedTracer (trace_event.h) constructor minimum.
-void MakeHandle(uint32 chunk_seq, size_t chunk_index, size_t event_index,
+void MakeHandle(uint32_t chunk_seq, size_t chunk_index, size_t event_index,
                 TraceEventHandle* handle) {
   DCHECK(chunk_seq);
   DCHECK(chunk_index < (1u << 16));
   DCHECK(event_index < (1u << 16));
   handle->chunk_seq = chunk_seq;
-  handle->chunk_index = static_cast<uint16>(chunk_index);
-  handle->event_index = static_cast<uint16>(event_index);
+  handle->chunk_index = static_cast<uint16_t>(chunk_index);
+  handle->event_index = static_cast<uint16_t>(event_index);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -697,10 +697,10 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
       *out += value.as_bool ? "true" : "false";
       break;
     case TRACE_VALUE_TYPE_UINT:
-      SubstituteAndAppend(out, "$0", static_cast<uint64>(value.as_uint));
+      SubstituteAndAppend(out, "$0", static_cast<uint64_t>(value.as_uint));
       break;
     case TRACE_VALUE_TYPE_INT:
-      SubstituteAndAppend(out, "$0", static_cast<int64>(value.as_int));
+      SubstituteAndAppend(out, "$0", static_cast<int64_t>(value.as_int));
       break;
     case TRACE_VALUE_TYPE_DOUBLE: {
       // FIXME: base/json/json_writer.cc is using the same code,
@@ -740,7 +740,7 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
     case TRACE_VALUE_TYPE_POINTER:
       // JSON only supports double and int numbers.
       // So as not to lose bits from a 64-bit pointer, output as a hex string.
-      StringAppendF(out, "\"0x%" PRIx64 "\"", static_cast<uint64>(
+      StringAppendF(out, "\"0x%" PRIx64 "\"", static_cast<uint64_t>(
                                      reinterpret_cast<intptr_t>(
                                      value.as_pointer)));
       break;
@@ -757,7 +757,7 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
 }
 
 void TraceEvent::AppendAsJSON(std::string* out) const {
-  int64 time_int64 = timestamp_;
+  int64_t time_int64 = timestamp_;
   int process_id = TraceLog::GetInstance()->process_id();
   // Category group checked at category creation time.
   DCHECK(!strchr(name_, '"'));
@@ -787,11 +787,11 @@ void TraceEvent::AppendAsJSON(std::string* out) const {
   *out += "}";
 
   if (phase_ == TRACE_EVENT_PHASE_COMPLETE) {
-    int64 duration = duration_;
+    int64_t duration = duration_;
     if (duration != -1)
       StringAppendF(out, ",\"dur\":%" PRId64, duration);
     if (thread_timestamp_ >= 0) {
-      int64 thread_duration = thread_duration_;
+      int64_t thread_duration = thread_duration_;
       if (thread_duration != -1)
         StringAppendF(out, ",\"tdur\":%" PRId64, thread_duration);
     }
@@ -799,14 +799,14 @@ void TraceEvent::AppendAsJSON(std::string* out) const {
 
   // Output tts if thread_timestamp is valid.
   if (thread_timestamp_ >= 0) {
-    int64 thread_time_int64 = thread_timestamp_;
+    int64_t thread_time_int64 = thread_timestamp_;
     StringAppendF(out, ",\"tts\":%" PRId64, thread_time_int64);
   }
 
   // If id_ is set, print it out as a hex string so we don't loose any
   // bits (it might be a 64-bit pointer).
   if (flags_ & TRACE_EVENT_FLAG_HAS_ID)
-    StringAppendF(out, ",\"id\":\"0x%" PRIx64 "\"", static_cast<uint64>(id_));
+    StringAppendF(out, ",\"id\":\"0x%" PRIx64 "\"", static_cast<uint64_t>(id_));
 
   // Instant events also output their scope.
   if (phase_ == TRACE_EVENT_PHASE_INSTANT) {

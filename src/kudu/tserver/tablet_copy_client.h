@@ -25,7 +25,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
@@ -66,7 +65,7 @@ struct TabletCopyClientMetrics {
   explicit TabletCopyClientMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   scoped_refptr<Counter> bytes_fetched;
-  scoped_refptr<AtomicGauge<int32>> open_client_sessions;
+  scoped_refptr<AtomicGauge<int32_t>> open_client_sessions;
 };
 
 // Client class for using tablet copy to copy a tablet from another host.

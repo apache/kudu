@@ -61,7 +61,7 @@ class SequentialFileFileInputStream : public google::protobuf::io::ZeroCopyInput
     total_read_ -= count;
   }
 
-  int64 ByteCount() const OVERRIDE {
+  int64_t ByteCount() const OVERRIDE {
     return total_read_;
   }
 
@@ -113,7 +113,7 @@ class WritableFileOutputStream : public google::protobuf::io::ZeroCopyOutputStre
     buffer_offset_ -= count;
   }
 
-  int64 ByteCount() const OVERRIDE {
+  int64_t ByteCount() const OVERRIDE {
     return flushed_ + buffer_offset_;
   }
 

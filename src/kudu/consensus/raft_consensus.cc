@@ -45,7 +45,6 @@
 #include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
@@ -1668,9 +1667,9 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   int64_t current_term;
   RaftConfigPB committed_config;
   int64_t all_replicated_index;
-  int64 last_committed_index;
+  int64_t last_committed_index;
   OpId preceding_opid;
-  uint64 msg_timestamp;
+  uint64_t msg_timestamp;
   {
     // Take the snapshot of the replica state and queue state so that
     // we can stick them in the consensus update request later.
@@ -1734,7 +1733,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
                                               SecureShortDebugString(new_config)));
   }
   new_config.set_unsafe_config_change(true);
-  int64 replicate_opid_index = preceding_opid.index() + 1;
+  int64_t replicate_opid_index = preceding_opid.index() + 1;
   new_config.set_opid_index(replicate_opid_index);
 
   // Sanity check the new config. 'type' is irrelevant here.
@@ -1756,7 +1755,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   // This makes this request appear to come from a new leader that
   // the local replica doesn't know about yet. If the local replica
   // happens to be the leader, this will cause it to step down.
-  int64 new_term = current_term + 1;
+  int64_t new_term = current_term + 1;
   consensus_req.set_caller_term(new_term);
   consensus_req.mutable_preceding_id()->CopyFrom(preceding_opid);
   consensus_req.set_committed_index(last_committed_index);

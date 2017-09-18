@@ -30,7 +30,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -57,7 +56,7 @@ struct TabletCopySourceMetrics {
   explicit TabletCopySourceMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   scoped_refptr<Counter> bytes_sent;
-  scoped_refptr<AtomicGauge<int32>> open_source_sessions;
+  scoped_refptr<AtomicGauge<int32_t>> open_source_sessions;
 };
 
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.

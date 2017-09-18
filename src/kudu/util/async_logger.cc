@@ -106,7 +106,7 @@ void AsyncLogger::Flush() {
   }
 }
 
-uint32 AsyncLogger::LogSize() {
+uint32_t AsyncLogger::LogSize() {
   return wrapped_->LogSize();
 }
 

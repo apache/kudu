@@ -7,7 +7,7 @@
 
 #include <cassert>
 #include <cstddef>
-#include <utility>
+#include <utility>  // IWYU pragma: keep
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"

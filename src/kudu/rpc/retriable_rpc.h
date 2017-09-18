@@ -127,7 +127,7 @@ class RetriableRpc : public Rpc {
   internal::SequenceNumber sequence_number_;
 
   // The number of times this RPC has been attempted
-  int32 num_attempts_;
+  int32_t num_attempts_;
 
   // Keeps track of the replica the RPCs were sent to.
   // TODO Remove this and pass the used replica around. For now we need to keep this as

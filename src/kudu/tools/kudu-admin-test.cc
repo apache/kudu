@@ -44,7 +44,6 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -1061,7 +1060,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
 
 Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
                             const string& tablet_id,
-                            int64 *current_term) {
+                            int64_t *current_term) {
   ConsensusStatePB cstate;
   for (auto& ts : tservers) {
     RETURN_NOT_OK(
@@ -1091,7 +1090,7 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
                                      MonoDelta::FromSeconds(10)));
   }
 
-  int64 current_term;
+  int64_t current_term;
   ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
                                  &current_term));
 
@@ -1109,7 +1108,7 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
       Status::IllegalState("").CodeAsString()) != string::npos;
   ASSERT_TRUE(s.ok() || not_currently_leader);
   if (s.ok()) {
-    int64 new_term;
+    int64_t new_term;
     ASSERT_EVENTUALLY([&]() {
         ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
                                        &new_term));
@@ -1133,7 +1132,7 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
                                      MonoDelta::FromSeconds(10)));
   }
 
-  int64 current_term;
+  int64_t current_term;
   ASSERT_TRUE(GetTermFromConsensus(tservers, tablet_id_,
                                    &current_term).IsNotFound());
   string stdout;

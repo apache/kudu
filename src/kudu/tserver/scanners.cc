@@ -28,7 +28,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/hash/string_hash.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -118,7 +117,7 @@ ScannerManager::ScannerMapStripe& ScannerManager::GetStripeByScannerId(const str
 
 void ScannerManager::NewScanner(const scoped_refptr<TabletReplica>& tablet_replica,
                                 const std::string& requestor_string,
-                                uint64 row_format_flags,
+                                uint64_t row_format_flags,
                                 SharedScanner* scanner) {
   // Keep trying to generate a unique ID until we get one.
   bool success = false;

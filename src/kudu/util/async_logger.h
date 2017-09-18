@@ -28,7 +28,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
 
@@ -95,7 +94,7 @@ class AsyncLogger : public google::base::Logger {
   // Get the current LOG file size.
   // The returned value is approximate since some
   // logged data may not have been flushed to disk yet.
-  uint32 LogSize() override;
+  uint32_t LogSize() override;
 
   // Return a count of how many times an application thread was
   // blocked due to the buffers being full and the writer thread

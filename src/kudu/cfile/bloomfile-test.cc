@@ -32,7 +32,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/slice.h"
@@ -63,7 +62,7 @@ class BloomFileTest : public BloomFileTestBase {
 
     int positive_count = 0;
     // Check that the FP rate for keys we didn't insert is what we expect.
-    for (uint64 i = 0; i < FLAGS_n_keys; i++) {
+    for (uint64_t i = 0; i < FLAGS_n_keys; i++) {
       uint64_t key = random();
       Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 

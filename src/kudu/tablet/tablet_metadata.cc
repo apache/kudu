@@ -72,7 +72,7 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
-const int64 kNoDurableMemStore = -1;
+const int64_t kNoDurableMemStore = -1;
 
 // ============================================================================
 //  Tablet Metadata

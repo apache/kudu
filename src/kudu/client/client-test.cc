@@ -3024,7 +3024,7 @@ TEST_F(ClientTest, TestAutoFlushBackgroundPreFlush) {
     // For details on this behavior please see the diagram in the body of the
     // KuduSession::Data::ApplyWriteOp() method.
     EXPECT_GT(kFlushIntervalMs / 10,
-              static_cast<int32>(sw.elapsed().wall_millis()));
+              static_cast<int32_t>(sw.elapsed().wall_millis()));
   }
   ASSERT_OK(session->Flush());
 

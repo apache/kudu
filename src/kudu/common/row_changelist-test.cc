@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <ostream>
 #include <string>
 
@@ -23,10 +24,9 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
-#include "kudu/common/rowblock.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
@@ -67,7 +67,7 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   // Construct an update with several columns changed
   Slice update1("update1");
   Slice update2("update2");
-  uint32 update3 = 12345;
+  uint32_t update3 = 12345;
 
   int c0_id = schema_.column_id(0);
   int c1_id = schema_.column_id(1);

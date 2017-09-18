@@ -40,7 +40,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/casts.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/memory/arena.h"
@@ -255,7 +254,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32> ints;
+  vector<uint32_t> ints;
   for (int i = 0; i < 100; i++) {
     ints.push_back(i);
   }
@@ -286,7 +285,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32> ints;
+  vector<uint32_t> ints;
   for (int i = 0; i < 100; i++) {
     ints.push_back(i);
   }
@@ -331,7 +330,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
   ScanSpec spec;
 
-  vector<uint32> ints;
+  vector<uint32_t> ints;
   shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
   shared_ptr<RowwiseIterator> materializing(new MaterializingIterator(colwise));
   shared_ptr<RowwiseIterator> outer_iter(materializing);
