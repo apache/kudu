@@ -177,7 +177,7 @@ Status Master::StartAsync() {
 void Master::InitCatalogManagerTask() {
   Status s = InitCatalogManager();
   if (!s.ok()) {
-    LOG(ERROR) << ToString() << ": Unable to init master catalog manager: " << s.ToString();
+    LOG(ERROR) << "Unable to init master catalog manager: " << s.ToString();
   }
   init_status_.Set(s);
 }
