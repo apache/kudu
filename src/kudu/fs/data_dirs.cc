@@ -728,7 +728,8 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
   }
   string dirs_state_str = Substitute("$0 failed", failed_data_dirs_.size());
   if (metrics_) {
-    dirs_state_str = Substitute("$0 full, $1", metrics_->data_dirs_full.get(), dirs_state_str);
+    dirs_state_str = Substitute("$0 full, $1",
+                                metrics_->data_dirs_full->value(), dirs_state_str);
   }
   return Status::IOError(Substitute("No directories available to add to $0directory group ($1 "
                         "dirs total, $2).", tablet_id_str, data_dirs_.size(), dirs_state_str),
