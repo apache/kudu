@@ -58,7 +58,7 @@ DEFINE_bool(cfile_write_checksums, true,
 TAG_FLAG(cfile_write_checksums, evolving);
 
 using google::protobuf::RepeatedPtrField;
-using kudu::fs::BlockTransaction;
+using kudu::fs::BlockCreationTransaction;
 using kudu::fs::WritableBlock;
 using std::accumulate;
 using std::pair;
@@ -202,12 +202,12 @@ Status CFileWriter::Start() {
 
 Status CFileWriter::Finish() {
   TRACE_EVENT0("cfile", "CFileWriter::Finish");
-  BlockTransaction transaction;
+  BlockCreationTransaction transaction;
   RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
   return transaction.CommitCreatedBlocks();
 }
 
-Status CFileWriter::FinishAndReleaseBlock(BlockTransaction* transaction) {
+Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {
   TRACE_EVENT0("cfile", "CFileWriter::FinishAndReleaseBlock");
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;

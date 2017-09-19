@@ -116,7 +116,7 @@ class CFileWriter {
 
   // Close the CFile, finalizing the underlying block and releasing
   // it to 'transaction'.
-  Status FinishAndReleaseBlock(fs::BlockTransaction* transaction);
+  Status FinishAndReleaseBlock(fs::BlockCreationTransaction* transaction);
 
   bool finished() {
     return state_ == kWriterFinished;

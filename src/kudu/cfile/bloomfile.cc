@@ -57,7 +57,7 @@ using std::vector;
 namespace kudu {
 namespace cfile {
 
-using fs::BlockTransaction;
+using fs::BlockCreationTransaction;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -113,12 +113,12 @@ Status BloomFileWriter::Start() {
 }
 
 Status BloomFileWriter::Finish() {
-  BlockTransaction transaction;
+  BlockCreationTransaction transaction;
   RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
   return transaction.CommitCreatedBlocks();
 }
 
-Status BloomFileWriter::FinishAndReleaseBlock(BlockTransaction* transaction) {
+Status BloomFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {
   if (bloom_builder_.count() > 0) {
     RETURN_NOT_OK(FinishCurrentBloomBlock());
   }

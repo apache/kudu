@@ -81,7 +81,7 @@ class OpId;
 namespace tablet {
 
 using cfile::BloomFileWriter;
-using fs::BlockTransaction;
+using fs::BlockCreationTransaction;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using log::LogAnchorRegistry;
@@ -227,12 +227,12 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 Status DiskRowSetWriter::Finish() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
-  BlockTransaction transaction;
+  BlockCreationTransaction transaction;
   RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
   return transaction.CommitCreatedBlocks();
 }
 
-Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockTransaction* transaction) {
+Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockCreationTransaction* transaction) {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::FinishAndReleaseBlocks");
   CHECK(!finished_);
 

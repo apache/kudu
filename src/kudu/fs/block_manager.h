@@ -260,10 +260,11 @@ class BlockManager {
 };
 
 // Group a set of block creations together in a transaction. This has two
-// major motivations: 1) the underlying block manager can optimize
-// synchronization for a batch of blocks if possible to achieve better
-// performance. 2) to be able to track all blocks in one logical operation.
-class BlockTransaction {
+// major motivations:
+//  1) the underlying block manager can optimize synchronization for
+//     a batch of blocks if possible to achieve better performance.
+//  2) to be able to track all blocks created in one logical operation.
+class BlockCreationTransaction {
  public:
   void AddCreatedBlock(std::unique_ptr<WritableBlock> block) {
     created_blocks_.emplace_back(std::move(block));

@@ -247,7 +247,7 @@ class TabletCopyClient {
   TabletCopyClientMetrics* tablet_copy_metrics_;
 
   // Block transaction for the tablet copy.
-  fs::BlockTransaction transaction_;
+  fs::BlockCreationTransaction transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };

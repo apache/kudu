@@ -131,7 +131,7 @@ class BlockManagerTest : public KuduTest {
     int num_blocks = num_dirs * num_blocks_per_dir;
 
     // Write 'num_blocks' blocks to this data dir group.
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < num_blocks; i++) {
       unique_ptr<WritableBlock> written_block;
       ASSERT_OK(bm_->CreateBlock(opts, &written_block));
@@ -348,7 +348,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   const char* kTestData = "test data";
-  BlockTransaction transaction;
+  BlockCreationTransaction transaction;
   // Creates (numPaths * 2) containers.
   for (int j = 0; j < paths.size() * 2; j++) {
     unique_ptr<WritableBlock> block;
@@ -1061,11 +1061,11 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseFinalizedWritableBlockTest) {
 }
 
 TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
-  // Create a BlockTransaction. In this transaction,
+  // Create a BlockCreationTransaction. In this transaction,
   // create some blocks and commit the writes all together.
   const string kTestData = "test data";
-  BlockTransaction transaction;
-  vector<BlockId> block_ids;
+  BlockCreationTransaction creation_transaction;
+  vector<BlockId> created_blocks;
   for (int i = 0; i < 20; i++) {
     unique_ptr<WritableBlock> writer;
     ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &writer));
@@ -1073,13 +1073,13 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
     // Write some data to it.
     ASSERT_OK(writer->Append(kTestData));
     ASSERT_OK(writer->Finalize());
-    block_ids.emplace_back(writer->id());
-    transaction.AddCreatedBlock(std::move(writer));
+    created_blocks.emplace_back(writer->id());
+    creation_transaction.AddCreatedBlock(std::move(writer));
   }
-  ASSERT_OK(transaction.CommitCreatedBlocks());
+  ASSERT_OK(creation_transaction.CommitCreatedBlocks());
 
   // Read the blocks and verify the content.
-  for (const auto& block : block_ids) {
+  for (const auto& block : created_blocks) {
     unique_ptr<ReadableBlock> reader;
     ASSERT_OK(this->bm_->OpenBlock(block, &reader));
     uint64_t sz;

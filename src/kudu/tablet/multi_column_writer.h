@@ -40,7 +40,7 @@ class CFileWriter;
 } // namespace cfile
 
 namespace fs {
-class BlockTransaction;
+class BlockCreationTransaction;
 } // namespace fs
 
 namespace tablet {
@@ -70,7 +70,7 @@ class MultiColumnWriter {
 
   // Close the in-progress CFiles, finalizing the underlying writable
   // blocks and releasing them to 'transaction'.
-  Status FinishAndReleaseBlocks(fs::BlockTransaction* transaction);
+  Status FinishAndReleaseBlocks(fs::BlockCreationTransaction* transaction);
 
   // Return the number of bytes written so far.
   size_t written_size() const;

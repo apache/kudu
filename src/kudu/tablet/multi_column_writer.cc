@@ -37,7 +37,7 @@ namespace kudu {
 namespace tablet {
 
 using cfile::CFileWriter;
-using fs::BlockTransaction;
+using fs::BlockCreationTransaction;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using std::unique_ptr;
@@ -119,12 +119,13 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 }
 
 Status MultiColumnWriter::Finish() {
-  BlockTransaction transaction;
+  BlockCreationTransaction transaction;
   RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
   return transaction.CommitCreatedBlocks();
 }
 
-Status MultiColumnWriter::FinishAndReleaseBlocks(BlockTransaction* transaction) {
+Status MultiColumnWriter::FinishAndReleaseBlocks(
+    BlockCreationTransaction* transaction) {
   CHECK(!finished_);
   for (int i = 0; i < schema_->num_columns(); i++) {
     CFileWriter *writer = cfile_writers_[i];

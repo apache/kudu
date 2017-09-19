@@ -290,7 +290,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   BlockId saved_id;
   {
     Random rand(SeedRandom());
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < 10; i++) {
       unique_ptr<WritableBlock> b;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &b));
@@ -377,7 +377,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 
   // Create 4 containers, with the first four block IDs in the sequence.
   {
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < 4; i++) {
       unique_ptr<WritableBlock> writer;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
@@ -806,7 +806,7 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
   const int kNumBlocks = AllowSlowTests() ? 1000000 : 1000;
   // Creates 'kNumBlocks' blocks with minimal data.
   {
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < kNumBlocks; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
@@ -986,7 +986,7 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
 
   // Create several full containers.
   {
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
@@ -1179,7 +1179,7 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
 
   // Create some containers.
   {
-    BlockTransaction transaction;
+    BlockCreationTransaction transaction;
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
