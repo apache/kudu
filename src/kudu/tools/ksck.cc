@@ -729,7 +729,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
           opid_index = config.opid_index();
         }
         boost::optional<string> repl_leader_uuid;
-        if (cstate.has_leader_uuid()) {
+        if (!cstate.leader_uuid().empty()) {
           repl_leader_uuid = cstate.leader_uuid();
         }
         KsckConsensusConfigType config_type = cstate.has_pending_config() ?

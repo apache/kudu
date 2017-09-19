@@ -184,7 +184,7 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
       ASSERT_TRUE(reported_tablet.has_consensus_state());
       ASSERT_TRUE(reported_tablet.consensus_state().has_current_term())
           << SecureShortDebugString(reported_tablet);
-      ASSERT_TRUE(reported_tablet.consensus_state().has_leader_uuid())
+      ASSERT_FALSE(reported_tablet.consensus_state().leader_uuid().empty())
           << SecureShortDebugString(reported_tablet);
       ASSERT_TRUE(reported_tablet.consensus_state().has_committed_config());
       const RaftConfigPB& committed_config = reported_tablet.consensus_state().committed_config();

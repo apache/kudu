@@ -510,7 +510,7 @@ Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
     return Status::NotFound("Error connecting to replica", s.ToString());
   }
   const string& replica_uuid = replica->instance_id.permanent_uuid();
-  if (cstate.has_leader_uuid() && cstate.leader_uuid() == replica_uuid) {
+  if (cstate.leader_uuid() == replica_uuid) {
     return Status::OK();
   }
   VLOG(1) << "Replica not leader of config: " << replica->instance_id.permanent_uuid();

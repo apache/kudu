@@ -73,7 +73,7 @@ Status GetRaftConfigMember(const RaftConfigPB& config,
 }
 
 Status GetRaftConfigLeader(const ConsensusStatePB& cstate, RaftPeerPB* peer_pb) {
-  if (!cstate.has_leader_uuid() || cstate.leader_uuid().empty()) {
+  if (cstate.leader_uuid().empty()) {
     return Status::NotFound("Consensus config has no leader");
   }
   return GetRaftConfigMember(cstate.committed_config(), cstate.leader_uuid(), peer_pb);
@@ -195,7 +195,7 @@ Status VerifyConsensusState(const ConsensusStatePB& cstate) {
     RETURN_NOT_OK(VerifyRaftConfig(cstate.pending_config(), PENDING_CONFIG));
   }
 
-  if (cstate.has_leader_uuid() && !cstate.leader_uuid().empty()) {
+  if (!cstate.leader_uuid().empty()) {
     if (!IsRaftConfigVoter(cstate.leader_uuid(), cstate.committed_config())
         && cstate.has_pending_config()
         && !IsRaftConfigVoter(cstate.leader_uuid(), cstate.pending_config())) {
@@ -315,13 +315,13 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
   if (leader_changed) {
     string old_leader = "<none>";
     string new_leader = "<none>";
-    if (old_state.has_leader_uuid()) {
+    if (!old_state.leader_uuid().empty()) {
       old_leader = Substitute("$0 ($1)",
                               old_state.leader_uuid(),
                               committed_peer_infos[old_state.leader_uuid()].first
                                   .last_known_addr().host());
     }
-    if (new_state.has_leader_uuid()) {
+    if (!new_state.leader_uuid().empty()) {
       new_leader = Substitute("$0 ($1)",
                               new_state.leader_uuid(),
                               committed_peer_infos[new_state.leader_uuid()].second

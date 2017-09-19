@@ -280,7 +280,15 @@ TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
   // Set a new leader to be a member of the committed configuration.
   cmeta->set_leader_uuid("a");
   ConsensusStatePB new_cstate = cmeta->ToConsensusStatePB();
-  ASSERT_TRUE(new_cstate.has_leader_uuid());
+  ASSERT_FALSE(new_cstate.leader_uuid().empty());
+  ASSERT_OK(VerifyConsensusState(new_cstate));
+
+  // An empty leader UUID means no leader and we should not set the
+  // corresponding PB field in that case. Regression test for KUDU-2147.
+  cmeta->clear_pending_config();
+  cmeta->set_leader_uuid("");
+  new_cstate = cmeta->ToConsensusStatePB();
+  ASSERT_TRUE(new_cstate.leader_uuid().empty());
   ASSERT_OK(VerifyConsensusState(new_cstate));
 }
 

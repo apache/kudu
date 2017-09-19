@@ -489,7 +489,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
       }
       jw_->EndArray();
 
-      if (cs.has_leader_uuid()) {
+      if (!cs.leader_uuid().empty()) {
         jw_->String("leader");
         jw_->String(cs.leader_uuid());
       }

@@ -783,7 +783,7 @@ Status CatalogManager::ElectedAsLeaderCb() {
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   ConsensusStatePB cstate = sys_catalog_->tablet_replica()->consensus()->ConsensusState();
   const string& uuid = master_->fs_manager()->uuid();
-  if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
+  if (cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
         Substitute("Node $0 not leader. Raft Consensus state: $1",
                     uuid, SecureShortDebugString(cstate)));
@@ -2424,7 +2424,7 @@ bool ShouldTransitionTabletToRunning(const ReportedTabletPB& report) {
   // Otherwise, we only transition to RUNNING once there is a leader that is a
   // member of the committed configuration.
   const ConsensusStatePB& cstate = report.consensus_state();
-  return cstate.has_leader_uuid() &&
+  return !cstate.leader_uuid().empty() &&
       IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config());
 }
 } // anonymous namespace
@@ -2557,9 +2557,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       return Status::OK();
     }
 
-    // If the reported leader is not a member of the committed config, then we
+    // If the reported leader is not a member of the committed config then we
     // disregard the leader state.
-    if (cstate.has_leader_uuid() &&
+    if (cstate.leader_uuid().empty() ||
         !IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config())) {
       cstate.clear_leader_uuid();
     }
@@ -2581,10 +2581,10 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             "Tablet reported with an active leader");
     }
 
-    bool modified_cstate = false;
     if (cstate.committed_config().opid_index() > prev_cstate.committed_config().opid_index() ||
-        (cstate.has_leader_uuid() &&
-         (!prev_cstate.has_leader_uuid() || cstate.current_term() > prev_cstate.current_term()))) {
+        (!cstate.leader_uuid().empty() &&
+         (prev_cstate.leader_uuid().empty() ||
+          cstate.current_term() > prev_cstate.current_term()))) {
 
       // When a config change is reported to the master, it may not include the
       // leader because the follower doing the reporting may not know who the
@@ -2593,11 +2593,10 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       // previously known for the current term, then retain knowledge of that
       // leader even if it wasn't reported in the latest config.
       if (cstate.current_term() == prev_cstate.current_term()) {
-        if (!cstate.has_leader_uuid() && prev_cstate.has_leader_uuid()) {
+        if (cstate.leader_uuid().empty() && !prev_cstate.leader_uuid().empty()) {
           cstate.set_leader_uuid(prev_cstate.leader_uuid());
-          modified_cstate = true;
         // Sanity check to detect consensus divergence bugs.
-        } else if (cstate.has_leader_uuid() && prev_cstate.has_leader_uuid() &&
+        } else if (!cstate.leader_uuid().empty() && !prev_cstate.leader_uuid().empty() &&
                    cstate.leader_uuid() != prev_cstate.leader_uuid()) {
           string msg = Substitute("Previously reported cstate for tablet $0 gave "
                                   "a different leader for term $1 than the current cstate. "
@@ -2612,29 +2611,24 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
       // If a replica is reporting a new consensus configuration, update the
       // master's copy of that configuration.
-      LOG(INFO) << Substitute("T $0 reported cstate change: $1. New cstate: $2",
-                              tablet->tablet_id(), DiffConsensusStates(prev_cstate, cstate),
+      LOG(INFO) << Substitute("T $0 P $1 reported cstate change: $2. New cstate: $3",
+                              tablet->tablet_id(), ts_desc->permanent_uuid(),
+                              DiffConsensusStates(prev_cstate, cstate),
                               SecureShortDebugString(cstate));
 
-      // If we need to change the report, copy the whole thing on the stack
-      // rather than const-casting.
-      const ReportedTabletPB* final_report = &report;
-      ReportedTabletPB updated_report;
-      if (modified_cstate) {
-        updated_report = report;
-        *updated_report.mutable_consensus_state() = cstate;
-        final_report = &updated_report;
-      }
+      // To ensure consistent handling when modifying or sanitizing the cstate
+      // above, copy the whole report on the stack rather than const-casting.
+      ReportedTabletPB modified_report = report;
+      *modified_report.mutable_consensus_state() = cstate;
 
       VLOG(2) << Substitute("Updating cstate for tablet $0 from config reported by $1 "
                             "to that committed in log index $2 with leader state from term $3",
-                            final_report->tablet_id(), ts_desc->ToString(),
-                            final_report->consensus_state().committed_config().opid_index(),
-                            final_report->consensus_state().current_term());
+                            modified_report.tablet_id(), ts_desc->ToString(),
+                            modified_report.consensus_state().committed_config().opid_index(),
+                            modified_report.consensus_state().current_term());
 
-      RETURN_NOT_OK(HandleRaftConfigChanged(*final_report, tablet,
+      RETURN_NOT_OK(HandleRaftConfigChanged(modified_report, tablet,
                                             table_lock, &tablet_lock));
-
     }
   }
 
@@ -2791,7 +2785,7 @@ class PickLeaderReplica : public TSPicker {
       // The tablet is still in the PREPARING state and has no replicas.
       err_msg = Substitute("Tablet $0 has no consensus state",
                            tablet_->tablet_id());
-    } else if (!l.data().pb.consensus_state().has_leader_uuid()) {
+    } else if (l.data().pb.consensus_state().leader_uuid().empty()) {
       // The tablet may be in the midst of a leader election.
       err_msg = Substitute("Tablet $0 consensus state has no leader",
                            tablet_->tablet_id());
@@ -4215,7 +4209,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
       consensus()->ConsensusState();
   initial_term_ = cstate.current_term();
   const string& uuid = catalog_->master_->fs_manager()->uuid();
-  if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
+  if (PREDICT_FALSE(cstate.leader_uuid() != uuid)) {
     leader_status_ = Status::IllegalState(
         Substitute("Not the leader. Local UUID: $0, Raft Consensus state: $1",
                    uuid, SecureShortDebugString(cstate)));

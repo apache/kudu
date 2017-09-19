@@ -238,7 +238,9 @@ ConsensusStatePB ConsensusMetadata::ToConsensusStatePBUnlocked() const {
   lock_.AssertAcquired();
   ConsensusStatePB cstate;
   cstate.set_current_term(pb_.current_term());
-  cstate.set_leader_uuid(leader_uuid_);
+  if (!leader_uuid_.empty()) {
+    cstate.set_leader_uuid(leader_uuid_);
+  }
   *cstate.mutable_committed_config() = committed_config_unlocked();
   if (has_pending_config_unlocked()) {
     *cstate.mutable_pending_config() = pending_config_unlocked();

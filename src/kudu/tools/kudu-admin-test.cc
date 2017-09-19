@@ -1065,7 +1065,7 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
   for (auto& ts : tservers) {
     RETURN_NOT_OK(
         GetConsensusState(ts, tablet_id, MonoDelta::FromSeconds(10), &cstate));
-    if (cstate.has_leader_uuid() &&
+    if (!cstate.leader_uuid().empty() &&
         IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config()) &&
         cstate.has_current_term()) {
       *current_term = cstate.current_term();

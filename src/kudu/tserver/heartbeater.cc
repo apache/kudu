@@ -61,6 +61,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/version_info.h"
 
 DEFINE_int32(heartbeat_rpc_timeout_ms, 15000,
@@ -76,6 +77,12 @@ DEFINE_int32(heartbeat_max_failures_before_backoff, 3,
              "Tablet Server backs off to the normal heartbeat interval, "
              "rather than retrying.");
 TAG_FLAG(heartbeat_max_failures_before_backoff, advanced);
+
+DEFINE_int32(heartbeat_inject_latency_before_heartbeat_ms, 0,
+             "How much latency (in ms) to inject when a tablet copy session is initialized. "
+             "(For testing only!)");
+TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, runtime);
+TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, unsafe);
 
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
@@ -373,6 +380,13 @@ Status Heartbeater::Thread::DoHeartbeat() {
   }
 
   CHECK(IsCurrentThread());
+
+  // Inject latency for testing purposes.
+  if (PREDICT_FALSE(FLAGS_heartbeat_inject_latency_before_heartbeat_ms > 0)) {
+    TRACE("Injecting $0ms of latency due to --heartbeat_inject_latency_before_heartbeat_ms",
+          FLAGS_heartbeat_inject_latency_before_heartbeat_ms);
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_heartbeat_inject_latency_before_heartbeat_ms));
+  }
 
   if (!proxy_) {
     VLOG(1) << "No valid master proxy. Connecting...";
