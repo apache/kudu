@@ -772,6 +772,22 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   std::shared_ptr<rpc::PeriodicTimer> failure_detector_;
 
+  // Lock held while starting a failure-triggered election.
+  //
+  // After reporting a failure and asynchronously starting an election, the
+  // failure detector immediately rearms. If the election starts slowly (i.e.
+  // there's a lot of contention on the consensus lock, or persisting votes is
+  // really slow due to other I/O), more elections may start and "stack" on
+  // top of the first. Forcing the starting of elections to serialize on this
+  // lock prevents that from happening. See KUDU-2149 for more details.
+  //
+  // Note: the lock is only ever acquired via try_lock(); if it cannot be
+  // acquired, a StartElection() is in progress so the next one is skipped.
+  //
+  // TODO(KUDU-2155): should be replaced with explicit disabling/enabling of
+  // the failure detector during elections.
+  simple_spinlock failure_detector_election_lock_;
+
   // If any RequestVote() RPC arrives before this timestamp,
   // the request will be ignored. This prevents abandoned or partitioned
   // nodes from disturbing the healthy leader.
