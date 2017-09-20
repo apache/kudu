@@ -520,9 +520,13 @@ scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
 }
 
 void RaftConsensus::ReportFailureDetectedTask() {
-  WARN_NOT_OK(StartElection(FLAGS_raft_enable_pre_election ?
-      PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED),
-              LogPrefixThreadSafe() + "failed to trigger leader election");
+  std::unique_lock<simple_spinlock> try_lock(failure_detector_election_lock_,
+                                             std::try_to_lock);
+  if (try_lock.owns_lock()) {
+    WARN_NOT_OK(StartElection(FLAGS_raft_enable_pre_election ?
+        PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED),
+                LogPrefixThreadSafe() + "failed to trigger leader election");
+  }
 }
 
 void RaftConsensus::ReportFailureDetected() {
