@@ -113,7 +113,7 @@ Status DeltaFileWriter::Start() {
 }
 
 Status DeltaFileWriter::Finish() {
-  BlockCreationTransaction transaction;
+  BlockCreationTransaction transaction(writer_->block()->block_manager());
   RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
   return transaction.CommitCreatedBlocks();
 }

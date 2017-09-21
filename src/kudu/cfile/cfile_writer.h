@@ -176,6 +176,8 @@ class CFileWriter {
 
   std::string ToString() const { return block_->id().ToString(); }
 
+  fs::WritableBlock* block() const { return block_.get(); }
+
   // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
   Status AppendDictBlock(const std::vector<Slice> &data_slices,
                          BlockPointer *block_ptr,

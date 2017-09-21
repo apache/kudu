@@ -227,7 +227,8 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 Status DiskRowSetWriter::Finish() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
-  BlockCreationTransaction transaction;
+  FsManager* fs = rowset_metadata_->fs_manager();
+  BlockCreationTransaction transaction(fs->block_manager());
   RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
   return transaction.CommitCreatedBlocks();
 }
@@ -315,7 +316,8 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(
       row_idx_in_cur_drs_(0),
       can_roll_(false),
       written_count_(0),
-      written_size_(0) {
+      written_size_(0),
+      block_transaction_(tablet_metadata->fs_manager()->block_manager()) {
   CHECK(schema.has_column_ids());
 }
 

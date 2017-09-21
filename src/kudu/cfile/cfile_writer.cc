@@ -203,7 +203,7 @@ Status CFileWriter::Start() {
 
 Status CFileWriter::Finish() {
   TRACE_EVENT0("cfile", "CFileWriter::Finish");
-  BlockCreationTransaction transaction;
+  BlockCreationTransaction transaction(block_->block_manager());
   RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
   return transaction.CommitCreatedBlocks();
 }

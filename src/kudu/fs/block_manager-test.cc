@@ -132,7 +132,7 @@ class BlockManagerTest : public KuduTest {
     int num_blocks = num_dirs * num_blocks_per_dir;
 
     // Write 'num_blocks' blocks to this data dir group.
-    BlockCreationTransaction transaction;
+    BlockCreationTransaction transaction(bm_.get());
     for (int i = 0; i < num_blocks; i++) {
       unique_ptr<WritableBlock> written_block;
       ASSERT_OK(bm_->CreateBlock(opts, &written_block));
@@ -349,7 +349,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   const char* kTestData = "test data";
-  BlockCreationTransaction transaction;
+  BlockCreationTransaction transaction(bm_.get());
   // Creates (numPaths * 2) containers.
   for (int j = 0; j < paths.size() * 2; j++) {
     unique_ptr<WritableBlock> block;
@@ -1065,7 +1065,7 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   // Create a BlockCreationTransaction. In this transaction,
   // create some blocks and commit the writes all together.
   const string kTestData = "test data";
-  BlockCreationTransaction creation_transaction;
+  BlockCreationTransaction creation_transaction(this->bm_.get());
   vector<BlockId> created_blocks;
   for (int i = 0; i < 20; i++) {
     unique_ptr<WritableBlock> writer;
@@ -1091,6 +1091,35 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
     ASSERT_OK(reader->Read(0, data));
     ASSERT_EQ(kTestData, data);
   }
+
+  // Create a BlockDeletionTransaction. In this transaction,
+  // randomly delete almost half of the created blocks.
+  BlockDeletionTransaction deletion_transaction(this->bm_.get());
+  for (const auto& block : created_blocks) {
+    if (rand() % 2) deletion_transaction.AddDeletedBlock(block);
+  }
+  vector<BlockId> deleted_blocks;
+  ASSERT_OK(deletion_transaction.CommitDeletedBlocks(&deleted_blocks));
+  for (const auto& block : deleted_blocks) {
+    created_blocks.erase(std::remove(created_blocks.begin(), created_blocks.end(), block),
+                         created_blocks.end());
+    ASSERT_TRUE(this->bm_->OpenBlock(block, nullptr).IsNotFound());
+  }
+
+  // Delete the rest of created blocks. But force the operations to fail,
+  // in order to test that the first failure properly propagates.
+  FLAGS_crash_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+  for (const auto& block : created_blocks) {
+    deletion_transaction.AddDeletedBlock(block);
+  }
+  deleted_blocks.clear();
+  Status s = deletion_transaction.CommitDeletedBlocks(&deleted_blocks);
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), Substitute("only deleted $0 blocks, "
+                                               "first failure",
+                                               deleted_blocks.size()));
+  FLAGS_env_inject_eio = 0;
 }
 
 } // namespace fs

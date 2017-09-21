@@ -24,7 +24,10 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -268,6 +271,10 @@ class BlockManager {
 //  2) to be able to track all blocks created in one logical operation.
 class BlockCreationTransaction {
  public:
+  explicit BlockCreationTransaction(BlockManager* bm)
+      : bm_(bm) {
+  }
+
   void AddCreatedBlock(std::unique_ptr<WritableBlock> block) {
     created_blocks_.emplace_back(std::move(block));
   }
@@ -279,10 +286,7 @@ class BlockCreationTransaction {
       return Status::OK();
     }
 
-    // We assume every block is using the same block manager, so any
-    // block's manager will do.
-    BlockManager* bm = created_blocks_[0]->block_manager();
-    Status s = bm->CloseBlocks(created_blocks_);
+    Status s = bm_->CloseBlocks(created_blocks_);
     if (s.ok()) created_blocks_.clear();
     return s;
   }
@@ -292,7 +296,58 @@ class BlockCreationTransaction {
   }
 
  private:
+  // The owning BlockManager. Must outlive the BlockCreationTransaction.
+  BlockManager* bm_;
   std::vector<std::unique_ptr<WritableBlock>> created_blocks_;
+};
+
+// Group a set of block deletions together in a transaction. Similar to
+// BlockCreationTransaction, this has two major motivations:
+//  1) the underlying block manager can optimize deletions for a batch
+//     of blocks if possible to achieve better performance.
+//  2) to be able to track all blocks deleted in one logical operation.
+class BlockDeletionTransaction {
+ public:
+  explicit BlockDeletionTransaction(BlockManager* bm)
+      : bm_(bm) {
+  }
+
+  void AddDeletedBlock(BlockId block) {
+    deleted_blocks_.emplace_back(block);
+  }
+
+  // Deletes a group of blocks given the block IDs, the actual deletion will take
+  // place after the last open reader or writer is closed for each block that needs
+  // be to deleted. The 'deleted' out parameter will be set with the list of block
+  // IDs that were successfully deleted, regardless of the value of returned 'status'
+  // is OK or error.
+  //
+  // Returns the first deletion failure that was seen, if any.
+  Status CommitDeletedBlocks(std::vector<BlockId>* deleted) {
+    Status first_failure;
+    for (BlockId block : deleted_blocks_) {
+      Status s = bm_->DeleteBlock(block);
+      // If we get NotFound, then the block was already deleted.
+      if (!s.ok() && !s.IsNotFound()) {
+        if (first_failure.ok()) first_failure = s;
+      } else {
+        deleted->emplace_back(block);
+      }
+    }
+
+    if (!first_failure.ok()) {
+      first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
+                                                                        "first failure",
+                                                                        deleted->size()));
+    }
+    deleted_blocks_.clear();
+    return first_failure;
+  }
+
+ private:
+  // The owning BlockManager. Must outlive the BlockDeletionTransaction.
+  BlockManager* bm_;
+  std::vector<BlockId> deleted_blocks_;
 };
 
 // Compute an upper bound for a file cache embedded within a block manager

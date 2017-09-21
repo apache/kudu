@@ -156,7 +156,8 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       session_idle_timeout_millis_(FLAGS_tablet_copy_begin_session_timeout_ms),
       start_time_micros_(0),
       rng_(GetRandomSeed32()),
-      tablet_copy_metrics_(tablet_copy_metrics) {
+      tablet_copy_metrics_(tablet_copy_metrics),
+      transaction_(fs_manager->block_manager()) {
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->Increment();
   }

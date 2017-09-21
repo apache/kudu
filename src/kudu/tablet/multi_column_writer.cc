@@ -119,7 +119,7 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 }
 
 Status MultiColumnWriter::Finish() {
-  BlockCreationTransaction transaction;
+  BlockCreationTransaction transaction(fs_->block_manager());
   RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
   return transaction.CommitCreatedBlocks();
 }
