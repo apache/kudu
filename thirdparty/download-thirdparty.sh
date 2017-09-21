@@ -139,10 +139,12 @@ if [ ! -d $GPERFTOOLS_SOURCE ]; then
   echo
 fi
 
+PROTOBUF_PATCHLEVEL=0
 delete_if_wrong_patchlevel $PROTOBUF_SOURCE $PROTOBUF_PATCHLEVEL
 if [ ! -d $PROTOBUF_SOURCE ]; then
   fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
   pushd $PROTOBUF_SOURCE
+  touch patchlevel-$PROTOBUF_PATCHLEVEL
   autoreconf -fvi
   popd
 fi
