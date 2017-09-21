@@ -42,6 +42,19 @@ elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-8")
   set(COMPILER_FAMILY "clang")
   set(COMPILER_VERSION "3.8.0svn")
 
+# clang on Mac OS X, XCode 9.
+#
+# TODO(dan): 4.0.0svn is just a guess, because Apple has not (as of the time of
+# writing) released the sources [1]. [2] and [3] are good resources for
+# determining the upstream Clang version as well.
+#
+# [1]: https://opensource.apple.com/
+# [2]: https://gist.github.com/yamaya/2924292
+# [3]: https://gist.github.com/epipping/ef8b02b0cfaec4a5ebf3a57092145a3f
+elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-9")
+  set(COMPILER_FAMILY "clang")
+  set(COMPILER_VERSION "4.0.0svn")
+
 # gcc
 elseif("${COMPILER_VERSION_FULL}" MATCHES ".*gcc version.*")
   set(COMPILER_FAMILY "gcc")
