@@ -17,13 +17,14 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 
 #include <boost/optional/optional.hpp>
+#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
@@ -36,9 +37,21 @@ class Messenger;
 
 // Repeatedly runs a task on a fixed period.
 //
-// PeriodicTimer is built using Messenger::ScheduleOnReactor() as its
-// scheduling primitive. This is merely for convenience; it could also be built
-// on libev, a hashed wheel timer, or something equivalent.
+// PeriodicTimer's periodicity is maintained via tail recursive calls to
+// Messenger::ScheduleOnReactor(). Every time the scheduled callback is
+// invoked, it checks the current time, updates some internal bookkeeping,
+// runs the user's task if the time is right, and makes another call to
+// Messenger::ScheduleOnReactor() to run itself again in the future. This
+// looping behavior is called a "callback loop".
+//
+// Every time Stop() and then Start() (or just Start(), if this is the first
+// such call) are invoked, PeriodicTimer will kick off a new callback loop. If
+// there was an old loop, it remains intact until its scheduled callback runs,
+// at which point it will detect that a new loop was created and exit.
+//
+// The use of Messenger::ScheduleOnReactor() is merely for convenience;
+// PeriodicTimer could also be built on libev, a hashed wheel timer, o
+// something equivalent.
 //
 // PeriodicTimers have shared ownership, but that's largely an implementation
 // detail to support asynchronous stopping. Users can treat them as exclusively
@@ -108,6 +121,8 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   void Stop();
 
  private:
+  FRIEND_TEST(PeriodicTimerTest, TestCallbackRestartsTimer);
+
   PeriodicTimer(std::shared_ptr<Messenger> messenger,
                 RunTaskFunctor functor,
                 MonoDelta period,
@@ -118,7 +133,17 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   MonoDelta GetMinimumPeriod();
 
   // Called by Messenger::ScheduleOnReactor when the timer fires.
-  void Callback();
+  // 'my_callback_generation' is the callback generation assigned to this loop
+  // when it was constructed.
+  void Callback(int64_t my_callback_generation);
+
+  // Like Snooze() but must be called with 'lock_' held.
+  void SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta = boost::none);
+
+  // Returns the number of times that Callback() has been called by this timer.
+  //
+  // Should only be used for tests!
+  int64_t NumCallbacksForTests() const;
 
   // Schedules invocations of Callback() in the future.
   std::shared_ptr<Messenger> messenger_;
@@ -132,17 +157,28 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // User-specified jitter percentage.
   const double jitter_pct_;
 
-  // Protects 'rng_' and 'next_task_time_'.
-  simple_spinlock lock_;
+  // Protects all mutable state below.
+  mutable simple_spinlock lock_;
 
   // PRNG used when generating jitter.
   Random rng_;
 
-  // Whether the timer is running or not.
-  AtomicBool started_;
-
   // The next time at which the task's functor should be run.
   MonoTime next_task_time_;
+
+  // The most recent callback generation.
+  //
+  // When started, a callback loop is assigned a generation, which it remembers
+  // for its entire lifespan. If 'current_callback_generation_' exceeds the
+  // loop's assigned generation, that means another loop has been created and
+  // the (now old) loop should exit.
+  int64_t current_callback_generation_;
+
+  // The number of times that Callback() has been invoked.
+  int64_t num_callbacks_for_tests_;
+
+  // Whether the timer is running or not.
+  bool started_;
 
   ALLOW_MAKE_SHARED(PeriodicTimer);
 

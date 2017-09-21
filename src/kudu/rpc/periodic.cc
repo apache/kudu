@@ -25,7 +25,6 @@
 #include <glog/logging.h>
 
 #include "kudu/rpc/messenger.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -56,6 +55,8 @@ PeriodicTimer::PeriodicTimer(
       period_(period),
       jitter_pct_(jitter_pct),
       rng_(GetRandomSeed32()),
+      current_callback_generation_(0),
+      num_callbacks_for_tests_(0),
       started_(false) {
   DCHECK_GE(jitter_pct_, 0);
   DCHECK_LE(jitter_pct_, 1);
@@ -66,22 +67,34 @@ PeriodicTimer::~PeriodicTimer() {
 }
 
 void PeriodicTimer::Start(boost::optional<MonoDelta> next_task_delta) {
-  if (!started_.CompareAndSwap(false, true)) {
-    Snooze(std::move(next_task_delta));
-    Callback();
+  std::unique_lock<simple_spinlock> l(lock_);
+  if (!started_) {
+    started_ = true;
+    SnoozeUnlocked(std::move(next_task_delta));
+    int new_callback_generation = ++current_callback_generation_;
+
+    // Invoke Callback() with the lock released.
+    l.unlock();
+    Callback(new_callback_generation);
   }
 }
 
 void PeriodicTimer::Stop() {
-  started_.Store(false);
+  std::lock_guard<simple_spinlock> l(lock_);
+  started_ = false;
 }
 
 void PeriodicTimer::Snooze(boost::optional<MonoDelta> next_task_delta) {
-  if (!started_.Load()) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  SnoozeUnlocked(std::move(next_task_delta));
+}
+
+void PeriodicTimer::SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta) {
+  DCHECK(lock_.is_locked());
+  if (!started_) {
     return;
   }
 
-  std::lock_guard<simple_spinlock> l(lock_);
   if (!next_task_delta) {
     // Given jitter percentage J and period P, this yields a delay somewhere
     // between (1-J)*P and (1+J)*P.
@@ -101,11 +114,12 @@ MonoDelta PeriodicTimer::GetMinimumPeriod() {
                                      period_.ToMilliseconds());
 }
 
-void PeriodicTimer::Callback() {
-  if (!started_.Load()) {
-    return;
-  }
+int64_t PeriodicTimer::NumCallbacksForTests() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return num_callbacks_for_tests_;
+}
 
+void PeriodicTimer::Callback(int64_t my_callback_generation) {
   // To simplify the implementation, a timer may have only one outstanding
   // callback scheduled at a time. This means that once the callback is
   // scheduled, the timer's task cannot run any earlier than whenever the
@@ -125,6 +139,24 @@ void PeriodicTimer::Callback() {
   bool run_task = false;
   {
     std::lock_guard<simple_spinlock> l(lock_);
+    num_callbacks_for_tests_++;
+
+    // If the timer was stopped, exit.
+    if (!started_) {
+      return;
+    }
+
+    // If there's a new callback loop in town, exit.
+    //
+    // We could check again just before calling Messenger::ScheduleOnReactor()
+    // (in case someone else restarted the timer while the functor ran, or in
+    // case the functor itself restarted the timer), but there's no real reason
+    // to do so: the very next iteration of this callback loop will wind up here
+    // and exit.
+    if (current_callback_generation_ > my_callback_generation) {
+      return;
+    }
+
     MonoTime now = MonoTime::Now();
     if (now < next_task_time_) {
       // It's not yet time to run the task. Reduce the scheduled delay if
@@ -144,13 +176,13 @@ void PeriodicTimer::Callback() {
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its timer.
   weak_ptr<PeriodicTimer> w = shared_from_this();
-  messenger_->ScheduleOnReactor([w](const Status& s) {
+  messenger_->ScheduleOnReactor([w, my_callback_generation](const Status& s) {
     if (!s.ok()) {
       // The reactor was shut down.
       return;
     }
     if (auto timer = w.lock()) {
-      timer->Callback();
+      timer->Callback(my_callback_generation);
     }
   }, delay);
 }

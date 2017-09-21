@@ -98,7 +98,6 @@ METRIC_DEFINE_histogram(server, reactor_active_latency_us,
                         kudu::MetricUnit::kMicroseconds,
                         "TODO", 1000000, 2);
 
-
 namespace kudu {
 namespace rpc {
 
@@ -138,8 +137,10 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder& bld)
     total_server_conns_cnt_(0) {
 
   if (bld.metric_entity_) {
-    invoke_us_histogram_ = METRIC_reactor_active_latency_us.Instantiate(bld.metric_entity_);
-    load_percent_histogram_ = METRIC_reactor_load_percent.Instantiate(bld.metric_entity_);
+    invoke_us_histogram_ =
+        METRIC_reactor_active_latency_us.Instantiate(bld.metric_entity_);
+    load_percent_histogram_ =
+        METRIC_reactor_load_percent.Instantiate(bld.metric_entity_);
   }
 }
 

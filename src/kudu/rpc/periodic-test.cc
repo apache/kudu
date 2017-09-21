@@ -34,8 +34,17 @@ using std::shared_ptr;
 namespace kudu {
 namespace rpc {
 
-class PeriodicTimerTest : public KuduTest,
-                          public ::testing::WithParamInterface<double> {
+class PeriodicTimerTest : public KuduTest {
+ public:
+  PeriodicTimerTest()
+      : period_ms_(200) {}
+
+ protected:
+  const int64_t period_ms_;
+};
+
+class JitteredPeriodicTimerTest : public PeriodicTimerTest,
+                                  public ::testing::WithParamInterface<double> {
  public:
   // In TSAN builds it takes a long time to de-schedule a thread. Also,
   // the actual time that thread spends sleeping in SleepFor() scenarios
@@ -44,13 +53,12 @@ class PeriodicTimerTest : public KuduTest,
   // is observed even under substantial load. Otherwise it would be necessary
   // to introduce additional logic to verify that the actual timings satisfy
   // the implicit constraints of the test scenarios below.
-  PeriodicTimerTest()
-      : period_ms_(200),
-        counter_(0) {
+  JitteredPeriodicTimerTest()
+      : counter_(0) {
   }
 
   virtual void SetUp() override {
-    KuduTest::SetUp();
+    PeriodicTimerTest::SetUp();
 
     MessengerBuilder builder("test");
     ASSERT_OK(builder.Build(&messenger_));
@@ -70,17 +78,16 @@ class PeriodicTimerTest : public KuduTest,
   }
 
  protected:
-  const int64_t period_ms_;
   atomic<int64_t> counter_;
   shared_ptr<Messenger> messenger_;
   shared_ptr<PeriodicTimer> timer_;
 };
 
 INSTANTIATE_TEST_CASE_P(AllJitterModes,
-                        PeriodicTimerTest,
+                        JitteredPeriodicTimerTest,
                         ::testing::Values(0.0, 0.25));
 
-TEST_P(PeriodicTimerTest, TestStartStop) {
+TEST_P(JitteredPeriodicTimerTest, TestStartStop) {
   // Before the timer starts, the counter's value should not change.
   SleepFor(MonoDelta::FromMilliseconds(period_ms_ * 2));
   ASSERT_EQ(0, counter_);
@@ -102,7 +109,7 @@ TEST_P(PeriodicTimerTest, TestStartStop) {
               counter_ == v + 1);
 }
 
-TEST_P(PeriodicTimerTest, TestReset) {
+TEST_P(JitteredPeriodicTimerTest, TestReset) {
   timer_->Start();
   MonoTime start_time = MonoTime::Now();
 
@@ -119,7 +126,7 @@ TEST_P(PeriodicTimerTest, TestReset) {
   }
 }
 
-TEST_P(PeriodicTimerTest, TestResetWithDelta) {
+TEST_P(JitteredPeriodicTimerTest, TestResetWithDelta) {
   timer_->Start();
   timer_->Snooze(MonoDelta::FromMilliseconds(period_ms_ * 5));
 
@@ -133,7 +140,7 @@ TEST_P(PeriodicTimerTest, TestResetWithDelta) {
   });
 }
 
-TEST_P(PeriodicTimerTest, TestStartWithDelta) {
+TEST_P(JitteredPeriodicTimerTest, TestStartWithDelta) {
   timer_->Start(MonoDelta::FromMilliseconds(period_ms_ * 5));
 
   // One period later, the counter still hasn't incremented...
@@ -144,6 +151,35 @@ TEST_P(PeriodicTimerTest, TestStartWithDelta) {
   ASSERT_EVENTUALLY([&](){
     ASSERT_GT(counter_, 0);
   });
+}
+
+TEST_F(PeriodicTimerTest, TestCallbackRestartsTimer) {
+  const int64_t kPeriods = 10;
+
+  shared_ptr<Messenger> messenger;
+  ASSERT_OK(MessengerBuilder("test").Build(&messenger));
+
+  // Create a timer that restarts itself from within its functor.
+  shared_ptr<PeriodicTimer> timer = PeriodicTimer::Create(
+      messenger,
+      [&] {
+        timer->Stop();
+        timer->Start();
+      },
+      MonoDelta::FromMilliseconds(period_ms_),
+      0.0); // jittering would just complicate the measurements below
+
+  // Run the timer for a fixed amount of time.
+  timer->Start();
+  SleepFor(MonoDelta::FromMilliseconds(period_ms_ * kPeriods));
+  timer->Stop();
+
+  // Although the timer is restarted by its functor, its overall period should
+  // remain more or less the same (since the period expired just as the functor
+  // ran). As such, we should see no more than three callbacks per period:
+  // one to start scheduling the callback loop, one when it fires, and one more
+  // after it has been replaced by a new callback loop.
+  ASSERT_LE(timer->NumCallbacksForTests(), kPeriods * 3);
 }
 
 } // namespace rpc
