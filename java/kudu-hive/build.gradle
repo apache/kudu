@@ -15,15 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// This file contains the configuration of the project hierarchy.
-// Mainly we just define what subprojects are in the build.
+dependencies {
+  compile libs.yetusAnnotations
+  compile libs.slf4jApi
+  compile libs.hiveMetastore
 
-rootProject.name = "kudu-parent"
-include "kudu-client"
-include "kudu-client-tools"
-include "kudu-flume-sink"
-include "kudu-hive"
-include "kudu-jepsen"
-include "kudu-mapreduce"
-include "kudu-spark"
-include "kudu-spark-tools"
+  testCompile libs.hiveMetastoreTest
+  testCompile libs.junit
+  testCompile libs.log4j
+  testCompile libs.slf4jLog4j12
+}
+
+test {
+  // This property is substituted into hive-site.xml.
+  systemProperty "testdata.dir", temporaryDir
+  // Configure the derby log file location.
+  systemProperty "derby.stream.error.file", "$temporaryDir/derby.log"
+}
