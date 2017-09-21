@@ -36,30 +36,35 @@ using std::weak_ptr;
 namespace kudu {
 namespace rpc {
 
+PeriodicTimer::Options::Options()
+    : jitter_pct(0.25),
+      one_shot(false) {
+}
+
 shared_ptr<PeriodicTimer> PeriodicTimer::Create(
     shared_ptr<Messenger> messenger,
     RunTaskFunctor functor,
     MonoDelta period,
-    double jitter_pct) {
+    Options options) {
   return std::make_shared<PeriodicTimer>(
-      std::move(messenger), std::move(functor), period, jitter_pct);
+      std::move(messenger), std::move(functor), period, options);
 }
 
 PeriodicTimer::PeriodicTimer(
     shared_ptr<Messenger> messenger,
     RunTaskFunctor functor,
     MonoDelta period,
-    double jitter_pct)
+    Options options)
     : messenger_(std::move(messenger)),
       functor_(std::move(functor)),
       period_(period),
-      jitter_pct_(jitter_pct),
+      options_(std::move(options)),
       rng_(GetRandomSeed32()),
       current_callback_generation_(0),
       num_callbacks_for_tests_(0),
       started_(false) {
-  DCHECK_GE(jitter_pct_, 0);
-  DCHECK_LE(jitter_pct_, 1);
+  DCHECK_GE(options_.jitter_pct, 0);
+  DCHECK_LE(options_.jitter_pct, 1);
 }
 
 PeriodicTimer::~PeriodicTimer() {
@@ -81,6 +86,11 @@ void PeriodicTimer::Start(boost::optional<MonoDelta> next_task_delta) {
 
 void PeriodicTimer::Stop() {
   std::lock_guard<simple_spinlock> l(lock_);
+  StopUnlocked();
+}
+
+void PeriodicTimer::StopUnlocked() {
+  DCHECK(lock_.is_locked());
   started_ = false;
 }
 
@@ -101,7 +111,7 @@ void PeriodicTimer::SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta) {
     next_task_delta = MonoDelta::FromMilliseconds(
         GetMinimumPeriod().ToMilliseconds() +
         rng_.NextDoubleFraction() *
-        jitter_pct_ *
+        options_.jitter_pct *
         (2 * period_.ToMilliseconds()));
   }
   next_task_time_ = MonoTime::Now() + *next_task_delta;
@@ -110,7 +120,7 @@ void PeriodicTimer::SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta) {
 MonoDelta PeriodicTimer::GetMinimumPeriod() {
   // Given jitter percentage J and period P, this returns (1-J)*P, which is
   // the lowest possible jittered value.
-  return MonoDelta::FromMilliseconds((1.0 - jitter_pct_) *
+  return MonoDelta::FromMilliseconds((1.0 - options_.jitter_pct) *
                                      period_.ToMilliseconds());
 }
 
@@ -166,10 +176,23 @@ void PeriodicTimer::Callback(int64_t my_callback_generation) {
       // It's time to run the task. Although the next task time is reset now,
       // it may be reset again by virtue of running the task itself.
       run_task = true;
+
+      if (options_.one_shot) {
+        // Stop the timer first, in case the task wants to restart it.
+        StopUnlocked();
+      }
     }
   }
+
   if (run_task) {
     functor_();
+
+    if (options_.one_shot) {
+      // The task was run; exit the loop. Even if the task restarted the timer,
+      // that will have started a new callback loop, so exiting here is always
+      // the correct thing to do.
+      return;
+    }
     Snooze();
   }
 

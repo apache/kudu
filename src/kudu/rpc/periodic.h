@@ -66,6 +66,28 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
  public:
   typedef std::function<void(void)> RunTaskFunctor;
 
+  struct Options {
+    Options();
+
+    // Defines the percentage of the period that will be jittered up or down
+    // randomly. Together with the period, the periodicity of the timer will
+    // vary between (1-J)*P and (1+J)*P.
+    //
+    // Must be between 0 and 1.
+    //
+    // If not set, defaults to 0.25.
+    double jitter_pct;
+
+    // The timer will automatically stop after running the user's task.
+    //
+    // Just as with a normal timer, Snooze() will postpone the running of the
+    // task, and Stop() will cancel the task outright. Unlike a normal timer,
+    // both operations will no-op if the timer has already fired.
+    //
+    // If not set, defaults to false.
+    bool one_shot;
+  };
+
   // Creates a new PeriodicTimer.
   //
   // A ref is taken on 'messenger', which is used for scheduling callbacks.
@@ -74,15 +96,14 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // PeriodicTimer. The task will run on the messenger's reactor threads so it
   // should do very little work (i.e. no I/O).
   //
-  // 'period' defines the period between tasks while 'jitter_pct' (which must
-  // be between 0 and 1) defines the percentage of the period that will be
-  // jittered up or down randomly. Taken together, the periodicity of the
-  // timer varies between (1-J)*P and (1+J)*P.
+  // 'period' defines the period between tasks.
+  //
+  // 'options' allows additional (optional) customization of the timer.
   static std::shared_ptr<PeriodicTimer> Create(
       std::shared_ptr<Messenger> messenger,
       RunTaskFunctor functor,
       MonoDelta period,
-      double jitter_pct = 0.25);
+      Options options = {});
 
   ~PeriodicTimer();
 
@@ -126,7 +147,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   PeriodicTimer(std::shared_ptr<Messenger> messenger,
                 RunTaskFunctor functor,
                 MonoDelta period,
-                double jitter_pct);
+                Options options);
 
   // Calculate the minimum period for the timer, which varies depending on
   // 'jitter_pct_' and the output of the PRNG.
@@ -136,6 +157,9 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // 'my_callback_generation' is the callback generation assigned to this loop
   // when it was constructed.
   void Callback(int64_t my_callback_generation);
+
+  // Like Stop() but must be called with 'lock_' held.
+  void StopUnlocked();
 
   // Like Snooze() but must be called with 'lock_' held.
   void SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta = boost::none);
@@ -154,8 +178,8 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // User-specified task period.
   const MonoDelta period_;
 
-  // User-specified jitter percentage.
-  const double jitter_pct_;
+  // User-specified options.
+  const Options options_;
 
   // Protects all mutable state below.
   mutable simple_spinlock lock_;
