@@ -415,12 +415,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // reporting to the master.
   void SetLeaderUuidUnlocked(const std::string& uuid);
 
-  // Replicate (as leader) a pre-validated config change. This includes
-  // updating the peers and setting the new_configuration as pending.
+  // Replicate (as leader) a config change. This includes validating the new
+  // config and updating the peers and setting the new_configuration as pending.
   // The old_configuration must be the currently-committed configuration.
   Status ReplicateConfigChangeUnlocked(
-      const RaftConfigPB& old_config,
-      const RaftConfigPB& new_config,
+      RaftConfigPB old_config,
+      RaftConfigPB new_config,
       StdStatusCallback client_cb);
 
   // Update the peers and queue to be consistent with a new active configuration.

@@ -568,9 +568,8 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
       round.get(),
       &DoNothingStatusCB,
       std::placeholders::_1));
-  RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
 
-  return Status::OK();
+  return AppendNewRoundToQueueUnlocked(round);
 }
 
 Status RaftConsensus::BecomeReplicaUnlocked() {
@@ -1643,7 +1642,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
     }
 
     RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
-        committed_config, new_config, std::bind(
+        std::move(committed_config), std::move(new_config), std::bind(
             &RaftConsensus::MarkDirtyOnSuccess,
             this,
             string("Config change replication complete"),
@@ -2080,16 +2079,16 @@ void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
 }
 
 Status RaftConsensus::ReplicateConfigChangeUnlocked(
-    const RaftConfigPB& old_config,
-    const RaftConfigPB& new_config,
+    RaftConfigPB old_config,
+    RaftConfigPB new_config,
     StdStatusCallback client_cb) {
   DCHECK(lock_.is_locked());
   auto cc_replicate = new ReplicateMsg();
   cc_replicate->set_op_type(CHANGE_CONFIG_OP);
   ChangeConfigRecordPB* cc_req = cc_replicate->mutable_change_config_record();
   cc_req->set_tablet_id(options_.tablet_id);
-  *cc_req->mutable_old_config() = old_config;
-  *cc_req->mutable_new_config() = new_config;
+  *cc_req->mutable_old_config() = std::move(old_config);
+  *cc_req->mutable_new_config() = std::move(new_config);
   CHECK_OK(time_manager_->AssignTimestamp(cc_replicate));
 
   scoped_refptr<ConsensusRound> round(
@@ -2101,8 +2100,7 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
       std::move(client_cb),
       std::placeholders::_1));
 
-  CHECK_OK(AppendNewRoundToQueueUnlocked(round));
-  return Status::OK();
+  return AppendNewRoundToQueueUnlocked(round);
 }
 
 Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
