@@ -63,12 +63,13 @@ class HmsClientTest : public KuduTest,
     hive::Table table;
     table.dbName = database_name;
     table.tableName = table_name;
-    table.tableType = HmsClient::kManagedTable;
+    table.tableType = HmsClient::kExternalTable;
 
     table.__set_parameters({
         make_pair(HmsClient::kKuduTableIdKey, table_id),
         make_pair(HmsClient::kKuduMasterAddrsKey, string("TODO")),
         make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler),
+        make_pair(HmsClient::kExternalTableKey, "TRUE")
     });
 
     hive::EnvironmentContext env_ctx;
@@ -168,7 +169,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(table_name, my_table.tableName);
   EXPECT_EQ(table_id, my_table.parameters[HmsClient::kKuduTableIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler, my_table.parameters[HmsClient::kStorageHandlerKey]);
-  EXPECT_EQ(HmsClient::kManagedTable, my_table.tableType);
+  EXPECT_EQ(HmsClient::kExternalTable, my_table.tableType);
 
   string new_table_name = "my_altered_table";
 
@@ -193,7 +194,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(table_id, renamed_table.parameters[HmsClient::kKuduTableIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler,
             renamed_table.parameters[HmsClient::kStorageHandlerKey]);
-  EXPECT_EQ(HmsClient::kManagedTable, renamed_table.tableType);
+  EXPECT_EQ(HmsClient::kExternalTable, renamed_table.tableType);
 
   // Create a table with an uppercase name.
   string uppercase_table_name = "my_UPPERCASE_Table";
@@ -286,7 +287,7 @@ TEST_P(HmsClientTest, TestLargeObjects) {
   hive::Table table;
   table.dbName = database_name;
   table.tableName = table_name;
-  table.tableType = HmsClient::kManagedTable;
+  table.tableType = HmsClient::kExternalTable;
   hive::FieldSchema partition_key;
   partition_key.name = "c1";
   partition_key.type = "int";

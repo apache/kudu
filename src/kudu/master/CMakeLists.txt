@@ -34,6 +34,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 
 set(MASTER_SRCS
   catalog_manager.cc
+  hms_notification_log_listener.cc
   master.cc
   master_cert_authority.cc
   master_options.cc
@@ -72,6 +73,7 @@ set(KUDU_TEST_LINK_LIBS
   mini_hms)
 
 ADD_KUDU_TEST(catalog_manager-test)
+ADD_KUDU_TEST(hms_notification_log_listener-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")

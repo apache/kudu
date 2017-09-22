@@ -47,16 +47,15 @@ target_link_libraries(itest_util
   kudu_tools_util
   security_test_util)
 add_dependencies(itest_util
-  kudu-tserver
-  kudu-master)
+  kudu-master
+  kudu-tserver)
 
 # Tests
 set(KUDU_TEST_LINK_LIBS itest_util ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)
-ADD_KUDU_TEST(alter_table-randomized-test
-  PROCESSORS 4)
+ADD_KUDU_TEST(alter_table-randomized-test NUM_SHARDS 2 PROCESSORS 4)
 ADD_KUDU_TEST(alter_table-test PROCESSORS 3)
 ADD_KUDU_TEST(authn_token_expire-itest)
 ADD_KUDU_TEST(catalog_manager_tsk-itest PROCESSORS 2)
@@ -81,7 +80,9 @@ ADD_KUDU_TEST(heavy-update-compaction-itest RUN_SERIAL true)
 ADD_KUDU_TEST(linked_list-test RUN_SERIAL true)
 ADD_KUDU_TEST(log-rolling-itest)
 ADD_KUDU_TEST(master_cert_authority-itest PROCESSORS 2)
-ADD_KUDU_TEST(master_failover-itest PROCESSORS 3)
+ADD_KUDU_TEST(master_failover-itest NUM_SHARDS 4 PROCESSORS 3)
+ADD_KUDU_TEST_DEPENDENCIES(master_failover-itest
+  kudu)
 ADD_KUDU_TEST(master_hms-itest RUN_SERIAL true PROCESSORS 4)
 ADD_KUDU_TEST(master_migration-itest)
 ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest

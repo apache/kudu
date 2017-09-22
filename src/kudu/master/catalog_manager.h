@@ -17,6 +17,7 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <iosfwd>
@@ -30,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -58,7 +60,7 @@ class NodeInstancePB;
 class PartitionPB;
 class PartitionSchema;
 class Schema;
-class ThreadPool; // IWYU pragma: keep
+class ThreadPool;
 struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
@@ -73,7 +75,7 @@ class RpcContext;
 namespace security {
 class Cert;
 class PrivateKey;
-class TokenSigningPublicKeyPB; // IWYU pragma: keep
+class TokenSigningPublicKeyPB;
 } // namespace security
 
 namespace consensus {
@@ -89,9 +91,14 @@ namespace hms {
 class HmsCatalog;
 } // namespace hms
 
+namespace hms {
+class HmsCatalog;
+}
+
 namespace master {
 
-class CatalogManagerBgTasks; // IWYU pragma: keep
+class CatalogManagerBgTasks;
+class HmsNotificationLogListenerTask;
 class Master;
 class SysCatalogTable;
 class TSDescriptor;
@@ -539,7 +546,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // but this function does not itself respond to the RPC.
   Status DeleteTableRpc(const DeleteTableRequestPB& req,
                         DeleteTableResponsePB* resp,
-                        rpc::RpcContext* rpc);
+                        rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+
+  // Delete the specified table in response to a 'DROP TABLE' HMS notification
+  // log listener event.
+  Status DeleteTableHms(const std::string& table_name,
+                        const std::string& table_id,
+                        int64_t notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Alter the specified table in response to an AlterTableRequest RPC.
   //
@@ -548,6 +561,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status AlterTableRpc(const AlterTableRequestPB& req,
                        AlterTableResponsePB* resp,
                        rpc::RpcContext* rpc);
+
+  // Rename the specified table in response to an 'ALTER TABLE RENAME' HMS
+  // notification log listener event.
+  Status RenameTableHms(const std::string& table_id,
+                        const std::string& table_name,
+                        const std::string& new_table_name,
+                        int64_t notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Get the information about an in-progress alter operation
   //
@@ -592,6 +612,18 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                              const TabletReportPB& full_report,
                              TabletReportUpdatesPB* full_report_update,
                              rpc::RpcContext* rpc);
+
+  // Returns the latest handled Hive Metastore notification log event ID.
+  int64_t GetLatestNotificationLogEventId();
+
+  // Initializes the cached latest handled Hive Metastore notification log event ID
+  // after a leader election.
+  Status InitLatestNotificationLogEventId();
+
+  // Stores the latest handled Hive Metastore notification log event ID.
+  //
+  // Must only be called by the singleton notification log listener thread.
+  Status StoreLatestNotificationLogEventId(int64_t event_id);
 
   SysCatalogTable* sys_catalog() { return sys_catalog_.get(); }
 
@@ -647,6 +679,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // must be initialized before calling this method.
   consensus::RaftPeerPB::Role Role() const;
 
+  hms::HmsCatalog* HmsCatalog() const {
+    return hms_catalog_.get();
+  }
+
  private:
   // These tests call ElectedAsLeaderCb() directly.
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
@@ -665,13 +701,20 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
 
   // Delete the specified table in the catalog.
+  //
+  // If a notification log event ID is provided, it will be written to the sys
+  // catalog.
   Status DeleteTable(const DeleteTableRequestPB& req,
-                     DeleteTableResponsePB* resp) WARN_UNUSED_RESULT;
-
+                     DeleteTableResponsePB* resp,
+                     boost::optional<int64_t> hms_notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Alter the specified table in the catalog.
+  //
+  // If a notification log event ID is provided, it will be written to the sys
+  // catalog along with the altered table metadata.
   Status AlterTable(const AlterTableRequestPB& req,
-                    AlterTableResponsePB* resp) WARN_UNUSED_RESULT;
+                    AlterTableResponsePB* resp,
+                    boost::optional<int64_t> hms_notification_log_event_id) WARN_UNUSED_RESULT;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes
@@ -895,6 +938,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Aborts all tasks belonging to 'tables' and waits for them to finish.
   void AbortAndWaitForAllTasks(const std::vector<scoped_refptr<TableInfo>>& tables);
 
+  // Wait for the Hive Metastore notification log listener to process the latest
+  // events, if the HMS integration is enabled. Handles setting the correct
+  // response code in the case of an error.
+  template<typename RespClass>
+  Status WaitForNotificationLogListenerCatchUp(RespClass* resp,
+                                               rpc::RpcContext* rpc) WARN_UNUSED_RESULT;
+
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
@@ -938,6 +988,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
 
   std::unique_ptr<hms::HmsCatalog> hms_catalog_;
+  std::unique_ptr<HmsNotificationLogListenerTask> hms_notification_log_listener_;
 
   enum State {
     kConstructed,
@@ -945,6 +996,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     kRunning,
     kClosing
   };
+
+  static const char* StateToString(State state);
 
   // Lock protecting state_, leader_ready_term_
   mutable simple_spinlock state_lock_;
@@ -960,6 +1013,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // that depend on the in-memory state until this master can respond
   // correctly.
   int64_t leader_ready_term_;
+
+  // This field is updated when a node becomes leader master, and the HMS
+  // integration is enabled. It caches the latest processed Hive Metastore
+  // notification log event ID so that every request does not need to hit the
+  // sys catalog. Must only be written to by the HMS notification log listener
+  // thread.
+  std::atomic<int64_t> hms_notification_log_event_id_;
 
   // Lock used to fence operations and leader elections. All logical operations
   // (i.e. create table, alter table, etc.) should acquire this lock for

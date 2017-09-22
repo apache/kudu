@@ -71,7 +71,8 @@ using std::vector;
 using strings::Split;
 using strings::Substitute;
 
-class MasterFailoverTest : public KuduTest {
+class MasterFailoverTest : public KuduTest,
+                           public ::testing::WithParamInterface<HmsMode> {
  public:
   enum CreateTableMode {
     kWaitForCreate = 0,
@@ -81,7 +82,7 @@ class MasterFailoverTest : public KuduTest {
   MasterFailoverTest() {
     opts_.num_masters = 3;
     opts_.num_tablet_servers = kNumTabletServerReplicas;
-    opts_.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+    opts_.hms_mode = GetParam();
 
     // Reduce various timeouts below as to make the detection of
     // leader master failures (specifically, failures as result of
@@ -156,11 +157,15 @@ class MasterFailoverTest : public KuduTest {
   shared_ptr<KuduClient> client_;
 };
 
+// Run the test with the HMS integration enabled and disabled.
+INSTANTIATE_TEST_CASE_P(HmsConfigurations, MasterFailoverTest,
+                        ::testing::Values(HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION));
+
 // Test that synchronous CreateTable (issue CreateTable call and then
 // wait until the table has been created) works even when the original
 // leader master has been paused.
-TEST_F(MasterFailoverTest, TestCreateTableSync) {
-  const char* kTableName = "default.testCreateTableSync";
+TEST_P(MasterFailoverTest, TestCreateTableSync) {
+  const char* kTableName = "default.test_create_table_sync";
 
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
@@ -192,8 +197,8 @@ TEST_F(MasterFailoverTest, TestCreateTableSync) {
 // Test that we can issue a CreateTable call, pause the leader master
 // immediately after, then verify that the table has been created on
 // the newly elected leader master.
-TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
-  const char* kTableName = "default.testPauseAfterCreateTableIssued";
+TEST_P(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
+  const char* kTableName = "default.test_pause_after_create_table_issued";
 
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
@@ -223,8 +228,8 @@ TEST_F(MasterFailoverTest, TestPauseAfterCreateTableIssued) {
 // Test the scenario where we create a table, pause the leader master,
 // and then issue the DeleteTable call: DeleteTable should go to the newly
 // elected leader master and succeed.
-TEST_F(MasterFailoverTest, TestDeleteTableSync) {
-  const char* kTableName = "default.testDeleteTableSync";
+TEST_P(MasterFailoverTest, TestDeleteTableSync) {
+  const char* kTableName = "default.test_delete_table_sync";
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
@@ -255,9 +260,9 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
 //
 // TODO(unknown): Add an equivalent async test. Add a test for adding and/or
 // renaming a column in a table.
-TEST_F(MasterFailoverTest, TestRenameTableSync) {
-  const char* kTableNameOrig = "default.testAlterTableSync";
-  const char* kTableNameNew = "default.testAlterTableSyncRenamed";
+TEST_P(MasterFailoverTest, TestRenameTableSync) {
+  const char* kTableNameOrig = "default.test_alter_table_sync";
+  const char* kTableNameNew = "default.test_alter_table_sync_renamed";
 
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
@@ -284,8 +289,8 @@ TEST_F(MasterFailoverTest, TestRenameTableSync) {
 }
 
 
-TEST_F(MasterFailoverTest, TestKUDU1374) {
-  const char* kTableName = "default.testKUDU1374";
+TEST_P(MasterFailoverTest, TestKUDU1374) {
+  const char* kTableName = "default.test_kudu_1374";
 
   // Wait at least one additional heartbeat interval after creating the table.
   // The idea is to guarantee that all tservers sent a tablet report with the
@@ -328,7 +333,7 @@ TEST_F(MasterFailoverTest, TestKUDU1374) {
   NO_PENDING_FATALS();
 }
 
-TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
+TEST_P(MasterFailoverTest, TestMasterUUIDResolution) {
   // After a fresh start, the masters should have received RPCs asking for
   // their UUIDs.
   for (int i = 0; i < cluster_->num_masters(); i++) {
@@ -367,7 +372,7 @@ TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
   }
 }
 
-TEST_F(MasterFailoverTest, TestMasterPermanentFailure) {
+TEST_P(MasterFailoverTest, TestMasterPermanentFailure) {
   const string kBinPath = cluster_->GetBinaryPath("kudu");
   Random r(SeedRandom());
 

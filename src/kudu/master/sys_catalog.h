@@ -23,12 +23,14 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -97,6 +99,7 @@ class TskEntryVisitor {
 //   * root CA (certificate authority) certificate of the Kudu IPKI
 //   * Kudu IPKI root CA cert's private key
 //   * TSK (Token Signing Key) entries
+//   * Latest handled Hive Metastore notification log event ID
 //
 // The essential properties of the SysCatalogTable are:
 //   * SysCatalogTable has only one tablet.
@@ -111,6 +114,9 @@ class SysCatalogTable {
   // There should be no more than one entry of this type in the system table.
   static const char* const kSysCertAuthorityEntryId;
 
+  // The row ID of the latest notification log entry in the sys catalog table.
+  static const char* const kLatestNotificationLogEntryIdRowId;
+
   typedef Callback<Status()> ElectedLeaderCallback;
 
   enum CatalogEntryType {
@@ -118,6 +124,7 @@ class SysCatalogTable {
     TABLETS_ENTRY = 2,
     CERT_AUTHORITY_INFO = 3,  // Kudu's root certificate authority entry.
     TSK_ENTRY = 4,            // Token Signing Key entry.
+    HMS_NOTIFICATION_LOG = 5, // HMS notification log latest event ID.
   };
 
   // 'leader_cb_' is invoked whenever this node is elected as a leader
@@ -152,6 +159,7 @@ class SysCatalogTable {
     std::vector<scoped_refptr<TabletInfo>> tablets_to_add;
     std::vector<scoped_refptr<TabletInfo>> tablets_to_update;
     std::vector<scoped_refptr<TabletInfo>> tablets_to_delete;
+    boost::optional<int64_t> hms_notification_log_event_id;
   };
   Status Write(const Actions& actions);
 
@@ -163,6 +171,9 @@ class SysCatalogTable {
 
   // Scan for TSK-related entries in the system table.
   Status VisitTskEntries(TskEntryVisitor* visitor);
+
+  // Get the latest processed HMS notification log event ID.
+  Status GetLatestNotificationLogEventId(int64_t* event_id) WARN_UNUSED_RESULT;
 
   // Retrive the CA entry (private key and certificate) from the system table.
   Status GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry);
@@ -252,6 +263,9 @@ class SysCatalogTable {
                         const std::vector<scoped_refptr<TabletInfo>>& tablets);
   void ReqDeleteTablets(tserver::WriteRequestPB* req,
                         const std::vector<scoped_refptr<TabletInfo>>& tablets);
+
+  // Overwrite (upsert) the latest event ID in the table with the provided ID.
+  void ReqSetNotificationLogEventId(tserver::WriteRequestPB* req, int64_t event_id);
 
   static std::string TskSeqNumberToEntryId(int64_t seq_number);
 

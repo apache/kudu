@@ -237,6 +237,13 @@ Status HmsCatalog::AlterTable(const string& id,
   });
 }
 
+Status HmsCatalog::GetNotificationEvents(int64_t last_event_id, int max_events,
+                                         vector<hive::NotificationEvent>* events) {
+  return Execute([&] (HmsClient* client) {
+    return client->GetNotificationEvents(last_event_id, max_events, events);
+  });
+}
+
 template<typename Task>
 Status HmsCatalog::Execute(Task task) {
   Synchronizer synchronizer;
@@ -427,6 +434,14 @@ Status HmsCatalog::PopulateTable(const string& id,
   table->parameters[HmsClient::kKuduTableIdKey] = id;
   table->parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses;
   table->parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
+  // Workaround for HIVE-19253.
+  table->parameters[HmsClient::kExternalTableKey] = "TRUE";
+
+  // Set the table type to external so that the table's (HD)FS directory will
+  // not be deleted when the table is dropped. Deleting the directory is
+  // unnecessary, and causes a race in the HMS between concurrent DROP TABLE and
+  // CREATE TABLE operations on existing tables.
+  table->tableType = HmsClient::kExternalTable;
 
   // Remove the deprecated Kudu-specific field 'kudu.table_name'.
   EraseKeyReturnValuePtr(&table->parameters, HmsClient::kLegacyKuduTableNameKey);

@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -30,7 +31,7 @@
 #include "kudu/util/status.h"
 
 namespace hive {
-class EnvironmentContext;
+class NotificationEvent;
 class Table;
 }
 
@@ -98,6 +99,13 @@ class HmsCatalog {
   //
   // This method will fail if the HMS is unreachable.
   Status RetrieveTables(std::vector<hive::Table>* hms_tables) WARN_UNUSED_RESULT;
+
+  // Retrieves notification log events from the HMS.
+  //
+  // The events will begin at id 'last_event_id + 1', and at most 'max_events'
+  // events are returned.
+  Status GetNotificationEvents(int64_t last_event_id, int max_events,
+                               std::vector<hive::NotificationEvent>* events);
 
   // Validates the hive_metastore_uris gflag.
   static bool ValidateUris(const char* flag_name, const std::string& metastore_uris);

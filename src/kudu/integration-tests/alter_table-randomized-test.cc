@@ -93,14 +93,15 @@ const vector <KuduColumnStorageAttributes::EncodingType> kInt32Encodings =
 const vector<int32_t> kBlockSizes = {0, 2 * 1024 * 1024,
                                      4 * 1024 * 1024, 8 * 1024 * 1024};
 
-class AlterTableRandomized : public KuduTest {
+class AlterTableRandomized : public KuduTest,
+                             public ::testing::WithParamInterface<HmsMode> {
  public:
   void SetUp() override {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+    opts.hms_mode = GetParam();
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.emplace_back("--log_container_preallocate_bytes=0");
@@ -137,6 +138,10 @@ class AlterTableRandomized : public KuduTest {
   unique_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
 };
+
+// Run the test with the HMS integration enabled and disabled.
+INSTANTIATE_TEST_CASE_P(HmsConfigurations, AlterTableRandomized,
+                        ::testing::Values(HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION));
 
 struct RowState {
   // We use this special value to denote NULL values.
@@ -696,7 +701,7 @@ struct MirrorTable {
 // During the sequence of operations, a "mirror" of the table in memory is kept up to
 // date. We periodically scan the actual table, and ensure that the data in Kudu
 // matches our in-memory "mirror".
-TEST_F(AlterTableRandomized, TestRandomSequence) {
+TEST_P(AlterTableRandomized, TestRandomSequence) {
   MirrorTable t(client_);
   ASSERT_OK(t.Create());
 

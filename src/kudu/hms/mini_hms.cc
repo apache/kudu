@@ -117,17 +117,33 @@ Status MiniHms::Start() {
 
   // Comma-separated list of additional jars to add to the HMS classpath.
   string aux_jars = Substitute("$0/hms-plugin.jar", bin_dir);
+
+  // List of JVM environment options to pass to the HMS.
+  string java_options =
+    // Make logging less verbose.
+    "-Dhive.log.level=WARN "
+    // Log to the console.
+    "-Dhive.root.logger=console "
+    // Tune down the Derby deadlock timeout. The HMS's use of Derby with the
+    // NOTIFICATION_SEQUENCE table is prone to deadlocks, at which point Derby
+    // cancels a conflicting transaction after waiting out the timeout. This
+    // typically doesn't cause issues since the HMS auto retries these
+    // transactions, however the default period of 20 seconds causes tests to
+    // timeout.
+    "-Dderby.locks.deadlockTimeout=1";
+
+  if (!krb5_conf_.empty()) {
+    java_options += Substitute(" -Djava.security.krb5.conf=$0", krb5_conf_);
+  }
+
   map<string, string> env_vars {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
       { "HIVE_AUX_JARS_PATH", aux_jars },
       { "HIVE_CONF_DIR", tmp_dir },
-      { "JAVA_TOOL_OPTIONS",  "-Dhive.log.level=WARN -Dhive.root.logger=console" },
+      { "JAVA_TOOL_OPTIONS", java_options },
       { "HADOOP_CONF_DIR", tmp_dir },
   };
-  if (!krb5_conf_.empty()) {
-    env_vars["JAVA_TOOL_OPTIONS"] += Substitute(" -Djava.security.krb5.conf=$0", krb5_conf_);
-  }
 
   // Start the HMS.
   hms_process_.reset(new Subprocess({

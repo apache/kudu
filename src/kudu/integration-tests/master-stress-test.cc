@@ -32,6 +32,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -96,7 +97,8 @@ using tools::LeaderMasterProxy;
 
 static const MonoDelta kDefaultAdminTimeout = MonoDelta::FromSeconds(300);
 
-class MasterStressTest : public KuduTest {
+class MasterStressTest : public KuduTest,
+                         public ::testing::WithParamInterface<HmsMode> {
  public:
   MasterStressTest()
     : done_(1),
@@ -120,10 +122,9 @@ class MasterStressTest : public KuduTest {
     opts.num_masters = 3;
     opts.num_tablet_servers = 3;
 
-    // TODO(dan): enable HMS integration. Currently the test fails when it's
-    // enabled because the HMS and Kudu catalogs become unsynchronized when
-    // masters are killed while operating on the catalog.
-    // opts.enable_hive_metastore = true;
+    opts.hms_mode = GetParam();
+    // Tune down the notification log poll period in order to speed up catalog convergence.
+    opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
 
     // Don't preallocate log segments, since we're creating many tablets here.
     // If each preallocates 64M or so, we use a ton of disk space in this
@@ -155,9 +156,6 @@ class MasterStressTest : public KuduTest {
     // builders, but there's no such option for DeleteTable, so we extend
     // the global operation timeout.
     builder.default_admin_operation_timeout(kDefaultAdminTimeout);
-
-    // Encourage the client to switch masters quickly in the event of failover.
-    builder.default_rpc_timeout(MonoDelta::FromSeconds(1));
 
     ASSERT_OK(cluster_->CreateClient(&builder, &client_));
 
@@ -433,7 +431,11 @@ class MasterStressTest : public KuduTest {
   std::unordered_map<string, itest::TServerDetails*> ts_map_;
 };
 
-TEST_F(MasterStressTest, Test) {
+// Run the test with the HMS integration enabled and disabled.
+INSTANTIATE_TEST_CASE_P(HmsConfigurations, MasterStressTest,
+                        ::testing::Values(HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION));
+
+TEST_P(MasterStressTest, Test) {
   OverrideFlagForSlowTests("num_create_table_threads", "10");
   OverrideFlagForSlowTests("num_alter_table_threads", "5");
   OverrideFlagForSlowTests("num_delete_table_threads", "5");
@@ -477,5 +479,4 @@ TEST_F(MasterStressTest, Test) {
   LOG(INFO) << "Tablets replaced: " << num_tablets_replaced_.Load();
   LOG(INFO) << "Masters restarted: " << num_masters_restarted_.Load();
 }
-
 } // namespace kudu

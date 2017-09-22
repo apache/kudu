@@ -70,6 +70,8 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
     opts.num_masters = 1;
     opts.num_tablet_servers = 1;
+    // Tune down the notification log poll period in order to speed up catalog convergence.
+    opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
     StartClusterWithOpts(std::move(opts));
 
     hms_client_.reset(new HmsClient(cluster_->hms()->address(), HmsClientOptions()));
@@ -131,6 +133,34 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
                          .num_replicas(1)
                          .set_range_partition_columns({ "key" })
                          .Create();
+  }
+
+  // Rename a table entry in the HMS catalog.
+  Status RenameHmsTable(const string& database_name,
+                        const string& old_table_name,
+                        const string& new_table_name) {
+    // The HMS doesn't have a rename table API. Instead it offers the more
+    // general AlterTable API, which requires the entire set of table fields to be
+    // set. Since we don't know these fields during a simple rename operation, we
+    // have to look them up.
+    hive::Table table;
+    RETURN_NOT_OK(hms_client_->GetTable(database_name, old_table_name, &table));
+    table.tableName = new_table_name;
+    return hms_client_->AlterTable(database_name, old_table_name, table);
+  }
+
+  // Drop all columns from a Kudu HMS table entry.
+  Status AlterHmsTableDropColumns(const string& database_name, const string& table_name) {
+    hive::Table table;
+    RETURN_NOT_OK(hms_client_->GetTable(database_name, table_name, &table));
+    table.sd.cols.clear();
+
+    // The KuduMetastorePlugin only allows the master to alter the columns in a
+    // Kudu table, so we pretend to be the master.
+    hive::EnvironmentContext env_ctx;
+    env_ctx.__set_properties({ std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true") });
+    RETURN_NOT_OK(hms_client_->AlterTable(database_name, table_name, table, env_ctx));
+    return Status::OK();
   }
 
   // Checks that the Kudu table schema and the HMS table entry in their
@@ -269,7 +299,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   s = table_alterer->Alter();
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
-  // Start the HMS and rename the table back to the original name.  This is the happy path.
+  // Start the HMS and rename the table through Kudu.
   ASSERT_OK(StartHms());
   ASSERT_EVENTUALLY([&] {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
@@ -278,53 +308,35 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   NO_FATALS(CheckTable("db", "c"));
   NO_FATALS(CheckTableDoesNotExist("db", "a"));
 
-  // Drop the HMS table entry, then create a non-Kudu table entry in it's place,
-  // and attempt to rename the table.
-  ASSERT_OK(hms_client_->DropTable("db", "c"));
-  hive::Table external_table_2;
-  external_table_2.dbName = "db";
-  external_table_2.tableName = "c";
-  ASSERT_OK(hms_client_->CreateTable(external_table_2));
-  table_alterer.reset(client_->NewTableAlterer("db.c"));
-  s = table_alterer->RenameTo("db.a")->Alter();
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  // Rename the table through the HMS, and ensure the rename is handled in Kudu.
+  ASSERT_OK(RenameHmsTable("db", "c", "d"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("db", "d"));
+  });
 
-  // Check that all three tables still exist.
+  // Check that the two tables still exist.
   vector<string> tables;
   ASSERT_OK(hms_client_->GetAllTables("db", &tables));
   std::sort(tables.begin(), tables.end());
-  ASSERT_EQ(tables, vector<string>({ "b", "c" })) << tables;
+  ASSERT_EQ(tables, vector<string>({ "b", "d" })) << tables;
 }
 
 TEST_F(MasterHmsTest, TestAlterTable) {
-  const char* hms_database_name = "alter_db";
-  const char* hms_table_name = "table";
-  string table_name = Substitute("$0.$1", hms_database_name, hms_table_name);
-
-  ASSERT_OK(CreateDatabase(hms_database_name));
-
   // Create the Kudu table.
-  ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  NO_FATALS(CheckTable("default", "a"));
 
-  // Alter the HMS table entry in a destructive way (remove the columns).
-  hive::Table hms_table;
-  ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table));
-  hms_table.sd.cols.clear();
-  // The KuduMetastorePlugin requires column alteration events to come from a Kudu Master.
-  ASSERT_OK(hms_client_->AlterTable(hms_database_name, hms_table_name, hms_table, MasterEnvCtx()));
-  hive::Table altered_table;
-  ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &altered_table));
-  ASSERT_TRUE(altered_table.sd.cols.empty());
+  // Alter the HMS table entry in a destructive way (remove all columns).
+  ASSERT_OK(AlterHmsTableDropColumns("default", "a"));
 
-  // Drop a column. This should correct the entire set of columns in the HMS.
-  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
+  // Drop a column in Kudu. This should correct the entire set of columns in the HMS.
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.a"));
   ASSERT_OK(table_alterer->DropColumn("int8_val")->Alter());
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
+  NO_FATALS(CheckTable("default", "a"));
 
   // Shutdown the HMS and try to alter the table.
   ASSERT_OK(StopHms());
-  table_alterer.reset(client_->NewTableAlterer(table_name)->DropColumn("int16_val"));
+  table_alterer.reset(client_->NewTableAlterer("default.a")->DropColumn("int16_val"));
   Status s = table_alterer->Alter();
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
@@ -334,66 +346,103 @@ TEST_F(MasterHmsTest, TestAlterTable) {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
     ASSERT_OK(table_alterer->Alter());
   });
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
-
-  // Drop the table from the HMS, and insert a non-Kudu table entry, then try
-  // and alter the table.
-  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
-  hms_table = hive::Table();
-  hms_table.dbName = hms_database_name;
-  hms_table.tableName = hms_table_name;
-  ASSERT_OK(hms_client_->CreateTable(hms_table));
-
-  table_alterer.reset(client_->NewTableAlterer(table_name));
-  s = table_alterer->DropColumn("int32_val")->Alter();
-  EXPECT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "belongs to another table");
+  NO_FATALS(CheckTable("default", "a"));
 }
 
 TEST_F(MasterHmsTest, TestDeleteTable) {
-  const char* hms_database_name = "delete_db";
-  const char* hms_table_name = "table";
-  string table_name = Substitute("$0.$1", hms_database_name, hms_table_name);
-
-  ASSERT_OK(CreateDatabase(hms_database_name));
-
-  // Create the Kudu table, then drop it and ensure the HMS entry is removed.
-  ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
+  // Create a Kudu table, then drop it from Kudu and ensure the HMS entry is removed.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  NO_FATALS(CheckTable("default", "a"));
   hive::Table hms_table;
-  ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table));
-  ASSERT_OK(client_->DeleteTable(table_name));
-  NO_FATALS(CheckTableDoesNotExist(hms_database_name, hms_table_name));
+  ASSERT_OK(hms_client_->GetTable("default", "a", &hms_table));
 
-  // Create the Kudu table, remove the HMS entry, and ensure the Kudu table can
-  // not be dropped.
-  ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
-  ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table));
+  ASSERT_OK(client_->DeleteTable("default.a"));
+  NO_FATALS(CheckTableDoesNotExist("default", "a"));
+
+  // Create the Kudu table, then drop it from the HMS, and ensure the Kudu table is deleted.
+  ASSERT_OK(CreateKuduTable("default", "b"));
+  NO_FATALS(CheckTable("default", "b"));
+  hive::Table hms_table_b;
+  ASSERT_OK(hms_client_->GetTable("default", "b", &hms_table_b));
   shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(table_name, &table));
-  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
-  Status s = hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table);
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  s = client_->DeleteTable(table_name);
-  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-
-  // Re-create the HMS catalog entry and try again.
-  ASSERT_OK(hms_client_->CreateTable(hms_table, MasterEnvCtx()));
-  ASSERT_OK(client_->DeleteTable(table_name));
+  ASSERT_OK(client_->OpenTable("default.b", &table));
+  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_EVENTUALLY([&] {
+      NO_FATALS(CheckTableDoesNotExist("default", "b"));
+  });
 
   // Ensure that dropping a table while the HMS is unreachable fails.
-  ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
+  ASSERT_OK(CreateKuduTable("default", "c"));
+  NO_FATALS(CheckTable("default", "c"));
   ASSERT_OK(StopHms());
-  s = client_->DeleteTable(table_name);
+  Status s = client_->DeleteTable("default.c");
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
   ASSERT_OK(StartHms());
-  NO_FATALS(CheckTable(hms_database_name, hms_table_name));
+  NO_FATALS(CheckTable("default", "c"));
   ASSERT_EVENTUALLY([&] {
     // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
-    ASSERT_OK(client_->DeleteTable(table_name));
+    ASSERT_OK(client_->DeleteTable("default.c"));
   });
-  NO_FATALS(CheckTableDoesNotExist(hms_database_name, hms_table_name));
+  NO_FATALS(CheckTableDoesNotExist("default", "c"));
+}
+
+TEST_F(MasterHmsTest, TestNotificationLogListener) {
+  // Create a Kudu table.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  NO_FATALS(CheckTable("default", "a"));
+
+  // Rename the table in the HMS, and ensure that the notification log listener
+  // detects the rename and updates the Kudu catalog accordingly.
+  ASSERT_OK(RenameHmsTable("default", "a", "b"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS({
+      CheckTable("default", "b");
+      CheckTableDoesNotExist("default", "a");
+    });
+  });
+
+  // Drop the table in the HMS, and ensure that the notification log listener
+  // detects the drop and updates the Kudu catalog accordingly.
+  ASSERT_OK(hms_client_->DropTable("default", "b"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTableDoesNotExist("default", "b"));
+  });
+
+  // Rename a table from A to B to A, and ensure that Kudu doesn't continue
+  // applying notification log events in a self-perpetuating loop.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  unique_ptr<KuduTableAlterer> table_alterer;
+  table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b"));
+  ASSERT_OK(table_alterer->Alter());
+  NO_FATALS(CheckTable("default", "b"));
+  table_alterer.reset(client_->NewTableAlterer("default.b")->RenameTo("default.a"));
+  ASSERT_OK(table_alterer->Alter());
+  NO_FATALS(CheckTable("default", "a"));
+
+
+  // Ensure that Kudu can rename a table just after it's been renamed through the HMS.
+  RenameHmsTable("default", "a", "b");
+  table_alterer.reset(client_->NewTableAlterer("default.b")->RenameTo("default.c"));
+  ASSERT_OK(table_alterer->Alter());
+
+  // Ensure that Kudu can drop a table just after it's been renamed through the HMS.
+  RenameHmsTable("default", "c", "a");
+  ASSERT_OK(client_->DeleteTable("default.a"));
+
+  // Test concurrent drops from the HMS and Kudu.
+
+  // Scenario 1: drop from the HMS first.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  ASSERT_OK(hms_client_->DropTable("default", "a"));
+  Status s = client_->DeleteTable("default.a");
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  CheckTableDoesNotExist("default", "a");
+
+  // Scenario 2: drop from Kudu first.
+  ASSERT_OK(CreateKuduTable("default", "a"));
+  ASSERT_OK(client_->DeleteTable("default.a"));
+  s = hms_client_->DropTable("default", "a");
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  CheckTableDoesNotExist("default", "a");
 }
 } // namespace kudu

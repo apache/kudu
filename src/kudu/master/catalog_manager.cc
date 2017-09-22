@@ -93,6 +93,7 @@
 #include "kudu/gutil/utf/utf.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/hms/hms_catalog.h"
+#include "kudu/master/hms_notification_log_listener.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
@@ -249,16 +250,17 @@ DECLARE_int64(tsk_rotation_seconds);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
+using boost::optional;
 using kudu::cfile::TypeEncodingInfo;
 using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::GetConsensusRole;
 using kudu::consensus::IsRaftConfigMember;
+using kudu::consensus::MajorityHealthPolicy;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::StartTabletCopyRequestPB;
-using kudu::consensus::MajorityHealthPolicy;
 using kudu::consensus::kMinimumTerm;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -446,7 +448,7 @@ class CatalogManagerBgTasks {
 
   ~CatalogManagerBgTasks() {}
 
-  Status Init();
+  Status Init() WARN_UNUSED_RESULT;
   void Shutdown();
 
   void Wake() {
@@ -467,7 +469,6 @@ class CatalogManagerBgTasks {
  private:
   void Run();
 
- private:
   Atomic32 closing_;
   bool pending_updates_;
   mutable Mutex lock_;
@@ -579,7 +580,6 @@ void CatalogManagerBgTasks::Run() {
 
 namespace {
 
-
 string RequestorString(RpcContext* rpc) {
   if (rpc) {
     return rpc->requestor_string();
@@ -663,6 +663,7 @@ CatalogManager::CatalogManager(Master* master)
     rng_(GetRandomSeed32()),
     state_(kConstructed),
     leader_ready_term_(-1),
+    hms_notification_log_event_id_(-1),
     leader_lock_(RWMutex::Priority::PREFER_WRITING) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            // Presently, this thread pool must contain only a single thread
@@ -708,6 +709,10 @@ Status CatalogManager::Init(bool is_first_run) {
     hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses)));
     RETURN_NOT_OK_PREPEND(hms_catalog_->Start(),
                           "failed to start Hive Metastore catalog");
+
+    hms_notification_log_listener_.reset(new HmsNotificationLogListenerTask(this));
+    RETURN_NOT_OK_PREPEND(hms_notification_log_listener_->Init(),
+        "failed to initialize Hive Metastore notification log listener task");
   }
 
   std::lock_guard<LockType> l(lock_);
@@ -852,7 +857,7 @@ Status CatalogManager::InitCertAuthorityWith(
   RETURN_NOT_OK_PREPEND(tls->AddTrustedCertificate(ca->ca_cert()),
                         "could not trust master CA cert");
   // If we haven't signed our own server cert yet, do so.
-  boost::optional<security::CertSignRequest> csr = tls->GetCsrIfNecessary();
+  optional<security::CertSignRequest> csr = tls->GetCsrIfNecessary();
   if (csr) {
     Cert cert;
     RETURN_NOT_OK_PREPEND(ca->SignServerCSR(*csr, &cert),
@@ -1025,6 +1030,18 @@ void CatalogManager::PrepareForLeadershipTask() {
         return;
       }
     }
+
+    if (hms_catalog_) {
+      static const char* const kNotificationLogEventIdDescription =
+          "Loading latest processed Hive Metastore notification log event ID";
+      LOG(INFO) << kNotificationLogEventIdDescription << "...";
+      LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + kNotificationLogEventIdDescription) {
+        if (!check(std::bind(&CatalogManager::InitLatestNotificationLogEventId, this),
+                   *consensus, term, kNotificationLogEventIdDescription).ok()) {
+          return;
+        }
+      }
+    }
   }
 
   std::lock_guard<simple_spinlock> l(state_lock_);
@@ -1175,6 +1192,7 @@ void CatalogManager::Shutdown() {
   }
 
   if (hms_catalog_) {
+    hms_notification_log_listener_->Shutdown();
     hms_catalog_->Stop();
   }
 
@@ -1262,7 +1280,7 @@ Status ValidateIdentifier(const string& id) {
 }
 
 // Validate the client-provided schema and name.
-Status ValidateClientSchema(const boost::optional<string>& name,
+Status ValidateClientSchema(const optional<string>& name,
                             const Schema& schema) {
   if (name != boost::none) {
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(name.get()), "invalid table name");
@@ -1309,6 +1327,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    rpc::RpcContext* rpc) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
+
+  // If the HMS integration is enabled, wait for the notification log listener
+  // to catch up. This reduces the likelihood of attempting to create a table
+  // with a name that conflicts with a table that has just been deleted or
+  // renamed in the HMS.
+  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
 
   // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
@@ -1706,10 +1730,71 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
                                       rpc::RpcContext* rpc) {
   LOG(INFO) << Substitute("Servicing DeleteTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
-  return DeleteTable(req, resp);
+
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
+  // If the HMS integration is enabled, then don't directly remove the table
+  // from the Kudu catalog. Instead, delete the table from the HMS and wait for
+  // the notification log listener to apply the corresponding event to the
+  // catalog. By 'serializing' the drop through the HMS, race conditions are
+  // avoided.
+  if (hms_catalog_) {
+    // Wait for the notification log listener to catch up. This reduces the
+    // likelihood of attempting to delete a table which has just been deleted or
+    // renamed in the HMS.
+    RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+
+    // Look up and lock the table.
+    scoped_refptr<TableInfo> table;
+    TableMetadataLock l;
+    RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
+    if (l.data().is_deleted()) {
+      return SetupError(Status::NotFound("the table was deleted", l.data().pb.state_msg()),
+          resp, MasterErrorPB::TABLE_NOT_FOUND);
+    }
+
+    // Drop the table from the HMS.
+    RETURN_NOT_OK(SetupError(
+          hms_catalog_->DropTable(table->id(), l.data().name()),
+          resp, MasterErrorPB::HIVE_METASTORE_ERROR));
+
+    // Unlock the table, and wait for the notification log listener to handle
+    // the delete table event.
+    l.Unlock();
+    return WaitForNotificationLogListenerCatchUp(resp, rpc);
+  }
+
+  // If the HMS integration isn't enabled, then delete the table directly from
+  // the Kudu catalog.
+  return DeleteTable(req, resp, boost::none);
 }
 
-Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableResponsePB* resp) {
+Status CatalogManager::DeleteTableHms(const string& table_name,
+                                      const string& table_id,
+                                      int64_t notification_log_event_id) {
+  LOG(INFO) << "Deleting table " << table_name
+            << " [id=" << table_id
+            << "] in response to Hive Metastore notification log event "
+            << notification_log_event_id;
+
+  DeleteTableRequestPB req;
+  DeleteTableResponsePB resp;
+  req.mutable_table()->set_table_name(table_name);
+  req.mutable_table()->set_table_id(table_id);
+
+  RETURN_NOT_OK(DeleteTable(req, &resp, notification_log_event_id));
+
+  // Update the cached HMS notification log event ID, if it changed.
+  DCHECK_GT(notification_log_event_id, hms_notification_log_event_id_);
+  hms_notification_log_event_id_ = notification_log_event_id;
+
+  return Status::OK();
+}
+
+Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
+                                   DeleteTableResponsePB* resp,
+                                   optional<int64_t> hms_notification_log_event_id) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -1722,42 +1807,11 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableR
         resp, MasterErrorPB::TABLE_NOT_FOUND);
   }
 
-  // 2. Drop the HMS table entry.
-  //
-  // This step comes before modifying the sys catalog so that we can ensure the
-  // HMS is available. We do not allow dropping tables while the HMS is
-  // unavailable, because that would cause the catalogs to become unsynchronized.
-  if (hms_catalog_) {
-    Status s = hms_catalog_->DropTable(table->id(), l.data().name());
-    if (!s.ok()) {
-      s.CloneAndPrepend(Substitute("an error occurred while dropping table $0 in the HMS",
-                                   l.data().name()));
-      LOG(WARNING) << s.ToString();
-      return SetupError(std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR);
-    }
-  }
-  // Re-create the HMS entry if we exit early.
-  auto abort_hms = MakeScopedCleanup([&] {
-      // TODO(dan): figure out how to test this.
-      if (hms_catalog_) {
-        TRACE("Rolling back HMS table deletion");
-        Schema schema;
-        Status s = SchemaFromPB(l.data().pb.schema(), &schema);
-        if (!s.ok()) {
-          LOG(WARNING) << "Failed to decode schema during HMS table entry deletion roll-back: "
-                       << s.ToString();
-          return;
-        }
-        WARN_NOT_OK(hms_catalog_->CreateTable(table->id(), l.data().name(), schema),
-                    "An error occurred while attempting to roll-back HMS table entry deletion");
-      }
-  });
-
   TRACE("Modifying in-memory table state")
   string deletion_msg = "Table deleted at " + LocalTimeAsString();
   l.mutable_data()->set_state(SysTablesEntryPB::REMOVED, deletion_msg);
 
-  // 3. Look up the tablets, lock them, and mark them as deleted.
+  // 2. Look up the tablets, lock them, and mark them as deleted.
   {
     TRACE("Locking tablets");
     vector<scoped_refptr<TabletInfo>> tablets;
@@ -1771,9 +1825,10 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableR
           SysTabletsEntryPB::DELETED, deletion_msg);
     }
 
-    // 4. Update sys-catalog with the removed table and tablet state.
+    // 3. Update sys-catalog with the removed table and tablet state.
     TRACE("Removing table and tablets from system table");
     SysCatalogTable::Actions actions;
+    actions.hms_notification_log_event_id = hms_notification_log_event_id;
     actions.table_to_update = table;
     actions.tablets_to_update.assign(tablets.begin(), tablets.end());
     Status s = sys_catalog_->Write(actions);
@@ -1784,10 +1839,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableR
       return s;
     }
 
-    // The operation has been written to sys-catalog; now it must succeed.
-    abort_hms.cancel();
-
-    // 5. Remove the table from the by-name map.
+    // 4. Remove the table from the by-name map.
     {
       TRACE("Removing table from by-name map");
       std::lock_guard<LockType> l_map(lock_);
@@ -1798,19 +1850,19 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableR
       }
     }
 
-    // 6. Commit the dirty tablet state.
+    // 5. Commit the dirty tablet state.
     lock.Commit();
   }
 
-  // 7. Commit the dirty table state.
+  // 6. Commit the dirty table state.
   TRACE("Committing in-memory state");
   l.Commit();
 
-  // 8. Abort any extant tasks belonging to the table.
+  // 7. Abort any extant tasks belonging to the table.
   TRACE("Aborting table tasks");
   table->AbortTasks();
 
-  // 9. Send a DeleteTablet() request to each tablet replica in the table.
+  // 8. Send a DeleteTablet() request to each tablet replica in the table.
   SendDeleteTableRequest(table, deletion_msg);
 
   VLOG(1) << "Deleted table " << table->ToString();
@@ -2073,12 +2125,79 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
 Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
                                      AlterTableResponsePB* resp,
                                      rpc::RpcContext* rpc) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
+  // If the HMS integration is enabled, wait for the notification log listener
+  // to catch up. This reduces the likelihood of attempting to apply an
+  // alteration to a table which has just been renamed or deleted through the HMS.
+  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
-  return AlterTable(req, resp);
+
+  // If the HMS integration is enabled and the alteration includes a table
+  // rename, then don't directly rename the table in the Kudu catalog. Instead,
+  // rename the table in the HMS and wait for the notification log listener to
+  // apply that event to the catalog. By 'serializing' the rename through the
+  // HMS, race conditions are avoided.
+  if (hms_catalog_ && req.has_new_table_name()) {
+    // Look up the table, lock it, and mark it as removed.
+    scoped_refptr<TableInfo> table;
+    TableMetadataLock l;
+    RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
+    RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
+
+    Schema schema;
+    RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &schema));
+
+    // Rename the table in the HMS.
+    RETURN_NOT_OK(SetupError(hms_catalog_->AlterTable(
+            table->id(), l.data().name(), req.new_table_name(),
+            schema),
+        resp, MasterErrorPB::HIVE_METASTORE_ERROR));
+
+    // Unlock the table, and wait for the notification log listener to handle
+    // the alter table event.
+    l.Unlock();
+    RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
+
+    // Finally, apply the remaining schema and partitioning alterations to the
+    // local catalog. Since Kudu holds the canonical version of table schemas
+    // and partitions the HMS is not updated first.
+    AlterTableRequestPB r(req);
+    r.mutable_table()->clear_table_name();
+    r.mutable_table()->set_table_id(table->id());
+    r.clear_new_table_name();
+
+    return AlterTable(r, resp, boost::none);
+  }
+
+  return AlterTable(req, resp, boost::none);
 }
 
-Status CatalogManager::AlterTable(const AlterTableRequestPB& req, AlterTableResponsePB* resp) {
+Status CatalogManager::RenameTableHms(const string& table_id,
+                                      const string& table_name,
+                                      const string& new_table_name,
+                                      int64_t notification_log_event_id) {
+  AlterTableRequestPB req;
+  AlterTableResponsePB resp;
+  req.mutable_table()->set_table_id(table_id);
+  req.mutable_table()->set_table_name(table_name);
+  req.set_new_table_name(new_table_name);
+
+  RETURN_NOT_OK(AlterTable(req, &resp, notification_log_event_id));
+
+  // Update the cached HMS notification log event ID.
+  DCHECK_GT(notification_log_event_id, hms_notification_log_event_id_);
+  hms_notification_log_event_id_ = notification_log_event_id;
+
+  return Status::OK();
+}
+
+Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
+                                  AlterTableResponsePB* resp,
+                                  optional<int64_t> hms_notification_log_event_id) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -2230,45 +2349,11 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req, AlterTableResp
                                            LocalTimeAsString()));
   }
 
-  // 7. Update the HMS table entry.
-  //
-  // This step comes before modifying the sys catalog so that we can ensure the
-  // HMS is available. We do not allow altering tables while the HMS is
-  // unavailable, because that would cause the catalogs to become unsynchronized.
-  if (hms_catalog_ != nullptr && has_metadata_changes) {
-    const string& new_name = req.has_new_table_name() ? req.new_table_name() : table_name;
-    Status s = hms_catalog_->AlterTable(table->id(), table_name, new_name, new_schema);
-
-    if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("an error occurred while altering table $0 in the HMS",
-                                       table_name));
-      LOG(WARNING) << s.ToString();
-      return SetupError(std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR);
-    }
-  }
-  // Roll-back the HMS alteration if we exit early.
-  auto abort_hms = MakeScopedCleanup([&] {
-      // TODO(dan): figure out how to test this.
-      if (hms_catalog_) {
-        TRACE("Rolling back HMS table alterations");
-        Schema schema;
-        Status s = SchemaFromPB(l.data().pb.schema(), &schema);
-        if (!s.ok()) {
-          LOG(WARNING) << "Failed to decode schema during HMS table entry alteration roll-back: "
-                       << s.ToString();
-          return;
-        }
-        const string& new_name = req.has_new_table_name() ? req.new_table_name() : table_name;
-
-        WARN_NOT_OK(hms_catalog_->AlterTable(table->id(), new_name, table_name, schema),
-                    "An error occurred while attempting to roll-back HMS table entry alteration");
-      }
-  });
-
-  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 7. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   string deletion_msg = "Partition dropped at " + LocalTimeAsString();
   SysCatalogTable::Actions actions;
+  actions.hms_notification_log_event_id = hms_notification_log_event_id;
   if (!tablets_to_add.empty() || has_metadata_changes) {
     // If anything modified the table's persistent metadata, then sync it to the sys catalog.
     actions.table_to_update = table;
@@ -2294,11 +2379,9 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req, AlterTableResp
     return s;
   }
 
-  // 9. Commit the in-memory state.
+  // 8. Commit the in-memory state.
   {
     TRACE("Committing alterations to in-memory state");
-
-    abort_hms.cancel();
 
     // Commit new tablet in-memory state. This doesn't require taking the global
     // lock since the new tablets are not yet visible, because they haven't been
@@ -2349,6 +2432,21 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req, AlterTableResp
   // GetTabletLocations returns a deleted tablet, the retry will never include
   // the tablet again.
   tablets_to_drop_lock.Commit();
+
+  // If there are schema changes, then update the entry in the Hive Metastore.
+  // This is done on a best-effort basis, since Kudu is the source of truth for
+  // table schema information, and the table has already been altered in the
+  // Kudu catalog via the successful sys-table write above.
+  if (hms_catalog_ && has_schema_changes) {
+    // Sanity check: if there are schema changes then this is necessarily not a
+    // table rename, since we split out the rename portion into its own
+    // 'transaction' which is serialized through the HMS.
+    DCHECK(!req.has_new_table_name());
+    WARN_NOT_OK(hms_catalog_->AlterTable(table->id(), table_name, table_name, new_schema),
+                Substitute(
+                  "failed to alter HiveMetastore schema for table $0, "
+                  "HMS schema information will be stale", table->ToString()));
+  }
 
   if (!tablets_to_add.empty() || has_metadata_changes) {
     l.Commit();
@@ -2943,7 +3041,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       Master* master, const string& permanent_uuid,
       const scoped_refptr<TableInfo>& table, string tablet_id,
       TabletDataState delete_type,
-      boost::optional<int64_t> cas_config_opid_index_less_or_equal,
+      optional<int64_t> cas_config_opid_index_less_or_equal,
       string reason)
       : RetrySpecificTSRpcTask(master, permanent_uuid, table),
         tablet_id_(std::move(tablet_id)),
@@ -3021,7 +3119,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
 
   const string tablet_id_;
   const TabletDataState delete_type_;
-  const boost::optional<int64_t> cas_config_opid_index_less_or_equal_;
+  const optional<int64_t> cas_config_opid_index_less_or_equal_;
   const string reason_;
   tserver::DeleteTabletResponsePB resp_;
 };
@@ -3850,6 +3948,34 @@ Status CatalogManager::ProcessTabletReport(
   return Status::OK();
 }
 
+int64_t CatalogManager::GetLatestNotificationLogEventId() {
+  DCHECK(hms_catalog_);
+  leader_lock_.AssertAcquiredForReading();
+  return hms_notification_log_event_id_;
+}
+
+Status CatalogManager::InitLatestNotificationLogEventId() {
+  DCHECK(hms_catalog_);
+  leader_lock_.AssertAcquiredForWriting();
+  int64_t hms_notification_log_event_id;
+  RETURN_NOT_OK(sys_catalog_->GetLatestNotificationLogEventId(&hms_notification_log_event_id));
+  hms_notification_log_event_id_ = hms_notification_log_event_id;
+  return Status::OK();
+}
+
+Status CatalogManager::StoreLatestNotificationLogEventId(int64_t event_id) {
+  DCHECK(hms_catalog_);
+  DCHECK_GT(event_id, hms_notification_log_event_id_);
+  leader_lock_.AssertAcquiredForReading();
+  SysCatalogTable::Actions actions;
+  actions.hms_notification_log_event_id = event_id;
+  RETURN_NOT_OK_PREPEND(
+      sys_catalog()->Write(actions),
+      "Failed to update processed Hive Metastore notification log ID in the sys catalog table");
+  hms_notification_log_event_id_ = event_id;
+  return Status::OK();
+}
+
 std::shared_ptr<RaftConsensus> CatalogManager::master_consensus() const {
   // CatalogManager::InitSysCatalogAsync takes lock_ in exclusive mode in order
   // to initialize sys_catalog_, so it's sufficient to take lock_ in shared mode
@@ -4388,7 +4514,7 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
   return BuildLocationsForTablet(tablet_info, filter, locs_pb);
 }
 
-Status CatalogManager::ReplaceTablet(const std::string& tablet_id, ReplaceTabletResponsePB* resp) {
+Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletResponsePB* resp) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -4605,6 +4731,31 @@ void CatalogManager::AbortAndWaitForAllTasks(
     t->WaitTasksCompletion();
   }
 }
+
+template<typename RespClass>
+Status CatalogManager::WaitForNotificationLogListenerCatchUp(RespClass* resp,
+                                                             rpc::RpcContext* rpc) {
+  if (hms_catalog_) {
+    Status s = hms_notification_log_listener_->WaitForCatchUp(rpc->GetClientDeadline());
+    // ServiceUnavailable indicates the master has lost leadership.
+    MasterErrorPB::Code code = s.IsServiceUnavailable() ?
+      MasterErrorPB::NOT_THE_LEADER :
+      MasterErrorPB::HIVE_METASTORE_ERROR;
+    return SetupError(s, resp, code);
+  }
+  return Status::OK();
+}
+
+const char* CatalogManager::StateToString(State state) {
+  switch (state) {
+    case CatalogManager::kConstructed: return "Constructed";
+    case CatalogManager::kStarting: return "Starting";
+    case CatalogManager::kRunning: return "Running";
+    case CatalogManager::kClosing: return "Closing";
+  }
+  __builtin_unreachable();
+}
+
 ////////////////////////////////////////////////////////////
 // CatalogManager::ScopedLeaderSharedLock
 ////////////////////////////////////////////////////////////
@@ -4622,7 +4773,7 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
   if (PREDICT_FALSE(catalog_->state_ != kRunning)) {
     catalog_status_ = Status::ServiceUnavailable(
         Substitute("Catalog manager is not initialized. State: $0",
-                   catalog_->state_));
+                   StateToString(catalog_->state_)));
     return;
   }
 

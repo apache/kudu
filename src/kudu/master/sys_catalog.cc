@@ -134,6 +134,8 @@ const char* const SysCatalogTable::kSysCertAuthorityEntryId =
     "root-ca-info";
 const char* const SysCatalogTable::kInjectedFailureStatusMsg =
     "INJECTED FAILURE";
+const char* const SysCatalogTable::kLatestNotificationLogEntryIdRowId =
+  "latest_notification_log_entry_id";
 
 namespace {
 
@@ -506,6 +508,10 @@ Status SysCatalogTable::Write(const Actions& actions) {
   ReqUpdateTablets(&req, actions.tablets_to_update);
   ReqDeleteTablets(&req, actions.tablets_to_delete);
 
+  if (actions.hms_notification_log_event_id) {
+    ReqSetNotificationLogEventId(&req, *actions.hms_notification_log_event_id);
+  }
+
   if (req.row_operations().rows().empty()) {
     // No actual changes were written (i.e the data to be updated matched the
     // previous version of the data).
@@ -648,6 +654,24 @@ Status SysCatalogTable::VisitTskEntries(TskEntryVisitor* visitor) {
   return ProcessRows<SysTskEntryPB, TSK_ENTRY>(processor);
 }
 
+Status SysCatalogTable::GetLatestNotificationLogEventId(int64_t* event_id) {
+  TRACE_EVENT0("master", "SysCatalogTable::GetLatestNotificationLogEventId");
+
+  *event_id = -1;
+  auto processor = [&](const string& entry_id, const SysNotificationLogEventIdPB& entry_data) {
+    if (entry_id != kLatestNotificationLogEntryIdRowId) {
+      // This is not the row we're looking for.
+      return Status::OK();
+    }
+    DCHECK(entry_data.has_latest_notification_log_event_id());
+    DCHECK(entry_data.latest_notification_log_event_id() >= 0);
+    *event_id = entry_data.latest_notification_log_event_id();
+    return Status::OK();
+  };
+
+  return ProcessRows<SysNotificationLogEventIdPB, HMS_NOTIFICATION_LOG>(processor);
+}
+
 Status SysCatalogTable::GetCertAuthorityEntry(SysCertAuthorityEntryPB* entry) {
   CHECK(entry);
   vector<SysCertAuthorityEntryPB> entries;
@@ -787,6 +811,20 @@ void SysCatalogTable::ReqDeleteTablets(WriteRequestPB* req,
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, tablet->id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
+}
+
+void SysCatalogTable::ReqSetNotificationLogEventId(WriteRequestPB* req, int64_t event_id) {
+  SysNotificationLogEventIdPB pb;
+  pb.set_latest_notification_log_event_id(event_id);
+  faststring metadata_buf;
+  pb_util::SerializeToString(pb, &metadata_buf);
+
+  KuduPartialRow row(&schema_);
+  RowOperationsPBEncoder enc(req->mutable_row_operations());
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, HMS_NOTIFICATION_LOG));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, kLatestNotificationLogEntryIdRowId));
+  CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColMetadata, metadata_buf));
+  enc.Add(RowOperationsPB::UPSERT, row);
 }
 
 Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {

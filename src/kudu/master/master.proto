@@ -204,6 +204,12 @@ message SysTskEntryPB {
   required security.TokenSigningPrivateKeyPB tsk = 1;
 }
 
+// The on-disk entry in the sys.catalog table ("metadata" column) to represent
+// the latest processed Hive Metastore notification log event ID.
+message SysNotificationLogEventIdPB {
+  optional int64 latest_notification_log_event_id = 1;
+}
+
 ////////////////////////////////////////////////////////////
 // RPCs
 ////////////////////////////////////////////////////////////
