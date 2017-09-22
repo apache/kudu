@@ -59,7 +59,7 @@ class MasterPathHandlers {
 
   // Returns a pair (text, target) given a tserver's TSDescriptor and a tablet id.
   // - text is the http host and port for the tserver, if available, or the tserver's uuid.
-  // - target is a url to to the tablet page for the tablet on the tserver's webui,
+  // - target is a url to the tablet page for the tablet on the tserver's webui,
   //   or an empty string if no http address is available for the tserver.
   std::pair<std::string, std::string> TSDescToLinkPair(const TSDescriptor& desc,
                                                        const std::string& tablet_id) const;

@@ -271,13 +271,13 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     s = SchemaFromPB(l.data().pb.schema(), &schema);
     if (!s.ok()) {
-      (*output)["error"] = Substitute("Unable to decode schema: ", s.ToString());
+      (*output)["error"] = Substitute("Unable to decode schema: $0", s.ToString());
       return;
     }
     s = PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema);
     if (!s.ok()) {
       (*output)["error"] =
-          Substitute("Unable to decode partition schema: ", s.ToString());
+          Substitute("Unable to decode partition schema: $0", s.ToString());
       return;
     }
     table->GetAllTablets(&tablets);
