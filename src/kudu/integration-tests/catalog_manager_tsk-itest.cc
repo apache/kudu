@@ -61,7 +61,7 @@ class CatalogManagerTskITest : public KuduTest {
       : num_masters_(3),
         num_tservers_(1),
 #if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
-        hb_interval_ms_(64),
+        hb_interval_ms_(32),
         run_time_seconds_(5)
 #else
         hb_interval_ms_(16),
