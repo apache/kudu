@@ -639,19 +639,24 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void ElectionCallback(ElectionReason reason, const ElectionResult& result);
   void DoElectionCallback(ElectionReason reason, const ElectionResult& result);
 
-  // Start tracking the leader for failures. This typically occurs at startup
-  // and when the local peer steps down as leader.
+  // Starts tracking the leader for failures. This occurs at startup, when a
+  // local peer transitions from LEADER to FOLLOWER or from NON_VOTER to VOTER,
+  // or after a failed election.
+  //
+  // If the failure detector is "snoozed" (see SnoozeFailureDetector()), it
+  // means some leader activity was observed and the failure detection period
+  // should be reset.
   //
   // If 'delta' is set, it is used as the initial period for leader failure
   // detection. Otherwise, the minimum election timeout is used.
   //
-  // If the failure detector is already registered, has no effect.
-  void EnableFailureDetector(boost::optional<MonoDelta> delta);
+  // If the failure detector is already enabled, this has no effect.
+  void EnableFailureDetector(boost::optional<MonoDelta> delta = boost::none);
 
-  // Stop tracking the current leader for failures. This typically occurs when
-  // the local peer becomes leader.
+  // Stops tracking the leader for failures. This occurs when a local peer
+  // transitions from FOLLOWER to LEADER or from VOTER to NON_VOTER.
   //
-  // If the failure detector is already disabled, has no effect.
+  // If the failure detector is already disabled, this has no effect.
   void DisableFailureDetector();
 
   // Enables or disables the failure detector based on the role of the local
@@ -889,22 +894,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   AtomicBool leader_transfer_in_progress_;
   boost::optional<std::string> designated_successor_uuid_;
   std::shared_ptr<rpc::PeriodicTimer> transfer_period_timer_;
-
-  // Lock held while starting a failure-triggered election.
-  //
-  // After reporting a failure and asynchronously starting an election, the
-  // failure detector immediately rearms. If the election starts slowly (i.e.
-  // there's a lot of contention on the consensus lock, or persisting votes is
-  // really slow due to other I/O), more elections may start and "stack" on
-  // top of the first. Forcing the starting of elections to serialize on this
-  // lock prevents that from happening. See KUDU-2149 for more details.
-  //
-  // Note: the lock is only ever acquired via try_lock(); if it cannot be
-  // acquired, a StartElection() is in progress so the next one is skipped.
-  //
-  // TODO(KUDU-2155): should be replaced with explicit disabling/enabling of
-  // the failure detector during elections.
-  simple_spinlock failure_detector_election_lock_;
 
   // Any RequestVote() arriving before this timestamp is ignored (i.e. responded
   // to with NO vote). This prevents abandoned or partitioned nodes from

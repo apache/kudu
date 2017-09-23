@@ -67,6 +67,7 @@
 #include "kudu/util/process_memory.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
@@ -296,6 +297,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   // Capture a weak_ptr reference into the functor so it can safely handle
   // outliving the consensus instance.
   weak_ptr<RaftConsensus> w = shared_from_this();
+  PeriodicTimer::Options opts;
+  opts.one_shot = true;
   failure_detector_ = PeriodicTimer::Create(
       peer_proxy_factory_->messenger(),
       [w]() {
@@ -303,10 +306,9 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
           consensus->ReportFailureDetected();
         }
       },
-      MinimumElectionTimeout());
+      MinimumElectionTimeout(),
+      opts);
 
-  PeriodicTimer::Options opts;
-  opts.one_shot = true;
   transfer_period_timer_ = PeriodicTimer::Create(
       peer_proxy_factory_->messenger(),
       [w]() {
@@ -650,20 +652,29 @@ scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
 }
 
 void RaftConsensus::ReportFailureDetectedTask() {
-  std::unique_lock<simple_spinlock> try_lock(failure_detector_election_lock_,
-                                             std::try_to_lock);
-  if (try_lock.owns_lock()) {
-    WARN_NOT_OK_EVERY_N_SECS(StartElection(FLAGS_raft_enable_pre_election ?
-        PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED),
-                             LogPrefixThreadSafe() + "failed to trigger leader election", 10);
+  Status s = StartElection(FLAGS_raft_enable_pre_election ?
+      PRE_ELECTION : NORMAL_ELECTION, ELECTION_TIMEOUT_EXPIRED);
+  if (PREDICT_FALSE(!s.ok())) {
+    WARN_NOT_OK_EVERY_N_SECS(
+        s, LogPrefixThreadSafe() + "failed to trigger leader election", 10);
+    // Normally the failure detector would be enabled at the end of the election,
+    // but since the election failed to start, we must reenable explicitly.
+    EnableFailureDetector();
   }
 }
 
 void RaftConsensus::ReportFailureDetected() {
-  // We're running on a timer thread; start an election on a different thread pool.
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(
-      &RaftConsensus::ReportFailureDetectedTask, shared_from_this())),
-              LogPrefixThreadSafe() + "failed to submit failure detected task");
+  // We're running on a timer thread; start an election on a different thread.
+  //
+  // There's no need to reenable the failure detector; if this fails, it's a
+  // sign that RaftConsensus has stopped and we no longer need failure detection.
+  Status s = raft_pool_token_->SubmitFunc(std::bind(
+      &RaftConsensus::ReportFailureDetectedTask, shared_from_this()));
+  if (PREDICT_FALSE(!s.ok())) {
+    static const char* msg = "failed to submit failure detected task";
+    CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
+    WARN_NOT_OK(s, LogPrefixThreadSafe() + msg);
+  }
 }
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
@@ -2596,14 +2607,17 @@ void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
 }
 
 void RaftConsensus::ElectionCallback(ElectionReason reason, const ElectionResult& result) {
-  // The election callback runs on a reactor thread, so we need to defer to our
-  // threadpool. If the threadpool is already shut down for some reason, it's OK --
-  // we're OK with the callback never running.
-  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::DoElectionCallback,
-                                                     shared_from_this(),
-                                                     reason,
-                                                     result)),
-              LogPrefixThreadSafe() + "Unable to run election callback");
+  // We're running on a reactor thread; service the callback on another thread.
+  //
+  // There's no need to reenable the failure detector; if this fails, it's a
+  // sign that RaftConsensus has stopped and we no longer need failure detection.
+  Status s = raft_pool_token_->SubmitFunc(std::bind(
+      &RaftConsensus::DoElectionCallback, shared_from_this(), reason, result));
+  if (!s.ok()) {
+    static const char* msg = "unable to run election callback";
+    CHECK(s.IsServiceUnavailable()) << LogPrefixThreadSafe() << msg;
+    WARN_NOT_OK(s, LogPrefixThreadSafe() + msg);
+  }
 }
 
 void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResult& result) {
@@ -2611,9 +2625,9 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   const bool was_pre_election = result.vote_request.is_pre_election();
   const char* election_type = was_pre_election ? "pre-election" : "election";
 
-  // The vote was granted, become leader.
   ThreadRestrictions::AssertWaitAllowed();
-  UniqueLock lock(lock_);
+  UniqueLock l(lock_);
+
   Status s = CheckRunningUnlocked();
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received " << election_type << " callback for term "
@@ -2622,13 +2636,23 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     return;
   }
 
-  // Snooze to avoid the election timer firing again as much as possible.
-  // We need to snooze when we win and when we lose:
-  // - When we win because we're about to disable the timer and become leader.
+  // If this election was not triggered by the failure detector, the fd may
+  // still be enabled and needs to be snoozed, both if we win and lose:
+  // - When we win because we're about to disable it and become leader.
   // - When we lose or otherwise we can fall into a cycle, where everyone keeps
   //   triggering elections but no election ever completes because by the time they
   //   finish another one is triggered already.
-  SnoozeFailureDetector(string("election complete"), LeaderElectionExpBackoffDeltaUnlocked());
+  //
+  // This is a no-op if the failure detector is disabled..
+  MonoDelta snooze_delta = LeaderElectionExpBackoffDeltaUnlocked();
+  SnoozeFailureDetector(string("election complete"), snooze_delta);
+  auto enable_fd = MakeScopedCleanup([&]() {
+    // The failure detector was disabled if it triggered this election. Reenable
+    // it when exiting this function.
+    if (reason == ELECTION_TIMEOUT_EXPIRED) {
+      EnableFailureDetector(snooze_delta);
+    }
+  });
 
   if (result.decision == VOTE_DENIED) {
     failed_elections_since_stable_leader_++;
@@ -2665,27 +2689,31 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   if (election_started_in_term != CurrentTermUnlocked()) {
     LOG_WITH_PREFIX_UNLOCKED(INFO)
         << "Leader " << election_type << " decision vote started in "
-        << "defunct term " << election_started_in_term << ": "
-        << (result.decision == VOTE_GRANTED ? "won" : "lost");
+        << "defunct term " << election_started_in_term << ": won";
     return;
   }
 
   if (!cmeta_->IsVoterInConfig(peer_uuid(), ACTIVE_CONFIG)) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Leader " << election_type
                                       << " decision while not in active config. "
-                                      << "Result: Term " << election_term << ": "
-                                      << (result.decision == VOTE_GRANTED ? "won" : "lost")
-                                      << ". RaftConfig: "
+                                      << "Result: Term " << election_term
+                                      << ": won. RaftConfig: "
                                       << SecureShortDebugString(cmeta_->ActiveConfig());
     return;
   }
 
+  // At this point we're either already leader, we're going to become leader,
+  // or we're going to run a real election.
+  //
+  // In all cases, do not reenable the failure detector.
+  enable_fd.cancel();
+
   if (cmeta_->active_role() == RaftPeerPB::LEADER) {
     // If this was a pre-election, it's possible to see the following interleaving:
     //
-    //  1. Term N (follower): send a real election for term N
-    //  2. Election callback expires again
-    //  3. Term N (follower): send a pre-election for term N+1
+    //  1. Term N (follower): send a real election for term N.
+    //  2. An externally-triggered election is started.
+    //  3. Term N (follower): send a pre-election for term N+1.
     //  4. Election callback for real election from term N completes.
     //     Peer is now leader for term N.
     //  5. Pre-election callback from term N+1 completes, even though
@@ -2695,8 +2723,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     if (was_pre_election) return;
     LOG_WITH_PREFIX_UNLOCKED(DFATAL)
         << "Leader " << election_type << " callback while already leader! "
-        << "Result: Term " << election_term << ": "
-        << (result.decision == VOTE_GRANTED ? "won" : "lost");
+        << "Result: Term " << election_term << ": won";
     return;
   }
 
@@ -2704,7 +2731,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 
   if (was_pre_election) {
     // We just won the pre-election. So, we need to call a real election.
-    lock.unlock();
+    l.unlock();
     WARN_NOT_OK_EVERY_N_SECS(StartElection(NORMAL_ELECTION, reason),
                              "Couldn't start leader election after successful pre-election", 10);
   } else {
