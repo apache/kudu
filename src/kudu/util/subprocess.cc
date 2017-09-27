@@ -151,10 +151,17 @@ void CloseNonStandardFDs(DIR* fd_dir) {
 }
 
 void RedirectToDevNull(int fd) {
-  // We must not close stderr or stdout, because then when a new file descriptor
-  // gets opened, it might get that fd number.  (We always allocate the lowest
-  // available file descriptor number.)  Instead, we reopen that fd as
-  // /dev/null.
+  // We must not close stderr or stdout, because then when a new file
+  // descriptor is opened, it might reuse the closed file descriptor's number
+  // (we always allocate the lowest available file descriptor number).
+  //
+  // Instead, we open /dev/null as a new file descriptor, then use dup2() to
+  // atomically close 'fd' and reuse its file descriptor number as an open file
+  // handle to /dev/null.
+  //
+  // It is expected that the file descriptor allocated when opening /dev/null
+  // will be closed when the child process closes all of its "non-standard"
+  // file descriptors later on.
   int dev_null = open("/dev/null", O_WRONLY);
   if (dev_null < 0) {
     PLOG(WARNING) << "failed to open /dev/null";
@@ -280,16 +287,6 @@ Subprocess::~Subprocess() {
   }
 }
 
-void Subprocess::DisableStderr() {
-  CHECK_EQ(state_, kNotStarted);
-  fd_state_[STDERR_FILENO] = DISABLED;
-}
-
-void Subprocess::DisableStdout() {
-  CHECK_EQ(state_, kNotStarted);
-  fd_state_[STDOUT_FILENO] = DISABLED;
-}
-
 #if defined(__APPLE__)
 static int pipe2(int pipefd[2], int flags) {
   DCHECK_EQ(O_CLOEXEC, flags);
@@ -378,6 +375,8 @@ Status Subprocess::Start() {
     // stdin
     if (fd_state_[STDIN_FILENO] == PIPED) {
       PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
+    } else {
+      DCHECK_EQ(SHARED, fd_state_[STDIN_FILENO]);
     }
 
     // stdout
@@ -391,6 +390,7 @@ Status Subprocess::Start() {
         break;
       }
       default:
+        DCHECK_EQ(SHARED, fd_state_[STDOUT_FILENO]);
         break;
     }
 
@@ -405,6 +405,7 @@ Status Subprocess::Start() {
         break;
       }
       default:
+        DCHECK_EQ(SHARED, fd_state_[STDERR_FILENO]);
         break;
     }
 
@@ -763,8 +764,17 @@ void Subprocess::SetCurrentDir(string cwd) {
 
 void Subprocess::SetFdShared(int stdfd, bool share) {
   CHECK_EQ(state_, kNotStarted);
-  CHECK_NE(fd_state_[stdfd], DISABLED);
-  fd_state_[stdfd] = share? SHARED : PIPED;
+  fd_state_[stdfd] = share ? SHARED : PIPED;
+}
+
+void Subprocess::DisableStderr() {
+  CHECK_EQ(state_, kNotStarted);
+  fd_state_[STDERR_FILENO] = DISABLED;
+}
+
+void Subprocess::DisableStdout() {
+  CHECK_EQ(state_, kNotStarted);
+  fd_state_[STDOUT_FILENO] = DISABLED;
 }
 
 int Subprocess::CheckAndOffer(int stdfd) const {

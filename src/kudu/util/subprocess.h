@@ -58,12 +58,16 @@ class Subprocess {
   explicit Subprocess(std::vector<std::string> argv, int sig_on_destruct = SIGKILL);
   ~Subprocess();
 
-  // Disable subprocess stream output.  Must be called before subprocess starts.
+  // Disables subprocess stream output. Is mutually exclusive with stream sharing.
+  //
+  // Must be called before subprocess starts.
   void DisableStderr();
   void DisableStdout();
 
-  // Share a stream with parent. Must be called before subprocess starts.
-  // Cannot set sharing at all if stream is disabled
+  // Configures the subprocess to share the parent's stream. Is mutually
+  // exclusive with stream disabling.
+  //
+  // Must be called before subprocess starts.
   void ShareParentStdin(bool  share = true) { SetFdShared(STDIN_FILENO,  share); }
   void ShareParentStdout(bool share = true) { SetFdShared(STDOUT_FILENO, share); }
   void ShareParentStderr(bool share = true) { SetFdShared(STDERR_FILENO, share); }
