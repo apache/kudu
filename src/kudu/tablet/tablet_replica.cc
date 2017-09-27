@@ -760,7 +760,7 @@ Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       <<  ": Waiting for in-flight transactions to commit.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
-    tablet_->mvcc_manager()->WaitForApplyingTransactionsToCommit();
+    RETURN_NOT_OK(tablet_->mvcc_manager()->WaitForApplyingTransactionsToCommit());
   }
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       << ": Waiting for the log queue to be flushed.";

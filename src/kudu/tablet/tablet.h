@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_H
-#define KUDU_TABLET_TABLET_H
+
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -23,9 +23,11 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/clock/clock.h"
@@ -36,6 +38,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
@@ -108,9 +111,26 @@ class Tablet {
 
   // Mark that the tablet has finished bootstrapping.
   // This transitions from kBootstrapping to kOpen state.
-  void MarkFinishedBootstrapping();
+  // Returns an error if tablet has been stopped.
+  Status MarkFinishedBootstrapping();
 
+  // Shuts down the tablet, unregistering various components that may attempt
+  // to point back to it, and changing the lifecycle state to 'kShutdown'.
   void Shutdown();
+
+  // Stops the tablet from making any progress. Currently-Applying operations
+  // are terminated early on a best-effort basis, new transactions will return
+  // with Status::Aborted(), tablet maintenance ops will no longer be
+  // scheduled, and the lifecycle state is set to 'kStopped'.
+  //
+  // Currently, the tablet will only be Stopped as the tablet is shutting down.
+  // In the future, it can be Stopped when it hits a non-recoverable error
+  // (e.g. a disk error) to immediately prevent further writes.
+  void Stop();
+
+  // Returns whether the tablet has been stopped, i.e. is in either the
+  // 'kStopped' or 'kShutdown' state.
+  bool HasBeenStopped() const;
 
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
@@ -157,13 +177,13 @@ class Tablet {
   void StartApplying(WriteTransactionState* tx_state);
 
   // Apply all of the row operations associated with this transaction.
-  void ApplyRowOperations(WriteTransactionState* tx_state);
+  Status ApplyRowOperations(WriteTransactionState* tx_state) WARN_UNUSED_RESULT;
 
   // Apply a single row operation, which must already be prepared.
-  // The result is set back into row_op->result
-  void ApplyRowOperation(WriteTransactionState* tx_state,
-                         RowOp* row_op,
-                         ProbeStats* stats);
+  // The result is set back into row_op->result.
+  Status ApplyRowOperation(WriteTransactionState* tx_state,
+                           RowOp* row_op,
+                           ProbeStats* stats) WARN_UNUSED_RESULT;
 
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
@@ -200,7 +220,7 @@ class Tablet {
   // the operations in the log with the correct schema.
   //
   // REQUIRES: state_ == kBootstrapping
-  Status RewindSchemaForBootstrap(const Schema& schema,
+  Status RewindSchemaForBootstrap(const Schema& new_schema,
                                   int64_t schema_version);
 
   // Prints current RowSet layout, taking a snapshot of the current RowSet interval
@@ -350,10 +370,8 @@ class Tablet {
   // Runs a major delta major compaction on columns with specified IDs.
   // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
   // a shared_ptr API for now?)
-  //
-  // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
-  Status DoMajorDeltaCompaction(const std::vector<ColumnId>& column_ids,
-                                std::shared_ptr<RowSet> input_rowset);
+  Status DoMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
+                                const std::shared_ptr<RowSet>& input_rs);
 
   // Calculates the ancient history mark and returns true iff tablet history GC
   // is enabled, which requires the use of a HybridClock.
@@ -369,11 +387,20 @@ class Tablet {
   void GetRowSetsForTests(std::vector<std::shared_ptr<RowSet> >* out);
 
   // Register the maintenance ops associated with this tablet
-  void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
+  void RegisterMaintenanceOps(MaintenanceManager* maint_mgr);
 
-  // Unregister the maintenance ops associated with this tablet.
-  // This method is not thread safe.
+  // Unregister the maintenance ops associated with this tablet. This will wait
+  // for all ops to finish before returning.
+  //
+  // This method is not thread safe, but is currently only called during
+  // TabletReplica::Shutdown(), which is single-threaded by design.
   void UnregisterMaintenanceOps();
+
+  // Cancel the maintenance ops associated with this tablet. This will prevent
+  // further scheduling of the ops and will not wait for any ops to finish.
+  //
+  // This method is thread-safe.
+  void CancelMaintenanceOps();
 
   const std::string& tablet_id() const { return metadata_->tablet_id(); }
 
@@ -406,6 +433,54 @@ class Tablet {
   friend class Iterator;
   friend class TabletReplicaTest;
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
+
+  // Lifecycle states that a Tablet can be in. Legal state transitions for a
+  // Tablet object:
+  //
+  //   kInitialized -> kBootstrapping -> kOpen -> kStopped -> kShutdown
+  //         |               |             |        ^^^
+  //         |               |             +--------+||
+  //         |               +-----------------------+|
+  //         +----------------------------------------+
+  enum State {
+    kInitialized,
+    kBootstrapping,
+    kOpen,
+    kStopped,
+    kShutdown
+  };
+
+  // Sets the lifecycle state of the tablet. See the definition of State for
+  // the valid transitions.
+  //
+  // Must be called while 'state_lock_' is held.
+  void set_state_unlocked(State s) {
+    DCHECK(state_lock_.is_locked());
+    switch (s) {
+      case kBootstrapping:
+        DCHECK_EQ(kInitialized, state_);
+        break;
+      case kOpen:
+        DCHECK_EQ(kBootstrapping, state_);
+        break;
+      case kStopped:
+        DCHECK(state_ == kInitialized ||
+               state_ == kBootstrapping ||
+               state_ == kOpen);
+        break;
+      case kShutdown:
+        DCHECK(state_ == kStopped ||
+               state_ == kShutdown);
+        break;
+      default:
+        LOG(DFATAL) << "Illegal state transition!";
+    }
+    state_ = s;
+  }
+
+  // Returns an error if the tablet is in the 'kStopped' or 'kShutdown' state.
+  // Must be called while 'state_lock_' is held.
+  Status CheckHasNotBeenStoppedUnlocked() const;
 
   Status FlushUnlocked();
 
@@ -454,7 +529,7 @@ class Tablet {
   // For each of the operations in 'tx_state', check for the presence of their
   // row keys in the RowSets in the current RowSetTree (as determined by the transaction's
   // captured TabletComponents).
-  void BulkCheckPresence(WriteTransactionState* tx_state);
+  Status BulkCheckPresence(WriteTransactionState* tx_state) WARN_UNUSED_RESULT;
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
@@ -608,13 +683,17 @@ class Tablet {
   // started earlier completes after the one started later.
   mutable Semaphore rowsets_flush_sem_;
 
-  enum State {
-    kInitialized,
-    kBootstrapping,
-    kOpen,
-    kShutdown
-  };
+  // Lock protecting access to 'state_' and 'maintenance_ops_'.
+  // If taken with any other locks, this must be taken last, i.e. no locks can
+  // be acquired while holding this this.
+  mutable simple_spinlock state_lock_;
+
   State state_;
+
+  // Fake lock used to ensure calls to RegisterMaintenanceOps and
+  // UnregisterMaintenanceOps don't overlap. This serves to ensure that only
+  // one thread is updating the maintenance op list at a time.
+  DFAKE_MUTEX(maintenance_registration_fake_lock_);
 
   // Fault hooks. In production code, these will always be NULL.
   std::shared_ptr<CompactionFaultHooks> compaction_hooks_;
@@ -699,4 +778,3 @@ struct TabletComponents : public RefCountedThreadSafe<TabletComponents> {
 } // namespace tablet
 } // namespace kudu
 
-#endif

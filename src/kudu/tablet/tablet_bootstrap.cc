@@ -252,9 +252,9 @@ class TabletBootstrap {
   Status OpenNewLog();
 
   // Finishes bootstrap, setting 'rebuilt_log' and 'rebuilt_tablet'.
-  void FinishBootstrap(const string& message,
-                       scoped_refptr<log::Log>* rebuilt_log,
-                       shared_ptr<Tablet>* rebuilt_tablet);
+  Status FinishBootstrap(const string& message,
+                         scoped_refptr<log::Log>* rebuilt_log,
+                         shared_ptr<Tablet>* rebuilt_tablet);
 
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
@@ -567,7 +567,8 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   if (!has_blocks && !needs_recovery) {
     LOG_WITH_PREFIX(INFO) << "No blocks or log segments found. Creating new log.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
-    FinishBootstrap("No bootstrap required, opened a new log", rebuilt_log, rebuilt_tablet);
+    RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
+                                  rebuilt_log, rebuilt_tablet));
     consensus_info->last_id = MinimumOpId();
     consensus_info->last_committed_id = MinimumOpId();
     return Status::OK();
@@ -585,18 +586,19 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
 
   RETURN_NOT_OK(RemoveRecoveryDir());
-  FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet);
+  RETURN_NOT_OK(FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet));
 
   return Status::OK();
 }
 
-void TabletBootstrap::FinishBootstrap(const string& message,
+Status TabletBootstrap::FinishBootstrap(const string& message,
                                       scoped_refptr<log::Log>* rebuilt_log,
                                       shared_ptr<Tablet>* rebuilt_tablet) {
-  tablet_->MarkFinishedBootstrapping();
+  RETURN_NOT_OK(tablet_->MarkFinishedBootstrapping());
   SetStatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
   rebuilt_log->swap(log_);
+  return Status::OK();
 }
 
 Status TabletBootstrap::OpenTablet(bool* has_blocks) {
@@ -1525,7 +1527,7 @@ Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
 
     // Actually apply it.
     ProbeStats stats; // we don't use this, but tablet internals require non-NULL.
-    tablet_->ApplyRowOperation(tx_state, op, &stats);
+    RETURN_NOT_OK(tablet_->ApplyRowOperation(tx_state, op, &stats));
     DCHECK(op->result != nullptr);
 
     // We expect that the above Apply() will always succeed, because we're

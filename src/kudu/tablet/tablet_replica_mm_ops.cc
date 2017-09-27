@@ -31,6 +31,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(flush_threshold_mb, 1024,
@@ -132,16 +133,25 @@ bool FlushMRSOp::Prepare() {
 }
 
 void FlushMRSOp::Perform() {
-  CHECK(!tablet_replica_->tablet()->rowsets_flush_sem_.try_lock());
+  Tablet* tablet = tablet_replica_->tablet();
+  CHECK(!tablet->rowsets_flush_sem_.try_lock());
+  SCOPED_CLEANUP({
+    tablet->rowsets_flush_sem_.unlock();
+  });
 
-  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushUnlocked(),
-                        Substitute("FlushMRS failed on $0", tablet_replica_->tablet_id()));
+  Status s = tablet->FlushUnlocked();
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << Substitute("FlushMRS failed on $0: $1",
+                               tablet->tablet_id(), s.ToString());
+    CHECK(tablet->HasBeenStopped()) << "FlushMRS failure is only allowed if the "
+                                       "tablet is stopped first";
+    return;
+  }
 
   {
     std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();
   }
-  tablet_replica_->tablet()->rowsets_flush_sem_.unlock();
 }
 
 scoped_refptr<Histogram> FlushMRSOp::DurationHistogram() const {

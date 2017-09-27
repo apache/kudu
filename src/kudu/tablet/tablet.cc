@@ -59,6 +59,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -248,10 +249,19 @@ Tablet::~Tablet() {
   Shutdown();
 }
 
+// Returns an error if the Tablet has been stopped, i.e. is 'kStopped' or
+// 'kShutdown', and otherwise checks that 'expected_state' matches 'state_'.
+#define RETURN_IF_STOPPED_OR_CHECK_STATE(expected_state) do { \
+  std::lock_guard<simple_spinlock> l(state_lock_); \
+  RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked()); \
+  CHECK_EQ(expected_state, state_); \
+} while (0);
+
 Status Tablet::Open() {
   TRACE_EVENT0("tablet", "Tablet::Open");
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kInitialized);
+
   std::lock_guard<rw_spinlock> lock(component_lock_);
-  CHECK_EQ(state_, kInitialized) << "already open";
   CHECK(schema()->has_column_ids());
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
@@ -284,21 +294,54 @@ Status Tablet::Open() {
                                   &new_mrs));
   components_ = new TabletComponents(new_mrs, new_rowset_tree);
 
-  state_ = kBootstrapping;
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    if (state_ != kInitialized) {
+      DCHECK(state_ == kStopped || state_ == kShutdown);
+      return Status::IllegalState("Expected the Tablet to be initialized");
+    }
+    set_state_unlocked(kBootstrapping);
+  }
   return Status::OK();
 }
 
-void Tablet::MarkFinishedBootstrapping() {
-  CHECK_EQ(state_, kBootstrapping);
-  state_ = kOpen;
+void Tablet::Stop() {
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    if (state_ == kStopped || state_ == kShutdown) {
+      return;
+    }
+    set_state_unlocked(kStopped);
+  }
+
+  // Close MVCC so Applying transactions will not complete and will not be
+  // waited on. This prevents further snapshotting of the tablet.
+  mvcc_.Close();
+
+  // Stop tablet ops from being scheduled by the maintenance manager.
+  CancelMaintenanceOps();
+}
+
+Status Tablet::MarkFinishedBootstrapping() {
+  std::lock_guard<simple_spinlock> l(state_lock_);
+  if (state_ != kBootstrapping) {
+    DCHECK(state_ == kStopped || state_ == kShutdown);
+    return Status::IllegalState("The tablet has been stopped");
+  }
+  set_state_unlocked(kOpen);
+  return Status::OK();
 }
 
 void Tablet::Shutdown() {
+  Stop();
   UnregisterMaintenanceOps();
 
   std::lock_guard<rw_spinlock> lock(component_lock_);
   components_ = nullptr;
-  state_ = kShutdown;
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    set_state_unlocked(kShutdown);
+  }
   if (metric_entity_) {
     metric_entity_->Unpublish();
   }
@@ -333,7 +376,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
                               const OrderMode order,
                               gscoped_ptr<RowwiseIterator> *iter) const {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
@@ -702,11 +745,11 @@ void Tablet::StartApplying(WriteTransactionState* tx_state) {
   tx_state->set_tablet_components(components_);
 }
 
-void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
+Status Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
   int num_ops = tx_state->row_ops().size();
 
   // TODO(todd) determine why we sometimes get empty writes!
-  if (PREDICT_FALSE(num_ops == 0)) return;
+  if (PREDICT_FALSE(num_ops == 0)) return Status::OK();
 
   // The compiler seems to be bad at hoisting this load out of the loops,
   // so load it up top.
@@ -767,8 +810,9 @@ void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
   // 'pending_group' and then calls 'ProcessPendingGroup' when the next group
   // begins.
   vector<pair<RowSet*, int>> pending_group;
+  Status s;
   const auto& ProcessPendingGroup = [&]() {
-    if (pending_group.empty()) return;
+    if (pending_group.empty() || !s.ok()) return;
     // Check invariant of the batch RowSetTree query: within each output group
     // we should have fully-sorted keys.
     DCHECK(std::is_sorted(pending_group.begin(), pending_group.end(),
@@ -790,10 +834,13 @@ void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
         continue;
       }
 
-      // TODO(todd) is CHECK_OK correct? it used to be that errors here
-      // would just be silently ignored, so this seems at least an improvement.
       bool present = false;
-      CHECK_OK(rs->CheckRowPresent(*op->key_probe, &present, tx_state->mutable_op_stats(op_idx)));
+      s = rs->CheckRowPresent(*op->key_probe, &present, tx_state->mutable_op_stats(op_idx));
+      if (PREDICT_FALSE(!s.ok())) {
+        LOG(WARNING) << Substitute("Tablet $0 failed to check row presence for op $1: $2",
+            tablet_id(), op->ToString(key_schema_), s.ToString());
+        return;
+      }
       if (present) {
         op->present_in_rowset = rs;
       }
@@ -812,6 +859,7 @@ void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
       });
   // Process the last group.
   ProcessPendingGroup();
+  RETURN_NOT_OK_PREPEND(s, "Error while checking presence of rows");
 
   // Mark all of the ops as having been checked.
   // TODO(todd): this could potentially be weaved into the std::unique() call up
@@ -819,9 +867,23 @@ void Tablet::BulkCheckPresence(WriteTransactionState* tx_state) {
   for (auto& p : keys_and_indexes) {
     row_ops_base[p.second]->checked_present = true;
   }
+  return Status::OK();
 }
 
-void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+bool Tablet::HasBeenStopped() const {
+  std::lock_guard<simple_spinlock> l(state_lock_);
+  return state_ == kStopped || state_ == kShutdown;
+}
+
+Status Tablet::CheckHasNotBeenStoppedUnlocked() const {
+  DCHECK(state_lock_.is_locked());
+  if (PREDICT_FALSE(state_ == kStopped || state_ == kShutdown)) {
+    return Status::IllegalState("Tablet has been stopped");
+  }
+  return Status::OK();
+}
+
+Status Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
   int num_ops = tx_state->row_ops().size();
 
   StartApplying(tx_state);
@@ -831,33 +893,39 @@ void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
     ValidateOpOrMarkFailed(op);
   }
 
-  BulkCheckPresence(tx_state);
+  RETURN_NOT_OK(BulkCheckPresence(tx_state));
 
   // Actually apply the ops.
   for (int op_idx = 0; op_idx < num_ops; op_idx++) {
     RowOp* row_op = tx_state->row_ops()[op_idx];
     if (row_op->has_result()) continue;
 
-    ApplyRowOperation(tx_state, row_op, tx_state->mutable_op_stats(op_idx));
+    RETURN_NOT_OK(ApplyRowOperation(tx_state, row_op, tx_state->mutable_op_stats(op_idx)));
     DCHECK(row_op->has_result());
   }
 
   if (metrics_ && num_ops > 0) {
     metrics_->AddProbeStats(tx_state->mutable_op_stats(0), num_ops, tx_state->arena());
   }
+  return Status::OK();
 }
 
-void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
-                               RowOp* row_op,
-                               ProbeStats* stats) {
-  CHECK(state_ == kOpen || state_ == kBootstrapping);
+Status Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
+                                 RowOp* row_op,
+                                 ProbeStats* stats) {
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    RETURN_NOT_OK_PREPEND(CheckHasNotBeenStoppedUnlocked(),
+        Substitute("Apply of $0 exited early", tx_state->ToString()));
+    CHECK(state_ == kOpen || state_ == kBootstrapping);
+  }
   DCHECK(row_op->has_row_lock()) << "RowOp must hold the row lock.";
   DCHECK(tx_state != nullptr) << "must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
 
   if (!ValidateOpOrMarkFailed(row_op)) {
-    return;
+    return Status::OK();
   }
 
   // If we were unable to check rowset presence in batch (e.g. because we are processing
@@ -866,9 +934,8 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
     vector<RowSet *> to_check = FindRowSetsToCheck(row_op, tx_state->tablet_components());
     for (RowSet *rowset : to_check) {
       bool present = false;
-      // TODO(todd) is CHECK_OK correct? it used to be that errors here
-      // would just be silently ignored, so this seems at least an improvement.
-      CHECK_OK(rowset->CheckRowPresent(*row_op->key_probe, &present, stats));
+      RETURN_NOT_OK_PREPEND(rowset->CheckRowPresent(*row_op->key_probe, &present, stats),
+          "Failed to check if row is present");
       if (present) {
         row_op->present_in_rowset = rowset;
         break;
@@ -881,16 +948,17 @@ void Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
     case RowOperationsPB::INSERT:
     case RowOperationsPB::UPSERT:
       ignore_result(InsertOrUpsertUnlocked(tx_state, row_op, stats));
-      return;
+      return Status::OK();
 
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
       ignore_result(MutateRowUnlocked(tx_state, row_op, stats));
-      return;
+      return Status::OK();
 
     default:
       LOG_WITH_PREFIX(FATAL) << RowOperationsPB::Type_Name(row_op->decoded_op.type);
   }
+  return Status::OK();
 }
 
 void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
@@ -946,8 +1014,8 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
 }
 
 Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
-                                      shared_ptr<RowSet> input_rs) {
-  CHECK_EQ(state_, kOpen);
+                                      const shared_ptr<RowSet>& input_rs) {
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   Status s = down_cast<DiskRowSet*>(input_rs.get())
       ->MajorCompactDeltaStoresWithColumnIds(col_ids, GetHistoryGcOpts());
   return s;
@@ -1001,7 +1069,9 @@ Status Tablet::FlushUnlocked() {
 
   // Wait for any in-flight transactions to finish against the old MRS
   // before we flush it.
-  mvcc_.WaitForApplyingTransactionsToCommit();
+  //
+  // This may fail if the tablet has been stopped.
+  RETURN_NOT_OK(mvcc_.WaitForApplyingTransactionsToCommit());
 
   // Note: "input" should only contain old_mrs.
   return FlushInternal(input, old_mrs);
@@ -1036,7 +1106,11 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
 
 Status Tablet::FlushInternal(const RowSetsInCompaction& input,
                              const shared_ptr<MemRowSet>& old_ms) {
-  CHECK(state_ == kOpen || state_ == kBootstrapping);
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked());
+    CHECK(state_ == kOpen || state_ == kBootstrapping);
+  }
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.
@@ -1139,7 +1213,7 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
 
 Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
                                         int64_t schema_version) {
-  CHECK_EQ(state_, kBootstrapping);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kBootstrapping);
 
   // We know that the MRS should be empty at this point, because we
   // rewind the schema before replaying any operations. So, we just
@@ -1193,7 +1267,7 @@ bool Tablet::ShouldThrottleAllow(int64_t bytes) {
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   // Grab a local reference to the current RowSetTree. This is to avoid
   // holding the component_lock_ for too long. See the comment on component_lock_
   // in tablet.h for details on why that would be bad.
@@ -1274,39 +1348,68 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
 }
 
 void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
-  CHECK_EQ(state_, kOpen);
-  DCHECK(maintenance_ops_.empty());
+  // This method must be externally synchronized to not coincide with other
+  // calls to it or to UnregisterMaintenanceOps.
+  DFAKE_SCOPED_LOCK(maintenance_registration_fake_lock_);
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    if (state_ == kStopped || state_ == kShutdown) {
+      LOG(WARNING) << "Could not register maintenance ops";
+      return;
+    }
+    CHECK_EQ(kOpen, state_);
+    DCHECK(maintenance_ops_.empty());
+  }
 
+  vector<MaintenanceOp*> maintenance_ops;
   gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
   maint_mgr->RegisterOp(rs_compact_op.get());
-  maintenance_ops_.push_back(rs_compact_op.release());
+  maintenance_ops.push_back(rs_compact_op.release());
 
   gscoped_ptr<MaintenanceOp> minor_delta_compact_op(new MinorDeltaCompactionOp(this));
   maint_mgr->RegisterOp(minor_delta_compact_op.get());
-  maintenance_ops_.push_back(minor_delta_compact_op.release());
+  maintenance_ops.push_back(minor_delta_compact_op.release());
 
   gscoped_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
   maint_mgr->RegisterOp(major_delta_compact_op.get());
-  maintenance_ops_.push_back(major_delta_compact_op.release());
+  maintenance_ops.push_back(major_delta_compact_op.release());
 
   if (FLAGS_enable_undo_delta_block_gc) {
     gscoped_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
     maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
-    maintenance_ops_.push_back(undo_delta_block_gc_op.release());
+    maintenance_ops.push_back(undo_delta_block_gc_op.release());
   }
+
+  std::lock_guard<simple_spinlock> l(state_lock_);
+  maintenance_ops_.swap(maintenance_ops);
 }
 
 void Tablet::UnregisterMaintenanceOps() {
+  // This method must be externally synchronized to not coincide with other
+  // calls to it or to RegisterMaintenanceOps.
+  DFAKE_SCOPED_LOCK(maintenance_registration_fake_lock_);
+
   // First cancel all of the operations, so that while we're waiting for one
   // operation to finish in Unregister(), a different one can't get re-scheduled.
-  for (MaintenanceOp* op : maintenance_ops_) {
-    op->CancelAndDisable();
-  }
+  CancelMaintenanceOps();
 
+  // We don't lock here because unregistering ops may take a long time.
+  // 'maintenance_registration_fake_lock_' is sufficient to ensure nothing else
+  // is updating 'maintenance_ops_'.
   for (MaintenanceOp* op : maintenance_ops_) {
     op->Unregister();
   }
+
+  // Finally, delete the ops under lock.
+  std::lock_guard<simple_spinlock> l(state_lock_);
   STLDeleteElements(&maintenance_ops_);
+}
+
+void Tablet::CancelMaintenanceOps() {
+  std::lock_guard<simple_spinlock> l(state_lock_);
+  for (MaintenanceOp* op : maintenance_ops_) {
+    op->CancelAndDisable();
+  }
 }
 
 Status Tablet::FlushMetadata(const RowSetVector& to_remove,
@@ -1460,7 +1563,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // those transactions in 'applying_during_swap', but MVCC doesn't implement the
   // ability to wait for a specific set. So instead we wait for all currently applying --
   // a bit more than we need, but still correct.
-  mvcc_.WaitForApplyingTransactionsToCommit();
+  RETURN_NOT_OK(mvcc_.WaitForApplyingTransactionsToCommit());
 
   // Then we want to consider all those transactions that were in-flight when we did the
   // swap as committed in 'non_duplicated_txns_snap'.
@@ -1541,7 +1644,7 @@ Status Tablet::HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
 }
 
 Status Tablet::Compact(CompactFlags flags) {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
   RowSetsInCompaction input;
   // Step 1. Capture the rowsets to be merged
@@ -1811,7 +1914,7 @@ int64_t Tablet::GetReplaySizeForIndex(int64_t min_log_index,
 }
 
 Status Tablet::FlushBiggestDMS() {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
@@ -1828,7 +1931,7 @@ Status Tablet::FlushBiggestDMS() {
 }
 
 Status Tablet::FlushAllDMSForTests() {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   for (const auto& rowset : comps->rowsets->all_rowsets()) {
@@ -1839,7 +1942,7 @@ Status Tablet::FlushAllDMSForTests() {
 
 Status Tablet::MajorCompactAllDeltaStoresForTests() {
   LOG_WITH_PREFIX(INFO) << "Major compacting all delta stores, for tests";
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   for (const auto& rs : comps->rowsets->all_rowsets()) {
@@ -1853,7 +1956,7 @@ Status Tablet::MajorCompactAllDeltaStoresForTests() {
 }
 
 Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
-  CHECK_EQ(state_, kOpen);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   shared_ptr<RowSet> rs;
 
   // We're required to grab the rowset's compact_flush_lock under the compact_select_lock_.

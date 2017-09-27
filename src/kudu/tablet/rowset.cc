@@ -160,9 +160,8 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
       break;
       #endif
     } else if (!s.IsNotFound()) {
-      LOG(FATAL) << "Unable to mirror update to rowset " << new_rowset->ToString()
-                 << " for key: " << probe.schema()->CreateKeyProjection().DebugRow(probe.row_key())
-                 << ": " << s.ToString();
+      RETURN_NOT_OK_PREPEND(s, Substitute("Unable to mirror update to rowset $0 for key: $1",
+          new_rowset->ToString(), probe.schema()->CreateKeyProjection().DebugRow(probe.row_key())));
     }
     // IsNotFound is OK - it might be in a different one.
   }

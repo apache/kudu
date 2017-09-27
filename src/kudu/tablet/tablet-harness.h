@@ -122,8 +122,7 @@ class TabletHarness {
 
   Status Open() {
     RETURN_NOT_OK(tablet_->Open());
-    tablet_->MarkFinishedBootstrapping();
-    return Status::OK();
+    return tablet_->MarkFinishedBootstrapping();
   }
 
   clock::Clock* clock() const {

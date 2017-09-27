@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_TABLET_TRANSACTION_DRIVER_H_
-#define KUDU_TABLET_TRANSACTION_DRIVER_H_
+#pragma once
 
 #include <string>
+
+#include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/opid.pb.h"
@@ -234,7 +235,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
   Status Init(gscoped_ptr<Transaction> transaction,
-              consensus::DriverType driver);
+              consensus::DriverType type);
 
   // Returns the OpId of the transaction being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
@@ -277,6 +278,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   Trace* trace() { return trace_.get(); }
 
  private:
+  FRIEND_TEST(TabletReplicaTest, TestShuttingDownMVCC);
   friend class RefCountedThreadSafe<TransactionDriver>;
   enum ReplicationState {
     // The operation has not yet been sent to consensus for replication
@@ -321,7 +323,8 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   Status CommitWait();
 
   // Handle a failure in any of the stages of the operation.
-  // In some cases, this will end the operation and call its callback.
+  // In cases where we can recover or where the transaction's Tablet has been
+  // stopped, this will end the operation and call its callback.
   // In others, where we can't recover, this will FATAL.
   void HandleFailure(const Status& s);
 
@@ -393,4 +396,3 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 }  // namespace tablet
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_TRANSACTION_DRIVER_H_ */

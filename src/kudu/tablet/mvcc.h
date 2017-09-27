@@ -14,9 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_MVCC_H
-#define KUDU_TABLET_MVCC_H
 
+#pragma once
+
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -248,7 +249,9 @@ class MvccManager {
   // NOTE: this does _not_ guarantee that no transactions are APPLYING upon
   // return -- just that those that were APPLYING at call time are finished
   // upon return.
-  void WaitForApplyingTransactionsToCommit() const;
+  //
+  // Returns Status::Aborted() if MVCC closed while waiting.
+  Status WaitForApplyingTransactionsToCommit() const WARN_UNUSED_RESULT;
 
   bool AreAllTransactionsCommitted(Timestamp ts) const;
 
@@ -268,6 +271,16 @@ class MvccManager {
   // never Abort().
   void GetApplyingTransactionsTimestamps(std::vector<Timestamp>* timestamps) const;
 
+  // Closes the MVCC manager. New transactions will not start, in-flight
+  // transactions will exit early on a best-effort basis, and waiting threads
+  // will return Status::Aborted().
+  void Close();
+
+  // Returns whether MVCC is open and available to manage transactions.
+  bool is_open() const {
+    return open_.load();
+  }
+
   ~MvccManager();
 
  private:
@@ -277,6 +290,7 @@ class MvccManager {
   FRIEND_TEST(MvccTest, TestAutomaticCleanTimeMoveToSafeTimeOnCommit);
   FRIEND_TEST(MvccTest, TestWaitForApplyingTransactionsToCommit);
   FRIEND_TEST(MvccTest, TestWaitForCleanSnapshot_SnapAfterSafeTimeWithInFlights);
+  FRIEND_TEST(MvccTest, TestDontWaitAfterClose);
 
   enum TxnState {
     RESERVED,
@@ -297,6 +311,9 @@ class MvccManager {
     CountDownLatch* latch;
     WaitFor wait_for;
   };
+
+  // Returns an error if the MVCC manager is closed.
+  Status CheckOpen() const;
 
   // Returns true if all transactions before the given timestamp are committed.
   //
@@ -362,6 +379,8 @@ class MvccManager {
 
   mutable std::vector<WaitingState*> waiters_;
 
+  std::atomic<bool> open_;
+
   DISALLOW_COPY_AND_ASSIGN(MvccManager);
 };
 
@@ -412,4 +431,3 @@ class ScopedTransaction {
 } // namespace tablet
 } // namespace kudu
 
-#endif

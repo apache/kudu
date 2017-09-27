@@ -100,7 +100,7 @@ class LocalTabletWriter {
 
     // Create a "fake" OpId and set it in the TransactionState for anchoring.
     tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
-    tablet_->ApplyRowOperations(tx_state_.get());
+    RETURN_NOT_OK(tablet_->ApplyRowOperations(tx_state_.get()));
 
     tx_state_->ReleaseTxResultPB(&result_);
     tablet_->mvcc_manager()->AdjustSafeTime(tx_state_->timestamp());
