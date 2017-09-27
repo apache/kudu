@@ -451,8 +451,8 @@ Status WaitForReplicasReportedToMaster(
       }
     }
     if (deadline < MonoTime::Now()) {
-      return Status::TimedOut(Substitute("Timed out after waiting "
-          "for tablet $1 expected to report master with $2 replicas, has_leader: $3",
+      return Status::TimedOut(Substitute("Timed out while waiting "
+          "for tablet $0 reporting to master with $1 replicas, has_leader: $2",
           tablet_id, num_replicas, *has_leader));
     }
     SleepFor(MonoDelta::FromMilliseconds(20));
