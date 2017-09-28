@@ -165,6 +165,7 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
     master::GetTableLocationsResponsePB resp;
     rpc::RpcController controller;
     req.mutable_table()->set_table_name(table_id);
+    req.set_replica_type_filter(master::ANY_REPLICA);
     controller.set_timeout(MonoDelta::FromSeconds(1));
     CHECK_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
     CHECK_OK(controller.status());

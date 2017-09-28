@@ -239,6 +239,5 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
   }
 }
 
-
 } // namespace master
 } // namespace kudu

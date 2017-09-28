@@ -83,6 +83,7 @@ using kudu::itest::WaitUntilCommittedConfigNumVotersIs;
 using kudu::itest::WaitUntilCommittedOpIdIndexIs;
 using kudu::itest::WaitUntilTabletInState;
 using kudu::itest::WaitUntilTabletRunning;
+using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureDebugString;
 using std::back_inserter;
 using std::copy;
@@ -363,6 +364,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id, kTimeout,
                                             WAIT_FOR_LEADER,
+                                            VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -398,7 +400,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleFollower) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(3, followers[0], tablet_id, kTimeout));
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   ASSERT_OK(WaitForOpFromCurrentTerm(followers[0], tablet_id, COMMITTED_OPID, kTimeout, &opid));
 
@@ -451,7 +453,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -500,7 +502,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -535,7 +537,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -583,7 +585,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -627,7 +629,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -676,7 +678,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -714,7 +716,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -772,7 +774,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -810,7 +812,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -879,7 +881,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -917,7 +919,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -984,7 +986,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   // Wait for the master to be notified of the config change.
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -1029,7 +1031,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
@@ -1091,7 +1093,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
   LOG(INFO) << "Waiting for Master to see new config...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             5, tablet_id_, kTimeout,
-                                            WAIT_FOR_LEADER,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   for (const master::TabletLocationsPB_ReplicaPB& replica :

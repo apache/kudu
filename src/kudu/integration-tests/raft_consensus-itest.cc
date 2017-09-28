@@ -118,6 +118,7 @@ using kudu::itest::WaitUntilCommittedOpIdIndexIs;
 using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::master::TabletLocationsPB;
+using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
@@ -1700,7 +1701,8 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                            2, tablet_id, timeout, WAIT_FOR_LEADER,
+                                            2, tablet_id, timeout,
+                                            WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
@@ -1721,7 +1723,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see config change...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             3, tablet_id, timeout,
-                                            DONT_WAIT_FOR_LEADER,
+                                            DONT_WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
@@ -1737,7 +1739,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see config change...";
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             2, tablet_id, timeout,
-                                            DONT_WAIT_FOR_LEADER,
+                                            DONT_WAIT_FOR_LEADER, VOTER_REPLICA,
                                             &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);

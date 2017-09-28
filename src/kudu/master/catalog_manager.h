@@ -552,13 +552,14 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status GetTableLocations(const GetTableLocationsRequestPB* req,
                            GetTableLocationsResponsePB* resp);
 
-  // Look up the locations of the given tablet. The locations
-  // vector is overwritten (not appended to).
-  // If the tablet is not found, returns Status::NotFound.
+  // Look up the locations of the given tablet. Adds only information on
+  // replicas which satisfy the 'filter'. The locations vector is overwritten
+  // (not appended to). If the tablet is not found, returns Status::NotFound.
   // If the tablet is not running, returns Status::ServiceUnavailable.
   // Otherwise, returns Status::OK and puts the result in 'locs_pb'.
   // This only returns tablets which are in RUNNING state.
   Status GetTabletLocations(const std::string& tablet_id,
+                            master::ReplicaTypeFilter filter,
                             TabletLocationsPB* locs_pb);
 
   // Handle a tablet report from the given tablet server.
@@ -717,10 +718,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   scoped_refptr<TabletInfo> CreateTabletInfo(const scoped_refptr<TableInfo>& table,
                                              const PartitionPB& partition);
 
-  // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
-  // Populates locs_pb and returns true on success.
-  // Returns Status::ServiceUnavailable if tablet is not running.
+  // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo
+  // and the replica type fiter specified. Populates locs_pb and returns
+  // Status::OK on success. Returns Status::ServiceUnavailable if tablet is
+  // not running.
   Status BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
+                                 master::ReplicaTypeFilter filter,
                                  TabletLocationsPB* locs_pb);
 
   // Looks up the table and locks it with the provided lock mode. If the table

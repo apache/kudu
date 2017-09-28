@@ -37,6 +37,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
@@ -61,10 +62,7 @@ class OpId;
 }
 
 namespace master {
-class GetTableLocationsResponsePB;
-class ListTabletServersResponsePB_Entry;
 class MasterServiceProxy;
-class TabletLocationsPB;
 } // namespace master
 
 namespace rpc {
@@ -204,6 +202,7 @@ Status WaitForReplicasReportedToMaster(
     int num_replicas, const std::string& tablet_id,
     const MonoDelta& timeout,
     WaitForLeader wait_for_leader,
+    master::ReplicaTypeFilter filter,
     bool* has_leader,
     master::TabletLocationsPB* tablet_locations);
 
@@ -334,12 +333,14 @@ Status ListRunningTabletIds(const TServerDetails* ts,
 Status GetTabletLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                           const std::string& tablet_id,
                           const MonoDelta& timeout,
+                          master::ReplicaTypeFilter filter,
                           master::TabletLocationsPB* tablet_locations);
 
 // Get the list of tablet locations for all tablets in the specified table from the Master.
 Status GetTableLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                          const std::string& table_name,
                          const MonoDelta& timeout,
+                         master::ReplicaTypeFilter filter,
                          master::GetTableLocationsResponsePB* table_locations);
 
 // Wait for the specified number of voters to be reported to the config on the

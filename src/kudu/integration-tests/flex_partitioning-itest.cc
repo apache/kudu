@@ -426,9 +426,10 @@ void FlexPartitioningITest::CheckPKRangeScan(int lower, int upper) {
 void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
   GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
-                    table_->name(),
-                    MonoDelta::FromSeconds(32),
-                    &table_locations));
+                              table_->name(),
+                              MonoDelta::FromSeconds(32),
+                              master::VOTER_REPLICA,
+                              &table_locations));
 
   vector<string> rows;
 
@@ -459,10 +460,10 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
 void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int upper) {
   GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
-                    table_->name(),
-                    MonoDelta::FromSeconds(32),
-                    &table_locations));
-
+                              table_->name(),
+                              MonoDelta::FromSeconds(32),
+                              master::VOTER_REPLICA,
+                              &table_locations));
   vector<string> rows;
 
   for (const master::TabletLocationsPB& tablet_locations :
