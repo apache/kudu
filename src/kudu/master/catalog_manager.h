@@ -445,10 +445,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     explicit ScopedLeaderDisablerForTests(CatalogManager* catalog)
         : catalog_(catalog),
         old_leader_ready_term_(catalog->leader_ready_term_) {
+      std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
       catalog_->leader_ready_term_ = -1;
     }
 
     ~ScopedLeaderDisablerForTests() {
+      std::lock_guard<simple_spinlock> l(catalog_->state_lock_);
       catalog_->leader_ready_term_ = old_leader_ready_term_;
     }
 
