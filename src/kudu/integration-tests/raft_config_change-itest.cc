@@ -56,7 +56,9 @@ using kudu::consensus::RaftPeerAttrsPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::REMOVE_PEER;
 using kudu::itest::BulkChangeConfig;
+using kudu::itest::GetTableLocations;
 using kudu::itest::TServerDetails;
+using kudu::master::VOTER_REPLICA;
 using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unordered_set;
@@ -121,8 +123,8 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   // The table should have replicas on three tservers.
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
-  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, &table_locations));
+  ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                              kTimeout, VOTER_REPLICA, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
@@ -186,8 +188,8 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
   // The table should initially have replicas on three tservers.
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
-  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, &table_locations));
+  ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                              kTimeout, VOTER_REPLICA, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
@@ -244,8 +246,8 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
 
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumInitialReplicas));
   master::GetTableLocationsResponsePB table_locations;
-  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, &table_locations));
+  ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                              kTimeout, VOTER_REPLICA, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations().begin()->replicas_size());
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();

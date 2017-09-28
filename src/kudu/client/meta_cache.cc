@@ -668,6 +668,7 @@ void LookupRpc::SendRpc() {
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
   req_.set_max_returned_locations(max_returned_locations_);
+  req_.set_replica_type_filter(master::ANY_REPLICA);
 
   // The end partition key is left unset intentionally so that we'll prefetch
   // some additional tablets.

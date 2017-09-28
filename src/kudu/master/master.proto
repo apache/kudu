@@ -361,9 +361,21 @@ message TSInfoPB {
   repeated HostPortPB rpc_addresses = 2;
 }
 
+// Selector to specify policy for listing tablet replicas in
+// GetTableLocationResponsePB and GetTabletLocationsResponsePB.
+enum ReplicaTypeFilter {
+  UNKNOWN = 999;
+  ANY_REPLICA = 0;
+  VOTER_REPLICA = 1;
+}
+
 message GetTabletLocationsRequestPB {
+
   // The tablet IDs about which to fetch info.
   repeated bytes tablet_ids = 1;
+
+  // What type of tablet replicas to include in the response.
+  optional ReplicaTypeFilter replica_type_filter = 2 [ default = VOTER_REPLICA ];
 }
 
 message GetTabletLocationsResponsePB {
@@ -445,6 +457,10 @@ message GetTableLocationsRequestPB {
   optional bytes partition_key_end = 4 [(kudu.REDACT) = true];
 
   optional uint32 max_returned_locations = 5 [ default = 10 ];
+
+  // What type of tablet replicas to include in the
+  // 'GetTableLocationsResponsePB::tablet_locations' response field.
+  optional ReplicaTypeFilter replica_type_filter = 6 [ default = VOTER_REPLICA ];
 }
 
 // The response to a GetTableLocations RPC. The master guarantees that:

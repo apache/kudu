@@ -86,7 +86,6 @@ using consensus::RunLeaderElectionRequestPB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 using consensus::kInvalidOpIdIndex;
-using master::ListTabletServersResponsePB;
 using master::ListTabletServersResponsePB_Entry;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
@@ -446,7 +445,7 @@ Status ListTabletServers(
     vector<ListTabletServersResponsePB_Entry>* tservers) {
   master::ListTabletServersRequestPB req;
   master::ListTabletServersResponsePB resp;
-  rpc::RpcController controller;
+  RpcController controller;
   controller.set_timeout(timeout);
 
   RETURN_NOT_OK(master_proxy->ListTabletServers(req, &resp, &controller));
@@ -481,11 +480,13 @@ Status WaitForReplicasReportedToMaster(
     const string& tablet_id,
     const MonoDelta& timeout,
     WaitForLeader wait_for_leader,
+    master::ReplicaTypeFilter filter,
     bool* has_leader,
     master::TabletLocationsPB* tablet_locations) {
   MonoTime deadline(MonoTime::Now() + timeout);
   while (true) {
-    RETURN_NOT_OK(GetTabletLocations(master_proxy, tablet_id, timeout, tablet_locations));
+    RETURN_NOT_OK(GetTabletLocations(
+        master_proxy, tablet_id, timeout, filter, tablet_locations));
     *has_leader = false;
     if (tablet_locations->replicas_size() == num_replicas) {
       for (const master::TabletLocationsPB_ReplicaPB& replica :
@@ -885,10 +886,13 @@ Status ListRunningTabletIds(const TServerDetails* ts,
 Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
                           const string& tablet_id,
                           const MonoDelta& timeout,
+                          master::ReplicaTypeFilter filter,
                           master::TabletLocationsPB* tablet_locations) {
-  master::GetTabletLocationsResponsePB resp;
   master::GetTabletLocationsRequestPB req;
   *req.add_tablet_ids() = tablet_id;
+  req.set_replica_type_filter(filter);
+
+  master::GetTabletLocationsResponsePB resp;
   rpc::RpcController rpc;
   rpc.set_timeout(timeout);
   RETURN_NOT_OK(master_proxy->GetTabletLocations(req, &resp, &rpc));
@@ -907,9 +911,11 @@ Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
 Status GetTableLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
                          const string& table_name,
                          const MonoDelta& timeout,
+                         master::ReplicaTypeFilter filter,
                          master::GetTableLocationsResponsePB* table_locations) {
   master::GetTableLocationsRequestPB req;
   req.mutable_table()->set_table_name(table_name);
+  req.set_replica_type_filter(filter);
   req.set_max_returned_locations(1000);
   rpc::RpcController rpc;
   rpc.set_timeout(timeout);
@@ -930,7 +936,8 @@ Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& ma
   while (true) {
     TabletLocationsPB tablet_locations;
     MonoDelta time_remaining = deadline - MonoTime::Now();
-    s = GetTabletLocations(master_proxy, tablet_id, time_remaining, &tablet_locations);
+    s = GetTabletLocations(master_proxy, tablet_id, time_remaining,
+                           master::VOTER_REPLICA, &tablet_locations);
     if (s.ok()) {
       num_voters_found = 0;
       for (const TabletLocationsPB::ReplicaPB& r : tablet_locations.replicas()) {

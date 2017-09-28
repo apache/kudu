@@ -90,7 +90,7 @@ TEST_F(TombstonedVotingITest, TestTombstonedReplicaWithoutCMetaCanVote) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, &table_locations));
+                                     kTimeout, master::VOTER_REPLICA, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size());
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
   set<string> replica_uuids;

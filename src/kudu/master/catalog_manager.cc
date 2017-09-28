@@ -4021,8 +4021,10 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
   }
 }
 
-Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
-                                               TabletLocationsPB* locs_pb) {
+Status CatalogManager::BuildLocationsForTablet(
+    const scoped_refptr<TabletInfo>& tablet,
+    master::ReplicaTypeFilter filter,
+    TabletLocationsPB* locs_pb) {
   TabletMetadataLock l_tablet(tablet.get(), LockMode::READ);
   if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
     return Status::NotFound("Tablet deleted", l_tablet.data().pb.state_msg());
@@ -4039,6 +4041,27 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
   for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
     // TODO(adar): GetConsensusRole() iterates over all of the peers, making this an
     // O(n^2) loop. If replication counts get high, it should be optimized.
+    switch (filter) {
+      case VOTER_REPLICA:
+        if (!peer.has_member_type() ||
+            peer.member_type() != consensus::RaftPeerPB::VOTER) {
+          // Jump to the next iteration of the outside cycle.
+          continue;
+        }
+        break;
+
+      case ANY_REPLICA:
+        break;
+
+      default:
+        {
+          const string err_msg = Substitute(
+              "$0: unsupported replica type filter", filter);
+          LOG(DFATAL) << err_msg;
+          return Status::InvalidArgument(err_msg);
+        }
+    }
+
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
     replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
 
@@ -4069,6 +4092,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
 }
 
 Status CatalogManager::GetTabletLocations(const string& tablet_id,
+                                          master::ReplicaTypeFilter filter,
                                           TabletLocationsPB* locs_pb) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
@@ -4082,27 +4106,26 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
     }
   }
 
-  return BuildLocationsForTablet(tablet_info, locs_pb);
+  return BuildLocationsForTablet(tablet_info, filter, locs_pb);
 }
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
-  leader_lock_.AssertAcquiredForReading();
-  RETURN_NOT_OK(CheckOnline());
-
   // If start-key is > end-key report an error instead of swap the two
   // since probably there is something wrong app-side.
   if (req->has_partition_key_start() && req->has_partition_key_end()
       && req->partition_key_start() > req->partition_key_end()) {
     return Status::InvalidArgument("start partition key is greater than the end partition key");
   }
-
   if (req->max_returned_locations() <= 0) {
     return Status::InvalidArgument("max_returned_locations must be greater than 0");
   }
 
   // Lookup the table and verify if it exists
   TRACE("Looking up and locking table");
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
   RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::READ, &table, &l));
@@ -4117,10 +4140,12 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   table->GetTabletsInRange(req, &tablets_in_range);
 
   for (const auto& tablet : tablets_in_range) {
-    Status s = BuildLocationsForTablet(tablet, resp->add_tablet_locations());
+    Status s = BuildLocationsForTablet(
+        tablet, req->replica_type_filter(), resp->add_tablet_locations());
     if (s.ok()) {
       continue;
-    } else if (s.IsNotFound()) {
+    }
+    if (s.IsNotFound()) {
       // The tablet has been deleted; force the client to retry. This is a
       // transient state that only happens with a concurrent drop range
       // partition alter table operation.

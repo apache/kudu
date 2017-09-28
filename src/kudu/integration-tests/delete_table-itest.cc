@@ -1147,7 +1147,7 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumReplicas));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, &table_locations));
+                                     kTimeout, master::VOTER_REPLICA, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   string tablet_id;
   std::set<string> replicas;

@@ -238,9 +238,10 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
   ServerRegistrationPB reg;
   vector<TSDescriptor*> locs;
   for (const string& tablet_id : req->tablet_ids()) {
-    // TODO: once we have catalog data. ACL checks would also go here, probably.
+    // TODO(todd): once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
-    Status s = server_->catalog_manager()->GetTabletLocations(tablet_id, locs_pb);
+    Status s = server_->catalog_manager()->GetTabletLocations(
+        tablet_id, req->replica_type_filter(), locs_pb);
     if (!s.ok()) {
       resp->mutable_tablet_locations()->RemoveLast();
 
