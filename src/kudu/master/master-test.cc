@@ -107,7 +107,8 @@ class MasterTest : public KuduTest {
     mini_master_.reset(new MiniMaster(GetTestPath("Master"), HostPort("127.0.0.1", 0)));
     ASSERT_OK(mini_master_->Start());
     master_ = mini_master_->master();
-    ASSERT_OK(master_->WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
+    ASSERT_OK(master_->WaitUntilCatalogManagerIsLeaderAndReadyForTests(
+        MonoDelta::FromSeconds(90)));
 
     // Create a client proxy to it.
     MessengerBuilder bld("Client");
