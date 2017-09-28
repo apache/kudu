@@ -1118,8 +1118,10 @@ TEST_F(MasterTest, TestMasterMetadataConsistentDespiteFailures) {
   ASSERT_GE(num_injected_failures, 1);
 
   // Restart the catalog manager to ensure that it can survive reloading the
-  // metadata we wrote to disk.
+  // metadata we wrote to disk. Make sure failure injection is disabled as
+  // restarting may issue several catalog writes.
   mini_master_->Shutdown();
+  FLAGS_sys_catalog_fail_during_write = 0.0;
   ASSERT_OK(mini_master_->Restart());
 
   // Reload the metadata again, this time verifying its consistency.
