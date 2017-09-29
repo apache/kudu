@@ -42,11 +42,11 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
-#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
@@ -65,6 +65,8 @@ METRIC_DECLARE_entity(server);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet);
 
 namespace kudu {
+
+using cluster::ClusterNodes;
 
 const char* const kTableName = "test-table";
 

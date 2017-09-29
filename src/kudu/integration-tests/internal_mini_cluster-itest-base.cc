@@ -26,6 +26,9 @@
 
 namespace kudu {
 
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
+
 void MiniClusterITestBase::TearDown() {
   StopCluster();
   KuduTest::TearDown();

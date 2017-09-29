@@ -32,12 +32,12 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/monotime.h"
@@ -60,12 +60,12 @@ class TSDescriptor;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
-using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
-using client::KuduTable;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 
 const char * const kTableId1 = "testMasterReplication-1";
 const char * const kTableId2 = "testMasterReplication-2";

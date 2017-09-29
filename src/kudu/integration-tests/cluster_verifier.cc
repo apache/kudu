@@ -28,11 +28,13 @@
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/log_verifier.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -41,6 +43,7 @@ using std::vector;
 
 namespace kudu {
 
+using cluster::ExternalMiniCluster;
 using strings::Substitute;
 using tools::Ksck;
 using tools::KsckCluster;

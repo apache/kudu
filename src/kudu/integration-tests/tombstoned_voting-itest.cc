@@ -29,10 +29,10 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -42,6 +42,8 @@
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_TSHeartbeat);
 
+using kudu::cluster::ExternalMaster;
+using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::MakeOpId;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_COPYING;

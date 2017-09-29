@@ -26,7 +26,7 @@
 
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 
 namespace kudu {
 
@@ -52,6 +52,8 @@ class Messenger;
 namespace tserver {
 class MiniTabletServer;
 }
+
+namespace cluster {
 
 struct InternalMiniClusterOptions {
   InternalMiniClusterOptions();
@@ -216,4 +218,5 @@ class InternalMiniCluster : public MiniCluster {
   DISALLOW_COPY_AND_ASSIGN(InternalMiniCluster);
 };
 
+} // namespace cluster
 } // namespace kudu

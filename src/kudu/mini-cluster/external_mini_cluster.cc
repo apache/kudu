@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 
 #include <algorithm>
 #include <csignal>
@@ -92,6 +92,7 @@ DEFINE_bool(perf_record, false,
             "Whether to run \"perf record --call-graph fp\" on each daemon in the cluster");
 
 namespace kudu {
+namespace cluster {
 
 static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tserver";
@@ -1179,15 +1180,15 @@ Status ExternalMaster::WaitForCatalogManager() {
       if (!resp.has_error()) {
         // This master is the leader and is up and running.
         break;
-      } else {
-        s = StatusFromPB(resp.error().status());
-        if (s.IsIllegalState()) {
-          // This master is not the leader but is otherwise up and running.
-          break;
-        } else if (!s.IsServiceUnavailable()) {
-          // Unexpected error from master.
-          return s;
-        }
+      }
+      s = StatusFromPB(resp.error().status());
+      if (s.IsIllegalState()) {
+        // This master is not the leader but is otherwise up and running.
+        break;
+      }
+      if (!s.IsServiceUnavailable()) {
+        // Unexpected error from master.
+        return s;
       }
     } else if (!s.IsTimedOut() && !s.IsNetworkError()) {
       // Unexpected error from proxy.
@@ -1276,5 +1277,5 @@ Status ExternalTabletServer::Restart() {
   return StartProcess(flags);
 }
 
-
+} // namespace cluster
 } // namespace kudu

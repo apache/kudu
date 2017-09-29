@@ -29,10 +29,10 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
@@ -85,7 +85,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     LOG(INFO) << FLAGS_num_replicas << " replicas per TS";
     LOG(INFO) << "--------------";
 
-    ExternalMiniClusterOptions opts;
+    cluster::ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = FLAGS_num_tablet_servers;
     opts.data_root = GetTestPath(data_root_path);
     opts.num_data_dirs = num_data_dirs;
@@ -110,7 +110,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     AddExtraFlags(FLAGS_ts_flags, &opts.extra_tserver_flags);
     AddExtraFlags(FLAGS_master_flags, &opts.extra_master_flags);
 
-    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+    cluster_.reset(new cluster::ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
     inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
     CreateTSProxies();
@@ -189,7 +189,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     // reached, the wait here is best effort only. That is, if the wait
     // deadline expires, the resulting timeout failure is ignored.
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
       int expected_tablet_count = 0;
       for (const auto& e : tablet_replicas_) {
         if (ts->uuid() == e.second->uuid()) {
@@ -421,7 +421,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   Status ShutdownServerWithUUID(const std::string& uuid) {
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
       if (ts->instance_id().permanent_uuid() == uuid) {
         ts->Shutdown();
         return Status::OK();
@@ -432,7 +432,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   Status RestartServerWithUUID(const std::string& uuid) {
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
       if (ts->instance_id().permanent_uuid() == uuid) {
         ts->Shutdown();
         RETURN_NOT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
@@ -541,7 +541,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   }
 
  protected:
-  gscoped_ptr<ExternalMiniCluster> cluster_;
+  gscoped_ptr<cluster::ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
 
   // Maps server uuid to TServerDetails

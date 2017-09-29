@@ -14,9 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
-#ifndef KUDU_INTEGRATION_TESTS_CLUSTER_EXTERNAL_MINI_CLUSTER_FS_INSPECTOR_H_
-#define KUDU_INTEGRATION_TESTS_CLUSTER_EXTERNAL_MINI_CLUSTER_FS_INSPECTOR_H_
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -28,13 +26,17 @@
 #include "kudu/util/monotime.h"
 
 namespace kudu {
+
 class Env;
-class ExternalMiniCluster;
 class Status;
+
+namespace cluster {
+class ExternalMiniCluster;
+} // namespace cluster
 
 namespace consensus {
 class ConsensusMetadataPB;
-}
+} // namespace consensus
 
 namespace itest {
 
@@ -44,7 +46,7 @@ namespace itest {
 class ExternalMiniClusterFsInspector {
  public:
   // Does not take ownership of the ExternalMiniCluster pointer.
-  explicit ExternalMiniClusterFsInspector(ExternalMiniCluster* cluster);
+  explicit ExternalMiniClusterFsInspector(cluster::ExternalMiniCluster* cluster);
   ~ExternalMiniClusterFsInspector();
 
   Status ListFilesInDir(const std::string& path, std::vector<std::string>* entries);
@@ -130,12 +132,10 @@ class ExternalMiniClusterFsInspector {
                                           const std::string& tablet_id) const;
 
   Env* const env_;
-  ExternalMiniCluster* const cluster_;
+  cluster::ExternalMiniCluster* const cluster_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalMiniClusterFsInspector);
 };
 
 } // namespace itest
 } // namespace kudu
-
-#endif // KUDU_INTEGRATION_TESTS_CLUSTER_EXTERNAL_MINI_CLUSTER_FS_INSPECTOR_H_

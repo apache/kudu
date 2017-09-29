@@ -38,8 +38,8 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/countdown_latch.h"
@@ -82,6 +82,8 @@ using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 
 // This integration test tries to trigger all the update-related bits while also serving as a
 // foundation for benchmarking. It first inserts 'row_count' rows and then starts two threads,

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_INTEGRATION_TESTS_CLUSTER_VERIFIER_H
-#define KUDU_INTEGRATION_TESTS_CLUSTER_VERIFIER_H
+#pragma once
 
 #include <string>
 
@@ -26,12 +25,14 @@
 
 namespace kudu {
 
+namespace cluster {
 class ExternalMiniCluster;
+} // namespace cluster
 
 // Utility class for integration tests to verify that the cluster is in a good state.
 class ClusterVerifier {
  public:
-  explicit ClusterVerifier(ExternalMiniCluster* cluster);
+  explicit ClusterVerifier(cluster::ExternalMiniCluster* cluster);
 
   // Set the timeout for read/write/admin operations.
   void SetOperationsTimeout(const MonoDelta& timeout);
@@ -85,7 +86,7 @@ class ClusterVerifier {
                          int expected_row_count);
 
 
-  ExternalMiniCluster* cluster_;
+  cluster::ExternalMiniCluster* cluster_;
 
   tools::ChecksumOptions checksum_options_;
 
@@ -95,4 +96,3 @@ class ClusterVerifier {
 };
 
 } // namespace kudu
-#endif /* KUDU_INTEGRATION_TESTS_CLUSTER_VERIFIER_H */

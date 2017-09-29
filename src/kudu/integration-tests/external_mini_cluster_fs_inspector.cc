@@ -27,7 +27,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
@@ -40,7 +40,7 @@ namespace itest {
 using std::set;
 using std::string;
 using std::vector;
-
+using cluster::ExternalMiniCluster;
 using consensus::ConsensusMetadataPB;
 using strings::Substitute;
 using tablet::TabletDataState;

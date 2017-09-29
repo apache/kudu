@@ -25,8 +25,8 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -35,10 +35,11 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-METRIC_DECLARE_entity(server);
 METRIC_DECLARE_gauge_uint64(threads_running);
 
 namespace kudu {
+
+namespace cluster {
 
 using std::string;
 using strings::Substitute;
@@ -97,7 +98,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
 
   // Hard-coded RPC ports for the masters. This is safe, as this unit test
   // runs under a resource lock (see CMakeLists.txt in this directory).
-  // TODO we should have a generic method to obtain n free ports.
+  // TODO(af) we should have a generic method to obtain n free ports.
   opts.master_rpc_ports = { 11010, 11011, 11012 };
   opts.num_masters = opts.master_rpc_ports.size();
   opts.num_tablet_servers = 3;
@@ -208,4 +209,5 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   cluster.Shutdown();
 }
 
+} // namespace cluster
 } // namespace kudu

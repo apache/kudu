@@ -30,9 +30,9 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
@@ -50,6 +50,9 @@ using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::cluster::ScopedResumeExternalDaemon;
 using kudu::master::SysCatalogTable;
 using std::pair;
 using std::string;
@@ -196,7 +199,8 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // Bring down the old cluster configuration and bring up the new one.
   cluster_->Shutdown();
   ExternalMiniClusterOptions opts;
-  opts.bind_mode = MiniCluster::LOOPBACK; // Required since we use 127.0.0.1 in the config above.
+  // Required since we use 127.0.0.1 in the config above.
+  opts.bind_mode = cluster::MiniCluster::LOOPBACK;
   opts.master_rpc_ports = kMasterRpcPorts;
   opts.num_masters = kMasterRpcPorts.size();
   ExternalMiniCluster migrated_cluster(std::move(opts));

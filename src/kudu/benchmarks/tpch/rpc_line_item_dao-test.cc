@@ -31,8 +31,8 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -41,6 +41,8 @@
 namespace kudu {
 
 using client::KuduRowResult;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using std::string;
 using std::vector;
 

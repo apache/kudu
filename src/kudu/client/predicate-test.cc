@@ -36,7 +36,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -50,6 +50,8 @@ using std::vector;
 namespace kudu {
 namespace client {
 
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using sp::shared_ptr;
 
 class PredicateTest : public KuduTest {

@@ -61,12 +61,12 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
@@ -113,6 +113,7 @@ using client::KuduInsert;
 using client::KuduSession;
 using client::KuduTable;
 using client::sp::shared_ptr;
+using cluster::ExternalTabletServer;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusServiceProxy;

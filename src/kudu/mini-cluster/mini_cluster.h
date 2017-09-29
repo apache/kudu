@@ -41,6 +41,8 @@ namespace rpc {
 class Messenger;
 } // namespace rpc
 
+namespace cluster {
+
 // Mode to which node types a certain action (like Shutdown()) should apply.
 enum class ClusterNodes {
   ALL,
@@ -155,4 +157,5 @@ class MiniCluster {
   static std::string GetBindIpForDaemon(DaemonType type, int index, BindMode bind_mode);
 };
 
+} // namespace cluster
 } // namespace kudu

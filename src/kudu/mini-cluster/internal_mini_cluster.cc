@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 
 #include <cstdint>
 #include <ostream>
@@ -50,6 +50,7 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+namespace cluster {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
@@ -372,4 +373,5 @@ std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy(int idx) c
   return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
 }
 
+} // namespace cluster
 } // namespace kudu

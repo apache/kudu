@@ -22,18 +22,18 @@
 #include <unordered_map>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
 
 namespace client {
 class KuduClient;
-}
+} // namespace client
 
 namespace itest {
 struct TServerDetails;
-}
+} // namespace itest
 
 // Simple base utility class to provide a mini cluster with common setup
 // routines useful for integration tests.
@@ -45,7 +45,7 @@ class MiniClusterITestBase : public KuduTest {
   void StartCluster(int num_tablet_servers = 3);
   void StopCluster();
 
-  std::unique_ptr<InternalMiniCluster> cluster_;
+  std::unique_ptr<cluster::InternalMiniCluster> cluster_;
   client::sp::shared_ptr<client::KuduClient> client_;
   std::unordered_map<std::string, itest::TServerDetails*> ts_map_;
 };

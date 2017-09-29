@@ -40,7 +40,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/net/sockaddr.h"
@@ -51,6 +51,8 @@
 namespace kudu {
 namespace client {
 
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using sp::shared_ptr;
 using std::atomic;
 using std::string;

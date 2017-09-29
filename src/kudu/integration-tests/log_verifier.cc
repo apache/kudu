@@ -40,8 +40,8 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -56,6 +56,8 @@ using strings::Substitute;
 
 namespace kudu {
 
+using cluster::ExternalMiniCluster;
+using cluster::ExternalTabletServer;
 using consensus::OpId;
 using log::LogReader;
 using itest::ExternalMiniClusterFsInspector;

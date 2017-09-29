@@ -32,8 +32,8 @@
 #include "kudu/client/schema.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -66,6 +66,7 @@ namespace kudu {
 using client::KuduColumnSchema;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
+using cluster::ExternalMiniClusterOptions;
 using std::pair;
 using std::string;
 using std::unique_ptr;

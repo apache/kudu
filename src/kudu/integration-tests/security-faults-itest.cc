@@ -35,7 +35,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/util/monotime.h"
@@ -52,6 +52,8 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using std::string;
 using std::unique_ptr;
 using std::vector;

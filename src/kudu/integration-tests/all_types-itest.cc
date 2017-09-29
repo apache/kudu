@@ -43,7 +43,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/type_traits.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -58,6 +58,8 @@ using std::vector;
 namespace kudu {
 namespace client {
 
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 using sp::shared_ptr;
 
 static const int kNumTabletServers = 3;

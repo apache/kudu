@@ -44,8 +44,8 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -101,6 +101,8 @@ using client::KuduSession;
 using client::KuduStatusMemberCallback;
 using client::KuduTable;
 using client::KuduTableCreator;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using strings::Split;
 using strings::Substitute;
 

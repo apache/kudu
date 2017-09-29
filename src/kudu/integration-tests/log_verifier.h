@@ -26,8 +26,11 @@
 
 namespace kudu {
 
+namespace cluster {
 class ExternalMiniCluster;
 class ExternalTabletServer;
+} // namespace cluster
+
 class FsManager;
 
 namespace consensus {
@@ -37,7 +40,7 @@ class OpId;
 // Verifies correctness of the logs in an external mini-cluster.
 class LogVerifier {
  public:
-  explicit LogVerifier(ExternalMiniCluster* cluster);
+  explicit LogVerifier(cluster::ExternalMiniCluster* cluster);
   ~LogVerifier();
 
   // Verify that, for every tablet in the cluster, the logs of each of that tablet's replicas
@@ -55,20 +58,21 @@ class LogVerifier {
 
   // Scans the WAL on the given tablet server to find the COMMIT message with the highest
   // index.
-  Status ScanForHighestCommittedOpIdInLog(ExternalTabletServer* ets,
+  Status ScanForHighestCommittedOpIdInLog(cluster::ExternalTabletServer* ets,
                                           const std::string& tablet_id,
                                           consensus::OpId* commit_id);
 
  private:
   // Open an FsManager for the given tablet server.
-  Status OpenFsManager(ExternalTabletServer* ets, std::unique_ptr<FsManager>* fs);
+  Status OpenFsManager(cluster::ExternalTabletServer* ets,
+                       std::unique_ptr<FsManager>* fs);
 
   // Scan the WALs for tablet 'tablet_id' on the given 'fs'. Sets entries
   // in '*index_to_term' for each COMMIT entry found in the WALs.
   Status ScanForCommittedOpIds(FsManager* fs, const std::string& tablet_id,
                                std::map<int64_t, int64_t>* index_to_term);
 
-  ExternalMiniCluster* const cluster_;
+  cluster::ExternalMiniCluster* const cluster_;
 
   DISALLOW_COPY_AND_ASSIGN(LogVerifier);
 };

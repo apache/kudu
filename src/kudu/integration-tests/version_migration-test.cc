@@ -27,9 +27,9 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/log_verifier.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -53,6 +53,9 @@ const char* kTableName = "test_table";
 const int kNumTabletServers = 3;
 
 namespace kudu {
+
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 
 namespace client {
 class KuduClient;

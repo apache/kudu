@@ -254,7 +254,11 @@ endif()
 if(NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
   ADD_KUDU_TEST(client_samples-test.sh RUN_SERIAL true LABELS no_dist_test)
 endif()
-set(KUDU_TEST_LINK_LIBS kudu_client integration-tests ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS
+  integration-tests
+  kudu_client
+  mini-cluster
+  ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(client-test)
 ADD_KUDU_TEST(client-unittest)
 ADD_KUDU_TEST(predicate-test)

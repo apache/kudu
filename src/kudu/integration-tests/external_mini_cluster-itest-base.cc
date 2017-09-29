@@ -28,16 +28,19 @@
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
-#include "kudu/util/status.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/pstack_watcher.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
 DEFINE_bool(test_dump_stacks_on_failure, true,
             "Whether to dump ExternalMiniCluster process stacks on test failure");
 
 namespace kudu {
+
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 
 void ExternalMiniClusterITestBase::TearDown() {
   StopCluster();

@@ -36,7 +36,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
@@ -304,7 +304,7 @@ class ScopedRowUpdater {
 // linked list test.
 class PeriodicWebUIChecker {
  public:
-  PeriodicWebUIChecker(const ExternalMiniCluster& cluster,
+  PeriodicWebUIChecker(const cluster::ExternalMiniCluster& cluster,
                        const std::string& tablet_id, MonoDelta period)
       : period_(period), is_running_(true) {
     // List of master and ts web pages to fetch

@@ -34,9 +34,9 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/atomic.h"
@@ -67,9 +67,11 @@ using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
-using client::KuduTable;
 using client::KuduTableAlterer;
 using client::KuduTableCreator;
+using cluster::ExternalMaster;
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 using master::MasterServiceProxy;
 using master::ListTablesRequestPB;
 using master::ListTablesResponsePB;

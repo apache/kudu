@@ -25,9 +25,9 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -35,6 +35,7 @@
 
 namespace kudu {
 
+using cluster::ExternalTabletServer;
 using std::map;
 using std::string;
 using std::vector;

@@ -26,7 +26,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -37,6 +37,9 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 
 class LogRollingITest : public KuduTest {};
 

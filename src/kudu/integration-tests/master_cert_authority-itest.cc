@@ -26,12 +26,12 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/ca/cert_management.h"
@@ -50,6 +50,8 @@ using std::shared_ptr;
 
 namespace kudu {
 
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using security::ca::CertRequestGenerator;
 using security::Cert;
 using security::CertSignRequest;

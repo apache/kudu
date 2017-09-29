@@ -22,7 +22,6 @@
 #include <string>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -35,9 +34,9 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -59,16 +58,13 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::rpc::Messenger;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
-
-DECLARE_string(keytab_file);
-DECLARE_string(rpc_private_key_file);
-DECLARE_string(rpc_certificate_file);
-DECLARE_string(rpc_ca_certificate_file);
 
 namespace kudu {
 

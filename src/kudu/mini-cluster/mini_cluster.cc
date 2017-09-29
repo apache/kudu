@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 
 #include <unistd.h>
 
@@ -31,6 +31,7 @@ using std::string;
 using strings::Substitute;
 
 namespace kudu {
+namespace cluster {
 
 string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind_mode) {
   switch (bind_mode) {
@@ -52,4 +53,5 @@ string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind
   }
 }
 
+} // namespace cluster
 } // namespace kudu

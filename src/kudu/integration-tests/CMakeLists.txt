@@ -24,12 +24,9 @@ set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
   external_mini_cluster-itest-base.cc
-  external_mini_cluster.cc
   external_mini_cluster_fs_inspector.cc
   internal_mini_cluster-itest-base.cc
-  internal_mini_cluster.cc
   log_verifier.cc
-  mini_cluster.cc
   test_workload.cc
 )
 
@@ -38,6 +35,7 @@ target_link_libraries(integration-tests
   tserver
   tserver_test_util
   master
+  mini-cluster
   ksck
   kudu_client
   kudu_client_test_util
@@ -71,7 +69,6 @@ ADD_KUDU_TEST(delete_tablet-itest)
 ADD_KUDU_TEST(disk_failure-itest)
 ADD_KUDU_TEST(disk_reservation-itest)
 ADD_KUDU_TEST(exactly_once_writes-itest)
-ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(flex_partitioning-itest TIMEOUT 1800)
 ADD_KUDU_TEST(full_stack-insert-scan-test RUN_SERIAL true)
 ADD_KUDU_TEST(fuzz-itest RUN_SERIAL true)

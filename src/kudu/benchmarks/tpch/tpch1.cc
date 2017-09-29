@@ -76,8 +76,8 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
@@ -254,15 +254,15 @@ int main(int argc, char **argv) {
   kudu::InitGoogleLoggingSafe(argv[0]);
 
   kudu::Env* env;
-  gscoped_ptr<kudu::InternalMiniCluster> cluster;
+  gscoped_ptr<kudu::cluster::InternalMiniCluster> cluster;
   string master_address;
   if (FLAGS_use_mini_cluster) {
     env = kudu::Env::Default();
     kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
     CHECK(s.IsAlreadyPresent() || s.ok()) << s.ToString();
-    kudu::InternalMiniClusterOptions options;
+    kudu::cluster::InternalMiniClusterOptions options;
     options.data_root = FLAGS_mini_cluster_base_dir;
-    cluster.reset(new kudu::InternalMiniCluster(env, options));
+    cluster.reset(new kudu::cluster::InternalMiniCluster(env, options));
     CHECK_OK(cluster->StartSync());
     master_address = cluster->mini_master()->bound_rpc_addr_str();
   } else {

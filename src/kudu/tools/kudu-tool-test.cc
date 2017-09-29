@@ -72,11 +72,11 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
-#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -123,6 +123,10 @@ using cfile::CFileWriter;
 using cfile::StringDataGenerator;
 using cfile::WriterOptions;
 using client::sp::shared_ptr;
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
 using consensus::ReplicateRefPtr;
@@ -1359,7 +1363,7 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   // on the tablet servers in the cluster giving us the test coverage
   // for KUDU-1776. With this, 'kudu remote_replica copy' can be used to
   // connect to tablet servers bound to wildcard ip addresses.
-  cluster_opts_.bind_mode = MiniCluster::WILDCARD;
+  cluster_opts_.bind_mode = cluster::MiniCluster::WILDCARD;
   NO_FATALS(StartExternalMiniCluster(
       {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"},
       {"--enable_leader_failure_detection=false"}, kNumTservers));

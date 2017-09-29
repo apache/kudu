@@ -38,8 +38,8 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -62,9 +62,10 @@ using std::vector;
 namespace kudu {
 
 using client::KuduClient;
-using client::KuduClientBuilder;
 using client::KuduScanner;
 using client::KuduTable;
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 
 class ClientStressTest : public KuduTest {
  public:

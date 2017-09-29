@@ -33,8 +33,8 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -50,6 +50,8 @@ using strings::Substitute;
 namespace kudu {
 namespace client {
 
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 using sp::shared_ptr;
 
 namespace {

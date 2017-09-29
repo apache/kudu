@@ -35,7 +35,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/integration-tests/mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -43,9 +43,6 @@
 
 namespace kudu {
 
-class ExternalDaemon;
-class ExternalMaster;
-class ExternalTabletServer;
 class MetricEntityPrototype;
 class MetricPrototype;
 class NodeInstancePB;
@@ -68,6 +65,12 @@ class Messenger;
 namespace server {
 class ServerStatusPB;
 } // namespace server
+
+namespace cluster {
+
+class ExternalDaemon;
+class ExternalMaster;
+class ExternalTabletServer;
 
 struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
@@ -169,7 +172,7 @@ class ExternalMiniCluster : public MiniCluster {
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
   //
-  // TODO: Use the appropriate RPC here to return the leader master,
+  // TODO(unknown): Use the appropriate RPC here to return the leader master,
   // to allow some of the existing tests (e.g., raft_consensus-itest)
   // to use multiple masters.
   ExternalMaster* leader_master() { return master(0); }
@@ -561,4 +564,5 @@ class ExternalTabletServer : public ExternalDaemon {
   virtual ~ExternalTabletServer();
 };
 
+} // namespace cluster
 } // namespace kudu

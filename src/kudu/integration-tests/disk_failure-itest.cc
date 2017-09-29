@@ -25,8 +25,8 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
@@ -37,6 +37,7 @@ METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 
 namespace kudu {
 
+using cluster::ExternalTabletServer;
 using std::string;
 using std::vector;
 using strings::Substitute;

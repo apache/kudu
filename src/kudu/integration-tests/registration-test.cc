@@ -32,7 +32,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
@@ -40,6 +39,7 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
@@ -70,6 +70,7 @@ using std::vector;
 
 namespace kudu {
 
+using cluster::InternalMiniCluster;
 using master::CatalogManager;
 using master::CreateTableRequestPB;
 using master::CreateTableResponsePB;

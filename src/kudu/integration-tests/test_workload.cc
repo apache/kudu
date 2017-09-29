@@ -34,8 +34,8 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tools/data_gen_util.h"
-#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -54,6 +54,7 @@ using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
+using cluster::MiniCluster;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 

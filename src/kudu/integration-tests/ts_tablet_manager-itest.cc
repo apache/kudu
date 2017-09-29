@@ -37,11 +37,11 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -70,6 +70,8 @@ using client::KuduClient;
 using client::KuduSchema;
 using client::KuduTable;
 using client::KuduTableCreator;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using consensus::GetConsensusRole;
 using consensus::RaftPeerPB;
 using itest::SimpleIntKeyKuduSchema;

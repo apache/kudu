@@ -37,8 +37,11 @@
 
 namespace kudu {
 
-class MiniCluster;
 class Status;
+
+namespace cluster {
+class MiniCluster;
+} // namespace cluster
 
 // Utility class for generating a workload against a test cluster.
 //
@@ -54,7 +57,7 @@ class TestWorkload {
  public:
   static const char* const kDefaultTableName;
 
-  explicit TestWorkload(MiniCluster* cluster);
+  explicit TestWorkload(cluster::MiniCluster* cluster);
   ~TestWorkload();
 
   void set_payload_bytes(int n) {
@@ -208,7 +211,7 @@ class TestWorkload {
   void WriteThread();
   void ReadThread();
 
-  MiniCluster* cluster_;
+  cluster::MiniCluster* cluster_;
   client::KuduClientBuilder client_builder_;
   client::sp::shared_ptr<client::KuduClient> client_;
   ThreadSafeRandom rng_;

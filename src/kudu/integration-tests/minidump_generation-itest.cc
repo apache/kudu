@@ -20,25 +20,25 @@
 #include <string>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_string(minidump_path);
-
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+using cluster::ExternalMaster;
+using cluster::ExternalTabletServer;
 
 // Test the creation of minidumps upon process crash.
 class MinidumpGenerationITest : public ExternalMiniClusterITestBase {

@@ -100,6 +100,7 @@ set(KUDU_TEST_LINK_LIBS
   kudu_tools_util
   kudu_tools_test_util
   integration-tests
+  mini-cluster
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test RESOURCE_LOCK "master-rpc-ports")

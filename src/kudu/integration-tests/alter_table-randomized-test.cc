@@ -42,7 +42,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -65,6 +65,8 @@ using client::KuduTableCreator;
 using client::KuduValue;
 using client::KuduWriteOperation;
 using client::sp::shared_ptr;
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
 using std::make_pair;
 using std::map;
 using std::pair;

@@ -47,21 +47,15 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
-#include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-using kudu::client::KuduClient;
-using kudu::client::sp::shared_ptr;
-using kudu::itest::TServerDetails;
-using std::string;
-using std::vector;
 
 DEFINE_int32(seconds_to_run, 5, "Number of seconds for which to run the test");
 
@@ -79,7 +73,14 @@ namespace kudu {
 
 namespace client {
 class KuduClient;
-}
+} // namespace client
+
+using client::KuduClient;
+using client::sp::shared_ptr;
+using cluster::ClusterNodes;
+using itest::TServerDetails;
+using std::string;
+using std::vector;
 
 class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
  public:

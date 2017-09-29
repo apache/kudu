@@ -33,8 +33,8 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/sys_catalog.h"
+#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -55,6 +55,11 @@ namespace client {
 
 const int kNumTabletServerReplicas = 3;
 
+using cluster::ExternalDaemon;
+using cluster::ExternalMaster;
+using cluster::ExternalMiniCluster;
+using cluster::ExternalMiniClusterOptions;
+using cluster::ScopedResumeExternalDaemon;
 using sp::shared_ptr;
 using std::set;
 using std::string;

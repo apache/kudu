@@ -28,9 +28,9 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/walltime.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
@@ -49,6 +49,8 @@ DECLARE_int32(heartbeat_interval_ms);
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using kudu::security::TokenPB;
 using kudu::security::TokenSigningPublicKeyPB;
 using kudu::security::SignedTokenPB;

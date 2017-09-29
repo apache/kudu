@@ -40,10 +40,10 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/integration-tests/internal_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/openssl_util.h"
@@ -58,7 +58,6 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(rpc_reopen_outbound_connections);
-DECLARE_bool(rpc_trace_negotiation);
 DECLARE_int32(heartbeat_interval_ms);
 
 using std::atomic;
@@ -79,6 +78,8 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::sp::shared_ptr;
+using cluster::InternalMiniCluster;
+using cluster::InternalMiniClusterOptions;
 using security::DataFormat;
 using security::PrivateKey;
 using security::SignedTokenPB;
