@@ -2102,4 +2102,13 @@ TEST_F(AlterTableTest, TestRenameStillCreatingTable) {
   }
 }
 
+// Regression test for KUDU-2132.
+TEST_F(AlterTableTest, TestKUDU2132) {
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  table_alterer->AlterColumn("c0")->RenameTo("primaryKeyRenamed");
+  table_alterer->AlterColumn("c1")->RenameTo("c0");
+  table_alterer->DropColumn("c0");
+  ASSERT_OK(table_alterer->Alter());
+}
+
 } // namespace kudu

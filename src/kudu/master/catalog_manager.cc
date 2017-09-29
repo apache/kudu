@@ -1656,7 +1656,7 @@ Status CatalogManager::ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,
           return Status::InvalidArgument("DROP_COLUMN missing column info");
         }
 
-        if (cur_schema.is_key_column(step.drop_column().name())) {
+        if (builder.is_key_column(step.drop_column().name())) {
           return Status::InvalidArgument("cannot remove a key column",
                                          step.drop_column().name());
         }

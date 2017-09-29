@@ -891,6 +891,16 @@ class SchemaBuilder {
     return next_id_;
   }
 
+  // Return true if the column named 'col_name' is a key column.
+  // Return false if the column is not a key column, or if
+  // the column is not in the builder.
+  bool is_key_column(const StringPiece col_name) const {
+    for (int i = 0; i < num_key_columns_; i++) {
+      if (cols_[i].name() == col_name) return true;
+    }
+    return false;
+  }
+
   Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
   Schema BuildWithoutIds() const { return Schema(cols_, num_key_columns_); }
 
