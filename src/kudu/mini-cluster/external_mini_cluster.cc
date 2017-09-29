@@ -299,7 +299,7 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 Status ExternalMiniCluster::StartSingleMaster() {
   string daemon_id = "master-0";
 
-  ExternalDaemonOptions opts(opts_.logtostderr);
+  ExternalDaemonOptions opts;
   opts.messenger = messenger_;
   opts.exe = GetBinaryPath(kMasterBinaryName);
   opts.wal_dir = GetWalPath(daemon_id);
@@ -311,6 +311,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
   }
   opts.extra_flags = SubstituteInFlags(opts_.extra_master_flags, 0);
   opts.start_process_timeout = opts_.start_process_timeout;
+  opts.logtostderr = opts_.logtostderr;
 
   opts.rpc_bind_address = HostPort(GetBindIpForMaster(0), 0);
   scoped_refptr<ExternalMaster> master = new ExternalMaster(opts);
@@ -345,7 +346,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
   for (int i = 0; i < num_masters; i++) {
     string daemon_id = Substitute("master-$0", i);
 
-    ExternalDaemonOptions opts(opts_.logtostderr);
+    ExternalDaemonOptions opts;
     opts.messenger = messenger_;
     opts.exe = exe;
     opts.wal_dir = GetWalPath(daemon_id);
@@ -358,6 +359,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
     opts.extra_flags = SubstituteInFlags(flags, i);
     opts.start_process_timeout = opts_.start_process_timeout;
     opts.rpc_bind_address = peer_hostports[i];
+    opts.logtostderr = opts_.logtostderr;
 
     scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts);
     if (opts_.enable_kerberos) {
@@ -393,7 +395,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   }
   string bind_host = GetBindIpForTabletServer(idx);
 
-  ExternalDaemonOptions opts(opts_.logtostderr);
+  ExternalDaemonOptions opts;
   opts.messenger = messenger_;
   opts.exe = GetBinaryPath(kTabletServerBinaryName);
   opts.wal_dir = GetWalPath(daemon_id);
@@ -406,6 +408,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   opts.extra_flags = SubstituteInFlags(opts_.extra_tserver_flags, idx);
   opts.start_process_timeout = opts_.start_process_timeout;
   opts.rpc_bind_address = HostPort(bind_host, 0);
+  opts.logtostderr = opts_.logtostderr;
 
   scoped_refptr<ExternalTabletServer> ts =
       new ExternalTabletServer(opts, master_hostports);
@@ -761,7 +764,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   // Start the daemon.
   unique_ptr<Subprocess> p(new Subprocess(argv));
-  p->ShareParentStdout(false);
   p->SetEnvVars(extra_env_);
   string env_str;
   JoinMapKeysAndValues(extra_env_, "=", ",", &env_str);

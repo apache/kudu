@@ -76,26 +76,31 @@ struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
 
   // Number of masters to start.
-  // Default: 1
+  //
+  // Default: 1.
   int num_masters;
 
   // Number of TS to start.
-  // Default: 1
+  //
+  // Default: 1.
   int num_tablet_servers;
 
   // Directory in which to store data.
+  //
   // Default: "", which auto-generates a unique path for this cluster.
   std::string data_root;
 
   MiniCluster::BindMode bind_mode;
 
   // The path where the kudu daemons should be run from.
+  //
   // Default: "", which uses the same path as the currently running executable.
   // This works for unit tests, since they all end up in build/latest/bin.
   std::string daemon_bin_path;
 
   // Number of data directories to be created for each daemon.
-  // Default: 1
+  //
+  // Default: 1.
   int num_data_dirs;
 
   // Extra flags for tablet servers and masters respectively.
@@ -120,14 +125,19 @@ struct ExternalMiniClusterOptions {
   // Additionally, when the cluster is started, the environment of the
   // test process will be modified to include Kerberos credentials for
   // a principal named 'testuser'.
+  //
+  // Default: false.
   bool enable_kerberos;
 
-  // If true, sends logging output to stderr instead of a log file. Defaults to
-  // true.
+  // If true, sends logging output to stderr instead of a log file.
+  //
+  // Default: true.
   bool logtostderr;
 
   // Amount of time that may elapse between the creation of a daemon process
-  // and the process writing out its info file. Defaults to 30 seconds.
+  // and the process writing out its info file.
+  //
+  // Default: 30s.
   MonoDelta start_process_timeout;
 };
 
@@ -334,8 +344,8 @@ class ExternalMiniCluster : public MiniCluster {
 };
 
 struct ExternalDaemonOptions {
-  explicit ExternalDaemonOptions(bool logtostderr)
-      : logtostderr(logtostderr) {
+  ExternalDaemonOptions()
+      : logtostderr(false) {
   }
 
   bool logtostderr;

@@ -36,15 +36,18 @@ class Subprocess;
 struct MiniKdcOptions {
 
   // Kerberos Realm.
-  // Default: "KRBTEST.COM"
+  //
+  // Default: "KRBTEST.COM".
   std::string realm;
 
   // Directory in which to store data.
+  //
   // Default: "", which auto-generates a unique path for this KDC.
   // The default may only be used from a gtest unit test.
   std::string data_root;
 
   // KDC port.
+  //
   // Default: 0 (ephemeral port).
   uint16_t port = 0;
 

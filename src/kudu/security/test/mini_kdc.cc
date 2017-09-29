@@ -46,7 +46,9 @@ using strings::Substitute;
 namespace kudu {
 
 string MiniKdcOptions::ToString() const {
-  return strings::Substitute("{ realm: $0, port: $1, data_root: $2 }", realm, port, data_root);
+  return strings::Substitute("{ realm: $0, data_root: $1, port: $2, "
+      "ticket_lifetime: $3, renew_lifetime: $4 }",
+      realm, data_root, port, ticket_lifetime, renew_lifetime);
 }
 
 MiniKdc::MiniKdc()
@@ -61,11 +63,11 @@ MiniKdc::MiniKdc(MiniKdcOptions options)
   if (options_.data_root.empty()) {
     options_.data_root = JoinPathSegments(GetTestDataDirectory(), "krb5kdc");
   }
-  if (options_.renew_lifetime.empty()) {
-    options_.renew_lifetime = "7d";
-  }
   if (options_.ticket_lifetime.empty()) {
     options_.ticket_lifetime = "24h";
+  }
+  if (options_.renew_lifetime.empty()) {
+    options_.renew_lifetime = "7d";
   }
 }
 
