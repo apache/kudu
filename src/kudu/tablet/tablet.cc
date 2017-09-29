@@ -611,6 +611,9 @@ Status Tablet::ApplyUpsertAsUpdate(WriteTransactionState* tx_state,
                                result.get());
   CHECK(!s.IsNotFound());
   if (s.ok()) {
+    if (metrics_) {
+      metrics_->upserts_as_updates->Increment();
+    }
     upsert->SetMutateSucceeded(std::move(result));
   } else {
     upsert->SetFailed(s);

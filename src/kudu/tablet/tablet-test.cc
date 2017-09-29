@@ -53,6 +53,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tablet/tablet_metrics.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
@@ -719,10 +720,15 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 
 TYPED_TEST(TestTablet, TestUpsert) {
   vector<string> rows;
-  this->UpsertTestRows(0, 1, 1000);
+  const auto& upserts_as_updates = this->tablet()->metrics()->upserts_as_updates;
 
-  // UPSERT a row that is in MRS.
+  // Upsert a new row.
+  this->UpsertTestRows(0, 1, 1000);
+  EXPECT_EQ(0, upserts_as_updates->value());
+
+  // Upsert a row that is in the MRS.
   this->UpsertTestRows(0, 1, 1001);
+  EXPECT_EQ(1, upserts_as_updates->value());
 
   ASSERT_OK(this->IterateToStringList(&rows));
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
@@ -732,8 +738,9 @@ TYPED_TEST(TestTablet, TestUpsert) {
   ASSERT_OK(this->IterateToStringList(&rows));
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1001, false) }, rows);
 
-  // UPSERT a row that is in DRS.
+  // Upsert a row that is in the DRS.
   this->UpsertTestRows(0, 1, 1002);
+  EXPECT_EQ(2, upserts_as_updates->value());
   ASSERT_OK(this->IterateToStringList(&rows));
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1002, false) }, rows);
 }

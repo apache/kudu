@@ -94,6 +94,10 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_scanned_from_disk, "Scanner Bytes Sc
 METRIC_DEFINE_counter(tablet, insertions_failed_dup_key, "Duplicate Key Inserts",
                       kudu::MetricUnit::kRows,
                       "Number of inserts which failed because the key already existed");
+METRIC_DEFINE_counter(tablet, upserts_as_updates, "Upserts converted into updates",
+                      kudu::MetricUnit::kRows,
+                      "Number of upserts which were applied as updates because the key already "
+                      "existed.");
 METRIC_DEFINE_counter(tablet, scans_started, "Scans Started",
                       kudu::MetricUnit::kScanners,
                       "Number of scanners which have been started on this tablet");
@@ -263,6 +267,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(rows_updated),
     MINIT(rows_deleted),
     MINIT(insertions_failed_dup_key),
+    MINIT(upserts_as_updates),
     MINIT(scanner_rows_returned),
     MINIT(scanner_cells_returned),
     MINIT(scanner_bytes_returned),

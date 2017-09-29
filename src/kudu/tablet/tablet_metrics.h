@@ -48,6 +48,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> rows_updated;
   scoped_refptr<Counter> rows_deleted;
   scoped_refptr<Counter> insertions_failed_dup_key;
+  scoped_refptr<Counter> upserts_as_updates;
   scoped_refptr<Counter> scanner_rows_returned;
   scoped_refptr<Counter> scanner_cells_returned;
   scoped_refptr<Counter> scanner_bytes_returned;
