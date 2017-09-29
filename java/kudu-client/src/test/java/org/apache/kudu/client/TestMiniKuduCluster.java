@@ -20,80 +20,81 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.net.Socket;
 
+import org.apache.kudu.client.KuduClient.KuduClientBuilder;
 import org.junit.Test;
+
+import com.google.common.net.HostAndPort;
 
 public class TestMiniKuduCluster {
 
   private static final int NUM_TABLET_SERVERS = 3;
-  private static final int DEFAULT_NUM_MASTERS = 1;
+  private static final int NUM_MASTERS = 1;
   private static final long SLEEP_TIME_MS = 10000;
 
   @Test(timeout = 50000)
   public void test() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasters(DEFAULT_NUM_MASTERS)
+                                                      .numMasters(NUM_MASTERS)
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .build()) {
-      assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
-      assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
-      assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
+      assertEquals(NUM_MASTERS, cluster.getMasterHostPorts().size());
+      assertEquals(NUM_TABLET_SERVERS, cluster.getTserverHostPorts().size());
 
       {
         // Kill the master.
-        int masterPort = cluster.getMasterProcesses().keySet().iterator().next();
-        testPort(masterPort, true);
-        cluster.killMasterOnPort(masterPort);
+        HostAndPort masterHostPort = cluster.getMasterHostPorts().get(0);
+        testHostPort(masterHostPort, true);
+        cluster.killMasterOnHostPort(masterHostPort);
 
-        testPort(masterPort, false);
+        testHostPort(masterHostPort, false);
 
         // Restart the master.
-        cluster.restartDeadMasterOnPort(masterPort);
+        cluster.restartDeadMasterOnHostPort(masterHostPort);
 
         // Test we can reach it.
-        testPort(masterPort, true);
+        testHostPort(masterHostPort, true);
       }
 
       {
         // Kill the first TS.
-        int tsPort = cluster.getTabletServerProcesses().keySet().iterator().next();
-        testPort(tsPort, true);
-        cluster.killTabletServerOnPort(tsPort);
+        HostAndPort tsHostPort = cluster.getTserverHostPorts().get(0);
+        testHostPort(tsHostPort, true);
+        cluster.killTabletServerOnHostPort(tsHostPort);
 
-        testPort(tsPort, false);
+        testHostPort(tsHostPort, false);
 
         // Restart it.
-        cluster.restartDeadTabletServerOnPort(tsPort);
+        cluster.restartDeadTabletServerOnHostPort(tsHostPort);
 
-        testPort(tsPort, true);
+        testHostPort(tsHostPort, true);
       }
-
-      assertEquals(DEFAULT_NUM_MASTERS, cluster.getMasterProcesses().size());
-      assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServerProcesses().size());
     }
   }
 
   @Test(timeout = 50000)
   public void testKerberos() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasters(DEFAULT_NUM_MASTERS)
+                                                      .numMasters(NUM_MASTERS)
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .enableKerberos()
                                                       .build()) {
-      assertTrue(cluster.waitForTabletServers(NUM_TABLET_SERVERS));
+      KuduClient client = new KuduClientBuilder(cluster.getMasterAddresses()).build();
+      ListTablesResponse resp = client.getTablesList();
+      assertTrue(resp.getTablesList().isEmpty());
     }
   }
 
   /**
-   * Test whether the specified port is open or closed, waiting up to a certain time.
-   * @param port the port to test
+   * Test whether the specified host and port is open or closed, waiting up to a certain time.
+   * @param hp the host and port to test
    * @param testIsOpen true if we should want it to be open, false if we want it closed
    */
-  private static void testPort(int port,
-                               boolean testIsOpen) throws InterruptedException {
+  private static void testHostPort(HostAndPort hp,
+      boolean testIsOpen) throws InterruptedException {
     DeadlineTracker tracker = new DeadlineTracker();
     while (tracker.getElapsedMillis() < SLEEP_TIME_MS) {
       try {
-        Socket socket = new Socket(TestUtils.getUniqueLocalhost(), port);
+        Socket socket = new Socket(hp.getHost(), hp.getPort());
         socket.close();
         if (testIsOpen) {
           return;
@@ -105,6 +106,6 @@ public class TestMiniKuduCluster {
       }
       Thread.sleep(200);
     }
-    fail("Port " + port + " is still " + (testIsOpen ? "closed " : "open"));
+    fail("HostAndPort " + hp + " is still " + (testIsOpen ? "closed " : "open"));
   }
 }

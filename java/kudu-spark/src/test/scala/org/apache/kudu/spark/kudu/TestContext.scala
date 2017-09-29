@@ -75,7 +75,6 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     ss = SparkSession.builder().config(conf).getOrCreate()
 
     kuduClient = new KuduClientBuilder(miniCluster.getMasterAddresses).build()
-    assert(miniCluster.waitForTabletServers(1))
 
     kuduContext = new KuduContext(miniCluster.getMasterAddresses, ss.sparkContext)
 

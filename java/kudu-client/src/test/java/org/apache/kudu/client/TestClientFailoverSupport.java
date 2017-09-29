@@ -25,6 +25,8 @@ import org.apache.kudu.util.AssertHelpers.BooleanExpression;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import com.google.common.net.HostAndPort;
+
 public class TestClientFailoverSupport extends BaseKuduTest {
 
   @BeforeClass
@@ -75,8 +77,8 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     for (int i = 0; i < TSERVER_LEADERS_TO_KILL; i++) {
       List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
       assertEquals(1, tablets.size());
-      final int leaderPort = findLeaderTabletServerPort(tablets.get(0));
-      miniCluster.killTabletServerOnPort(leaderPort);
+      HostAndPort hp = findLeaderTabletServerHostPort(tablets.get(0));
+      miniCluster.killTabletServerOnHostPort(hp);
     }
     killMasterLeader();
 

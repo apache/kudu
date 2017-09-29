@@ -18,34 +18,17 @@ package org.apache.kudu.client;
 
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.SocketAddress;
-import java.net.SocketException;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.List;
 import java.util.Set;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.google.protobuf.ByteString;
-import com.sun.security.auth.module.UnixSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.management.VMManagement;
 
 import org.apache.kudu.Common;
 import org.apache.kudu.consensus.Metadata;
@@ -62,33 +45,6 @@ public class TestUtils {
   private static Set<String> VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
 
   private static final String BIN_DIR_PROP = "binDir";
-
-  /**
-   * @return the path of the flags file to pass to daemon processes
-   * started by the tests
-   */
-  public static String getFlagsPath() {
-    URL u = BaseKuduTest.class.getResource("/flags");
-    if (u == null) {
-      throw new RuntimeException("Unable to find 'flags' file");
-    }
-    if (u.getProtocol() == "file") {
-      return urlToPath(u);
-    }
-    // If the flags are inside a JAR, extract them into our temporary
-    // test directory.
-    try {
-      // Somewhat unintuitively, createTempFile() actually creates the file,
-      // not just the path, so we have to use REPLACE_EXISTING below.
-      Path tmpFile = Files.createTempFile(
-          Paths.get(getBaseDir()), "kudu-flags", ".flags");
-      Files.copy(BaseKuduTest.class.getResourceAsStream("/flags"), tmpFile,
-          StandardCopyOption.REPLACE_EXISTING);
-      return tmpFile.toAbsolutePath().toString();
-    } catch (IOException e) {
-      throw new RuntimeException("Unable to extract flags file into tmp", e);
-    }
-  }
 
   /**
    * Return the path portion of a file URL, after decoding the escaped
@@ -161,63 +117,6 @@ public class TestUtils {
   }
 
   /**
-   * @return the base directory within which we will store server data
-   */
-  public static String getBaseDir() {
-    String s = System.getenv("TEST_TMPDIR");
-    if (s == null) {
-      s = String.format("/tmp/kudutest-%d", new UnixSystem().getUid());
-    }
-    File f = new File(s);
-    f.mkdirs();
-    return f.getAbsolutePath();
-  }
-
-  /**
-   * Finds the next free port, starting with the one passed. Keep in mind the
-   * time-of-check-time-of-use nature of this method, the returned port might become occupied
-   * after it was checked for availability.
-   * @param startPort first port to be probed
-   * @return a currently usable port
-   * @throws IOException IOE is thrown if we can't close a socket we tried to open or if we run
-   * out of ports to try
-   */
-  public static int findFreePort(int startPort) throws IOException {
-    ServerSocket ss;
-    for(int i = startPort; i < 65536; i++) {
-      try {
-        ss = new ServerSocket();
-        SocketAddress address = new InetSocketAddress(getUniqueLocalhost(), i);
-        ss.bind(address);
-      } catch (IOException e) {
-        continue;
-      }
-      ss.close();
-      return i;
-    }
-    throw new IOException("Ran out of ports.");
-  }
-
-  /**
-   * Finds a specified number of parts, starting with one passed. Keep in mind the
-   * time-of-check-time-of-use nature of this method.
-   * @see {@link #findFreePort(int)}
-   * @param startPort First port to be probed.
-   * @param numPorts Number of ports to reserve.
-   * @return A list of currently usable ports.
-   * @throws IOException IOE Is thrown if we can't close a socket we tried to open or if run
-   * out of ports to try.
-   */
-  public static List<Integer> findFreePorts(int startPort, int numPorts) throws IOException {
-    List<Integer> ports = Lists.newArrayListWithCapacity(numPorts);
-    for (int i = 0; i < numPorts; i++) {
-      startPort = findFreePort(startPort);
-      ports.add(startPort++);
-    }
-    return ports;
-  }
-
-  /**
    * Gets the pid of a specified process. Relies on reflection and only works on
    * UNIX process, not guaranteed to work on JDKs other than Oracle and OpenJDK.
    * @param proc The specified process.
@@ -275,45 +174,6 @@ public class TestUtils {
    */
   static void resumeProcess(Process proc) throws Exception {
     signalProcess(proc, "CONT");
-  }
-
-  /**
-   * This is used to generate unique loopback IPs for parallel test running.
-   * @return the local PID of this process
-   */
-  static int getPid() {
-    try {
-      RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
-      java.lang.reflect.Field jvm = runtime.getClass().getDeclaredField("jvm");
-      jvm.setAccessible(true);
-      VMManagement mgmt = (VMManagement)jvm.get(runtime);
-      Method pid_method = mgmt.getClass().getDeclaredMethod("getProcessId");
-      pid_method.setAccessible(true);
-
-      return (Integer)pid_method.invoke(mgmt);
-    } catch (Exception e) {
-      LOG.warn("Cannot get PID", e);
-      return 1;
-    }
-  }
-
-  /**
-   * The generated IP is based on pid, so this requires that the parallel tests
-   * run in separate VMs.
-   *
-   * On OSX, the above trick doesn't work, so we can't run parallel tests on OSX.
-   * Given that, we just return the normal localhost IP.
-   *
-   * @return a unique loopback IP address for this PID. This allows running
-   * tests in parallel, since 127.0.0.0/8 all act as loopbacks on Linux.
-   */
-  static String getUniqueLocalhost() {
-    if ("Mac OS X".equals(System.getProperty("os.name"))) {
-      return "127.0.0.1";
-    }
-
-    int pid = getPid();
-    return "127." + ((pid & 0xff00) >> 8) + "." + (pid & 0xff) + ".1";
   }
 
   /**

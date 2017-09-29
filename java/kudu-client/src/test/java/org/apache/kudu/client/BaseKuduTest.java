@@ -18,6 +18,7 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -37,8 +38,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.client.LocatedTablet.Replica;
 import org.apache.kudu.master.Master;
 
 public class BaseKuduTest {
@@ -109,7 +112,6 @@ public class BaseKuduTest {
     miniCluster = miniClusterBuilder
         .numMasters(numMasters)
         .numTservers(numTabletServers)
-        .defaultTimeoutMs(DEFAULT_SLEEP)
         .build();
     masterAddresses = miniCluster.getMasterAddresses();
     masterHostPorts = miniCluster.getMasterHostPorts();
@@ -119,11 +121,6 @@ public class BaseKuduTest {
         .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
         .build();
     syncClient = new KuduClient(client);
-
-    LOG.info("Waiting for tablet servers...");
-    if (!miniCluster.waitForTabletServers(numTabletServers)) {
-      fail(String.format("Couldn't get %d tablet servers running, aborting", numTabletServers));
-    }
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,
@@ -358,8 +355,8 @@ public class BaseKuduTest {
       fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
     }
 
-    Integer port = findLeaderTabletServerPort(tablet);
-    miniCluster.killTabletServerOnPort(port);
+    HostAndPort hp = findLeaderTabletServerHostPort(tablet);
+    miniCluster.killTabletServerOnHostPort(hp);
   }
 
   /**
@@ -372,17 +369,17 @@ public class BaseKuduTest {
    * @throws Exception
    */
   protected static void killTabletLeader(RemoteTablet tablet) throws Exception {
-    int port = findLeaderTabletServerPort(new LocatedTablet(tablet));
-    miniCluster.killTabletServerOnPort(port);
+    HostAndPort hp = findLeaderTabletServerHostPort(new LocatedTablet(tablet));
+    miniCluster.killTabletServerOnHostPort(hp);
   }
 
   /**
-   * Finds the RPC port of the given tablet's leader tablet server.
+   * Finds the RPC port of the given tablet's leader tserver.
    * @param tablet a LocatedTablet
-   * @return the RPC port of the given tablet's leader tablet server.
-   * @throws Exception
+   * @return the host and port of the given tablet's leader tserver
+   * @throws Exception if we are unable to find the leader tserver
    */
-  protected static int findLeaderTabletServerPort(LocatedTablet tablet)
+  protected static HostAndPort findLeaderTabletServerHostPort(LocatedTablet tablet)
       throws Exception {
     LocatedTablet.Replica leader = null;
     DeadlineTracker deadlineTracker = new DeadlineTracker();
@@ -399,47 +396,44 @@ public class BaseKuduTest {
         Thread.sleep(50);
       }
     }
-    return leader.getRpcPort();
+    return HostAndPort.fromParts(leader.getRpcHost(), leader.getRpcPort());
   }
 
   /**
    * Helper method to easily kill the leader master.
    *
    * This method is thread-safe.
-   * @throws Exception If there is an error finding or killing the leader master.
+   * @throws Exception if there is an error finding or killing the leader master.
    */
   protected static void killMasterLeader() throws Exception {
-    int leaderPort = findLeaderMasterPort();
-    miniCluster.killMasterOnPort(leaderPort);
+    HostAndPort hp = findLeaderMasterHostPort();
+    miniCluster.killMasterOnHostPort(hp);
   }
 
   /**
-   * Find the port of the leader master in order to retrieve it from the port to process map.
-   * @return The port of the leader master.
-   * @throws Exception If we are unable to find the leader master.
+   * Find the host and port of the leader master.
+   * @return the host and port of the leader master
+   * @throws Exception if we are unable to find the leader master
    */
-  protected static int findLeaderMasterPort() throws Exception {
+  protected static HostAndPort findLeaderMasterHostPort() throws Exception {
     Stopwatch sw = Stopwatch.createStarted();
-    int leaderPort = -1;
-    while (leaderPort == -1 && sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
+    while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       Deferred<Master.GetTableLocationsResponsePB> masterLocD =
           client.getMasterTableLocationsPB(null);
       Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
-      leaderPort = r.getTabletLocations(0)
+      HostPortPB pb = r.getTabletLocations(0)
           .getReplicas(0)
           .getTsInfo()
-          .getRpcAddresses(0)
-          .getPort();
+          .getRpcAddresses(0);
+      if (pb.getPort() != -1) {
+        return HostAndPort.fromParts(pb.getHost(), pb.getPort());
+      }
     }
-    if (leaderPort == -1) {
-      fail(String.format("No leader master found after %d ms", DEFAULT_SLEEP));
-    }
-    return leaderPort;
+    throw new IOException(String.format("No leader master found after %d ms", DEFAULT_SLEEP));
   }
 
   /**
    * Picks at random a tablet server that serves tablets from the passed table and restarts it.
-   * Waits between killing and restarting the process.
    * @param table table to query for a TS to restart
    * @throws Exception
    */
@@ -450,44 +444,31 @@ public class BaseKuduTest {
     }
 
     LocatedTablet tablet = tablets.get(0);
-
-    int port = tablet.getReplicas().get(
-        randomForTSRestart.nextInt(tablet.getReplicas().size())).getRpcPort();
-
-    miniCluster.killTabletServerOnPort(port);
-
-    Thread.sleep(1000);
-
-    miniCluster.restartDeadTabletServerOnPort(port);
+    Replica replica = tablet.getReplicas().get(randomForTSRestart.nextInt(tablet.getReplicas().size()));
+    HostAndPort hp = HostAndPort.fromParts(replica.getRpcHost(), replica.getRpcPort());
+    miniCluster.killTabletServerOnHostPort(hp);
+    miniCluster.restartDeadTabletServerOnHostPort(hp);
   }
 
   /**
    * Kills a tablet server that serves the given tablet's leader and restarts it.
-   * Waits between killing and restarting the process.
-   *
    * @param tablet a RemoteTablet which will get its leader killed and restarted
    * @throws Exception
    */
   protected static void restartTabletServer(RemoteTablet tablet) throws Exception {
-    int port = findLeaderTabletServerPort(new LocatedTablet(tablet));
-    miniCluster.killTabletServerOnPort(port);
-
-    Thread.sleep(1000);
-
-    miniCluster.restartDeadTabletServerOnPort(port);
+    HostAndPort hp = findLeaderTabletServerHostPort(new LocatedTablet(tablet));
+    miniCluster.killTabletServerOnHostPort(hp);
+    miniCluster.restartDeadTabletServerOnHostPort(hp);
   }
 
   /**
-   * Kills, sleeps, then restarts the leader master.
+   * Kills and restarts the leader master.
    * @throws Exception
    */
   protected static void restartLeaderMaster() throws Exception {
-    int master = findLeaderMasterPort();
-    miniCluster.killMasterOnPort(master);
-
-    Thread.sleep(1000);
-
-    miniCluster.restartDeadMasterOnPort(master);
+    HostAndPort hp = findLeaderMasterHostPort();
+    miniCluster.killMasterOnHostPort(hp);
+    miniCluster.restartDeadMasterOnHostPort(hp);
   }
 
   /**
@@ -503,15 +484,15 @@ public class BaseKuduTest {
    * Kills all tablet servers in the cluster.
    * @throws InterruptedException
    */
-  protected void killTabletServers() throws InterruptedException {
-    miniCluster.killTabletServers();
+  protected void killTabletServers() throws IOException {
+    miniCluster.killTservers();
   }
 
   /**
    * Restarts killed tablet servers in the cluster.
    * @throws Exception
    */
-  protected void restartTabletServers() throws Exception {
-    miniCluster.restartDeadTabletServers();
+  protected void restartTabletServers() throws IOException {
+    miniCluster.restartDeadTservers();
   }
 }
