@@ -714,18 +714,18 @@ TEST_F(TestEnv, TestWalk) {
   string subdir_c = JoinPathSegments(subdir_b, "dir_c");
   string file_one = "file_1";
   string file_two = "file_2";
-  create_dir(root);
-  create_file(JoinPathSegments(root, file_one));
-  create_file(JoinPathSegments(root, file_two));
-  create_dir(subdir_a);
-  create_file(JoinPathSegments(subdir_a, file_one));
-  create_file(JoinPathSegments(subdir_a, file_two));
-  create_dir(subdir_b);
-  create_file(JoinPathSegments(subdir_b, file_one));
-  create_file(JoinPathSegments(subdir_b, file_two));
-  create_dir(subdir_c);
-  create_file(JoinPathSegments(subdir_c, file_one));
-  create_file(JoinPathSegments(subdir_c, file_two));
+  NO_FATALS(create_dir(root));
+  NO_FATALS(create_file(JoinPathSegments(root, file_one)));
+  NO_FATALS(create_file(JoinPathSegments(root, file_two)));
+  NO_FATALS(create_dir(subdir_a));
+  NO_FATALS(create_file(JoinPathSegments(subdir_a, file_one)));
+  NO_FATALS(create_file(JoinPathSegments(subdir_a, file_two)));
+  NO_FATALS(create_dir(subdir_b));
+  NO_FATALS(create_file(JoinPathSegments(subdir_b, file_one)));
+  NO_FATALS(create_file(JoinPathSegments(subdir_b, file_two)));
+  NO_FATALS(create_dir(subdir_c));
+  NO_FATALS(create_file(JoinPathSegments(subdir_c, file_one)));
+  NO_FATALS(create_file(JoinPathSegments(subdir_c, file_two)));
 
   // Do the walk.
   unordered_set<string> actual;
