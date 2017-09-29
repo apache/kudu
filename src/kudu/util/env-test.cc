@@ -31,14 +31,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -48,6 +48,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -60,6 +61,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -79,6 +81,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -669,24 +672,17 @@ TEST_F(TestEnv, TestIncreaseOpenFileLimit) {
   ASSERT_GE(limit_after, limit_before) << "Failed to retain/increase open file limit";
 }
 
-static Status TestWalkCb(vector<string>* actual,
+static Status TestWalkCb(unordered_set<string>* actual,
                          Env::FileType type,
                          const string& dirname, const string& basename) {
   VLOG(1) << type << ":" << dirname << ":" << basename;
-  actual->push_back(JoinPathSegments(dirname, basename));
+  InsertOrDie(actual, (JoinPathSegments(dirname, basename)));
   return Status::OK();
 }
 
-static Status CreateDir(Env* env, const string& name, vector<string>* created) {
-  RETURN_NOT_OK(env->CreateDir(name));
-  created->push_back(name);
-  return Status::OK();
-}
-
-static Status CreateFile(Env* env, const string& name, vector<string>* created) {
-  unique_ptr<WritableFile> writer;
-  RETURN_NOT_OK(env->NewWritableFile(name, &writer));
-  created->push_back(writer->filename());
+static Status NoopTestWalkCb(Env::FileType /*type*/,
+                             const string& /*dirname*/,
+                             const string& /*basename*/) {
   return Status::OK();
 }
 
@@ -702,40 +698,70 @@ TEST_F(TestEnv, TestWalk) {
   // /root/dir_b/file_2
   // /root/dir_b/dir_c/file_1
   // /root/dir_b/dir_c/file_2
+  unordered_set<string> expected;
+  auto create_dir = [&](const string& name) {
+    ASSERT_OK(env_->CreateDir(name));
+    InsertOrDie(&expected, name);
+  };
+  auto create_file = [&](const string& name) {
+    unique_ptr<WritableFile> writer;
+    ASSERT_OK(env_->NewWritableFile(name, &writer));
+    InsertOrDie(&expected, writer->filename());
+  };
   string root = GetTestPath("root");
   string subdir_a = JoinPathSegments(root, "dir_a");
   string subdir_b = JoinPathSegments(root, "dir_b");
   string subdir_c = JoinPathSegments(subdir_b, "dir_c");
   string file_one = "file_1";
   string file_two = "file_2";
-  vector<string> expected;
-  ASSERT_OK(CreateDir(env_, root, &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(root, file_one), &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(root, file_two), &expected));
-  ASSERT_OK(CreateDir(env_, subdir_a, &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_a, file_one), &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_a, file_two), &expected));
-  ASSERT_OK(CreateDir(env_, subdir_b, &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_b, file_one), &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_b, file_two), &expected));
-  ASSERT_OK(CreateDir(env_, subdir_c, &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_c, file_one), &expected));
-  ASSERT_OK(CreateFile(env_, JoinPathSegments(subdir_c, file_two), &expected));
+  create_dir(root);
+  create_file(JoinPathSegments(root, file_one));
+  create_file(JoinPathSegments(root, file_two));
+  create_dir(subdir_a);
+  create_file(JoinPathSegments(subdir_a, file_one));
+  create_file(JoinPathSegments(subdir_a, file_two));
+  create_dir(subdir_b);
+  create_file(JoinPathSegments(subdir_b, file_one));
+  create_file(JoinPathSegments(subdir_b, file_two));
+  create_dir(subdir_c);
+  create_file(JoinPathSegments(subdir_c, file_one));
+  create_file(JoinPathSegments(subdir_c, file_two));
 
   // Do the walk.
-  //
-  // Sadly, tr1/unordered_set doesn't implement equality operators, so we
-  // compare sorted vectors instead.
-  vector<string> actual;
+  unordered_set<string> actual;
   ASSERT_OK(env_->Walk(root, Env::PRE_ORDER, Bind(&TestWalkCb, &actual)));
-  sort(expected.begin(), expected.end());
-  sort(actual.begin(), actual.end());
   ASSERT_EQ(expected, actual);
 }
 
+TEST_F(TestEnv, TestWalkNonExistentPath) {
+  // A walk on a non-existent path should fail.
+  Status s = env_->Walk("/not/a/real/path", Env::PRE_ORDER, Bind(&NoopTestWalkCb));
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "One or more errors occurred");
+}
+
+TEST_F(TestEnv, TestWalkBadPermissions) {
+  // Create a directory with mode of 0000.
+  const string kTestPath = GetTestPath("asdf");
+  ASSERT_OK(env_->CreateDir(kTestPath));
+  struct stat stat_buf;
+  PCHECK(stat(kTestPath.c_str(), &stat_buf) == 0);
+  PCHECK(chmod(kTestPath.c_str(), 0000) == 0);
+  auto cleanup = MakeScopedCleanup([&]() {
+    // Restore the old permissions so the path can be successfully deleted.
+    PCHECK(chmod(kTestPath.c_str(), stat_buf.st_mode) == 0);
+  });
+
+  // A walk on a directory without execute permission should fail.
+  Status s = env_->Walk(kTestPath, Env::PRE_ORDER, Bind(&NoopTestWalkCb));
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "One or more errors occurred");
+}
+
 static Status TestWalkErrorCb(int* num_calls,
-                              Env::FileType type,
-                              const string& dirname, const string& basename) {
+                              Env::FileType /*type*/,
+                              const string& /*dirname*/,
+                              const string& /*basename*/) {
   (*num_calls)++;
   return Status::Aborted("Returning abort status");
 }

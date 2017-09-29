@@ -1471,7 +1471,9 @@ class PosixEnv : public Env {
           type = FILE_TYPE;
           break;
 
+        case FTS_DNR:
         case FTS_ERR:
+        case FTS_NS:
           LOG(WARNING) << "Unable to access file " << ent->fts_path
                        << " during walk: " << strerror(ent->fts_errno);
           had_errors = true;
