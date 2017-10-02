@@ -31,6 +31,8 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
@@ -45,8 +47,6 @@ DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L *1000L, // 5 seconds
              "Number of microseconds in the interval at which we remove expired scanners");
 TAG_FLAG(scanner_gc_check_interval_us, hidden);
 
-// TODO: would be better to scope this at a tablet level instead of
-// server level.
 METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Active Scanners",
                          kudu::MetricUnit::kScanners,
@@ -212,10 +212,22 @@ Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
       metrics_(metrics),
       arena_(1024, 1024 * 1024),
       row_format_flags_(row_format_flags) {
+  if (tablet_replica_) {
+    auto tablet = tablet_replica->shared_tablet();
+    if (tablet && tablet->metrics()) {
+      tablet->metrics()->tablet_active_scanners->Increment();
+    }
+  }
   UpdateAccessTime();
 }
 
 Scanner::~Scanner() {
+  if (tablet_replica_) {
+    auto tablet = tablet_replica_->shared_tablet();
+    if (tablet && tablet->metrics()) {
+      tablet->metrics()->tablet_active_scanners->IncrementBy(-1);
+    }
+  }
   if (metrics_) {
     metrics_->SubmitScannerDuration(start_time_);
   }

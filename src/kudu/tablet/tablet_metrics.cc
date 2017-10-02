@@ -42,6 +42,15 @@ METRIC_DEFINE_counter(tablet, rows_deleted, "Rows Deleted",
     kudu::MetricUnit::kRows,
     "Number of row delete operations performed on this tablet since service start");
 
+METRIC_DEFINE_counter(tablet, insertions_failed_dup_key, "Duplicate Key Inserts",
+                      kudu::MetricUnit::kRows,
+                      "Number of inserts which failed because the key already existed");
+
+METRIC_DEFINE_counter(tablet, upserts_as_updates, "Upserts converted into updates",
+                      kudu::MetricUnit::kRows,
+                      "Number of upserts which were applied as updates because the key already "
+                          "existed.");
+
 METRIC_DEFINE_counter(tablet, scanner_rows_returned, "Scanner Rows Returned",
                       kudu::MetricUnit::kRows,
                       "Number of rows returned by scanners to clients. This count "
@@ -58,7 +67,6 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_returned, "Scanner Bytes Returned",
                       "is measured after predicates are applied and the data is decoded "
                       "for consumption by clients, and thus is not "
                       "a reflection of the amount of work being done by scanners.");
-
 
 METRIC_DEFINE_counter(tablet, scanner_rows_scanned, "Scanner Rows Scanned",
                       kudu::MetricUnit::kRows,
@@ -90,17 +98,12 @@ METRIC_DEFINE_counter(tablet, scanner_bytes_scanned_from_disk, "Scanner Bytes Sc
                       "and does not include data read from in-memory stores. However, it"
                       "includes both cache misses and cache hits.");
 
-
-METRIC_DEFINE_counter(tablet, insertions_failed_dup_key, "Duplicate Key Inserts",
-                      kudu::MetricUnit::kRows,
-                      "Number of inserts which failed because the key already existed");
-METRIC_DEFINE_counter(tablet, upserts_as_updates, "Upserts converted into updates",
-                      kudu::MetricUnit::kRows,
-                      "Number of upserts which were applied as updates because the key already "
-                      "existed.");
 METRIC_DEFINE_counter(tablet, scans_started, "Scans Started",
                       kudu::MetricUnit::kScanners,
                       "Number of scanners which have been started on this tablet");
+METRIC_DEFINE_gauge_size(tablet, tablet_active_scanners, "Active Scanners",
+                         kudu::MetricUnit::kScanners,
+                         "Number of scanners that are currently active on this tablet");
 
 METRIC_DEFINE_counter(tablet, bloom_lookups, "Bloom Filter Lookups",
                       kudu::MetricUnit::kProbes,
@@ -275,6 +278,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(scanner_cells_scanned_from_disk),
     MINIT(scanner_bytes_scanned_from_disk),
     MINIT(scans_started),
+    GINIT(tablet_active_scanners),
     MINIT(bloom_lookups),
     MINIT(key_file_lookups),
     MINIT(delta_file_lookups),

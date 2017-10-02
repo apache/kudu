@@ -22,12 +22,12 @@
 METRIC_DEFINE_counter(server, scanners_expired,
                       "Scanners Expired",
                       kudu::MetricUnit::kScanners,
-                      "Number of scanners that have expired since service start");
+                      "Number of scanners that have expired due to inactivity since service start");
 
 METRIC_DEFINE_histogram(server, scanner_duration,
                         "Scanner Duration",
                         kudu::MetricUnit::kMicroseconds,
-                        "Histogram of the duration of active scanners on this tablet.",
+                        "Histogram of the duration of active scanners on this server",
                         60000000LU, 2);
 
 namespace kudu {

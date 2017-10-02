@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <memory>
 #include <sstream>
+#include <stddef.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,6 +51,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
@@ -124,13 +126,18 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
 DECLARE_bool(fail_dns_resolution);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
+DECLARE_int32(scanner_gc_check_interval_us);
+DECLARE_int32(scanner_ttl_ms);
 DECLARE_string(block_manager);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 METRIC_DECLARE_counter(rows_deleted);
+METRIC_DECLARE_counter(scanners_expired);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
+METRIC_DECLARE_gauge_size(active_scanners);
+METRIC_DECLARE_gauge_size(tablet_active_scanners);
 
 namespace kudu {
 
@@ -261,8 +268,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   FLAGS_metrics_retirement_age_ms = 0;
   for (int i = 0; i < 3; i++) {
     SCOPED_TRACE(i);
-    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/jsonmetricz", addr, kTabletId),
-                                &buf));
+    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/jsonmetricz", addr), &buf));
 
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
@@ -1151,6 +1157,17 @@ TEST_F(TabletServerTest, TestScan) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
   InsertTestRowsDirect(0, num_rows);
 
+  // Instantiate scanner metrics.
+  ASSERT_TRUE(mini_server_->server()->metric_entity());
+  // We don't care what the function is, since the metric is already instantiated.
+  auto active_scanners = METRIC_active_scanners.InstantiateFunctionGauge(
+      mini_server_->server()->metric_entity(), Callback<size_t(void)>());
+  scoped_refptr<TabletReplica> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  ASSERT_TRUE(tablet->tablet()->GetMetricEntity());
+  scoped_refptr<AtomicGauge<size_t>> tablet_active_scanners =
+      METRIC_tablet_active_scanners.Instantiate(tablet->tablet()->GetMetricEntity(), 0);
+
   ScanResponsePB resp;
   ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
 
@@ -1163,10 +1180,13 @@ TEST_F(TabletServerTest, TestScan) {
     ASSERT_TRUE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
   }
 
+  // Ensure that the scanner shows up in the server and tablet's metrics.
+  ASSERT_EQ(1, active_scanners->value());
+  ASSERT_EQ(1, tablet_active_scanners->value());
+
   // Drain all the rows from the scanner.
   vector<string> results;
-  ASSERT_NO_FATAL_FAILURE(
-    DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(num_rows, results.size());
 
   KuduPartialRow row(&schema_);
@@ -1182,6 +1202,45 @@ TEST_F(TabletServerTest, TestScan) {
     SharedScanner junk;
     ASSERT_FALSE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
   }
+
+  // Ensure that the metrics have been updated now that the scanner is unregistered.
+  ASSERT_EQ(0, active_scanners->value());
+  ASSERT_EQ(0, tablet_active_scanners->value());
+}
+
+TEST_F(TabletServerTest, TestExpiredScanner) {
+  // Make scanners expire quickly.
+  FLAGS_scanner_ttl_ms = 1;
+
+  int num_rows = 100;
+  InsertTestRowsDirect(0, num_rows);
+
+  // Instantiate scanners expired metric.
+  ASSERT_TRUE(mini_server_->server()->metric_entity());
+  scoped_refptr<Counter> scanners_expired = METRIC_scanners_expired.Instantiate(
+      mini_server_->server()->metric_entity());
+
+  // Initially, there've been no scanners, so none of have expired.
+  ASSERT_EQ(0, scanners_expired->value());
+
+  // Open a scanner but don't read from it.
+  ScanResponsePB resp;
+  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
+
+  // The scanner should expire after a short time.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(1, scanners_expired->value());
+  });
+
+  // Continue the scan. We should get a SCANNER_EXPIRED error.
+  ScanRequestPB req;
+  RpcController rpc;
+  req.set_scanner_id(resp.scanner_id());
+  req.set_call_seq_id(1);
+  resp.Clear();
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
 }
 
 TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
