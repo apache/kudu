@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Everything in this module is test-related.
+if (NO_TESTS)
+  return()
+endif()
+
 set(MINI_CLUSTER_SRCS
   external_mini_cluster.cc
   internal_mini_cluster.cc
