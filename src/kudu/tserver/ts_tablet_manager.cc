@@ -626,6 +626,39 @@ void TSTabletManager::RunTabletCopy(
   LOG(INFO) << init_msg;
   TRACE(init_msg);
 
+  // The TabletCopyClient instance should be kept alive until the tablet
+  // is successfully copied over and opened/started. This is because we want
+  // to maintain the LogAnchor until the replica starts up. Upon destruction,
+  // the TabletCopyClient instance sends an RPC explicitly ending the tablet
+  // copy session. The source replica then destroys the corresponding
+  // TabletCopySourceSession object, releasing its LogAnchor and allowing
+  // the WAL segments being copied to be GCed.
+  //
+  // See below for more details on why anchoring of WAL segments is necessary.
+  //
+  // * Assume there are WAL segments 0-10 when tablet copy starts. Tablet copy
+  //   will anchor 0 until its destroyed, meaning the source replica wont
+  //   delete it.
+  //
+  // * When tablet copy is done the tablet still needs to bootstrap which will
+  //   take some time.
+  //
+  // * When tablet bootstrap is done, the new replica will need to continue
+  //   catching up to the leader, this time through consensus. It needs segment
+  //   11 to be still available. We need the anchor to still be alive at this
+  //   point, otherwise there is nothing preventing the leader from deleting
+  //   segment 11 and thus making the new replica unable to catch up. Yes, it's
+  //   not optimal: we're anchoring 0 and we might only need to anchor 10/11.
+  //   However, having no anchor at all is likely to cause replicas to start
+  //   fail copying.
+  //
+  // NOTE:
+  //   Ideally, we should wait until the leader starts tracking of the target
+  //   replica's log watermark. As for current implementation, the intent is
+  //   to at least try preventing GC of logs before the tablet replica connects
+  //   to the leader.
+  //
+  // TODO(aserbin): make this robust and more optimal than it is now.
   TabletCopyClient tc_client(tablet_id, fs_manager_, cmeta_manager_,
                              server_->messenger(), &tablet_copy_metrics_);
 
