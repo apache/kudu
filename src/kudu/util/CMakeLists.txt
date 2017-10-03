@@ -268,35 +268,37 @@ ADD_EXPORTABLE_LIBRARY(kudu_util_compression
 # kudu_test_util
 #######################################
 
-if(NOT NO_TESTS)
-  add_library(kudu_test_util
-    test_util.cc)
-  target_link_libraries(kudu_test_util
-    gflags
-    glog
-    gmock
-    kudu_util)
+# Used by mini-cluster, so must be built even when NO_TESTS=0.
+add_library(kudu_test_util
+  test_util.cc)
+target_link_libraries(kudu_test_util
+  gflags
+  glog
+  gmock
+  kudu_util)
 
-  if(NOT APPLE)
-    target_link_libraries(kudu_test_util
-      vmem)
-  endif()
+if(NOT APPLE)
+  target_link_libraries(kudu_test_util
+    vmem)
+endif()
 
 #######################################
 # kudu_curl_util
 #######################################
-  add_library(kudu_curl_util
-    curl_util.cc)
-  target_link_libraries(kudu_curl_util
-    security
-    ${CURL_LIBRARIES}
-    glog
-    gutil)
+
+# Used by mini-cluster, so must be built even when NO_TESTS=0.
+add_library(kudu_curl_util
+  curl_util.cc)
+target_link_libraries(kudu_curl_util
+  security
+  ${CURL_LIBRARIES}
+  glog
+  gutil)
 
 #######################################
 # kudu_test_main
 #######################################
-
+if(NOT NO_TESTS)
   add_library(kudu_test_main
     test_main.cc)
   target_link_libraries(kudu_test_main

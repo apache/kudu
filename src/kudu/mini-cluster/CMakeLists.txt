@@ -15,11 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Everything in this module is test-related.
-if (NO_TESTS)
-  return()
-endif()
-
 set(MINI_CLUSTER_SRCS
   external_mini_cluster.cc
   internal_mini_cluster.cc
@@ -35,11 +30,12 @@ target_link_libraries(mini-cluster
   kudu_client
   kudu_common
   kudu_curl_util
+  kudu_test_util
   kudu_util
   krpc
   master
   master_proto
-  security-test
+  mini_kdc
   server_base_proto
   tablet_proto
   tserver

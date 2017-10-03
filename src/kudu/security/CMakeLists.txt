@@ -86,17 +86,29 @@ ADD_EXPORTABLE_LIBRARY(security
 
 
 ##############################
-# security-test
+# mini_kdc
+##############################
+
+set(MINI_KDC_SRCS test/mini_kdc.cc)
+
+add_library(mini_kdc ${MINI_KDC_SRCS})
+target_link_libraries(mini_kdc
+  gutil
+  kudu_test_util
+  kudu_util)
+
+##############################
+# security_test_util
 ##############################
 
 if (NOT NO_TESTS)
   set(SECURITY_TEST_SRCS
     security-test-util.cc
-    test/mini_kdc.cc
-    test/test_certs.cc test/test_pass.cc)
+    test/test_certs.cc
+    test/test_pass.cc)
 
-  add_library(security-test ${SECURITY_TEST_SRCS})
-  target_link_libraries(security-test
+  add_library(security_test_util ${SECURITY_TEST_SRCS})
+  target_link_libraries(security_test_util
     gutil
     kudu_test_util
     kudu_util
@@ -104,8 +116,9 @@ if (NOT NO_TESTS)
 
   # Tests
   set(KUDU_TEST_LINK_LIBS
+    mini_kdc
     security
-    security-test
+    security_test_util
     ${KUDU_MIN_TEST_LIBS})
 
   ADD_KUDU_TEST(ca/cert_management-test)

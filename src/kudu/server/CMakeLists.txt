@@ -77,9 +77,9 @@ endif()
 # server_process tests
 #########################################
 
-set(KUDU_TEST_LINK_LIBS  ${KUDU_MIN_TEST_LIBS}
+set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS}
   kudu_curl_util
   server_process
-  security-test)
+  security_test_util)
 ADD_KUDU_TEST(rpc_server-test)
 ADD_KUDU_TEST(webserver-test)
