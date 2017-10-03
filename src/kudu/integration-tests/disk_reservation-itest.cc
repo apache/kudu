@@ -19,6 +19,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -42,6 +43,7 @@ METRIC_DECLARE_gauge_uint64(data_dirs_full);
 
 namespace kudu {
 
+using cluster::ExternalMiniClusterOptions;
 using cluster::ExternalTabletServer;
 
 namespace {
@@ -73,7 +75,10 @@ TEST_F(DiskReservationITest, TestFillMultipleDisks) {
   // failing requests.
   ts_flags.emplace_back("--fs_data_dirs_reserved_bytes=1");
 
-  NO_FATALS(StartCluster(ts_flags, {}, /* num_tablet_servers= */ 1, /* num_data_dirs= */ 2));
+  ExternalMiniClusterOptions opts;
+  opts.extra_tserver_flags = std::move(ts_flags);
+  opts.num_data_dirs = 2;
+  NO_FATALS(StartClusterWithOpts(opts));
 
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
       "disk_reserved_override_prefix_1_path_for_testing",

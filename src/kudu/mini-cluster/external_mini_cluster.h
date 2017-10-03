@@ -90,6 +90,11 @@ struct ExternalMiniClusterOptions {
   // Default: "", which auto-generates a unique path for this cluster.
   std::string data_root;
 
+  // Block manager type. Must be either "file" or "log".
+  //
+  // Default: "", which uses the current value of FLAGS_block_manager.
+  std::string block_manager_type;
+
   MiniCluster::BindMode bind_mode;
 
   // The path where the kudu daemons should be run from.
@@ -257,6 +262,10 @@ class ExternalMiniCluster : public MiniCluster {
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
 
+  std::string block_manager_type() const {
+    return opts_.block_manager_type;
+  }
+
   // Wait until the number of registered tablet servers reaches the given count
   // on all of the running masters. Returns Status::TimedOut if the desired
   // count is not achieved with the given timeout.
@@ -331,12 +340,7 @@ class ExternalMiniCluster : public MiniCluster {
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
 
-  const ExternalMiniClusterOptions opts_;
-
-  // The root for binaries.
-  std::string daemon_bin_path_;
-
-  std::string data_root_;
+  ExternalMiniClusterOptions opts_;
 
   std::vector<scoped_refptr<ExternalMaster> > masters_;
   std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
@@ -354,6 +358,7 @@ struct ExternalDaemonOptions {
 
   bool logtostderr;
   std::shared_ptr<rpc::Messenger> messenger;
+  std::string block_manager_type;
   std::string exe;
   HostPort rpc_bind_address;
   std::string wal_dir;
@@ -435,21 +440,21 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Delete files specified by 'wal_dir_' and 'data_dirs_'.
   Status DeleteFromDisk() const WARN_UNUSED_RESULT;
 
-  const std::string& wal_dir() const { return wal_dir_; }
+  const std::string& wal_dir() const { return opts_.wal_dir; }
 
   const std::string& data_dir() const {
-    CHECK_EQ(1, data_dirs_.size());
-    return data_dirs_[0];
+    CHECK_EQ(1, opts_.data_dirs.size());
+    return opts_.data_dirs[0];
   }
 
-  const std::vector<std::string>& data_dirs() const { return data_dirs_; }
+  const std::vector<std::string>& data_dirs() const { return opts_.data_dirs; }
 
   // Returns the log dir of the external daemon.
-  const std::string& log_dir() const { return log_dir_; }
+  const std::string& log_dir() const { return opts_.log_dir; }
 
   // Return a pointer to the flags used for this server on restart.
   // Modifying these flags will only take effect on the next restart.
-  std::vector<std::string>* mutable_flags() { return &extra_flags_; }
+  std::vector<std::string>* mutable_flags() { return &opts_.extra_flags; }
 
   // Retrieve the value of a given metric from this server. The metric must
   // be of int64_t type.
@@ -494,19 +499,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   // Get RPC bind address for daemon.
   const HostPort& rpc_bind_address() const {
-    return rpc_bind_address_;
+    return opts_.rpc_bind_address;
   }
 
-  const std::shared_ptr<rpc::Messenger> messenger_;
-  const std::string wal_dir_;
-  std::vector<std::string> data_dirs_;
-  const std::string log_dir_;
-  const std::string perf_record_filename_;
-  const MonoDelta start_process_timeout_;
-  const bool logtostderr_;
-  const HostPort rpc_bind_address_;
-  std::string exe_;
-  std::vector<std::string> extra_flags_;
+  ExternalDaemonOptions opts_;
   std::map<std::string, std::string> extra_env_;
 
   std::unique_ptr<Subprocess> process_;

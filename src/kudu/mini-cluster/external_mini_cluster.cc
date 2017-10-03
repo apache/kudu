@@ -28,6 +28,7 @@
 #include <utility>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
@@ -88,6 +89,8 @@ using strings::Substitute;
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
+DECLARE_string(block_manager);
+
 DEFINE_bool(perf_record, false,
             "Whether to run \"perf record --call-graph fp\" on each daemon in the cluster");
 
@@ -129,15 +132,17 @@ Status ExternalMiniCluster::DeduceBinRoot(std::string* ret) {
 }
 
 Status ExternalMiniCluster::HandleOptions() {
-  daemon_bin_path_ = opts_.daemon_bin_path;
-  if (daemon_bin_path_.empty()) {
-    RETURN_NOT_OK(DeduceBinRoot(&daemon_bin_path_));
+  if (opts_.daemon_bin_path.empty()) {
+    RETURN_NOT_OK(DeduceBinRoot(&opts_.daemon_bin_path));
   }
 
-  data_root_ = opts_.data_root;
-  if (data_root_.empty()) {
+  if (opts_.data_root.empty()) {
     // If they don't specify a data root, use the current gtest directory.
-    data_root_ = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
+    opts_.data_root = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
+  }
+
+  if (opts_.block_manager_type.empty()) {
+    opts_.block_manager_type = FLAGS_block_manager;
   }
 
   return Status::OK();
@@ -156,9 +161,9 @@ Status ExternalMiniCluster::Start() {
                         .Build(&messenger_),
                         "Failed to start Messenger for minicluster");
 
-  Status s = Env::Default()->CreateDir(data_root_);
+  Status s = Env::Default()->CreateDir(opts_.data_root);
   if (!s.ok() && !s.IsAlreadyPresent()) {
-    RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + data_root_);
+    RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + opts_.data_root);
   }
 
   if (opts_.enable_kerberos) {
@@ -235,7 +240,7 @@ Status ExternalMiniCluster::Restart() {
 }
 
 void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {
-  daemon_bin_path_ = std::move(daemon_bin_path);
+  opts_.daemon_bin_path = std::move(daemon_bin_path);
   for (auto& master : masters_) {
     master->SetExePath(GetBinaryPath(kMasterBinaryName));
   }
@@ -245,18 +250,18 @@ void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {
 }
 
 string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
-  CHECK(!daemon_bin_path_.empty());
-  return JoinPathSegments(daemon_bin_path_, binary);
+  CHECK(!opts_.daemon_bin_path.empty());
+  return JoinPathSegments(opts_.daemon_bin_path, binary);
 }
 
 string ExternalMiniCluster::GetLogPath(const string& daemon_id) const {
-  CHECK(!data_root_.empty());
-  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), "logs");
+  CHECK(!opts_.data_root.empty());
+  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), "logs");
 }
 
 string ExternalMiniCluster::GetDataPath(const string& daemon_id,
                                         boost::optional<uint32_t> dir_index) const {
-  CHECK(!data_root_.empty());
+  CHECK(!opts_.data_root.empty());
   string data_path = "data";
   if (dir_index) {
     CHECK_LT(*dir_index, opts_.num_data_dirs);
@@ -264,7 +269,7 @@ string ExternalMiniCluster::GetDataPath(const string& daemon_id,
   } else {
     CHECK_EQ(1, opts_.num_data_dirs);
   }
-  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), data_path);
+  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), data_path);
 }
 
 vector<string> ExternalMiniCluster::GetDataPaths(const string& daemon_id) const {
@@ -279,8 +284,8 @@ vector<string> ExternalMiniCluster::GetDataPaths(const string& daemon_id) const 
 }
 
 string ExternalMiniCluster::GetWalPath(const string& daemon_id) const {
-  CHECK(!data_root_.empty());
-  return JoinPathSegments(JoinPathSegments(data_root_, daemon_id), "wal");
+  CHECK(!opts_.data_root.empty());
+  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), "wal");
 }
 
 namespace {
@@ -305,6 +310,7 @@ Status ExternalMiniCluster::StartSingleMaster() {
   opts.wal_dir = GetWalPath(daemon_id);
   opts.data_dirs = GetDataPaths(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
+  opts.block_manager_type = opts_.block_manager_type;
   if (FLAGS_perf_record) {
     opts.perf_record_filename =
         Substitute("$0/perf-$1.data", opts.log_dir, daemon_id);
@@ -348,6 +354,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
 
     ExternalDaemonOptions opts;
     opts.messenger = messenger_;
+    opts.block_manager_type = opts_.block_manager_type;
     opts.exe = exe;
     opts.wal_dir = GetWalPath(daemon_id);
     opts.data_dirs = GetDataPaths(daemon_id);
@@ -397,6 +404,7 @@ Status ExternalMiniCluster::AddTabletServer() {
 
   ExternalDaemonOptions opts;
   opts.messenger = messenger_;
+  opts.block_manager_type = opts_.block_manager_type;
   opts.exe = GetBinaryPath(kTabletServerBinaryName);
   opts.wal_dir = GetWalPath(daemon_id);
   opts.data_dirs = GetDataPaths(daemon_id);
@@ -663,17 +671,8 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
 //------------------------------------------------------------
 
 ExternalDaemon::ExternalDaemon(ExternalDaemonOptions opts)
-    : messenger_(std::move(opts.messenger)),
-      wal_dir_(std::move(opts.wal_dir)),
-      data_dirs_(std::move(opts.data_dirs)),
-      log_dir_(std::move(opts.log_dir)),
-      perf_record_filename_(std::move(opts.perf_record_filename)),
-      start_process_timeout_(opts.start_process_timeout),
-      logtostderr_(opts.logtostderr),
-      rpc_bind_address_(std::move(opts.rpc_bind_address)),
-      exe_(std::move(opts.exe)),
-      extra_flags_(std::move(opts.extra_flags)) {
-  CHECK(rpc_bind_address_.Initialized());
+    : opts_(std::move(opts)) {
+  CHECK(rpc_bind_address().Initialized());
 }
 
 ExternalDaemon::~ExternalDaemon() {
@@ -685,11 +684,11 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
   extra_env_ = kdc->GetEnvVars();
-  extra_flags_.push_back(Substitute("--keytab_file=$0", ktpath));
-  extra_flags_.push_back(Substitute("--principal=$0", spn));
-  extra_flags_.emplace_back("--rpc_authentication=required");
-  extra_flags_.emplace_back("--superuser_acl=test-admin");
-  extra_flags_.emplace_back("--user_acl=test-user");
+  opts_.extra_flags.push_back(Substitute("--keytab_file=$0", ktpath));
+  opts_.extra_flags.push_back(Substitute("--principal=$0", spn));
+  opts_.extra_flags.emplace_back("--rpc_authentication=required");
+  opts_.extra_flags.emplace_back("--superuser_acl=test-admin");
+  opts_.extra_flags.emplace_back("--user_acl=test-user");
   return Status::OK();
 }
 
@@ -699,7 +698,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   vector<string> argv;
 
   // First the exe for argv[0].
-  argv.push_back(exe_);
+  argv.push_back(opts_.exe);
 
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
@@ -728,7 +727,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Enable metrics logging.
   argv.emplace_back("--metrics_log_interval_ms=1000");
 
-  if (logtostderr_) {
+  if (opts_.logtostderr) {
     // Ensure that logging goes to the test output and doesn't get buffered.
     argv.emplace_back("--logtostderr");
     argv.emplace_back("--logbuflevel=-1");
@@ -736,11 +735,11 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   // Even if we are logging to stderr, metrics logs and minidumps end up being
   // written based on -log_dir. So, we have to set that too.
-  argv.push_back("--log_dir=" + log_dir_);
-  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir_));
+  argv.push_back("--log_dir=" + log_dir());
+  RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), log_dir()));
 
   // Tell the server to dump its port information so we can pick it up.
-  string info_path = JoinPathSegments(data_dirs_[0], "info.pb");
+  string info_path = JoinPathSegments(data_dirs()[0], "info.pb");
   argv.push_back("--server_dump_info_path=" + info_path);
   argv.emplace_back("--server_dump_info_format=pb");
 
@@ -756,7 +755,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
   // web port or RPC bind address if necessary.
-  argv.insert(argv.end(), extra_flags_.begin(), extra_flags_.end());
+  argv.insert(argv.end(), opts_.extra_flags.begin(), opts_.extra_flags.end());
 
   // A previous instance of the daemon may have run in the same directory. So, remove
   // the previous info file if it's there.
@@ -767,21 +766,21 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   p->SetEnvVars(extra_env_);
   string env_str;
   JoinMapKeysAndValues(extra_env_, "=", ",", &env_str);
-  LOG(INFO) << "Running " << exe_ << "\n" << JoinStrings(argv, "\n")
+  LOG(INFO) << "Running " << opts_.exe << "\n" << JoinStrings(argv, "\n")
             << " with env {" << env_str << "}";
   RETURN_NOT_OK_PREPEND(p->Start(),
-                        Substitute("Failed to start subprocess $0", exe_));
+                        Substitute("Failed to start subprocess $0", opts_.exe));
 
   // If requested, start a monitoring subprocess.
   unique_ptr<Subprocess> perf_record;
-  if (!perf_record_filename_.empty()) {
+  if (!opts_.perf_record_filename.empty()) {
     perf_record.reset(new Subprocess({
       "perf",
       "record",
       "--call-graph",
       "fp",
       "-o",
-      perf_record_filename_,
+      opts_.perf_record_filename,
       Substitute("--pid=$0", p->pid())
     }, SIGINT));
     RETURN_NOT_OK_PREPEND(perf_record->Start(),
@@ -792,7 +791,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   Stopwatch sw;
   sw.start();
   bool success = false;
-  while (sw.elapsed().wall_seconds() < start_process_timeout_.ToSeconds()) {
+  while (sw.elapsed().wall_seconds() < opts_.start_process_timeout.ToSeconds()) {
     if (Env::Default()->FileExists(info_path)) {
       success = true;
       break;
@@ -813,7 +812,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
       return Status::OK();
     }
 
-    RETURN_NOT_OK_PREPEND(s, Substitute("Failed waiting on $0", exe_));
+    RETURN_NOT_OK_PREPEND(s, Substitute("Failed waiting on $0", opts_.exe));
     string exit_info;
     RETURN_NOT_OK(p->GetExitStatus(nullptr, &exit_info));
     return Status::RuntimeError(exit_info);
@@ -823,14 +822,14 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
     ignore_result(p->Kill(SIGKILL));
     return Status::TimedOut(
         Substitute("Timed out after $0s waiting for process ($1) to write info file ($2)",
-                   start_process_timeout_.ToString(), exe_, info_path));
+                   opts_.start_process_timeout.ToString(), opts_.exe, info_path));
   }
 
   status_.reset(new ServerStatusPB());
   RETURN_NOT_OK_PREPEND(pb_util::ReadPBFromPath(Env::Default(), info_path, status_.get()),
                         "Failed to read info file from " + info_path);
-  LOG(INFO) << "Started " << exe_ << " as pid " << p->pid();
-  VLOG(1) << exe_ << " instance information:\n" << SecureDebugString(*status_);
+  LOG(INFO) << "Started " << opts_.exe << " as pid " << p->pid();
+  VLOG(1) << opts_.exe << " instance information:\n" << SecureDebugString(*status_);
 
   process_.swap(p);
   perf_record_process_.swap(perf_record);
@@ -839,15 +838,15 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
 void ExternalDaemon::SetExePath(string exe) {
   CHECK(IsShutdown()) << "Call Shutdown() before changing the executable path";
-  exe_ = std::move(exe);
+  opts_.exe = std::move(exe);
 }
 
 Status ExternalDaemon::Pause() {
   if (!process_) {
     return Status::IllegalState(Substitute(
-        "Request to pause '$0' but the process is not there", exe_));
+        "Request to pause '$0' but the process is not there", opts_.exe));
   }
-  VLOG(1) << "Pausing " << exe_ << " with pid " << process_->pid();
+  VLOG(1) << "Pausing " << opts_.exe << " with pid " << process_->pid();
   const Status s = process_->Kill(SIGSTOP);
   RETURN_NOT_OK(s);
   paused_ = true;
@@ -857,9 +856,9 @@ Status ExternalDaemon::Pause() {
 Status ExternalDaemon::Resume() {
   if (!process_) {
     return Status::IllegalState(Substitute(
-        "Request to resume '$0' but the process is not there", exe_));
+        "Request to resume '$0' but the process is not there", opts_.exe));
   }
-  VLOG(1) << "Resuming " << exe_ << " with pid " << process_->pid();
+  VLOG(1) << "Resuming " << opts_.exe << " with pid " << process_->pid();
   const Status s = process_->Kill(SIGCONT);
   RETURN_NOT_OK(s);
   paused_ = false;
@@ -959,10 +958,10 @@ void ExternalDaemon::Shutdown() {
       CheckForLeaks();
     }
 
-    LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
+    LOG(INFO) << "Killing " << opts_.exe << " with pid " << process_->pid();
     ignore_result(process_->Kill(SIGKILL));
   }
-  WARN_NOT_OK(process_->Wait(), "Waiting on " + exe_);
+  WARN_NOT_OK(process_->Wait(), "Waiting on " + opts_.exe);
   paused_ = false;
   process_.reset();
   perf_record_process_.reset();
@@ -980,9 +979,9 @@ void ExternalDaemon::FlushCoverage() {
 #ifndef COVERAGE_BUILD
   return; // NOLINT(*)
 #else
-  LOG(INFO) << "Attempting to flush coverage for " << exe_ << " pid " << process_->pid();
+  LOG(INFO) << "Attempting to flush coverage for " << opts_.exe << " pid " << process_->pid();
   server::GenericServiceProxy proxy(
-      messenger_, bound_rpc_addr(), bound_rpc_addr().host());
+      opts_.messenger, bound_rpc_addr(), bound_rpc_addr().host());
 
   server::FlushCoverageRequestPB req;
   server::FlushCoverageResponsePB resp;
@@ -993,15 +992,15 @@ void ExternalDaemon::FlushCoverage() {
   if (s.ok() && !resp.success()) {
     s = Status::RemoteError("Server does not appear to be running a coverage build");
   }
-  WARN_NOT_OK(s, Substitute("Unable to flush coverage on $0 pid $1", exe_, process_->pid()));
+  WARN_NOT_OK(s, Substitute("Unable to flush coverage on $0 pid $1", opts_.exe, process_->pid()));
 #endif
 }
 
 void ExternalDaemon::CheckForLeaks() {
 #if defined(__has_feature)
 #  if __has_feature(address_sanitizer)
-  LOG(INFO) << "Attempting to check leaks for " << exe_ << " pid " << process_->pid();
-  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr(), bound_rpc_addr().host());
+  LOG(INFO) << "Attempting to check leaks for " << opts_.exe << " pid " << process_->pid();
+  server::GenericServiceProxy proxy(opts_.messenger, bound_rpc_addr(), bound_rpc_addr().host());
 
   server::CheckLeaksRequestPB req;
   server::CheckLeaksResponsePB resp;
@@ -1013,10 +1012,10 @@ void ExternalDaemon::CheckForLeaks() {
     if (!resp.success()) {
       s = Status::RemoteError("Server does not appear to be running an LSAN build");
     } else {
-      CHECK(!resp.found_leaks()) << "Found leaks in " << exe_ << " pid " << process_->pid();
+      CHECK(!resp.found_leaks()) << "Found leaks in " << opts_.exe << " pid " << process_->pid();
     }
   }
-  WARN_NOT_OK(s, Substitute("Unable to check leaks on $0 pid $1", exe_, process_->pid()));
+  WARN_NOT_OK(s, Substitute("Unable to check leaks on $0 pid $1", opts_.exe, process_->pid()));
 #  endif
 #endif
 }
@@ -1170,7 +1169,7 @@ Status ExternalMaster::Restart() {
 
 Status ExternalMaster::WaitForCatalogManager() {
   unique_ptr<MasterServiceProxy> proxy(new MasterServiceProxy(
-      messenger_, bound_rpc_addr(), bound_rpc_addr().host()));
+      opts_.messenger, bound_rpc_addr(), bound_rpc_addr().host()));
   Stopwatch sw;
   sw.start();
   while (sw.elapsed().wall_seconds() < kMasterCatalogManagerTimeoutSeconds) {
@@ -1212,8 +1211,9 @@ Status ExternalMaster::WaitForCatalogManager() {
 
 vector<string> ExternalMaster::GetCommonFlags() const {
   return {
-    "--fs_wal_dir=" + wal_dir_,
-    "--fs_data_dirs=" + JoinStrings(data_dirs_, ","),
+    "--fs_wal_dir=" + wal_dir(),
+    "--fs_data_dirs=" + JoinStrings(data_dirs(), ","),
+    "--block_manager=" + opts_.block_manager_type,
     "--webserver_interface=localhost",
 
     // See the in-line comment for "--ipki_server_key_size" flag in
@@ -1243,8 +1243,9 @@ ExternalTabletServer::~ExternalTabletServer() {
 
 Status ExternalTabletServer::Start() {
   vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + wal_dir_);
-  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs_, ","));
+  flags.push_back("--fs_wal_dir=" + wal_dir());
+  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs(), ","));
+  flags.push_back("--block_manager=" + opts_.block_manager_type);
   flags.push_back(Substitute("--rpc_bind_addresses=$0",
                              rpc_bind_address().ToString()));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
@@ -1264,8 +1265,9 @@ Status ExternalTabletServer::Restart() {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags;
-  flags.push_back("--fs_wal_dir=" + wal_dir_);
-  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs_, ","));
+  flags.push_back("--fs_wal_dir=" + wal_dir());
+  flags.push_back("--fs_data_dirs=" + JoinStrings(data_dirs(), ","));
+  flags.push_back("--block_manager=" + opts_.block_manager_type);
   flags.push_back(Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              rpc_bind_address().host()));

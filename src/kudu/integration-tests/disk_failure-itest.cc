@@ -26,6 +26,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -37,14 +38,17 @@ METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 
 namespace kudu {
 
+using cluster::ExternalMiniClusterOptions;
 using cluster::ExternalTabletServer;
+using fs::BlockManager;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 const MonoDelta kAgreementTimeout = MonoDelta::FromSeconds(30);
 
-class DiskFailureITest : public ExternalMiniClusterITestBase {
+class DiskFailureITest : public ExternalMiniClusterITestBase,
+                         public ::testing::WithParamInterface<string> {
  public:
 
   // Waits for 'ext_tserver' to experience 'target_failed_disks' disk failures.
@@ -63,9 +67,13 @@ class DiskFailureITest : public ExternalMiniClusterITestBase {
 // cluster is started and loaded with some tablets. The tablet server is then
 // shut down and restarted. Errors are injected to one of the directories while
 // it is shut down.
-TEST_F(DiskFailureITest, TestFailDuringServerStartup) {
+TEST_P(DiskFailureITest, TestFailDuringServerStartup) {
   // Set up a cluster with three servers with five disks each.
-  NO_FATALS(StartCluster({}, {}, 3, 5));
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 3;
+  opts.num_data_dirs = 5;
+  opts.block_manager_type = GetParam();
+  NO_FATALS(StartClusterWithOpts(opts));
   const int kNumTablets = 5;
   const int kNumRows = 100;
 
@@ -105,5 +113,8 @@ TEST_F(DiskFailureITest, TestFailDuringServerStartup) {
   NO_FATALS(v.CheckRowCount(write_workload.table_name(), ClusterVerifier::AT_LEAST,
                             write_workload.batches_completed()));
 }
+
+INSTANTIATE_TEST_CASE_P(DiskFailure, DiskFailureITest,
+    ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 }  // namespace kudu

@@ -69,16 +69,16 @@ TAG_FLAG(enable_data_block_fsync, unsafe);
 #if defined(__linux__)
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
-static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
-  return value == "log" || value == "file";
-}
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "Only the file block manager is supported for non-Linux systems.");
-static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
-  return value == "file";
-}
 #endif
+static bool ValidateBlockManagerType(const char* /*flagname*/, const std::string& value) {
+  for (const std::string& type : kudu::fs::BlockManager::block_manager_types()) {
+    if (type == value) return true;
+  }
+  return false;
+}
 DEFINE_validator(block_manager, &ValidateBlockManagerType);
 TAG_FLAG(block_manager, advanced);
 
@@ -129,6 +129,7 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManagerOpts::FsManagerOpts()
   : wal_path(FLAGS_fs_wal_dir),
+    block_manager_type(FLAGS_block_manager),
     read_only(false) {
   data_paths = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
@@ -139,6 +140,7 @@ FsManagerOpts::~FsManagerOpts() {
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(false),
+    block_manager_type_(FLAGS_block_manager),
     wal_fs_root_(root_path),
     data_fs_roots_({ root_path }),
     metric_entity_(nullptr),
@@ -150,6 +152,7 @@ FsManager::FsManager(Env* env,
                      const FsManagerOpts& opts)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
+    block_manager_type_(opts.block_manager_type),
     wal_fs_root_(opts.wal_path),
     data_fs_roots_(opts.data_paths),
     metric_entity_(opts.metric_entity),
@@ -269,7 +272,7 @@ void FsManager::InitBlockManager() {
   opts.metric_entity = metric_entity_;
   opts.parent_mem_tracker = parent_mem_tracker_;
   opts.read_only = read_only_;
-  if (FLAGS_block_manager == "file") {
+  if (block_manager_type_ == "file") {
     block_manager_.reset(new FileBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
   } else {
     block_manager_.reset(new LogBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
@@ -320,6 +323,7 @@ Status FsManager::Open(FsReport* report) {
   if (!dd_manager_) {
     DataDirManagerOptions dm_opts;
     dm_opts.metric_entity = metric_entity_;
+    dm_opts.block_manager_type = block_manager_type_;
     dm_opts.read_only = read_only_;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,

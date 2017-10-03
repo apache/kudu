@@ -200,6 +200,12 @@ class DataDir {
 struct DataDirManagerOptions {
   DataDirManagerOptions();
 
+  // The block manager type the directory manager should support.
+  // Must be either "file" or "log".
+  //
+  // Defaults to the value of FLAGS_block_manager.
+  std::string block_manager_type;
+
   // The entity under which all metrics should be grouped. If null, metrics
   // will not be produced.
   //

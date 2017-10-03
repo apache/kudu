@@ -279,7 +279,8 @@ Status DataDir::RefreshIsFull(RefreshMode mode) {
 const char* DataDirManager::kDataDirName = "data";
 
 DataDirManagerOptions::DataDirManagerOptions()
-  : read_only(false) {
+  : block_manager_type(FLAGS_block_manager),
+    read_only(false) {
 }
 
 vector<string> DataDirManager::GetRootNames(const CanonicalizedRootsList& root_list) {
@@ -293,7 +294,7 @@ DataDirManager::DataDirManager(Env* env,
                                DataDirManagerOptions opts,
                                CanonicalizedRootsList canonicalized_data_roots)
     : env_(env),
-      block_manager_type_(FLAGS_block_manager),
+      block_manager_type_(std::move(opts.block_manager_type)),
       read_only_(opts.read_only),
       canonicalized_data_fs_roots_(std::move(canonicalized_data_roots)),
       rng_(GetRandomSeed32()) {

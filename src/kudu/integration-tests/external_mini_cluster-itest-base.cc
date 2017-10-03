@@ -41,6 +41,8 @@ namespace kudu {
 
 using cluster::ExternalMiniCluster;
 using cluster::ExternalMiniClusterOptions;
+using std::string;
+using std::vector;
 
 void ExternalMiniClusterITestBase::TearDown() {
   StopCluster();
@@ -48,15 +50,13 @@ void ExternalMiniClusterITestBase::TearDown() {
 }
 
 void ExternalMiniClusterITestBase::StartCluster(
-    const std::vector<std::string>& extra_ts_flags,
-    const std::vector<std::string>& extra_master_flags,
-    int num_tablet_servers,
-    int num_data_dirs) {
+    vector<string> extra_ts_flags,
+    vector<string> extra_master_flags,
+    int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
-  opts.num_data_dirs = num_data_dirs;
   opts.num_tablet_servers = num_tablet_servers;
-  opts.extra_master_flags = extra_master_flags;
-  opts.extra_tserver_flags = extra_ts_flags;
+  opts.extra_master_flags = std::move(extra_master_flags);
+  opts.extra_tserver_flags = std::move(extra_ts_flags);
   StartClusterWithOpts(std::move(opts));
 }
 

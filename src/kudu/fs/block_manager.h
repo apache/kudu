@@ -199,6 +199,15 @@ struct BlockManagerOptions {
 // thread-safe.
 class BlockManager {
  public:
+  // Lists the available block manager types.
+  static std::vector<std::string> block_manager_types() {
+#if defined(__linux__)
+    return { "file", "log" };
+#else
+    return { "file" };
+#endif
+  }
+
   virtual ~BlockManager() {}
 
   // Opens an existing on-disk representation of this block manager and

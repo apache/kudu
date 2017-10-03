@@ -75,6 +75,8 @@ Status LogVerifier::OpenFsManager(ExternalTabletServer* ets,
   fs_opts.read_only = true;
   fs_opts.wal_path = ets->wal_dir();
   fs_opts.data_paths = ets->data_dirs();
+  fs_opts.block_manager_type = cluster_->block_manager_type();
+
   unique_ptr<FsManager> ret(new FsManager(Env::Default(), fs_opts));
   RETURN_NOT_OK_PREPEND(ret->Open(),
                         Substitute("Couldn't initialize FS Manager for $0", ets->wal_dir()));

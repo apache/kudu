@@ -156,6 +156,7 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;
   fs_opts.parent_mem_tracker = mem_tracker_;
+  fs_opts.block_manager_type = options.fs_opts.block_manager_type;
   fs_opts.wal_path = options.fs_opts.wal_path;
   fs_opts.data_paths = options.fs_opts.data_paths;
   fs_manager_.reset(new FsManager(options.env, fs_opts));

@@ -80,6 +80,10 @@ struct FsManagerOpts {
   // The paths where data blocks will be stored. Cannot be empty.
   std::vector<std::string> data_paths;
 
+  // The block manager type. Must be either "file" or "log".
+  // Defaults to the value of FLAGS_block_manager.
+  std::string block_manager_type;
+
   // Whether or not read-write operations should be allowed. Defaults to false.
   bool read_only;
 };
@@ -288,6 +292,9 @@ class FsManager {
 
   // If false, operations that mutate on-disk state are prohibited.
   const bool read_only_;
+
+  // The block manager type.
+  const std::string block_manager_type_;
 
   // These roots are the constructor input verbatim. None of them are used
   // as-is; they are first canonicalized during Init().

@@ -19,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -35,6 +36,7 @@
 
 namespace kudu {
 
+using cluster::ExternalMiniClusterOptions;
 using cluster::ExternalTabletServer;
 using std::map;
 using std::string;
@@ -53,7 +55,11 @@ TEST_F(MultiDirClusterITest, TestBasicMultiDirCluster) {
     "--fs_target_data_dirs_per_tablet=0"
   };
 
-  NO_FATALS(StartCluster(ts_flags, {}, /* num_tablet_servers= */ 1, kNumDataDirs));
+  ExternalMiniClusterOptions opts;
+  opts.extra_tserver_flags = std::move(ts_flags);
+  opts.num_tablet_servers = 1;
+  opts.num_data_dirs = kNumDataDirs;
+  NO_FATALS(StartClusterWithOpts(opts));
   ExternalTabletServer* ts = cluster_->tablet_server(0);
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
