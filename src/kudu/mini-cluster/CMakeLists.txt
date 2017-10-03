@@ -21,8 +21,8 @@ set(MINI_CLUSTER_SRCS
   mini_cluster.cc
 )
 
-add_library(mini-cluster ${MINI_CLUSTER_SRCS})
-target_link_libraries(mini-cluster
+add_library(mini_cluster ${MINI_CLUSTER_SRCS})
+target_link_libraries(mini_cluster
   gflags
   glog
   gmock
@@ -43,10 +43,10 @@ target_link_libraries(mini-cluster
   tserver_service_proto
   wire_protocol_proto
 )
-add_dependencies(mini-cluster
+add_dependencies(mini_cluster
   kudu-tserver
   kudu-master)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS mini-cluster ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS mini_cluster ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")

@@ -30,12 +30,12 @@ set(INTEGRATION_TESTS_SRCS
   test_workload.cc
 )
 
-add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
-target_link_libraries(integration-tests
+add_library(itest_util ${INTEGRATION_TESTS_SRCS})
+target_link_libraries(itest_util
   tserver
   tserver_test_util
   master
-  mini-cluster
+  mini_cluster
   ksck
   kudu_client
   kudu_client_test_util
@@ -44,12 +44,12 @@ target_link_libraries(integration-tests
   kudu_test_util
   kudu_tools_util
   security_test_util)
-add_dependencies(integration-tests
+add_dependencies(itest_util
   kudu-tserver
   kudu-master)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS itest_util ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(all_types-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(alter_table-randomized-test)
 ADD_KUDU_TEST(alter_table-test)

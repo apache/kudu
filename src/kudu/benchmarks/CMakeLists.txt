@@ -26,8 +26,8 @@ set(TPCH_SRCS
 
 add_library(tpch ${TPCH_SRCS})
 target_link_libraries(tpch
-  kudu_client
-  integration-tests)
+  itest_util
+  kudu_client)
 
 # tpch1
 add_executable(tpch1 tpch/tpch1.cc)
