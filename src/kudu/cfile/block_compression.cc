@@ -167,7 +167,7 @@ Status CompressedBlockDecoder::Init() {
   if (uncompressed_size_ > FLAGS_max_cfile_block_size) {
     return Status::Corruption(
       Substitute("uncompressed size $0 overflows the maximum length $1, buffer",
-                 compressed_size, FLAGS_max_cfile_block_size),
+                 uncompressed_size_, FLAGS_max_cfile_block_size),
       KUDU_REDACT(data_.ToDebugString(50)));
   }
 
