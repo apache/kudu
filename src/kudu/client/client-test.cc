@@ -5253,5 +5253,38 @@ TEST_F(ClientTest, TestVerboseLevelByEnvVar) {
   ASSERT_EQ(0, FLAGS_v);
 }
 
+// Regression test for KUDU-2167: older versions of Kudu could return a scan
+// response without a 'data' field, crashing the client.
+TEST_F(ClientTest, TestSubsequentScanRequestReturnsNoData) {
+  // Insert some rows.
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+
+  // Set up a table scan.
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+
+  // Ensure that the new scan RPC does not return the data.
+  //
+  // It's OK to leave the scanner configured like this; after the new scan RPC
+  // the server will still return at least one block of data per RPC.
+  ASSERT_OK(scanner.SetBatchSizeBytes(0));
+
+  // This scan should not match any of the inserted rows.
+  unique_ptr<KuduPartialRow> row(client_table_->schema().NewRow());
+  ASSERT_OK(row->SetInt32("key", -1));
+  ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
+
+  // Perform the scan.
+  ASSERT_OK(scanner.Open());
+  ASSERT_TRUE(scanner.HasMoreRows());
+  int count = 0;
+  KuduScanBatch batch;
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&batch));
+    count += batch.NumRows();
+  }
+  ASSERT_EQ(0, count);
+}
+
 } // namespace client
 } // namespace kudu

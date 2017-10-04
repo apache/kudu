@@ -429,7 +429,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());
 
   next_req_.clear_new_scan_request();
-  data_in_open_ = last_response_.has_data();
+  data_in_open_ = last_response_.has_data() && last_response_.data().num_rows() > 0;
   if (last_response_.has_more_results()) {
     next_req_.set_scanner_id(last_response_.scanner_id());
     VLOG(2) << "Opened tablet " << remote_->tablet_id()
@@ -535,8 +535,16 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
   CHECK(controller->finished());
   controller_.Swap(controller);
   projection_ = projection;
+  projected_row_size_ = CalculateProjectedRowSize(*projection_);
   client_projection_ = client_projection;
   row_format_flags_ = row_format_flags;
+  if (!resp_data) {
+    // No new data; just clear out the old stuff.
+    resp_data_.Clear();
+    return Status::OK();
+  }
+
+  // There's new data. Swap it in and process it.
   resp_data_.Swap(resp_data.get());
 
   // First, rewrite the relative addresses into absolute ones.
@@ -546,16 +554,16 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
 
   Status s = controller_.GetInboundSidecar(resp_data_.rows_sidecar(), &direct_data_);
   if (!s.ok()) {
-    return Status::Corruption("Server sent invalid response: row data "
-        "sidecar index corrupt", s.ToString());
+    return Status::Corruption("Server sent invalid response: "
+        "row data sidecar index corrupt", s.ToString());
   }
 
   if (resp_data_.has_indirect_data_sidecar()) {
     Status s = controller_.GetInboundSidecar(resp_data_.indirect_data_sidecar(),
-                                      &indirect_data_);
+                                             &indirect_data_);
     if (!s.ok()) {
-      return Status::Corruption("Server sent invalid response: indirect data "
-                                "sidecar index corrupt", s.ToString());
+      return Status::Corruption("Server sent invalid response: "
+          "indirect data sidecar index corrupt", s.ToString());
     }
   }
 
@@ -564,10 +572,8 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
     pad_unixtime_micros_to_16_bytes = true;
   }
 
-  RETURN_NOT_OK(RewriteRowBlockPointers(*projection_, resp_data_, indirect_data_, &direct_data_,
-                                        pad_unixtime_micros_to_16_bytes));
-  projected_row_size_ = CalculateProjectedRowSize(*projection_);
-  return Status::OK();
+  return RewriteRowBlockPointers(*projection_, resp_data_, indirect_data_, &direct_data_,
+                                 pad_unixtime_micros_to_16_bytes);
 }
 
 void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {

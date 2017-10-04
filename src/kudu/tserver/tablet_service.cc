@@ -326,9 +326,6 @@ class ScanResultCollector {
   virtual void HandleRowBlock(const Schema* client_projection_schema,
                               const RowBlock& row_block) = 0;
 
-  // Returns number of times HandleRowBlock() was called.
-  virtual int BlocksProcessed() const = 0;
-
   // Returns number of bytes which will be returned in the response.
   virtual int64_t ResponseSize() const = 0;
 
@@ -385,20 +382,16 @@ class ScanResultCopier : public ScanResultCollector {
       : rowblock_pb_(DCHECK_NOTNULL(rowblock_pb)),
         rows_data_(DCHECK_NOTNULL(rows_data)),
         indirect_data_(DCHECK_NOTNULL(indirect_data)),
-        blocks_processed_(0),
         num_rows_returned_(0),
         pad_unixtime_micros_to_16_bytes_(false) {}
 
   void HandleRowBlock(const Schema* client_projection_schema,
                               const RowBlock& row_block) override {
-    blocks_processed_++;
     num_rows_returned_ += row_block.selection_vector()->CountSelected();
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
                       rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
     SetLastRow(row_block, &last_primary_key_);
   }
-
-  int BlocksProcessed() const override { return blocks_processed_; }
 
   // Returns number of bytes buffered to return.
   int64_t ResponseSize() const override {
@@ -423,7 +416,6 @@ class ScanResultCopier : public ScanResultCollector {
   RowwiseRowBlockPB* const rowblock_pb_;
   faststring* const rows_data_;
   faststring* const indirect_data_;
-  int blocks_processed_;
   int64_t num_rows_returned_;
   faststring last_primary_key_;
   bool pad_unixtime_micros_to_16_bytes_;
@@ -437,13 +429,11 @@ class ScanResultChecksummer : public ScanResultCollector {
   ScanResultChecksummer()
       : crc_(crc::GetCrc32cInstance()),
         agg_checksum_(0),
-        blocks_processed_(0),
         rows_checksummed_(0) {
   }
 
   virtual void HandleRowBlock(const Schema* client_projection_schema,
                               const RowBlock& row_block) OVERRIDE {
-    blocks_processed_++;
     if (!client_projection_schema) {
       client_projection_schema = &row_block.schema();
     }
@@ -458,8 +448,6 @@ class ScanResultChecksummer : public ScanResultCollector {
     // Find the last selected row and save its encoded key.
     SetLastRow(row_block, &encoded_last_row_);
   }
-
-  virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
 
   // Returns a constant -- we only return checksum based on a time budget.
   virtual int64_t ResponseSize() const OVERRIDE { return sizeof(agg_checksum_); }
@@ -509,7 +497,6 @@ class ScanResultChecksummer : public ScanResultCollector {
   faststring tmp_buf_;
   crc::Crc* const crc_;
   uint64_t agg_checksum_;
-  int blocks_processed_;
   int64_t rows_checksummed_;
   faststring encoded_last_row_;
 
@@ -1172,31 +1159,29 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   }
   resp->set_has_more_results(has_more_results);
 
-  DVLOG(2) << "Blocks processed: " << collector.BlocksProcessed();
-  if (collector.BlocksProcessed() > 0) {
-    resp->mutable_data()->CopyFrom(data);
+  resp->mutable_data()->CopyFrom(data);
 
-    // Add sidecar data to context and record the returned indices.
-    int rows_idx;
-    CHECK_OK(context->AddOutboundSidecar(RpcSidecar::FromFaststring((std::move(rows_data))),
-            &rows_idx));
-    resp->mutable_data()->set_rows_sidecar(rows_idx);
+  // Add sidecar data to context and record the returned indices.
+  int rows_idx;
+  CHECK_OK(context->AddOutboundSidecar(
+      RpcSidecar::FromFaststring((std::move(rows_data))), &rows_idx));
+  resp->mutable_data()->set_rows_sidecar(rows_idx);
 
-    // Add indirect data as a sidecar, if applicable.
-    if (indirect_data->size() > 0) {
-      int indirect_idx;
-      CHECK_OK(context->AddOutboundSidecar(RpcSidecar::FromFaststring(
-          std::move(indirect_data)), &indirect_idx));
-      resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
-    }
+  // Add indirect data as a sidecar, if applicable.
+  if (indirect_data->size() > 0) {
+    int indirect_idx;
+    CHECK_OK(context->AddOutboundSidecar(
+        RpcSidecar::FromFaststring(std::move(indirect_data)), &indirect_idx));
+    resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
+  }
 
-    // Set the last row found by the collector.
-    // We could have an empty batch if all the remaining rows are filtered by the predicate,
-    // in which case do not set the last row.
-    const faststring& last = collector.last_primary_key();
-    if (last.length() > 0) {
-      resp->set_last_primary_key(last.ToString());
-    }
+  // Set the last row found by the collector.
+  //
+  // We could have an empty batch if all the remaining rows are filtered by the
+  // predicate, in which case do not set the last row.
+  const faststring& last = collector.last_primary_key();
+  if (last.length() > 0) {
+    resp->set_last_primary_key(last.ToString());
   }
   resp->set_propagated_timestamp(server_->clock()->Now().ToUint64());
   SetResourceMetrics(resp->mutable_resource_metrics(), context);
