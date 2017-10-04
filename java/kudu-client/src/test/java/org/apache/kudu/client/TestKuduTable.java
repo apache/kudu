@@ -587,31 +587,33 @@ public class TestKuduTable extends BaseKuduTest {
           .renameColumn(oldName, newName)
           .setWait(false));
 
-      // Reload the schema and test for the existence of 'oldName'. Since we
-      // didn't wait for alter to finish, we should be able to find it. However,
-      // this is timing dependent: if the alter finishes before we reload the
-      // schema, loop and try again.
+      // We didn't wait for the column rename to finish, so we should be able
+      // to still see 'oldName' and not yet see 'newName'. However, this is
+      // timing dependent: if the alter finishes before we reload the schema,
+      // loop and try again.
+      KuduTable table = syncClient.openTable(tableName);
       try {
-        syncClient.openTable(tableName).getSchema().getColumn(newName);
-        LOG.info("Alter finished too quickly (new column name {} is already " +
-            "visible), trying again", oldName);
+        table.getSchema().getColumn(oldName);
+      } catch (IllegalArgumentException e) {
+        LOG.info("Alter finished too quickly (old column name {} is already " +
+            "gone), trying again", oldName);
         oldName = newName;
         continue;
-      } catch (IllegalArgumentException e) {}
-
+      }
       try {
-        syncClient.openTable(tableName).getSchema().getColumn(newName);
-        fail(String.format("New column name %s should have been visible", newName));
+        table.getSchema().getColumn(newName);
+        fail(String.format("New column name %s should not yet be visible", newName));
       } catch (IllegalArgumentException e) {}
 
       // After waiting for the alter to finish and reloading the schema,
-      // the new column name should be visible.
-      syncClient.isAlterTableDone(tableName);
+      // 'newName' should be visible and 'oldName' should be gone.
+      assertTrue(syncClient.isAlterTableDone(tableName));
+      table = syncClient.openTable(tableName);
       try {
-        syncClient.openTable(tableName).getSchema().getColumn(oldName);
-        fail(String.format("Old column name %s should have been visible", oldName));
+        table.getSchema().getColumn(oldName);
+        fail(String.format("Old column name %s should not be visible", oldName));
       } catch (IllegalArgumentException e) {}
-      syncClient.openTable(tableName).getSchema().getColumn(newName);
+      table.getSchema().getColumn(newName);
       LOG.info("Test passed on attempt {}", i + 1);
       return;
     }
