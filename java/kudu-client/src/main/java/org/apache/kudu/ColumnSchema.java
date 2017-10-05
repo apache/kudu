@@ -208,6 +208,8 @@ public class ColumnSchema {
   /**
    * Builder for ColumnSchema.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public static class ColumnSchemaBuilder {
     private final String name;
     private final Type type;
