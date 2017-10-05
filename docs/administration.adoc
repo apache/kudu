@@ -211,11 +211,11 @@ how to migrate to a multi-master configuration.
 WARNING: The workflow is unsafe for adding new masters to an existing multi-master configuration.
 Do not use it for that purpose.
 
-WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
-
 WARNING: All of the command line steps below should be executed as the Kudu UNIX user, typically
 `kudu`.
+
+WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
+using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
 
 ==== Prepare for the migration
 
@@ -228,16 +228,17 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 . Perform the following preparatory steps for the existing master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
   the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
-  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
-  other than the value of fs_wal_dir, it should be explicitly included in every command below where
-  fs_wal_dir is also included.
+  `fs_data_dirs` configuration parameters. Please note if you've set `fs_data_dirs` to some directories
+  other than the value of `fs_wal_dir`, it should be explicitly included in every command below where
+  `fs_wal_dir` is also included. For more information on configuring these directories, see the
+  link:configuration.html#directory_configuration[Kudu Configuration docs].
 * Identify and record the port the master is using for RPCs. The default port value is 7051, but it
   may have been customized using the `rpc_bind_addresses` configuration parameter.
 * Identify the master's UUID. It can be fetched using the following command:
 +
 [source,bash]
 ----
-$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+$ kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
 ----
 master_data_dir:: existing master's previously recorded data directory
 +
@@ -277,8 +278,8 @@ bringing the cluster down for maintenance, and as such, it is highly recommended
 +
 [source,bash]
 ----
-$ kudu fs format --fs_wal_dir=<master_data_dir>
-$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+$ kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>]
+$ kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
 ----
 +
 master_data_dir:: new master's previously recorded data directory
@@ -302,7 +303,7 @@ f5624e05f40649b79a757629a69d061e
 +
 [source,bash]
 ----
-$ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_data_dir> <tablet_id> <all_masters>
+$ kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <all_masters>
 ----
 +
 master_data_dir:: existing master's previously recorded data directory
@@ -332,7 +333,7 @@ port:: master's previously recorded RPC port number
 +
 [source,bash]
 ----
-$ kudu local_replica copy_from_remote --fs_wal_dir=<master_data_dir> <tablet_id> <existing_master>
+$ kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <existing_master>
 ----
 +
 master_data_dir:: new master's previously recorded data directory
@@ -419,14 +420,15 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 . Perform the following preparatory steps for each live master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
   the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
-  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
-  other than the value of fs_wal_dir, it should be explicitly included in every command below where
-  fs_wal_dir is also included.
+  `fs_data_dirs` configuration parameters. Please note if you've set `fs_data_dirs` to some directories
+  other than the value of `fs_wal_dir`, it should be explicitly included in every command below where
+  `fs_wal_dir` is also included. For more information on configuring these directories, see the
+  link:configuration.html#directory_configuration[Kudu Configuration docs].
 * Identify and record the master's UUID. It can be fetched using the following command:
 +
 [source,bash]
 ----
-$ kudu fs dump uuid --fs_wal_dir=<master_data_dir> 2>/dev/null
+$ kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
 ----
 master_data_dir:: live master's previously recorded data directory
 +
@@ -441,14 +443,15 @@ $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
 . Perform the following preparatory steps for the reference master:
 * Identify and record the directory where the master's data lives. If using Kudu system packages,
   the default value is /var/lib/kudu/master, but it may be customized via the `fs_wal_dir` and
-  `fs_data_dirs` configuration parameter. Please note if you've set fs_data_dirs to some directories
-  other than the value of fs_wal_dir, it should be explicitly included in every command below where
-  fs_wal_dir is also included.
+  `fs_data_dirs` configuration parameters. Please note if you've set `fs_data_dirs` to some directories
+  other than the value of `fs_wal_dir`, it should be explicitly included in every command below where
+  `fs_wal_dir` is also included. For more information on configuring these directories, see the
+  link:configuration.html#directory_configuration[Kudu Configuration docs].
 * Identify and record the UUIDs of every master in the cluster, using the following command:
 +
 [source,bash]
 ----
-$ kudu local_replica cmeta print_replica_uuids --fs_wal_dir=<master_data_dir> <tablet_id> 2>/dev/null
+$ kudu local_replica cmeta print_replica_uuids --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> 2>/dev/null
 ----
 master_data_dir:: reference master's previously recorded data directory
 tablet_id:: must be the string `00000000000000000000000000000000`
@@ -471,7 +474,7 @@ $ kudu local_replica cmeta print_replica_uuids --fs_wal_dir=/var/lib/kudu/master
 +
 [source,bash]
 ----
-$ kudu fs format --fs_wal_dir=<master_data_dir> --uuid=<uuid>
+$ kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] --uuid=<uuid>
 ----
 +
 master_data_dir:: replacement master's previously recorded data directory
@@ -488,7 +491,7 @@ $ kudu fs format --fs_wal_dir=/var/lib/kudu/master --uuid=80a82c4b8a9f4c819bab74
 +
 [source,bash]
 ----
-$ kudu local_replica copy_from_remote --fs_wal_dir=<master_data_dir> <tablet_id> <reference_master>
+$ kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <reference_master>
 ----
 +
 master_data_dir:: replacement master's previously recorded data directory
