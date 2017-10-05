@@ -232,6 +232,7 @@ MessengerBuilder::MessengerBuilder(std::string name)
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
       coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
+      sasl_proto_name_("kudu"),
       enable_inbound_tls_(false) {
 }
 
@@ -263,6 +264,11 @@ MessengerBuilder& MessengerBuilder::set_coarse_timer_granularity(const MonoDelta
 MessengerBuilder &MessengerBuilder::set_metric_entity(
     const scoped_refptr<MetricEntity>& metric_entity) {
   metric_entity_ = metric_entity;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_sasl_proto_name(std::string sasl_proto_name) {
+  sasl_proto_name_ = std::move(sasl_proto_name);
   return *this;
 }
 
@@ -396,7 +402,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   // that everything is set up correctly. This way we'll generate errors on
   // startup rather than later on when we first receive a client connection.
   if (!FLAGS_keytab_file.empty()) {
-    RETURN_NOT_OK_PREPEND(ServerNegotiation::PreflightCheckGSSAPI(),
+    RETURN_NOT_OK_PREPEND(ServerNegotiation::PreflightCheckGSSAPI(sasl_proto_name()),
                           "GSSAPI/Kerberos not properly configured");
   }
 
@@ -491,6 +497,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
     token_verifier_(new security::TokenVerifier()),
     rpcz_store_(new RpczStore()),
     metric_entity_(bld.metric_entity_),
+    sasl_proto_name_(bld.sasl_proto_name_),
     retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));

@@ -107,7 +107,8 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
 ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      boost::optional<security::SignedTokenPB> authn_token,
-                                     RpcEncryption encryption)
+                                     RpcEncryption encryption,
+                                     std::string sasl_proto_name)
     : socket_(std::move(socket)),
       helper_(SaslHelper::CLIENT),
       tls_context_(tls_context),
@@ -117,6 +118,7 @@ ClientNegotiation::ClientNegotiation(unique_ptr<Socket> socket,
       psecret_(nullptr, std::free),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
+      sasl_proto_name_(std::move(sasl_proto_name)),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&ClientNegotiationGetoptCb), this));
@@ -284,7 +286,7 @@ Status ClientNegotiation::InitSaslClient() {
   sasl_conn_t* sasl_conn = nullptr;
   RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
       return sasl_client_new(
-          kSaslProtoName,               // Registered name of the service using SASL. Required.
+          sasl_proto_name_.c_str(),     // Registered name of the service using SASL. Required.
           helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
           nullptr,                      // Local and remote IP address strings. (we don't use
           nullptr,                      // any mechanisms which require this info.)

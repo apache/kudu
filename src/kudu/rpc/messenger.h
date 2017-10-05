@@ -121,6 +121,9 @@ class MessengerBuilder {
   // Set metric entity for use by RPC systems.
   MessengerBuilder &set_metric_entity(const scoped_refptr<MetricEntity>& metric_entity);
 
+  // Set the SASL protocol name that is used for the SASL negotiation.
+  MessengerBuilder &set_sasl_proto_name(std::string sasl_proto_name);
+
   // Configure the messenger to enable TLS encryption on inbound connections.
   MessengerBuilder& enable_inbound_tls();
 
@@ -134,6 +137,7 @@ class MessengerBuilder {
   int max_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   scoped_refptr<MetricEntity> metric_entity_;
+  std::string sasl_proto_name_;
   bool enable_inbound_tls_;
 };
 
@@ -260,6 +264,10 @@ class Messenger {
 
   scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_.get(); }
 
+  const std::string& sasl_proto_name() const {
+    return sasl_proto_name_;
+  }
+
   const scoped_refptr<RpcService> rpc_service(const std::string& service_name) const;
 
  private:
@@ -329,6 +337,9 @@ class Messenger {
   std::unique_ptr<RpczStore> rpcz_store_;
 
   scoped_refptr<MetricEntity> metric_entity_;
+
+  // The SASL protocol name that is used for the SASL negotiation.
+  const std::string sasl_proto_name_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:

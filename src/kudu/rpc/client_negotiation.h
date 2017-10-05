@@ -64,7 +64,8 @@ class ClientNegotiation {
   ClientNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     boost::optional<security::SignedTokenPB> authn_token,
-                    RpcEncryption encryption);
+                    RpcEncryption encryption,
+                    std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
   // Must be called before Negotiate().
@@ -246,6 +247,9 @@ class ClientNegotiation {
 
   // The SASL mechanism used by the connection. Filled in during negotiation.
   SaslMechanism::Type negotiated_mech_;
+
+  // The SASL protocol name that is used for the SASL negotiation.
+  const std::string sasl_proto_name_;
 
   // Negotiation timeout deadline.
   MonoTime deadline_;

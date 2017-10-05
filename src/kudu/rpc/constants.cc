@@ -24,7 +24,6 @@ namespace rpc {
 
 const char* const kMagicNumber = "hrpc";
 const char* const kSaslAppName = "kudu";
-const char* const kSaslProtoName = "kudu";
 
 // NOTE: the TLS flag is dynamically added based on the local encryption
 // configuration.

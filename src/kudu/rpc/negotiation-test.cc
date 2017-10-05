@@ -242,11 +242,13 @@ TEST_P(TestNegotiation, TestNegotiation) {
   ClientNegotiation client_negotiation(std::move(client_socket),
                                        &client_tls_context,
                                        authn_token,
-                                       desc.client.encryption);
+                                       desc.client.encryption,
+                                       "kudu");
   ServerNegotiation server_negotiation(std::move(server_socket),
                                        &server_tls_context,
                                        &token_verifier,
-                                       desc.server.encryption);
+                                       desc.server.encryption,
+                                       "kudu");
 
   // Set client and server SASL mechanisms.
   MiniKdc kdc;
@@ -1025,7 +1027,7 @@ static void RunGSSAPINegotiationServer(unique_ptr<Socket> socket,
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL);
+                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
   server_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(server_negotiation.EnableGSSAPI());
   post_check(server_negotiation.Negotiate(), server_negotiation);
@@ -1038,7 +1040,7 @@ static void RunGSSAPINegotiationClient(unique_ptr<Socket> conn,
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(conn), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL);
+                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
   client_negotiation.set_server_fqdn("127.0.0.1");
   CHECK_OK(client_negotiation.EnableGSSAPI());
   post_check(client_negotiation.Negotiate(), client_negotiation);
@@ -1138,7 +1140,7 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
 // the preflight check passes a 0-length token.
 TEST_F(TestNegotiation, TestPreflight) {
   // Try pre-flight with no keytab.
-  Status s = ServerNegotiation::PreflightCheckGSSAPI();
+  Status s = ServerNegotiation::PreflightCheckGSSAPI("kudu");
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "Key table file.*not found");
@@ -1151,11 +1153,11 @@ TEST_F(TestNegotiation, TestPreflight) {
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
 
-  ASSERT_OK(ServerNegotiation::PreflightCheckGSSAPI());
+  ASSERT_OK(ServerNegotiation::PreflightCheckGSSAPI("kudu"));
 
   // Try with an inaccessible keytab.
   CHECK_ERR(chmod(kt_path.c_str(), 0000));
-  s = ServerNegotiation::PreflightCheckGSSAPI();
+  s = ServerNegotiation::PreflightCheckGSSAPI("kudu");
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
@@ -1165,7 +1167,7 @@ TEST_F(TestNegotiation, TestPreflight) {
   // Try with a keytab that has the wrong credentials.
   ASSERT_OK(kdc.CreateServiceKeytab("wrong-service/127.0.0.1", &kt_path));
   CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1 /*replace*/));
-  s = ServerNegotiation::PreflightCheckGSSAPI();
+  s = ServerNegotiation::PreflightCheckGSSAPI("kudu");
   ASSERT_FALSE(s.ok());
 #ifndef KRB5_VERSION_LE_1_10
   ASSERT_STR_MATCHES(s.ToString(), "No key table entry found matching kudu/.*");
@@ -1180,7 +1182,7 @@ static void RunTimeoutExpectingServer(unique_ptr<Socket> socket) {
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL);
+                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   Status s = server_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected client to time out and close the connection. Got: "
@@ -1191,7 +1193,7 @@ static void RunTimeoutNegotiationClient(unique_ptr<Socket> sock) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(sock), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL);
+                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   client_negotiation.set_deadline(deadline);
@@ -1212,7 +1214,7 @@ static void RunTimeoutNegotiationServer(unique_ptr<Socket> socket) {
   CHECK_OK(tls_context.Init());
   TokenVerifier token_verifier;
   ServerNegotiation server_negotiation(std::move(socket), &tls_context,
-                                       &token_verifier, RpcEncryption::OPTIONAL);
+                                       &token_verifier, RpcEncryption::OPTIONAL, "kudu");
   CHECK_OK(server_negotiation.EnablePlain());
   MonoTime deadline = MonoTime::Now() - MonoDelta::FromMilliseconds(100L);
   server_negotiation.set_deadline(deadline);
@@ -1225,7 +1227,7 @@ static void RunTimeoutExpectingClient(unique_ptr<Socket> socket) {
   TlsContext tls_context;
   CHECK_OK(tls_context.Init());
   ClientNegotiation client_negotiation(std::move(socket), &tls_context,
-                                       boost::none, RpcEncryption::OPTIONAL);
+                                       boost::none, RpcEncryption::OPTIONAL, "kudu");
   CHECK_OK(client_negotiation.EnablePlain("test", "test"));
   Status s = client_negotiation.Negotiate();
   ASSERT_TRUE(s.IsNetworkError()) << "Expected server to time out and close the connection. Got: "

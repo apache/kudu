@@ -64,7 +64,8 @@ class ServerNegotiation {
   ServerNegotiation(std::unique_ptr<Socket> socket,
                     const security::TlsContext* tls_context,
                     const security::TokenVerifier* token_verifier,
-                    RpcEncryption encryption);
+                    RpcEncryption encryption,
+                    std::string sasl_proto_name);
 
   // Enable PLAIN authentication.
   // Despite PLAIN authentication taking a username and password, we disregard
@@ -146,7 +147,7 @@ class ServerNegotiation {
 
   // Perform a "pre-flight check" that everything required to act as a Kerberos
   // server is properly set up.
-  static Status PreflightCheckGSSAPI() WARN_UNUSED_RESULT;
+  static Status PreflightCheckGSSAPI(const std::string& sasl_proto_name) WARN_UNUSED_RESULT;
 
  private:
 
@@ -245,6 +246,9 @@ class ServerNegotiation {
   // The SASL mechanism. Filled in during negotiation if the negotiated
   // authentication type is SASL.
   SaslMechanism::Type negotiated_mech_;
+
+  // The SASL protocol name that is used for the SASL negotiation.
+  const std::string sasl_proto_name_;
 
   // Negotiation timeout deadline.
   MonoTime deadline_;

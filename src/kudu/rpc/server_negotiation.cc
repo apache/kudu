@@ -133,7 +133,8 @@ static int ServerNegotiationPlainAuthCb(sasl_conn_t* conn,
 ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
                                      const security::TlsContext* tls_context,
                                      const security::TokenVerifier* token_verifier,
-                                     RpcEncryption encryption)
+                                     RpcEncryption encryption,
+                                     std::string sasl_proto_name)
     : socket_(std::move(socket)),
       helper_(SaslHelper::SERVER),
       tls_context_(tls_context),
@@ -142,6 +143,7 @@ ServerNegotiation::ServerNegotiation(unique_ptr<Socket> socket,
       token_verifier_(token_verifier),
       negotiated_authn_(AuthenticationType::INVALID),
       negotiated_mech_(SaslMechanism::INVALID),
+      sasl_proto_name_(std::move(sasl_proto_name)),
       deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&ServerNegotiationGetoptCb), this));
@@ -263,7 +265,7 @@ Status ServerNegotiation::Negotiate() {
   return Status::OK();
 }
 
-Status ServerNegotiation::PreflightCheckGSSAPI() {
+Status ServerNegotiation::PreflightCheckGSSAPI(const std::string& sasl_proto_name) {
   // TODO(todd): the error messages that come from this function on el6
   // are relatively useless due to the following krb5 bug:
   // http://krbdev.mit.edu/rt/Ticket/Display.html?id=6973
@@ -275,7 +277,8 @@ Status ServerNegotiation::PreflightCheckGSSAPI() {
   //
   // We aren't going to actually send/receive any messages, but
   // this makes it easier to reuse the initialization code.
-  ServerNegotiation server(nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL);
+  ServerNegotiation server(
+      nullptr, nullptr, nullptr, RpcEncryption::OPTIONAL, sasl_proto_name);
   Status s = server.EnableGSSAPI();
   if (!s.ok()) {
     return Status::RuntimeError(s.message());
@@ -382,7 +385,7 @@ Status ServerNegotiation::InitSaslServer() {
   RETURN_NOT_OK_PREPEND(WrapSaslCall(nullptr /* no conn */, [&]() {
       return sasl_server_new(
           // Registered name of the service using SASL. Required.
-          kSaslProtoName,
+          sasl_proto_name_.c_str(),
           // The fully qualified domain name of this server.
           helper_.server_fqdn(),
           // Permits multiple user realms on server. NULL == use default.

@@ -178,7 +178,8 @@ static Status DoClientNegotiation(Connection* conn,
   ClientNegotiation client_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        authn_token,
-                                       encryption);
+                                       encryption,
+                                       messenger->sasl_proto_name());
 
   client_negotiation.set_server_fqdn(conn->outbound_connection_id().hostname());
 
@@ -256,7 +257,8 @@ static Status DoServerNegotiation(Connection* conn,
   ServerNegotiation server_negotiation(conn->release_socket(),
                                        &messenger->tls_context(),
                                        &messenger->token_verifier(),
-                                       encryption);
+                                       encryption,
+                                       messenger->sasl_proto_name());
 
   if (authentication != RpcAuthentication::DISABLED && !FLAGS_keytab_file.empty()) {
     RETURN_NOT_OK(server_negotiation.EnableGSSAPI());

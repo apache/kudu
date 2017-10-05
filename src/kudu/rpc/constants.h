@@ -32,9 +32,6 @@ extern const char* const kMagicNumber;
 // App name for SASL library init
 extern const char* const kSaslAppName;
 
-// Network protocol name for SASL library init
-extern const char* const kSaslProtoName;
-
 // Current version of the RPC protocol.
 static const uint32_t kCurrentRpcVersion = 9;
 
