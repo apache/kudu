@@ -208,7 +208,6 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     byte min = Byte.MIN_VALUE;
 
-
     // No bounds
     checkPartitionsPrimaryKey(3, table, partitions,
                               null, null);
@@ -216,6 +215,14 @@ public class TestPartitionPruner extends BaseKuduTest {
     // PK < (-1, min, min)
     checkPartitionsPrimaryKey(1, table, partitions,
                               null, new byte[] { -1, min, min });
+
+    // PK < (0, 0, 0)
+    checkPartitionsPrimaryKey(1, table, partitions,
+                              null, new byte[] { 0, 0, 0 });
+
+    // PK < (0, 0, min)
+    checkPartitionsPrimaryKey(1, table, partitions,
+                              null, new byte[] { 0, 0, min });
 
     // PK < (10, 10, 10)
     checkPartitionsPrimaryKey(2, table, partitions,
@@ -256,7 +263,86 @@ public class TestPartitionPruner extends BaseKuduTest {
     // PK >= (10, 10, 11)
     checkPartitionsPrimaryKey(0, table, partitions,
                               new byte[] { 10, 0, 0 }, new byte[] { 0, 0, 0 });
+  }
 
+  @Test
+  public void testPrimaryKeyPrefixRangePruning() throws Exception {
+    // CREATE TABLE t
+    // (a INT8, b INT8, c INT8)
+    // PRIMARY KEY (a, b, c))
+    // PARTITION BY RANGE (a, b)
+    //    (PARTITION VALUES < (0, 0, 0));
+
+    ArrayList<ColumnSchema> columns = new ArrayList<>(3);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("a", Type.INT8).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("b", Type.INT8).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c", Type.INT8).key(true).build());
+    Schema schema = new Schema(columns);
+
+    CreateTableOptions tableBuilder = new CreateTableOptions();
+    tableBuilder.setRangePartitionColumns(ImmutableList.of("a", "b"));
+
+    PartialRow split = schema.newPartialRow();
+    split.addByte("a", (byte) 0);
+    split.addByte("b", (byte) 0);
+    tableBuilder.addSplitRow(split);
+
+    String tableName = "testPrimaryKeyPrefixRangePruning-" + System.currentTimeMillis();
+
+    syncClient.createTable(tableName, schema, tableBuilder);
+    KuduTable table = syncClient.openTable(tableName);
+    List<Partition> partitions = getTablePartitions(table);
+
+    byte min = Byte.MIN_VALUE;
+    byte max = Byte.MAX_VALUE;
+
+    // No bounds
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, null);
+
+    // PK < (-1, min, min)
+    // TODO(KUDU-2178): prune the upper partition.
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { -1, min, min });
+
+    // PK < (0, 0, min)
+    // TODO(KUDU-2178): prune the upper partition.
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { 0, 0, min });
+
+    // PK < (0, 0, 0)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { 0, 0, 0 });
+
+    // PK < (0, 1, min)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { 0, 1, min });
+
+    // PK < (0, 1, 0)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { 0, 1, 0 });
+
+    // PK < (max, max, min)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { max, max, min });
+
+    // PK < (max, max, 0)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              null, new byte[] { max, max, 0 });
+
+    // PK >= (0, 0, min)
+    // TODO(KUDU-2178): prune the lower partition.
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              new byte[] { 0, 0, min }, null);
+
+    // PK >= (0, 0, 0)
+    // TODO(KUDU-2178): prune the lower partition.
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              new byte[] { 0, 0, 0 }, null);
+
+    // PK >= (0, -1, 0)
+    checkPartitionsPrimaryKey(2, table, partitions,
+                              new byte[] { 0, -1, 0 }, null);
   }
 
   @Test
