@@ -57,6 +57,10 @@ namespace key_util {
 // REQUIRES: all primary key columns must be initialized.
 bool IncrementPrimaryKey(ContiguousRow* row, Arena* arena) WARN_UNUSED_RESULT;
 
+// Like 'IncrementPrimaryKey(ContiguousRow*, Arena*)', but only increments up to
+// 'num_columns' columns of the primary key prefix.
+bool IncrementPrimaryKey(ContiguousRow* row, int32_t num_columns, Arena* arena) WARN_UNUSED_RESULT;
+
 // Increments the provided cell in place.
 bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena);
 

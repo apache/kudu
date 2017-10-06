@@ -259,9 +259,12 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
 } // anonymous namespace
 
 bool IncrementPrimaryKey(ContiguousRow* row, Arena* arena) {
-  int32_t num_pk_cols = row->schema()->num_key_columns();
+  return IncrementPrimaryKey(row, row->schema()->num_key_columns(), arena);
+}
+
+bool IncrementPrimaryKey(ContiguousRow* row, int32_t num_columns, Arena* arena) {
   return IncrementKey(boost::make_counting_iterator(0),
-                      boost::make_counting_iterator(num_pk_cols),
+                      boost::make_counting_iterator(num_columns),
                       row,
                       arena);
 }

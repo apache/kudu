@@ -485,6 +485,7 @@ class KUDU_EXPORT KuduPartialRow {
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct tablet::SliceTypeRowOps;
   template<typename KeyTypeWarpper> friend struct tablet::NumTypeRowOps;
+  FRIEND_TEST(TestPartitionPruner, TestIntPartialPrimaryKeyRangePruning);
   FRIEND_TEST(TestPartitionPruner, TestPrimaryKeyRangePruning);
   FRIEND_TEST(TestPartitionPruner, TestPartialPrimaryKeyRangePruning);
 
