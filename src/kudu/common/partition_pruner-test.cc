@@ -40,6 +40,8 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/auto_release_pool.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -67,14 +69,20 @@ void CheckPrunedPartitions(const Schema& schema,
                            size_t remaining_tablets,
                            size_t pruner_ranges) {
 
+  ScanSpec opt_spec(spec);
+  AutoReleasePool p;
+  Arena arena(256, 1024 * 1024);
+  opt_spec.OptimizeScan(schema, &arena, &p, false);
+
   PartitionPruner pruner;
-  pruner.Init(schema, partition_schema, spec);
+  pruner.Init(schema, partition_schema, opt_spec);
 
   SCOPED_TRACE(strings::Substitute("schema: $0", schema.ToString()));
   SCOPED_TRACE(strings::Substitute("partition schema: $0", partition_schema.DebugString(schema)));
   SCOPED_TRACE(strings::Substitute("partition pruner: $0",
                                    pruner.ToString(schema, partition_schema)));
-  SCOPED_TRACE(strings::Substitute("scan spec: $0", spec.ToString(schema)));
+  SCOPED_TRACE(strings::Substitute("optimized scan spec: $0", opt_spec.ToString(schema)));
+  SCOPED_TRACE(strings::Substitute("original  scan spec: $0", spec.ToString(schema)));
 
   int pruned_partitions = count_if(partitions.begin(), partitions.end(),
                                    [&] (const Partition& partition) {
@@ -234,8 +242,8 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
 
   // Applies the specified lower and upper bound primary keys against the
   // schema, and checks that the expected number of partitions are pruned.
-  auto Check = [&] (optional<tuple<int8_t, string>> lower,
-                    optional<tuple<int8_t, string>> upper,
+  auto Check = [&] (optional<tuple<int8_t, string, string>> lower,
+                    optional<tuple<int8_t, string, string>> upper,
                     size_t remaining_tablets ) {
     ScanSpec spec;
     KuduPartialRow lower_bound(&schema);
@@ -246,7 +254,7 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
     if (lower) {
       CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
       CHECK_OK(lower_bound.SetStringCopy("b", get<1>(*lower)));
-      CHECK_OK(lower_bound.SetStringCopy("c", "fuzz"));
+      CHECK_OK(lower_bound.SetStringCopy("c", get<2>(*lower)));
       ConstContiguousRow row(lower_bound.schema(), lower_bound.row_data_);
       enc_lower_bound = EncodedKey::FromContiguousRow(row);
       spec.SetLowerBoundKey(enc_lower_bound.get());
@@ -254,7 +262,7 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
     if (upper) {
       CHECK_OK(upper_bound.SetInt8("a", get<0>(*upper)));
       CHECK_OK(upper_bound.SetStringCopy("b", get<1>(*upper)));
-      CHECK_OK(upper_bound.SetStringCopy("c", "fuzzy"));
+      CHECK_OK(upper_bound.SetStringCopy("c", get<2>(*upper)));
       ConstContiguousRow row(upper_bound.schema(), upper_bound.row_data_);
       enc_upper_bound = EncodedKey::FromContiguousRow(row);
       spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
@@ -267,46 +275,141 @@ TEST_F(PartitionPrunerTest, TestPartialPrimaryKeyRangePruning) {
   // No bounds
   Check(boost::none, boost::none, 3);
 
-  // PK < (-1, min, _)
-  Check(boost::none, make_tuple<int8_t, string>(-1, ""), 1);
+  // PK < (-1, min, "")
+  Check(boost::none, make_tuple<int8_t, string, string>(-1, "", ""), 1);
 
-  // PK < (10, "r", _)
-  Check(boost::none, make_tuple<int8_t, string>(10, "r"), 2);
+  // PK < (10, "r", "")
+  Check(boost::none, make_tuple<int8_t, string, string>(10, "r", ""), 2);
 
-  // PK < (100, min)
-  Check(boost::none, make_tuple<int8_t, string>(100, ""), 3);
+  // PK < (10, "r", "z")
+  Check(boost::none, make_tuple<int8_t, string, string>(10, "r", "z"), 3);
 
-  // PK >= (-10, "m")
-  Check(make_tuple<int8_t, string>(-10, "m"), boost::none, 3);
+  // PK < (100, min, "")
+  Check(boost::none, make_tuple<int8_t, string, string>(100, "", ""), 3);
 
-  // PK >= (0, "")
-  Check(make_tuple<int8_t, string>(0, ""), boost::none, 3);
+  // PK >= (-10, "m", "")
+  Check(make_tuple<int8_t, string, string>(-10, "m", ""), boost::none, 3);
 
-  // PK >= (0, "m")
-  Check(make_tuple<int8_t, string>(0, "m"), boost::none, 2);
+  // PK >= (0, "", "")
+  Check(make_tuple<int8_t, string, string>(0, "", ""), boost::none, 3);
 
-  // PK >= (100, "")
-  Check(make_tuple<int8_t, string>(100, ""), boost::none, 1);
+  // PK >= (0, "m", "")
+  Check(make_tuple<int8_t, string, string>(0, "m", ""), boost::none, 2);
 
-  // PK >= (-10, 0)
-  // PK  < (100, 0)
-  Check(make_tuple<int8_t, string>(-10, ""),
-        make_tuple<int8_t, string>(100, ""), 3);
+  // PK >= (100, "", "")
+  Check(make_tuple<int8_t, string, string>(100, "", ""), boost::none, 1);
 
-  // PK >= (0, "m")
-  // PK  < (10, "r")
-  Check(make_tuple<int8_t, string>(0, "m"),
-        make_tuple<int8_t, string>(10, "r"), 1);
+  // PK >= (-10, 0, "")
+  // PK  < (100, 0, "")
+  Check(make_tuple<int8_t, string, string>(-10, "", ""),
+        make_tuple<int8_t, string, string>(100, "", ""), 3);
 
-  // PK >= (0, "")
-  // PK  < (10, "m")
-  Check(make_tuple<int8_t, string>(0, ""),
-        make_tuple<int8_t, string>(10, "m"), 2);
+  // PK >= (0, "m", "")
+  // PK  < (10, "r", "")
+  Check(make_tuple<int8_t, string, string>(0, "m", ""),
+        make_tuple<int8_t, string, string>(10, "r", ""), 1);
 
-  // PK >= (10, "m")
-  // PK  < (10, "m")
-  Check(make_tuple<int8_t, string>(10, "m"),
-        make_tuple<int8_t, string>(10, "m"), 1);
+  // PK >= (0, "m", "")
+  // PK  < (10, "r", "z")
+  Check(make_tuple<int8_t, string, string>(0, "m", ""),
+        make_tuple<int8_t, string, string>(10, "r", "z"), 2);
+
+  // PK >= (0, "", "")
+  // PK  < (10, "m", "z")
+  Check(make_tuple<int8_t, string, string>(0, "", ""),
+        make_tuple<int8_t, string, string>(10, "m", "z"), 2);
+
+  // PK >= (10, "m", "")
+  // PK  < (10, "m", "z")
+  Check(make_tuple<int8_t, string, string>(10, "m", ""),
+        make_tuple<int8_t, string, string>(10, "m", "z"), 1);
+}
+
+TEST_F(PartitionPrunerTest, TestIntPartialPrimaryKeyRangePruning) {
+  // CREATE TABLE t
+  // (a INT8, b INT8, c INT8, PRIMARY KEY (a, b, c))
+  // DISTRIBUTE BY RANGE(a, b)
+  // SPLIT ROWS [(0, 0)];
+
+  // Setup the Schema
+  Schema schema({ ColumnSchema("a", INT8),
+                  ColumnSchema("b", INT8),
+                  ColumnSchema("c", INT8) },
+                { ColumnId(0), ColumnId(1), ColumnId(2) },
+                3);
+
+  PartitionSchema partition_schema;
+  auto pb = PartitionSchemaPB();
+  auto range_schema = pb.mutable_range_schema();
+  range_schema->add_columns()->set_name("a");
+  range_schema->add_columns()->set_name("b");
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  KuduPartialRow split(&schema);
+  ASSERT_OK(split.SetInt8("a", 0));
+  ASSERT_OK(split.SetInt8("b", 0));
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({ split }, {}, schema, &partitions));
+
+  // Applies the specified lower and upper bound primary keys against the
+  // schema, and checks that the expected number of partitions are pruned.
+  auto Check = [&] (optional<tuple<int8_t, int8_t, int8_t>> lower,
+                    optional<tuple<int8_t, int8_t, int8_t>> upper,
+                    size_t remaining_tablets ) {
+    ScanSpec spec;
+    KuduPartialRow lower_bound(&schema);
+    KuduPartialRow upper_bound(&schema);
+    gscoped_ptr<EncodedKey> enc_lower_bound;
+    gscoped_ptr<EncodedKey> enc_upper_bound;
+
+    if (lower) {
+      CHECK_OK(lower_bound.SetInt8("a", get<0>(*lower)));
+      CHECK_OK(lower_bound.SetInt8("b", get<1>(*lower)));
+      CHECK_OK(lower_bound.SetInt8("c", get<2>(*lower)));
+      ConstContiguousRow row(lower_bound.schema(), lower_bound.row_data_);
+      enc_lower_bound = EncodedKey::FromContiguousRow(row);
+      spec.SetLowerBoundKey(enc_lower_bound.get());
+    }
+    if (upper) {
+      CHECK_OK(upper_bound.SetInt8("a", get<0>(*upper)));
+      CHECK_OK(upper_bound.SetInt8("b", get<1>(*upper)));
+      CHECK_OK(upper_bound.SetInt8("c", get<2>(*upper)));
+      ConstContiguousRow row(upper_bound.schema(), upper_bound.row_data_);
+      enc_upper_bound = EncodedKey::FromContiguousRow(row);
+      spec.SetExclusiveUpperBoundKey(enc_upper_bound.get());
+    }
+    size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
+  };
+
+  // No bounds
+  Check(boost::none, boost::none, 2);
+
+  // PK < (0, 0, min)
+  Check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, INT8_MIN, INT8_MIN), 1);
+
+  // PK < (0, 0, 0);
+  Check(boost::none, make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), 2);
+
+  // PK < (0, max, 0);
+  Check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2);
+
+  // PK < (max, max, min);
+  Check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, INT8_MIN), 2);
+
+  // PK < (max, max, 0);
+  Check(boost::none, make_tuple<int8_t, int8_t, int8_t>(INT8_MAX, INT8_MAX, 0), 2);
+
+  // PK >= (0, 0, 0);
+  Check(make_tuple<int8_t, int8_t, int8_t>(0, 0, 0), boost::none, 1);
+
+  // PK >= (0, 0, -1);
+  Check(make_tuple<int8_t, int8_t, int8_t>(0, 0, -1), boost::none, 1);
+
+  // PK >= (0, 0, min);
+  Check(make_tuple<int8_t, int8_t, int8_t>(0, 0, INT8_MIN), boost::none, 1);
 }
 
 TEST_F(PartitionPrunerTest, TestRangePruning) {
@@ -599,6 +702,7 @@ TEST_F(PartitionPrunerTest, TestInListHashPruning) {
   hash_component_3->add_columns()->set_name("c");
   hash_component_3->set_num_buckets(3);
   hash_component_3->set_seed(0);
+  pb.mutable_range_schema()->clear_columns();
 
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
@@ -686,6 +790,7 @@ TEST_F(PartitionPrunerTest, TestMultiColumnInListHashPruning) {
   hash_component_2->add_columns()->set_name("c");
   hash_component_2->set_num_buckets(3);
   hash_component_2->set_seed(0);
+  pb.mutable_range_schema()->clear_columns();
 
   ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
 
@@ -885,5 +990,61 @@ TEST_F(PartitionPrunerTest, TestPruning) {
   // partition key >= (hash=1)
   Check({ ColumnPredicate::Equality(schema.column(2), &ten) },
         string("\0\0\0\1", 4), "", 1, 1);
+}
+
+TEST_F(PartitionPrunerTest, TestKudu2173) {
+  // CREATE TABLE t
+  // (a INT8, b INT8, PRIMARY KEY (a, b))
+  // DISTRIBUTE BY RANGE(a)
+  // SPLIT ROWS [(10)]
+
+  // Setup the Schema
+  Schema schema({ ColumnSchema("a", INT8),
+          ColumnSchema("b", INT8)},
+    { ColumnId(0), ColumnId(1) },
+    2);
+
+  PartitionSchema partition_schema;
+  auto pb = PartitionSchemaPB();
+  auto range_schema = pb.mutable_range_schema();
+  range_schema->add_columns()->set_name("a");
+  ASSERT_OK(PartitionSchema::FromPB(pb, schema, &partition_schema));
+
+  KuduPartialRow split1(&schema);
+  ASSERT_OK(split1.SetInt8("a", 10));
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions({ split1 }, {}, schema, &partitions));
+
+  // Applies the specified predicates to a scan and checks that the expected
+  // number of partitions are pruned.
+  auto Check = [&] (const vector<ColumnPredicate>& predicates, size_t remaining_tablets) {
+    ScanSpec spec;
+
+    for (const auto& pred : predicates) {
+      spec.AddPredicate(pred);
+    }
+    size_t pruner_ranges = remaining_tablets == 0 ? 0 : 1;
+    CheckPrunedPartitions(schema, partition_schema, partitions, spec,
+                          remaining_tablets, pruner_ranges);
+  };
+
+  int8_t eleven = 11;
+  int8_t max = INT8_MAX;
+
+  // a < 11
+  Check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven) }, 2);
+
+  // a < 11 AND b < 11
+  Check({ ColumnPredicate::Range(schema.column(0), nullptr, &eleven),
+          ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
+        2);
+
+  // a < max
+  Check({ ColumnPredicate::Range(schema.column(0), nullptr, &max) }, 2);
+
+  // a < max AND b < 11
+  Check({ ColumnPredicate::Range(schema.column(0), nullptr, &max),
+          ColumnPredicate::Range(schema.column(1), nullptr, &eleven) },
+        2);
 }
 } // namespace kudu
