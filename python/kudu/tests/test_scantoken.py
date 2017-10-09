@@ -53,8 +53,10 @@ class TestScanToken(TestScanBase):
         # Begin process pool
         pool = Pool(len(input))
         results = pool.map(_get_scan_token_results, input)
+        pool.close()
+        pool.join()
 
-        #Validate results
+        # Validate results
         actual_tuples = []
         for result in results:
             actual_tuples += result
