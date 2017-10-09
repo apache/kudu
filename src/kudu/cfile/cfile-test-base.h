@@ -467,7 +467,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
   ASSERT_OK(iter->SeekToOrdinal(0));
 
-  Arena arena(8192, 8*1024*1024);
+  Arena arena(8192, 1024 * 1024);
   int count = 0;
   switch (reader->type_info()->physical_type()) {
     case UINT8:

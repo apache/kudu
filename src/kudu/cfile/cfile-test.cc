@@ -200,7 +200,7 @@ class TestCFile : public CFileTestBase {
     gscoped_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
-    Arena arena(8192, 8*1024*1024);
+    Arena arena(8192, 1024 * 1024);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
 
     SelectionVector sel(10);

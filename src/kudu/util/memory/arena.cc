@@ -39,15 +39,16 @@ ArenaBase<THREADSAFE>::ArenaBase(
     : buffer_allocator_(buffer_allocator),
       max_buffer_size_(max_buffer_size),
       arena_footprint_(0) {
+  DCHECK_LE(max_buffer_size_, 1024 * 1024)
+      << "Should not use buffer sizes larger than 1MB due to tcmalloc inefficiencies";
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
 template <bool THREADSAFE>
 ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_size)
-    : buffer_allocator_(HeapBufferAllocator::Get()),
-      max_buffer_size_(max_buffer_size),
-      arena_footprint_(0) {
-  AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
+    : ArenaBase<THREADSAFE>(HeapBufferAllocator::Get(),
+                            initial_buffer_size,
+                            max_buffer_size) {
 }
 
 template <bool THREADSAFE>

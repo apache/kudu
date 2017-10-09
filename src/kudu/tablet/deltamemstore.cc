@@ -54,7 +54,7 @@ using strings::Substitute;
 ////////////////////////////////////////////////////////////
 
 static const int kInitialArenaSize = 16;
-static const int kMaxArenaBufferSize = 5*1024*1024;
+static const int kMaxArenaBufferSize = 1024*1024;
 
 Status DeltaMemStore::Create(int64_t id,
                              int64_t rs_id,

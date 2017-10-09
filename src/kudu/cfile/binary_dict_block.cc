@@ -52,7 +52,7 @@ namespace cfile {
 BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
     : options_(options),
       dict_block_(options_),
-      dictionary_strings_arena_(1024, 32*1024*1024),
+      dictionary_strings_arena_(1024, 1024*1024),
       mode_(kCodeWordMode) {
   data_builder_.reset(new BShufBlockBuilder<UINT32>(options_));
   // We use this invalid StringPiece for the "empty key". It's safe to build such

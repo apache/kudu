@@ -152,10 +152,11 @@ static void MemUsageHandler(const Webserver::WebRequest& req,
 #ifndef TCMALLOC_ENABLED
   (*output) << "Memory tracking is not available unless tcmalloc is enabled.";
 #else
-  char buf[2048];
-  MallocExtension::instance()->GetStats(buf, 2048);
+  faststring buf;
+  buf.resize(32 * 1024);
+  MallocExtension::instance()->GetStats(reinterpret_cast<char*>(buf.data()), buf.size());
   // Replace new lines with <br> for html
-  string tmp(buf);
+  string tmp(reinterpret_cast<char*>(buf.data()));
   boost::replace_all(tmp, "\n", tags.line_break);
   (*output) << tmp << tags.end_pre_tag;
 #endif

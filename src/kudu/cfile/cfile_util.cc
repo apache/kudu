@@ -46,7 +46,7 @@ Status DumpIterator(const CFileReader& reader,
                     int num_rows,
                     int indent) {
 
-  Arena arena(8192, 8*1024*1024);
+  Arena arena(8192, 1024 * 1024);
   uint8_t buf[kBufSize];
   const TypeInfo *type = reader.type_info();
   size_t max_rows = kBufSize/type->size();

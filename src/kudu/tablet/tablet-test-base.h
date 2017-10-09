@@ -310,7 +310,7 @@ class TabletTestBase : public KuduTabletTest {
     KuduTabletTest(TESTSETUP::CreateSchema(), clock_type),
     setup_(),
     max_rows_(setup_.GetMaxRows()),
-    arena_(1024, 4*1024*1024)
+    arena_(1024, 1024 * 1024)
   {}
 
   // Inserts "count" rows.
