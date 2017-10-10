@@ -30,9 +30,18 @@ class Status;
 
 namespace security {
 
+// The default kerberos credential cache name.
+// Have the daemons use an in-memory ticket cache, so they don't accidentally
+// pick up credentials from test cases or any other daemon.
+static const std::string kKrb5CCName = "MEMORY:kudu";
+
 // Initializes Kerberos for a server. In particular, this processes
 // the '--keytab_file' command line flag.
-Status InitKerberosForServer();
+// 'krb5ccname' is passed into the KRB5CCNAME env var.
+// 'disable_krb5_replay_cache' if set to true, disables the kerberos replay cache by setting
+// the KRB5RCACHETYPE env var to "none".
+Status InitKerberosForServer(const std::string& krb5ccname = kKrb5CCName,
+                             bool disable_krb5_replay_cache = true);
 
 // Returns the process lock 'kerberos_reinit_lock'
 // This lock is taken in write mode while the ticket is being reacquired, and

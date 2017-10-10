@@ -459,21 +459,19 @@ boost::optional<string> GetLoggedInUsernameFromKeytab() {
   return g_kinit_ctx->username_str();
 }
 
-Status InitKerberosForServer() {
+Status InitKerberosForServer(const std::string& krb5ccname, bool disable_krb5_replay_cache) {
   if (FLAGS_keytab_file.empty()) return Status::OK();
 
-  // Have the daemons use an in-memory ticket cache, so they don't accidentally
-  // pick up credentials from test cases or any other daemon.
-  // TODO(todd): extract these krb5 env vars into some constants since they're
-  // typo-prone.
-  setenv("KRB5CCNAME", "MEMORY:kudu", 1);
+  setenv("KRB5CCNAME", krb5ccname.c_str(), 1);
   setenv("KRB5_KTNAME", FLAGS_keytab_file.c_str(), 1);
 
-  // KUDU-1897: disable the Kerberos replay cache. The KRPC protocol includes a
-  // per-connection server-generated nonce to protect against replay attacks
-  // when authenticating via Kerberos. The replay cache has many performance and
-  // implementation issues.
-  setenv("KRB5RCACHETYPE", "none", 1);
+  if (disable_krb5_replay_cache) {
+    // KUDU-1897: disable the Kerberos replay cache. The KRPC protocol includes a
+    // per-connection server-generated nonce to protect against replay attacks
+    // when authenticating via Kerberos. The replay cache has many performance and
+    // implementation issues.
+    setenv("KRB5RCACHETYPE", "none", 1);
+  }
 
   g_kinit_ctx = new KinitContext();
   string principal;
