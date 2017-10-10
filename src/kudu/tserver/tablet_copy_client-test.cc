@@ -74,6 +74,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadataManager;
+using consensus::ConsensusStatePB;
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
 using std::tuple;
@@ -105,7 +106,10 @@ class TabletCopyClientTest : public TabletCopyTest {
                                        cmeta_manager,
                                        messenger_,
                                        nullptr /* no metrics */));
-    ASSERT_OK(GetRaftConfigLeader(tablet_replica_->consensus()->ConsensusState(), &leader_));
+    RaftPeerPB* cstate_leader;
+    ConsensusStatePB cstate = tablet_replica_->consensus()->ConsensusState();
+    ASSERT_OK(GetRaftConfigLeader(&cstate, &cstate_leader));
+    leader_ = *cstate_leader;
 
     HostPort host_port;
     ASSERT_OK(HostPortFromPB(leader_.last_known_addr(), &host_port));

@@ -64,23 +64,23 @@ bool IsVoterRole(RaftPeerPB::Role role) {
   return role == RaftPeerPB::LEADER || role == RaftPeerPB::FOLLOWER;
 }
 
-Status GetRaftConfigMember(const RaftConfigPB& config,
+Status GetRaftConfigMember(RaftConfigPB* config,
                            const std::string& uuid,
-                           RaftPeerPB* peer_pb) {
-  for (const RaftPeerPB& peer : config.peers()) {
+                           RaftPeerPB** peer_pb) {
+  for (RaftPeerPB& peer : *config->mutable_peers()) {
     if (peer.permanent_uuid() == uuid) {
-      *peer_pb = peer;
+      *peer_pb = &peer;
       return Status::OK();
     }
   }
   return Status::NotFound(Substitute("Peer with uuid $0 not found in consensus config", uuid));
 }
 
-Status GetRaftConfigLeader(const ConsensusStatePB& cstate, RaftPeerPB* peer_pb) {
-  if (cstate.leader_uuid().empty()) {
+Status GetRaftConfigLeader(ConsensusStatePB* cstate, RaftPeerPB** peer_pb) {
+  if (cstate->leader_uuid().empty()) {
     return Status::NotFound("Consensus config has no leader");
   }
-  return GetRaftConfigMember(cstate.committed_config(), cstate.leader_uuid(), peer_pb);
+  return GetRaftConfigMember(cstate->mutable_committed_config(), cstate->leader_uuid(), peer_pb);
 }
 
 bool RemoveFromRaftConfig(RaftConfigPB* config, const string& uuid) {

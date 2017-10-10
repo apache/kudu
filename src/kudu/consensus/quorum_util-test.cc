@@ -47,20 +47,20 @@ TEST(QuorumUtilTest, TestMemberExtraction) {
   AddPeer(&config, "C", RaftPeerPB::VOTER);
 
   // Basic test for GetRaftConfigMember().
-  RaftPeerPB peer_pb;
-  Status s = GetRaftConfigMember(config, "invalid", &peer_pb);
+  RaftPeerPB* peer_pb;
+  Status s = GetRaftConfigMember(&config, "invalid", &peer_pb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  ASSERT_OK(GetRaftConfigMember(config, "A", &peer_pb));
-  ASSERT_EQ("A", peer_pb.permanent_uuid());
+  ASSERT_OK(GetRaftConfigMember(&config, "A", &peer_pb));
+  ASSERT_EQ("A", peer_pb->permanent_uuid());
 
   // Basic test for GetRaftConfigLeader().
   ConsensusStatePB cstate;
   *cstate.mutable_committed_config() = config;
-  s = GetRaftConfigLeader(cstate, &peer_pb);
+  s = GetRaftConfigLeader(&cstate, &peer_pb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   cstate.set_leader_uuid("B");
-  ASSERT_OK(GetRaftConfigLeader(cstate, &peer_pb));
-  ASSERT_EQ("B", peer_pb.permanent_uuid());
+  ASSERT_OK(GetRaftConfigLeader(&cstate, &peer_pb));
+  ASSERT_EQ("B", peer_pb->permanent_uuid());
 }
 
 TEST(QuorumUtilTest, TestDiffConsensusStates) {

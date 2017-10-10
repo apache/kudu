@@ -42,14 +42,14 @@ bool IsVoterRole(RaftPeerPB::Role role);
 // Get the specified member of the config.
 // Returns Status::NotFound if a member with the specified uuid could not be
 // found in the config.
-Status GetRaftConfigMember(const RaftConfigPB& config,
+Status GetRaftConfigMember(RaftConfigPB* config,
                            const std::string& uuid,
-                           RaftPeerPB* peer_pb);
+                           RaftPeerPB** peer_pb);
 
 // Get the leader of the consensus configuration.
 // Returns Status::NotFound() if the leader RaftPeerPB could not be found in
 // the config, or if there is no leader defined.
-Status GetRaftConfigLeader(const ConsensusStatePB& cstate, RaftPeerPB* peer_pb);
+Status GetRaftConfigLeader(ConsensusStatePB* cstate, RaftPeerPB** peer_pb);
 
 // Modifies 'configuration' remove the peer with the specified 'uuid'.
 // Returns false if the server with 'uuid' is not found in the configuration.

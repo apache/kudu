@@ -186,8 +186,8 @@ class RaftConsensusQuorumTest : public KuduTest {
     for (int i = 0; i < config_.peers_size(); i++) {
       RETURN_NOT_OK(cmeta_managers_[i]->Create(kTestTablet, config_, kMinimumTerm));
 
-      RaftPeerPB local_peer_pb;
-      RETURN_NOT_OK(GetRaftConfigMember(config_, fs_managers_[i]->uuid(), &local_peer_pb));
+      RaftPeerPB* local_peer_pb;
+      RETURN_NOT_OK(GetRaftConfigMember(&config_, fs_managers_[i]->uuid(), &local_peer_pb));
 
       shared_ptr<RaftConsensus> peer;
       RETURN_NOT_OK(RaftConsensus::Create(options_,
