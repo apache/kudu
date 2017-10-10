@@ -49,7 +49,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -830,13 +829,8 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   ASSERT_FALSE(needs_tablet_copy);
 
   // Peer responds with tablet not found.
-  response.mutable_error()->set_code(tserver::TabletServerErrorPB::TABLET_NOT_FOUND);
-  StatusToPB(Status::NotFound("No such tablet"), response.mutable_error()->mutable_status());
-  bool more_pending = false;
-  queue_->ResponseFromPeer(kPeerUuid, response, &more_pending);
-
-  // If the peer needs Tablet Copy, more_pending should be set to true.
-  ASSERT_TRUE(more_pending);
+  queue_->UpdatePeerStatus(kPeerUuid, PeerStatus::TABLET_NOT_FOUND,
+                           Status::NotFound("No such tablet"));
 
   // On the next request, we should find out that the queue wants us to initiate Tablet Copy.
   request.Clear();

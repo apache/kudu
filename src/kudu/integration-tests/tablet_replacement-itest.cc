@@ -65,7 +65,14 @@ using strings::Substitute;
 
 namespace kudu {
 
+enum InstabilityType {
+  NODE_DOWN,
+  NODE_STOPPED
+};
+
 class TabletReplacementITest : public ExternalMiniClusterITestBase {
+ protected:
+  void TestDontEvictIfRemainingConfigIsUnstable(InstabilityType type);
 };
 
 // Test that the Master will tombstone a newly-evicted replica.
@@ -315,6 +322,72 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
   // With a RemoveServer and AddServer, the opid_index of the committed config will be 3.
   ASSERT_OK(itest::WaitUntilCommittedConfigOpIdIndexIs(3, leader_ts, tablet_id, timeout));
   ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
+}
+
+void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(InstabilityType type) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  vector<string> ts_flags = { "--enable_leader_failure_detection=false",
+                              "--follower_unavailable_considered_failed_sec=5" };
+  vector<string> master_flags = { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
+  NO_FATALS(StartCluster(ts_flags, master_flags));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup(); // Easy way to create a new tablet.
+
+  const int kLeaderIndex = 0;
+  TServerDetails* leader_ts = ts_map_[cluster_->tablet_server(kLeaderIndex)->uuid()];
+  const int kFollower1Index = 1;
+  const int kFollower2Index = 2;
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(leader_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader (TS 0)
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
+
+  // Shut down both followers and wait for enough time that the leader thinks they are
+  // unresponsive. It should not trigger a config change to evict either one.
+  switch (type) {
+    case NODE_DOWN:
+      cluster_->tablet_server(kFollower1Index)->Shutdown();
+      cluster_->tablet_server(kFollower2Index)->Shutdown();
+      break;
+    case NODE_STOPPED:
+      cluster_->tablet_server(kFollower1Index)->Pause();
+      cluster_->tablet_server(kFollower2Index)->Pause();
+      break;
+  }
+
+  SleepFor(MonoDelta::FromSeconds(10));
+  consensus::ConsensusStatePB cstate;
+  ASSERT_OK(GetConsensusState(leader_ts, tablet_id, MonoDelta::FromSeconds(10), &cstate));
+  SCOPED_TRACE(cstate.DebugString());
+  ASSERT_FALSE(cstate.has_pending_config())
+      << "Leader should not have issued any config change";
+}
+
+// Regression test for KUDU-2048. If a majority of followers are unresponsive, the
+// leader should not evict any of them.
+TEST_F(TabletReplacementITest, TestDontEvictIfRemainingConfigIsUnstable_NodesDown) {
+  TestDontEvictIfRemainingConfigIsUnstable(NODE_DOWN);
+}
+
+TEST_F(TabletReplacementITest, TestDontEvictIfRemainingConfigIsUnstable_NodesStopped) {
+  TestDontEvictIfRemainingConfigIsUnstable(NODE_STOPPED);
 }
 
 // Regression test for KUDU-1233. This test creates a situation in which tablet

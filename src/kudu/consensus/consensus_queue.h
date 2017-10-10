@@ -62,6 +62,44 @@ class StartTabletCopyRequestPB;
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
 
+// State enum for the last known status of a peer tracked by the
+// ConsensusQueue.
+enum class PeerStatus {
+  // The peer has not yet had a round of communication.
+  NEW,
+
+  // The last exchange with the peer was successful. We transmitted
+  // an update to the peer and it accepted it.
+  OK,
+
+  // Some tserver-level or consensus-level error occurred that didn't
+  // fall into any of the below buckets.
+  REMOTE_ERROR,
+
+  // Some RPC-layer level error occurred. For example, a network error or timeout
+  // occurred while attempting to send the RPC.
+  RPC_LAYER_ERROR,
+
+  // The remote tablet server indicated that the tablet was in a FAILED state.
+  TABLET_FAILED,
+
+  // The remote tablet server indicated that the tablet was in a NOT_FOUND state.
+  TABLET_NOT_FOUND,
+
+  // The remote tablet server indicated that the term of this leader was older
+  // than its latest seen term.
+  INVALID_TERM,
+
+  // The remote tablet server was unable to prepare any operations in the most recent
+  // batch.
+  CANNOT_PREPARE,
+
+  // The remote tablet server's log was divergent from the leader's log.
+  LMP_MISMATCH,
+};
+
+const char* PeerStatusToString(PeerStatus p);
+
 // Tracks the state of the peers and which transactions they have replicated.
 // Owns the LogCache which actually holds the replicate messages which are
 // en route to the various peers.
@@ -77,13 +115,11 @@ class PeerMessageQueue {
   struct TrackedPeer {
     explicit TrackedPeer(std::string uuid)
         : uuid(std::move(uuid)),
-          is_new(true),
           next_index(kInvalidOpIdIndex),
           last_received(MinimumOpId()),
           last_known_committed_index(MinimumOpId().index()),
-          is_last_exchange_successful(false),
-          last_successful_communication_time(MonoTime::Now()),
-          needs_tablet_copy(false),
+          last_exchange_status(PeerStatus::NEW),
+          last_communication_time(MonoTime::Now()),
           last_seen_term_(0) {}
 
     TrackedPeer() = default;
@@ -103,9 +139,6 @@ class PeerMessageQueue {
     // UUID of the peer.
     std::string uuid;
 
-    // Whether this is a newly tracked peer.
-    bool is_new;
-
     // Next index to send to the peer.
     // This corresponds to "nextIndex" as specified in Raft.
     int64_t next_index;
@@ -117,16 +150,20 @@ class PeerMessageQueue {
     // The last committed index this peer knows about.
     int64_t last_known_committed_index;
 
-    // Whether the last exchange with this peer was successful.
-    bool is_last_exchange_successful;
+    // The status after our last attempt to communicate with the peer.
+    // See the comments within the PeerStatus enum above for details.
+    PeerStatus last_exchange_status;
 
     // The time of the last communication with the peer.
+    //
+    // NOTE: this does not indicate that the peer successfully made progress at the
+    // given time -- this only indicates that we got some indication that the tablet
+    // server process was alive. It could be that the tablet was not found, etc.
+    // Consult last_exchange_status for details.
+    //
     // Defaults to the time of construction, so does not necessarily mean that
     // successful communication ever took place.
-    MonoTime last_successful_communication_time;
-
-    // Whether the follower was detected to need tablet copy.
-    bool needs_tablet_copy;
+    MonoTime last_communication_time;
 
     // Throttler for how often we will log status messages pertaining to this
     // peer (eg when it is lagging, etc).
@@ -232,16 +269,14 @@ class PeerMessageQueue {
   Status GetTabletCopyRequestForPeer(const std::string& uuid,
                                      StartTabletCopyRequestPB* req);
 
-  // Update the last successful communication timestamp for the given peer to
-  // the current time.
-  //
-  // This should be called when the peer responds with a message indicating that
-  // it is alive and making progress.
-  void NotifyPeerIsResponsive(const std::string& peer_uuid);
+  // Inform the queue of a new status known for one of its peers.
+  // 'ps' indicates an interpretation of the status, while 'status'
+  // may contain a more specific error message in the case of one of
+  // the error statuses.
+  void UpdatePeerStatus(const std::string& peer_uuid,
+                        PeerStatus ps,
+                        const Status& status);
 
-  // Notify consensus that the given peer has failed.
-  void NotifyPeerHasFailed(const std::string& peer_uuid,
-                           const std::string& reason);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
@@ -381,6 +416,10 @@ class PeerMessageQueue {
   // If the log cache returns some error other than NotFound, crashes with a
   // fatal error.
   bool IsOpInLog(const OpId& desired_op) const;
+
+  // Return true if it would be safe to evict the peer 'evict_uuid' at this
+  // point in time.
+  bool SafeToEvict(const std::string& evict_uuid);
 
   void NotifyObserversOfCommitIndexChange(int64_t new_commit_index);
   void NotifyObserversOfCommitIndexChangeTask(int64_t new_commit_index);

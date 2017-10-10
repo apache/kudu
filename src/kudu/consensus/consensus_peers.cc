@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/consensus_peers.h"
 
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -31,13 +33,19 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus_queue.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/periodic.h"
+#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
@@ -46,6 +54,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 30000,
@@ -281,39 +290,41 @@ void Peer::ProcessResponse() {
 
   MAYBE_FAULT(FLAGS_fault_crash_after_leader_request_fraction);
 
+  // Process RpcController errors.
   if (!controller_.status().ok()) {
-    if (controller_.status().IsRemoteError()) {
-      // Most controller errors are caused by network issues or corner cases
-      // like shutdown and failure to serialize a protobuf. Therefore, we
-      // generally consider these errors to indicate an unreachable peer.
-      // However, a RemoteError wraps some other error propagated from the
-      // remote peer, so we know the remote is alive. Therefore, we will let
-      // the queue know that the remote is responsive.
-      queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
-    }
+    auto ps = controller_.status().IsRemoteError() ?
+        PeerStatus::REMOTE_ERROR : PeerStatus::RPC_LAYER_ERROR;
+    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), ps, controller_.status());
     ProcessResponseError(controller_.status());
     return;
   }
 
-  // Notify consensus that the peer has failed.
-  if (response_.has_error() && response_.error().code() == TabletServerErrorPB::TABLET_FAILED) {
+  // Process CANNOT_PREPARE.
+  // TODO(todd): there is no integration test coverage of this code path. Likely a bug in
+  // this path is responsible for KUDU-1779.
+  if (response_.status().has_error() &&
+      response_.status().error().code() == consensus::ConsensusErrorPB::CANNOT_PREPARE) {
     Status response_status = StatusFromPB(response_.error().status());
-    queue_->NotifyPeerHasFailed(peer_pb_.permanent_uuid(),
-                                response_status.ToString());
+    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), PeerStatus::CANNOT_PREPARE,
+                             response_status);
     ProcessResponseError(response_status);
     return;
   }
 
-  // Pass through errors we can respond to, like not found, since in that case
-  // we will need to start a Tablet Copy. TODO: Handle DELETED response once implemented.
-  if ((response_.has_error() &&
-      response_.error().code() != TabletServerErrorPB::TABLET_NOT_FOUND) ||
-      (response_.status().has_error() &&
-          response_.status().error().code() == consensus::ConsensusErrorPB::CANNOT_PREPARE)) {
-    // Again, let the queue know that the remote is still responsive, since we
-    // will not be sending this error response through to the queue.
-    queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
-    ProcessResponseError(StatusFromPB(response_.error().status()));
+  // Process tserver-level errors.
+  if (response_.has_error()) {
+    Status response_status = StatusFromPB(response_.error().status());
+    PeerStatus ps;
+    if (response_.error().code() == TabletServerErrorPB::TABLET_FAILED) {
+      ps = PeerStatus::TABLET_FAILED;
+    } else if (response_.error().code() == TabletServerErrorPB::TABLET_NOT_FOUND) {
+      ps = PeerStatus::TABLET_NOT_FOUND;
+    } else {
+      // Unknown kind of error.
+      ps = PeerStatus::REMOTE_ERROR;
+    }
+    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), ps, response_status);
+    ProcessResponseError(response_status);
     return;
   }
 
@@ -388,7 +399,7 @@ void Peer::ProcessTabletCopyResponse() {
 
   if (success) {
     lock.unlock();
-    queue_->NotifyPeerIsResponsive(peer_pb_.permanent_uuid());
+    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), PeerStatus::OK, Status::OK());
   } else if (!tc_response_.has_error() ||
               tc_response_.error().code() != TabletServerErrorPB::TabletServerErrorPB::THROTTLED) {
     // THROTTLED is a common response after a tserver with many replicas fails;
