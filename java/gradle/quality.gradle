@@ -21,6 +21,7 @@ apply plugin: "checkstyle" // Ensures Java code follows the defined coding style
 apply plugin: "findbugs"   // Performs static code analysis to look for bugs in Java code.
 apply plugin: "pmd"        // Performs static code analysis to look for common code smells in Java code.
 apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
+apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
 
 checkstyle {
   configFile = file("$rootDir/kudu_style.xml")
@@ -65,6 +66,20 @@ pmd {
 // This simplifies running pmd on all the code by only needing one task instead of multiple in your command.
 task pmd(dependsOn: [pmdMain, pmdTest, pmdIntegrationTest], group: "Verification") {
   description = "Run PMD analysis."
+}
+
+// Define a Java API signature for use by animal-sniffer. It'll enforce that all
+// Java API usage adheres to this signature.
+//
+// When changing this, also change javaCompatibility defined in gradle.properties.
+dependencies {
+  signature 'org.codehaus.mojo.signature:java17:1.0@signature'
+}
+
+// Create an aggregate animal-sniffer task.
+// This simplifies running animal-sniffer on all the code by only needing one task instead of multiple in your command.
+task animalsniffer(dependsOn: [animalsnifferMain, animalsnifferTest, animalsnifferIntegrationTest], group: "Verification") {
+  description = "Run animal-sniffer analysis."
 }
 
 // Configure the versions plugin to only show dependency updates for released versions.

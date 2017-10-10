@@ -34,4 +34,5 @@ dependencies {
   classpath "com.google.protobuf:protobuf-gradle-plugin:0.8.2"
   classpath "com.netflix.nebula:nebula-clojure-plugin:4.1.0"
   classpath "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
+  classpath "ru.vyarus:gradle-animalsniffer-plugin:1.4.2"
 }
