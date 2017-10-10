@@ -120,7 +120,7 @@ enum ChangeConfigType {
   UNKNOWN_CHANGE = 0;
   ADD_SERVER = 1;
   REMOVE_SERVER = 2;
-  CHANGE_ROLE = 3;
+  CHANGE_REPLICA_TYPE = 3;
 }
 
 // A configuration change request for the tablet with 'tablet_id'.

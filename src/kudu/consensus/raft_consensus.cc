@@ -1646,8 +1646,8 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
         }
         break;
 
-      // TODO: Support role change.
-      case CHANGE_ROLE:
+      // TODO(mpercy): Support changing between VOTER and NON_VOTER.
+      case CHANGE_REPLICA_TYPE:
       default:
         return Status::NotSupported("Role change is not yet implemented.");
     }

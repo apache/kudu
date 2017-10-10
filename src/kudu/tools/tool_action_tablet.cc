@@ -166,7 +166,8 @@ Status DoChangeConfig(const vector<string>& master_addresses,
   if (cc_type == consensus::REMOVE_SERVER && member_type) {
     return Status::InvalidArgument("cannot supply Raft member type when removing a server");
   }
-  if ((cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) && !member_type) {
+  if ((cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_REPLICA_TYPE) &&
+      !member_type) {
     return Status::InvalidArgument(
         "must specify member type when adding a server or changing member type");
   }
@@ -219,7 +220,7 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
   boost::optional<RaftPeerPB::MemberType> member_type;
-  if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_ROLE) {
+  if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_REPLICA_TYPE) {
     const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
     string uppercase_peer_type;
     ToUpperCase(replica_type, &uppercase_peer_type);
@@ -238,7 +239,7 @@ Status AddReplica(const RunnerContext& context) {
 }
 
 Status ChangeReplicaType(const RunnerContext& context) {
-  return ChangeConfig(context, consensus::CHANGE_ROLE);
+  return ChangeConfig(context, consensus::CHANGE_REPLICA_TYPE);
 }
 
 Status RemoveReplica(const RunnerContext& context) {
