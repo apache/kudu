@@ -227,8 +227,14 @@ class ThreadPool {
   std::unique_ptr<ThreadPoolToken> NewTokenWithMetrics(ExecutionMode mode,
                                                        ThreadPoolMetrics metrics);
 
+  // Return the number of threads currently running (or in the process of starting up)
+  // for this thread pool.
+  int num_threads() const {
+    MutexLock l(lock_);
+    return num_threads_ + num_threads_pending_start_;
+  }
+
  private:
-  FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMaxThreads);
   FRIEND_TEST(ThreadPoolTest, TestThreadPoolWithNoMinimum);
   FRIEND_TEST(ThreadPoolTest, TestVariableSizeThreadPool);
 
@@ -251,10 +257,13 @@ class ThreadPool {
   Status Init();
 
   // Dispatcher responsible for dequeueing and executing the tasks
-  void DispatchThread(bool permanent);
+  void DispatchThread();
 
-  // Creates new thread. Required that lock_ is held.
-  Status CreateThreadUnlocked();
+  // Create new thread.
+  //
+  // REQUIRES: caller has incremented 'num_threads_pending_start_' ahead of this call.
+  // NOTE: For performance reasons, lock_ should not be held.
+  Status CreateThread();
 
   // Aborts if the current thread is a member of this thread pool.
   void CheckNotPoolThreadUnlocked();
@@ -278,14 +287,14 @@ class ThreadPool {
 
   // Synchronizes many of the members of the pool and all of its
   // condition variables.
-  Mutex lock_;
+  mutable Mutex lock_;
 
   // Condition variable for "pool is idling". Waiters wake up when
   // active_threads_ reaches zero.
   ConditionVariable idle_cond_;
 
   // Condition variable for "pool has no threads". Waiters wake up when
-  // num_threads_ reaches zero.
+  // num_threads_ and num_pending_threads_ are both 0.
   ConditionVariable no_threads_cond_;
 
   // Condition variable for "queue is not empty". Waiters wake up when
@@ -296,6 +305,13 @@ class ThreadPool {
   //
   // Protected by lock_.
   int num_threads_;
+
+  // Number of threads which are in the process of starting.
+  // When these threads start, they will decrement this counter and
+  // accordingly increment 'num_threads_'.
+  //
+  // Protected by lock_.
+  int num_threads_pending_start_;
 
   // Number of threads currently running and executing client tasks.
   //

@@ -317,6 +317,7 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     no_threads_cond_(&lock_),
     not_empty_(&lock_),
     num_threads_(0),
+    num_threads_pending_start_(0),
     active_threads_(0),
     total_queued_tasks_(0),
     tokenless_(NewToken(ExecutionMode::CONCURRENT)),
@@ -341,13 +342,13 @@ ThreadPool::~ThreadPool() {
 }
 
 Status ThreadPool::Init() {
-  MutexLock unique_lock(lock_);
   if (!pool_status_.IsUninitialized()) {
     return Status::NotSupported("The thread pool is already initialized");
   }
   pool_status_ = Status::OK();
+  num_threads_pending_start_ = min_threads_;
   for (int i = 0; i < min_threads_; i++) {
-    Status status = CreateThreadUnlocked();
+    Status status = CreateThread();
     if (!status.ok()) {
       Shutdown();
       return status;
@@ -400,7 +401,7 @@ void ThreadPool::Shutdown() {
   // while others will exit after they finish executing an outstanding task.
   total_queued_tasks_ = 0;
   not_empty_.Broadcast();
-  while (num_threads_ > 0) {
+  while (num_threads_ + num_threads_pending_start_ > 0) {
     no_threads_cond_.Wait();
   }
 
@@ -473,34 +474,34 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   if (capacity_remaining < 1) {
     return Status::ServiceUnavailable(
         Substitute("Thread pool is at capacity ($0/$1 tasks running, $2/$3 tasks queued)",
-                   num_threads_, max_threads_, total_queued_tasks_, max_queue_size_));
+                   num_threads_ + num_threads_pending_start_, max_threads_,
+                   total_queued_tasks_, max_queue_size_));
   }
 
   // Should we create another thread?
+
   // We assume that each current inactive thread will grab one item from the
   // queue.  If it seems like we'll need another thread, we create one.
+  //
+  // Rather than creating the thread here, while holding the lock, we defer
+  // it to down below. This is because thread creation can be rather slow
+  // (hundreds of milliseconds in some cases) and we'd like to allow the
+  // existing threads to continue to process tasks while we do so.
+  //
   // In theory, a currently active thread could finish immediately after this
-  // calculation.  This would mean we created a thread we didn't really need.
-  // However, this race is unavoidable, since we don't do the work under a lock.
-  // It's also harmless.
+  // calculation but before our new worker starts running. This would mean we
+  // created a thread we didn't really need. However, this race is unavoidable
+  // and harmless.
   //
   // Of course, we never create more than max_threads_ threads no matter what.
   int threads_from_this_submit =
       token->IsActive() && token->mode() == ExecutionMode::SERIAL ? 0 : 1;
-  int inactive_threads = num_threads_ - active_threads_;
+  int inactive_threads = num_threads_ + num_threads_pending_start_ - active_threads_;
   int additional_threads = (queue_.size() + threads_from_this_submit) - inactive_threads;
-  if (additional_threads > 0 && num_threads_ < max_threads_) {
-    Status status = CreateThreadUnlocked();
-    if (!status.ok()) {
-      if (num_threads_ == 0) {
-        // If we have no threads, we can't do any work.
-        return status;
-      }
-      // If we failed to create a thread, but there are still some other
-      // worker threads, log a warning message and continue.
-      LOG(ERROR) << "Thread pool failed to create thread: "
-                 << status.ToString();
-    }
+  bool need_a_thread = false;
+  if (additional_threads > 0 && num_threads_ + num_threads_pending_start_ < max_threads_) {
+    need_a_thread = true;
+    num_threads_pending_start_++;
   }
 
   Task task;
@@ -528,6 +529,7 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   int length_at_submit = total_queued_tasks_++;
 
   guard.Unlock();
+
   not_empty_.Signal();
 
   if (metrics_.queue_length_histogram) {
@@ -536,6 +538,23 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   if (token->metrics_.queue_length_histogram) {
     token->metrics_.queue_length_histogram->Increment(length_at_submit);
   }
+
+  if (need_a_thread) {
+    Status status = CreateThread();
+    if (!status.ok()) {
+      guard.Lock();
+      num_threads_pending_start_--;
+      if (num_threads_ + num_threads_pending_start_ == 0) {
+        // If we have no threads, we can't do any work.
+        return status;
+      }
+      // If we failed to create a thread, but there are still some other
+      // worker threads, log a warning message and continue.
+      LOG(ERROR) << "Thread pool failed to create thread: "
+                 << status.ToString();
+    }
+  }
+
 
   return Status::OK();
 }
@@ -563,8 +582,16 @@ bool ThreadPool::WaitFor(const MonoDelta& delta) {
   return true;
 }
 
-void ThreadPool::DispatchThread(bool permanent) {
+void ThreadPool::DispatchThread() {
   MutexLock unique_lock(lock_);
+  InsertOrDie(&threads_, Thread::current_thread());
+  DCHECK_GT(num_threads_pending_start_, 0);
+  num_threads_++;
+  num_threads_pending_start_--;
+  // If we are one of the first 'min_threads_' to start, we must be
+  // a "permanent" thread.
+  bool permanent = num_threads_ <= min_threads_;
+
   while (true) {
     // Note: Status::Aborted() is used to indicate normal shutdown.
     if (!pool_status_.ok()) {
@@ -679,7 +706,8 @@ void ThreadPool::DispatchThread(bool permanent) {
   CHECK(unique_lock.OwnsLock());
 
   CHECK_EQ(threads_.erase(Thread::current_thread()), 1);
-  if (--num_threads_ == 0) {
+  num_threads_--;
+  if (num_threads_ + num_threads_pending_start_ == 0) {
     no_threads_cond_.Broadcast();
 
     // Sanity check: if we're the last thread exiting, the queue ought to be
@@ -689,17 +717,9 @@ void ThreadPool::DispatchThread(bool permanent) {
   }
 }
 
-Status ThreadPool::CreateThreadUnlocked() {
-  // The first few threads are permanent, and do not time out.
-  bool permanent = (num_threads_ < min_threads_);
-  scoped_refptr<Thread> t;
-  Status s = kudu::Thread::Create("thread pool", strings::Substitute("$0 [worker]", name_),
-                                  &ThreadPool::DispatchThread, this, permanent, &t);
-  if (s.ok()) {
-    InsertOrDie(&threads_, t.get());
-    num_threads_++;
-  }
-  return s;
+Status ThreadPool::CreateThread() {
+  return kudu::Thread::Create("thread pool", strings::Substitute("$0 [worker]", name_),
+                              &ThreadPool::DispatchThread, this, nullptr);
 }
 
 void ThreadPool::CheckNotPoolThreadUnlocked() {

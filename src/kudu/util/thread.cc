@@ -37,6 +37,7 @@
 
 #include <boost/bind.hpp>
 #include <boost/smart_ptr/shared_ptr.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
@@ -46,18 +47,20 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/os-util.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/url-coding.h"
 #include "kudu/util/trace.h"
+#include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
 using boost::bind;
@@ -104,6 +107,11 @@ METRIC_DEFINE_gauge_uint64(server, involuntary_context_switches,
                            kudu::MetricUnit::kContextSwitches,
                            "Total involuntary context switches",
                            kudu::EXPOSE_AS_COUNTER);
+
+DEFINE_int32(thread_inject_start_latency_ms, 0,
+             "Number of ms to sleep when starting a new thread. (For tests).");
+TAG_FLAG(thread_inject_start_latency_ms, hidden);
+TAG_FLAG(thread_inject_start_latency_ms, unsafe);
 
 namespace kudu {
 
@@ -520,6 +528,11 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
   // Temporary reference for the duration of this function.
   scoped_refptr<Thread> t(new Thread(category, name, functor));
+
+  if (PREDICT_FALSE(FLAGS_thread_inject_start_latency_ms > 0)) {
+    LOG(INFO) << "Injecting " << FLAGS_thread_inject_start_latency_ms << "ms sleep on thread start";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_thread_inject_start_latency_ms));
+  }
 
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "creating pthread");

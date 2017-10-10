@@ -31,6 +31,7 @@
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/smart_ptr/shared_ptr.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -64,6 +65,8 @@ using std::unique_ptr;
 using std::vector;
 
 using strings::Substitute;
+
+DECLARE_int32(thread_inject_start_latency_ms);
 
 namespace kudu {
 
@@ -186,7 +189,7 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
                                    .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
 
   // There are no threads to start with.
-  ASSERT_TRUE(pool_->num_threads_ == 0);
+  ASSERT_TRUE(pool_->num_threads() == 0);
   // We get up to 3 threads when submitting work.
   CountDownLatch latch(1);
   auto cleanup = MakeScopedCleanup([&]() {
@@ -194,18 +197,18 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
   });
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(2, pool_->num_threads_);
+  ASSERT_EQ(2, pool_->num_threads());
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(3, pool_->num_threads_);
+  ASSERT_EQ(3, pool_->num_threads());
   // The 4th piece of work gets queued.
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(3, pool_->num_threads_);
+  ASSERT_EQ(3, pool_->num_threads());
   // Finish all work
   latch.CountDown();
   pool_->Wait();
   ASSERT_EQ(0, pool_->active_threads_);
   pool_->Shutdown();
-  ASSERT_EQ(0, pool_->num_threads_);
+  ASSERT_EQ(0, pool_->num_threads());
 }
 
 TEST_F(ThreadPoolTest, TestThreadPoolWithNoMaxThreads) {
@@ -226,7 +229,7 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMaxThreads) {
   for (int i = 0; i < kNumCPUs * 2; i++) {
     ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
   }
-  ASSERT_EQ((kNumCPUs * 2), pool_->num_threads_);
+  ASSERT_EQ((kNumCPUs * 2), pool_->num_threads());
 
   // Submit tasks on two tokens. Only two threads should be created.
   unique_ptr<ThreadPoolToken> t1 = pool_->NewToken(ThreadPool::ExecutionMode::SERIAL);
@@ -235,13 +238,13 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMaxThreads) {
     ThreadPoolToken* t = (i % 2 == 0) ? t1.get() : t2.get();
     ASSERT_OK(t->Submit(SlowTask::NewSlowTask(&latch)));
   }
-  ASSERT_EQ((kNumCPUs * 2) + 2, pool_->num_threads_);
+  ASSERT_EQ((kNumCPUs * 2) + 2, pool_->num_threads());
 
   // Submit more tokenless tasks. Each should create a new thread.
   for (int i = 0; i < kNumCPUs; i++) {
     ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
   }
-  ASSERT_EQ((kNumCPUs * 3) + 2, pool_->num_threads_);
+  ASSERT_EQ((kNumCPUs * 3) + 2, pool_->num_threads());
 
   latch.CountDown();
   pool_->Wait();
@@ -277,26 +280,26 @@ TEST_F(ThreadPoolTest, TestVariableSizeThreadPool) {
                                    .set_idle_timeout(MonoDelta::FromMilliseconds(1))));
 
   // There is 1 thread to start with.
-  ASSERT_EQ(1, pool_->num_threads_);
+  ASSERT_EQ(1, pool_->num_threads());
   // We get up to 4 threads when submitting work.
   CountDownLatch latch(1);
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(1, pool_->num_threads_);
+  ASSERT_EQ(1, pool_->num_threads());
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(2, pool_->num_threads_);
+  ASSERT_EQ(2, pool_->num_threads());
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(3, pool_->num_threads_);
+  ASSERT_EQ(3, pool_->num_threads());
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(4, pool_->num_threads_);
+  ASSERT_EQ(4, pool_->num_threads());
   // The 5th piece of work gets queued.
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
-  ASSERT_EQ(4, pool_->num_threads_);
+  ASSERT_EQ(4, pool_->num_threads());
   // Finish all work
   latch.CountDown();
   pool_->Wait();
   ASSERT_EQ(0, pool_->active_threads_);
   pool_->Shutdown();
-  ASSERT_EQ(0, pool_->num_threads_);
+  ASSERT_EQ(0, pool_->num_threads());
 }
 
 TEST_F(ThreadPoolTest, TestMaxQueueSize) {
@@ -335,6 +338,62 @@ TEST_F(ThreadPoolTest, TestZeroQueueSize) {
   latch.CountDown();
   pool_->Wait();
   pool_->Shutdown();
+}
+
+// Regression test for KUDU-2187:
+//
+// If a threadpool thread is slow to start up, it shouldn't block progress of
+// other tasks on the same pool.
+TEST_F(ThreadPoolTest, TestSlowThreadStart) {
+  // Start a pool of threads from which we'll submit tasks.
+  gscoped_ptr<ThreadPool> submitter_pool;
+  ASSERT_OK(ThreadPoolBuilder("submitter")
+            .set_min_threads(5)
+            .set_max_threads(5)
+            .Build(&submitter_pool));
+
+  // Start the actual test pool, which starts with one thread
+  // but will start a second one on-demand.
+  ASSERT_OK(RebuildPoolWithMinMax(1, 2));
+  // Ensure that the second thread will take a long time to start.
+  FLAGS_thread_inject_start_latency_ms = 3000;
+
+  // Now submit 10 tasks to the 'submitter' pool, each of which
+  // submits a single task to 'pool_'. The 'pool_' task sleeps
+  // for 10ms.
+  //
+  // Because the 'submitter' tasks submit faster than they can be
+  // processed on a single thread (due to the sleep), we expect that
+  // this will trigger 'pool_' to start up its second worker thread.
+  // The thread startup will have some latency injected.
+  //
+  // We expect that the thread startup will block only one of the
+  // tasks in the 'submitter' pool after it submits its task. Other
+  // tasks will continue to be processed by the other (already-running)
+  // thread on 'pool_'.
+  std::atomic<int32_t> total_queue_time_ms(0);
+  for (int i = 0; i < 10; i++) {
+    ASSERT_OK(submitter_pool->SubmitFunc([&]() {
+          auto submit_time = MonoTime::Now();
+          CHECK_OK(pool_->SubmitFunc([&,submit_time]() {
+                auto queue_time = MonoTime::Now() - submit_time;
+                total_queue_time_ms += queue_time.ToMilliseconds();
+                SleepFor(MonoDelta::FromMilliseconds(10));
+              }));
+        }));
+  }
+  submitter_pool->Wait();
+  pool_->Wait();
+
+  // Since the total amount of work submitted was only 100ms, we expect
+  // that the performance would be equivalent to a single-threaded
+  // threadpool. So, we expect the total queue time to be approximately
+  // 0 + 10 + 20 ... + 80 + 90 = 450ms.
+  //
+  // If, instead, throughput had been blocked while starting threads,
+  // we'd get something closer to 18000ms (3000ms delay * 5 submitter threads).
+  ASSERT_GE(total_queue_time_ms, 400);
+  ASSERT_LE(total_queue_time_ms, 10000);
 }
 
 // Test that setting a promise from another thread yields
