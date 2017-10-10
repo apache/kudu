@@ -167,6 +167,14 @@ std::ostream& operator<<(std::ostream& o, LockMode m);
 template<class State>
 class CowLock {
  public:
+
+   // An unlocked CowLock. This is useful for default constructing a lock to be
+   // moved in to.
+   CowLock()
+    : cow_(nullptr),
+      mode_(LockMode::RELEASED) {
+   }
+
   // Lock in either read or write mode.
   CowLock(CowObject<State>* cow,
           LockMode mode)
@@ -190,6 +198,25 @@ class CowLock {
       case LockMode::WRITE: LOG(FATAL) << "Cannot write-lock a const pointer";
       default: LOG(FATAL) << "Cannot lock in mode " << mode;
     }
+  }
+
+  // Disable copying.
+  CowLock(const CowLock&) = delete;
+  CowLock& operator=(const CowLock&) = delete;
+
+  // Allow moving.
+  CowLock(CowLock&& other)
+    : cow_(other.cow_),
+      mode_(other.mode_) {
+    other.cow_ = nullptr;
+    other.mode_ = LockMode::RELEASED;
+  }
+  CowLock& operator=(CowLock&& other) {
+    cow_ = other.cow_;
+    mode_ = other.mode_;
+    other.cow_ = nullptr;
+    other.mode_ = LockMode::RELEASED;
+    return *this;
   }
 
   // Commit the underlying object.
@@ -242,7 +269,6 @@ class CowLock {
  private:
   CowObject<State>* cow_;
   LockMode mode_;
-  DISALLOW_COPY_AND_ASSIGN(CowLock);
 };
 
 // Scoped object that locks multiple CowObjects for reading or for writing.

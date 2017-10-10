@@ -1444,19 +1444,16 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  scoped_refptr<TableInfo> table;
-
   // 1. Lookup the table and verify if it exists
-  TRACE("Looking up table");
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TRACE("Looking up and locking table");
+  scoped_refptr<TableInfo> table;
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::READ, &table, &l));
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TRACE("Locking table");
-  TableMetadataLock l(table.get(), LockMode::READ);
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the create is in-progress
@@ -1496,17 +1493,45 @@ scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(const scoped_refptr<T
   return tablet;
 }
 
-Status CatalogManager::FindTable(const TableIdentifierPB& table_identifier,
-                                 scoped_refptr<TableInfo> *table_info) {
-  shared_lock<LockType> l(lock_);
+Status CatalogManager::FindAndLockTable(const TableIdentifierPB& table_identifier,
+                                        LockMode lock_mode,
+                                        scoped_refptr<TableInfo>* table_info,
+                                        TableMetadataLock* table_lock) {
+  scoped_refptr<TableInfo> table;
+  {
+    shared_lock<LockType> l(lock_);
+    if (table_identifier.has_table_id()) {
+      table = FindPtrOrNull(table_ids_map_, table_identifier.table_id());
 
-  if (table_identifier.has_table_id()) {
-    *table_info = FindPtrOrNull(table_ids_map_, table_identifier.table_id());
-  } else if (table_identifier.has_table_name()) {
-    *table_info = FindPtrOrNull(table_names_map_, table_identifier.table_name());
-  } else {
-    return Status::InvalidArgument("Missing Table ID or Table Name");
+      // If the request contains both a table ID and table name, ensure that
+      // both match the same table.
+      if (table_identifier.has_table_name() &&
+          table.get() != FindPtrOrNull(table_names_map_, table_identifier.table_name()).get()) {
+        return Status::OK();
+      }
+    } else if (table_identifier.has_table_name()) {
+      table = FindPtrOrNull(table_names_map_, table_identifier.table_name());
+    } else {
+      return Status::InvalidArgument("Missing Table ID or Table Name");
+    }
   }
+
+  // If the table doesn't exist, don't attempt to lock it.
+  if (!table) {
+    return Status::OK();
+  }
+
+  // Acquire the table lock.
+  TableMetadataLock lock(table.get(), lock_mode);
+
+  if (table_identifier.has_table_name() && table_identifier.table_name() != lock.data().name()) {
+    // We've encountered the table while it's in the process of being renamed;
+    // pretend it doesn't yet exist.
+    return Status::OK();
+  }
+
+  *table_info = std::move(table);
+  *table_lock = std::move(lock);
   return Status::OK();
 }
 
@@ -1520,17 +1545,15 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
                           RequestorString(rpc), SecureShortDebugString(*req));
 
   // 1. Look up the table, lock it, and mark it as removed.
-  TRACE("Looking up table");
+  TRACE("Looking up and locking table");
   scoped_refptr<TableInfo> table;
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::WRITE, &table, &l));
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TRACE("Locking table");
-  TableMetadataLock l(table.get(), LockMode::WRITE);
   if (l.data().is_deleted()) {
     Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
@@ -1887,39 +1910,25 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   }
 
   // 2. Lookup the table, verify if it exists, and lock it for modification.
-  TRACE("Looking up table");
+  TRACE("Looking up and locking table");
   scoped_refptr<TableInfo> table;
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::WRITE, &table, &l));
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TRACE("Locking table");
-  TableMetadataLock l(table.get(), LockMode::WRITE);
   if (l.data().is_deleted()) {
     Status s = Status::NotFound("The table was deleted", l.data().pb.state_msg());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
 
-  // 3. Having locked the table, look it up again, in case we raced with another
-  //    AlterTable() that renamed our table.
-  {
-    scoped_refptr<TableInfo> table_again;
-    CHECK_OK(FindTable(req->table(), &table_again));
-    if (table_again == nullptr) {
-      Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
-      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
-      return s;
-    }
-  }
-
   string table_name = l.data().name();
   *resp->mutable_table_id() = table->id();
 
-  // 4. Calculate and validate new schema for the on-disk state, not persisted yet.
+  // 3. Calculate and validate new schema for the on-disk state, not persisted yet.
   Schema new_schema;
   ColumnId next_col_id = ColumnId(l.data().pb.next_column_id());
   if (!alter_schema_steps.empty()) {
@@ -1941,7 +1950,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     }
   }
 
-  // 5. Validate and try to acquire the new table name.
+  // 4. Validate and try to acquire the new table name.
   if (req->has_new_table_name()) {
     Status s = ValidateIdentifier(req->new_table_name());
     if (!s.ok()) {
@@ -1981,7 +1990,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     }
   });
 
-  // 6. Alter table partitioning.
+  // 5. Alter table partitioning.
   vector<scoped_refptr<TabletInfo>> tablets_to_add;
   vector<scoped_refptr<TabletInfo>> tablets_to_drop;
   if (!alter_partitioning_steps.empty()) {
@@ -2011,7 +2020,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return Status::OK();
   }
 
-  // 7. Serialize the schema and increment the version number.
+  // 6. Serialize the schema and increment the version number.
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }
@@ -2032,7 +2041,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                                            LocalTimeAsString()));
   }
 
-  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 7. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   string deletion_msg = "Partition dropped at " + LocalTimeAsString();
   SysCatalogTable::Actions actions;
@@ -2063,7 +2072,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
-  // 9. Commit the in-memory state.
+  // 8. Commit the in-memory state.
   {
     TRACE("Committing alterations to in-memory state");
     // Commit new tablet in-memory state. This doesn't require taking the global
@@ -2137,19 +2146,16 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  scoped_refptr<TableInfo> table;
-
   // 1. Lookup the table and verify if it exists
-  TRACE("Looking up table");
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TRACE("Looking up and locking table");
+  scoped_refptr<TableInfo> table;
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::READ, &table, &l));
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TRACE("Locking table");
-  TableMetadataLock l(table.get(), LockMode::READ);
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the alter is in-progress
@@ -2165,19 +2171,16 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
+  // Lookup the table and verify if it exists
+  TRACE("Looking up and locking table");
   scoped_refptr<TableInfo> table;
-
-  // 1. Lookup the table and verify if it exists
-  TRACE("Looking up table");
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::READ, &table, &l));
   if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TRACE("Locking table");
-  TableMetadataLock l(table.get(), LockMode::READ);
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   if (l.data().pb.has_fully_applied_schema()) {
@@ -3953,15 +3956,16 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
     return Status::InvalidArgument("max_returned_locations must be greater than 0");
   }
 
+  // Lookup the table and verify if it exists
+  TRACE("Looking up and locking table");
   scoped_refptr<TableInfo> table;
-  RETURN_NOT_OK(FindTable(req->table(), &table));
+  TableMetadataLock l;
+  RETURN_NOT_OK(FindAndLockTable(req->table(), LockMode::READ, &table, &l));
   if (table == nullptr) {
-    Status s = Status::NotFound("The table does not exist");
+    Status s = Status::NotFound("The table does not exist", SecureShortDebugString(req->table()));
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
   }
-
-  TableMetadataLock l(table.get(), LockMode::READ);
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   vector<scoped_refptr<TabletInfo>> tablets_in_range;

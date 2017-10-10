@@ -1351,6 +1351,68 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
   ASSERT_OK(verifier.Verify());
 }
 
+TEST_F(MasterTest, TestConcurrentRenameAndDeleteOfSameTable) {
+  const char* kTableName = "testtb";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  bool renamed = false;
+  bool deleted = false;
+
+  thread renamer([&] {
+      AlterTableRequestPB req;
+      AlterTableResponsePB resp;
+      RpcController controller;
+
+      req.mutable_table()->set_table_name(kTableName);
+      req.set_new_table_name("testtb-renamed");
+      CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
+
+      // There are two expected outcomes:
+      //
+      // 1. This thread won the race: no error.
+      // 2. This thread lost the race: TABLE_NOT_FOUND error with NotFound status.
+      if (resp.has_error()) {
+        Status s = StatusFromPB(resp.error().status());
+        string failure_msg = Substitute("Unexpected response: $0",
+                                        SecureDebugString(resp));
+        CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code()) << failure_msg;
+        CHECK(s.IsNotFound()) << failure_msg;
+      } else {
+        renamed = true;
+      }
+  });
+
+  thread dropper([&] {
+      DeleteTableRequestPB req;
+      DeleteTableResponsePB resp;
+      RpcController controller;
+
+      req.mutable_table()->set_table_name(kTableName);
+      CHECK_OK(proxy_->DeleteTable(req, &resp, &controller));
+
+      // There are two expected outcomes:
+      //
+      // 1. This thread won the race: no error.
+      // 2. This thread lost the race: TABLE_NOT_FOUND error with NotFound status.
+      if (resp.has_error()) {
+        Status s = StatusFromPB(resp.error().status());
+        string failure_msg = Substitute("Unexpected response: $0",
+                                        SecureDebugString(resp));
+        CHECK_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code()) << failure_msg;
+        CHECK(s.IsNotFound()) << failure_msg;
+      } else {
+        deleted = true;
+      }
+  });
+
+  renamer.join();
+  dropper.join();
+
+  ASSERT_TRUE(renamed ^ deleted);
+}
+
 // Unit tests for the ConnectToMaster() RPC:
 // should issue authentication tokens and the master CA cert.
 TEST_F(MasterTest, TestConnectToMaster) {
@@ -1381,6 +1443,66 @@ TEST_F(MasterTest, TestSignOwnCertAndLoadTSKs) {
       ASSERT_TRUE(master_->tls_context().has_signed_cert());
       ASSERT_GT(master_->messenger()->token_verifier().GetMaxKnownKeySequenceNumber(), -1);
     });
+}
+
+TEST_F(MasterTest, TestTableIdentifierWithIdAndName) {
+  const char *kTableName = "testtb";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+
+  ListTablesResponsePB tables;
+  ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
+  ASSERT_EQ(1, tables.tables_size());
+  ASSERT_EQ(kTableName, tables.tables(0).name());
+  string table_id = tables.tables(0).id();
+  ASSERT_FALSE(table_id.empty());
+
+  // Delete the table with an invalid ID.
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    req.mutable_table()->set_table_id("abc123");
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code());
+  }
+
+  // Delete the table with an invalid name.
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name("abc123");
+    req.mutable_table()->set_table_id(table_id);
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code());
+  }
+
+  // Delete the table with an invalid ID and name.
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name("abc123");
+    req.mutable_table()->set_table_id("abc123");
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(MasterErrorPB::TABLE_NOT_FOUND, resp.error().code());
+  }
+
+  {
+    DeleteTableRequestPB req;
+    DeleteTableResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    req.mutable_table()->set_table_id(table_id);
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
+    ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
+  }
 }
 
 } // namespace master

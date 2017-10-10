@@ -36,6 +36,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
@@ -329,6 +330,9 @@ template<class MetadataClass>
 class MetadataLock : public CowLock<typename MetadataClass::cow_state> {
  public:
   typedef CowLock<typename MetadataClass::cow_state> super;
+  MetadataLock()
+      : super() {
+  }
   MetadataLock(MetadataClass* info, LockMode mode)
       : super(DCHECK_NOTNULL(info)->mutable_metadata(), mode) {
   }
@@ -719,8 +723,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                  TabletLocationsPB* locs_pb);
 
-  Status FindTable(const TableIdentifierPB& table_identifier,
-                   scoped_refptr<TableInfo>* table_info);
+  // Looks up the table and locks it with the provided lock mode. If the table
+  // does not exist, the lock is not acquired and the table is not modified.
+  Status FindAndLockTable(const TableIdentifierPB& table_identifier,
+                          LockMode lock_mode,
+                          scoped_refptr<TableInfo>* table_info,
+                          TableMetadataLock* table_lock) WARN_UNUSED_RESULT;
 
   // Extract the set of tablets that must be processed because not running yet.
   void ExtractTabletsToProcess(std::vector<scoped_refptr<TabletInfo>>* tablets_to_process);
