@@ -536,6 +536,102 @@ size_t FileReadableBlock::memory_footprint() const {
   return kudu_malloc_usable_size(this) + reader_->memory_footprint();
 }
 
+////////////////////////////////////////////////////////////
+// FileBlockCreationTransaction
+////////////////////////////////////////////////////////////
+
+class FileBlockCreationTransaction : public BlockCreationTransaction {
+ public:
+  FileBlockCreationTransaction() = default;
+
+  virtual ~FileBlockCreationTransaction() = default;
+
+  virtual void AddCreatedBlock(std::unique_ptr<WritableBlock> block) override;
+
+  virtual Status CommitCreatedBlocks() override;
+
+ private:
+  std::vector<std::unique_ptr<FileWritableBlock>> created_blocks_;
+};
+
+void FileBlockCreationTransaction::AddCreatedBlock(
+    std::unique_ptr<WritableBlock> block) {
+  FileWritableBlock* fwb =
+      down_cast<FileWritableBlock*>(block.release());
+  created_blocks_.emplace_back(unique_ptr<FileWritableBlock>(fwb));
+}
+
+Status FileBlockCreationTransaction::CommitCreatedBlocks() {
+  if (created_blocks_.empty()) {
+    return Status::OK();
+  }
+
+  VLOG(3) << "Closing " << created_blocks_.size() << " blocks";
+  if (FLAGS_block_manager_preflush_control == "close") {
+    // Ask the kernel to begin writing out each block's dirty data. This is
+    // done up-front to give the kernel opportunities to coalesce contiguous
+    // dirty pages.
+    for (const auto& block : created_blocks_) {
+      RETURN_NOT_OK(block->FlushDataAsync());
+    }
+  }
+
+  // Now close each block, waiting for each to become durable.
+  for (const auto& block : created_blocks_) {
+    RETURN_NOT_OK(block->Close());
+  }
+  created_blocks_.clear();
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// FileBlockDeletionTransaction
+////////////////////////////////////////////////////////////
+
+class FileBlockDeletionTransaction : public BlockDeletionTransaction {
+ public:
+  explicit FileBlockDeletionTransaction(FileBlockManager* fbm)
+      : fbm_(fbm) {
+  }
+
+  virtual ~FileBlockDeletionTransaction() = default;
+
+  virtual void AddDeletedBlock(BlockId block) override;
+
+  virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) override;
+
+ private:
+  // The owning FileBlockManager. Must outlive the FileBlockDeletionTransaction.
+  FileBlockManager* fbm_;
+  std::vector<BlockId> deleted_blocks_;
+  DISALLOW_COPY_AND_ASSIGN(FileBlockDeletionTransaction);
+};
+
+void FileBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
+  deleted_blocks_.emplace_back(block);
+}
+
+Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
+  Status first_failure;
+  for (BlockId block : deleted_blocks_) {
+    Status s = fbm_->DeleteBlock(block);
+    // If we get NotFound, then the block was already deleted.
+    if (!s.ok() && !s.IsNotFound()) {
+      if (first_failure.ok()) first_failure = s;
+    } else {
+      deleted->emplace_back(block);
+    }
+  }
+
+  if (!first_failure.ok()) {
+    first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
+                                                                      "first failure",
+                                                                      deleted->size()));
+  }
+  deleted_blocks_.clear();
+  return first_failure;
+}
+
 } // namespace internal
 
 ////////////////////////////////////////////////////////////
@@ -751,24 +847,15 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status FileBlockManager::CloseBlocks(const vector<unique_ptr<WritableBlock>>& blocks) {
-  VLOG(3) << "Closing " << blocks.size() << " blocks";
-  if (FLAGS_block_manager_preflush_control == "close") {
-    // Ask the kernel to begin writing out each block's dirty data. This is
-    // done up-front to give the kernel opportunities to coalesce contiguous
-    // dirty pages.
-    for (const auto& block : blocks) {
-      internal::FileWritableBlock* fwb =
-          down_cast<internal::FileWritableBlock*>(block.get());
-      RETURN_NOT_OK(fwb->FlushDataAsync());
-    }
-  }
+unique_ptr<BlockCreationTransaction> FileBlockManager::NewCreationTransaction() {
+  CHECK(!read_only_);
+  return unique_ptr<internal::FileBlockCreationTransaction>(
+      new internal::FileBlockCreationTransaction());
+}
 
-  // Now close each block, waiting for each to become durable.
-  for (const auto& block : blocks) {
-    RETURN_NOT_OK(block->Close());
-  }
-  return Status::OK();
+shared_ptr<BlockDeletionTransaction> FileBlockManager::NewDeletionTransaction() {
+  CHECK(!read_only_);
+  return std::make_shared<internal::FileBlockDeletionTransaction>(this);
 }
 
 namespace {

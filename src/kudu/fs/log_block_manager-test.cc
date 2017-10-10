@@ -290,7 +290,7 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   BlockId saved_id;
   {
     Random rand(SeedRandom());
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < 10; i++) {
       unique_ptr<WritableBlock> b;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &b));
@@ -303,12 +303,12 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
       }
       b->Append(Slice(data, sizeof(data)));
       ASSERT_OK(b->Finalize());
-      transaction.AddCreatedBlock(std::move(b));
+      transaction->AddCreatedBlock(std::move(b));
     }
     // Metrics for full containers are updated after Finalize().
     ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 10));
 
-    ASSERT_OK(transaction.CommitCreatedBlocks());
+    ASSERT_OK(transaction->CommitCreatedBlocks());
     ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 10 * 1024, 11, 10, 10));
   }
 
@@ -377,14 +377,14 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
 
   // Create 4 containers, with the first four block IDs in the sequence.
   {
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < 4; i++) {
       unique_ptr<WritableBlock> writer;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
       block_ids.push_back(writer->id());
-      transaction.AddCreatedBlock(std::move(writer));
+      transaction->AddCreatedBlock(std::move(writer));
     }
-    ASSERT_OK(transaction.CommitCreatedBlocks());
+    ASSERT_OK(transaction->CommitCreatedBlocks());
   }
 
   // Create one more block, which should reuse the first container.
@@ -806,15 +806,15 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
   const int kNumBlocks = AllowSlowTests() ? 1000000 : 1000;
   // Creates 'kNumBlocks' blocks with minimal data.
   {
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < kNumBlocks; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK_FAST(block->Append("x"));
       ASSERT_OK_FAST(block->Finalize());
-      transaction.AddCreatedBlock(std::move(block));
+      transaction->AddCreatedBlock(std::move(block));
     }
-    ASSERT_OK(transaction.CommitCreatedBlocks());
+    ASSERT_OK(transaction->CommitCreatedBlocks());
   }
   for (int i = 0; i < 10; i++) {
     LOG_TIMING(INFO, "reopening block manager") {
@@ -986,14 +986,14 @@ TEST_F(LogBlockManagerTest, TestRepairPreallocateExcessSpace) {
 
   // Create several full containers.
   {
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK(block->Append("a"));
-      transaction.AddCreatedBlock(std::move(block));
+      transaction->AddCreatedBlock(std::move(block));
     }
-    ASSERT_OK(transaction.CommitCreatedBlocks());
+    ASSERT_OK(transaction->CommitCreatedBlocks());
   }
   vector<string> container_names;
   NO_FATALS(GetContainerNames(&container_names));
@@ -1179,12 +1179,12 @@ TEST_F(LogBlockManagerTest, TestRepairPartialRecords) {
 
   // Create some containers.
   {
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < kNumContainers; i++) {
       unique_ptr<WritableBlock> block;
       ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
       ASSERT_OK(block->Append("a"));
-      transaction.AddCreatedBlock(std::move(block));
+      transaction->AddCreatedBlock(std::move(block));
     }
   }
   vector<string> container_names;

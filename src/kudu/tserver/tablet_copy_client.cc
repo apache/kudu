@@ -119,6 +119,7 @@ using consensus::ConsensusMetadataManager;
 using consensus::MakeOpId;
 using consensus::OpId;
 using env_util::CopyFile;
+using fs::BlockManager;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using rpc::Messenger;
@@ -156,8 +157,9 @@ TabletCopyClient::TabletCopyClient(std::string tablet_id,
       session_idle_timeout_millis_(FLAGS_tablet_copy_begin_session_timeout_ms),
       start_time_micros_(0),
       rng_(GetRandomSeed32()),
-      tablet_copy_metrics_(tablet_copy_metrics),
-      transaction_(fs_manager->block_manager()) {
+      tablet_copy_metrics_(tablet_copy_metrics) {
+  BlockManager* bm = fs_manager->block_manager();
+  transaction_ = bm->NewCreationTransaction();
   if (tablet_copy_metrics_) {
     tablet_copy_metrics_->open_client_sessions->Increment();
   }
@@ -385,7 +387,7 @@ Status TabletCopyClient::Finish() {
   //  2) While DownloadWALs() is running the kernel has more time to eagerly flush the blocks,
   //     so the fsync() operations could be cheaper.
   //  3) Downloaded blocks should be made durable before replacing superblock.
-  RETURN_NOT_OK(transaction_.CommitCreatedBlocks());
+  RETURN_NOT_OK(transaction_->CommitCreatedBlocks());
   state_ = kFinished;
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
@@ -660,7 +662,7 @@ Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
 
   *new_block_id = block->id();
   RETURN_NOT_OK_PREPEND(block->Finalize(), "Unable to finalize block");
-  transaction_.AddCreatedBlock(std::move(block));
+  transaction_->AddCreatedBlock(std::move(block));
   return Status::OK();
 }
 

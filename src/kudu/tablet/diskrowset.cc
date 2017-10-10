@@ -36,6 +36,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/types.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/cfile_set.h"
@@ -81,6 +82,7 @@ class OpId;
 namespace tablet {
 
 using cfile::BloomFileWriter;
+using fs::BlockManager;
 using fs::BlockCreationTransaction;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
@@ -227,10 +229,10 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
 Status DiskRowSetWriter::Finish() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
-  FsManager* fs = rowset_metadata_->fs_manager();
-  BlockCreationTransaction transaction(fs->block_manager());
-  RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
-  return transaction.CommitCreatedBlocks();
+  BlockManager* bm = rowset_metadata_->fs_manager()->block_manager();
+  unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
+  RETURN_NOT_OK(FinishAndReleaseBlocks(transaction.get()));
+  return transaction->CommitCreatedBlocks();
 }
 
 Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockCreationTransaction* transaction) {
@@ -316,8 +318,9 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(
       row_idx_in_cur_drs_(0),
       can_roll_(false),
       written_count_(0),
-      written_size_(0),
-      block_transaction_(tablet_metadata->fs_manager()->block_manager()) {
+      written_size_(0) {
+  BlockManager* bm = tablet_metadata->fs_manager()->block_manager();
+  block_transaction_ = bm->NewCreationTransaction();
   CHECK(schema.has_column_ids());
 }
 
@@ -422,7 +425,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   }
   CHECK_EQ(state_, kStarted);
 
-  Status writer_status = cur_writer_->FinishAndReleaseBlocks(&block_transaction_);
+  Status writer_status = cur_writer_->FinishAndReleaseBlocks(block_transaction_.get());
 
   // If no rows were written (e.g. due to an empty flush or a compaction with all rows
   // deleted), FinishAndReleaseBlocks(...) returns Aborted. In that case, we don't
@@ -438,7 +441,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
 
     // Commit the UNDO block. Status::Aborted() indicates that there
     // were no UNDOs written.
-    Status s = cur_undo_writer_->FinishAndReleaseBlock(&block_transaction_);
+    Status s = cur_undo_writer_->FinishAndReleaseBlock(block_transaction_.get());
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
@@ -447,7 +450,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     }
 
     // Same for the REDO block.
-    s = cur_redo_writer_->FinishAndReleaseBlock(&block_transaction_);
+    s = cur_redo_writer_->FinishAndReleaseBlock(block_transaction_.get());
     if (!s.IsAborted()) {
       RETURN_NOT_OK(s);
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
@@ -474,7 +477,7 @@ Status RollingDiskRowSetWriter::Finish() {
   DCHECK_EQ(state_, kStarted);
 
   RETURN_NOT_OK(FinishCurrentWriter());
-  RETURN_NOT_OK(block_transaction_.CommitCreatedBlocks());
+  RETURN_NOT_OK(block_transaction_->CommitCreatedBlocks());
 
   state_ = kFinished;
   return Status::OK();

@@ -38,6 +38,7 @@ namespace tablet {
 
 using cfile::CFileWriter;
 using fs::BlockCreationTransaction;
+using fs::BlockManager;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using std::unique_ptr;
@@ -119,9 +120,10 @@ Status MultiColumnWriter::AppendBlock(const RowBlock& block) {
 }
 
 Status MultiColumnWriter::Finish() {
-  BlockCreationTransaction transaction(fs_->block_manager());
-  RETURN_NOT_OK(FinishAndReleaseBlocks(&transaction));
-  return transaction.CommitCreatedBlocks();
+  BlockManager* bm = fs_->block_manager();
+  unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
+  RETURN_NOT_OK(FinishAndReleaseBlocks(transaction.get()));
+  return transaction->CommitCreatedBlocks();
 }
 
 Status MultiColumnWriter::FinishAndReleaseBlocks(

@@ -80,6 +80,7 @@ using cfile::CFileReader;
 using cfile::IndexTreeIterator;
 using cfile::ReaderOptions;
 using fs::BlockCreationTransaction;
+using fs::BlockManager;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -113,9 +114,10 @@ Status DeltaFileWriter::Start() {
 }
 
 Status DeltaFileWriter::Finish() {
-  BlockCreationTransaction transaction(writer_->block()->block_manager());
-  RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
-  return transaction.CommitCreatedBlocks();
+  BlockManager* bm = writer_->block()->block_manager();
+  unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
+  RETURN_NOT_OK(FinishAndReleaseBlock(transaction.get()));
+  return transaction->CommitCreatedBlocks();
 }
 
 Status DeltaFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {

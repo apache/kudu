@@ -1128,6 +1128,106 @@ void LogBlockContainer::SetReadOnly() {
   read_only_.Store(true);
 }
 
+///////////////////////////////////////////////////////////
+// LogBlockCreationTransaction
+////////////////////////////////////////////////////////////
+
+class LogBlockCreationTransaction : public BlockCreationTransaction {
+ public:
+  LogBlockCreationTransaction() = default;
+
+  virtual ~LogBlockCreationTransaction() = default;
+
+  virtual void AddCreatedBlock(std::unique_ptr<WritableBlock> block) override;
+
+  virtual Status CommitCreatedBlocks() override;
+
+ private:
+  std::vector<std::unique_ptr<LogWritableBlock>> created_blocks_;
+};
+
+void LogBlockCreationTransaction::AddCreatedBlock(
+    std::unique_ptr<WritableBlock> block) {
+  LogWritableBlock* lwb = down_cast<LogWritableBlock*>(block.release());
+  created_blocks_.emplace_back(unique_ptr<LogWritableBlock>(lwb));
+}
+
+Status LogBlockCreationTransaction::CommitCreatedBlocks() {
+  if (created_blocks_.empty()) {
+    return Status::OK();
+  }
+
+  VLOG(3) << "Closing " << created_blocks_.size() << " blocks";
+  unordered_map<LogBlockContainer*, vector<LogWritableBlock*>> created_block_map;
+  for (const auto& block : created_blocks_) {
+    if (FLAGS_block_manager_preflush_control == "close") {
+      // Ask the kernel to begin writing out each block's dirty data. This is
+      // done up-front to give the kernel opportunities to coalesce contiguous
+      // dirty pages.
+      RETURN_NOT_OK(block->FlushDataAsync());
+    }
+    created_block_map[block->container()].emplace_back(block.get());
+  }
+
+  // Close all blocks and sync the blocks belonging to the same
+  // container together to reduce fsync() usage, waiting for them
+  // to become durable.
+  for (const auto& entry : created_block_map) {
+    RETURN_NOT_OK(entry.first->DoCloseBlocks(entry.second,
+                                             LogBlockContainer::SyncMode::SYNC));
+  }
+  created_blocks_.clear();
+  return Status::OK();
+}
+
+///////////////////////////////////////////////////////////
+// LogBlockDeletionTransaction
+////////////////////////////////////////////////////////////
+
+class LogBlockDeletionTransaction : public BlockDeletionTransaction {
+ public:
+  explicit LogBlockDeletionTransaction(LogBlockManager* lbm)
+      : lbm_(lbm) {
+  }
+
+  virtual ~LogBlockDeletionTransaction() = default;
+
+  virtual void AddDeletedBlock(BlockId block) override;
+
+  virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) override;
+
+ private:
+  // The owning LogBlockManager. Must outlive the LogBlockDeletionTransaction.
+  LogBlockManager* lbm_;
+  std::vector<BlockId> deleted_blocks_;
+  DISALLOW_COPY_AND_ASSIGN(LogBlockDeletionTransaction);
+};
+
+void LogBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
+  deleted_blocks_.emplace_back(block);
+}
+
+Status LogBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
+  Status first_failure;
+  for (BlockId block : deleted_blocks_) {
+    Status s = lbm_->DeleteBlock(block);
+    // If we get NotFound, then the block was already deleted.
+    if (!s.ok() && !s.IsNotFound()) {
+      if (first_failure.ok()) first_failure = s;
+    } else {
+      deleted->emplace_back(block);
+    }
+  }
+
+  if (!first_failure.ok()) {
+    first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
+                                                                      "first failure",
+                                                                      deleted->size()));
+  }
+  deleted_blocks_.clear();
+  return first_failure;
+}
+
 ////////////////////////////////////////////////////////////
 // LogBlock (definition)
 ////////////////////////////////////////////////////////////
@@ -1777,30 +1877,15 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status LogBlockManager::CloseBlocks(const std::vector<unique_ptr<WritableBlock>>& blocks) {
-  VLOG(3) << "Closing " << blocks.size() << " blocks";
+unique_ptr<BlockCreationTransaction> LogBlockManager::NewCreationTransaction() {
+  CHECK(!read_only_);
+  return unique_ptr<internal::LogBlockCreationTransaction>(
+      new internal::LogBlockCreationTransaction());
+}
 
-  unordered_map<LogBlockContainer*, vector<LogWritableBlock*>> created_block_map;
-  for (const auto& block : blocks) {
-    LogWritableBlock* lwb = down_cast<LogWritableBlock*>(block.get());
-
-    if (FLAGS_block_manager_preflush_control == "close") {
-      // Ask the kernel to begin writing out each block's dirty data. This is
-      // done up-front to give the kernel opportunities to coalesce contiguous
-      // dirty pages.
-      RETURN_NOT_OK(lwb->FlushDataAsync());
-    }
-    created_block_map[lwb->container()].emplace_back(lwb);
-  }
-
-  // Close all blocks and sync the blocks belonging to the same
-  // container together to reduce fsync() usage, waiting for them
-  // to become durable.
-  for (const auto& entry : created_block_map) {
-    RETURN_NOT_OK(entry.first->DoCloseBlocks(entry.second,
-                                             LogBlockContainer::SyncMode::SYNC));
-  }
-  return Status::OK();
+shared_ptr<BlockDeletionTransaction> LogBlockManager::NewDeletionTransaction() {
+  CHECK(!read_only_);
+  return std::make_shared<internal::LogBlockDeletionTransaction>(this);
 }
 
 Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {

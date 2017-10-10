@@ -60,6 +60,7 @@ TAG_FLAG(cfile_write_checksums, evolving);
 
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::BlockCreationTransaction;
+using kudu::fs::BlockManager;
 using kudu::fs::WritableBlock;
 using std::accumulate;
 using std::pair;
@@ -203,9 +204,10 @@ Status CFileWriter::Start() {
 
 Status CFileWriter::Finish() {
   TRACE_EVENT0("cfile", "CFileWriter::Finish");
-  BlockCreationTransaction transaction(block_->block_manager());
-  RETURN_NOT_OK(FinishAndReleaseBlock(&transaction));
-  return transaction.CommitCreatedBlocks();
+  BlockManager* bm = block_->block_manager();
+  unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
+  RETURN_NOT_OK(FinishAndReleaseBlock(transaction.get()));
+  return transaction->CommitCreatedBlocks();
 }
 
 Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction) {

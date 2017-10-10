@@ -177,7 +177,7 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
   // Check that the client downloaded the block and verification passed.
   BlockId new_block_id;
   ASSERT_OK(client_->DownloadBlock(block_id, &new_block_id));
-  ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
+  ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
 
   // Ensure it placed the block where we expected it to.
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
@@ -242,7 +242,7 @@ TEST_F(TabletCopyClientTest, TestVerifyData) {
 TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   // Download and commit all the blocks.
   ASSERT_OK(client_->DownloadBlocks());
-  ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
+  ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
 
   // Verify the disk synchronization count.
   if (FLAGS_block_manager == "log") {
@@ -335,7 +335,7 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
   int num_blocks_downloaded = 0;
   if (download_blocks == kDownloadBlocks) {
     ASSERT_OK(client_->DownloadBlocks());
-    ASSERT_OK(client_->transaction_.CommitCreatedBlocks());
+    ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
     num_blocks_downloaded = num_remote_blocks;
   }
 

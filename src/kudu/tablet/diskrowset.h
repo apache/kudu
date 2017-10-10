@@ -36,7 +36,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
-#include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -68,6 +67,10 @@ class CFileWriter;
 
 namespace consensus {
 class OpId;
+}
+
+namespace fs {
+class BlockCreationTransaction;
 }
 
 namespace log {
@@ -269,7 +272,7 @@ class RollingDiskRowSetWriter {
 
   // Syncs and commits all writes of outstanding blocks when the rolling
   // writer is destroyed.
-  fs::BlockCreationTransaction block_transaction_;
+  std::unique_ptr<fs::BlockCreationTransaction> block_transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(RollingDiskRowSetWriter);
 };

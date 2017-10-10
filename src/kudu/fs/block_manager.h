@@ -43,6 +43,8 @@ class ArrayView;
 
 namespace fs {
 
+class BlockCreationTransaction;
+class BlockDeletionTransaction;
 class BlockManager;
 class FsErrorManager;
 struct FsReport;
@@ -253,12 +255,14 @@ class BlockManager {
   // writer is closed.
   virtual Status DeleteBlock(const BlockId& block_id) = 0;
 
-  // Closes (and fully synchronizes) the given blocks. Effectively like
-  // Close() for each block but may be optimized for groups of blocks.
-  //
-  // On success, guarantees that outstanding data is durable.
-  virtual Status CloseBlocks(
-      const std::vector<std::unique_ptr<WritableBlock>>& blocks) = 0;
+  // Constructs a block creation transaction to group a set of block creation
+  // operations and closes the registered blocks together.
+  virtual std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() = 0;
+
+  // Constructs a block deletion transaction to group a set of block deletion
+  // operations. Similar to 'DeleteBlock', the actual deletion will take place
+  // after the last open reader or writer is closed.
+  virtual std::shared_ptr<BlockDeletionTransaction> NewDeletionTransaction() = 0;
 
   // Retrieves the IDs of all blocks under management by this block manager.
   // These include ReadableBlocks as well as WritableBlocks.
@@ -278,36 +282,19 @@ class BlockManager {
 //  1) the underlying block manager can optimize synchronization for
 //     a batch of blocks if possible to achieve better performance.
 //  2) to be able to track all blocks created in one logical operation.
+// This class is not thread-safe. It is not recommended to share a transaction
+// between threads. If necessary, use external synchronization to guarantee
+// thread safety.
 class BlockCreationTransaction {
  public:
-  explicit BlockCreationTransaction(BlockManager* bm)
-      : bm_(bm) {
-  }
+  virtual ~BlockCreationTransaction() = default;
 
-  void AddCreatedBlock(std::unique_ptr<WritableBlock> block) {
-    created_blocks_.emplace_back(std::move(block));
-  }
+  // Add a block to the creation transaction.
+  virtual void AddCreatedBlock(std::unique_ptr<WritableBlock> block) = 0;
 
   // Commit all the created blocks and close them together.
   // On success, guarantees that outstanding data is durable.
-  Status CommitCreatedBlocks() {
-    if (created_blocks_.empty()) {
-      return Status::OK();
-    }
-
-    Status s = bm_->CloseBlocks(created_blocks_);
-    if (s.ok()) created_blocks_.clear();
-    return s;
-  }
-
-  const std::vector<std::unique_ptr<WritableBlock>>& created_blocks() const {
-    return created_blocks_;
-  }
-
- private:
-  // The owning BlockManager. Must outlive the BlockCreationTransaction.
-  BlockManager* bm_;
-  std::vector<std::unique_ptr<WritableBlock>> created_blocks_;
+  virtual Status CommitCreatedBlocks() = 0;
 };
 
 // Group a set of block deletions together in a transaction. Similar to
@@ -315,15 +302,15 @@ class BlockCreationTransaction {
 //  1) the underlying block manager can optimize deletions for a batch
 //     of blocks if possible to achieve better performance.
 //  2) to be able to track all blocks deleted in one logical operation.
+// This class is not thread-safe. It is not recommended to share a transaction
+// between threads. If necessary, use external synchronization to guarantee
+// thread safety.
 class BlockDeletionTransaction {
  public:
-  explicit BlockDeletionTransaction(BlockManager* bm)
-      : bm_(bm) {
-  }
+  virtual ~BlockDeletionTransaction() = default;
 
-  void AddDeletedBlock(BlockId block) {
-    deleted_blocks_.emplace_back(block);
-  }
+  // Add a block to the deletion transaction.
+  virtual void AddDeletedBlock(BlockId block) = 0;
 
   // Deletes a group of blocks given the block IDs, the actual deletion will take
   // place after the last open reader or writer is closed for each block that needs
@@ -332,31 +319,7 @@ class BlockDeletionTransaction {
   // is OK or error.
   //
   // Returns the first deletion failure that was seen, if any.
-  Status CommitDeletedBlocks(std::vector<BlockId>* deleted) {
-    Status first_failure;
-    for (BlockId block : deleted_blocks_) {
-      Status s = bm_->DeleteBlock(block);
-      // If we get NotFound, then the block was already deleted.
-      if (!s.ok() && !s.IsNotFound()) {
-        if (first_failure.ok()) first_failure = s;
-      } else {
-        deleted->emplace_back(block);
-      }
-    }
-
-    if (!first_failure.ok()) {
-      first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
-                                                                        "first failure",
-                                                                        deleted->size()));
-    }
-    deleted_blocks_.clear();
-    return first_failure;
-  }
-
- private:
-  // The owning BlockManager. Must outlive the BlockDeletionTransaction.
-  BlockManager* bm_;
-  std::vector<BlockId> deleted_blocks_;
+  virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) = 0;
 };
 
 // Compute an upper bound for a file cache embedded within a block manager

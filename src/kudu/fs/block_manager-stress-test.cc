@@ -303,7 +303,9 @@ void BlockManagerStressTest<T>::WriterThread() {
   size_t num_bytes_written = 0;
   MonoDelta tight_loop(MonoDelta::FromSeconds(0));
   while (!ShouldStop(tight_loop)) {
-    vector<unique_ptr<WritableBlock>> all_dirty_blocks;
+    unique_ptr<BlockCreationTransaction> creation_transaction =
+        bm_->NewCreationTransaction();
+    vector<BlockId> all_dirty_blocks;
     for (int i = 0; i < FLAGS_block_group_number; i++) {
       vector<unique_ptr<WritableBlock>> dirty_blocks;
       vector<Random> dirty_block_rands;
@@ -351,17 +353,18 @@ void BlockManagerStressTest<T>::WriterThread() {
       num_bytes_written += total_dirty_bytes;
 
       for (auto& dirty_block : dirty_blocks) {
-        all_dirty_blocks.emplace_back(std::move(dirty_block));
+        all_dirty_blocks.emplace_back(dirty_block->id());
+        creation_transaction->AddCreatedBlock(std::move(dirty_block));
       }
     }
 
     // Close all dirty blocks.
-    CHECK_OK(bm_->CloseBlocks(all_dirty_blocks));
+    CHECK_OK(creation_transaction->CommitCreatedBlocks());
     // Publish the now sync'ed blocks to readers and deleters.
     {
       std::lock_guard<simple_spinlock> l(lock_);
       for (const auto& block : all_dirty_blocks) {
-        InsertOrDie(&written_blocks_, block->id(), 0);
+        InsertOrDie(&written_blocks_, block, 0);
       }
     }
   }

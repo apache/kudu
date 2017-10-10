@@ -24,7 +24,6 @@
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/metrics.h"
@@ -43,6 +42,10 @@ class ConsensusMetadata;
 class ConsensusMetadataManager;
 class ConsensusStatePB;
 } // namespace consensus
+
+namespace fs {
+class BlockCreationTransaction;
+} // namespace fs
 
 namespace rpc {
 class Messenger;
@@ -247,7 +250,7 @@ class TabletCopyClient {
   TabletCopyClientMetrics* tablet_copy_metrics_;
 
   // Block transaction for the tablet copy.
-  fs::BlockCreationTransaction transaction_;
+  std::unique_ptr<fs::BlockCreationTransaction> transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyClient);
 };

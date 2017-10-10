@@ -132,14 +132,14 @@ class BlockManagerTest : public KuduTest {
     int num_blocks = num_dirs * num_blocks_per_dir;
 
     // Write 'num_blocks' blocks to this data dir group.
-    BlockCreationTransaction transaction(bm_.get());
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < num_blocks; i++) {
       unique_ptr<WritableBlock> written_block;
       ASSERT_OK(bm_->CreateBlock(opts, &written_block));
       ASSERT_OK(written_block->Append(kTestData));
-      transaction.AddCreatedBlock(std::move(written_block));
+      transaction->AddCreatedBlock(std::move(written_block));
     }
-    ASSERT_OK(transaction.CommitCreatedBlocks());
+    ASSERT_OK(transaction->CommitCreatedBlocks());
   }
 
  protected:
@@ -349,15 +349,15 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
   ASSERT_OK(dd_manager_->CreateDataDirGroup("multipath_test"));
 
   const char* kTestData = "test data";
-  BlockCreationTransaction transaction(bm_.get());
+  unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
   // Creates (numPaths * 2) containers.
   for (int j = 0; j < paths.size() * 2; j++) {
     unique_ptr<WritableBlock> block;
     ASSERT_OK(bm_->CreateBlock(opts, &block));
     ASSERT_OK(block->Append(kTestData));
-    transaction.AddCreatedBlock(std::move(block));
+    transaction->AddCreatedBlock(std::move(block));
   }
-  ASSERT_OK(transaction.CommitCreatedBlocks());
+  ASSERT_OK(transaction->CommitCreatedBlocks());
 
   // Verify the results. (numPaths * 2) containers were created, each
   // consisting of 2 files. Thus, there should be a total of
@@ -529,7 +529,8 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
   }
 
   Random rand(SeedRandom());
-  vector<unique_ptr<WritableBlock>> dirty_blocks;
+  unique_ptr<BlockCreationTransaction> creation_transaction =
+      this->bm_->NewCreationTransaction();
   LOG_TIMING(INFO, Substitute("creating $0 blocks", kNumBlocks)) {
     for (int i = 0; i < kNumBlocks; i++) {
       // Create a block.
@@ -543,12 +544,12 @@ TYPED_TEST(BlockManagerTest, CloseManyBlocksTest) {
       }
       written_block->Append(Slice(data, sizeof(data)));
       written_block->Finalize();
-      dirty_blocks.emplace_back(std::move(written_block));
+      creation_transaction->AddCreatedBlock(std::move(written_block));
     }
   }
 
   LOG_TIMING(INFO, Substitute("closing $0 blocks", kNumBlocks)) {
-    ASSERT_OK(this->bm_->CloseBlocks(dirty_blocks));
+    ASSERT_OK(creation_transaction->CommitCreatedBlocks());
   }
 }
 
@@ -1065,7 +1066,8 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   // Create a BlockCreationTransaction. In this transaction,
   // create some blocks and commit the writes all together.
   const string kTestData = "test data";
-  BlockCreationTransaction creation_transaction(this->bm_.get());
+  unique_ptr<BlockCreationTransaction> creation_transaction =
+      this->bm_->NewCreationTransaction();
   vector<BlockId> created_blocks;
   for (int i = 0; i < 20; i++) {
     unique_ptr<WritableBlock> writer;
@@ -1075,9 +1077,9 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
     ASSERT_OK(writer->Append(kTestData));
     ASSERT_OK(writer->Finalize());
     created_blocks.emplace_back(writer->id());
-    creation_transaction.AddCreatedBlock(std::move(writer));
+    creation_transaction->AddCreatedBlock(std::move(writer));
   }
-  ASSERT_OK(creation_transaction.CommitCreatedBlocks());
+  ASSERT_OK(creation_transaction->CommitCreatedBlocks());
 
   // Read the blocks and verify the content.
   for (const auto& block : created_blocks) {
@@ -1094,12 +1096,13 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
 
   // Create a BlockDeletionTransaction. In this transaction,
   // randomly delete almost half of the created blocks.
-  BlockDeletionTransaction deletion_transaction(this->bm_.get());
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
   for (const auto& block : created_blocks) {
-    if (rand() % 2) deletion_transaction.AddDeletedBlock(block);
+    if (rand() % 2) deletion_transaction->AddDeletedBlock(block);
   }
   vector<BlockId> deleted_blocks;
-  ASSERT_OK(deletion_transaction.CommitDeletedBlocks(&deleted_blocks));
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted_blocks));
   for (const auto& block : deleted_blocks) {
     created_blocks.erase(std::remove(created_blocks.begin(), created_blocks.end(), block),
                          created_blocks.end());
@@ -1111,10 +1114,10 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
   for (const auto& block : created_blocks) {
-    deletion_transaction.AddDeletedBlock(block);
+    deletion_transaction->AddDeletedBlock(block);
   }
   deleted_blocks.clear();
-  Status s = deletion_transaction.CommitDeletedBlocks(&deleted_blocks);
+  Status s = deletion_transaction->CommitDeletedBlocks(&deleted_blocks);
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), Substitute("only deleted $0 blocks, "
                                                "first failure",
