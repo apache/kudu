@@ -104,6 +104,9 @@ fi
 # Configure TSAN (ignored if this isn't a TSAN build).
 TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt"
 TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
+#   Flush TSAN memory every 10 seconds - this prevents RSS blowup in unit tests
+#   which can cause tests to get killed by the OOM killer.
+TSAN_OPTIONS="$TSAN_OPTIONS flush_memory_ms=10000"
 TSAN_OPTIONS="$TSAN_OPTIONS external_symbolizer_path=$ASAN_SYMBOLIZER_PATH"
 export TSAN_OPTIONS
 
