@@ -81,7 +81,9 @@ map<string, string> MiniKdc::GetEnvVars() const {
   return {
     {"KRB5_CONFIG", JoinPathSegments(options_.data_root, "krb5.conf")},
     {"KRB5_KDC_PROFILE", JoinPathSegments(options_.data_root, "kdc.conf")},
-    {"KRB5CCNAME", JoinPathSegments(options_.data_root, "krb5cc")}
+    {"KRB5CCNAME", JoinPathSegments(options_.data_root, "krb5cc")},
+    // Enable the workaround for MIT krb5 1.10 bugs from krb5_realm_override.cc.
+    {"KUDU_ENABLE_KRB5_REALM_FIX", "yes"}
   };
 }
 
@@ -208,6 +210,16 @@ Status MiniKdc::CreateKrb5Conf() const {
     forwardable = true
     renew_lifetime = $2
     ticket_lifetime = $3
+
+    # Disable aes256 since Java does not support it without JCE. Java is only
+    # one of several minicluster consumers, but disabling aes256 doesn't
+    # appreciably hurt Kudu code coverage, so we disable it universally.
+    #
+    # For more details, see:
+    # https://docs.oracle.com/javase/8/docs/technotes/guides/security/jgss/jgss-features.html
+    default_tkt_enctypes = aes128-cts des3-cbc-sha1
+    default_tgs_enctypes = aes128-cts des3-cbc-sha1
+    permitted_enctypes = aes128-cts des3-cbc-sha1
 
     # In miniclusters, we start daemons on local loopback IPs that
     # have no reverse DNS entries. So, disable reverse DNS.
