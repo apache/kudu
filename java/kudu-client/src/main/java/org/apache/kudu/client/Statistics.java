@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -141,7 +142,17 @@ public class Statistics {
    */
   public Set<String> getTabletSet() {
     Set<String> tablets = Sets.newHashSet();
-    for (String tablet : stsMap.keySet()) {
+    // This cast forces the compiler to invoke Map.keySet() rather than
+    // ConcurrentHashMap's override, which is critical because when this code
+    // is built with JDK8, ConcurrentHashMap.keySet() introduces a dependency
+    // on a Java 8 only API.
+    //
+    // Note: an alternative would be to always access stsMap as a Map, but that
+    // just moves the problem to the putIfAbsent() call in getTabletStatistics(),
+    // which is only a Map method in Java 8.
+    //
+    // See KUDU-2188 for details.
+    for (String tablet : ((Map<String, Statistics.TabletStatistics>) stsMap).keySet()) {
       tablets.add(tablet);
     }
     return tablets;
