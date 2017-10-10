@@ -23,7 +23,6 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -389,10 +388,10 @@ public class MiniKuduCluster implements AutoCloseable {
     }
     if (miniCluster != null) {
       try {
-        miniCluster.waitFor(10, TimeUnit.SECONDS);
+        miniCluster.waitFor();
       } catch (InterruptedException e) {
-        LOG.warn("Minicluster process did not exit after 10s, destroying");
-        miniCluster.destroyForcibly();
+        LOG.warn("Minicluster process did not exit, destroying");
+        miniCluster.destroy();
       }
     }
   }
