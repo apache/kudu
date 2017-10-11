@@ -4799,6 +4799,10 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
                                    &ClientTest::CheckRowCount, this, client_table_.get(), kNumRows,
                                    &thread));
     threads.push_back(thread);
+    // Don't start threads too fast - otherwise we could accumulate tens or hundreds
+    // of threads before any of them starts their actual scans, and then it would
+    // take a long time to join on them all eventually finishing down below.
+    SleepFor(MonoDelta::FromMilliseconds(100));
 
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       scoped_refptr<Counter> counter = METRIC_rpcs_queue_overflow.Instantiate(

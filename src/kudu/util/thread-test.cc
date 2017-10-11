@@ -22,6 +22,7 @@
 
 #include <ostream>
 #include <string>
+#include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -33,8 +34,9 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread_restrictions.h"
 
 using std::string;
@@ -115,6 +117,24 @@ TEST_F(ThreadTest, TestCallOnExit) {
   ASSERT_OK(Thread::Create("test", "TestCallOnExit", CallAtExitThread, &s, &holder));
   holder->Join();
   ASSERT_EQ("hello 1, hello 2", s);
+}
+
+TEST_F(ThreadTest, ThreadStartBenchmark) {
+  std::vector<scoped_refptr<Thread>> threads(1000);
+  LOG_TIMING(INFO, "starting threads") {
+    for (auto& t : threads) {
+      ASSERT_OK(Thread::Create("test", "TestCallOnExit", usleep, 0, &t));
+    }
+  }
+  LOG_TIMING(INFO, "waiting for all threads to publish TIDs") {
+    for (auto& t : threads) {
+      t->tid();
+    }
+  }
+
+  for (auto& t : threads) {
+    t->Join();
+  }
 }
 
 // The following tests only run in debug mode, since thread restrictions are no-ops

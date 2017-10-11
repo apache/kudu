@@ -50,7 +50,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
-#include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
@@ -58,6 +57,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/os-util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
@@ -515,19 +515,56 @@ void Thread::CallAtExit(const Closure& cb) {
 }
 
 std::string Thread::ToString() const {
-  return Substitute("Thread $0 (name: \"$1\", category: \"$2\")", tid_, name_, category_);
+  return Substitute("Thread $0 (name: \"$1\", category: \"$2\")", tid(), name_, category_);
 }
+
+int64_t Thread::WaitForTid() const {
+  const string log_prefix = Substitute("$0 ($1) ", name_, category_);
+  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix,
+                                   "waiting for new thread to publish its TID");
+  int loop_count = 0;
+  while (true) {
+    int64_t t = Acquire_Load(&tid_);
+    if (t != PARENT_WAITING_TID) return t;
+    boost::detail::yield(loop_count++);
+  }
+}
+
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, uint64_t flags,
                            scoped_refptr<Thread> *holder) {
   TRACE_COUNTER_INCREMENT("threads_started", 1);
   TRACE_COUNTER_SCOPE_LATENCY_US("thread_start_us");
+  GoogleOnceInit(&once, &InitThreading);
+
   const string log_prefix = Substitute("$0 ($1) ", name, category);
   SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "starting thread");
 
   // Temporary reference for the duration of this function.
   scoped_refptr<Thread> t(new Thread(category, name, functor));
+
+  // Optional, and only set if the thread was successfully created.
+  //
+  // We have to set this before we even start the thread because it's
+  // allowed for the thread functor to access 'holder'.
+  if (holder) {
+    *holder = t;
+  }
+
+  t->tid_ = PARENT_WAITING_TID;
+
+  // Add a reference count to the thread since SuperviseThread() needs to
+  // access the thread object, and we have no guarantee that our caller
+  // won't drop the reference as soon as we return. This is dereferenced
+  // in FinishThread().
+  t->AddRef();
+
+  auto cleanup = MakeScopedCleanup([&]() {
+      // If we failed to create the thread, we need to undo all of our prep work.
+      t->tid_ = INVALID_TID;
+      t->Release();
+    });
 
   if (PREDICT_FALSE(FLAGS_thread_inject_start_latency_ms > 0)) {
     LOG(INFO) << "Injecting " << FLAGS_thread_inject_start_latency_ms << "ms sleep on thread start";
@@ -549,28 +586,7 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
   // (or someone communicating with the parent) can join, so joinable must
   // be set before the parent returns.
   t->joinable_ = true;
-
-  // Optional, and only set if the thread was successfully created.
-  if (holder) {
-    *holder = t;
-  }
-
-  // The tid_ member goes through the following states:
-  // 1  CHILD_WAITING_TID: the child has just been spawned and is waiting
-  //    for the parent to finish writing to caller state (i.e. 'holder').
-  // 2. PARENT_WAITING_TID: the parent has updated caller state and is now
-  //    waiting for the child to write the tid.
-  // 3. <value>: both the parent and the child are free to continue. If the
-  //    value is INVALID_TID, the child could not discover its tid.
-  Release_Store(&t->tid_, PARENT_WAITING_TID);
-  {
-    SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix,
-                                     "waiting for new thread to publish its TID");
-    int loop_count = 0;
-    while (Acquire_Load(&t->tid_) == PARENT_WAITING_TID) {
-      boost::detail::yield(loop_count++);
-    }
-  }
+  cleanup.cancel();
 
   VLOG(2) << "Started thread " << t->tid()<< " - " << category << ":" << name;
   return Status::OK();
@@ -579,14 +595,9 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 void* Thread::SuperviseThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
   int64_t system_tid = Thread::CurrentThreadId();
-  if (system_tid == -1) {
-    string error_msg = ErrnoToString(errno);
-    KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;
-  }
-  string name = strings::Substitute("$0-$1", t->name(), system_tid);
+  PCHECK(system_tid != -1);
 
   // Take an additional reference to the thread manager, which we'll need below.
-  GoogleOnceInit(&once, &InitThreading);
   ANNOTATE_IGNORE_SYNC_BEGIN();
   shared_ptr<ThreadMgr> thread_mgr_ref = thread_manager;
   ANNOTATE_IGNORE_SYNC_END();
@@ -594,21 +605,17 @@ void* Thread::SuperviseThread(void* arg) {
   // Set up the TLS.
   //
   // We could store a scoped_refptr in the TLS itself, but as its
-  // lifecycle is poorly defined, we'll use a bare pointer and take an
-  // additional reference on t out of band, in thread_ref.
-  scoped_refptr<Thread> thread_ref = t;
-  t->tls_ = t;
+  // lifecycle is poorly defined, we'll use a bare pointer. We
+  // already incremented the reference count in StartThread.
+  Thread::tls_ = t;
 
-  // Wait until the parent has updated all caller-visible state, then write
-  // the TID to 'tid_', thus completing the parent<-->child handshake.
-  int loop_count = 0;
-  while (Acquire_Load(&t->tid_) == CHILD_WAITING_TID) {
-    boost::detail::yield(loop_count++);
-  }
+  // Publish our tid to 'tid_', which unblocks any callers waiting in
+  // WaitForTid().
   Release_Store(&t->tid_, system_tid);
 
-  thread_manager->SetThreadName(name, t->tid());
-  thread_manager->AddThread(pthread_self(), name, t->category(), t->tid());
+  string name = strings::Substitute("$0-$1", t->name(), system_tid);
+  thread_manager->SetThreadName(name, t->tid_);
+  thread_manager->AddThread(pthread_self(), name, t->category(), t->tid_);
 
   // FinishThread() is guaranteed to run (even if functor_ throws an
   // exception) because pthread_cleanup_push() creates a scoped object
@@ -636,8 +643,11 @@ void Thread::FinishThread(void* arg) {
   // Signal any Joiner that we're done.
   t->done_.CountDown();
 
-  VLOG(2) << "Ended thread " << t->tid() << " - "
-          << t->category() << ":" << t->name();
+  VLOG(2) << "Ended thread " << t->tid_ << " - " << t->category() << ":" << t->name();
+  t->Release();
+  // NOTE: the above 'Release' call could be the last reference to 'this',
+  // so 'this' could be destructed at this point. Do not add any code
+  // following here!
 }
 
 } // namespace kudu
