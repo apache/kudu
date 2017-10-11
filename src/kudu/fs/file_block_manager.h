@@ -45,6 +45,7 @@ class FsErrorManager;
 struct FsReport;
 
 namespace internal {
+class FileBlockDeletionTransaction;
 class FileBlockLocation;
 class FileReadableBlock;
 class FileWritableBlock;
@@ -86,8 +87,6 @@ class FileBlockManager : public BlockManager {
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
-  Status DeleteBlock(const BlockId& block_id) override;
-
   std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() override;
 
   std::shared_ptr<BlockDeletionTransaction> NewDeletionTransaction() override;
@@ -97,9 +96,18 @@ class FileBlockManager : public BlockManager {
   FsErrorManager* error_manager() override { return error_manager_; }
 
  private:
+  friend class internal::FileBlockDeletionTransaction;
   friend class internal::FileBlockLocation;
   friend class internal::FileReadableBlock;
   friend class internal::FileWritableBlock;
+
+  // Deletes an existing block, allowing its space to be reclaimed by the
+  // filesystem. The change is immediately made durable.
+  //
+  // Blocks may be deleted while they are open for reading or writing;
+  // the actual deletion will take place after the last open reader or
+  // writer is closed.
+  Status DeleteBlock(const BlockId& block_id);
 
   // Synchronizes the metadata for a block with the given location.
   Status SyncMetadata(const internal::FileBlockLocation& location);

@@ -88,6 +88,7 @@ DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "test path");
 
 using std::string;
+using std::shared_ptr;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
@@ -448,6 +449,8 @@ void BlockManagerStressTest<T>::DeleterThread() {
   while (!ShouldStop(tight_loop)) {
     // Grab a block at random.
     BlockId to_delete;
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
     {
       std::unique_lock<simple_spinlock> l(lock_);
       // If we only have a small number of live blocks, don't delete any.
@@ -472,8 +475,10 @@ void BlockManagerStressTest<T>::DeleterThread() {
     }
 
     // And delete it.
-    CHECK_OK(bm_->DeleteBlock(to_delete));
-    num_blocks_deleted++;
+    deletion_transaction->AddDeletedBlock(to_delete);
+    vector<BlockId> deleted;
+    CHECK_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    num_blocks_deleted += deleted.size();
   }
 
   total_blocks_deleted_.IncrementBy(num_blocks_deleted);

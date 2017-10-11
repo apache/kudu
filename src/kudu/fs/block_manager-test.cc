@@ -40,6 +40,7 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -456,7 +457,12 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   LOG(INFO) << "Block memory footprint: " << read_block->memory_footprint();
 
   // Delete the block.
-  ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(written_block->id());
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  ASSERT_EQ(1, deleted.size());
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 }
@@ -495,7 +501,12 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   // Open it for reading, then delete it. Subsequent opens should fail.
   unique_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
-  ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(written_block->id());
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  ASSERT_EQ(1, deleted.size());
   ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 
@@ -655,7 +666,12 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block3));
   ASSERT_OK(written_block3->Append(test_data));
   ASSERT_OK(written_block3->Close());
-  ASSERT_OK(this->bm_->DeleteBlock(written_block3->id()));
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(written_block3->id());
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  ASSERT_EQ(1, deleted.size());
 
   // Reopen the block manager. This may read block metadata from disk.
   //
@@ -940,15 +956,14 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
 
     int num_deleted = 0;
     int num_deleted_attempts = 0;
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
     for (auto it = ids.begin(); it != ids.end();) {
       // TODO(adar): the lbm removes a block from its block map even if the
       // on-disk deletion fails. When that's fixed, update this code to
       // erase() only if s.ok().
-      Status s = this->bm_->DeleteBlock(*it);
+      deletion_transaction->AddDeletedBlock(*it);
       it = ids.erase(it);
-      if (s.ok()) {
-        num_deleted++;
-      }
       num_deleted_attempts++;
 
       // Skip every other block.
@@ -956,6 +971,9 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
         it++;
       }
     }
+    vector<BlockId> deleted;
+    ignore_result(deletion_transaction->CommitDeletedBlocks(&deleted));
+    num_deleted += deleted.size();
     LOG(INFO) << Substitute("Successfully deleted $0 blocks on $1 attempts",
                             num_deleted, num_deleted_attempts);
 

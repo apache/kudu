@@ -31,6 +31,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
@@ -61,6 +62,8 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 using base::subtle::Barrier_AtomicIncrement;
 using kudu::consensus::MinimumOpId;
 using kudu::consensus::OpId;
+using kudu::fs::BlockManager;
+using kudu::fs::BlockDeletionTransaction;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
@@ -465,19 +468,14 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
     return;
   }
 
-  vector<BlockId> deleted;
+  BlockManager* bm = fs_manager()->block_manager();
+  shared_ptr<BlockDeletionTransaction> transaction = bm->NewDeletionTransaction();
   for (const BlockId& b : blocks) {
-    Status s = fs_manager()->DeleteBlock(b);
-    // If we get NotFound, then the block was actually successfully
-    // deleted before. So, we can remove it from our orphaned block list
-    // as if it was a success.
-    if (!s.ok() && !s.IsNotFound()) {
-      WARN_NOT_OK(s, Substitute("Could not delete block $0", b.ToString()));
-      continue;
-    }
-
-    deleted.push_back(b);
+    transaction->AddDeletedBlock(b);
   }
+  vector<BlockId> deleted;
+  WARN_NOT_OK(transaction->CommitDeletedBlocks(&deleted),
+              "not all orphaned blocks were deleted");
 
   // Remove the successfully-deleted blocks from the set.
   {

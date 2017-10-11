@@ -91,6 +91,7 @@ using consensus::ConsensusMetadataManager;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using consensus::kMinimumTerm;
+using fs::BlockDeletionTransaction;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
@@ -362,9 +363,14 @@ TEST_F(TabletCopyTest, TestBlocksAreFetchableAfterBeingDeleted) {
   }
 
   // Delete them.
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      fs_manager()->block_manager()->NewDeletionTransaction();
   for (const BlockId& block_id : data_blocks) {
-    ASSERT_OK(fs_manager()->DeleteBlock(block_id));
+    deletion_transaction->AddDeletedBlock(block_id);
   }
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  ASSERT_EQ(data_blocks.size(), deleted.size());
 
   // Read them back.
   for (const BlockId& block_id : data_blocks) {

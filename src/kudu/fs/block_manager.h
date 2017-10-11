@@ -247,14 +247,6 @@ class BlockManager {
   virtual Status OpenBlock(const BlockId& block_id,
                            std::unique_ptr<ReadableBlock>* block) = 0;
 
-  // Deletes an existing block, allowing its space to be reclaimed by the
-  // filesystem. The change is immediately made durable.
-  //
-  // Blocks may be deleted while they are open for reading or writing;
-  // the actual deletion will take place after the last open reader or
-  // writer is closed.
-  virtual Status DeleteBlock(const BlockId& block_id) = 0;
-
   // Constructs a block creation transaction to group a set of block creation
   // operations and closes the registered blocks together.
   virtual std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() = 0;

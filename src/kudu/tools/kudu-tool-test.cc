@@ -134,6 +134,7 @@ using consensus::OpId;
 using consensus::RECEIVED_OPID;
 using consensus::ReplicateRefPtr;
 using consensus::ReplicateMsg;
+using fs::BlockDeletionTransaction;
 using fs::FsReport;
 using fs::WritableBlock;
 using itest::ExternalMiniClusterFsInspector;
@@ -624,10 +625,12 @@ TEST_F(ToolTest, TestFsCheck) {
     FsManager fs(env_, kTestDir);
     FsReport report;
     ASSERT_OK(fs.Open(&report));
+    std::shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        fs.block_manager()->NewDeletionTransaction();
     for (int i = 0; i < block_ids.size(); i += 2) {
-      ASSERT_OK(fs.DeleteBlock(block_ids[i]));
-      missing_ids.push_back(block_ids[i]);
+      deletion_transaction->AddDeletedBlock(block_ids[i]);
     }
+    deletion_transaction->CommitDeletedBlocks(&missing_ids);
   }
   NO_FATALS(RunFsCheck(Substitute("fs check --fs_wal_dir=$0", kTestDir),
                        block_ids.size() / 2, kTabletId, missing_ids, 0));

@@ -57,6 +57,7 @@ struct FsReport;
 namespace internal {
 class LogBlock;
 class LogBlockContainer;
+class LogBlockDeletionTransaction;
 class LogWritableBlock;
 
 struct LogBlockManagerMetrics;
@@ -178,8 +179,6 @@ class LogBlockManager : public BlockManager {
   Status OpenBlock(const BlockId& block_id,
                    std::unique_ptr<ReadableBlock>* block) override;
 
-  Status DeleteBlock(const BlockId& block_id) override;
-
   std::unique_ptr<BlockCreationTransaction> NewCreationTransaction() override;
 
   std::shared_ptr<BlockDeletionTransaction> NewDeletionTransaction() override;
@@ -191,6 +190,7 @@ class LogBlockManager : public BlockManager {
  private:
   FRIEND_TEST(LogBlockManagerTest, TestAbortBlock);
   FRIEND_TEST(LogBlockManagerTest, TestCloseFinalizedBlock);
+  FRIEND_TEST(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup);
   FRIEND_TEST(LogBlockManagerTest, TestFinalizeBlock);
   FRIEND_TEST(LogBlockManagerTest, TestLIFOContainerSelection);
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
@@ -199,6 +199,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
 
   friend class internal::LogBlockContainer;
+  friend class internal::LogBlockDeletionTransaction;
   friend class internal::LogWritableBlock;
 
   // Type for the actual block map used to store all live blocks.
@@ -236,6 +237,14 @@ class LogBlockManager : public BlockManager {
   typedef std::unordered_map<
       std::string,
       std::vector<BlockRecordPB>> BlockRecordsByContainerMap;
+
+  // Deletes an existing block, allowing its space to be reclaimed by the
+  // filesystem. The change is immediately made durable.
+  //
+  // Blocks may be deleted while they are open for reading or writing;
+  // the actual deletion will take place after the last open reader or
+  // writer is closed.
+  Status DeleteBlock(const BlockId& block_id);
 
   // Adds an as of yet unseen container to this block manager.
   //

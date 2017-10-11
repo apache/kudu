@@ -649,12 +649,6 @@ Status FsManager::OpenBlock(const BlockId& block_id, unique_ptr<ReadableBlock>* 
   return block_manager_->OpenBlock(block_id, block);
 }
 
-Status FsManager::DeleteBlock(const BlockId& block_id) {
-  CHECK(!read_only_);
-
-  return block_manager_->DeleteBlock(block_id);
-}
-
 bool FsManager::BlockExists(const BlockId& block_id) const {
   unique_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();

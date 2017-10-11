@@ -319,7 +319,7 @@ Status FileWritableBlock::Close() {
 
 Status FileWritableBlock::Abort() {
   RETURN_NOT_OK(Close(NO_SYNC));
-  return block_manager()->DeleteBlock(id());
+  return block_manager_->DeleteBlock(id());
 }
 
 BlockManager* FileWritableBlock::block_manager() const {
@@ -612,6 +612,7 @@ void FileBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
 }
 
 Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
+  deleted->clear();
   Status first_failure;
   for (BlockId block : deleted_blocks_) {
     Status s = fbm_->DeleteBlock(block);

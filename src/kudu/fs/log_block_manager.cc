@@ -1208,6 +1208,7 @@ void LogBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
 }
 
 Status LogBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
+  deleted->clear();
   Status first_failure;
   for (BlockId block : deleted_blocks_) {
     Status s = lbm_->DeleteBlock(block);

@@ -65,11 +65,13 @@ namespace tools {
 using cfile::CFileReader;
 using cfile::CFileIterator;
 using cfile::ReaderOptions;
+using fs::BlockDeletionTransaction;
 using fs::FsReport;
 using fs::ReadableBlock;
 using std::cout;
 using std::endl;
 using std::string;
+using std::shared_ptr;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
@@ -139,6 +141,11 @@ Status Check(const RunnerContext& /*context*/) {
 
   // Add orphaned blocks to the report after attempting to repair them.
   report.orphaned_block_check.emplace();
+  shared_ptr<BlockDeletionTransaction> deletion_transaction;
+  if (FLAGS_repair) {
+    deletion_transaction = fs_manager.block_manager()->NewDeletionTransaction();
+  }
+  vector<BlockId> deleted;
   for (const auto& id : orphaned_block_ids) {
     // Opening a block isn't free, but the number of orphaned blocks shouldn't
     // be extraordinarily high.
@@ -151,14 +158,20 @@ Status Check(const RunnerContext& /*context*/) {
     fs::OrphanedBlockCheck::Entry entry(id, size);
 
     if (FLAGS_repair) {
-      Status s = fs_manager.DeleteBlock(id);
-      WARN_NOT_OK(s, "Could not delete orphaned block");
-      if (s.ok()) {
-        entry.repaired = true;
-      }
+      deletion_transaction->AddDeletedBlock(id);
     }
     report.orphaned_block_check->entries.emplace_back(entry);
   }
+
+  if (FLAGS_repair) {
+    WARN_NOT_OK(deletion_transaction->CommitDeletedBlocks(&deleted),
+                "Could not delete orphaned blocks");
+    BlockIdSet deleted_set(deleted.begin(), deleted.end());
+    for (auto& entry : report.orphaned_block_check->entries) {
+      if (ContainsKey(deleted_set, entry.block_id)) entry.repaired = true;
+    }
+  }
+
   return report.PrintAndCheckForFatalErrors();
 }
 

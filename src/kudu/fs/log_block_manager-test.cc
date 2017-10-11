@@ -66,6 +66,7 @@
 using kudu::pb_util::ReadablePBContainerFile;
 using std::set;
 using std::string;
+using std::shared_ptr;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
@@ -320,7 +321,11 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
   // Delete a block. Its contents should no longer be under management.
-  ASSERT_OK(bm_->DeleteBlock(saved_id));
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      bm_->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(saved_id);
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 9 * 1024, 10, 10, 10));
 }
 
@@ -727,17 +732,22 @@ TEST_F(LogBlockManagerTest, TestContainerWithManyHoles) {
   // in the container by forcing the filesystem to alternate every hole with
   // a live extent.
   LOG(INFO) << "Deleting every other block";
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
   for (int i = 0; i < ids.size(); i += 2) {
-    ASSERT_OK(bm_->DeleteBlock(ids[i]));
+    deletion_transaction->AddDeletedBlock(ids[i]);
   }
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
 
   // Delete all of the blocks belonging to the interior node. If KUDU-1508
   // applies, this should corrupt the filesystem.
   LOG(INFO) << Substitute("Deleting remaining blocks up to block number $0",
                           last_interior_node_block_number);
   for (int i = 1; i < last_interior_node_block_number; i += 2) {
-    ASSERT_OK(bm_->DeleteBlock(ids[i]));
+    deletion_transaction->AddDeletedBlock(ids[i]);
   }
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
 }
 
 TEST_F(LogBlockManagerTest, TestParseKernelRelease) {
@@ -932,14 +942,18 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
     ASSERT_EQ(container_name, mb.container);
   }
 
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
   // Delete about half of them, chosen randomly.
   vector<BlockId> block_ids;
   ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
   for (const auto& id : block_ids) {
     if (rand() % 2) {
-      ASSERT_OK(bm_->DeleteBlock(id));
+      deletion_transaction->AddDeletedBlock(id);
     }
   }
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
 
   // Wait for the block manager to punch out all of the holes. It's easiest to
   // do this by reopening it; shutdown will wait for outstanding hole punches.
@@ -1235,7 +1249,11 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
 
   // Delete the one block and reopen it again. The container files should have
   // been deleted.
-  ASSERT_OK(bm_->DeleteBlock(block->id()));
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      this->bm_->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(block->id());
+  vector<BlockId> deleted;
+  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   ASSERT_OK(ReopenBlockManager());
   ASSERT_FALSE(env_->FileExists(data_file_name));
   ASSERT_FALSE(env_->FileExists(metadata_file_name));
@@ -1316,15 +1334,21 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
 
   // Create many container with a bunch of blocks, half of which are deleted.
   vector<BlockId> block_ids;
-  for (int i = 0; i < 1000; i++) {
-    unique_ptr<WritableBlock> block;
-    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
-    ASSERT_OK(block->Close());
-    if (i % 2 == 1) {
-      ASSERT_OK(bm_->DeleteBlock(block->id()));
-    } else {
-      block_ids.emplace_back(block->id());
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+    for (int i = 0; i < 1000; i++) {
+      unique_ptr<WritableBlock> block;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &block));
+      ASSERT_OK(block->Close());
+      if (i % 2 == 1) {
+        deletion_transaction->AddDeletedBlock(block->id());
+      } else {
+        block_ids.emplace_back(block->id());
+      }
     }
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   }
 
   // Reopen the block manager. This will cause it to compact all of the metadata
@@ -1338,8 +1362,14 @@ TEST_F(LogBlockManagerTest, TestDeleteFromContainerAfterMetadataCompaction) {
   // we have file_cache capacity, this will also generate a mix of cache hits,
   // misses, and re-insertions.
   std::random_shuffle(block_ids.begin(), block_ids.end());
-  for (const BlockId& b : block_ids) {
-    ASSERT_OK(bm_->DeleteBlock(b));
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+    for (const BlockId &b : block_ids) {
+      deletion_transaction->AddDeletedBlock(b);
+    }
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   }
 
   // Reopen to make sure that the metadata can be properly loaded and
