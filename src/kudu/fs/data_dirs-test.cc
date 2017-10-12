@@ -201,7 +201,7 @@ TEST_F(DataDirsTest, TestFailedDirNotReturned) {
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
   DataDir* dd;
   DataDir* failed_dd;
-  uint16_t uuid_idx;
+  int uuid_idx;
   // Fail one of the directories in the group and verify that it is not used.
   ASSERT_OK(dd_manager_->GetNextDataDir(test_block_opts_, &failed_dd));
   ASSERT_TRUE(dd_manager_->FindUuidIndexByDataDir(failed_dd, &uuid_idx));
@@ -241,13 +241,13 @@ TEST_F(DataDirsTest, TestFailedDirNotAddedToGroup) {
   // Check that all uuid_indices are valid and are not in the failed directory
   // (uuid_idx 0).
   for (const string& uuid : pb.uuids()) {
-    uint16_t* uuid_idx = FindOrNull(dd_manager_->idx_by_uuid_, uuid);
+    int* uuid_idx = FindOrNull(dd_manager_->idx_by_uuid_, uuid);
     ASSERT_NE(nullptr, uuid_idx);
     ASSERT_NE(0, *uuid_idx);
   }
   dd_manager_->DeleteDataDirGroup(test_tablet_name_);
 
-  for (uint16_t i = 1; i < kNumDirs - 1; i++) {
+  for (int i = 1; i < kNumDirs - 1; i++) {
     ASSERT_OK(dd_manager_->MarkDataDirFailed(i));
   }
   Status s = dd_manager_->MarkDataDirFailed(kNumDirs - 1);
@@ -310,9 +310,9 @@ TEST_F(DataDirsTest, TestLoadBalancingBias) {
   // Note: this should not happen in the wild and is used here as a way to
   // introduce some initial skew to the distribution.
   auto uuid_idx_iter = dd_manager_->tablets_by_uuid_idx_map_.begin();
-  vector<uint16_t> skewed_dir_indices;
+  vector<int> skewed_dir_indices;
   for (int i = 0; i < kNumSkewedDirs; i++) {
-    uint16_t uuid_idx = uuid_idx_iter->first;
+    int uuid_idx = uuid_idx_iter->first;
     skewed_dir_indices.push_back(uuid_idx);
     uuid_idx_iter++;
   }
@@ -321,7 +321,7 @@ TEST_F(DataDirsTest, TestLoadBalancingBias) {
   for (int skew_tablet_idx = 0; skew_tablet_idx < kTabletsPerSkewedDir; skew_tablet_idx++) {
     string skew_tablet = Substitute("$0-$1", kSkewTabletPrefix, skew_tablet_idx);
     InsertOrDie(&dd_manager_->group_by_tablet_map_, skew_tablet, DataDirGroup(skewed_dir_indices));
-    for (uint16_t uuid_idx : skewed_dir_indices) {
+    for (int uuid_idx : skewed_dir_indices) {
       InsertOrDie(&FindOrDie(dd_manager_->tablets_by_uuid_idx_map_, uuid_idx), skew_tablet);
     }
   }
@@ -352,7 +352,7 @@ TEST_F(DataDirsTest, TestLoadBalancingBias) {
   // having the mean, 10, tablets. Instead, the block-placement heuristic should
   // not completely ignore the initially skewed dirs.
   bool some_added_to_skewed_dirs = false;
-  for (uint16_t skewed_uuid_index : skewed_dir_indices) {
+  for (int skewed_uuid_index : skewed_dir_indices) {
     set<string>* tablets = FindOrNull(dd_manager_->tablets_by_uuid_idx_map_, skewed_uuid_index);
     ASSERT_NE(nullptr, tablets);
     if (tablets->size() > kTabletsPerSkewedDir) {
@@ -401,7 +401,7 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
 
   // The directory manager will successfully open with the single failed directory.
   ASSERT_OK(OpenDataDirManager());
-  set<uint16_t> failed_dirs;
+  set<int> failed_dirs;
   ASSERT_EQ(1, dd_manager_->GetFailedDataDirs().size());
 
   // Now fail almost all of the other directories, leaving the first intact.

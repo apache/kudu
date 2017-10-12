@@ -431,7 +431,7 @@ Status DataDirManager::Open() {
   } else {
     lock_mode = LockMode::MANDATORY;
   }
-  int max_data_dirs = block_manager_type_ == "file" ? (1 << 16) - 1 : kuint32max;
+  const int kMaxDataDirs = block_manager_type_ == "file" ? (1 << 16) - 1 : kint32max;
 
   int i = 0;
   // Create a directory for all data dirs specified by the user.
@@ -529,7 +529,7 @@ Status DataDirManager::Open() {
   TabletsByUuidIndexMap tablets_by_uuid_idx_map;
   FailedDataDirSet failed_data_dirs;
 
-  const auto insert_to_maps = [&] (uint16_t idx, string uuid, DataDir* dd) {
+  const auto insert_to_maps = [&] (int idx, string uuid, DataDir* dd) {
     InsertOrDie(&uuid_by_root, DirName(dd->dir()), uuid);
     InsertOrDie(&uuid_by_idx, idx, uuid);
     InsertOrDie(&idx_by_uuid, uuid, idx);
@@ -547,7 +547,7 @@ Status DataDirManager::Open() {
       continue;
     }
     const PathSetPB& path_set = dd->instance()->metadata()->path_set();
-    uint32_t idx = -1;
+    int idx = -1;
     for (int i = 0; i < path_set.all_uuids_size(); i++) {
       if (path_set.uuid() == path_set.all_uuids(i)) {
         idx = i;
@@ -555,9 +555,9 @@ Status DataDirManager::Open() {
       }
     }
     DCHECK_NE(idx, -1); // Guaranteed by CheckIntegrity().
-    if (idx > max_data_dirs) {
+    if (idx > kMaxDataDirs) {
       return Status::NotSupported(
-          Substitute("Block manager supports a maximum of $0 paths", max_data_dirs));
+          Substitute("Block manager supports a maximum of $0 paths", kMaxDataDirs));
     }
     insert_to_maps(idx, path_set.uuid(), dd.get());
   }
@@ -597,7 +597,7 @@ Status DataDirManager::Open() {
 
   // Initialize the 'fullness' status of the data directories.
   for (const auto& dd : data_dirs_) {
-    uint16_t uuid_idx;
+    int uuid_idx;
     CHECK(FindUuidIndexByDataDir(dd.get(), &uuid_idx));
     if (ContainsKey(failed_data_dirs_, uuid_idx)) {
       continue;
@@ -626,7 +626,7 @@ Status DataDirManager::LoadDataDirGroupFromPB(const std::string& tablet_id,
     return Status::AlreadyPresent("Tried to load directory group for tablet but one is already "
                                   "registered", tablet_id);
   }
-  for (uint16_t uuid_idx : group_from_pb.uuid_indices()) {
+  for (int uuid_idx : group_from_pb.uuid_indices()) {
     InsertOrDie(&FindOrDie(tablets_by_uuid_idx_map_, uuid_idx), tablet_id);
   }
   return Status::OK();
@@ -647,7 +647,7 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
     group_target_size = std::min(FLAGS_fs_target_data_dirs_per_tablet,
                                  static_cast<int>(data_dirs_.size()));
   }
-  vector<uint16_t> group_indices;
+  vector<int> group_indices;
   if (mode == DirDistributionMode::ACROSS_ALL_DIRS) {
     // If using all dirs, add all regardless of directory state.
     AppendKeysFromMap(data_dir_by_uuid_idx_, &group_indices);
@@ -675,7 +675,7 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
     }
   }
   InsertOrDie(&group_by_tablet_map_, tablet_id, DataDirGroup(group_indices));
-  for (uint16_t uuid_idx : group_indices) {
+  for (int uuid_idx : group_indices) {
     InsertOrDie(&FindOrDie(tablets_by_uuid_idx_map_, uuid_idx), tablet_id);
   }
   return Status::OK();
@@ -683,8 +683,8 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
 
 Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** dir) {
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
-  const vector<uint16_t>* group_uuid_indices;
-  vector<uint16_t> valid_uuid_indices;
+  const vector<int>* group_uuid_indices;
+  vector<int> valid_uuid_indices;
   if (PREDICT_TRUE(!opts.tablet_id.empty())) {
     // Get the data dir group for the tablet.
     DataDirGroup* group = FindOrNull(group_by_tablet_map_, opts.tablet_id);
@@ -715,7 +715,7 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
 
   // Randomly select a member of the group that is not full.
   for (int i : random_indices) {
-    uint16_t uuid_idx = (*group_uuid_indices)[i];
+    int uuid_idx = (*group_uuid_indices)[i];
     DataDir* candidate = FindOrDie(data_dir_by_uuid_idx_, uuid_idx);
     RETURN_NOT_OK(candidate->RefreshIsFull(DataDir::RefreshMode::EXPIRED_ONLY));
     if (!candidate->is_full()) {
@@ -744,7 +744,7 @@ void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
     return;
   }
   // Remove the tablet_id from every data dir in its group.
-  for (uint16_t uuid_idx : group->uuid_indices()) {
+  for (int uuid_idx : group->uuid_indices()) {
     FindOrDie(tablets_by_uuid_idx_map_, uuid_idx).erase(tablet_id);
   }
   group_by_tablet_map_.erase(tablet_id);
@@ -762,9 +762,9 @@ bool DataDirManager::GetDataDirGroupPB(const std::string& tablet_id,
 }
 
 Status DataDirManager::GetDirsForGroupUnlocked(int target_size,
-                                               vector<uint16_t>* group_indices) {
+                                               vector<int>* group_indices) {
   DCHECK(dir_group_lock_.is_locked());
-  vector<uint16_t> candidate_indices;
+  vector<int> candidate_indices;
   for (auto& e : data_dir_by_uuid_idx_) {
     if (ContainsKey(failed_data_dirs_, e.first)) {
       continue;
@@ -792,16 +792,16 @@ Status DataDirManager::GetDirsForGroupUnlocked(int target_size,
   return Status::OK();
 }
 
-DataDir* DataDirManager::FindDataDirByUuidIndex(uint16_t uuid_idx) const {
+DataDir* DataDirManager::FindDataDirByUuidIndex(int uuid_idx) const {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   return FindPtrOrNull(data_dir_by_uuid_idx_, uuid_idx);
 }
 
-bool DataDirManager::FindUuidIndexByDataDir(DataDir* dir, uint16_t* uuid_idx) const {
+bool DataDirManager::FindUuidIndexByDataDir(DataDir* dir, int* uuid_idx) const {
   return FindCopy(uuid_idx_by_data_dir_, dir, uuid_idx);
 }
 
-bool DataDirManager::FindUuidIndexByRoot(const string& root, uint16_t* uuid_idx) const {
+bool DataDirManager::FindUuidIndexByRoot(const string& root, int* uuid_idx) const {
   string uuid;
   if (FindUuidByRoot(root, &uuid)) {
     return FindUuidIndexByUuid(uuid, uuid_idx);
@@ -809,7 +809,7 @@ bool DataDirManager::FindUuidIndexByRoot(const string& root, uint16_t* uuid_idx)
   return false;
 }
 
-bool DataDirManager::FindUuidIndexByUuid(const string& uuid, uint16_t* uuid_idx) const {
+bool DataDirManager::FindUuidIndexByUuid(const string& uuid, int* uuid_idx) const {
   return FindCopy(idx_by_uuid_, uuid, uuid_idx);
 }
 
@@ -817,7 +817,7 @@ bool DataDirManager::FindUuidByRoot(const string& root, string* uuid) const {
   return FindCopy(uuid_by_root_, root, uuid);
 }
 
-set<string> DataDirManager::FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) const {
+set<string> DataDirManager::FindTabletsByDataDirUuidIdx(int uuid_idx) const {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
   const set<string>* tablet_set_ptr = FindOrNull(tablets_by_uuid_idx_map_, uuid_idx);
@@ -828,12 +828,12 @@ set<string> DataDirManager::FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) const
 }
 
 void DataDirManager::MarkDataDirFailedByUuid(const string& uuid) {
-  uint16_t uuid_idx;
+  int uuid_idx;
   CHECK(FindUuidIndexByUuid(uuid, &uuid_idx));
   WARN_NOT_OK(MarkDataDirFailed(uuid_idx), "Failed to handle disk failure");
 }
 
-Status DataDirManager::MarkDataDirFailed(uint16_t uuid_idx, const string& error_message) {
+Status DataDirManager::MarkDataDirFailed(int uuid_idx, const string& error_message) {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   std::lock_guard<percpu_rwlock> lock(dir_group_lock_);
   DataDir* dd = FindDataDirByUuidIndex(uuid_idx);
@@ -856,15 +856,15 @@ Status DataDirManager::MarkDataDirFailed(uint16_t uuid_idx, const string& error_
   return Status::OK();
 }
 
-bool DataDirManager::IsDataDirFailed(uint16_t uuid_idx) const {
+bool DataDirManager::IsDataDirFailed(int uuid_idx) const {
   DCHECK_LT(uuid_idx, data_dirs_.size());
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
   return ContainsKey(failed_data_dirs_, uuid_idx);
 }
 
 bool DataDirManager::IsTabletInFailedDir(const string& tablet_id) const {
-  const set<uint16_t> failed_dirs = GetFailedDataDirs();
-  for (uint16_t failed_dir : failed_dirs) {
+  const set<int> failed_dirs = GetFailedDataDirs();
+  for (int failed_dir : failed_dirs) {
     if (ContainsKey(FindTabletsByDataDirUuidIdx(failed_dir), tablet_id)) {
       return true;
     }
@@ -872,13 +872,13 @@ bool DataDirManager::IsTabletInFailedDir(const string& tablet_id) const {
   return false;
 }
 
-void DataDirManager::RemoveUnhealthyDataDirsUnlocked(const vector<uint16_t>& uuid_indices,
-                                                     vector<uint16_t>* healthy_indices) const {
+void DataDirManager::RemoveUnhealthyDataDirsUnlocked(const vector<int>& uuid_indices,
+                                                     vector<int>* healthy_indices) const {
   if (PREDICT_TRUE(failed_data_dirs_.empty())) {
     return;
   }
   healthy_indices->clear();
-  for (uint16_t uuid_idx : uuid_indices) {
+  for (int uuid_idx : uuid_indices) {
     DCHECK_LT(uuid_idx, data_dirs_.size());
     if (!ContainsKey(failed_data_dirs_, uuid_idx)) {
       healthy_indices->emplace_back(uuid_idx);

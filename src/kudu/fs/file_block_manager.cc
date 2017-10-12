@@ -37,6 +37,7 @@
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -99,7 +100,7 @@ class FileBlockLocation {
 
   // Construct a location from its constituent parts.
   static FileBlockLocation FromParts(DataDir* data_dir,
-                                     uint16_t data_dir_idx,
+                                     int data_dir_idx,
                                      const BlockId& block_id);
 
   // Construct a location from a full block ID.
@@ -107,7 +108,7 @@ class FileBlockLocation {
                                        const BlockId& block_id);
 
   // Get the data dir index of a given block ID.
-  static uint16_t GetDataDirIdx(const BlockId& block_id) {
+  static int GetDataDirIdx(const BlockId& block_id) {
     return block_id.id() >> 48;
   }
 
@@ -154,8 +155,10 @@ class FileBlockLocation {
 };
 
 FileBlockLocation FileBlockLocation::FromParts(DataDir* data_dir,
-                                               uint16_t data_dir_idx,
+                                               int data_dir_idx,
                                                const BlockId& block_id) {
+  DCHECK_LT(data_dir_idx, kuint16max);
+
   // The combined ID consists of 'data_dir_idx' (top 2 bytes) and 'block_id'
   // (bottom 6 bytes). The top 2 bytes of 'block_id' are dropped.
   uint64_t combined_id = static_cast<uint64_t>(data_dir_idx) << 48;
@@ -704,14 +707,14 @@ Status FileBlockManager::Open(FsReport* report) {
 
   // Prepare the filesystem report and either return or log it.
   FsReport local_report;
-  set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
+  set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
   for (const auto& dd : dd_manager_->data_dirs()) {
     // Don't report failed directories.
     // TODO(KUDU-2111): currently the FsReport only reports on containers for
     // the log block manager. Implement some sort of reporting for failed
     // directories as well.
     if (PREDICT_FALSE(!failed_dirs.empty())) {
-      uint16_t uuid_idx;
+      int uuid_idx;
       CHECK(dd_manager_->FindUuidIndexByDataDir(dd.get(), &uuid_idx));
       if (ContainsKey(failed_dirs, uuid_idx)) {
         continue;
@@ -734,7 +737,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
   DataDir* dir;
   RETURN_NOT_OK(dd_manager_->GetNextDataDir(opts, &dir));
-  uint16_t uuid_idx;
+  int uuid_idx;
   CHECK(dd_manager_->FindUuidIndexByDataDir(dir, &uuid_idx));
 
   string path;
@@ -819,9 +822,9 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
   CHECK(!read_only_);
 
   // Return early if deleting a block in a failed directory.
-  set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
+  set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
   if (PREDICT_FALSE(!failed_dirs.empty())) {
-    uint16_t uuid_idx = internal::FileBlockLocation::GetDataDirIdx(block_id);
+    int uuid_idx = internal::FileBlockLocation::GetDataDirIdx(block_id);
     if (ContainsKey(failed_dirs, uuid_idx)) {
       LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
                                           block_id.ToString());

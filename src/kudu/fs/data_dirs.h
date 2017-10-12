@@ -57,8 +57,8 @@ typedef std::vector<CanonicalizedRootAndStatus> CanonicalizedRootsList;
 
 namespace fs {
 
-typedef std::unordered_map<uint16_t, std::string> UuidByUuidIndexMap;
-typedef std::unordered_map<std::string, uint16_t> UuidIndexByUuidMap;
+typedef std::unordered_map<int, std::string> UuidByUuidIndexMap;
+typedef std::unordered_map<std::string, int> UuidIndexByUuidMap;
 
 class PathInstanceMetadataFile;
 struct CreateBlockOptions;
@@ -68,20 +68,20 @@ const char kInstanceMetadataFileName[] = "block_manager_instance";
 namespace internal {
 
 // A DataDirGroup is a group of directories used by an entity for block
-// placement. A group is represented in memory by a list of 2-byte indices,
-// which index into the list of all UUIDs found in a PathSetPB. A group is
-// represented on-disk as a list of full UUIDs, and as such, when writing or
-// reading from disk, a mapping is needed to translate between index and UUID.
+// placement. A group is represented in memory by a list of indices which index
+// into the list of all UUIDs found in a PathSetPB. A group is represented
+// on-disk as a list of full UUIDs, and as such, when writing or reading from
+// disk, a mapping is needed to translate between index and UUID.
 //
 // The same directory may appear in multiple DataDirGroups.
 class DataDirGroup {
  public:
-  explicit DataDirGroup(std::vector<uint16_t> uuid_indices)
+  explicit DataDirGroup(std::vector<int> uuid_indices)
       : uuid_indices_(std::move(uuid_indices)) {}
 
   static DataDirGroup FromPB(const DataDirGroupPB& pb,
                              const UuidIndexByUuidMap& uuid_idx_by_uuid) {
-    std::vector<uint16_t> uuid_indices;
+    std::vector<int> uuid_indices;
     for (const std::string& uuid : pb.uuids()) {
       uuid_indices.push_back(FindOrDie(uuid_idx_by_uuid, uuid));
     }
@@ -92,17 +92,17 @@ class DataDirGroup {
                 DataDirGroupPB* pb) const {
     DCHECK(pb);
     DataDirGroupPB group;
-    for (uint16_t uuid_idx : uuid_indices_) {
+    for (int uuid_idx : uuid_indices_) {
       group.add_uuids(FindOrDie(uuid_by_uuid_idx, uuid_idx));
     }
     pb->Swap(&group);
   }
 
-  const std::vector<uint16_t>& uuid_indices() const { return uuid_indices_; }
+  const std::vector<int>& uuid_indices() const { return uuid_indices_; }
 
  private:
   // UUID indices corresponding to the data directories within the group.
-  const std::vector<uint16_t> uuid_indices_;
+  const std::vector<int> uuid_indices_;
 };
 
 }  // namespace internal
@@ -313,7 +313,7 @@ class DataDirManager {
 
   // Finds the set of tablet_ids in the data dir specified by 'uuid_idx' and
   // returns a copy, returning an empty set if none are found.
-  std::set<std::string> FindTabletsByDataDirUuidIdx(uint16_t uuid_idx) const;
+  std::set<std::string> FindTabletsByDataDirUuidIdx(int uuid_idx) const;
 
   // ==========================================================================
   // Directory Health
@@ -324,19 +324,19 @@ class DataDirManager {
   // describing what directories are affected.
   //
   // Returns an error if all directories have failed.
-  Status MarkDataDirFailed(uint16_t uuid_idx, const std::string& error_message = "");
+  Status MarkDataDirFailed(int uuid_idx, const std::string& error_message = "");
 
   // Fails the directory specified by 'uuid' and logs a warning if all
   // directories have failed.
   void MarkDataDirFailedByUuid(const std::string& uuid);
 
   // Returns whether or not the 'uuid_idx' refers to a failed directory.
-  bool IsDataDirFailed(uint16_t uuid_idx) const;
+  bool IsDataDirFailed(int uuid_idx) const;
 
   // Returns whether the tablet's data is spread across a failed directory.
   bool IsTabletInFailedDir(const std::string& tablet_id) const;
 
-  const std::set<uint16_t> GetFailedDataDirs() const {
+  const std::set<int> GetFailedDataDirs() const {
     shared_lock<rw_spinlock> group_lock(dir_group_lock_.get_lock());
     return failed_data_dirs_;
   }
@@ -360,16 +360,16 @@ class DataDirManager {
   //
   // More information on uuid indexes and their relation to data directories
   // can be found next to PathSetPB in fs.proto.
-  DataDir* FindDataDirByUuidIndex(uint16_t uuid_idx) const;
+  DataDir* FindDataDirByUuidIndex(int uuid_idx) const;
 
   // Finds a uuid index by data directory, returning false if it can't be found.
-  bool FindUuidIndexByDataDir(DataDir* dir, uint16_t* uuid_idx) const;
+  bool FindUuidIndexByDataDir(DataDir* dir, int* uuid_idx) const;
 
   // Finds a uuid index by root path, returning false if it can't be found.
-  bool FindUuidIndexByRoot(const std::string& root, uint16_t* uuid_idx) const;
+  bool FindUuidIndexByRoot(const std::string& root, int* uuid_idx) const;
 
   // Finds a uuid index by UUID, returning false if it can't be found.
-  bool FindUuidIndexByUuid(const std::string& uuid, uint16_t* uuid_idx) const;
+  bool FindUuidIndexByUuid(const std::string& uuid, int* uuid_idx) const;
 
   // Finds a UUID by canonicalized root name, returning false if it can't be found.
   bool FindUuidByRoot(const std::string& root, std::string* uuid) const;
@@ -414,12 +414,12 @@ class DataDirManager {
   // added. Although this function does not itself change DataDirManager state,
   // its expected usage warrants that it is called within the scope of a
   // lock_guard of dir_group_lock_.
-  Status GetDirsForGroupUnlocked(int target_size, std::vector<uint16_t>* group_indices);
+  Status GetDirsForGroupUnlocked(int target_size, std::vector<int>* group_indices);
 
   // Goes through the data dirs in 'uuid_indices' and populates
   // 'healthy_indices' with those that haven't failed.
-  void RemoveUnhealthyDataDirsUnlocked(const std::vector<uint16_t>& uuid_indices,
-                                       std::vector<uint16_t>* healthy_indices) const;
+  void RemoveUnhealthyDataDirsUnlocked(const std::vector<int>& uuid_indices,
+                                       std::vector<int>* healthy_indices) const;
 
   Env* env_;
   const std::string block_manager_type_;
@@ -438,22 +438,22 @@ class DataDirManager {
   typedef std::unordered_map<std::string, std::string> UuidByRootMap;
   UuidByRootMap uuid_by_root_;
 
-  typedef std::unordered_map<uint16_t, DataDir*> UuidIndexMap;
+  typedef std::unordered_map<int, DataDir*> UuidIndexMap;
   UuidIndexMap data_dir_by_uuid_idx_;
 
-  typedef std::unordered_map<DataDir*, uint16_t> ReverseUuidIndexMap;
+  typedef std::unordered_map<DataDir*, int> ReverseUuidIndexMap;
   ReverseUuidIndexMap uuid_idx_by_data_dir_;
 
   typedef std::unordered_map<std::string, internal::DataDirGroup> TabletDataDirGroupMap;
   TabletDataDirGroupMap group_by_tablet_map_;
 
-  typedef std::unordered_map<uint16_t, std::set<std::string>> TabletsByUuidIndexMap;
+  typedef std::unordered_map<int, std::set<std::string>> TabletsByUuidIndexMap;
   TabletsByUuidIndexMap tablets_by_uuid_idx_map_;
 
   UuidByUuidIndexMap uuid_by_idx_;
   UuidIndexByUuidMap idx_by_uuid_;
 
-  typedef std::set<uint16_t> FailedDataDirSet;
+  typedef std::set<int> FailedDataDirSet;
   FailedDataDirSet failed_data_dirs_;
 
   // Lock protecting access to the dir group maps and to failed_data_dirs_.

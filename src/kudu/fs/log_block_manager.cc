@@ -1724,7 +1724,7 @@ Status LogBlockManager::Open(FsReport* report) {
   int i = -1;
   for (const auto& dd : dd_manager_->data_dirs()) {
     i++;
-    uint16_t uuid_idx;
+    int uuid_idx;
     CHECK(dd_manager_->FindUuidIndexByDataDir(dd.get(), &uuid_idx));
     // TODO(awong): store Statuses for each directory in the directory manager
     // so we can avoid these artificial Statuses.
@@ -1841,9 +1841,9 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
     }
 
     // Return early if deleting a block in a failed directory.
-    set<uint16_t> failed_dirs = dd_manager_->GetFailedDataDirs();
+    set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
     if (PREDICT_FALSE(!failed_dirs.empty())) {
-      uint16_t uuid_idx;
+      int uuid_idx;
       CHECK(dd_manager_->FindUuidIndexByDataDir(lb->container()->data_dir(), &uuid_idx));
       if (ContainsKey(failed_dirs, uuid_idx)) {
         LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",

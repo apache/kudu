@@ -345,7 +345,7 @@ Status FsManager::Open(FsReport* report) {
   // Before returning, ensure the metadata directory has not failed.
   // TODO(awong): avoid this single point of failure by spreading metadata
   // across directories.
-  uint16_t metadata_idx;
+  int metadata_idx;
   CHECK(dd_manager_->FindUuidIndexByRoot(canonicalized_metadata_fs_root_.path, &metadata_idx));
   if (ContainsKey(dd_manager_->GetFailedDataDirs(), metadata_idx)) {
     return Status::IOError("Cannot open the FS layout; metadata directory failed");

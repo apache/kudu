@@ -1276,7 +1276,7 @@ Status TSTabletManager::DeleteTabletData(
 
 void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
   DataDirManager* dd_manager = fs_manager_->dd_manager();
-  uint16_t uuid_idx;
+  int uuid_idx;
   CHECK(dd_manager->FindUuidIndexByUuid(uuid, &uuid_idx))
       << Substitute("No data directory found with UUID $0", uuid);
   LOG(FATAL) << Substitute("Data directory $0 failed. Disk failure handling not implemented",

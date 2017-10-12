@@ -1417,10 +1417,10 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
   for (const string& data_dir : report.data_dirs) {
     ASSERT_NE(data_dir, test_dirs[failed_idx]);
   }
-  const set<uint16_t>& failed_dirs = dd_manager_->GetFailedDataDirs();
+  const set<int>& failed_dirs = dd_manager_->GetFailedDataDirs();
   ASSERT_EQ(1, failed_dirs.size());
 
-  uint16_t uuid_idx;
+  int uuid_idx;
   dd_manager_->FindUuidIndexByRoot(test_dirs[failed_idx], &uuid_idx);
   ASSERT_TRUE(ContainsKey(failed_dirs, uuid_idx));
   FLAGS_env_inject_eio = 0;
