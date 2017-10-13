@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
-#include <deque>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -45,7 +44,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
@@ -56,6 +54,7 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util_prod.h"
@@ -111,10 +110,8 @@ namespace kudu {
 
 namespace fs {
 
-using env_util::ScopedFileDeleter;
 using internal::DataDirGroup;
 using std::default_random_engine;
-using std::deque;
 using std::iota;
 using std::set;
 using std::shuffle;
@@ -149,7 +146,10 @@ Status CheckHolePunch(Env* env, const string& path) {
   RETURN_NOT_OK(env->NewRWFile(opts, filename, &file));
 
   // The file has been created; delete it on exit no matter what happens.
-  ScopedFileDeleter file_deleter(env, filename);
+  auto file_deleter = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(filename),
+                "Could not delete file " + filename);
+  });
 
   // Preallocate it, making sure the file's size is what we'd expect.
   uint64_t sz;
@@ -370,8 +370,19 @@ Status DataDirManager::CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
 Status DataDirManager::Create() {
   CHECK(!read_only_);
 
-  deque<ScopedFileDeleter*> delete_on_failure;
-  ElementDeleter d(&delete_on_failure);
+  vector<string> dirs_to_delete;
+  vector<string> files_to_delete;
+  auto deleter = MakeScopedCleanup([&]() {
+    // Delete files first so that the directories will be empty when deleted.
+    for (const auto& f : files_to_delete) {
+      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+    }
+    // Delete directories in reverse order since parent directories will have
+    // been added before child directories.
+    for (auto it = dirs_to_delete.rbegin(); it != dirs_to_delete.rend(); it++) {
+      WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
+    }
+  });
 
   // The UUIDs and indices will be included in every instance file.
   ObjectIdGenerator gen;
@@ -390,7 +401,7 @@ Status DataDirManager::Create() {
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, data_dir, &created),
         Substitute("Could not create directory $0", data_dir));
     if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, data_dir));
+      dirs_to_delete.emplace_back(data_dir);
       to_sync.insert(root.path);
     }
 
@@ -402,7 +413,7 @@ Status DataDirManager::Create() {
     PathInstanceMetadataFile metadata(env_, block_manager_type_,
                                       instance_filename);
     RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids), instance_filename);
-    delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+    files_to_delete.emplace_back(instance_filename);
 
     idx++;
   }
@@ -414,9 +425,7 @@ Status DataDirManager::Create() {
   }
 
   // Success: don't delete any files.
-  for (ScopedFileDeleter* deleter : delete_on_failure) {
-    deleter->Cancel();
-  }
+  deleter.cancel();
   return Status::OK();
 }
 

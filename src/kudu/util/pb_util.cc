@@ -68,6 +68,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util-internal.h"
 #include "kudu/util/pb_util.pb.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -476,7 +477,9 @@ Status WritePBToPath(Env* env, const std::string& path,
 
   unique_ptr<WritableFile> file;
   RETURN_NOT_OK(env->NewTempWritableFile(WritableFileOptions(), tmp_template, &tmp_path, &file));
-  env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
+  auto tmp_deleter = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(tmp_path), "Could not delete file " + tmp_path);
+  });
 
   WritableFileOutputStream output(file.get());
   bool res = msg.SerializeToZeroCopyStream(&output);
@@ -489,7 +492,7 @@ Status WritePBToPath(Env* env, const std::string& path,
   }
   RETURN_NOT_OK_PREPEND(file->Close(), "Failed to Close() " + tmp_path);
   RETURN_NOT_OK_PREPEND(env->RenameFile(tmp_path, path), "Failed to rename tmp file to " + path);
-  tmp_deleter.Cancel();
+  tmp_deleter.cancel();
   if (sync == pb_util::SYNC) {
     RETURN_NOT_OK_PREPEND(env->SyncDir(DirName(path)), "Failed to SyncDir() parent of " + path);
   }
@@ -978,7 +981,9 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
 
   unique_ptr<RWFile> file;
   RETURN_NOT_OK(env->NewTempRWFile(RWFileOptions(), tmp_template, &tmp_path, &file));
-  env_util::ScopedFileDeleter tmp_deleter(env, tmp_path);
+  auto tmp_deleter = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(tmp_path), "Could not delete file " + tmp_path);
+  });
 
   WritablePBContainerFile pb_file(std::move(file));
   RETURN_NOT_OK(pb_file.CreateNew(msg));
@@ -989,7 +994,7 @@ Status WritePBContainerToPath(Env* env, const std::string& path,
   RETURN_NOT_OK(pb_file.Close());
   RETURN_NOT_OK_PREPEND(env->RenameFile(tmp_path, path),
                         "Failed to rename tmp file to " + path);
-  tmp_deleter.Cancel();
+  tmp_deleter.cancel();
   if (sync == pb_util::SYNC) {
     RETURN_NOT_OK_PREPEND(env->SyncDir(DirName(path)),
                           "Failed to SyncDir() parent of " + path);

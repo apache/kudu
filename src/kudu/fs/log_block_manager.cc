@@ -60,7 +60,6 @@
 #include "kudu/util/array_view.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
@@ -2600,7 +2599,11 @@ Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
   RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(env_->NewTempRWFile(RWFileOptions(), tmpl,
                                                              &tmp_file_name, &tmp_file),
                                          "could not create temporary metadata file");
-  env_util::ScopedFileDeleter tmp_deleter(env_, tmp_file_name);
+  auto tmp_deleter = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env_->DeleteFile(tmp_file_name),
+                "Could not delete file " + tmp_file_name);
+
+  });
   WritablePBContainerFile pb_file(std::move(tmp_file));
   RETURN_NOT_OK_LBM_DISK_FAILURE_PREPEND(pb_file.CreateNew(BlockRecordPB()),
                                          "could not initialize temporary metadata file");
@@ -2622,7 +2625,7 @@ Status LogBlockManager::RewriteMetadataFile(const LogBlockContainer& container,
   // old file descriptor pointing to the now-deleted old version.
   file_cache_.Invalidate(metadata_file_name);
 
-  tmp_deleter.Cancel();
+  tmp_deleter.cancel();
   *file_bytes_delta = (static_cast<int64_t>(old_metadata_size) - new_metadata_size);
   return Status::OK();
 }

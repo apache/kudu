@@ -19,7 +19,6 @@
 
 #include <cinttypes>
 #include <ctime>
-#include <deque>
 #include <iostream>
 #include <map>
 #include <set>
@@ -42,7 +41,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
@@ -58,6 +56,7 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/website_util.h"
 
@@ -92,7 +91,6 @@ DEFINE_string(fs_data_dirs, "",
               "block directory.");
 TAG_FLAG(fs_data_dirs, stable);
 
-using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
@@ -386,8 +384,19 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   // subdirectories.
   //
   // In the event of failure, delete everything we created.
-  std::deque<ScopedFileDeleter*> delete_on_failure;
-  ElementDeleter d(&delete_on_failure);
+  vector<string> dirs_to_delete;
+  vector<string> files_to_delete;
+  auto deleter = MakeScopedCleanup([&]() {
+    // Delete files first so that the directories will be empty when deleted.
+    for (const auto& f : files_to_delete) {
+      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+    }
+    // Delete directories in reverse order since parent directories will have
+    // been added before child directories.
+    for (auto it = dirs_to_delete.rbegin(); it != dirs_to_delete.rend(); it++) {
+      WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
+    }
+  });
 
   InstanceMetadataPB metadata;
   RETURN_NOT_OK(CreateInstanceMetadata(std::move(uuid), &metadata));
@@ -401,13 +410,12 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root_name, &created),
                           "Unable to create FSManager root");
     if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_name));
+      dirs_to_delete.emplace_back(root_name);
       to_sync.insert(DirName(root_name));
     }
     RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root_name),
                           "Unable to write instance metadata");
-    delete_on_failure.push_front(new ScopedFileDeleter(
-        env_, GetInstanceMetadataPath(root_name)));
+    files_to_delete.emplace_back(GetInstanceMetadataPath(root_name));
   }
 
   // Initialize ancillary directories.
@@ -419,7 +427,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(dir, &created),
                           Substitute("Unable to create directory $0", dir));
     if (created) {
-      delete_on_failure.push_front(new ScopedFileDeleter(env_, dir));
+      dirs_to_delete.emplace_back(dir);
       to_sync.insert(DirName(dir));
     }
   }
@@ -442,9 +450,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   }
 
   // Success: don't delete any files.
-  for (ScopedFileDeleter* deleter : delete_on_failure) {
-    deleter->Cancel();
-  }
+  deleter.cancel();
   return Status::OK();
 }
 

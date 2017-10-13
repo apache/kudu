@@ -39,10 +39,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
-#include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -142,7 +142,10 @@ Status EditFile(const RunnerContext& context) {
   const string tmp_out_path = path + ".new";
   unique_ptr<RWFile> out_rwfile;
   RETURN_NOT_OK_PREPEND(env->NewRWFile(tmp_out_path, &out_rwfile), "couldn't open output PBC file");
-  env_util::ScopedFileDeleter delete_tmp_output(env, tmp_out_path);
+  auto delete_tmp_output = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(tmp_out_path),
+                "Could not delete file " + tmp_out_path);
+  });
 
   // Also make a tmp file where we'll write the PBC in JSON format for
   // easy editing.
@@ -153,7 +156,10 @@ Status EditFile(const RunnerContext& context) {
                                                  JoinPathSegments(dir, tmp_template),
                                                  &tmp_json_path, &tmp_json_file),
                         "couldn't create temporary file");
-  env_util::ScopedFileDeleter delete_tmp_json(env, tmp_json_path);
+  auto delete_tmp_json = MakeScopedCleanup([&]() {
+    WARN_NOT_OK(env->DeleteFile(tmp_json_path),
+                "Could not delete file " + tmp_json_path);
+  });
 
   // Dump the contents in JSON to the temporary file.
   {
@@ -202,7 +208,7 @@ Status EditFile(const RunnerContext& context) {
   LOG(INFO) << "Moved original file to " << backup_path;
   RETURN_NOT_OK_PREPEND(env->RenameFile(tmp_out_path, path),
                         "couldn't move new file into place");
-  delete_tmp_output.Cancel();
+  delete_tmp_output.cancel();
   WARN_NOT_OK(env->SyncDir(dir), "couldn't sync directory");
 
   return Status::OK();

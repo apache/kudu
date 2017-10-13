@@ -22,7 +22,6 @@
 #include <memory>
 #include <string>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -88,29 +87,6 @@ Status DeleteExcessFilesByPattern(Env* env, const std::string& pattern, int max_
 //
 // Deletion errors generate warnings but do not halt the traversal.
 Status DeleteTmpFilesRecursively(Env* env, const std::string& path);
-
-// Deletes a file or directory when this object goes out of scope.
-//
-// The deletion may be cancelled by calling .Cancel().
-// This is typically useful for cleaning up temporary files if the
-// creation of the tmp file may fail.
-class ScopedFileDeleter {
- public:
-  ScopedFileDeleter(Env* env, std::string path);
-  ~ScopedFileDeleter();
-
-  // Do not delete the file when this object goes out of scope.
-  void Cancel() {
-    should_delete_ = false;
-  }
-
- private:
-  Env* const env_;
-  const std::string path_;
-  bool should_delete_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedFileDeleter);
-};
 
 } // namespace env_util
 } // namespace kudu
