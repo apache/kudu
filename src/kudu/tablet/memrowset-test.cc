@@ -192,7 +192,7 @@ class TestMemRowSet : public KuduTest {
     gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(&schema_, snap));
     CHECK_OK(iter->Init(NULL));
 
-    Arena arena(1024, 256*1024);
+    Arena arena(1024);
     RowBlock block(schema_, 100, &arena);
     int fetched = 0;
     while (iter->HasNext()) {

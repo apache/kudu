@@ -210,7 +210,7 @@ Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
       call_seq_id_(0),
       start_time_(MonoTime::Now()),
       metrics_(metrics),
-      arena_(1024, 1024 * 1024),
+      arena_(256),
       row_format_flags_(row_format_flags) {
   if (tablet_replica_) {
     auto tablet = tablet_replica->shared_tablet();

@@ -234,7 +234,7 @@ TEST_F(EncodedKeyTest, TestDecodeCompoundKeys) {
 
 TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
   gscoped_ptr<EncodedKey> key;
-  Arena arena(1024, 1024*1024);
+  Arena arena(1024);
 
   {
     // Integer type compound key.
@@ -259,7 +259,7 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
   Random r(SeedRandom());
   char buf[80];
   faststring encoded;
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   for (int i = 0; i < 10000; i++) {
     encoded.clear();
     arena.Reset();

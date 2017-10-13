@@ -45,9 +45,13 @@ namespace kudu {
 __thread Trace* Trace::threadlocal_trace_;
 
 Trace::Trace()
-  : arena_(new ThreadSafeArena(1024, 128*1024)),
-    entries_head_(nullptr),
-    entries_tail_(nullptr) {
+    : arena_(new ThreadSafeArena(1024)),
+      entries_head_(nullptr),
+      entries_tail_(nullptr) {
+  // We expect small allocations from our Arena so no need to have
+  // a large arena component. Small allocations are more likely to
+  // come out of thread cache and be fast.
+  arena_->SetMaxBufferSize(4096);
 }
 
 Trace::~Trace() {

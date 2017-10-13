@@ -729,7 +729,7 @@ Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
   const size_t kRowsPerBlock  = 100;
   size_t nrows = 0;
   size_t ndeltas = 0;
-  Arena arena(32 * 1024, 128 * 1024);
+  Arena arena(32 * 1024);
   RowBlock block(schema, kRowsPerBlock, &arena);
 
   // See tablet/delta_compaction.cc to understand why this loop is structured the way

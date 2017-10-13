@@ -52,7 +52,7 @@ namespace kudu {
 class RowOperationsTest : public KuduTest {
  public:
   RowOperationsTest()
-    : arena_(1024, 128 * 1024) {
+    : arena_(1024) {
     SeedRandom();
 
     SchemaBuilder builder;
@@ -354,7 +354,7 @@ string TestProjection(RowOperationsPB::Type type,
   enc.Add(type, client_row);
 
   // Decode it
-  Arena arena(1024, 1024*1024);
+  Arena arena(1024);
   vector<DecodedRowOperation> ops;
   RowOperationsPBDecoder dec(&pb, client_row.schema(), &server_schema, &arena);
   Status s = dec.DecodeOperations(&ops);

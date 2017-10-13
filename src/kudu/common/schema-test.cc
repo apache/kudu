@@ -304,7 +304,7 @@ TEST_F(TestSchema, TestRowOperations) {
                   ColumnSchema("col4", INT32) },
                 1);
 
-  Arena arena(1024, 256*1024);
+  Arena arena(1024);
 
   RowBuilder rb(schema);
   rb.AddString(string("row_a_1"));

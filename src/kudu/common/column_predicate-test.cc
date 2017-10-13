@@ -803,7 +803,7 @@ TEST_F(TestColumnPredicate, TestRangeConstructor) {
 // Test that the inclusive range constructor handles transforming to exclusive
 // upper bound correctly.
 TEST_F(TestColumnPredicate, TestInclusiveRange) {
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   {
     ColumnSchema column("c", INT32);
     int32_t zero = 0;
@@ -847,7 +847,7 @@ TEST_F(TestColumnPredicate, TestInclusiveRange) {
 // Test that the exclusive range constructor handles transforming to inclusive
 // lower bound correctly.
 TEST_F(TestColumnPredicate, TestExclusive) {
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   {
     ColumnSchema column("c", INT32);
     int32_t zero = 0;

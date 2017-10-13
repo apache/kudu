@@ -547,7 +547,7 @@ class RowBuilder {
  public:
   explicit RowBuilder(const Schema& schema)
     : schema_(schema),
-      arena_(1024, 1024*1024),
+      arena_(1024),
       bitmap_size_(ContiguousRowHelper::null_bitmap_size(schema)) {
     Reset();
   }

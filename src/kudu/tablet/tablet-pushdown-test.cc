@@ -104,7 +104,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // the same set of rows. Run the scan and verify that the
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
-    Arena arena(128, 1028);
+    Arena arena(128);
     AutoReleasePool pool;
     spec.OptimizeScan(schema_, &arena, &pool, true);
 
@@ -171,7 +171,7 @@ class TabletPushdownTest : public KuduTabletTest,
   // returns the expected number of rows. The rows themselves
   // should be empty.
   void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
-    Arena arena(128, 1028);
+    Arena arena(128);
     AutoReleasePool pool;
     spec.OptimizeScan(schema_, &arena, &pool, true);
 

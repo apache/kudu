@@ -122,7 +122,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   RETURN_NOT_OK(delta_iter_->Init(&spec));
   RETURN_NOT_OK(delta_iter_->SeekToOrdinal(0));
 
-  Arena arena(32 * 1024, 128 * 1024);
+  Arena arena(32 * 1024);
   RowBlock block(partial_schema_, kRowsPerBlock, &arena);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";

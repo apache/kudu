@@ -53,7 +53,7 @@ ScanConfiguration::ScanConfiguration(KuduTable* table)
       is_fault_tolerant_(false),
       snapshot_timestamp_(kNoTimestamp),
       timeout_(MonoDelta::FromMilliseconds(KuduScanner::kScanTimeoutMillis)),
-      arena_(1024, 1024 * 1024),
+      arena_(256),
       row_format_flags_(KuduScanner::NO_FLAGS) {
 }
 

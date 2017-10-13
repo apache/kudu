@@ -63,7 +63,7 @@ Status DebugDumpDeltaIterator(DeltaType type,
 
   const size_t kRowsPerBlock = 100;
 
-  Arena arena(32 * 1024, 128 * 1024);
+  Arena arena(32 * 1024);
   for (size_t i = 0; iter->HasNext(); ) {
     size_t n;
     if (nrows > 0) {
@@ -103,7 +103,7 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
 
   const size_t kRowsPerBlock = 100;
   DeltaStats stats;
-  Arena arena(32 * 1024, 128 * 1024);
+  Arena arena(32 * 1024);
   for (size_t i = 0; iter->HasNext(); ) {
     size_t n;
     if (nrows > 0) {

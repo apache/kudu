@@ -109,7 +109,7 @@ class TestCompaction : public KuduRowSetTest {
     : KuduRowSetTest(CreateSchema()),
       op_id_(consensus::MaximumOpId()),
       row_builder_(schema_),
-      arena_(32*1024, 128*1024),
+      arena_(32*1024),
       clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
   }

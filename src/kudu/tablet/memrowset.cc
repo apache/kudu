@@ -62,7 +62,6 @@ using log::LogAnchorRegistry;
 using strings::Substitute;
 
 static const int kInitialArenaSize = 16;
-static const int kMaxArenaBufferSize = 1024*1024;
 
 bool MRSRow::IsGhost() const {
   bool is_ghost = false;
@@ -116,8 +115,7 @@ MemRowSet::MemRowSet(int64_t id,
     schema_(schema),
     allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(),
                                                  CreateMemTrackerForMemRowSet(id, parent_tracker))),
-    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
-                                             allocator_)),
+    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, allocator_)),
     tree_(arena_),
     debug_insert_count_(0),
     debug_update_count_(0),

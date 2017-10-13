@@ -141,7 +141,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
-    Arena tmp_arena(1024, 1024);
+    Arena tmp_arena(1024);
     RowBlock block(schema_, 1, &tmp_arena);
     faststring update_buf;
 
@@ -211,7 +211,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memrowset memory.
   void SlowReaderThread(int tid) {
-    Arena arena(32*1024, 256*1024);
+    Arena arena(32*1024);
     RowBlock block(schema_, 1, &arena);
 
     uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
@@ -244,7 +244,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   }
 
   uint64_t CountSum(const shared_ptr<TimeSeries> &scanned_ts) {
-    Arena arena(1024, 1024); // unused, just scanning ints
+    Arena arena(1024); // unused, just scanning ints
 
     static const int kBufInts = 1024*1024 / 8;
     RowBlock block(valcol_projection_, kBufInts, &arena);

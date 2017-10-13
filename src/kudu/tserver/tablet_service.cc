@@ -1870,10 +1870,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   RowwiseIterator* iter = scanner->iter();
 
-  // TODO: could size the RowBlock based on the user's requested batch size?
+  // TODO(todd): could size the RowBlock based on the user's requested batch size?
   // If people had really large indirect objects, we would currently overshoot
   // their requested batch size by a lot.
-  Arena arena(32 * 1024, 1 * 1024 * 1024);
+  Arena arena(32 * 1024);
   RowBlock block(scanner->iter()->schema(),
                  FLAGS_scanner_batch_size_rows, &arena);
 

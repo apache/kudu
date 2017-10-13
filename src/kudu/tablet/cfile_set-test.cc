@@ -118,7 +118,7 @@ class TestCFileSet : public KuduRowSetTest {
     ASSERT_OK(iter->Init(&spec));
 
     // Check that the range was respected on all the results.
-    Arena arena(1024, 1024);
+    Arena arena(1024);
     RowBlock block(schema_, 100, &arena);
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&block));
@@ -168,7 +168,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
   ASSERT_OK(iter->Init(nullptr));
 
-  Arena arena(4096, 1024*1024);
+  Arena arena(4096);
   RowBlock block(schema_, 100, &arena);
   rowid_t row_idx = 0;
   while (iter->HasNext()) {
@@ -282,7 +282,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
   Schema key_schema = schema_.CreateKeyProjection();
-  Arena arena(1024, 256 * 1024);
+  Arena arena(1024);
   AutoReleasePool pool;
 
   // Create a scan with a range predicate on the key column.

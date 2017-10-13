@@ -952,7 +952,7 @@ class PreparedMutation {
 template<class Traits = BTreeTraits>
 class CBTree {
  public:
-  CBTree() : CBTree(std::make_shared<typename Traits::ArenaType>(4 * 1024, 1024 * 1024)) {
+  CBTree() : CBTree(std::make_shared<typename Traits::ArenaType>(4 * 1024)) {
   }
 
   explicit CBTree(std::shared_ptr<typename Traits::ArenaType> arena)

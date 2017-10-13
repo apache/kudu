@@ -69,7 +69,7 @@ namespace cfile {
 class TestEncoding : public KuduTest {
  public:
   TestEncoding()
-    : arena_(1024, 1024*1024) {
+    : arena_(1024) {
   }
 
  protected:
@@ -178,7 +178,7 @@ class TestEncoding : public KuduTest {
 
   template<class BuilderType, class DecoderType>
   void TestStringSeekByValueLargeBlock() {
-    Arena arena(1024, 1024*1024); // TODO: move to fixture?
+    Arena arena(1024); // TODO(todd): move to fixture?
     gscoped_ptr<WriterOptions> opts(NewWriterOptions());
     BinaryPrefixBlockBuilder sbb(opts.get());
     const uint kCount = 1000;

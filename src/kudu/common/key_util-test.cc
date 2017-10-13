@@ -37,8 +37,7 @@ namespace kudu {
 
 class KeyUtilTest : public KuduTest {
  public:
-  KeyUtilTest()
-    : arena_(1024, 4096) {}
+  KeyUtilTest() : arena_(1024) {}
 
  protected:
   uint8_t* row_data(KuduPartialRow* row) {

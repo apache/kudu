@@ -156,7 +156,7 @@ TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
 // Test for "host <= 'foo'" which should reject 'foobaz'.
 // Regression test for a bug in an earlier implementation of predicate pushdown.
 TEST_F(CompositePushdownTest, TestPushDownStringInequality) {
-  Arena arena(256, 1024);
+  Arena arena(256);
   ScanSpec spec;
   int16_t year = 2001;
   int8_t month = 9;

@@ -720,7 +720,7 @@ string PartitionSchema::RangePartitionDebugString(Slice lower_bound,
   // Partitions are considered metadata, so don't redact them.
   ScopedDisableRedaction no_redaction;
 
-  Arena arena(1024, 128 * 1024);
+  Arena arena(256);
   KuduPartialRow lower(&schema);
   KuduPartialRow upper(&schema);
 
@@ -737,7 +737,7 @@ string PartitionSchema::RangePartitionDebugString(Slice lower_bound,
 }
 
 string PartitionSchema::RangeKeyDebugString(Slice range_key, const Schema& schema) const {
-  Arena arena(1024, 128 * 1024);
+  Arena arena(256);
   KuduPartialRow row(&schema);
 
   Status s = DecodeRangeKey(&range_key, &row, &arena);

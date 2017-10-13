@@ -78,7 +78,7 @@ class TestDeltaFile : public KuduTest {
  public:
   TestDeltaFile() :
     schema_(CreateSchema()),
-    arena_(1024, 1024) {
+    arena_(1024) {
   }
 
  public:

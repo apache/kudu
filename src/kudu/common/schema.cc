@@ -376,7 +376,7 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
     }
   }
 
-  Arena arena(1024, 128 * 1024);
+  Arena arena(256);
   uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
   Status s = DecodeRowKey(encoded_key, buf, &arena);
   if (!s.ok()) {

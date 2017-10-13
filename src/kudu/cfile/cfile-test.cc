@@ -201,7 +201,7 @@ class TestCFile : public CFileTestBase {
     gscoped_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
-    Arena arena(8192, 1024 * 1024);
+    Arena arena(8192);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
 
     SelectionVector sel(10);
@@ -607,7 +607,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   gscoped_ptr<CFileIterator> iter;
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
-  Arena arena(1024, 1024*1024);
+  Arena arena(1024);
 
   ASSERT_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -815,7 +815,7 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   // Test String Default Value
   Slice str_data[kNumItems];
   Slice str_value("Hello");
-  Arena arena(32*1024, 256*1024);
+  Arena arena(32*1024);
   DefaultColumnValueIterator str_iter(GetTypeInfo(STRING), &str_value);
   ColumnBlock str_col(GetTypeInfo(STRING), nullptr, str_data, kNumItems, &arena);
   ColumnMaterializationContext str_ctx = CreateNonDecoderEvalContext(&str_col, &sel);

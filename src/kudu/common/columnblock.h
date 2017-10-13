@@ -217,7 +217,7 @@ class ScopedColumnBlock : public ColumnBlock {
                   new uint8_t[BitmapSize(n_rows)],
                   new cpp_type[n_rows],
                   n_rows,
-                  new Arena(1024, 1*1024*1024)),
+                  new Arena(1024)),
       null_bitmap_(null_bitmap()),
       data_(reinterpret_cast<cpp_type *>(data())),
       arena_(arena()) {

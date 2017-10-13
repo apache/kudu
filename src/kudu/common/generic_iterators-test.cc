@@ -264,7 +264,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ASSERT_OK(materializing.Init(&spec));
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   RowBlock dst(kIntSchema, 100, &arena);
   ASSERT_OK(materializing.NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
@@ -312,7 +312,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   ASSERT_EQ(1, pred_eval->col_idx_predicates_.size())
     << "Predicate should be evaluated by the outer iterator";
 
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   RowBlock dst(kIntSchema, 100, &arena);
   ASSERT_OK(outer_iter->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);

@@ -51,7 +51,7 @@ namespace kudu {
 class TestScanSpec : public KuduTest {
  public:
   explicit TestScanSpec(const Schema& s)
-    : arena_(1024, 256 * 1024),
+    : arena_(1024),
       pool_(),
       schema_(s),
       spec_() {}

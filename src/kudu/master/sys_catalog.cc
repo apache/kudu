@@ -605,7 +605,7 @@ Status SysCatalogTable::ProcessRows(
   RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_, &iter));
   RETURN_NOT_OK(iter->Init(&spec));
 
-  Arena arena(32 * 1024, 256 * 1024);
+  Arena arena(32 * 1024);
   RowBlock block(iter->schema(), 512, &arena);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));

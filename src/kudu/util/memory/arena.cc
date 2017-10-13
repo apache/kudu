@@ -32,23 +32,25 @@ template <bool THREADSAFE>
 const size_t ArenaBase<THREADSAFE>::kMinimumChunkSize = 16;
 
 template <bool THREADSAFE>
-ArenaBase<THREADSAFE>::ArenaBase(
-  BufferAllocator* const buffer_allocator,
-  size_t initial_buffer_size,
-  size_t max_buffer_size)
+ArenaBase<THREADSAFE>::ArenaBase(BufferAllocator* buffer_allocator,
+                                 size_t initial_buffer_size)
     : buffer_allocator_(buffer_allocator),
-      max_buffer_size_(max_buffer_size),
+      max_buffer_size_(1024 * 1024),
       arena_footprint_(0) {
-  DCHECK_LE(max_buffer_size_, 1024 * 1024)
-      << "Should not use buffer sizes larger than 1MB due to tcmalloc inefficiencies";
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
 
 template <bool THREADSAFE>
-ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size, size_t max_buffer_size)
+ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size)
     : ArenaBase<THREADSAFE>(HeapBufferAllocator::Get(),
-                            initial_buffer_size,
-                            max_buffer_size) {
+                            initial_buffer_size) {
+}
+
+template <bool THREADSAFE>
+void ArenaBase<THREADSAFE>::SetMaxBufferSize(size_t size) {
+  DCHECK_LE(size, 1024 * 1024)
+      << "Should not use buffer sizes larger than 1MB due to tcmalloc inefficiencies";
+  max_buffer_size_ = size;
 }
 
 template <bool THREADSAFE>

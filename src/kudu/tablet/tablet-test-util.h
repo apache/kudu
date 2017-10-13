@@ -141,7 +141,7 @@ class KuduRowSetTest : public KuduTabletTest {
 static inline Status SilentIterateToStringList(RowwiseIterator* iter,
                                                int* fetched) {
   const Schema& schema = iter->schema();
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   RowBlock block(schema, 100, &arena);
   *fetched = 0;
   while (iter->HasNext()) {
@@ -160,7 +160,7 @@ static inline Status IterateToStringList(RowwiseIterator* iter,
                                          int limit = INT_MAX) {
   out->clear();
   Schema schema = iter->schema();
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   RowBlock block(schema, 100, &arena);
   int fetched = 0;
   while (iter->HasNext() && fetched < limit) {

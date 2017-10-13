@@ -65,9 +65,8 @@ class CodegenTest : public KuduTest {
  public:
   CodegenTest()
     : random_(SeedRandom()),
-      // Set the arena size as small as possible to catch errors during relocation,
-      // for its initial size and its eventual max size.
-      projections_arena_(16, kIndirectPerProjection * 2) {
+      // Set the initial Arena size as small as possible to catch errors during relocation.
+      projections_arena_(16) {
     // Create the base schema.
     vector<ColumnSchema> cols = { ColumnSchema("key           ", UINT64, false),
                                   ColumnSchema("int32         ",  INT32, false),
@@ -87,7 +86,7 @@ class CodegenTest : public KuduTest {
     defaults_.Reset(cols, 1);
     defaults_ = SchemaBuilder(defaults_).Build(); // add IDs
 
-    test_rows_arena_.reset(new Arena(2 * 1024, 1024 * 1024));
+    test_rows_arena_.reset(new Arena(2 * 1024));
     RowBuilder rb(base_);
     for (int i = 0; i < kNumTestRows; ++i) {
       rb.AddUint64(i);

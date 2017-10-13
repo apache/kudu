@@ -54,7 +54,6 @@ using strings::Substitute;
 ////////////////////////////////////////////////////////////
 
 static const int kInitialArenaSize = 16;
-static const int kMaxArenaBufferSize = 1024*1024;
 
 Status DeltaMemStore::Create(int64_t id,
                              int64_t rs_id,
@@ -77,8 +76,7 @@ DeltaMemStore::DeltaMemStore(int64_t id,
     rs_id_(rs_id),
     allocator_(new MemoryTrackingBufferAllocator(
         HeapBufferAllocator::Get(), std::move(parent_tracker))),
-    arena_(new ThreadSafeMemoryTrackingArena(
-        kInitialArenaSize, kMaxArenaBufferSize, allocator_)),
+    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, allocator_)),
     tree_(arena_),
     anchorer_(log_anchor_registry,
               Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),

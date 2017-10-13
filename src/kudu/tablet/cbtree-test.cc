@@ -67,7 +67,7 @@ class TestCBTree : public KuduTest {
   }
 
   void DoBigKVTest(size_t key_size, size_t val_size) {
-    ThreadSafeArena arena(1024, 1024);
+    ThreadSafeArena arena(1024);
 
     char kbuf[key_size];
     char vbuf[val_size];
@@ -91,7 +91,7 @@ class TestCBTree : public KuduTest {
 // The nodes may come in slightly smaller than the requested size,
 // but should not be any larger.
 TEST_F(TestCBTree, TestNodeSizes) {
-  ThreadSafeArena arena(1024, 1024);
+  ThreadSafeArena arena(1024);
 
   LeafNode<BTreeTraits> lnode(false);
   ASSERT_LE(sizeof(lnode), BTreeTraits::kLeafNodeSize);
@@ -103,7 +103,7 @@ TEST_F(TestCBTree, TestNodeSizes) {
 
 TEST_F(TestCBTree, TestLeafNode) {
   LeafNode<BTreeTraits> lnode(false);
-  ThreadSafeArena arena(1024, 1024);
+  ThreadSafeArena arena(1024);
 
   Slice k1("key1");
   Slice v1("val1");

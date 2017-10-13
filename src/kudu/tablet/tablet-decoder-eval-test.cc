@@ -158,7 +158,7 @@ public:
 
   void TestTimedScanWithBounds(size_t nrows, size_t cardinality, size_t strlen, size_t lower_val,
                                size_t upper_val, int* fetched) {
-    Arena arena(128, 1028);
+    Arena arena(128);
     AutoReleasePool pool;
     ScanSpec spec;
 
@@ -226,7 +226,7 @@ public:
                               Substitute("$0", upper).length(),
                               Substitute("$0", cardinality).length()});
     FillTestTablet(nrows, 10, strlen, -1);
-    Arena arena(128, 1028);
+    Arena arena(128);
     AutoReleasePool pool;
     ScanSpec spec;
 
@@ -257,7 +257,7 @@ public:
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
-    Arena ret_arena(1028, 1028);
+    Arena ret_arena(1024);
     size_t expected_count = ExpectedCount(nrows, cardinality, lower, upper);
     Schema schema = iter->schema();
     RowBlock block(schema, 100, &ret_arena);

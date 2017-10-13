@@ -478,7 +478,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
 }
 
 TEST_F(TestDeltaMemStore, TestCollectMutations) {
-  Arena arena(1024, 1024);
+  Arena arena(1024);
 
   // Update rows 5 and 12
   vector<uint32_t> to_update;

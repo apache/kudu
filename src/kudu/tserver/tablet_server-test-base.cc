@@ -391,7 +391,7 @@ void TabletServerTestBase::VerifyRows(const Schema& schema,
   const size_t batch_size =
       std::max(size_t(1), std::min(expected.size() / 10,
                                    4*1024*1024 / schema.byte_size()));
-  Arena arena(32*1024, 256*1024);
+  Arena arena(32*1024);
   RowBlock block(schema, batch_size, &arena);
 
   int count = 0;

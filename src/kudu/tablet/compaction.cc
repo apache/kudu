@@ -92,7 +92,7 @@ class MemRowSetCompactionInput : public CompactionInput {
                            const MvccSnapshot& snap,
                            const Schema* projection)
     : iter_(memrowset.NewIterator(projection, snap)),
-      arena_(32*1024, 128*1024),
+      arena_(32*1024),
       has_more_blocks_(false) {
   }
 
@@ -199,7 +199,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
       : base_iter_(std::move(base_iter)),
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
-        arena_(32 * 1024, 128 * 1024),
+        arena_(32 * 1024),
         block_(base_iter_->schema(), kRowsPerBlock, &arena_),
         redo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
         undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
@@ -1200,7 +1200,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   const Schema key_schema(input->schema().CreateKeyProjection());
 
   // Arena and projector to store/project row keys for missed delta updates
-  Arena arena(1024, 1024*1024);
+  Arena arena(1024);
   RowProjector key_projector(schema, &key_schema);
   RETURN_NOT_OK(key_projector.Init());
   faststring buf;

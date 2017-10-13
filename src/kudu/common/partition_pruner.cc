@@ -136,7 +136,7 @@ void EncodeRangeKeysFromPrimaryKeyBounds(const Schema& schema,
                             .type_info()
                             ->IsMinValue(scan_spec.exclusive_upper_bound_key()->raw_keys()[idx]);
       }
-      Arena arena(std::max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()), 4096);
+      Arena arena(std::max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()));
       if (!min_suffix) {
         if (!key_util::IncrementPrimaryKey(&row, num_range_columns, &arena)) {
           // The range-partition key upper bound can't be incremented, which
@@ -169,7 +169,7 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
 
   // Arenas must be at least the minimum chunk size, and we require at least
   // enough space for the range key columns.
-  Arena arena(std::max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()), 4096);
+  Arena arena(std::max<size_t>(Arena::kMinimumChunkSize, schema.key_byte_size()));
   uint8_t* buf = static_cast<uint8_t*>(CHECK_NOTNULL(arena.AllocateBytes(schema.key_byte_size())));
   ContiguousRow row(&schema, buf);
 

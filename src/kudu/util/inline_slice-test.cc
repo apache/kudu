@@ -59,7 +59,7 @@ static void TestRoundTrip(InlineSlice<N> *slice,
 // data
 template<size_t N>
 static void DoTest() {
-  Arena arena(1024, 4096);
+  Arena arena(1024);
 
   // Test a range of inputs both growing and shrinking
   InlineSlice<N> my_slice;

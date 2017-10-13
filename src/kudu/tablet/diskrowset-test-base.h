@@ -216,7 +216,7 @@ class TestRowSet : public KuduRowSetTest {
     gscoped_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(&proj_val, snap, UNORDERED, &row_iter));
     CHECK_OK(row_iter->Init(NULL));
-    Arena arena(1024, 1024*1024);
+    Arena arena(1024);
     int batch_size = 10000;
     RowBlock dst(proj_val, batch_size, &arena);
 
@@ -252,7 +252,7 @@ class TestRowSet : public KuduRowSetTest {
   // asserting that the result matches 'expected_val'.
   void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
                         const std::string& expected_val) {
-    Arena arena(256, 1024);
+    Arena arena(256);
     AutoReleasePool pool;
     ScanSpec spec;
     auto pred = ColumnPredicate::Equality(schema_.column(0), &row_key);
@@ -279,7 +279,7 @@ class TestRowSet : public KuduRowSetTest {
     CHECK_OK(row_iter->Init(NULL));
 
     int batch_size = 1000;
-    Arena arena(1024, 1024*1024);
+    Arena arena(1024);
     RowBlock dst(schema, batch_size, &arena);
 
     int i = 0;

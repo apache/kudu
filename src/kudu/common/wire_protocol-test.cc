@@ -54,7 +54,7 @@ class WireProtocolTest : public KuduTest {
               ColumnSchema("col2", STRING),
               ColumnSchema("col3", UINT32, true /* nullable */) },
         1),
-        test_data_arena_(4096, 256 * 1024) {
+        test_data_arena_(4096) {
   }
 
   void FillRowBlockWithTestRows(RowBlock* block) {
@@ -214,7 +214,7 @@ TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
 // Create a block of rows in columnar layout and ensure that it can be
 // converted to and from protobuf.
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   RowBlock block(schema_, 10, &arena);
   FillRowBlockWithTestRows(&block);
 
@@ -244,7 +244,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
 // converted to and from protobuf.
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
   int kNumRows = 10;
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   // Create a schema with multiple UNIXTIME_MICROS columns in different
   // positions.
   Schema tablet_schema({ ColumnSchema("key", UNIXTIME_MICROS),
@@ -334,7 +334,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
 
 #ifdef NDEBUG
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   const int kNumTrials = AllowSlowTests() ? 100 : 10;
   RowBlock block(schema_, 10000 * kNumTrials, &arena);
   FillRowBlockWithTestRows(&block);
@@ -379,7 +379,7 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
 // projection (a COUNT(*) query).
 TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
   Schema empty(std::vector<ColumnSchema>(), 0);
-  Arena arena(1024, 1024 * 1024);
+  Arena arena(1024);
   RowBlock block(empty, 1000, &arena);
   block.selection_vector()->SetAllTrue();
   // Unselect 100 rows
@@ -446,7 +446,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
   ColumnSchema col1("col1", INT32);
   vector<ColumnSchema> cols = { col1 };
   Schema schema(cols, 1);
-  Arena arena(1024,1024*1024);
+  Arena arena(1024);
   boost::optional<ColumnPredicate> predicate;
 
   { // col1 IN (5, 6, 10)
@@ -482,7 +482,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     pb.set_column("col1");
     pb.mutable_in_list();
 
-    Arena arena(1024,1024*1024);
+    Arena arena(1024);
     boost::optional<ColumnPredicate> predicate;
     ASSERT_OK(ColumnPredicateFromPB(schema, &arena, pb, &predicate));
     ASSERT_EQ(PredicateType::None, predicate->predicate_type());
@@ -494,7 +494,7 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     pb.mutable_in_list();
     *pb.mutable_in_list()->mutable_values()->Add() = string("\0", 1);
 
-    Arena arena(1024,1024*1024);
+    Arena arena(1024);
     boost::optional<ColumnPredicate> predicate;
     ASSERT_TRUE(ColumnPredicateFromPB(schema, &arena, pb, &predicate).IsInvalidArgument());
   }

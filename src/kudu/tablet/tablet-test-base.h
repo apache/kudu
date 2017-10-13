@@ -310,7 +310,7 @@ class TabletTestBase : public KuduTabletTest {
     KuduTabletTest(TESTSETUP::CreateSchema(), clock_type),
     setup_(),
     max_rows_(setup_.GetMaxRows()),
-    arena_(1024, 1024 * 1024)
+    arena_(1024)
   {}
 
   // Inserts "count" rows.
@@ -429,7 +429,7 @@ class TabletTestBase : public KuduTabletTest {
     ASSERT_OK(iter->Init(NULL));
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));
-    Arena arena(32*1024, 256*1024);
+    Arena arena(32*1024);
     RowBlock block(schema_, batch_size, &arena);
 
     bool check_for_dups = true;

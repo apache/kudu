@@ -672,7 +672,7 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
                         "Cannot create new row iterator");
   RETURN_NOT_OK_PREPEND(iter->Init(NULL), "Cannot initialize row iterator");
 
-  Arena arena(1024, 1024);
+  Arena arena(1024);
   RowBlock block(projection, 100, &arena);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));

@@ -90,7 +90,7 @@ class MergeIterState {
  public:
   explicit MergeIterState(shared_ptr<RowwiseIterator> iter) :
       iter_(std::move(iter)),
-      arena_(1024, 256*1024),
+      arena_(1024),
       read_block_(iter_->schema(), kMergeRowBuffer, &arena_),
       next_row_idx_(0),
       num_advanced_(0),

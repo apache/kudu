@@ -71,7 +71,7 @@ void CheckPrunedPartitions(const Schema& schema,
 
   ScanSpec opt_spec(spec);
   AutoReleasePool p;
-  Arena arena(256, 1024 * 1024);
+  Arena arena(256);
   opt_spec.OptimizeScan(schema, &arena, &p, false);
 
   PartitionPruner pruner;

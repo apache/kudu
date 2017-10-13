@@ -78,9 +78,8 @@ class ArenaBase {
   // Arenas are required to have a minimum size of at least this amount.
   static const size_t kMinimumChunkSize;
 
-  // Creates a new arena, with a single buffer of size up-to
-  // initial_buffer_size, upper size limit for later-allocated buffers capped
-  // at max_buffer_size, and maximum capacity (i.e. total sizes of all buffers)
+  // Creates a new arena, with a single buffer of size up-to initial_buffer_size
+  // and maximum capacity (i.e. total sizes of all buffers)
   // possibly limited by the buffer allocator. The allocator might cap the
   // initial allocation request arbitrarily (down to zero). As a consequence,
   // arena construction never fails due to OOM.
@@ -88,14 +87,42 @@ class ArenaBase {
   // Calls to AllocateBytes() will then give out bytes from the working buffer
   // until it is exhausted. Then, a subsequent working buffer will be allocated.
   // The size of the next buffer is normally 2x the size of the previous buffer.
-  // It might be capped by the allocator, or by the max_buffer_size parameter.
-  ArenaBase(BufferAllocator* const buffer_allocator,
-            size_t initial_buffer_size,
-            size_t max_buffer_size);
+  // It might be capped by the allocator, or by the max_buffer_size of the Arena,
+  // settable by SetMaxBufferSize below.
+  //
+  // The default maximum buffer size is 1MB. See 'SetMaxBufferSize' for details
+  // on when you would want to configure this differently.
+  ArenaBase(BufferAllocator* buffer_allocator,
+            size_t initial_buffer_size);
 
-  // Creates an arena using a default (heap) allocator with unbounded capacity.
-  // Discretion advised.
-  ArenaBase(size_t initial_buffer_size, size_t max_buffer_size);
+  // Creates an arena using a default (heap) allocator.
+  explicit ArenaBase(size_t initial_buffer_size);
+
+  // Set the maximum buffer size allocated for this arena.
+  // The maximum buffer size allowed is 1MB.
+  //
+  // Consider the following pros/cons of large buffer sizes:
+  //
+  // Pros:
+  //   - Fewer heap allocations if the arena will hold a lot of data.
+  //     (hence better allocation performance out of the arena)
+  //   - Better page locality for objects allocated out of the same arena,
+  //     especially if huge pages are in use.
+  //   - Less internal fragmentation at the "end" of each buffer if the
+  //     size of allocations from the arena is close to the size of the
+  //     buffer. For example, with a 128KB max buffer size and 65KB
+  //     allocations, we will only be able to make one allocation from
+  //     each buffer and waste nearly 50% of memory.
+  // Cons:
+  //   - Larger heap allocations may be more difficult to fulfill if the
+  //     heap is fragmented.
+  //
+  // Overall, if you aren't sure, just leave it at the default.
+  //
+  // NOTE: this method is not thread-safe, even in the thread-safe variant.
+  // It is expected to call this only immediately after constructing the
+  // Arena instance, but before making any allocations.
+  void SetMaxBufferSize(size_t size);
 
   // Adds content of the specified Slice to the arena, and returns a
   // pointer to it. The pointer is guaranteed to remain valid during the
@@ -192,7 +219,7 @@ class ArenaBase {
   // The current component to allocate from.
   // Use AcquireLoadCurrent and ReleaseStoreCurrent to load/store.
   Component* current_;
-  const size_t max_buffer_size_;
+  size_t max_buffer_size_;
   size_t arena_footprint_;
 
   // Lock covering 'slow path' allocation, when new components are
@@ -265,15 +292,15 @@ template<class T, bool THREADSAFE> class ArenaAllocator {
 
 class Arena : public ArenaBase<false> {
  public:
-  explicit Arena(size_t initial_buffer_size, size_t max_buffer_size) :
-    ArenaBase<false>(initial_buffer_size, max_buffer_size)
+  explicit Arena(size_t initial_buffer_size) :
+    ArenaBase<false>(initial_buffer_size)
   {}
 };
 
 class ThreadSafeArena : public ArenaBase<true> {
  public:
-  explicit ThreadSafeArena(size_t initial_buffer_size, size_t max_buffer_size) :
-    ArenaBase<true>(initial_buffer_size, max_buffer_size)
+  explicit ThreadSafeArena(size_t initial_buffer_size) :
+    ArenaBase<true>(initial_buffer_size)
   {}
 };
 
@@ -285,9 +312,8 @@ class MemoryTrackingArena : public ArenaBase<false> {
 
   MemoryTrackingArena(
       size_t initial_buffer_size,
-      size_t max_buffer_size,
       const std::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
-      : ArenaBase<false>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
+      : ArenaBase<false>(tracking_allocator.get(), initial_buffer_size),
         tracking_allocator_(tracking_allocator) {}
 
   ~MemoryTrackingArena() {
@@ -305,9 +331,8 @@ class ThreadSafeMemoryTrackingArena : public ArenaBase<true> {
 
   ThreadSafeMemoryTrackingArena(
       size_t initial_buffer_size,
-      size_t max_buffer_size,
       const std::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
-      : ArenaBase<true>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
+      : ArenaBase<true>(tracking_allocator.get(), initial_buffer_size),
         tracking_allocator_(tracking_allocator) {}
 
   ~ThreadSafeMemoryTrackingArena() {

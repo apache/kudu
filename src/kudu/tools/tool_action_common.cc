@@ -209,7 +209,7 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   Schema request_schema;
   RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
 
-  Arena arena(32 * 1024, 1024 * 1024);
+  Arena arena(32 * 1024);
   RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(dec.DecodeOperations(&ops));

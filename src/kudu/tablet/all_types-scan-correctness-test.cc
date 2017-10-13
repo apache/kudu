@@ -301,7 +301,7 @@ public:
   // Scan the results of a query. Set "count" to the number of results satisfying the predicates.
   // ScanSpec must have all desired predicates already added to it.
   void ScanWithSpec(const Schema& schema, ScanSpec spec, int* count) {
-    Arena arena(1028, 1028);
+    Arena arena(1024);
     AutoReleasePool pool;
     *count = 0;
     spec.OptimizeScan(schema, &arena, &pool, true);
