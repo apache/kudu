@@ -49,6 +49,8 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
@@ -101,11 +103,13 @@
 using google::protobuf::util::MessageDifferencer;
 using kudu::clock::Clock;
 using kudu::clock::HybridClock;
+using kudu::fs::CreateCorruptBlock;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::tablet::RowSetDataPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletSuperBlockPB;
@@ -1241,6 +1245,61 @@ TEST_F(TabletServerTest, TestExpiredScanner) {
   ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
+}
+
+TEST_F(TabletServerTest, TestScanCorruptedDeltas) {
+  // Ensure some rows get to disk with deltas.
+  InsertTestRowsDirect(0, 100);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  UpdateTestRowRemote(0, 1, 100);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+
+  // Fudge with some delta blocks.
+  TabletSuperBlockPB superblock_pb;
+  tablet_replica_->tablet()->metadata()->ToSuperBlock(&superblock_pb);
+  FsManager* fs_manager = mini_server_->server()->fs_manager();
+  for (int rowset_no = 0; rowset_no < superblock_pb.rowsets_size(); rowset_no++) {
+    RowSetDataPB* rowset_pb = superblock_pb.mutable_rowsets(rowset_no);
+    for (int id = 0; id < rowset_pb->undo_deltas_size(); id++) {
+      BlockId block_id(rowset_pb->undo_deltas(id).block().id());
+      BlockId new_block_id;
+      // Make a copy of each block and rewrite the superblock to include these
+      // newly corrupted blocks.
+      ASSERT_OK(CreateCorruptBlock(fs_manager, block_id, 0, 0, &new_block_id));
+      rowset_pb->mutable_undo_deltas(id)->mutable_block()->set_id(new_block_id.id());
+    }
+  }
+  // Grab the deltafiles and corrupt them.
+  const string& meta_path = fs_manager->GetTabletMetadataPath(tablet_replica_->tablet_id());
+  ShutdownTablet();
+
+  // Flush the corruption and rebuild the server with the corrupt data.
+  ASSERT_OK(pb_util::WritePBContainerToPath(env_,
+      meta_path, superblock_pb, pb_util::OVERWRITE, pb_util::SYNC));
+  ASSERT_OK(ShutdownAndRebuildTablet());
+  LOG(INFO) << Substitute("Rebuilt tablet $0 with broken blocks", tablet_replica_->tablet_id());
+
+  // Now open a scanner for the server.
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+
+  // Send the call. This first call should attempt to init the corrupted
+  // deltafiles and return with an error. The second call should see that the
+  // previous call to init failed and should return the failed status.
+  req.set_batch_size_bytes(10000);
+  for (int i = 0; i < 2; i++) {
+    rpc.Reset();
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(resp.error().status().code(), AppStatusPB::CORRUPTION);
+    ASSERT_STR_CONTAINS(resp.error().status().message(), "failed to init CFileReader");
+  }
 }
 
 TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {

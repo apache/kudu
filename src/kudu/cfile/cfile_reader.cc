@@ -202,7 +202,7 @@ Status CFileReader::Init() {
 Status CFileReader::ReadAndParseHeader() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseHeader",
                "cfile", ToString());
-  DCHECK(!init_once_.initted());
+  DCHECK(!init_once_.init_succeeded());
 
   // First read and parse the "pre-header", which lets us know
   // that it is indeed a CFile and tells us the length of the
@@ -254,7 +254,7 @@ Status CFileReader::ReadAndParseHeader() {
 Status CFileReader::ReadAndParseFooter() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseFooter",
                "cfile", ToString());
-  DCHECK(!init_once_.initted());
+  DCHECK(!init_once_.init_succeeded());
   CHECK_GT(file_size_, kMagicAndLengthSize) <<
     "file too short: " << file_size_;
 
@@ -419,7 +419,7 @@ class ScratchMemory {
 
 Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
                               BlockHandle *ret) const {
-  DCHECK(init_once_.initted());
+  DCHECK(init_once_.init_succeeded());
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
     "bad offset " << ptr.ToString() << " in file of size "

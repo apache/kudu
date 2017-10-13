@@ -111,7 +111,7 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
 
   // Returns true if this session has been initialized.
   bool IsInitialized() const {
-    return init_once_.initted();
+    return init_once_.init_succeeded();
   }
 
   // Return ID of tablet corresponding to this session.
@@ -142,17 +142,17 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
                             TabletCopyErrorPB::Code* error_code);
 
   const tablet::TabletSuperBlockPB& tablet_superblock() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return tablet_superblock_;
   }
 
   const consensus::ConsensusStatePB& initial_cstate() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return initial_cstate_;
   }
 
   const log::SegmentSequence& log_segments() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return log_segments_;
   }
 

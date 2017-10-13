@@ -132,12 +132,12 @@ class CFileReader {
   }
 
   const TypeInfo *type_info() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return type_info_;
   }
 
   const TypeEncodingInfo *type_encoding_info() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return type_encoding_info_;
   }
 
@@ -146,12 +146,12 @@ class CFileReader {
   }
 
   const CFileHeaderPB &header() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return *DCHECK_NOTNULL(header_.get());
   }
 
   const CFileFooterPB &footer() const {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return *DCHECK_NOTNULL(footer_.get());
   }
 

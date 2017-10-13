@@ -299,7 +299,7 @@ Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
                                              uint64_t offset, int64_t client_maxlen,
                                              string* data, int64_t* block_file_size,
                                              TabletCopyErrorPB::Code* error_code) {
-  DCHECK(init_once_.initted());
+  DCHECK(init_once_.init_succeeded());
   ImmutableReadableBlockInfo* block_info;
   RETURN_NOT_OK(FindBlock(block_id, &block_info, error_code));
 
@@ -319,7 +319,7 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                    uint64_t offset, int64_t client_maxlen,
                                                    std::string* data, int64_t* log_file_size,
                                                    TabletCopyErrorPB::Code* error_code) {
-  DCHECK(init_once_.initted());
+  DCHECK(init_once_.init_succeeded());
   ImmutableRandomAccessFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
@@ -332,7 +332,7 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
 }
 
 bool TabletCopySourceSession::IsBlockOpenForTests(const BlockId& block_id) const {
-  DCHECK(init_once_.initted());
+  DCHECK(init_once_.init_succeeded());
   return ContainsKey(blocks_, block_id);
 }
 

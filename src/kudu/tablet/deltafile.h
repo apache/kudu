@@ -154,7 +154,7 @@ class DeltaFileReader : public DeltaStore,
   virtual Status Init() OVERRIDE;
 
   virtual bool Initted() OVERRIDE {
-    return init_once_.initted();
+    return init_once_.init_succeeded();
   }
 
   // See DeltaStore::NewDeltaIterator(...)
@@ -170,12 +170,12 @@ class DeltaFileReader : public DeltaStore,
   const BlockId& block_id() const { return reader_->block_id(); }
 
   virtual const DeltaStats& delta_stats() const OVERRIDE {
-    DCHECK(init_once_.initted());
+    DCHECK(init_once_.init_succeeded());
     return *delta_stats_;
   }
 
   virtual std::string ToString() const OVERRIDE {
-    if (!init_once_.initted()) return reader_->ToString();
+    if (!init_once_.init_succeeded()) return reader_->ToString();
     return strings::Substitute("$0 ($1)", reader_->ToString(), delta_stats_->ToString());
   }
 

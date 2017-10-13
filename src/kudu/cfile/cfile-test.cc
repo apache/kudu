@@ -96,6 +96,7 @@ namespace cfile {
 
 using fs::BlockManager;
 using fs::CountingReadableBlock;
+using fs::CreateCorruptBlock;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -362,27 +363,13 @@ class TestCFile : public CFileTestBase {
 
   Status CorruptAndReadBlock(const BlockId block_id, const uint64_t corrupt_offset,
                              uint8_t flip_bit) {
-    // Read the input block
-    unique_ptr<ReadableBlock> source;
-    RETURN_NOT_OK(fs_manager_->OpenBlock(block_id, &source));
-    uint64_t file_size;
-    RETURN_NOT_OK(source->Size(&file_size));
-    uint8_t data_scratch[file_size];
-    Slice data(data_scratch, file_size);
-    RETURN_NOT_OK(source->Read(0, data));
-
-    // Corrupt the data and write to a new block
-    uint8_t orig = data.data()[corrupt_offset];
-    uint8_t corrupt = orig ^ (static_cast<uint8_t>(1) << flip_bit);
-    data.mutable_data()[corrupt_offset] = corrupt;
-    unique_ptr<fs::WritableBlock> writer;
-    RETURN_NOT_OK(fs_manager_->CreateNewBlock({}, &writer));
-    RETURN_NOT_OK(writer->Append(data));
-    RETURN_NOT_OK(writer->Close());
+    BlockId new_id;
+    RETURN_NOT_OK(CreateCorruptBlock(
+        fs_manager_.get(), block_id, corrupt_offset, flip_bit, &new_id));
 
     // Open and read the corrupt block with the CFileReader
     unique_ptr<ReadableBlock> corrupt_source;
-    RETURN_NOT_OK(fs_manager_->OpenBlock(writer->id(), &corrupt_source));
+    RETURN_NOT_OK(fs_manager_->OpenBlock(new_id, &corrupt_source));
     unique_ptr<CFileReader> reader;
     RETURN_NOT_OK(CFileReader::Open(std::move(corrupt_source), ReaderOptions(), &reader));
     gscoped_ptr<IndexTreeIterator> iter;

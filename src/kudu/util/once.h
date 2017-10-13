@@ -42,19 +42,24 @@ template<typename T>
 void InitCb(void* arg) {
   MemberFunc<T>* mf = reinterpret_cast<MemberFunc<T>*>(arg);
   mf->once->status_ = (mf->instance->*mf->member_func)();
-  mf->once->set_initted();
+  if (PREDICT_TRUE(mf->once->status_.ok())) {
+    mf->once->set_init_succeeded();
+  }
 }
 
 } // namespace internal
 
 // More versatile version of GoogleOnceDynamic, including the following:
-// 1. Can be used with single-arg, non-static member functions.
-// 2. Retains results and overall initialization state for repeated access.
-// 3. Access to initialization state is safe for concurrent use.
+// - Non-static member functions are registered and run via Init().
+// - The first time Init() is called, the registered function is run and the
+//   resulting status is stored.
+// - Regardless of whether Init() succeeded, the function will cease to run on
+//   subsequent calls to Init(), and the stored result will be returned instead.
+// - Access to initialization state is safe for concurrent use.
 class KuduOnceDynamic {
  public:
   KuduOnceDynamic()
-    : initted_(false) {
+    : init_succeeded_(false) {
   }
 
   // If the underlying GoogleOnceDynamic has yet to be invoked, invokes the
@@ -78,13 +83,13 @@ class KuduOnceDynamic {
     return status_;
   }
 
-  // kMemOrderAcquire ensures that loads/stores that come after initted()
+  // kMemOrderAcquire ensures that loads/stores that come after init_succeeded()
   // aren't reordered to come before it instead. kMemOrderRelease ensures
-  // the opposite (i.e. loads/stores before set_initted() aren't reordered
+  // the opposite (i.e. loads/stores before set_init_succeeded() aren't reordered
   // to come after it).
   //
-  // Taken together, threads can safely synchronize on initted_.
-  bool initted() const { return initted_.Load(kMemOrderAcquire); }
+  // Taken together, threads can safely synchronize on init_succeeded_.
+  bool init_succeeded() const { return init_succeeded_.Load(kMemOrderAcquire); }
 
   // Returns the memory usage of this object without the object itself. Should
   // be used when embedded inside another object.
@@ -98,9 +103,9 @@ class KuduOnceDynamic {
   template<typename T>
   friend void internal::InitCb(void* arg);
 
-  void set_initted() { initted_.Store(true, kMemOrderRelease); }
+  void set_init_succeeded() { init_succeeded_.Store(true, kMemOrderRelease); }
 
-  AtomicBool initted_;
+  AtomicBool init_succeeded_;
   GoogleOnceDynamic once_;
   Status status_;
 };

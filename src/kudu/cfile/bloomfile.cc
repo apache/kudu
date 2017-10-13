@@ -283,7 +283,7 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
-  DCHECK(init_once_.initted());
+  DCHECK(init_once_.init_succeeded());
 
   // Since we frequently will access the same BloomFile many times in a row
   // when processing a batch of operations, we put our state in a small thread-local

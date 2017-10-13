@@ -268,7 +268,7 @@ Status DeltaFileReader::ReadDeltaStats() {
 }
 
 bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
-  if (!init_once_.initted()) {
+  if (!init_once_.init_succeeded()) {
     // If we're not initted, it means we have no delta stats and must
     // assume that this file is relevant for every snapshot.
     return true;
@@ -298,7 +298,7 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          DeltaIterator** iterator) const {
   if (IsRelevantForSnapshot(snap)) {
     if (VLOG_IS_ON(2)) {
-      if (!init_once_.initted()) {
+      if (!init_once_.init_succeeded()) {
         TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
 
         VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
