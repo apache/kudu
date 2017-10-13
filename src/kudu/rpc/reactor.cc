@@ -337,7 +337,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
                                    call->controller()->credentials_policy(),
                                    &conn);
   if (PREDICT_FALSE(!s.ok())) {
-    call->SetFailed(s, OutboundCall::Phase::CONNECTION_NEGOTIATION);
+    call->SetFailed(std::move(s), OutboundCall::Phase::CONNECTION_NEGOTIATION);
     return;
   }
 

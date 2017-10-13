@@ -1347,9 +1347,14 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
     // c. Reserve the table name if possible.
     if (!InsertIfNotPresent(&reserved_table_names_, req.name())) {
+      // ServiceUnavailable will cause the client to retry the create table
+      // request. We don't want to outright fail the request with
+      // 'AlreadyPresent', because a table name reservation can be rolled back
+      // in the case of an error. Instead, we force the client to retry at a
+      // later time.
       s = Status::ServiceUnavailable(Substitute(
           "New table name $0 is already reserved", req.name()));
-      return SetError(MasterErrorPB::TABLE_NOT_FOUND, s);
+      return SetError(MasterErrorPB::TABLE_ALREADY_PRESENT, s);
     }
   }
 
@@ -1884,8 +1889,6 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(*req));
 
-  RETURN_NOT_OK(CheckOnline());
-
   // 1. Group the steps into schema altering steps and partition altering steps.
   vector<AlterTableRequestPB::Step> alter_schema_steps;
   vector<AlterTableRequestPB::Step> alter_partitioning_steps;
@@ -1973,9 +1976,14 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
     // Reserve the new table name if possible.
     if (!InsertIfNotPresent(&reserved_table_names_, req->new_table_name())) {
+      // ServiceUnavailable will cause the client to retry the create table
+      // request. We don't want to outright fail the request with
+      // 'AlreadyPresent', because a table name reservation can be rolled back
+      // in the case of an error. Instead, we force the client to retry at a
+      // later time.
       Status s = Status::ServiceUnavailable(Substitute(
           "Table name $0 is already reserved", req->new_table_name()));
-      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
+      SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
     }
 

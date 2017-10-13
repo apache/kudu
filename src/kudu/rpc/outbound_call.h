@@ -128,11 +128,10 @@ class OutboundCall {
 
   // Mark the call as failed. This also triggers the callback to notify
   // the caller. If the call failed due to a remote error, then err_pb
-  // should be set to the error returned by the remote server. Takes
-  // ownership of 'err_pb'.
-  void SetFailed(const Status& status,
+  // should be set to the error returned by the remote server.
+  void SetFailed(Status status,
                  Phase phase = Phase::REMOTE_CALL,
-                 ErrorStatusPB* err_pb = nullptr);
+                 std::unique_ptr<ErrorStatusPB> err_pb = nullptr);
 
   // Mark the call as timed out. This also triggers the callback to notify
   // the caller.
@@ -238,7 +237,7 @@ class OutboundCall {
   mutable simple_spinlock lock_;
   State state_;
   Status status_;
-  gscoped_ptr<ErrorStatusPB> error_pb_;
+  std::unique_ptr<ErrorStatusPB> error_pb_;
 
   // Call the user-provided callback. Note that entries in 'sidecars_' are cleared
   // prior to invoking the callback so the client can assume that the call doesn't

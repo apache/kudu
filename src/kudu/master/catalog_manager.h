@@ -88,8 +88,8 @@ namespace master {
 class CatalogManagerBgTasks;
 class Master;
 class SysCatalogTable;
-class TableInfo;
 class TSDescriptor;
+class TableInfo;
 
 struct DeferredAssignmentActions;
 

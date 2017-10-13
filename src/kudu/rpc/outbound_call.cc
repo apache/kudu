@@ -305,14 +305,14 @@ void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
     CallCallback();
   } else {
     // Error
-    gscoped_ptr<ErrorStatusPB> err(new ErrorStatusPB());
+    unique_ptr<ErrorStatusPB> err(new ErrorStatusPB());
     if (!err->ParseFromArray(r.data(), r.size())) {
       SetFailed(Status::IOError("Was an RPC error but could not parse error response",
                                 err->InitializationErrorString()));
       return;
     }
-    ErrorStatusPB* err_raw = err.release();
-    SetFailed(Status::RemoteError(err_raw->message()), Phase::REMOTE_CALL, err_raw);
+    Status s = Status::RemoteError(err->message());
+    SetFailed(std::move(s), Phase::REMOTE_CALL, std::move(err));
   }
 }
 
@@ -344,17 +344,15 @@ void OutboundCall::SetSent() {
   }
 }
 
-void OutboundCall::SetFailed(const Status &status,
+void OutboundCall::SetFailed(Status status,
                              Phase phase,
-                             ErrorStatusPB* err_pb) {
+                             unique_ptr<ErrorStatusPB> err_pb) {
   DCHECK(!status.ok());
   DCHECK(phase == Phase::CONNECTION_NEGOTIATION || phase == Phase::REMOTE_CALL);
   {
     std::lock_guard<simple_spinlock> l(lock_);
-    status_ = status;
-    if (err_pb) {
-      error_pb_.reset(err_pb);
-    }
+    status_ = std::move(status);
+    error_pb_ = std::move(err_pb);
     set_state_unlocked(phase == Phase::CONNECTION_NEGOTIATION
         ? FINISHED_NEGOTIATION_ERROR
         : FINISHED_ERROR);

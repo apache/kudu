@@ -1159,23 +1159,19 @@ TEST_F(MasterTest, TestConcurrentCreateOfSameTable) {
       // There are three expected outcomes:
       //
       // 1. This thread won the CreateTable() race: no error.
-      // 2. This thread lost the CreateTable() race: TABLE_NOT_FOUND error
-      //    with ServiceUnavailable status.
+      // 2. This thread lost the CreateTable() race, but the table is still
+      //    in the process of being created: TABLE_ALREADY_PRESENT error with
+      //    ServiceUnavailable status.
       // 3. This thread arrived after the CreateTable() race was already over:
       //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
       if (resp.has_error()) {
         Status s = StatusFromPB(resp.error().status());
         string failure_msg = Substitute("Unexpected response: $0",
                                         SecureDebugString(resp));
-        switch (resp.error().code()) {
-          case MasterErrorPB::TABLE_NOT_FOUND:
-            CHECK(s.IsServiceUnavailable()) << failure_msg;
-            break;
-          case MasterErrorPB::TABLE_ALREADY_PRESENT:
-            CHECK(s.IsAlreadyPresent()) << failure_msg;
-            break;
-          default:
-            FAIL() << failure_msg;
+        if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT) {
+          CHECK(s.IsServiceUnavailable() || s.IsAlreadyPresent()) << failure_msg;
+        } else {
+          FAIL() << failure_msg;
         }
       }
     });
@@ -1265,23 +1261,17 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
         // There are three expected outcomes:
         //
         // 1. This thread finished well before the others: no error.
-        // 2. This thread raced with another thread: TABLE_NOT_FOUND error with
-        //    ServiceUnavailable status.
-        // 3. This thread finished well after the others: TABLE_ALREADY_PRESENT
-        //    error with AlreadyPresent status.
+        // 2. This thread raced with CreateTable() or AlterTable():
+        //    TABLE_ALREADY_PRESENT error with ServiceUnavailable status.
+        // 3. This thread finished well after the others:
+        //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
         if (resp.has_error()) {
           Status s = StatusFromPB(resp.error().status());
-          string failure_msg = Substitute("Unexpected response: $0",
-                                          SecureDebugString(resp));
-          switch (resp.error().code()) {
-            case MasterErrorPB::TABLE_NOT_FOUND:
-              CHECK(s.IsServiceUnavailable()) << failure_msg;
-              break;
-            case MasterErrorPB::TABLE_ALREADY_PRESENT:
-              CHECK(s.IsAlreadyPresent()) << failure_msg;
-              break;
-            default:
-              FAIL() << failure_msg;
+          string failure_msg = Substitute("Unexpected response: $0", SecureDebugString(resp));
+          if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT) {
+              CHECK(s.IsServiceUnavailable() || s.IsAlreadyPresent()) << failure_msg;
+          } else {
+            FAIL() << failure_msg;
           }
         } else {
           // Creating the table should only succeed once.
@@ -1299,25 +1289,25 @@ TEST_F(MasterTest, TestConcurrentCreateAndRenameOfSameTable) {
         CHECK_OK(proxy_->AlterTable(req, &resp, &controller));
         SCOPED_TRACE(SecureDebugString(resp));
 
-        // There are three expected outcomes:
+        // There are four expected outcomes:
         //
         // 1. This thread finished well before the others: no error.
-        // 2. This thread raced with CreateTable(): TABLE_NOT_FOUND error with
-        //    ServiceUnavailable status (if raced during reservation stage)
-        //    or TABLE_ALREADY_PRESENT error with AlreadyPresent status (if
-        //    raced after reservation stage).
-        // 3. This thread raced with AlterTable() or finished well after the
-        //    others: TABLE_NOT_FOUND error with NotFound status.
+        // 2. This thread raced with CreateTable() or AlterTable():
+        //    TABLE_ALREADY_PRESENT error with ServiceUnavailable status.
+        // 3. This thread completed well after a CreateTable():
+        //    TABLE_ALREADY_PRESENT error with AlreadyPresent status.
+        // 4. This thread completed well after an AlterTable():
+        //    TABLE_NOT_FOUND error with NotFound status.
         if (resp.has_error()) {
           Status s = StatusFromPB(resp.error().status());
           string failure_msg = Substitute("Unexpected response: $0",
                                           SecureDebugString(resp));
           switch (resp.error().code()) {
-            case MasterErrorPB::TABLE_NOT_FOUND:
-              CHECK(s.IsServiceUnavailable() || s.IsNotFound()) << failure_msg;
-              break;
             case MasterErrorPB::TABLE_ALREADY_PRESENT:
-              CHECK(s.IsAlreadyPresent()) << failure_msg;
+              CHECK(s.IsServiceUnavailable() || s.IsAlreadyPresent()) << failure_msg;
+              break;
+            case MasterErrorPB::TABLE_NOT_FOUND:
+              CHECK(s.IsNotFound()) << failure_msg;
               break;
             default:
               FAIL() << failure_msg;

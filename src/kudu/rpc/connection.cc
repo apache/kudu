@@ -167,7 +167,7 @@ void Connection::Shutdown(const Status &status,
       c->call->SetFailed(status,
                          negotiation_complete_ ? Phase::REMOTE_CALL
                                                : Phase::CONNECTION_NEGOTIATION,
-                         error.release());
+                         std::move(error));
     }
     // And we must return the CallAwaitingResponse to the pool
     car_pool_.Destroy(c);
@@ -635,8 +635,8 @@ void Connection::WriteHandler(ev::io &watcher, int revents) {
           outbound_transfers_.pop_front();
           Status s = Status::NotSupported("server does not support the required RPC features");
           transfer->Abort(s);
-          car->call->SetFailed(s, negotiation_complete_ ? Phase::REMOTE_CALL
-                                                        : Phase::CONNECTION_NEGOTIATION);
+          Phase phase = negotiation_complete_ ? Phase::REMOTE_CALL : Phase::CONNECTION_NEGOTIATION;
+          car->call->SetFailed(std::move(s), phase);
           // Test cancellation when 'call_' is in 'FINISHED_ERROR' state.
           MaybeInjectCancellation(car->call);
           car->call.reset();

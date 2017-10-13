@@ -469,12 +469,6 @@ Schema SysCatalogTable::BuildTableSchema() {
   return builder.Build();
 }
 
-SysCatalogTable::Actions::Actions()
-    : table_to_add(nullptr),
-      table_to_update(nullptr),
-      table_to_delete(nullptr) {
-}
-
 Status SysCatalogTable::Write(const Actions& actions) {
   TRACE_EVENT0("master", "SysCatalogTable::Write");
 

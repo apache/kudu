@@ -34,16 +34,15 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 
 set(MASTER_SRCS
   catalog_manager.cc
+  master-path-handlers.cc
   master.cc
   master_cert_authority.cc
   master_options.cc
   master_service.cc
-  master-path-handlers.cc
   mini_master.cc
   sys_catalog.cc
   ts_descriptor.cc
-  ts_manager.cc
-)
+  ts_manager.cc)
 
 add_library(master ${MASTER_SRCS})
 target_link_libraries(master

@@ -144,7 +144,7 @@ class SysCatalogTable {
 
   // Perform a series of table/tablet actions in one WriteTransaction.
   struct Actions {
-    Actions();
+    Actions() = default;
 
     scoped_refptr<TableInfo> table_to_add;
     scoped_refptr<TableInfo> table_to_update;
