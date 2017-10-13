@@ -435,9 +435,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Status BecomeLeaderUnlocked();
 
   // Makes the peer become a replica, i.e. a FOLLOWER or a LEARNER.
+  // See EnableFailureDetector() for description of the 'fd_delta' parameter.
   //
   // 'lock_' must be held for configuration change before calling.
-  Status BecomeReplicaUnlocked();
+  Status BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta = boost::none);
 
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required transactions. This method won't return until all
@@ -550,11 +551,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
   //
-  // If 'delta' is set, it is used as the initial failure period. Otherwise,
-  // the minimum election timeout is used.
+  // If 'delta' is set, it is used as the initial period for leader failure
+  // detection. Otherwise, the minimum election timeout is used.
   //
   // If the failure detector is already registered, has no effect.
-  void EnableFailureDetector(boost::optional<MonoDelta> delta = boost::none);
+  void EnableFailureDetector(boost::optional<MonoDelta> delta);
 
   // Stop tracking the current leader for failures. This typically occurs when
   // the local peer becomes leader.

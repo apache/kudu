@@ -298,7 +298,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
 
     // If this is the first term expire the FD immediately so that we have a
     // fast first election, otherwise we just let the timer expire normally.
-    boost::optional<MonoDelta> initial_delta;
+    boost::optional<MonoDelta> fd_initial_delta;
     if (CurrentTermUnlocked() == 0) {
       // The failure detector is initialized to a low value to trigger an early
       // election (unless someone else requested a vote from us first, which
@@ -311,14 +311,13 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
         LOG_WITH_PREFIX_UNLOCKED(INFO) << "Consensus starting up: Expiring failure detector timer "
                                           "to make a prompt election more likely";
-        initial_delta = MonoDelta::FromMilliseconds(
+        fd_initial_delta = MonoDelta::FromMilliseconds(
             rng_.Uniform(FLAGS_raft_heartbeat_interval_ms));
       }
     }
-    EnableFailureDetector(initial_delta);
 
     // Now assume "follower" duties.
-    RETURN_NOT_OK(BecomeReplicaUnlocked());
+    RETURN_NOT_OK(BecomeReplicaUnlocked(fd_initial_delta));
 
     SetStateUnlocked(kRunning);
   }
@@ -572,16 +571,15 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   return AppendNewRoundToQueueUnlocked(round);
 }
 
-Status RaftConsensus::BecomeReplicaUnlocked() {
+Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta) {
   DCHECK(lock_.is_locked());
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Becoming Follower/Learner. State: "
                                  << ToStringUnlocked();
-
   ClearLeaderUnlocked();
 
   // FD should be running while we are a follower.
-  EnableFailureDetector();
+  EnableFailureDetector(std::move(fd_delta));
 
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();
@@ -1496,8 +1494,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
   //
   // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
   // section 4.2.3.
-  MonoTime now = MonoTime::Now();
-  if (!request->ignore_live_leader() && now < withhold_votes_until_) {
+  if (!request->ignore_live_leader() && MonoTime::Now() < withhold_votes_until_) {
     return RequestVoteRespondLeaderIsAlive(request, response);
   }
 
