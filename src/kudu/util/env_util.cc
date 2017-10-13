@@ -267,5 +267,19 @@ Status DeleteTmpFilesRecursively(Env* env, const string& path) {
   return env->Walk(path, Env::PRE_ORDER, Bind(&DeleteTmpFilesRecursivelyCb, env));
 }
 
+Status IsDirectoryEmpty(Env* env, const string& path, bool* is_empty) {
+  vector<string> children;
+  RETURN_NOT_OK(env->GetChildren(path, &children));
+  for (const auto& c : children) {
+    if (c == "." || c == "..") {
+      continue;
+    }
+    *is_empty = false;
+    return Status::OK();
+  }
+  *is_empty = true;
+  return Status::OK();
+}
+
 } // namespace env_util
 } // namespace kudu

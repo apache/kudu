@@ -255,12 +255,6 @@ class FsManager {
   Status WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                const std::string& root);
 
-  // Checks if 'path' is an empty directory.
-  //
-  // Returns an error if it's not a directory. Otherwise, sets 'is_empty'
-  // accordingly.
-  Status IsDirectoryEmpty(const std::string& path, bool* is_empty);
-
   // ==========================================================================
   //  file-system helpers
   // ==========================================================================

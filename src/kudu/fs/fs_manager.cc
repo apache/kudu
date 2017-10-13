@@ -371,7 +371,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
       continue;
     }
     bool is_empty;
-    RETURN_NOT_OK_PREPEND(IsDirectoryEmpty(root.path, &is_empty),
+    RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
                           "Unable to check if FSManager root is empty");
     if (!is_empty) {
       return Status::AlreadyPresent(
@@ -487,21 +487,6 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                                 pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << SecureDebugString(metadata);
-  return Status::OK();
-}
-
-Status FsManager::IsDirectoryEmpty(const string& path, bool* is_empty) {
-  vector<string> children;
-  RETURN_NOT_OK(env_->GetChildren(path, &children));
-  for (const string& child : children) {
-    if (child == "." || child == "..") {
-      continue;
-    } else {
-      *is_empty = false;
-      return Status::OK();
-    }
-  }
-  *is_empty = true;
   return Status::OK();
 }
 

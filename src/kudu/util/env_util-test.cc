@@ -172,5 +172,21 @@ TEST_F(EnvUtilTest, TestDeleteExcessFilesByPattern) {
   ASSERT_EQ(expected_set, children_set) << children;
 }
 
+TEST_F(EnvUtilTest, TestIsDirectoryEmpty) {
+  const string kDir = JoinPathSegments(test_dir_, "foo");
+  const string kFile = JoinPathSegments(kDir, "bar");
+
+  bool is_empty;
+  ASSERT_TRUE(env_util::IsDirectoryEmpty(env_, kDir, &is_empty).IsNotFound());
+  ASSERT_OK(env_->CreateDir(kDir));
+  ASSERT_OK(env_util::IsDirectoryEmpty(env_, kDir, &is_empty));
+  ASSERT_TRUE(is_empty);
+
+  unique_ptr<WritableFile> file;
+  ASSERT_OK(env_->NewWritableFile(WritableFileOptions(), kFile, &file));
+  ASSERT_OK(env_util::IsDirectoryEmpty(env_, kDir, &is_empty));
+  ASSERT_FALSE(is_empty);
+}
+
 } // namespace env_util
 } // namespace kudu

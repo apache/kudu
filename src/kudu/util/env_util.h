@@ -88,6 +88,12 @@ Status DeleteExcessFilesByPattern(Env* env, const std::string& pattern, int max_
 // Deletion errors generate warnings but do not halt the traversal.
 Status DeleteTmpFilesRecursively(Env* env, const std::string& path);
 
+// Checks if 'path' is an empty directory.
+//
+// Returns an error if it's not a directory. Otherwise, sets 'is_empty'
+// accordingly.
+Status IsDirectoryEmpty(Env* env, const std::string& path, bool* is_empty);
+
 } // namespace env_util
 } // namespace kudu
 
