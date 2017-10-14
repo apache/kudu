@@ -118,7 +118,7 @@ void TSStressTest::InserterThread(int thread_idx) {
   int start_row = thread_idx * max_rows;
   for (int i = start_row; i < start_row + max_rows && stop_latch_.count() > 0; i++) {
     MonoTime before = MonoTime::Now();
-    InsertTestRowsRemote(thread_idx, i, 1);
+    InsertTestRowsRemote(i, 1);
     MonoTime after = MonoTime::Now();
     MonoDelta delta = after - before;
     histogram_->Increment(delta.ToMicroseconds());

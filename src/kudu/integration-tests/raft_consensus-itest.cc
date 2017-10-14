@@ -88,18 +88,50 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_int32(consensus_rpc_timeout_ms);
+DECLARE_int32(num_replicas);
+DECLARE_int32(num_tablet_servers);
+DECLARE_int32(rpc_timeout);
 DEFINE_int32(num_client_threads, 8,
              "Number of client threads to launch");
 DEFINE_int64(client_inserts_per_thread, 50,
              "Number of rows inserted by each client thread");
 DEFINE_int64(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
-DECLARE_int32(consensus_rpc_timeout_ms);
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 METRIC_DECLARE_gauge_int64(raft_term);
 
+using kudu::client::KuduInsert;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalTabletServer;
+using kudu::consensus::ConsensusRequestPB;
+using kudu::consensus::ConsensusResponsePB;
+using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::MajoritySize;
+using kudu::consensus::MakeOpId;
+using kudu::consensus::OpId;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::ReplicateMsg;
+using kudu::itest::AddServer;
+using kudu::itest::GetReplicaStatusAndCheckIfLeader;
+using kudu::itest::LeaderStepDown;
+using kudu::itest::RemoveServer;
+using kudu::itest::StartElection;
+using kudu::itest::TabletServerMap;
+using kudu::itest::TServerDetails;
+using kudu::itest::WaitUntilLeader;
+using kudu::itest::WriteSimpleTestRow;
+using kudu::master::TabletLocationsPB;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::pb_util::SecureDebugString;
+using kudu::rpc::RpcController;
+using kudu::server::SetFlagRequestPB;
+using kudu::server::SetFlagResponsePB;
+using kudu::tablet::TABLET_DATA_COPYING;
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
@@ -108,41 +140,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace tserver {
-
-using client::KuduInsert;
-using client::KuduSession;
-using client::KuduTable;
-using client::sp::shared_ptr;
-using cluster::ExternalTabletServer;
-using consensus::ConsensusRequestPB;
-using consensus::ConsensusResponsePB;
-using consensus::ConsensusServiceProxy;
-using consensus::MajoritySize;
-using consensus::MakeOpId;
-using consensus::OpId;
-using consensus::RaftPeerPB;
-using consensus::ReplicateMsg;
-using itest::AddServer;
-using itest::GetReplicaStatusAndCheckIfLeader;
-using itest::LeaderStepDown;
-using itest::RemoveServer;
-using itest::StartElection;
-using itest::TabletServerMap;
-using itest::TServerDetails;
-using itest::WaitUntilLeader;
-using itest::WriteSimpleTestRow;
-using master::TabletLocationsPB;
-using pb_util::SecureShortDebugString;
-using pb_util::SecureDebugString;
-using rpc::RpcController;
-using server::SetFlagRequestPB;
-using server::SetFlagResponsePB;
-using std::string;
-using std::unordered_map;
-using std::unordered_set;
-using std::vector;
-using strings::Substitute;
-using tablet::TABLET_DATA_COPYING;
 
 static const int kConsensusRpcTimeoutForTests = 50;
 
@@ -421,7 +418,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   Status GetTermMetricValue(ExternalTabletServer* ts, int64_t* term);
 
   shared_ptr<KuduTable> table_;
-  std::vector<scoped_refptr<kudu::Thread> > threads_;
+  vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
 };
 
@@ -486,7 +483,7 @@ TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
                                FLAGS_client_num_batches_per_thread,
                                vector<CountDownLatch*>());
   }
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters));
 }
 
 TEST_F(RaftConsensusITest, TestFailedTransaction) {
@@ -527,7 +524,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   SCOPED_TRACE(SecureShortDebugString(resp));
   ASSERT_FALSE(resp.has_error());
 
-  ASSERT_ALL_REPLICAS_AGREE(1);
+  NO_FATALS(AssertAllReplicasAgree(1));
 }
 
 // Inserts rows through consensus and also starts one delay injecting thread
@@ -568,7 +565,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads));
 }
 
 TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
@@ -601,7 +598,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
-  ASSERT_ALL_REPLICAS_AGREE(0);
+  NO_FATALS(AssertAllReplicasAgree(0));
 }
 
 TEST_F(RaftConsensusITest, TestRunLeaderElection) {
@@ -616,7 +613,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
                              FLAGS_client_num_batches_per_thread,
                              vector<CountDownLatch*>());
 
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters));
 
   // Select the last follower to be new leader.
   vector<TServerDetails*> followers;
@@ -642,7 +639,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   // Restart the original replica and make sure they all agree.
   ASSERT_OK(leader_ets->Restart());
 
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * num_iters * 2));
 }
 
 void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
@@ -726,8 +723,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
 
   // Now unpause the replica, the lagging replica should eventually catch back up.
   ASSERT_OK(replica_ets->Resume());
-
-  ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
+  NO_FATALS(AssertAllReplicasAgree(kNumWrites));
 
   // Once the follower has caught up, all replicas should eventually GC the earlier
   // log segments that they were retaining.
@@ -1136,7 +1132,7 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
     CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * FLAGS_num_client_threads));
   STLDeleteElements(&latches);
 }
 
@@ -1182,7 +1178,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
     CHECK_OK(cluster_->tablet_server_by_uuid(killed_node->uuid())->Restart());
   }
   // Verify the data on the remaining replicas.
-  ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
+  NO_FATALS(AssertAllReplicasAgree(FLAGS_client_inserts_per_thread * kFinalNumReplicas));
 }
 
 // Single-replica leader election test.
@@ -1922,7 +1918,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
 
   // Insert some data and verify that it propagates to all servers.
   NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1, vector<CountDownLatch*>()));
-  ASSERT_ALL_REPLICAS_AGREE(10);
+  NO_FATALS(AssertAllReplicasAgree(10));
 
   // Try another config change.
   // This acts as a regression test for KUDU-1338, in which aborting the original
@@ -2231,7 +2227,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
                                   min_log_index));
 
   LOG(INFO) << "Number of rows inserted: " << rows_inserted.Load();
-  ASSERT_ALL_REPLICAS_AGREE(rows_inserted.Load());
+  NO_FATALS(AssertAllReplicasAgree(rows_inserted.Load()));
 }
 
 TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
@@ -2492,7 +2488,7 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
 
   int rows_inserted = workload.rows_inserted();
   LOG(INFO) << "Number of rows inserted: " << rows_inserted;
-  ASSERT_ALL_REPLICAS_AGREE(rows_inserted);
+  NO_FATALS(AssertAllReplicasAgree(rows_inserted));
 }
 
 TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {

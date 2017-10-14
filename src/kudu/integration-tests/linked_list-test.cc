@@ -39,6 +39,7 @@
 
 #include <boost/bind.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -57,6 +58,9 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(num_replicas);
+DECLARE_int32(num_tablet_servers);
+DECLARE_string(ts_flags);
 DEFINE_int32(seconds_to_run, 5, "Number of seconds for which to run the test");
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
@@ -69,18 +73,17 @@ DEFINE_bool(stress_flush_compact, false,
 DEFINE_bool(stress_wal_gc, false,
             "Set WAL segment size small so that logs will be GCed during the test");
 
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::ClusterNodes;
+using kudu::itest::TServerDetails;
+using std::string;
+using std::vector;
+
 namespace kudu {
 
 namespace client {
 class KuduClient;
 } // namespace client
-
-using client::KuduClient;
-using client::sp::shared_ptr;
-using cluster::ClusterNodes;
-using itest::TServerDetails;
-using std::string;
-using std::vector;
 
 class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
  public:
@@ -146,7 +149,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
   }
 
  protected:
-  shared_ptr<KuduClient> client_;
+  shared_ptr<client::KuduClient> client_;
   gscoped_ptr<LinkedListTester> tester_;
 };
 

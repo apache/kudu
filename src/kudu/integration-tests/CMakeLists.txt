@@ -28,6 +28,7 @@ set(INTEGRATION_TESTS_SRCS
   internal_mini_cluster-itest-base.cc
   log_verifier.cc
   test_workload.cc
+  ts_itest-base.cc
 )
 
 add_library(itest_util ${INTEGRATION_TESTS_SRCS})

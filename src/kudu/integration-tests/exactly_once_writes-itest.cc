@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -53,7 +54,12 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_int32(consensus_rpc_timeout_ms);
+DECLARE_int32(num_replicas);
+DECLARE_int32(num_tablet_servers);
+
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -112,7 +118,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
   rpc::MessengerBuilder bld("Client");
   ASSERT_OK(bld.Build(&client_messenger));
 
-  std::unique_ptr<TabletServerServiceProxy> proxy(new TabletServerServiceProxy(
+  unique_ptr<TabletServerServiceProxy> proxy(new TabletServerServiceProxy(
       client_messenger, address, address.host()));
   for (int i = 0; i < num_batches; i++) {
     // Wait for all of the other writer threads to finish their attempts of the prior
@@ -146,7 +152,7 @@ void ExactlyOnceSemanticsITest::WriteRowsAndCollectResponses(int thread_idx,
       controller.Reset();
       WriteResponsePB response;
 
-      std::unique_ptr<rpc::RequestIdPB> request_id(new rpc::RequestIdPB());
+      unique_ptr<rpc::RequestIdPB> request_id(new rpc::RequestIdPB());
       request_id->set_client_id("test_client");
       request_id->set_seq_no(i);
       request_id->set_attempt_no(base_attempt_idx * kMaxAttempts + num_attempts);

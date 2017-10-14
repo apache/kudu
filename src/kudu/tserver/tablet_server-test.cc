@@ -797,7 +797,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
     iteration_(0) {}
 
   Status DoHook(int32_t key, int32_t new_int_val) {
-    test_->UpdateTestRowRemote(0, key, new_int_val);
+    test_->UpdateTestRowRemote(key, new_int_val);
     return Status::OK();
   }
 
@@ -844,7 +844,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
 // log produced on recovery allows to re-recover the original state.
 TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
 
-  InsertTestRowsRemote(0, 1, 7);
+  InsertTestRowsRemote(1, 7);
 
   shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
 
@@ -884,7 +884,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
 // DMS, when the initial one is flushed.
 TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 
-  InsertTestRowsRemote(0, 1, 7);
+  InsertTestRowsRemote(1, 7);
 
   shared_ptr<MyCommonHooks> hooks(new MyCommonHooks(this));
 
@@ -911,7 +911,7 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   tablet_replica_->tablet()->SetFlushCompactCommonHooksForTests(hooks);
 
   // insert an additional row so that we can flush
-  InsertTestRowsRemote(0, 8, 1);
+  InsertTestRowsRemote(8, 1);
 
   // flush an additional MRS so that we have two DiskRowSets and then compact
   // them making sure that mutations executed mid compaction are replayed as
@@ -959,12 +959,12 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
 TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
 
   // Flush a DRS with 1 rows.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(1, 1));
   ASSERT_OK(tablet_replica_->tablet()->Flush());
   ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
-  ANFF(UpdateTestRowRemote(0, 1, 2));
+  ANFF(UpdateTestRowRemote(1, 2));
   ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
   ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 
@@ -989,22 +989,20 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
 // we have a DELETE for a row which is still live in multiple on-disk
 // rowsets.
 TEST_F(TabletServerTest, TestKUDU_1341) {
-  const int kTid = 0;
-
   for (int i = 0; i < 3; i++) {
     // Insert a row to DMS and flush it.
-    ANFF(InsertTestRowsRemote(kTid, 1, 1));
+    ANFF(InsertTestRowsRemote(1, 1));
     ASSERT_OK(tablet_replica_->tablet()->Flush());
 
     // Update and delete row (in DMS)
-    ANFF(UpdateTestRowRemote(kTid, 1, i));
+    ANFF(UpdateTestRowRemote(1, i));
     ANFF(DeleteTestRowsRemote(1, 1));
   }
 
   // Insert row again, update it in MRS before flush, and
   // flush.
-  ANFF(InsertTestRowsRemote(kTid, 1, 1));
-  ANFF(UpdateTestRowRemote(kTid, 1, 12345));
+  ANFF(InsertTestRowsRemote(1, 1));
+  ANFF(UpdateTestRowRemote(1, 12345));
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   ANFF(VerifyRows(schema_, { KeyValue(1, 12345) }));
@@ -1084,16 +1082,16 @@ TEST_F(TabletServerTest, TestExactlyOnceForErrorsAcrossRestart) {
 // rows that were in the old DRS's DMS are properly replayed.
 TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompaction) {
   // Flush a DRS with 1 rows.
-  ANFF(InsertTestRowsRemote(0, 1, 1));
+  ANFF(InsertTestRowsRemote(1, 1));
   ASSERT_OK(tablet_replica_->tablet()->Flush());
   ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
-  ANFF(UpdateTestRowRemote(0, 1, 2));
+  ANFF(UpdateTestRowRemote(1, 2));
   ASSERT_OK(tablet_replica_->tablet()->FlushBiggestDMS());
 
   // Update it again, so this last update is in the DMS.
-  ANFF(UpdateTestRowRemote(0, 1, 3));
+  ANFF(UpdateTestRowRemote(1, 3));
   ANFF(VerifyRows(schema_, { KeyValue(1, 3) }));
 
   // Major compact deltas. This doesn't include the DMS, but the old
@@ -1114,7 +1112,7 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
 }
 
 TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
-  ANFF(InsertTestRowsRemote(0, 1, 7));
+  ANFF(InsertTestRowsRemote(1, 7));
 
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
@@ -1203,7 +1201,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
   vector<uint64_t> write_timestamps_collector;
 
   // perform a series of writes and collect the timestamps
-  InsertTestRowsRemote(0, 0, num_rows, num_batches, nullptr,
+  InsertTestRowsRemote(0, num_rows, num_batches, nullptr,
                        kTabletId, &write_timestamps_collector);
 
   // now perform snapshot scans.
@@ -1275,7 +1273,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
 TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1318,7 +1316,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1355,9 +1353,9 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
 TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
   vector<uint64_t> write_timestamps_collector;
   // Write and flush and write, so we have some rows in MRS and DRS
-  InsertTestRowsRemote(0, 0, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
   ASSERT_OK(tablet_replica_->tablet()->Flush());
-  InsertTestRowsRemote(0, 100, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(100, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1448,7 +1446,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
         ASSERT_FALSE(resp.has_error());
       }
       // Save the rows into 'results' vector.
-      StringifyRowsFromResponse(projection, rpc, resp, &results);
+      StringifyRowsFromResponse(projection, rpc, &resp, &results);
       // Retry the scan, setting the last_row_key and snapshot based on the response.
       scan->set_last_primary_key(resp.last_primary_key());
       scan->set_snap_timestamp(resp.snap_timestamp());
@@ -1474,7 +1472,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1532,7 +1530,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
 TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTimestampFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1957,7 +1955,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   AlterSchemaResponsePB resp;
   RpcController rpc;
 
-  InsertTestRowsRemote(0, 0, 2);
+  InsertTestRowsRemote(0, 2);
 
   // Add one column with a default value
   const int32_t c2_write_default = 5;
@@ -1980,7 +1978,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   }
 
   {
-    InsertTestRowsRemote(0, 2, 2);
+    InsertTestRowsRemote(2, 2);
     scoped_refptr<TabletReplica> tablet;
     ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
     ASSERT_OK(tablet->tablet()->Flush());
@@ -2013,7 +2011,7 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   AlterSchemaResponsePB resp;
   RpcController rpc;
 
-  InsertTestRowsRemote(0, 0, 2);
+  InsertTestRowsRemote(0, 2);
 
   // Add a column with a read-default but no write-default.
   const uint32_t c2_read_default = 7;
@@ -2093,9 +2091,9 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
 
   // Put some data in the tablet. We flush and insert more rows to ensure that
   // there is data both in the MRS and on disk.
-  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(1, 1));
   ASSERT_OK(tablet_replica_->tablet()->Flush());
-  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 2, 1));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(2, 1));
 
   const int block_count_after_flush = ondisk->value();
   if (FLAGS_block_manager == "log") {
@@ -2221,7 +2219,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
       FLAGS_single_threaded_insert_latency_bench_warmup_rows : 10;
 
   for (int i = 0; i < warmup; i++) {
-    InsertTestRowsRemote(0, i, 1);
+    InsertTestRowsRemote(i, 1);
   }
 
   uint64_t max_rows = AllowSlowTests() ?
@@ -2231,7 +2229,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
 
   for (int i = warmup; i < warmup + max_rows; i++) {
     MonoTime before = MonoTime::Now();
-    InsertTestRowsRemote(0, i, 1);
+    InsertTestRowsRemote(i, 1);
     MonoTime after = MonoTime::Now();
     MonoDelta delta = after - before;
     histogram->Increment(delta.ToMicroseconds());
@@ -2361,7 +2359,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
 
   // First row.
   int32_t key = 1;
-  InsertTestRowsRemote(0, key, 1);
+  InsertTestRowsRemote(key, 1);
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
   total_crc += CalcTestRowChecksum(key);
@@ -2375,7 +2373,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
 
   // Second row (null string field).
   key = 2;
-  InsertTestRowsRemote(0, key, 1, 1, nullptr, kTabletId, nullptr, nullptr, false);
+  InsertTestRowsRemote(key, 1, 1, nullptr, kTabletId, nullptr, nullptr, false);
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
   total_crc += CalcTestRowChecksum(key, false);
@@ -2458,11 +2456,11 @@ void CompactAsync(Tablet* tablet, CountDownLatch* flush_done_latch) {
 TEST_F(TabletServerTest, TestKudu120PreRequisites) {
 
   // Insert a few rows...
-  InsertTestRowsRemote(0, 0, 10);
+  InsertTestRowsRemote(0, 10);
   // ... now flush ...
   ASSERT_OK(tablet_replica_->tablet()->Flush());
   // ... insert a few rows...
-  InsertTestRowsRemote(0, 10, 10);
+  InsertTestRowsRemote(10, 10);
   // ... and flush again so that we have two disk row sets.
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 

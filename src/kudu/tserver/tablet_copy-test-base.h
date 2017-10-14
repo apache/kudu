@@ -30,6 +30,7 @@
 #include "kudu/tserver/tablet_copy.pb.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -105,7 +106,7 @@ class TabletCopyTest : public TabletServerTestBase {
     const int kIncr = 50;
     LOG_TIMING(INFO, "Loading test data") {
       for (int row_id = 0; row_id < kNumLogRolls * kIncr; row_id += kIncr) {
-        InsertTestRowsRemote(0, row_id, kIncr);
+        InsertTestRowsRemote(row_id, kIncr);
         ASSERT_OK(tablet_replica_->tablet()->Flush());
         ASSERT_OK(tablet_replica_->log()->AllocateSegmentAndRollOver());
       }

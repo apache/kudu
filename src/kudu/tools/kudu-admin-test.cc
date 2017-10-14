@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -61,33 +62,37 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-namespace tools {
+DECLARE_int32(num_replicas);
+DECLARE_int32(num_tablet_servers);
 
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduSchema;
-using client::KuduTableCreator;
-using client::sp::shared_ptr;
-using cluster::ExternalTabletServer;
-using consensus::COMMITTED_OPID;
-using consensus::ConsensusStatePB;
-using consensus::OpId;
-using itest::GetConsensusState;
-using itest::TabletServerMap;
-using itest::TServerDetails;
-using itest::WAIT_FOR_LEADER;
-using itest::WaitForReplicasReportedToMaster;
-using itest::WaitForServersToAgree;
-using itest::WaitUntilCommittedConfigNumVotersIs;
-using itest::WaitUntilCommittedOpIdIndexIs;
-using itest::WaitUntilTabletInState;
-using itest::WaitUntilTabletRunning;
-using pb_util::SecureDebugString;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduSchema;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalTabletServer;
+using kudu::consensus::COMMITTED_OPID;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::OpId;
+using kudu::itest::GetConsensusState;
+using kudu::itest::TabletServerMap;
+using kudu::itest::TServerDetails;
+using kudu::itest::WAIT_FOR_LEADER;
+using kudu::itest::WaitForReplicasReportedToMaster;
+using kudu::itest::WaitForServersToAgree;
+using kudu::itest::WaitUntilCommittedConfigNumVotersIs;
+using kudu::itest::WaitUntilCommittedOpIdIndexIs;
+using kudu::itest::WaitUntilTabletInState;
+using kudu::itest::WaitUntilTabletRunning;
+using kudu::pb_util::SecureDebugString;
 using std::deque;
 using std::string;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
 
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
 };
@@ -1187,8 +1192,7 @@ TEST_F(AdminCliTest, TestListTables) {
     cluster_->master()->bound_rpc_addr().ToString()
   }, "", &stdout, nullptr));
 
-  vector<string> stdout_lines = strings::Split(stdout, ",",
-                                               strings::SkipEmpty());
+  vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
   ASSERT_EQ(1, stdout_lines.size());
   ASSERT_EQ(Substitute("$0\n", kTableId), stdout_lines[0]);
 }
@@ -1225,8 +1229,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
     cluster_->master()->bound_rpc_addr().ToString()
   }, "", &stdout, nullptr));
 
-  vector<string> stdout_lines = strings::Split(stdout, "\n",
-                                               strings::SkipEmpty());
+  vector<string> stdout_lines = Split(stdout, "\n", strings::SkipEmpty());
 
   // Verify multiple tables along with their tablets and replica-uuids.
   ASSERT_EQ(4, stdout_lines.size());
