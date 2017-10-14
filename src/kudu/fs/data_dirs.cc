@@ -28,7 +28,6 @@
 #include <random>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -104,6 +103,7 @@ METRIC_DEFINE_gauge_uint64(server, data_dirs_full,
                            kudu::MetricUnit::kDataDirectories,
                            "Number of data directories whose disks are currently full");
 
+DECLARE_bool(enable_data_block_fsync);
 DECLARE_string(block_manager);
 
 namespace kudu {
@@ -117,7 +117,6 @@ using std::set;
 using std::shuffle;
 using std::string;
 using std::unique_ptr;
-using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -393,7 +392,6 @@ Status DataDirManager::Create() {
   int idx = 0;
 
   // Ensure the data dirs exist and create the instance files.
-  unordered_set<string> to_sync;
   for (const auto& root : canonicalized_data_fs_roots_) {
     RETURN_NOT_OK_PREPEND(root.status, "Could not create directory manager with disks failed");
     string data_dir = JoinPathSegments(root.path, kDataDirName);
@@ -402,7 +400,6 @@ Status DataDirManager::Create() {
         Substitute("Could not create directory $0", data_dir));
     if (created) {
       dirs_to_delete.emplace_back(data_dir);
-      to_sync.insert(root.path);
     }
 
     if (block_manager_type_ == "log") {
@@ -419,9 +416,9 @@ Status DataDirManager::Create() {
   }
 
   // Ensure newly created directories are synchronized to disk.
-  for (const string& dir : to_sync) {
-    RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
-                          Substitute("Unable to synchronize directory $0", dir));
+  if (FLAGS_enable_data_block_fsync) {
+    RETURN_NOT_OK_PREPEND(env_util::SyncAllParentDirs(
+        env_, dirs_to_delete, files_to_delete), "could not sync data directories");
   }
 
   // Success: don't delete any files.

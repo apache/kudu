@@ -22,7 +22,6 @@
 #include <iostream>
 #include <map>
 #include <set>
-#include <unordered_set>
 #include <utility>
 
 #include <boost/optional/optional.hpp>
@@ -107,7 +106,6 @@ using std::ostream;
 using std::set;
 using std::string;
 using std::unique_ptr;
-using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -400,7 +398,6 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
 
   InstanceMetadataPB metadata;
   RETURN_NOT_OK(CreateInstanceMetadata(std::move(uuid), &metadata));
-  unordered_set<string> to_sync;
   for (const auto& root : canonicalized_all_fs_roots_) {
     if (!root.status.ok()) {
       continue;
@@ -411,7 +408,6 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
                           "Unable to create FSManager root");
     if (created) {
       dirs_to_delete.emplace_back(root_name);
-      to_sync.insert(DirName(root_name));
     }
     RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root_name),
                           "Unable to write instance metadata");
@@ -428,19 +424,18 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
                           Substitute("Unable to create directory $0", dir));
     if (created) {
       dirs_to_delete.emplace_back(dir);
-      to_sync.insert(DirName(dir));
     }
   }
 
   // Ensure newly created directories are synchronized to disk.
   if (FLAGS_enable_data_block_fsync) {
-    for (const string& dir : to_sync) {
-      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
-                            Substitute("Unable to synchronize directory $0", dir));
-    }
+    RETURN_NOT_OK_PREPEND(env_util::SyncAllParentDirs(
+        env_, dirs_to_delete, files_to_delete), "could not sync fs roots");
   }
 
   // And lastly, create the directory manager.
+  //
+  // All files/directories created will be synchronized to disk.
   DataDirManagerOptions opts;
   opts.metric_entity = metric_entity_;
   opts.read_only = read_only_;

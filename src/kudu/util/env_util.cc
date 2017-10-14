@@ -23,8 +23,9 @@
 #include <ctime>
 #include <memory>
 #include <string>
-#include <vector>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -73,6 +74,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -278,6 +280,24 @@ Status IsDirectoryEmpty(Env* env, const string& path, bool* is_empty) {
     return Status::OK();
   }
   *is_empty = true;
+  return Status::OK();
+}
+
+Status SyncAllParentDirs(Env* env,
+                         const vector<string>& dirs,
+                         const vector<string>& files) {
+  // An unordered_set is used to deduplicate the set of directories.
+  unordered_set<string> to_sync;
+  for (const auto& d : dirs) {
+    to_sync.insert(DirName(d));
+  }
+  for (const auto& f : files) {
+    to_sync.insert(DirName(f));
+  }
+  for (const auto& d : to_sync) {
+    RETURN_NOT_OK_PREPEND(env->SyncDir(d),
+                          Substitute("unable to synchronize directory $0", d));
+  }
   return Status::OK();
 }
 

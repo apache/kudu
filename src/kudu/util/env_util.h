@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "kudu/util/status.h"
 
@@ -93,6 +94,12 @@ Status DeleteTmpFilesRecursively(Env* env, const std::string& path);
 // Returns an error if it's not a directory. Otherwise, sets 'is_empty'
 // accordingly.
 Status IsDirectoryEmpty(Env* env, const std::string& path, bool* is_empty);
+
+// Synchronize all of the parent directories belonging to 'dirs' and 'files'
+// to disk.
+Status SyncAllParentDirs(Env* env,
+                         const std::vector<std::string>& dirs,
+                         const std::vector<std::string>& files);
 
 } // namespace env_util
 } // namespace kudu
