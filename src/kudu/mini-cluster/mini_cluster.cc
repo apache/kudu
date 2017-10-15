@@ -22,12 +22,16 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 
 using std::string;
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -64,6 +68,23 @@ string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind
     default:
       LOG(FATAL) << bind_mode;
   }
+}
+
+Status MiniCluster::ReserveDaemonSocket(DaemonType type,
+                                        int index,
+                                        BindMode bind_mode,
+                                        unique_ptr<Socket>* socket) {
+  string ip = GetBindIpForDaemon(type, index, bind_mode);
+  Sockaddr sock_addr;
+  RETURN_NOT_OK(sock_addr.ParseString(ip, 0));
+
+  unique_ptr<Socket> sock(new Socket());
+  RETURN_NOT_OK(sock->Init(0));
+  RETURN_NOT_OK(sock->SetReuseAddr(true));
+  RETURN_NOT_OK(sock->SetReusePort(true));
+  RETURN_NOT_OK(sock->Bind(sock_addr));
+  *socket = std::move(sock);
+  return Status::OK();
 }
 
 } // namespace cluster

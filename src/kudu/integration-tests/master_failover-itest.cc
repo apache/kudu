@@ -78,8 +78,7 @@ class MasterFailoverTest : public KuduTest {
   };
 
   MasterFailoverTest() {
-    opts_.master_rpc_ports = { 11010, 11011, 11012 };
-    opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
+    opts_.num_masters = 3;
     opts_.num_tablet_servers = kNumTabletServerReplicas;
     opts_.enable_hive_metastore = true;
 
@@ -151,7 +150,6 @@ class MasterFailoverTest : public KuduTest {
   }
 
  protected:
-  int num_masters_;
   ExternalMiniClusterOptions opts_;
   unique_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;

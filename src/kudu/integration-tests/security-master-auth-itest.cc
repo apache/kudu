@@ -16,7 +16,6 @@
 // under the License.
 
 #include <memory>
-#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
@@ -53,8 +52,7 @@ class SecurityMasterAuthTest : public KuduTest {
     FLAGS_enable_leader_failure_detection = false;
 
     InternalMiniClusterOptions opts;
-    opts.master_rpc_ports = { 11010, 11011, 11012, 11013, 11014, };
-    opts.num_masters = opts.master_rpc_ports.size();
+    opts.num_masters = 5;
     opts.num_tablet_servers = 0;
     cluster_.reset(new InternalMiniCluster(env_, opts));
     ASSERT_OK(cluster_->Start());

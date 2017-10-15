@@ -118,10 +118,10 @@ struct ExternalMiniClusterOptions {
   std::vector<std::string> extra_tserver_flags;
   std::vector<std::string> extra_master_flags;
 
-  // If more than one master is specified, list of ports for the
-  // masters in a consensus configuration. Port at index 0 is used for the leader
-  // master.
-  std::vector<uint16_t> master_rpc_ports;
+  // List of RPC bind addresses to use for masters.
+  //
+  // If unset, addresses are assigned automatically.
+  std::vector<HostPort> master_rpc_addresses;
 
   // Options to configure the MiniKdc before starting it up.
   // Only used when 'enable_kerberos' is 'true'.
@@ -273,10 +273,6 @@ class ExternalMiniCluster : public MiniCluster {
     return opts_.bind_mode;
   }
 
-  std::vector<uint16_t> master_rpc_ports() const override {
-    return opts_.master_rpc_ports;
-  }
-
   std::vector<HostPort> master_rpc_addrs() const override;
 
   std::shared_ptr<rpc::Messenger> messenger() const override;
@@ -354,17 +350,15 @@ class ExternalMiniCluster : public MiniCluster {
  private:
   FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
 
-  Status StartSingleMaster();
-
-  Status StartDistributedMasters();
+  Status StartMasters();
 
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
 
   ExternalMiniClusterOptions opts_;
 
-  std::vector<scoped_refptr<ExternalMaster> > masters_;
-  std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
+  std::vector<scoped_refptr<ExternalMaster>> masters_;
+  std::vector<scoped_refptr<ExternalTabletServer>> tablet_servers_;
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
 

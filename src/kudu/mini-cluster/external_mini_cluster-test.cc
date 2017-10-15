@@ -126,11 +126,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   opts.enable_kerberos = GetParam().first == Kerberos::ENABLED;
   opts.enable_hive_metastore = GetParam().second == HiveMetastore::ENABLED;
 
-  // Hard-coded RPC ports for the masters. This is safe, as this unit test
-  // runs under a resource lock (see CMakeLists.txt in this directory).
-  // TODO(af) we should have a generic method to obtain n free ports.
-  opts.master_rpc_ports = { 11010, 11011, 11012 };
-  opts.num_masters = opts.master_rpc_ports.size();
+  opts.num_masters = 3;
   opts.num_tablet_servers = 3;
 
   ExternalMiniCluster cluster(opts);

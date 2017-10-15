@@ -417,7 +417,6 @@ TEST_P(ConnectToFollowerMasterTest, AuthnTokenVerifierHaveKeys) {
   cluster_opts_.extra_master_flags.emplace_back(
       "--enable_leader_failure_detection=false");
   cluster_opts_.num_masters = 3;
-  cluster_opts_.master_rpc_ports = { 11010, 11011, 11012, };
   const auto& params = GetParam();
   cluster_opts_.extra_master_flags.emplace_back(
       Substitute("--rpc_authentication=$0", params.rpc_authentication));

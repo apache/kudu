@@ -80,7 +80,6 @@ class SecurityComponentsFaultsITest : public KuduTest {
     cluster_opts_.enable_kerberos = true;
 
     cluster_opts_.num_masters = num_masters_;
-    cluster_opts_.master_rpc_ports = { 11080, 11081, 11082 };
     cluster_opts_.num_tablet_servers = num_tservers_;
 
     // KDC-related options

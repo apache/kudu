@@ -197,7 +197,6 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021ConnectToMaster) {
 
   cluster_opts_.num_masters = kNumMasters;
   cluster_opts_.num_tablet_servers = 1;
-  cluster_opts_.master_rpc_ports = { 32037, 32038, 32039 };
   ASSERT_OK(CreateAndStartCluster());
 
   shared_ptr<KuduClient> client;
@@ -232,7 +231,6 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021NegotiateWithMaster) {
 
   cluster_opts_.num_masters = kNumMasters;
   cluster_opts_.num_tablet_servers = 1;
-  cluster_opts_.master_rpc_ports = { 31037, 31038, 31039 };
   ASSERT_OK(CreateAndStartCluster());
 
   shared_ptr<KuduClient> client;

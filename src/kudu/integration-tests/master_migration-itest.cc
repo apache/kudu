@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -27,7 +26,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sys_catalog.h"
@@ -35,6 +33,8 @@
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -52,41 +52,18 @@ using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::cluster::MiniCluster;
 using kudu::cluster::ScopedResumeExternalDaemon;
 using kudu::master::SysCatalogTable;
 using std::pair;
 using std::string;
-using std::vector;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
 class MasterMigrationTest : public KuduTest {
- public:
-
-  virtual void SetUp() OVERRIDE {
-    KuduTest::SetUp();
-    ASSERT_NO_FATAL_FAILURE(RestartCluster());
-  }
-
-  virtual void TearDown() OVERRIDE {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
-    KuduTest::TearDown();
-  }
-
-  void RestartCluster() {
-    if (cluster_) {
-      cluster_->Shutdown();
-    }
-    cluster_.reset(new ExternalMiniCluster());
-    ASSERT_OK(cluster_->Start());
-  }
-
- protected:
-  unique_ptr<ExternalMiniCluster> cluster_;
 };
 
 static Status CreateTable(ExternalMiniCluster* cluster,
@@ -107,23 +84,46 @@ static Status CreateTable(ExternalMiniCluster* cluster,
 
 // Tests migration of a deployment from one master to multiple masters.
 TEST_F(MasterMigrationTest, TestEndToEndMigration) {
-  const vector<uint16_t> kMasterRpcPorts = { 11010, 11011, 11012 };
+  const int kNumMasters = 3;
+
+  // Collect and keep alive the set of master sockets bound with SO_REUSEPORT.
+  // This allows the ports to be reserved up front, so that they won't be taken
+  // while the test restarts nodes.
+  vector<unique_ptr<Socket>> reserved_sockets;
+  vector<HostPort> master_rpc_addresses;
+  for (int i = 0; i < kNumMasters; i++) {
+    unique_ptr<Socket> reserved_socket;
+    ASSERT_OK(MiniCluster::ReserveDaemonSocket(MiniCluster::MASTER, i,
+                                               MiniCluster::kDefaultBindMode,
+                                               &reserved_socket));
+    Sockaddr addr;
+    ASSERT_OK(reserved_socket->GetSocketAddress(&addr));
+    master_rpc_addresses.emplace_back(addr.host(), addr.port());
+    reserved_sockets.emplace_back(std::move(reserved_socket));
+  }
+
+  ExternalMiniClusterOptions opts;
+  opts.num_masters = 1;
+  opts.master_rpc_addresses = { master_rpc_addresses[0] };
+  opts.bind_mode = cluster::MiniCluster::LOOPBACK;
+
+  unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster->Start());
+
   const string kTableName = "test";
-  const string kBinPath = cluster_->GetBinaryPath("kudu");
+  const string kBinPath = cluster->GetBinaryPath("kudu");
 
   // Initial state: single-master cluster with one table.
-  ASSERT_OK(CreateTable(cluster_.get(), kTableName));
-  cluster_->Shutdown();
+  ASSERT_OK(CreateTable(cluster.get(), kTableName));
+  cluster->Shutdown();
 
-  // List of every master's UUID and port. Used when rewriting the single
-  // master's cmeta.
-  vector<pair<string, uint64_t>> master_uuids_and_ports;
-  master_uuids_and_ports.emplace_back(cluster_->master()->uuid(), kMasterRpcPorts[0]);
+  // List of every master UUIDs.
+  vector<string> uuids = { cluster->master()->uuid() };
 
   // Format a filesystem tree for each of the new masters and get the uuids.
-  for (int i = 1; i < kMasterRpcPorts.size(); i++) {
-    string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
-    string wal_dir = cluster_->GetWalPath(Substitute("master-$0", i));
+  for (int i = 1; i < kNumMasters; i++) {
+    string data_root = cluster->GetDataPath(Substitute("master-$0", i));
+    string wal_dir = cluster->GetWalPath(Substitute("master-$0", i));
     ASSERT_OK(env_->CreateDir(DirName(data_root)));
     ASSERT_OK(env_->CreateDir(wal_dir));
     {
@@ -148,24 +148,24 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
       string uuid;
       ASSERT_OK(Subprocess::Call(args, "", &uuid));
       StripWhiteSpace(&uuid);
-      master_uuids_and_ports.emplace_back(uuid, kMasterRpcPorts[i]);
+      uuids.emplace_back(uuid);
     }
   }
 
   // Rewrite the single master's cmeta to reflect the new Raft configuration.
   {
-    string data_root = cluster_->GetDataPath("master-0");
+    string data_root = cluster->GetDataPath("master-0");
     vector<string> args = {
         kBinPath,
         "local_replica",
         "cmeta",
         "rewrite_raft_config",
-        "--fs_wal_dir=" + cluster_->GetWalPath("master-0"),
+        "--fs_wal_dir=" + cluster->GetWalPath("master-0"),
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId
     };
-    for (const auto& m : master_uuids_and_ports) {
-      args.push_back(Substitute("$0:127.0.0.1:$1", m.first, m.second));
+    for (int i = 0; i < kNumMasters; i++) {
+      args.emplace_back(Substitute("$0:$1", uuids[i], master_rpc_addresses[i].ToString()));
     }
     ASSERT_OK(Subprocess::Call(args));
   }
@@ -177,13 +177,13 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   // made it aware that it should replicate to the new masters, but they're not
   // actually running. Thus, it cannot become leader or do any real work. But,
   // it can still service remote bootstrap requests.
-  NO_FATALS(RestartCluster());
+  ASSERT_OK(cluster->Restart());
 
   // Use remote bootstrap to copy the master tablet to each of the new masters'
   // filesystems.
-  for (int i = 1; i < kMasterRpcPorts.size(); i++) {
-    string data_root = cluster_->GetDataPath(Substitute("master-$0", i));
-    string wal_dir = cluster_->GetWalPath(Substitute("master-$0", i));
+  for (int i = 1; i < kNumMasters; i++) {
+    string data_root = cluster->GetDataPath(Substitute("master-$0", i));
+    string wal_dir = cluster->GetWalPath(Substitute("master-$0", i));
     vector<string> args = {
         kBinPath,
         "local_replica",
@@ -191,18 +191,15 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
         "--fs_wal_dir=" + wal_dir,
         "--fs_data_dirs=" + data_root,
         SysCatalogTable::kSysCatalogTabletId,
-        cluster_->master()->bound_rpc_hostport().ToString()
+        cluster->master()->bound_rpc_hostport().ToString()
     };
     ASSERT_OK(Subprocess::Call(args));
   }
 
   // Bring down the old cluster configuration and bring up the new one.
-  cluster_->Shutdown();
-  ExternalMiniClusterOptions opts;
-  // Required since we use 127.0.0.1 in the config above.
-  opts.bind_mode = cluster::MiniCluster::LOOPBACK;
-  opts.master_rpc_ports = kMasterRpcPorts;
-  opts.num_masters = kMasterRpcPorts.size();
+  cluster->Shutdown();
+  opts.num_masters = 3;
+  opts.master_rpc_addresses = master_rpc_addresses;
   ExternalMiniCluster migrated_cluster(std::move(opts));
   ASSERT_OK(migrated_cluster.Start());
 
@@ -221,7 +218,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   //
   // Only in slow mode.
   if (AllowSlowTests()) {
-    for (int i = 0; i < migrated_cluster.num_masters(); i++) {
+    for (int i = 0; i < kNumMasters; i++) {
       ASSERT_OK(migrated_cluster.master(i)->Pause());
       ScopedResumeExternalDaemon resume_daemon(migrated_cluster.master(i));
       ASSERT_OK(client->OpenTable(kTableName, &table));

@@ -774,7 +774,7 @@ TEST_F(ClientTest, TestBadTable) {
 // Test that, if the master is down, we experience a network error talking
 // to it (no "find the new leader master" since there's only one master).
 TEST_F(ClientTest, TestMasterDown) {
-  cluster_->mini_master()->Shutdown();
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
   shared_ptr<KuduTable> t;
   client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   Status s = client_->OpenTable("other-tablet", &t);
@@ -2643,7 +2643,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   // Shut down the server.
   switch (which) {
     case DEAD_MASTER:
-      cluster_->mini_master()->Shutdown();
+      cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
       break;
     case DEAD_TSERVER:
       cluster_->mini_tablet_server(0)->Shutdown();

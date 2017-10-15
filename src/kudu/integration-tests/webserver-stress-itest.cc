@@ -47,13 +47,6 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
   const int kNumTablets = 50;
 
   ExternalMiniClusterOptions opts;
-  // Force specific ports so that we can restart and guarantee we
-  // can bind the same port. If we use ephemeral ports, it's possible
-  // for one of the 'curl' threads to grab one of the ports as the local
-  // side of a client TCP connection while the server is down, preventing
-  // it from restarting. Choosing ports from the non-ephemeral range
-  // prevents this.
-  opts.master_rpc_ports = { 11010, 11011, 11012 };
 #ifdef __linux__
   // We can only do explicit webserver ports on Linux, where we use
   // IPs like 127.x.y.z to bind the minicluster servers to different
@@ -63,7 +56,7 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
   opts.extra_master_flags.emplace_back("-webserver_port=11013");
   opts.extra_tserver_flags.emplace_back("-webserver_port=11014");
 #endif
-  opts.num_masters = opts.master_rpc_ports.size();
+  opts.num_masters = 3;
 
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());

@@ -49,4 +49,4 @@ add_dependencies(mini_cluster
 
 # Tests
 set(KUDU_TEST_LINK_LIBS mini_cluster kudu_hms ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports" PROCESSORS 3)
+ADD_KUDU_TEST(external_mini_cluster-test PROCESSORS 3)

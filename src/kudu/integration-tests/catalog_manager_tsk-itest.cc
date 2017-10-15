@@ -84,7 +84,6 @@ class CatalogManagerTskITest : public KuduTest {
 #endif
         {
     cluster_opts_.num_masters = num_masters_;
-    cluster_opts_.master_rpc_ports = { 11030, 11031, 11032 };
     cluster_opts_.num_tablet_servers = num_tservers_;
 
     // Add master-only flags.

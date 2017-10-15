@@ -81,12 +81,7 @@ const int kNumTabletServerReplicas = 3;
 class MasterReplicationTest : public KuduTest {
  public:
   MasterReplicationTest() {
-    // Hard-coded ports for the masters. This is safe, as this unit test
-    // runs under a resource lock (see CMakeLists.txt in this directory).
-    // TODO we should have a generic method to obtain n free ports.
-    opts_.master_rpc_ports = { 11010, 11011, 11012 };
-
-    opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
+    opts_.num_masters = 3;
     opts_.num_tablet_servers = kNumTabletServerReplicas;
   }
 
@@ -111,14 +106,14 @@ class MasterReplicationTest : public KuduTest {
   }
 
   void ListMasterServerAddrs(vector<string>* out) {
-    for (int i = 0; i < num_masters_; i++) {
-      out->push_back(cluster_->mini_master(i)->bound_rpc_addr_str());
+    for (const auto& hostport : cluster_->master_rpc_addrs()) {
+      out->emplace_back(hostport.ToString());
     }
   }
 
   Status CreateClient(shared_ptr<KuduClient>* out) {
     KuduClientBuilder builder;
-    for (int i = 0; i < num_masters_; i++) {
+    for (int i = 0; i < cluster_->num_masters(); i++) {
       if (!cluster_->mini_master(i)->master()->IsShutdown()) {
         builder.add_master_server_addr(cluster_->mini_master(i)->bound_rpc_addr_str());
       }
@@ -143,7 +138,6 @@ class MasterReplicationTest : public KuduTest {
   }
 
  protected:
-  int num_masters_;
   InternalMiniClusterOptions opts_;
   gscoped_ptr<InternalMiniCluster> cluster_;
 };
@@ -291,8 +285,8 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
 TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {
   // Restart one master with an additional entry in --master_addresses. The
   // discrepancy with the on-disk list of masters should trigger a failure.
-  cluster_->mini_master(0)->Shutdown();
   vector<HostPort> master_rpc_addrs = cluster_->master_rpc_addrs();
+  cluster_->mini_master(0)->Shutdown();
   master_rpc_addrs.emplace_back("127.0.0.1", 55555);
   cluster_->mini_master(0)->SetMasterAddresses(master_rpc_addrs);
   ASSERT_OK(cluster_->mini_master(0)->Start());

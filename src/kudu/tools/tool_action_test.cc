@@ -167,9 +167,6 @@ Status ProcessRequest(const ControlShellRequestPB& req,
                                      cc.extra_master_flags().end());
       opts.extra_tserver_flags.assign(cc.extra_tserver_flags().begin(),
                                       cc.extra_tserver_flags().end());
-      if (opts.num_masters > 1) {
-        opts.master_rpc_ports = { 11030, 11031, 11032 };
-      }
       if (opts.enable_kerberos) {
         opts.mini_kdc_options.data_root = JoinPathSegments(opts.cluster_root, "krb5kdc");
         opts.mini_kdc_options.ticket_lifetime = cc.mini_kdc_options().ticket_lifetime();

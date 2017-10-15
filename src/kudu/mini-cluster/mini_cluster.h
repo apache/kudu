@@ -16,7 +16,6 @@
 // under the License.
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,6 +27,7 @@ namespace kudu {
 
 class Env;
 class HostPort;
+class Socket;
 
 namespace client {
 class KuduClient;
@@ -106,7 +106,8 @@ class MiniCluster {
   static constexpr const char* const kLoopbackIpAddr = "127.0.0.1";
 
   MiniCluster() {}
-  virtual ~MiniCluster() {}
+
+  virtual ~MiniCluster() = default;
 
   // Start the cluster.
   virtual Status Start() = 0;
@@ -126,8 +127,9 @@ class MiniCluster {
 
   virtual BindMode bind_mode() const = 0;
 
-  virtual std::vector<uint16_t> master_rpc_ports() const = 0;
-
+  /// Returns the RPC addresses of all Master nodes in the cluster.
+  ///
+  /// REQUIRES: the cluster must have already been Start()ed.
   virtual std::vector<HostPort> master_rpc_addrs() const = 0;
 
   // Create a client configured to talk to this cluster. 'builder' may contain
@@ -159,6 +161,15 @@ class MiniCluster {
 
   // Returns the Env on which the cluster operates.
   virtual Env* env() const = 0;
+
+  /// Reserves a unique socket address for a mini-cluster daemon. The address
+  /// can be ascertained through the returned socket, and will remain reserved
+  /// for the life of the socket. The daemon must use the SO_REUSEPORT socket
+  /// option when binding to the address.
+  static Status ReserveDaemonSocket(DaemonType type,
+                                    int index,
+                                    BindMode bind_mode,
+                                    std::unique_ptr<Socket>* socket);
 
  protected:
   // Return the IP address that the daemon with the given index will bind to.

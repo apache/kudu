@@ -56,6 +56,7 @@ MiniMaster::MiniMaster(string fs_root, HostPort rpc_bind_addr, int num_data_dirs
   FLAGS_enable_minidumps = false;
   HostPort web_bind_addr(rpc_bind_addr_.host(), /*port=*/ 0);
   opts_.rpc_opts.rpc_bind_addresses = rpc_bind_addr_.ToString();
+  opts_.rpc_opts.rpc_reuseport = true;
   opts_.webserver_opts.bind_interface = web_bind_addr.host();
   opts_.webserver_opts.port = web_bind_addr.port();
   if (num_data_dirs == 1) {

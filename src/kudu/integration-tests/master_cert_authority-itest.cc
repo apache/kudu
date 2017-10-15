@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <cstdint>
 #include <iterator>
 #include <memory>
 #include <ostream>
@@ -85,11 +84,7 @@ namespace master {
 class MasterCertAuthorityTest : public KuduTest {
  public:
   MasterCertAuthorityTest() {
-    // Hard-coded ports for the masters. This is safe, as this unit test
-    // runs under a resource lock (see CMakeLists.txt in this directory).
-    // TODO(aserbin): we should have a generic method to obtain n free ports.
-    opts_.master_rpc_ports = { 11010, 11011, 11012 };
-    opts_.num_masters = opts_.master_rpc_ports.size();
+    opts_.num_masters = 3;
   }
 
   void SetUp() override {
@@ -363,11 +358,10 @@ class ConnectToClusterBaseTest : public KuduTest {
  public:
   ConnectToClusterBaseTest(int run_time_seconds,
                            int latency_ms,
-                           vector<uint16_t> master_ports)
+                           int num_masters)
       : run_time_seconds_(run_time_seconds),
         latency_ms_(latency_ms) {
-    cluster_opts_.master_rpc_ports = std::move(master_ports);
-    cluster_opts_.num_masters = cluster_opts_.master_rpc_ports.size();
+    cluster_opts_.num_masters = num_masters;
   }
 
   void SetUp() override {
@@ -427,7 +421,7 @@ class ConnectToClusterBaseTest : public KuduTest {
 class SingleMasterConnectToClusterTest : public ConnectToClusterBaseTest {
  public:
   SingleMasterConnectToClusterTest()
-      : ConnectToClusterBaseTest(5, 2500, { 11020 }) {
+      : ConnectToClusterBaseTest(5, 2500, 1) {
     // Add master-only flags.
     cluster_opts_.extra_master_flags.push_back(Substitute(
         "--catalog_manager_inject_latency_load_ca_info_ms=$0", latency_ms_));
@@ -446,7 +440,7 @@ class SingleMasterConnectToClusterTest : public ConnectToClusterBaseTest {
 class MultiMasterConnectToClusterTest : public ConnectToClusterBaseTest {
  public:
   MultiMasterConnectToClusterTest()
-      : ConnectToClusterBaseTest(120, 2000, { 11030, 11031, 11032 }) {
+      : ConnectToClusterBaseTest(120, 2000, 3) {
     constexpr int kHbIntervalMs = 100;
     // Add master-only flags.
     const vector<string> master_flags = {

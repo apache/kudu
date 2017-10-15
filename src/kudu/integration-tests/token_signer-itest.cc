@@ -65,13 +65,8 @@ class TokenSignerITest : public KuduTest {
     FLAGS_authn_token_validity_seconds = authn_token_validity_seconds_;
     FLAGS_tsk_rotation_seconds = tsk_rotation_seconds_;
 
-    // Hard-coded ports for the masters. This is safe, as this unit test
-    // runs under a resource lock (see CMakeLists.txt in this directory).
-    // TODO(aserbin): we should have a generic method to obtain n free ports.
-    opts_.master_rpc_ports = { 11010, 11011, 11012 };
-
-    opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
-    opts_.num_tablet_servers = num_tablet_servers_;
+    opts_.num_masters = 3;
+    opts_.num_tablet_servers = 3;
   }
 
   void SetUp() override {
@@ -110,7 +105,7 @@ class TokenSignerITest : public KuduTest {
 
   Status GetPublicKeys(int idx, vector<TokenSigningPublicKeyPB>* public_keys) {
     CHECK_GE(idx, 0);
-    CHECK_LT(idx, num_masters_);
+    CHECK_LT(idx, cluster_->num_masters());
     MiniMaster* mm = cluster_->mini_master(idx);
     vector<TokenSigningPublicKeyPB> keys =
         mm->master()->token_verifier().ExportKeys();
@@ -128,8 +123,6 @@ class TokenSignerITest : public KuduTest {
   const int64_t authn_token_validity_seconds_ = 20;
   const int64_t tsk_rotation_seconds_ = 20;
 
-  int num_masters_;
-  const int num_tablet_servers_ = 3;
   InternalMiniClusterOptions opts_;
   unique_ptr<InternalMiniCluster> cluster_;
 };
@@ -241,7 +234,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
   ASSERT_OK(MakeSignedToken(&stoken));
   ASSERT_EQ(key_seq_num, stoken.signing_key_seq_num());
 
-  for (int i = 0; i < num_tablet_servers_; ++i) {
+  for (int i = 0; i < opts_.num_tablet_servers; ++i) {
     const tserver::TabletServer* ts = cluster_->mini_tablet_server(i)->server();
     ASSERT_NE(nullptr, ts);
     TokenPB token;
@@ -278,10 +271,10 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
   const int64_t key_seq_num_token_eotai = stoken_eotai.signing_key_seq_num();
   ASSERT_EQ(key_seq_num, key_seq_num_token_eotai);
 
-  vector<bool> expired_at_tserver(num_tablet_servers_, false);
-  vector<bool> valid_at_tserver(num_tablet_servers_, false);
+  vector<bool> expired_at_tserver(opts_.num_tablet_servers, false);
+  vector<bool> valid_at_tserver(opts_.num_tablet_servers, false);
   while (true) {
-    for (int i = 0; i < num_tablet_servers_; ++i) {
+    for (int i = 0; i < opts_.num_tablet_servers; ++i) {
       if (expired_at_tserver[i]) {
         continue;
       }
@@ -321,7 +314,7 @@ TEST_F(TokenSignerITest, AuthnTokenLifecycle) {
   }
   // Wait until current TSK expires and try to verify the token again.
   // The token verification result should be EXPIRED_TOKEN.
-  for (int i = 0; i < num_tablet_servers_; ++i) {
+  for (int i = 0; i < opts_.num_tablet_servers; ++i) {
     const tserver::TabletServer* ts = cluster_->mini_tablet_server(i)->server();
     ASSERT_NE(nullptr, ts);
     TokenPB token;
