@@ -63,7 +63,6 @@
 #include "kudu/util/test_util.h"
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
-DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(heartbeat_rpc_timeout_ms);
 

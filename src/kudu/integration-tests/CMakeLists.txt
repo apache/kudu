@@ -27,6 +27,7 @@ set(INTEGRATION_TESTS_SRCS
   external_mini_cluster_fs_inspector.cc
   internal_mini_cluster-itest-base.cc
   log_verifier.cc
+  raft_consensus-itest-base.cc
   test_workload.cc
   ts_itest-base.cc
 )
@@ -86,6 +87,7 @@ ADD_KUDU_TEST(multidir_cluster-itest)
 ADD_KUDU_TEST(open-readonly-fs-itest)
 ADD_KUDU_TEST(raft_config_change-itest)
 ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)
+ADD_KUDU_TEST(raft_consensus_election-itest)
 ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(security-faults-itest)
 ADD_KUDU_TEST(security-itest)

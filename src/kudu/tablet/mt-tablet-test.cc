@@ -59,11 +59,11 @@ DECLARE_int32(tablet_delta_store_minor_compact_max);
 DEFINE_int32(num_insert_threads, 8, "Number of inserting threads to launch");
 DEFINE_int32(num_counter_threads, 8, "Number of counting threads to launch");
 DEFINE_int32(num_summer_threads, 1, "Number of summing threads to launch");
-DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(num_slowreader_threads, 1, "Number of 'slow' reader threads to launch");
 DEFINE_int32(num_flush_threads, 1, "Number of flusher reader threads to launch");
 DEFINE_int32(num_compact_threads, 1, "Number of compactor threads to launch");
 DEFINE_int32(num_undo_delta_gc_threads, 1, "Number of undo delta gc threads to launch");
+DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
 DEFINE_int32(num_flush_delta_threads, 1, "Number of delta flusher reader threads to launch");
 DEFINE_int32(num_minor_compact_deltas_threads, 1,
              "Number of delta minor compactor threads to launch");

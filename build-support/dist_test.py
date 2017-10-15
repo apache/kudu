@@ -89,7 +89,7 @@ NUM_SHARDS_BY_TEST = {
   'delete_table-test': 8,
   'flex_partitioning-itest': 8,
   'mt-tablet-test': 4,
-  'raft_consensus-itest': 8
+  'raft_consensus-itest': 6
 }
 
 
