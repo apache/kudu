@@ -85,6 +85,9 @@ class Socket {
   // Sets SO_REUSEADDR to 'flag'. Should be used prior to Bind().
   Status SetReuseAddr(bool flag);
 
+  // Sets SO_REUSEPORT to 'flag'. Should be used prior to Bind().
+  Status SetReusePort(bool flag);
+
   // Convenience method to invoke the common sequence:
   // 1) SetReuseAddr(true)
   // 2) Bind()
@@ -160,6 +163,10 @@ class Socket {
   // Bind the socket to a local address before making an outbound connection,
   // based on the value of FLAGS_local_ip_for_outbound_sockets.
   Status BindForOutgoingConnection();
+
+  // Set an option on the socket.
+  template<typename T>
+  Status SetSockOpt(int level, int option, const T& value);
 
   int fd_;
 

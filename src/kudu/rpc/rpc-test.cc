@@ -802,10 +802,10 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
     ASSERT_STR_MATCHES(status.ToString(),
                        // Linux
                        "Connection reset by peer"
+                       // While reading from socket.
+                       "|recv got EOF from"
                        // Linux, SSL enabled
                        "|failed to read from TLS socket"
-                       // macOS, while reading from socket.
-                       "|got EOF from remote"
                        // macOS, while writing to socket.
                        "|Protocol wrong type for socket"
                        // macOS, sendmsg(): the sum of the iov_len values overflows an ssize_t

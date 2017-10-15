@@ -81,7 +81,8 @@ MessengerBuilder::MessengerBuilder(std::string name)
       rpc_encryption_("optional"),
       rpc_tls_ciphers_(kudu::security::SecurityDefaults::kDefaultTlsCiphers),
       rpc_tls_min_protocol_(kudu::security::SecurityDefaults::kDefaultTlsMinVersion),
-      enable_inbound_tls_(false) {
+      enable_inbound_tls_(false),
+      reuseport_(false) {
 }
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
@@ -175,6 +176,11 @@ MessengerBuilder& MessengerBuilder::set_keytab_file(const std::string& keytab_fi
 
 MessengerBuilder& MessengerBuilder::enable_inbound_tls() {
   enable_inbound_tls_ = true;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_reuseport() {
+  reuseport_ = true;
   return *this;
 }
 
@@ -311,6 +317,9 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   Socket sock;
   RETURN_NOT_OK(sock.Init(0));
   RETURN_NOT_OK(sock.SetReuseAddr(true));
+  if (reuseport_) {
+    RETURN_NOT_OK(sock.SetReusePort(true));
+  }
   RETURN_NOT_OK(sock.Bind(accept_addr));
   Sockaddr remote;
   RETURN_NOT_OK(sock.GetSocketAddress(&remote));
@@ -402,6 +411,7 @@ Messenger::Messenger(const MessengerBuilder &bld)
     rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
     sasl_proto_name_(bld.sasl_proto_name_),
     keytab_file_(bld.keytab_file_),
+    reuseport_(bld.reuseport_),
     retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));

@@ -163,6 +163,9 @@ class MessengerBuilder {
   // Configure the messenger to enable TLS encryption on inbound connections.
   MessengerBuilder& enable_inbound_tls();
 
+  // Configure the messenger to set the SO_REUSEPORT socket option.
+  MessengerBuilder& set_reuseport();
+
   Status Build(std::shared_ptr<Messenger> *msgr);
 
  private:
@@ -185,6 +188,7 @@ class MessengerBuilder {
   std::string rpc_private_key_password_cmd_;
   std::string keytab_file_;
   bool enable_inbound_tls_;
+  bool reuseport_;
 };
 
 // A Messenger is a container for the reactor threads which run event loops
@@ -398,6 +402,9 @@ class Messenger {
 
   // Path to the Kerberos Keytab file for this server.
   const std::string keytab_file_;
+
+  // Whether to set SO_REUSEPORT on the listening sockets.
+  bool reuseport_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:

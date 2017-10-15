@@ -470,6 +470,10 @@ Status ServerBase::Init() {
          .set_keytab_file(FLAGS_keytab_file)
          .enable_inbound_tls();
 
+  if (options_.rpc_opts.rpc_reuseport) {
+    builder.set_reuseport();
+  }
+
   RETURN_NOT_OK(builder.Build(&messenger_));
   rpc_server_->set_too_busy_hook(std::bind(
       &ServerBase::ServiceQueueOverflowed, this, std::placeholders::_1));

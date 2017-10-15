@@ -61,6 +61,9 @@ DEFINE_bool(socket_inject_short_recvs, false,
 TAG_FLAG(socket_inject_short_recvs, hidden);
 TAG_FLAG(socket_inject_short_recvs, unsafe);
 
+using std::string;
+using strings::Substitute;
+
 namespace kudu {
 
 Socket::Socket()
@@ -93,8 +96,7 @@ Status Socket::Close() {
   int fd = fd_;
   if (::close(fd) < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("close error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("close error", ErrnoToString(err), err);
   }
   fd_ = -1;
   return Status::OK();
@@ -112,8 +114,7 @@ Status Socket::Shutdown(bool shut_read, bool shut_write) {
   }
   if (::shutdown(fd_, flags) < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("shutdown error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("shutdown error", ErrnoToString(err), err);
   }
   return Status::OK();
 }
@@ -133,8 +134,7 @@ Status Socket::Init(int flags) {
   Reset(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | nonblocking_flag, 0));
   if (fd_ < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("error opening socket: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("error opening socket", ErrnoToString(err), err);
   }
 
   return Status::OK();
@@ -146,20 +146,15 @@ Status Socket::Init(int flags) {
   Reset(::socket(AF_INET, SOCK_STREAM, 0));
   if (fd_ < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("error opening socket: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("error opening socket", ErrnoToString(err), err);
   }
   RETURN_NOT_OK(SetNonBlocking(flags & FLAG_NONBLOCKING));
   RETURN_NOT_OK(SetCloseOnExec());
 
   // Disable SIGPIPE.
   int set = 1;
-  if (setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &set, sizeof(set)) == -1) {
-    int err = errno;
-    return Status::NetworkError(std::string("failed to set SO_NOSIGPIPE: ") +
-                                ErrnoToString(err), Slice(), err);
-  }
-
+  RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_NOSIGPIPE, set),
+                        "failed to set SO_NOSIGPIPE");
   return Status::OK();
 }
 
@@ -167,24 +162,18 @@ Status Socket::Init(int flags) {
 
 Status Socket::SetNoDelay(bool enabled) {
   int flag = enabled ? 1 : 0;
-  if (setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) == -1) {
-    int err = errno;
-    return Status::NetworkError(std::string("failed to set TCP_NODELAY: ") +
-                                ErrnoToString(err), Slice(), err);
-  }
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_TCP, TCP_NODELAY, flag),
+                        "failed to set TCP_NODELAY");
   return Status::OK();
 }
 
 Status Socket::SetTcpCork(bool enabled) {
 #if defined(__linux__)
   int flag = enabled ? 1 : 0;
-  if (setsockopt(fd_, IPPROTO_TCP, TCP_CORK, &flag, sizeof(flag)) == -1) {
-    int err = errno;
-    return Status::NetworkError(std::string("failed to set TCP_CORK: ") +
-                                ErrnoToString(err), Slice(), err);
-  }
+  RETURN_NOT_OK_PREPEND(SetSockOpt(IPPROTO_TCP, TCP_CORK, flag),
+                        "failed to set TCP_CORK");
 #endif // defined(__linux__)
-  // TODO: Use TCP_NOPUSH for OSX if perf becomes an issue.
+  // TODO(unknown): Use TCP_NOPUSH for OSX if perf becomes an issue.
   return Status::OK();
 }
 
@@ -229,14 +218,12 @@ Status Socket::SetCloseOnExec() {
   if (curflags == -1) {
     int err = errno;
     Reset(-1);
-    return Status::NetworkError(std::string("fcntl(F_GETFD) error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("fcntl(F_GETFD) error", ErrnoToString(err), err);
   }
   if (fcntl(fd_, F_SETFD, curflags | FD_CLOEXEC) == -1) {
     int err = errno;
     Reset(-1);
-    return Status::NetworkError(std::string("fcntl(F_SETFD) error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("fcntl(F_SETFD) error", ErrnoToString(err), err);
   }
   return Status::OK();
 }
@@ -250,13 +237,16 @@ Status Socket::SetRecvTimeout(const MonoDelta& timeout) {
 }
 
 Status Socket::SetReuseAddr(bool flag) {
-  int err;
   int int_flag = flag ? 1 : 0;
-  if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &int_flag, sizeof(int_flag)) == -1) {
-    err = errno;
-    return Status::NetworkError(std::string("failed to set SO_REUSEADDR: ") +
-                                ErrnoToString(err), Slice(), err);
-  }
+  RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_REUSEADDR, int_flag),
+                        "failed to set SO_REUSEADDR");
+  return Status::OK();
+}
+
+Status Socket::SetReusePort(bool flag) {
+  int int_flag = flag ? 1 : 0;
+  RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, SO_REUSEPORT, int_flag),
+                        "failed to set SO_REUSEPORT");
   return Status::OK();
 }
 
@@ -280,10 +270,9 @@ Status Socket::GetSocketAddress(Sockaddr *cur_addr) const {
   struct sockaddr_in sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
-  if (::getsockname(fd_, (struct sockaddr *)&sin, &len) == -1) {
+  if (::getsockname(fd_, reinterpret_cast<struct sockaddr*>(&sin), &len) == -1) {
     int err = errno;
-    return Status::NetworkError(std::string("getsockname error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("getsockname error", ErrnoToString(err), err);
   }
   *cur_addr = sin;
   return Status::OK();
@@ -293,10 +282,9 @@ Status Socket::GetPeerAddress(Sockaddr *cur_addr) const {
   struct sockaddr_in sin;
   socklen_t len = sizeof(sin);
   DCHECK_GE(fd_, 0);
-  if (::getpeername(fd_, (struct sockaddr *)&sin, &len) == -1) {
+  if (::getpeername(fd_, reinterpret_cast<struct sockaddr*>(&sin), &len) == -1) {
     int err = errno;
-    return Status::NetworkError(std::string("getpeername error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("getpeername error", ErrnoToString(err), err);
   }
   *cur_addr = sin;
   return Status::OK();
@@ -348,8 +336,7 @@ Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
                              &olen, accept_flags));
   if (fd < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("accept4(2) error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("accept4(2) error", ErrnoToString(err), err);
   }
   new_conn->Reset(fd);
 
@@ -358,8 +345,7 @@ Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
   RETRY_ON_EINTR(fd, accept(fd_, (struct sockaddr*)&addr, &olen));
   if (fd < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("accept(2) error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("accept(2) error", ErrnoToString(err), err);
   }
   new_conn->Reset(fd);
   RETURN_NOT_OK(new_conn->SetNonBlocking(flags & FLAG_NONBLOCKING));
@@ -393,10 +379,9 @@ Status Socket::Connect(const Sockaddr &remote) {
   struct sockaddr_in addr;
   memcpy(&addr, &remote.addr(), sizeof(sockaddr_in));
   DCHECK_GE(fd_, 0);
-  if (::connect(fd_, (const struct sockaddr*)&addr, sizeof(addr)) < 0) {
+  if (::connect(fd_, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)) < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("connect(2) error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("connect(2) error", ErrnoToString(err), err);
   }
   return Status::OK();
 }
@@ -408,8 +393,7 @@ Status Socket::GetSockError() const {
   ret = ::getsockopt(fd_, SOL_SOCKET, SO_ERROR, &val, &val_len);
   if (ret) {
     int err = errno;
-    return Status::NetworkError(std::string("getsockopt(SO_ERROR) failed: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("getsockopt(SO_ERROR) failed", ErrnoToString(err), err);
   }
   if (val != 0) {
     return Status::NetworkError(ErrnoToString(val), Slice(), val);
@@ -427,8 +411,7 @@ Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   int res = ::send(fd_, buf, amt, MSG_NOSIGNAL);
   if (res < 0) {
     int err = errno;
-    return Status::NetworkError(std::string("write error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("write error", ErrnoToString(err), err);
   }
   *nwritten = res;
   return Status::OK();
@@ -451,8 +434,7 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
   ssize_t res = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
   if (PREDICT_FALSE(res < 0)) {
     int err = errno;
-    return Status::NetworkError(std::string("sendmsg error: ") +
-                                ErrnoToString(err), Slice(), err);
+    return Status::NetworkError("sendmsg error", ErrnoToString(err), err);
   }
 
   *nwritten = res;
@@ -524,15 +506,12 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
     Sockaddr remote;
     GetPeerAddress(&remote);
     if (res == 0) {
-      std::string error_message = strings::Substitute("Recv() got EOF from remote $0",
-                                                      remote.ToString());
+      string error_message = Substitute("recv got EOF from $0", remote.ToString());
       return Status::NetworkError(error_message, Slice(), ESHUTDOWN);
     }
     int err = errno;
-    std::string error_message = strings::Substitute("recv error from $0: $1",
-                                                    remote.ToString(),
-                                                    ErrnoToString(err));
-    return Status::NetworkError(error_message, Slice(), err);
+    string error_message = Substitute("recv error from $0", remote.ToString());
+    return Status::NetworkError(error_message, ErrnoToString(err), err);
   }
   *nread = res;
   return Status::OK();
@@ -587,12 +566,17 @@ Status Socket::SetTimeout(int opt, const char* optname, const MonoDelta& timeout
   }
   struct timeval tv;
   timeout.ToTimeVal(&tv);
-  socklen_t optlen = sizeof(tv);
-  if (::setsockopt(fd_, SOL_SOCKET, opt, &tv, optlen) == -1) {
+  RETURN_NOT_OK_PREPEND(SetSockOpt(SOL_SOCKET, opt, tv),
+                        Substitute("failed to set socket option $0 to $1",
+                                   optname, timeout.ToString()));
+  return Status::OK();
+}
+
+template<typename T>
+Status Socket::SetSockOpt(int level, int option, const T& value) {
+  if (::setsockopt(fd_, level, option, &value, sizeof(T)) == -1) {
     int err = errno;
-    return Status::NetworkError(
-        StringPrintf("Failed to set %s to %s", optname, timeout.ToString().c_str()),
-        ErrnoToString(err), err);
+    return Status::NetworkError(ErrnoToString(err), Slice(), err);
   }
   return Status::OK();
 }
