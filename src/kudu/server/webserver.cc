@@ -207,6 +207,11 @@ Status Webserver::Start() {
       options.emplace_back("ssl_private_key_password");
       options.push_back(key_password); // maybe empty if not configured.
     }
+
+    options.emplace_back("ssl_ciphers");
+    options.emplace_back(opts_.tls_ciphers);
+    options.emplace_back("ssl_min_version");
+    options.emplace_back(opts_.tls_min_protocol);
   }
 
   if (!opts_.authentication_domain.empty()) {

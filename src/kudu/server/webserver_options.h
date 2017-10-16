@@ -38,6 +38,8 @@ struct WebserverOptions {
   std::string private_key_password_cmd;
   std::string authentication_domain;
   std::string password_file;
+  std::string tls_ciphers;
+  std::string tls_min_protocol;
   uint32_t num_worker_threads;
 };
 

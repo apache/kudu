@@ -95,6 +95,26 @@ DEFINE_int32(webserver_port, 0,
              "Port to bind to for the web server");
 TAG_FLAG(webserver_port, stable);
 
+DEFINE_string(webserver_tls_ciphers,
+              // See security/tls_context.cc for origin of this list.
+              "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+              "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+              "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+              "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
+              "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
+              "AES256-GCM-SHA384:AES128-GCM-SHA256:"
+              "AES256-SHA256:AES128-SHA256:"
+              "AES256-SHA:AES128-SHA",
+              "The cipher suite preferences to use for webserver HTTPS connections. "
+              "Uses the OpenSSL cipher preference list format. See man (1) ciphers "
+              "for more information.");
+TAG_FLAG(webserver_tls_ciphers, advanced);
+
+DEFINE_string(webserver_tls_min_protocol, "TLSv1",
+              "The minimum protocol version to allow when for webserver HTTPS "
+              "connections. May be one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.");
+TAG_FLAG(webserver_tls_min_protocol, advanced);
+
 namespace kudu {
 
 static bool ValidateTlsFlags() {
@@ -135,6 +155,8 @@ WebserverOptions::WebserverOptions()
     private_key_password_cmd(FLAGS_webserver_private_key_password_cmd),
     authentication_domain(FLAGS_webserver_authentication_domain),
     password_file(FLAGS_webserver_password_file),
+    tls_ciphers(FLAGS_webserver_tls_ciphers),
+    tls_min_protocol(FLAGS_webserver_tls_min_protocol),
     num_worker_threads(FLAGS_webserver_num_worker_threads) {
 }
 
