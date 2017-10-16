@@ -85,9 +85,13 @@ DECLARE_string(env_inject_eio_globs);
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
+// Block manager metrics.
+METRIC_DECLARE_counter(block_manager_total_blocks_deleted);
+
 // Log block manager metrics.
 METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
+METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_gauge_uint64(log_block_manager_full_containers);
 
@@ -250,28 +254,43 @@ class LogBlockManagerTest : public KuduTest {
   }
 };
 
+static void CheckGaugeMetric(const scoped_refptr<MetricEntity>& entity,
+                             int expected_value, const MetricPrototype* prototype) {
+  AtomicGauge<uint64_t>* gauge = down_cast<AtomicGauge<uint64_t>*>(
+      entity->FindOrNull(*prototype).get());
+  DCHECK_NOTNULL(gauge);
+  ASSERT_EQ(expected_value, gauge->value());
+}
+
+static void CheckCounterMetric(const scoped_refptr<MetricEntity>& entity,
+                               int expected_value, const MetricPrototype* prototype) {
+  Counter* counter = down_cast<Counter*>(entity->FindOrNull(*prototype).get());
+  DCHECK_NOTNULL(counter);
+  ASSERT_EQ(expected_value, counter->value());
+}
+
 static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
-                            int bytes_under_management, int blocks_under_management,
-                            int containers, int full_containers) {
-  ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
-                entity->FindOrNull(METRIC_log_block_manager_bytes_under_management)
-                .get())->value());
-  ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
-                entity->FindOrNull(METRIC_log_block_manager_blocks_under_management)
-                .get())->value());
-  ASSERT_EQ(containers, down_cast<AtomicGauge<uint64_t>*>(
-                entity->FindOrNull(METRIC_log_block_manager_containers)
-                .get())->value());
-  ASSERT_EQ(full_containers, down_cast<AtomicGauge<uint64_t>*>(
-                entity->FindOrNull(METRIC_log_block_manager_full_containers)
-                .get())->value());
+                            const vector<std::pair<int, const MetricPrototype*>> gauge_values,
+                            const vector<std::pair<int, const MetricPrototype*>> counter_values) {
+  for (const auto& gauge_value : gauge_values) {
+    CheckGaugeMetric(entity, gauge_value.first, gauge_value.second);
+  }
+  for (const auto& counter_value: counter_values) {
+    CheckCounterMetric(entity, counter_value.first, counter_value.second);
+  }
 }
 
 TEST_F(LogBlockManagerTest, MetricsTest) {
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
   ASSERT_OK(ReopenBlockManager(entity));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
+  NO_FATALS(CheckLogMetrics(entity,
+      { {0, &METRIC_log_block_manager_bytes_under_management},
+        {0, &METRIC_log_block_manager_blocks_under_management},
+        {0, &METRIC_log_block_manager_containers},
+        {0, &METRIC_log_block_manager_full_containers} },
+      { {0, &METRIC_log_block_manager_holes_punched},
+        {0, &METRIC_block_manager_total_blocks_deleted} }));
 
   // Lower the max container size so that we can more easily test full
   // container metrics.
@@ -280,11 +299,23 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   // One block --> one container.
   unique_ptr<WritableBlock> writer;
   ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 1, 0));
+  NO_FATALS(CheckLogMetrics(entity,
+      { {0, &METRIC_log_block_manager_bytes_under_management},
+        {0, &METRIC_log_block_manager_blocks_under_management},
+        {1, &METRIC_log_block_manager_containers},
+        {0, &METRIC_log_block_manager_full_containers} },
+      { {0, &METRIC_log_block_manager_holes_punched},
+        {0, &METRIC_block_manager_total_blocks_deleted} }));
 
   // And when the block is closed, it becomes "under management".
   ASSERT_OK(writer->Close());
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 1, 0));
+  NO_FATALS(CheckLogMetrics(entity,
+      { {0, &METRIC_log_block_manager_bytes_under_management},
+        {1, &METRIC_log_block_manager_blocks_under_management},
+        {1, &METRIC_log_block_manager_containers},
+        {0, &METRIC_log_block_manager_full_containers} },
+      { {0, &METRIC_log_block_manager_holes_punched},
+        {0, &METRIC_block_manager_total_blocks_deleted} }));
 
   // Create 10 blocks concurrently. We reuse the existing container and
   // create 9 new ones. All of them get filled.
@@ -307,10 +338,22 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
       transaction->AddCreatedBlock(std::move(b));
     }
     // Metrics for full containers are updated after Finalize().
-    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 10));
+    NO_FATALS(CheckLogMetrics(entity,
+        { {0, &METRIC_log_block_manager_bytes_under_management},
+          {1, &METRIC_log_block_manager_blocks_under_management},
+          {10, &METRIC_log_block_manager_containers},
+          {10, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {0, &METRIC_block_manager_total_blocks_deleted} }));
 
     ASSERT_OK(transaction->CommitCreatedBlocks());
-    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 10 * 1024, 11, 10, 10));
+    NO_FATALS(CheckLogMetrics(entity,
+        { {10 * 1024, &METRIC_log_block_manager_bytes_under_management},
+          {11, &METRIC_log_block_manager_blocks_under_management},
+          {10, &METRIC_log_block_manager_containers},
+          {10, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {0, &METRIC_block_manager_total_blocks_deleted} }));
   }
 
   // Reopen the block manager and test the metrics. They're all based on
@@ -318,15 +361,85 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
   MetricRegistry new_registry;
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
   ASSERT_OK(ReopenBlockManager(new_entity));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
+  NO_FATALS(CheckLogMetrics(new_entity,
+      { {10 * 1024, &METRIC_log_block_manager_bytes_under_management},
+        {11, &METRIC_log_block_manager_blocks_under_management},
+        {10, &METRIC_log_block_manager_containers},
+        {10, &METRIC_log_block_manager_full_containers} },
+      { {0, &METRIC_log_block_manager_holes_punched},
+        {0, &METRIC_block_manager_total_blocks_deleted} }));
 
   // Delete a block. Its contents should no longer be under management.
-  shared_ptr<BlockDeletionTransaction> deletion_transaction =
-      bm_->NewDeletionTransaction();
-  deletion_transaction->AddDeletedBlock(saved_id);
-  vector<BlockId> deleted;
-  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 9 * 1024, 10, 10, 10));
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        bm_->NewDeletionTransaction();
+    deletion_transaction->AddDeletedBlock(saved_id);
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    NO_FATALS(CheckLogMetrics(new_entity,
+        { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
+          {10, &METRIC_log_block_manager_blocks_under_management},
+          {10, &METRIC_log_block_manager_containers},
+          {10, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {1, &METRIC_block_manager_total_blocks_deleted} }));
+  }
+  // Wait for the actual hole punching to take place.
+  for (const auto& data_dir : dd_manager_->data_dirs()) {
+    data_dir->WaitOnClosures();
+  }
+  NO_FATALS(CheckLogMetrics(new_entity,
+      { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
+        {10, &METRIC_log_block_manager_blocks_under_management},
+        {10, &METRIC_log_block_manager_containers},
+        {10, &METRIC_log_block_manager_full_containers} },
+      { {1, &METRIC_log_block_manager_holes_punched},
+        {1, &METRIC_block_manager_total_blocks_deleted} }));
+
+  // Set the max container size to default so that we can create a bunch of blocks
+  // in the same container. Delete those created blocks afterwards to verify only
+  // one hole punch operation is executed since the blocks are contiguous.
+  FLAGS_log_container_max_size = 10LU * 1024 * 1024 * 1024;
+  {
+    vector<BlockId> blocks;
+    unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
+    for (int i = 0; i < 10; i++) {
+      unique_ptr<WritableBlock> b;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &b));
+      blocks.emplace_back(b->id());
+      b->Append("test data");
+      ASSERT_OK(b->Finalize());
+      transaction->AddCreatedBlock(std::move(b));
+    }
+    ASSERT_OK(transaction->CommitCreatedBlocks());
+
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        bm_->NewDeletionTransaction();
+    for (const auto& block : blocks) {
+      deletion_transaction->AddDeletedBlock(block);
+    }
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    ASSERT_EQ(blocks.size(), deleted.size());
+    NO_FATALS(CheckLogMetrics(new_entity,
+        { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
+          {10, &METRIC_log_block_manager_blocks_under_management},
+          {11, &METRIC_log_block_manager_containers},
+          {10, &METRIC_log_block_manager_full_containers} },
+        { {1, &METRIC_log_block_manager_holes_punched},
+          {11, &METRIC_block_manager_total_blocks_deleted} }));
+  }
+  // Wait for the actual hole punching to take place.
+  for (const auto& data_dir : dd_manager_->data_dirs()) {
+    data_dir->WaitOnClosures();
+  }
+  NO_FATALS(CheckLogMetrics(new_entity,
+      { {9 * 1024, &METRIC_log_block_manager_bytes_under_management},
+        {10, &METRIC_log_block_manager_blocks_under_management},
+        {11, &METRIC_log_block_manager_containers},
+        {10, &METRIC_log_block_manager_full_containers} },
+      { {2, &METRIC_log_block_manager_holes_punched},
+        {11, &METRIC_block_manager_total_blocks_deleted} }));
 }
 
 TEST_F(LogBlockManagerTest, ContainerPreallocationTest) {
@@ -402,8 +515,14 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   ASSERT_EQ(4, bm_->all_containers_by_name_.size());
 
   // Delete the original blocks.
-  for (const BlockId& b : block_ids) {
-    ASSERT_OK(bm_->DeleteBlock(b));
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        bm_->NewDeletionTransaction();
+    for (const BlockId& b : block_ids) {
+      deletion_transaction->AddDeletedBlock(b);
+    }
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   }
 
   // Reset the block ID sequence and re-create new blocks which should reuse the same
@@ -500,7 +619,13 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // Delete the first block we created. This necessitates writing to the
   // metadata file of the originally-written container, since we append a
   // delete record to the metadata.
-  ASSERT_OK(bm_->DeleteBlock(created_blocks[0]));
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        bm_->NewDeletionTransaction();
+    deletion_transaction->AddDeletedBlock(created_blocks[0]);
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  }
   ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
   ASSERT_EQ(3, block_ids.size());
 
@@ -998,18 +1123,20 @@ TEST_F(LogBlockManagerTest, TestMisalignedBlocksFuzz) {
     ASSERT_EQ(container_name, mb.container);
   }
 
-  shared_ptr<BlockDeletionTransaction> deletion_transaction =
-      this->bm_->NewDeletionTransaction();
   // Delete about half of them, chosen randomly.
   vector<BlockId> block_ids;
-  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
-  for (const auto& id : block_ids) {
-    if (rand() % 2) {
-      deletion_transaction->AddDeletedBlock(id);
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+    ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+    for (const auto& id : block_ids) {
+      if (rand() % 2) {
+        deletion_transaction->AddDeletedBlock(id);
+      }
     }
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
   }
-  vector<BlockId> deleted;
-  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
 
   // Wait for the block manager to punch out all of the holes. It's easiest to
   // do this by reopening it; shutdown will wait for outstanding hole punches.
@@ -1305,11 +1432,13 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersAtStartup) {
 
   // Delete the one block and reopen it again. The container files should have
   // been deleted.
-  shared_ptr<BlockDeletionTransaction> deletion_transaction =
-      this->bm_->NewDeletionTransaction();
-  deletion_transaction->AddDeletedBlock(block->id());
-  vector<BlockId> deleted;
-  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+    deletion_transaction->AddDeletedBlock(block->id());
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+  }
   ASSERT_OK(ReopenBlockManager());
   ASSERT_FALSE(env_->FileExists(data_file_name));
   ASSERT_FALSE(env_->FileExists(metadata_file_name));
@@ -1344,7 +1473,13 @@ TEST_F(LogBlockManagerTest, TestCompactFullContainerMetadataAtStartup) {
   int64_t last_live_aligned_bytes;
   int num_blocks_deleted = 0;
   for (const auto& id : block_ids) {
-    ASSERT_OK(bm_->DeleteBlock(id));
+    {
+      shared_ptr<BlockDeletionTransaction> deletion_transaction =
+          bm_->NewDeletionTransaction();
+      deletion_transaction->AddDeletedBlock(id);
+      vector<BlockId> deleted;
+      ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    }
     num_blocks_deleted++;
     FsReport report;
     ASSERT_OK(ReopenBlockManager(nullptr, &report));

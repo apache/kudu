@@ -381,6 +381,7 @@ struct MetricUnit {
     kScanners,
     kMaintenanceOperations,
     kBlocks,
+    kHoles,
     kLogBlockContainers,
     kTasks,
     kMessages,

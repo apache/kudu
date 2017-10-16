@@ -410,6 +410,7 @@ Status FileWritableBlock::Close(SyncMode mode) {
   if (block_manager_->metrics_) {
     block_manager_->metrics_->blocks_open_writing->Decrement();
     block_manager_->metrics_->total_bytes_written->IncrementBy(BytesAppended());
+    block_manager_->metrics_->total_blocks_created->Increment();
   }
 
   // Either Close() or Sync() could have run into an error.
@@ -624,6 +625,9 @@ Status FileBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* d
       if (first_failure.ok()) first_failure = s;
     } else {
       deleted->emplace_back(block);
+      if (s.ok() && fbm_->metrics_) {
+        fbm_->metrics_->total_blocks_deleted->Increment();
+      }
     }
   }
 

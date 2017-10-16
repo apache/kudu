@@ -34,6 +34,8 @@ struct BlockManagerMetrics {
 
   scoped_refptr<Counter> total_readable_blocks;
   scoped_refptr<Counter> total_writable_blocks;
+  scoped_refptr<Counter> total_blocks_created;
+  scoped_refptr<Counter> total_blocks_deleted;
   scoped_refptr<Counter> total_bytes_read;
   scoped_refptr<Counter> total_bytes_written;
   scoped_refptr<Counter> total_disk_sync;

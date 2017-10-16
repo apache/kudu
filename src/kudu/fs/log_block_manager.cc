@@ -71,6 +71,7 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/sorted_disjoint_interval_list.h"
 #include "kudu/util/test_util_prod.h"
 #include "kudu/util/trace.h"
 
@@ -132,12 +133,18 @@ METRIC_DEFINE_gauge_uint64(server, log_block_manager_full_containers,
                            kudu::MetricUnit::kLogBlockContainers,
                            "Number of full log block containers");
 
+METRIC_DEFINE_counter(server, log_block_manager_holes_punched,
+                      "Number of Holes Punched",
+                      kudu::MetricUnit::kHoles,
+                      "Number of holes punched since service start");
+
 namespace kudu {
 
 namespace fs {
 
 using internal::LogBlock;
 using internal::LogBlockContainer;
+using internal::LogBlockDeletionTransaction;
 using internal::LogWritableBlock;
 using pb_util::ReadablePBContainerFile;
 using pb_util::WritablePBContainerFile;
@@ -173,15 +180,19 @@ struct LogBlockManagerMetrics {
 
   scoped_refptr<AtomicGauge<uint64_t>> containers;
   scoped_refptr<AtomicGauge<uint64_t>> full_containers;
+
+  scoped_refptr<Counter> holes_punched;
 };
 
+#define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
 #define GINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity, 0))
 LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
   : generic_metrics(metric_entity),
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
     GINIT(containers),
-    GINIT(full_containers) {
+    GINIT(full_containers),
+    MINIT(holes_punched) {
 }
 #undef GINIT
 
@@ -205,7 +216,7 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
  public:
   LogBlock(LogBlockContainer* container, BlockId block_id, int64_t offset,
            int64_t length);
-  ~LogBlock();
+  ~LogBlock() = default;
 
   const BlockId& block_id() const { return block_id_; }
   LogBlockContainer* container() const { return container_; }
@@ -215,9 +226,9 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
   // Returns a block's length aligned to the nearest filesystem block size.
   int64_t fs_aligned_length() const;
 
-  // Delete the block. Actual deletion takes place when the
-  // block is destructed.
-  void Delete();
+  // Registers the deletion of the block with a deletion transaction. Actual
+  // deletion will take place when the deletion transaction is destructed.
+  void RegisterDeletion(const shared_ptr<LogBlockDeletionTransaction>& transaction);
 
  private:
   // The owning container. Must outlive the LogBlock.
@@ -232,8 +243,8 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
   // The block's length.
   const int64_t length_;
 
-  // Whether the block has been marked for deletion.
-  bool deleted_;
+  // The block deletion transaction with which this block has been registered.
+  shared_ptr<LogBlockDeletionTransaction> transaction_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlock);
 };
@@ -356,12 +367,15 @@ class LogBlockContainer {
   // If successful, adds all blocks to the block manager's in-memory maps.
   Status DoCloseBlocks(const vector<LogWritableBlock*>& blocks, SyncMode mode);
 
-  // Frees the space associated with a block at 'offset' and 'length'. This
-  // is a physical operation, not a logical one; a separate AppendMetadata()
-  // is required to record the deletion in container metadata.
+  // Frees the space associated with a block or a group of blocks at 'offset'
+  // and 'length'. This is a physical operation, not a logical one; a separate
+  // AppendMetadata() is required to record the deletion in container metadata.
   //
   // The on-disk effects of this call are made durable only after SyncData().
   Status PunchHole(int64_t offset, int64_t length);
+
+  // Executes a hole punching operation at 'offset' with the given 'length'.
+  void ContainerDeletionAsync(int64_t offset, int64_t length);
 
   // Preallocate enough space to ensure that an append of 'next_append_length'
   // can be satisfied by this container. The offset of the beginning of this
@@ -1140,6 +1154,14 @@ void LogBlockContainer::SetReadOnly(const Status& error) {
   read_only_status_ = error;
 }
 
+void LogBlockContainer::ContainerDeletionAsync(int64_t offset, int64_t length) {
+  VLOG(3) << "Freeing space belonging to container " << ToString();
+  Status s = PunchHole(offset, length);
+  if (s.ok() && metrics_) metrics_->holes_punched->Increment();
+  WARN_NOT_OK(s, Substitute("could not delete blocks in container $0",
+                            data_dir()->dir()));
+}
+
 ///////////////////////////////////////////////////////////
 // LogBlockCreationTransaction
 ////////////////////////////////////////////////////////////
@@ -1196,19 +1218,34 @@ Status LogBlockCreationTransaction::CommitCreatedBlocks() {
 // LogBlockDeletionTransaction
 ////////////////////////////////////////////////////////////
 
-class LogBlockDeletionTransaction : public BlockDeletionTransaction {
+class LogBlockDeletionTransaction : public BlockDeletionTransaction,
+    public std::enable_shared_from_this<LogBlockDeletionTransaction> {
  public:
   explicit LogBlockDeletionTransaction(LogBlockManager* lbm)
       : lbm_(lbm) {
   }
 
-  virtual ~LogBlockDeletionTransaction() = default;
+  // Given the shared ownership of LogBlockDeletionTransaction, at this point
+  // all registered blocks should be destructed. Thus, coalescing deletions
+  // for blocks that are contiguous in a container and schedules hole punching.
+  virtual ~LogBlockDeletionTransaction();
 
   virtual void AddDeletedBlock(BlockId block) override;
 
   virtual Status CommitDeletedBlocks(std::vector<BlockId>* deleted) override;
 
+  // Add the given block that needs to be deleted to 'deleted_interval_map_',
+  // which keeps track of container and the range to be hole punched.
+  void AddBlock(const scoped_refptr<internal::LogBlock>& lb);
+
  private:
+  // Block <offset, offset + length> pair.
+  typedef std::pair<int64_t, int64_t> BlockInterval;
+
+  // Map used to aggregate BlockInterval instances across containers.
+  std::unordered_map<internal::LogBlockContainer*,
+      std::vector<BlockInterval>> deleted_interval_map_;
+
   // The owning LogBlockManager. Must outlive the LogBlockDeletionTransaction.
   LogBlockManager* lbm_;
   std::vector<BlockId> deleted_blocks_;
@@ -1219,16 +1256,36 @@ void LogBlockDeletionTransaction::AddDeletedBlock(BlockId block) {
   deleted_blocks_.emplace_back(block);
 }
 
+LogBlockDeletionTransaction::~LogBlockDeletionTransaction() {
+  for (auto& entry : deleted_interval_map_) {
+    LogBlockContainer* container = entry.first;
+    CHECK_OK_PREPEND(CoalesceIntervals<int64_t>(&entry.second),
+                     Substitute("could not coalesce hole punching for container: $0",
+                                container->ToString()));
+
+    for (const auto& interval : entry.second) {
+      container->ExecClosure(Bind(&LogBlockContainer::ContainerDeletionAsync,
+                                  Unretained(container),
+                                  interval.first,
+                                  interval.second - interval.first));
+    }
+  }
+}
+
 Status LogBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* deleted) {
   deleted->clear();
-  Status first_failure;
-  for (BlockId block : deleted_blocks_) {
-    Status s = lbm_->DeleteBlock(block);
-    // If we get NotFound, then the block was already deleted.
-    if (!s.ok() && !s.IsNotFound()) {
-      if (first_failure.ok()) first_failure = s;
-    } else {
-      deleted->emplace_back(block);
+  shared_ptr<LogBlockDeletionTransaction> transaction = shared_from_this();
+
+  vector<scoped_refptr<LogBlock>> log_blocks;
+  Status first_failure = lbm_->RemoveLogBlocks(deleted_blocks_, &log_blocks, deleted);
+  for (const auto& lb : log_blocks) {
+    // Register the block to be hole punched if metadata recording
+    // is successful.
+    lb->RegisterDeletion(transaction);
+    AddBlock(lb);
+
+    if (lbm_->metrics_) {
+      lbm_->metrics_->generic_metrics.total_blocks_deleted->Increment();
     }
   }
 
@@ -1240,6 +1297,14 @@ Status LogBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* de
   return first_failure;
 }
 
+void LogBlockDeletionTransaction::AddBlock(const scoped_refptr<internal::LogBlock>& lb) {
+  DCHECK_GE(lb->fs_aligned_length(), 0);
+
+  BlockInterval block_interval(lb->offset(),
+                               lb->offset() + lb->fs_aligned_length());
+  deleted_interval_map_[lb->container()].emplace_back(block_interval);
+}
+
 ////////////////////////////////////////////////////////////
 // LogBlock (definition)
 ////////////////////////////////////////////////////////////
@@ -1249,31 +1314,9 @@ LogBlock::LogBlock(LogBlockContainer* container, BlockId block_id,
     : container_(container),
       block_id_(block_id),
       offset_(offset),
-      length_(length),
-      deleted_(false) {
+      length_(length) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
-}
-
-static void DeleteBlockAsync(LogBlockContainer* container,
-                             BlockId block_id,
-                             int64_t offset,
-                             int64_t fs_aligned_length) {
-  // We don't call SyncData() to synchronize the deletion because it's
-  // expensive, and in the worst case, we'll just leave orphaned data
-  // behind to be cleaned up in the next GC.
-  VLOG(3) << "Freeing space belonging to block " << block_id;
-  WARN_NOT_OK(container->PunchHole(offset, fs_aligned_length),
-              Substitute("Could not delete block $0", block_id.ToString()));
-}
-
-LogBlock::~LogBlock() {
-  if (deleted_) {
-    // Use the block's aligned length so that the filesystem can reclaim
-    // maximal disk space.
-    container_->ExecClosure(Bind(&DeleteBlockAsync, container_, block_id_,
-                                 offset_, fs_aligned_length()));
-  }
 }
 
 int64_t LogBlock::fs_aligned_length() const {
@@ -1294,9 +1337,12 @@ int64_t LogBlock::fs_aligned_length() const {
   return length_;
 }
 
-void LogBlock::Delete() {
-  DCHECK(!deleted_);
-  deleted_ = true;
+void LogBlock::RegisterDeletion(
+    const shared_ptr<LogBlockDeletionTransaction>& transaction) {
+  DCHECK(!transaction_);
+  DCHECK(transaction);
+
+  transaction_ = transaction;
 }
 
 ////////////////////////////////////////////////////////////
@@ -1374,7 +1420,11 @@ Status LogWritableBlock::Abort() {
 
   // DoCloseBlocks() has unlocked the container; it may be locked by someone else.
   // But block_manager_ is immutable, so this is safe.
-  return container_->block_manager()->DeleteBlock(id());
+  shared_ptr<BlockDeletionTransaction> deletion_transaction =
+      container_->block_manager()->NewDeletionTransaction();
+  deletion_transaction->AddDeletedBlock(id());
+  vector<BlockId> deleted;
+  return deletion_transaction->CommitDeletedBlocks(&deleted);
 }
 
 const BlockId& LogWritableBlock::id() const {
@@ -1463,6 +1513,7 @@ void LogWritableBlock::DoClose() {
     container_->metrics()->generic_metrics.blocks_open_writing->Decrement();
     container_->metrics()->generic_metrics.total_bytes_written->IncrementBy(
         block_length_);
+    container_->metrics()->generic_metrics.total_blocks_created->Increment();
   }
 
   // Finalize() was not called; this indicates we should
@@ -1826,60 +1877,6 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
   return Status::OK();
 }
 
-Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
-  CHECK(!read_only_);
-
-  // Deletion is forbidden for read-only container.
-  scoped_refptr<LogBlock> lb;
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    auto it = blocks_by_block_id_.find(block_id);
-    if (it == blocks_by_block_id_.end()) {
-      return Status::NotFound("Can't find block", block_id.ToString());
-    }
-
-    lb = it->second;
-    HANDLE_DISK_FAILURE(lb->container()->read_only_status(),
-        error_manager_->RunErrorNotificationCb(lb->container()->data_dir()));
-
-    // Return early if deleting a block in a failed directory.
-    set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
-    if (PREDICT_FALSE(!failed_dirs.empty())) {
-      int uuid_idx;
-      CHECK(dd_manager_->FindUuidIndexByDataDir(lb->container()->data_dir(), &uuid_idx));
-      if (ContainsKey(failed_dirs, uuid_idx)) {
-        LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
-                                            block_id.ToString());
-        return Status::IOError("Block is in a failed directory");
-      }
-    }
-    RemoveLogBlockUnlocked(it);
-  }
-
-  VLOG(3) << "Deleting block " << block_id;
-  lb->Delete();
-  lb->container()->BlockDeleted(lb);
-
-  // Record the on-disk deletion.
-  //
-  // TODO(unknown): what if this fails? Should we restore the in-memory block?
-  BlockRecordPB record;
-  block_id.CopyToPB(record.mutable_block_id());
-  record.set_op_type(DELETE);
-  record.set_timestamp_us(GetCurrentTimeMicros());
-  RETURN_NOT_OK_PREPEND(lb->container()->AppendMetadata(record),
-                        "Unable to append deletion record to block metadata");
-
-  // We don't bother fsyncing the metadata append for deletes in order to avoid
-  // the disk overhead. Even if we did fsync it, we'd still need to account for
-  // garbage at startup time (in the event that we crashed just before the
-  // fsync).
-  //
-  // TODO(KUDU-829): Implement GC of orphaned blocks.
-
-  return Status::OK();
-}
-
 unique_ptr<BlockCreationTransaction> LogBlockManager::NewCreationTransaction() {
   CHECK(!read_only_);
   return unique_ptr<internal::LogBlockCreationTransaction>(
@@ -2051,19 +2048,99 @@ bool LogBlockManager::AddLogBlockUnlocked(scoped_refptr<LogBlock> lb) {
   return true;
 }
 
-void LogBlockManager::RemoveLogBlockUnlocked(const BlockMap::iterator& it) {
-  scoped_refptr<LogBlock> lb = std::move(it->second);
+Status LogBlockManager::RemoveLogBlocks(vector<BlockId> block_ids,
+                                        vector<scoped_refptr<LogBlock>>* log_blocks,
+                                        vector<BlockId>* deleted) {
+  Status first_failure;
+  vector<scoped_refptr<LogBlock>> lbs;
+  int64_t malloc_space = 0, blocks_length = 0;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    for (const auto& block_id : block_ids) {
+      scoped_refptr<LogBlock> lb;
+      Status s = RemoveLogBlockUnlocked(block_id, &lb);
+      // If we get NotFound, then the block was already deleted.
+      if (!s.ok() && !s.IsNotFound()) {
+        if (first_failure.ok()) first_failure = s;
+      } else if (s.ok()) {
+        malloc_space += kudu_malloc_usable_size(lb.get());
+        blocks_length += lb->length();
+        lbs.emplace_back(std::move(lb));
+      } else {
+        deleted->emplace_back(block_id);
+      }
+    }
+  }
+
+  // Update various metrics.
+  mem_tracker_->Release(malloc_space);
+  if (metrics()) {
+    metrics()->blocks_under_management->DecrementBy(lbs.size());
+    metrics()->bytes_under_management->DecrementBy(blocks_length);
+  }
+
+  for (auto& lb : lbs) {
+    VLOG(3) << "Deleting block " << lb->block_id();
+    lb->container()->BlockDeleted(lb);
+
+    // Record the on-disk deletion.
+    //
+    // TODO(unknown): what if this fails? Should we restore the in-memory block?
+    BlockRecordPB record;
+    lb->block_id().CopyToPB(record.mutable_block_id());
+    record.set_op_type(DELETE);
+    record.set_timestamp_us(GetCurrentTimeMicros());
+    Status s = lb->container()->AppendMetadata(record);
+
+    // We don't bother fsyncing the metadata append for deletes in order to avoid
+    // the disk overhead. Even if we did fsync it, we'd still need to account for
+    // garbage at startup time (in the event that we crashed just before the
+    // fsync).
+    //
+    // TODO(KUDU-829): Implement GC of orphaned blocks.
+
+    if (!s.ok()) {
+      if (first_failure.ok()) {
+        first_failure = s.CloneAndPrepend(
+            "Unable to append deletion record to block metadata");
+      }
+    } else {
+      deleted->emplace_back(lb->block_id());
+      log_blocks->emplace_back(std::move(lb));
+    }
+  }
+
+  return first_failure;
+}
+
+Status LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id,
+                                               scoped_refptr<internal::LogBlock>* lb) {
+  auto it = blocks_by_block_id_.find(block_id);
+  if (it == blocks_by_block_id_.end()) {
+    return Status::NotFound("Can't find block", block_id.ToString());
+  }
+
+  LogBlockContainer* container = it->second->container();
+  HANDLE_DISK_FAILURE(container->read_only_status(),
+                      error_manager_->RunErrorNotificationCb(container->data_dir()));
+
+  // Return early if deleting a block in a failed directory.
+  set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
+  if (PREDICT_FALSE(!failed_dirs.empty())) {
+    int uuid_idx;
+    CHECK(dd_manager_->FindUuidIndexByDataDir(container->data_dir(), &uuid_idx));
+    if (ContainsKey(failed_dirs, uuid_idx)) {
+      LOG_EVERY_N(INFO, 10) << Substitute("Block $0 is in a failed directory; not deleting",
+                                          block_id.ToString());
+      return Status::IOError("Block is in a failed directory");
+    }
+  }
+  *lb = std::move(it->second);
   blocks_by_block_id_.erase(it);
 
   VLOG(2) << Substitute("Removed block: offset $0, length $1",
-                        lb->offset(), lb->length());
-
-  mem_tracker_->Release(kudu_malloc_usable_size(lb.get()));
-
-  if (metrics()) {
-    metrics()->blocks_under_management->Decrement();
-    metrics()->bytes_under_management->DecrementBy(lb->length());
-  }
+                        (*lb)->offset(), (*lb)->length());
+  return Status::OK();
 }
 
 void LogBlockManager::OpenDataDir(DataDir* dir,
@@ -2519,10 +2596,13 @@ Status LogBlockManager::Repair(
   // Repunch all requested holes. Any excess space reclaimed was already
   // tracked by LBMFullContainerSpaceCheck.
   //
-  // TODO(adar): can be more efficient (less fs work and more space reclamation
-  // in case of misaligned blocks) via hole coalescing first, but this is easy.
+  // Register deletions to a single BlockDeletionTransaction. So, the repunched
+  // holes belonging to the same container can be coalesced.
+  shared_ptr<LogBlockDeletionTransaction> transaction =
+      std::make_shared<LogBlockDeletionTransaction>(this);
   for (const auto& b : need_repunching) {
-    b->Delete();
+    b->RegisterDeletion(transaction);
+    transaction->AddBlock(b);
   }
 
   // Clearing this vector drops the last references to the LogBlocks within,

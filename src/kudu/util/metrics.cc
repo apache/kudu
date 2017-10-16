@@ -94,6 +94,8 @@ const char* MetricUnit::Name(Type unit) {
       return "operations";
     case kBlocks:
       return "blocks";
+    case kHoles:
+      return "holes";
     case kLogBlockContainers:
       return "log block containers";
     case kTasks:

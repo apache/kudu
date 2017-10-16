@@ -666,12 +666,14 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(this->bm_->CreateBlock(this->test_block_opts_, &written_block3));
   ASSERT_OK(written_block3->Append(test_data));
   ASSERT_OK(written_block3->Close());
-  shared_ptr<BlockDeletionTransaction> deletion_transaction =
-      this->bm_->NewDeletionTransaction();
-  deletion_transaction->AddDeletedBlock(written_block3->id());
-  vector<BlockId> deleted;
-  ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
-  ASSERT_EQ(1, deleted.size());
+  {
+    shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+    deletion_transaction->AddDeletedBlock(written_block3->id());
+    vector<BlockId> deleted;
+    ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+    ASSERT_EQ(1, deleted.size());
+  }
 
   // Reopen the block manager. This may read block metadata from disk.
   //
@@ -956,23 +958,25 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
 
     int num_deleted = 0;
     int num_deleted_attempts = 0;
-    shared_ptr<BlockDeletionTransaction> deletion_transaction =
-        this->bm_->NewDeletionTransaction();
-    for (auto it = ids.begin(); it != ids.end();) {
-      // TODO(adar): the lbm removes a block from its block map even if the
-      // on-disk deletion fails. When that's fixed, update this code to
-      // erase() only if s.ok().
-      deletion_transaction->AddDeletedBlock(*it);
-      it = ids.erase(it);
-      num_deleted_attempts++;
-
-      // Skip every other block.
-      if (it != ids.end()) {
-        it++;
-      }
-    }
     vector<BlockId> deleted;
-    ignore_result(deletion_transaction->CommitDeletedBlocks(&deleted));
+    {
+      shared_ptr<BlockDeletionTransaction> deletion_transaction =
+          this->bm_->NewDeletionTransaction();
+      for (auto it = ids.begin(); it != ids.end();) {
+        // TODO(adar): the lbm removes a block from its block map even if the
+        // on-disk deletion fails. When that's fixed, update this code to
+        // erase() only if s.ok().
+        deletion_transaction->AddDeletedBlock(*it);
+        it = ids.erase(it);
+        num_deleted_attempts++;
+
+        // Skip every other block.
+        if (it != ids.end()) {
+          it++;
+        }
+      }
+      ignore_result(deletion_transaction->CommitDeletedBlocks(&deleted));
+    }
     num_deleted += deleted.size();
     LOG(INFO) << Substitute("Successfully deleted $0 blocks on $1 attempts",
                             num_deleted, num_deleted_attempts);

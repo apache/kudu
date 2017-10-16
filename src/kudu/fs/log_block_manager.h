@@ -258,14 +258,6 @@ class LogBlockManager : public BlockManager {
       std::string,
       std::vector<BlockRecordPB>> BlockRecordsByContainerMap;
 
-  // Deletes an existing block, allowing its space to be reclaimed by the
-  // filesystem. The change is immediately made durable.
-  //
-  // Blocks may be deleted while they are open for reading or writing;
-  // the actual deletion will take place after the last open reader or
-  // writer is closed.
-  Status DeleteBlock(const BlockId& block_id);
-
   // Adds an as of yet unseen container to this block manager.
   //
   // Must be called with 'lock_' held.
@@ -317,8 +309,23 @@ class LogBlockManager : public BlockManager {
   // Returns true if the LogBlock was successfully added, false if it was already present.
   bool AddLogBlockUnlocked(scoped_refptr<internal::LogBlock> lb);
 
-  // Removes the given LogBlock from in-memory data structures. Must hold 'lock_'.
-  void RemoveLogBlockUnlocked(const BlockMap::iterator& it);
+  // Removes the given set of LogBlocks from in-memory data structures, and
+  // appends the block deletion metadata to record the on-disk deletion.
+  // The 'log_blocks' out parameter will be set with the LogBlocks that were
+  // successfully removed. The 'deleted' out parameter will be set with the
+  // blocks were already deleted, e.g encountered 'NotFound' error during removal.
+  //
+  // Returns the first deletion failure that was seen, if any.
+  Status RemoveLogBlocks(std::vector<BlockId> block_ids,
+                         std::vector<scoped_refptr<internal::LogBlock>>* log_blocks,
+                         std::vector<BlockId>* deleted);
+
+  // Removes a LogBlock from in-memory data structures. Must hold 'lock_'.
+  // The 'lb' out parameter will be set with the successfully deleted LogBlock.
+  //
+  // Returns an error of LogBlock cannot be successfully removed.
+  Status RemoveLogBlockUnlocked(const BlockId& block_id,
+                                scoped_refptr<internal::LogBlock>* lb);
 
   // Repairs any inconsistencies for 'dir' described in 'report'.
   //
