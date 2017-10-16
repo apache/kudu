@@ -427,5 +427,10 @@ ScanDescriptor Scanner::descriptor() const {
   return descriptor;
 }
 
+CpuTimes Scanner::cpu_times() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return cpu_times_;
+}
+
 } // namespace tserver
 } // namespace kudu

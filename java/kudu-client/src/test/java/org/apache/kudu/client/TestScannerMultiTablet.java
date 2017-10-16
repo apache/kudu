@@ -25,6 +25,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -104,6 +105,27 @@ public class TestScannerMultiTablet {
     table = harness.getClient().openTable(TABLE_NAME);
     client = harness.getClient();
     asyncClient = harness.getAsyncClient();
+  }
+
+  private void validateResourceMetrics(ResourceMetrics resourceMetrics) {
+      assertTrue("queue_duration_nanos > 0",
+              resourceMetrics.getMetric("queue_duration_nanos") > 0L);
+      assertTrue("total_duration_nanos > 0",
+              resourceMetrics.getMetric("total_duration_nanos") > 0L);
+  }
+
+  // Test scanner resource metrics.
+  @Test(timeout = 100000)
+  public void testResourceMetrics() throws Exception {
+    // Scan one tablet and the whole table.
+    AsyncKuduScanner oneTabletScanner = getScanner("1", "1", "1", "4"); // Whole second tablet.
+    assertEquals(3, countRowsInScan(oneTabletScanner));
+    AsyncKuduScanner fullTableScanner = getScanner(null, null, null, null);
+    assertEquals(9, countRowsInScan(fullTableScanner));
+    // Both scans should take a positive amount of wait duration, total duration, cpu user and cpu
+    // system time
+    validateResourceMetrics(oneTabletScanner.getResourceMetrics());
+    validateResourceMetrics(fullTableScanner.getResourceMetrics());
   }
 
   // Test various combinations of start/end row keys.

@@ -154,6 +154,14 @@ public class KuduScanner implements Iterable<RowResult> {
   }
 
   /**
+   * Returns the resource metrics of this scanner.
+   * @return the resource metrics for this scanner
+   */
+  public ResourceMetrics getResourceMetrics() {
+    return asyncScanner.getResourceMetrics();
+  }
+
+  /**
    * Returns the RemoteTablet currently being scanned, if any.
    */
   @InterfaceAudience.LimitedPrivate("Test")

@@ -192,7 +192,11 @@ MonoTime RpcContext::GetTimeReceived() const {
   return call_->GetTimeReceived();
 }
 
-Trace* RpcContext::trace() {
+MonoTime RpcContext::GetTimeHandled() const {
+  return call_->GetTimeHandled();
+}
+
+Trace* RpcContext::trace() const {
   return call_->trace();
 }
 

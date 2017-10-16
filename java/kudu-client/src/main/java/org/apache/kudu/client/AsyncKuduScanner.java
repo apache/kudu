@@ -29,6 +29,7 @@ package org.apache.kudu.client;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
+import static org.apache.kudu.tserver.Tserver.ResourceMetricsPB;
 import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
 import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
 import static org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
@@ -220,6 +221,8 @@ public final class AsyncKuduScanner {
   /////////////////////
 
   private boolean reuseRowResult = false;
+
+  private final ResourceMetrics resourceMetrics = new ResourceMetrics();
 
   private boolean closed = false;
 
@@ -452,6 +455,15 @@ public final class AsyncKuduScanner {
     return this.startTimestamp;
   }
 
+  /**
+   * Returns the {@code ResourceMetrics} for this scanner. These metrics are
+   * updated with each batch of rows returned from the server.
+   * @return the resource metrics for this scanner
+   */
+  public ResourceMetrics getResourceMetrics() {
+    return this.resourceMetrics;
+  }
+
   long getSnapshotTimestamp() {
     return this.htTimestamp;
   }
@@ -520,6 +532,9 @@ public final class AsyncKuduScanner {
           }
 
           numRowsReturned += resp.data.getNumRows();
+          if (resp.resourceMetricsPb != null) {
+            resourceMetrics.update(resp.resourceMetricsPb);
+          }
 
           if (!resp.more || resp.scannerId == null) {
             scanFinished();
@@ -561,7 +576,7 @@ public final class AsyncKuduScanner {
           } else {
             LOG.debug("Can not open scanner", e);
             // Don't let the scanner think it's opened on this tablet.
-            return Deferred.fromError(e); // Let the error propogate.
+            return Deferred.fromError(e); // Let the error propagate.
           }
         }
 
@@ -877,18 +892,22 @@ public final class AsyncKuduScanner {
 
     private final byte[] lastPrimaryKey;
 
+    private final ResourceMetricsPB resourceMetricsPb;
+
     Response(final byte[] scannerId,
              final RowResultIterator data,
              final boolean more,
              final long scanTimestamp,
              final long propagatedTimestamp,
-             final byte[] lastPrimaryKey) {
+             final byte[] lastPrimaryKey,
+             final ResourceMetricsPB resourceMetricsPb) {
       this.scannerId = scannerId;
       this.data = data;
       this.more = more;
       this.scanTimestamp = scanTimestamp;
       this.propagatedTimestamp = propagatedTimestamp;
       this.lastPrimaryKey = lastPrimaryKey;
+      this.resourceMetricsPb = resourceMetricsPb;
     }
 
     @Override
@@ -1131,12 +1150,14 @@ public final class AsyncKuduScanner {
             Bytes.pretty(scannerId));
         throw new NonRecoverableException(statusIllegalState);
       }
+      ResourceMetricsPB resourceMetricsPB = resp.hasResourceMetrics() ?
+          resp.getResourceMetrics() : null;
       Response response = new Response(id, iterator, hasMore,
           resp.hasSnapTimestamp() ? resp.getSnapTimestamp()
                                   : AsyncKuduClient.NO_TIMESTAMP,
           resp.hasPropagatedTimestamp() ? resp.getPropagatedTimestamp()
                                         : AsyncKuduClient.NO_TIMESTAMP,
-          resp.getLastPrimaryKey().toByteArray());
+          resp.getLastPrimaryKey().toByteArray(), resourceMetricsPB);
       if (LOG.isDebugEnabled()) {
         LOG.debug("{} for scanner {}", response.toString(), AsyncKuduScanner.this);
       }

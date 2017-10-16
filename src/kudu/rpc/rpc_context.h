@@ -81,7 +81,7 @@ class RpcContext {
   void SetResultTracker(scoped_refptr<ResultTracker> result_tracker);
 
   // Return the trace buffer for this call.
-  Trace* trace();
+  Trace* trace() const;
 
   // Send a response to the call. The service may call this method
   // before or after returning from the original handler method,
@@ -212,6 +212,9 @@ class RpcContext {
 
   // Return the time when the inbound call was received.
   MonoTime GetTimeReceived() const;
+
+  // Return the time when the inbound call was handled.
+  MonoTime GetTimeHandled() const;
 
   // Whether the results of this RPC are tracked with a ResultTracker.
   // If this returns true, both result_tracker() and request_id() should return non-null results.

@@ -302,7 +302,7 @@ void InboundCall::RecordHandlingCompleted() {
 
   if (method_info_) {
     method_info_->handler_latency_histogram->Increment(
-        (timing_.time_completed - timing_.time_handled).ToMicroseconds());
+        (timing_.ProcessingDuration()).ToMicroseconds());
   }
 }
 
@@ -311,7 +311,13 @@ bool InboundCall::ClientTimedOut() const {
 }
 
 MonoTime InboundCall::GetTimeReceived() const {
+  DCHECK(timing_.time_received.Initialized());
   return timing_.time_received;
+}
+
+MonoTime InboundCall::GetTimeHandled() const {
+  DCHECK(timing_.time_handled.Initialized());
+  return timing_.time_handled;
 }
 
 vector<uint32_t> InboundCall::GetRequiredFeatures() const {

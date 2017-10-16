@@ -325,6 +325,8 @@ class Scanner {
 
   ScanDescriptor descriptor() const;
 
+  CpuTimes cpu_times() const;
+
  private:
   friend class ScannerManager;
 
@@ -438,9 +440,12 @@ struct ScanDescriptor {
 class ScopedAddScannerTiming {
  public:
   // 'scanner' must outlive the scoped object.
-  explicit ScopedAddScannerTiming(Scanner* scanner)
+  // object pointed to by 'cpu_times' will contain the cpu timing information of the scanner upon
+  // scope exit
+  explicit ScopedAddScannerTiming(Scanner* scanner, CpuTimes* cpu_times)
       : stopped_(false),
-        scanner_(scanner) {
+        scanner_(scanner),
+        cpu_times_(cpu_times) {
     sw_.start();
   }
 
@@ -456,10 +461,12 @@ class ScopedAddScannerTiming {
     sw_.stop();
     scanner_->AddTimings(sw_.elapsed());
     scanner_->UpdateAccessTime();
+    *cpu_times_ = scanner_->cpu_times();
   }
 
   bool stopped_;
   Scanner* scanner_;
+  CpuTimes* cpu_times_;
   Stopwatch sw_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedAddScannerTiming);

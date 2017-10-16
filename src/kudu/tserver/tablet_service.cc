@@ -63,6 +63,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -105,6 +106,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/trace_metrics.h"
 
@@ -221,6 +223,8 @@ extern const char* CFILE_CACHE_HIT_BYTES_METRIC_NAME;
 }
 
 namespace tserver {
+
+const char* SCANNER_BYTES_READ_METRIC_NAME = "scanner_bytes_read";
 
 namespace {
 
@@ -692,6 +696,13 @@ class ScanResultCollector {
   //
   // Does nothing by default.
   virtual void set_row_format_flags(uint64_t /* row_format_flags */) {}
+
+  CpuTimes* cpu_times() {
+    return &cpu_times_;
+  }
+
+ private:
+  CpuTimes cpu_times_;
 };
 
 namespace {
@@ -1606,11 +1617,26 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
 }
 
 namespace {
-void SetResourceMetrics(ResourceMetricsPB* metrics, rpc::RpcContext* context) {
+void SetResourceMetrics(const rpc::RpcContext* context,
+                        const CpuTimes* cpu_times,
+                        ResourceMetricsPB* metrics) {
   metrics->set_cfile_cache_miss_bytes(
     context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_MISS_BYTES_METRIC_NAME));
   metrics->set_cfile_cache_hit_bytes(
     context->trace()->metrics()->GetMetric(cfile::CFILE_CACHE_HIT_BYTES_METRIC_NAME));
+
+  metrics->set_bytes_read(
+    context->trace()->metrics()->GetMetric(SCANNER_BYTES_READ_METRIC_NAME));
+
+  rpc::InboundCallTiming timing;
+  timing.time_handled = context->GetTimeHandled();
+  timing.time_received = context->GetTimeReceived();
+  timing.time_completed = MonoTime::Now();
+
+  metrics->set_queue_duration_nanos(timing.QueueDuration().ToNanoseconds());
+  metrics->set_total_duration_nanos(timing.TotalDuration().ToNanoseconds());
+  metrics->set_cpu_system_nanos(cpu_times->system);
+  metrics->set_cpu_user_nanos(cpu_times->user);
 }
 } // anonymous namespace
 
@@ -1618,6 +1644,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
                              rpc::RpcContext* context) {
   TRACE_EVENT0("tserver", "TabletServiceImpl::Scan");
+
   // Validate the request: user must pass a new_scan_request or
   // a scanner ID, but not both.
   if (PREDICT_FALSE(req->has_scanner_id() &&
@@ -1730,7 +1757,8 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     resp->set_last_primary_key(last.ToString());
   }
   resp->set_propagated_timestamp(server_->clock()->Now().ToUint64());
-  SetResourceMetrics(resp->mutable_resource_metrics(), context);
+
+  SetResourceMetrics(context, collector.cpu_times(), resp->mutable_resource_metrics());
   context->RespondSuccess();
 }
 
@@ -2017,8 +2045,9 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
 
   resp->set_checksum(collector.agg_checksum());
   resp->set_has_more_results(has_more);
-  SetResourceMetrics(resp->mutable_resource_metrics(), context);
   resp->set_rows_checksummed(collector.rows_checksummed());
+
+  SetResourceMetrics(context, collector.cpu_times(), resp->mutable_resource_metrics());
   context->RespondSuccess();
 }
 
@@ -2264,7 +2293,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // If we early-exit out of this function, automatically unregister
   // the scanner.
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
-  ScopedAddScannerTiming scanner_timer(scanner.get());
+  ScopedAddScannerTiming scanner_timer(scanner.get(), result_collector->cpu_times());
 
   // Create the user's requested projection.
   // TODO(todd): Add test cases for bad projections including 0 columns.
@@ -2549,7 +2578,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   // If we early-exit out of this function, automatically unregister the scanner.
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
-  ScopedAddScannerTiming scanner_timer(scanner.get());
+  ScopedAddScannerTiming scanner_timer(scanner.get(), result_collector->cpu_times());
 
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << SecureShortDebugString(*req);
@@ -2661,6 +2690,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   IteratorStats delta_stats = total_stats - scanner->already_reported_stats();
   scanner->set_already_reported_stats(total_stats);
+  TRACE_COUNTER_INCREMENT(SCANNER_BYTES_READ_METRIC_NAME, delta_stats.bytes_read);
 
   if (tablet) {
     tablet->metrics()->scanner_rows_scanned->IncrementBy(rows_scanned);

@@ -67,6 +67,14 @@ struct InboundCallTiming {
   MonoDelta TotalDuration() const {
     return time_completed - time_received;
   }
+
+  MonoDelta ProcessingDuration() const {
+    return time_completed - time_handled;
+  }
+
+  MonoDelta QueueDuration() const {
+    return time_handled - time_received;
+  }
 };
 
 // Inbound call on server
@@ -191,6 +199,9 @@ class InboundCall {
 
   // Return the time when this call was received.
   MonoTime GetTimeReceived() const;
+
+  // Return the time when this call was handled.
+  MonoTime GetTimeHandled() const;
 
   // Returns the set of application-specific feature flags required to service
   // the RPC.

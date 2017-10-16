@@ -364,9 +364,22 @@ message ScanRequestPB {
 
 // RPC's resource metrics.
 message ResourceMetricsPB {
-  // all metrics MUST be the type of int64.
+  // All metrics MUST be the type of int64.
+  // Number of bytes that were read because of a block cache miss.
   optional int64 cfile_cache_miss_bytes = 1;
+  // Number of bytes that were read from the block cache because of a hit.
   optional int64 cfile_cache_hit_bytes = 2;
+  // Number of bytes read from disk (or cache) by the scanner.
+  optional int64 bytes_read = 3;
+  // Total time taken between scan rpc requests being accepted and when they were handled in
+  // nanoseconds for this scanner.
+  optional int64 queue_duration_nanos = 4;
+  // Total time taken for all scan rpc requests to complete in nanoseconds for this scanner.
+  optional int64 total_duration_nanos = 5;
+  // Total elapsed CPU user time in nanoseconds for all scan rpc requests for this scanner.
+  optional int64 cpu_user_nanos = 6;
+  // Total elapsed CPU system time in nanoseconds for all scan rpc requests for this scanner.
+  optional int64 cpu_system_nanos = 7;
 }
 
 message ScanResponsePB {

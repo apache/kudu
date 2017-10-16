@@ -426,6 +426,7 @@ class ClientTest : public KuduTest {
     return del;
   }
 
+
   void DoTestScanResourceMetrics() {
     KuduScanner scanner(client_table_.get());
     string tablet_id = GetFirstTabletId(client_table_.get());
@@ -443,6 +444,16 @@ class ClientTest : public KuduTest {
       ASSERT_TRUE(ContainsKey(metrics, "cfile_cache_miss_bytes"));
       ASSERT_TRUE(ContainsKey(metrics, "cfile_cache_hit_bytes"));
       ASSERT_GT(metrics["cfile_cache_miss_bytes"] + metrics["cfile_cache_hit_bytes"], 0);
+
+      ASSERT_TRUE(ContainsKey(metrics, "total_duration_nanos"));
+      ASSERT_GT(metrics["total_duration_nanos"], 0);
+      ASSERT_TRUE(ContainsKey(metrics, "queue_duration_nanos"));
+      ASSERT_GT(metrics["queue_duration_nanos"], 0);
+      ASSERT_TRUE(ContainsKey(metrics, "cpu_user_nanos"));
+      ASSERT_TRUE(ContainsKey(metrics, "cpu_system_nanos"));
+
+      ASSERT_TRUE(ContainsKey(metrics, "bytes_read"));
+      ASSERT_GT(metrics["bytes_read"], 0);
     }
   }
 
