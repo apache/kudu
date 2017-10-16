@@ -305,7 +305,8 @@ Status FsManager::Open(FsReport* report) {
       metadata_.reset(pb.release());
     } else if (pb->uuid() != metadata_->uuid()) {
       return Status::Corruption(Substitute(
-          "Mismatched UUIDs across filesystem roots: $0 vs. $1",
+          "Mismatched UUIDs across filesystem roots: $0 vs. $1; configuring "
+          "multiple Kudu processes with the same directory is not supported",
           metadata_->uuid(), pb->uuid()));
     }
   }
