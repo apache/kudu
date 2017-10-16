@@ -704,7 +704,8 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
     if (metadata_size < pb_util::kPBContainerMinimumValidLength &&
         data_size == 0) {
       report->incomplete_container_check->entries.emplace_back(common_path);
-      return Status::Aborted("orphaned empty metadata and data files $0");
+      return Status::Aborted(Substitute("orphaned empty metadata and data files $0",
+                                        common_path));
     }
   }
 
@@ -1220,9 +1221,8 @@ Status LogBlockDeletionTransaction::CommitDeletedBlocks(std::vector<BlockId>* de
   }
 
   if (!first_failure.ok()) {
-    first_failure = first_failure.CloneAndPrepend(strings::Substitute("only deleted $0 blocks, "
-                                                                      "first failure",
-                                                                      deleted->size()));
+    first_failure = first_failure.CloneAndPrepend(Substitute("only deleted $0 blocks, "
+                                                             "first failure", deleted->size()));
   }
   deleted_blocks_.clear();
   return first_failure;
@@ -1328,7 +1328,8 @@ Status LogWritableBlock::Abort() {
             block_length_);
       }
     }
-    return Status::Aborted("container $0 is read-only", container_->ToString());
+    return Status::Aborted(Substitute("container $0 is read-only",
+                                      container_->ToString()));
   }
 
   // Close the block and then delete it. Theoretically, we could do nothing
