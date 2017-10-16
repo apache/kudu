@@ -221,9 +221,9 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Callback invoked to notify the caller of an election decision.
   const ElectionDecisionCallback decision_callback_;
 
-  // List of all potential followers to request votes from.
+  // List of all other voters to request votes from.
   // The candidate's own UUID must not be included.
-  std::vector<std::string> follower_uuids_;
+  std::vector<std::string> other_voter_uuids_;
 
   // Map of UUID -> VoterState.
   VoterStateMap voter_state_;

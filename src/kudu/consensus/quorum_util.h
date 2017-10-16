@@ -35,6 +35,10 @@ enum RaftConfigState {
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
 bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config);
 
+// Whether the specified Raft role is attributed to a peer which can participate
+// in leader elections.
+bool IsVoterRole(RaftPeerPB::Role role);
+
 // Get the specified member of the config.
 // Returns Status::NotFound if a member with the specified uuid could not be
 // found in the config.

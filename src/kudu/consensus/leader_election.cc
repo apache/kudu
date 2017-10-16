@@ -161,8 +161,18 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
       decision_callback_(std::move(decision_callback)),
       highest_voter_term_(0) {
   for (const RaftPeerPB& peer : config.peers()) {
-    if (request.candidate_uuid() == peer.permanent_uuid()) continue;
-    follower_uuids_.push_back(peer.permanent_uuid());
+    if (request.candidate_uuid() == peer.permanent_uuid()) {
+      DCHECK_EQ(peer.member_type(), RaftPeerPB::VOTER)
+          << Substitute("non-voter member $0 tried to start an election; "
+                        "Raft config {$1}",
+                        peer.permanent_uuid(),
+                        pb_util::SecureShortDebugString(config));
+      continue;
+    }
+    if (peer.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    other_voter_uuids_.push_back(peer.permanent_uuid());
 
     gscoped_ptr<VoterState> state(new VoterState());
     state->proxy_status = proxy_factory->NewProxy(peer, &state->proxy);
@@ -173,10 +183,10 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
   CHECK_EQ(1, vote_counter_->GetTotalVotesCounted()) << "Candidate must vote for itself first";
 
   // Ensure that existing votes + future votes add up to the expected total.
-  CHECK_EQ(vote_counter_->GetTotalVotesCounted() + follower_uuids_.size(),
+  CHECK_EQ(vote_counter_->GetTotalVotesCounted() + other_voter_uuids_.size(),
            vote_counter_->GetTotalExpectedVotes())
-      << "Expected different number of followers. Follower UUIDs: ["
-      << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ")
+      << "Expected different number of voters. Voter UUIDs: ["
+      << JoinStringsIterator(other_voter_uuids_.begin(), other_voter_uuids_.end(), ", ")
       << "]; RaftConfig: {" << pb_util::SecureShortDebugString(config) << "}";
 }
 
@@ -194,7 +204,7 @@ void LeaderElection::Run() {
   CheckForDecision();
 
   // The rest of the code below is for a typical multi-node configuration.
-  for (const std::string& voter_uuid : follower_uuids_) {
+  for (const std::string& voter_uuid : other_voter_uuids_) {
     VoterState* state = nullptr;
     {
       std::lock_guard<Lock> guard(lock_);

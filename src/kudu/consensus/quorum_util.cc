@@ -60,6 +60,10 @@ bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config) {
   return false;
 }
 
+bool IsVoterRole(RaftPeerPB::Role role) {
+  return role == RaftPeerPB::LEADER || role == RaftPeerPB::FOLLOWER;
+}
+
 Status GetRaftConfigMember(const RaftConfigPB& config,
                            const std::string& uuid,
                            RaftPeerPB* peer_pb) {
@@ -170,12 +174,6 @@ Status VerifyRaftConfig(const RaftConfigPB& config) {
       return Status::IllegalState(
           Substitute("Peer: $0 has no member type set. RaftConfig: $1", peer.permanent_uuid(),
                      SecureShortDebugString(config)));
-    }
-    if (peer.member_type() == RaftPeerPB::NON_VOTER) {
-      return Status::IllegalState(
-          Substitute(
-              "Peer: $0 is a NON_VOTER, but this isn't supported yet. RaftConfig: $1",
-              peer.permanent_uuid(), SecureShortDebugString(config)));
     }
   }
 

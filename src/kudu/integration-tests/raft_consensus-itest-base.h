@@ -23,8 +23,14 @@
 
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+namespace cluster {
+class ExternalTabletServer;
+}
+
 namespace tserver {
 
 class TabletServerServiceProxy;
@@ -45,8 +51,12 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
                                   uint64_t num_batches,
                                   const std::vector<CountDownLatch*>& latches);
  protected:
+  // Retrieve the current term of the first tablet on this tablet server.
+  static Status GetTermMetricValue(cluster::ExternalTabletServer* ts,
+                                   int64_t* term);
+
   // Flags needed for CauseFollowerToFallBehindLogGC() to work well.
-  void AddFlagsForLogRolls(std::vector<std::string>* extra_tserver_flags);
+  static void AddFlagsForLogRolls(std::vector<std::string>* extra_tserver_flags);
 
   // Pause one of the followers and write enough data to the remaining replicas
   // to cause log GC, then resume the paused follower. On success,

@@ -21,7 +21,6 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -91,7 +90,6 @@ DECLARE_int32(rpc_timeout);
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
-METRIC_DECLARE_gauge_int64(raft_term);
 
 using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
@@ -107,24 +105,24 @@ using kudu::consensus::OpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::ReplicateMsg;
 using kudu::itest::AddServer;
-using kudu::itest::GetReplicaStatusAndCheckIfLeader;
+using kudu::itest::DONT_WAIT_FOR_LEADER;
 using kudu::itest::LeaderStepDown;
 using kudu::itest::RemoveServer;
 using kudu::itest::StartElection;
-using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
+using kudu::itest::TabletServerMap;
+using kudu::itest::WAIT_FOR_LEADER;
+using kudu::itest::WaitForReplicasReportedToMaster;
 using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::master::TabletLocationsPB;
-using kudu::pb_util::SecureShortDebugString;
 using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using kudu::server::SetFlagRequestPB;
 using kudu::server::SetFlagResponsePB;
-using kudu::tablet::TABLET_DATA_COPYING;
 using std::string;
 using std::unordered_map;
-using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -201,9 +199,6 @@ class RaftConsensusITest : public RaftConsensusITestBase {
   void SetupSingleReplicaTest(TServerDetails** replica_ts);
 
  protected:
-  // Retrieve the current term of the first tablet on this tablet server.
-  Status GetTermMetricValue(ExternalTabletServer* ts, int64_t* term);
-
   shared_ptr<KuduTable> table_;
   vector<scoped_refptr<kudu::Thread> > threads_;
 };
@@ -254,13 +249,13 @@ string RaftConsensusITest::DumpToString(TServerDetails* leader,
                                         const vector<string>& leader_results,
                                         TServerDetails* replica,
                                         const vector<string>& replica_results) {
-  string ret = strings::Substitute("Replica results did not match the leaders."
-                                   "\nLeader: $0\nReplica: $1. Results size "
-                                   "L: $2 R: $3",
-                                   leader->ToString(),
-                                   replica->ToString(),
-                                   leader_results.size(),
-                                   replica_results.size());
+  string ret = Substitute("Replica results did not match the leaders."
+                          "\nLeader: $0\nReplica: $1. Results size "
+                          "L: $2 R: $3",
+                          leader->ToString(),
+                          replica->ToString(),
+                          leader_results.size(),
+                          replica_results.size());
 
   StrAppend(&ret, "Leader Results: \n");
   for (const string& result : leader_results) {
@@ -604,11 +599,6 @@ void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
   LOG(INFO) << "================================== Cluster setup complete.";
 }
 
-Status RaftConsensusITest::GetTermMetricValue(ExternalTabletServer* ts,
-                                              int64_t *term) {
-  return ts->GetInt64Metric(&METRIC_ENTITY_tablet, nullptr, &METRIC_raft_term, "value", term);
-}
-
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
 TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
@@ -703,7 +693,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
   int num_threads = FLAGS_num_client_threads;
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
                                   &RaftConsensusITest::InsertTestRowsRemoteThread,
                                   this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
@@ -714,7 +704,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
   }
   for (int i = 0; i < FLAGS_num_replicas; i++) {
     scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("chaos-test$0", i),
+    CHECK_OK(kudu::Thread::Create("test", Substitute("chaos-test$0", i),
                                   &RaftConsensusITest::DelayInjectorThread,
                                   this, cluster_->tablet_server(i),
                                   kConsensusRpcTimeoutForTests,
@@ -939,10 +929,10 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
   OverrideFlagForSlowTests(
       "client_inserts_per_thread",
-      strings::Substitute("$0", (FLAGS_client_inserts_per_thread * 100)));
+      Substitute("$0", (FLAGS_client_inserts_per_thread * 100)));
   OverrideFlagForSlowTests(
       "client_num_batches_per_thread",
-      strings::Substitute("$0", (FLAGS_client_num_batches_per_thread * 100)));
+      Substitute("$0", (FLAGS_client_num_batches_per_thread * 100)));
 
   int num_threads = FLAGS_num_client_threads;
   int64_t total_num_rows = num_threads * FLAGS_client_inserts_per_thread;
@@ -956,7 +946,7 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
 
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
                                   &RaftConsensusITest::InsertTestRowsRemoteThread,
                                   this, i * FLAGS_client_inserts_per_thread,
                                   FLAGS_client_inserts_per_thread,
@@ -1003,7 +993,7 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
   AtomicBool finish(false);
   for (int i = 0; i < FLAGS_num_tablet_servers; i++) {
     scoped_refptr<kudu::Thread> new_thread;
-    CHECK_OK(kudu::Thread::Create("test", strings::Substitute("ts-test$0", i),
+    CHECK_OK(kudu::Thread::Create("test", Substitute("ts-test$0", i),
                                   &RaftConsensusITest::StubbornlyWriteSameRowThread,
                                   this, i, &finish, &new_thread));
     threads_.push_back(new_thread);
@@ -1459,10 +1449,8 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
 
   // Now try to replicate a ChangeConfig operation. This should get stuck and time out
   // because the server can't replicate any operations.
-  TabletServerErrorPB::Code error_code;
   Status s = RemoveServer(leader_tserver, tablet_id_, tservers[1],
-                          -1, MonoDelta::FromSeconds(1),
-                          &error_code);
+                          -1, MonoDelta::FromSeconds(1));
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Pause the leader, and restart the other servers.
@@ -1490,8 +1478,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // This acts as a regression test for KUDU-1338, in which aborting the original
   // config change didn't properly unset the 'pending' configuration.
   ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[2],
-                         -1, MonoDelta::FromSeconds(5),
-                         &error_code));
+                         -1, MonoDelta::FromSeconds(5)));
   NO_FATALS(InsertTestRowsRemoteThread(10, 10, 1, vector<CountDownLatch*>()));
 }
 
@@ -1713,9 +1700,9 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   LOG(INFO) << "Waiting for Master to see the current replicas...";
   master::TabletLocationsPB tablet_locations;
   bool has_leader;
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   2, tablet_id, timeout, itest::WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            2, tablet_id, timeout, WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
   // Wait for initial NO_OP to be committed by the leader.
@@ -1733,10 +1720,10 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Wait for the master to be notified of the config change.
   // It should continue to have the same leader, even without waiting.
   LOG(INFO) << "Waiting for Master to see config change...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   3, tablet_id, timeout,
-                                                   itest::DONT_WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            3, tablet_id, timeout,
+                                            DONT_WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 
@@ -1749,10 +1736,10 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   // Wait for the master to be notified of the removal.
   LOG(INFO) << "Waiting for Master to see config change...";
-  ASSERT_OK(itest::WaitForReplicasReportedToMaster(cluster_->master_proxy(),
-                                                   2, tablet_id, timeout,
-                                                   itest::DONT_WAIT_FOR_LEADER,
-                                                   &has_leader, &tablet_locations));
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            2, tablet_id, timeout,
+                                            DONT_WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
 }
@@ -2326,9 +2313,9 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
   // Now attempt to do a config change. It should be rejected because there
   // have not been any ops (notably the initial NO_OP) from the leader's term
   // that have been committed yet.
-  Status s = itest::RemoveServer(leader_ts, tablet_id_,
-                                 tablet_servers_[cluster_->tablet_server(1)->uuid()],
-                                 boost::none, timeout);
+  Status s = RemoveServer(leader_ts, tablet_id_,
+                          tablet_servers_[cluster_->tablet_server(1)->uuid()],
+                          boost::none, timeout);
   ASSERT_TRUE(!s.ok()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Leader has not yet committed an operation in its own term");
 }
@@ -2587,4 +2574,3 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
 
 }  // namespace tserver
 }  // namespace kudu
-

@@ -161,7 +161,8 @@ void LeaderElectionTest::ElectionCallback(const ElectionResult& result) {
 
 void LeaderElectionTest::InitUUIDs(int num_voters) {
   voter_uuids_ = GenVoterUUIDs(num_voters);
-  candidate_uuid_ = voter_uuids_[num_voters - 1];
+  CHECK(!voter_uuids_.empty());
+  candidate_uuid_ = voter_uuids_.back();
   voter_uuids_.pop_back();
 }
 
@@ -170,6 +171,7 @@ void LeaderElectionTest::InitNoOpPeerProxies() {
   for (const string& uuid : voter_uuids_) {
     RaftPeerPB* peer_pb = config_.add_peers();
     peer_pb->set_permanent_uuid(uuid);
+    peer_pb->set_member_type(RaftPeerPB::VOTER);
     PeerProxy* proxy = new NoOpTestPeerProxy(pool_.get(), *peer_pb);
     InsertOrDie(&proxies_, uuid, proxy);
   }
@@ -180,6 +182,7 @@ void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
   for (const string& uuid : voter_uuids_) {
     RaftPeerPB* peer_pb = config_.add_peers();
     peer_pb->set_permanent_uuid(uuid);
+    peer_pb->set_member_type(RaftPeerPB::VOTER);
     auto proxy = new DelayablePeerProxy<MockedPeerProxy>(pool_.get(),
                                                          new MockedPeerProxy(pool_.get()));
     if (enable_delay) {

@@ -268,6 +268,12 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
   *fell_behind_uuid = replica->uuid();
 }
 
+Status RaftConsensusITestBase::GetTermMetricValue(ExternalTabletServer* ts,
+                                                  int64_t *term) {
+  return ts->GetInt64Metric(&METRIC_ENTITY_tablet, nullptr, &METRIC_raft_term,
+                            "value", term);
+}
+
 }  // namespace tserver
 }  // namespace kudu
 

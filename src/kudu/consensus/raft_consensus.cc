@@ -401,10 +401,17 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting " << mode << " -- already leader";
       return Status::OK();
     }
+    if (PREDICT_FALSE(!consensus::IsVoterRole(active_role))) {
+      // A non-voter should not start leader elections. The leader failure
+      // detector should be re-enabled once the non-voter replica is promoted
+      // to voter replica.
+      return Status::IllegalState("only voting members can start elections",
+          SecureShortDebugString(cmeta_->ActiveConfig()));
+    }
     if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
       SnoozeFailureDetector();
-      return Status::IllegalState("Not starting election: Node is currently "
-                                  "a non-participant in the raft config",
+      return Status::IllegalState("Not starting election: node is currently "
+                                  "a non-participant in the Raft config",
                                   SecureShortDebugString(cmeta_->ActiveConfig()));
     }
     LOG_WITH_PREFIX_UNLOCKED(INFO)
@@ -578,8 +585,15 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
                                  << ToStringUnlocked();
   ClearLeaderUnlocked();
 
-  // FD should be running while we are a follower.
-  EnableFailureDetector(std::move(fd_delta));
+  if (consensus::IsVoterRole(cmeta_->active_role())) {
+    // A voter should run failure detector, if not a leader.
+    EnableFailureDetector(std::move(fd_delta));
+  } else {
+    // A non-voter should not start leader elections. The leader failure
+    // detector should be re-enabled once the non-voter replica is promoted
+    // to voter replica.
+    DisableFailureDetector();
+  }
 
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();

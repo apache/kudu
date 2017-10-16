@@ -429,7 +429,8 @@ Status WaitForNumTabletServers(
 
 Status WaitForReplicasReportedToMaster(
     const shared_ptr<master::MasterServiceProxy>& master_proxy,
-    int num_replicas, const string& tablet_id,
+    int num_replicas,
+    const string& tablet_id,
     const MonoDelta& timeout,
     WaitForLeader wait_for_leader,
     bool* has_leader,
@@ -701,7 +702,6 @@ Status AddServer(const TServerDetails* leader,
   if (cas_config_opid_index) {
     req.set_cas_config_opid_index(*cas_config_opid_index);
   }
-
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     if (error_code) *error_code = resp.error().code();

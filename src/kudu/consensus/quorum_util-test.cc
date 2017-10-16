@@ -30,19 +30,21 @@ namespace consensus {
 
 using std::string;
 
-static void SetPeerInfo(const string& uuid,
-                        RaftPeerPB::MemberType type,
-                        RaftPeerPB* peer) {
+// Add a consensus peer into the specified configuration.
+static void AddPeer(RaftConfigPB* config,
+                    const string& uuid,
+                    RaftPeerPB::MemberType type) {
+  RaftPeerPB* peer = config->add_peers();
   peer->set_permanent_uuid(uuid);
-  peer->set_member_type(type);
   peer->mutable_last_known_addr()->set_host(uuid + ".example.com");
+  peer->set_member_type(type);
 }
 
 TEST(QuorumUtilTest, TestMemberExtraction) {
   RaftConfigPB config;
-  SetPeerInfo("A", RaftPeerPB::VOTER, config.add_peers());
-  SetPeerInfo("B", RaftPeerPB::VOTER, config.add_peers());
-  SetPeerInfo("C", RaftPeerPB::VOTER, config.add_peers());
+  AddPeer(&config, "A", RaftPeerPB::VOTER);
+  AddPeer(&config, "B", RaftPeerPB::VOTER);
+  AddPeer(&config, "C", RaftPeerPB::VOTER);
 
   // Basic test for GetRaftConfigMember().
   RaftPeerPB peer_pb;
@@ -63,9 +65,9 @@ TEST(QuorumUtilTest, TestMemberExtraction) {
 
 TEST(QuorumUtilTest, TestDiffConsensusStates) {
   ConsensusStatePB old_cs;
-  SetPeerInfo("A", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
-  SetPeerInfo("B", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
-  SetPeerInfo("C", RaftPeerPB::VOTER, old_cs.mutable_committed_config()->add_peers());
+  AddPeer(old_cs.mutable_committed_config(), "A", RaftPeerPB::VOTER);
+  AddPeer(old_cs.mutable_committed_config(), "B", RaftPeerPB::VOTER);
+  AddPeer(old_cs.mutable_committed_config(), "C", RaftPeerPB::VOTER);
   old_cs.set_current_term(1);
   old_cs.set_leader_uuid("A");
   old_cs.mutable_committed_config()->set_opid_index(1);
@@ -100,7 +102,7 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   {
     auto new_cs = old_cs;
     new_cs.mutable_committed_config()->set_opid_index(2);
-    SetPeerInfo("D", RaftPeerPB::NON_VOTER, new_cs.mutable_committed_config()->add_peers());
+    AddPeer(new_cs.mutable_committed_config(), "D", RaftPeerPB::NON_VOTER);
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "NON_VOTER D (D.example.com) added",
@@ -148,7 +150,7 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   // Simulate a change in a pending config
   {
     auto before_cs = old_cs;
-    SetPeerInfo("A", RaftPeerPB::VOTER, before_cs.mutable_pending_config()->add_peers());
+    AddPeer(before_cs.mutable_pending_config(), "A", RaftPeerPB::VOTER);
     auto after_cs = before_cs;
     after_cs.mutable_pending_config()
       ->mutable_peers()->Mutable(0)->set_member_type(RaftPeerPB::NON_VOTER);
@@ -156,6 +158,27 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
     EXPECT_EQ("pending config changed, A (A.example.com) changed from VOTER to NON_VOTER",
               DiffConsensusStates(before_cs, after_cs));
   }
+}
+
+TEST(QuorumUtilTest, TestIsRaftConfigVoter) {
+  RaftConfigPB config;
+  AddPeer(&config, "A", RaftPeerPB::VOTER);
+  AddPeer(&config, "B", RaftPeerPB::NON_VOTER);
+  AddPeer(&config, "C", RaftPeerPB::UNKNOWN_MEMBER_TYPE);
+
+  // The case when membership type is not specified. That sort of configuration
+  // would not pass VerifyRaftConfig(), though. Anyway, that should result
+  // in non-voter since the member_type is initialized with UNKNOWN_MEMBER_TYPE.
+  const string no_member_type_peer_uuid = "D";
+  RaftPeerPB* no_member_type_peer = config.add_peers();
+  no_member_type_peer->set_permanent_uuid(no_member_type_peer_uuid);
+  no_member_type_peer->mutable_last_known_addr()->set_host(
+      no_member_type_peer_uuid + ".example.com");
+
+  ASSERT_TRUE(IsRaftConfigVoter("A", config));
+  ASSERT_FALSE(IsRaftConfigVoter("B", config));
+  ASSERT_FALSE(IsRaftConfigVoter("C", config));
+  ASSERT_FALSE(IsRaftConfigVoter(no_member_type_peer_uuid, config));
 }
 
 } // namespace consensus
