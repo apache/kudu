@@ -27,13 +27,14 @@ target_link_libraries(mini_cluster
   glog
   gmock
   gutil
+  krpc
   kudu_client
   kudu_common
   kudu_test_util
   kudu_util
-  krpc
   master
   master_proto
+  mini_hms
   mini_kdc
   server_base_proto
   tablet_proto
@@ -47,5 +48,5 @@ add_dependencies(mini_cluster
   kudu-master)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS mini_cluster ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS mini_cluster kudu_hms ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")

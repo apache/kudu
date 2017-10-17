@@ -40,6 +40,9 @@ message CreateClusterRequestPB {
   // Whether or not the cluster should be Kerberized.
   optional bool enable_kerberos = 3;
 
+  // Whether or not to create a Hive Metastore and enable the HMS integration.
+  optional bool enable_hive_metastore = 7;
+
   // The directory where the cluster's data and logs should be placed.
   optional string data_root = 4;
 

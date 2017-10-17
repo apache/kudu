@@ -39,6 +39,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/hms/mini_hms.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
@@ -102,6 +103,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       bind_mode(MiniCluster::kDefaultBindMode),
       num_data_dirs(1),
       enable_kerberos(false),
+      enable_hive_metastore(false),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(30)) {
 }
@@ -174,6 +176,12 @@ Status ExternalMiniCluster::Start() {
                           "could not kinit as admin");
     RETURN_NOT_OK_PREPEND(kdc_->SetKrb5Environment(),
                           "could not set krb5 client env");
+  }
+
+  if (opts_.enable_hive_metastore) {
+    hms_.reset(new hms::MiniHms());
+    RETURN_NOT_OK_PREPEND(hms_->Start(),
+                          "Failed to start the Hive Metastore");
   }
 
   if (opts_.num_masters != 1) {

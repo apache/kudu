@@ -15,15 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <iosfwd>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
+#include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/strings/util.h" // IWYU pragma: keep
+#include "kudu/hms/hms_client.h"
+#include "kudu/hms/mini_hms.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -34,22 +38,50 @@
 #include "kudu/util/test_util.h"
 
 namespace kudu {
-
 namespace cluster {
 
+using std::make_pair;
+using std::pair;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
-enum KerberosMode {
-  WITHOUT_KERBEROS, WITH_KERBEROS
+enum class Kerberos {
+  ENABLED,
+  DISABLED,
 };
 
-class ExternalMiniClusterTest : public KuduTest,
-                                public testing::WithParamInterface<KerberosMode> {};
+enum HiveMetastore {
+  ENABLED,
+  DISABLED,
+};
 
+// Beautifies CLI test output.
+std::ostream& operator<<(std::ostream& o, Kerberos k) {
+  switch (k) {
+    case Kerberos::ENABLED: return o << "Kerberos::ENABLED";
+    case Kerberos::DISABLED: return o << "Kerberos::DISABLED";
+  }
+  return o;
+}
+std::ostream& operator<<(std::ostream& o, HiveMetastore k) {
+  switch (k) {
+    case HiveMetastore::ENABLED: return o << "HiveMetastore::ENABLED";
+    case HiveMetastore::DISABLED: return o << "HiveMetastore::DISABLED";
+  }
+  return o;
+}
+
+class ExternalMiniClusterTest : public KuduTest,
+                                public testing::WithParamInterface<pair<Kerberos, HiveMetastore>> {
+};
+
+// TODO(dan): Add ENABLED/ENABLED when the mini HMS supports Kerberos.
 INSTANTIATE_TEST_CASE_P(KerberosOnAndOff,
                         ExternalMiniClusterTest,
-                        ::testing::Values(WITHOUT_KERBEROS, WITH_KERBEROS));
+                        testing::Values(make_pair(Kerberos::DISABLED, HiveMetastore::DISABLED),
+                                        make_pair(Kerberos::ENABLED, HiveMetastore::DISABLED),
+                                        make_pair(Kerberos::DISABLED, HiveMetastore::ENABLED)));
 
 void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   ASSERT_TRUE(opts.enable_kerberos);
@@ -90,7 +122,8 @@ TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
 
 TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   ExternalMiniClusterOptions opts;
-  opts.enable_kerberos = GetParam() == WITH_KERBEROS;
+  opts.enable_kerberos = GetParam().first == Kerberos::ENABLED;
+  opts.enable_hive_metastore = GetParam().second == HiveMetastore::ENABLED;
 
   // Hard-coded RPC ports for the masters. This is safe, as this unit test
   // runs under a resource lock (see CMakeLists.txt in this directory).
@@ -168,6 +201,15 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
                        "(Credentials cache file.*not found|"
                         "No Kerberos credentials|"
                         ".*No such file or directory)");
+  }
+
+  // Verify that the HMS is reachable.
+  if (opts.enable_hive_metastore) {
+    hms::HmsClient hms_client(cluster.hms()->address());
+    ASSERT_OK(hms_client.Start());
+    vector<string> tables;
+    ASSERT_OK(hms_client.GetAllTables("default", &tables));
+    ASSERT_TRUE(tables.empty()) << "tables: " << tables;
   }
 
   // Test that if we inject a fault into a tablet server's boot process
