@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/master/master-path-handlers.h"
+#include "kudu/master/master_path_handlers.h"
 
 #include <algorithm>
 #include <array>

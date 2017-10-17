@@ -31,7 +31,7 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/test/test_pass.h"
-#include "kudu/server/default-path-handlers.h"
+#include "kudu/server/default_path_handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/curl_util.h"

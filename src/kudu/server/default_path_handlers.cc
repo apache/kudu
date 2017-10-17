@@ -15,22 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/server/default-path-handlers.h"
+#include "kudu/server/default_path_handlers.h"
 
 #include <sys/stat.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <map>
 #include <memory>
-#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/iterator/iterator_traits.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -43,9 +43,10 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/pprof-path-handlers.h"
+#include "kudu/server/pprof_path_handlers.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/easy_json.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/jsonwriter.h"

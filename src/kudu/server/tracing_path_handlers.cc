@@ -14,10 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/server/tracing-path-handlers.h"
+#include "kudu/server/tracing_path_handlers.h"
 
 #include <map>
-#include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -41,7 +40,6 @@ using std::map;
 using std::ostringstream;
 using std::pair;
 using std::string;
-using std::unique_ptr;
 using std::vector;
 
 using kudu::debug::CategoryFilter;
@@ -126,7 +124,7 @@ Status BeginRecording(const Webserver::WebRequest& req,
   return Status::OK();
 }
 
-Status EndRecording(const Webserver::WebRequest& req,
+Status EndRecording(const Webserver::WebRequest& /*req*/,
                     bool compressed,
                     ostringstream* out) {
   TraceLog* tl = TraceLog::GetInstance();
@@ -192,7 +190,7 @@ void GetMonitoringStatus(ostringstream* out) {
   *out << encoded;
 }
 
-void HandleTraceJsonPage(const Webserver::ArgumentMap &args,
+void HandleTraceJsonPage(const Webserver::ArgumentMap& /*args*/,
                          std::ostringstream* output) {
   TraceLog* tl = TraceLog::GetInstance();
   tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),

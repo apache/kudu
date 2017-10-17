@@ -34,10 +34,10 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 
 set(MASTER_SRCS
   catalog_manager.cc
-  master-path-handlers.cc
   master.cc
   master_cert_authority.cc
   master_options.cc
+  master_path_handlers.cc
   master_service.cc
   mini_master.cc
   sys_catalog.cc

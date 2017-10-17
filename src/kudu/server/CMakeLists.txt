@@ -39,16 +39,16 @@ target_link_libraries(server_base_proto
 #########################################
 
 set(SERVER_PROCESS_SRCS
-  default-path-handlers.cc
+  default_path_handlers.cc
   generic_service.cc
   glog_metrics.cc
-  pprof-path-handlers.cc
+  pprof_path_handlers.cc
   rpcz-path-handler.cc
   rpc_server.cc
   server_base.cc
   server_base_options.cc
   tcmalloc_metrics.cc
-  tracing-path-handlers.cc
+  tracing_path_handlers.cc
   webserver.cc
   webserver_options.cc
   webui_util.cc

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tserver/tserver-path-handlers.h"
+#include "kudu/tserver/tserver_path_handlers.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -79,8 +79,6 @@ using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
 using kudu::MaintenanceManagerStatusPB;
-using kudu::MaintenanceManagerStatusPB_MaintenanceOpPB;
-using kudu::MaintenanceManagerStatusPB_OpInstancePB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::Tablet;
@@ -244,7 +242,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
     *output << "<thead><tr><th>Status</th><th>Count</th><th>Percentage</th></tr></thead>\n";
     *output << "<tbody>\n";
     for (const auto& entry : tablet_statuses) {
-      double percent = replicas.size() == 0 ? 0 : (100.0 * entry.second) / replicas.size();
+      double percent = replicas.empty() ? 0 : (100.0 * entry.second) / replicas.size();
       *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
                             entry.first,
                             entry.second,

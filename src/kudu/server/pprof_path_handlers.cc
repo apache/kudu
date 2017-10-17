@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/server/pprof-path-handlers.h"
+#include "kudu/server/pprof_path_handlers.h"
 
 #include <unistd.h>
 
