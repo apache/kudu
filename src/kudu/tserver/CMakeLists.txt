@@ -150,15 +150,17 @@ target_link_libraries(kudu-tserver
 # tserver_test_util
 #########################################
 
-set(TSERVER_TEST_UTIL_SRCS
-  tablet_server_test_util.cc
-  tablet_server-test-base.cc
-)
+if (NOT NO_TESTS)
+  set(TSERVER_TEST_UTIL_SRCS
+    tablet_server_test_util.cc
+    tablet_server-test-base.cc
+  )
 
-add_library(tserver_test_util ${TSERVER_TEST_UTIL_SRCS})
-target_link_libraries(tserver_test_util
-  tserver
-  ${KUDU_MIN_TEST_LIBS})
+  add_library(tserver_test_util ${TSERVER_TEST_UTIL_SRCS})
+  target_link_libraries(tserver_test_util
+    tserver
+    ${KUDU_MIN_TEST_LIBS})
+endif()
 
 #########################################
 # tserver tests
