@@ -72,6 +72,7 @@ using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TABLET_DATA_COPYING;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using std::string;
 using std::unordered_set;
 using std::vector;
@@ -491,11 +492,19 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(2, tablet_servers_[leader_uuid],
                                                 tablet_id_, kTimeout));
   ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
-  ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, 2));
 
-  // Now the follower is evicted and will be tombstoned.
-  // We'll add it back to the config and then crash the follower during the
-  // resulting tablet copy.
+  // Wait for the deleted tablet to be tombstoned, meaning the catalog manager
+  // has already sent DeleteTablet request and it has been processed. A race
+  // between adding a new server and processing DeleteTablet request is
+  // possible: the DeleteTablet request might be sent/processed _after_
+  // a new server has been added.
+  const int follower_idx =
+      cluster_->tablet_server_index_by_uuid(follower_uuid);
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+      follower_idx, tablet_id_, { TABLET_DATA_TOMBSTONED }, kTimeout));
+
+  // Add the evicted follower back to the config and then make it crash because
+  // of injected fault during tablet copy.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(follower_uuid),
             "tablet_copy_fault_crash_on_fetch_all", "1.0"));
   auto* leader_ts = tablet_servers_[leader_uuid];
@@ -509,8 +518,8 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
   // to vote and the tablet should come online.
   cluster_->Shutdown();
 
-  int follower_idx = cluster_->tablet_server_index_by_uuid(follower_uuid);
-  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(follower_idx, tablet_id_, { TABLET_DATA_COPYING }));
+  ASSERT_OK(inspect_->CheckTabletDataStateOnTS(follower_idx, tablet_id_,
+                                               { TABLET_DATA_COPYING }));
 
   ASSERT_OK(cluster_->master()->Restart());
   ASSERT_OK(cluster_->tablet_server_by_uuid(leader_uuid)->Restart());

@@ -113,6 +113,7 @@ using kudu::itest::TServerDetails;
 using kudu::itest::TabletServerMap;
 using kudu::itest::WAIT_FOR_LEADER;
 using kudu::itest::WaitForReplicasReportedToMaster;
+using kudu::itest::WaitUntilCommittedOpIdIndexIs;
 using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::master::TabletLocationsPB;
@@ -1708,7 +1709,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id, timeout, &leader_ts));
-  ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id, timeout));
+  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id, timeout));
 
   // Change the config.
   TServerDetails* tserver_to_add = tablet_servers_[uuid_to_add];
