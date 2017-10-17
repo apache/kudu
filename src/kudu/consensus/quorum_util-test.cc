@@ -179,6 +179,16 @@ TEST(QuorumUtilTest, TestIsRaftConfigVoter) {
   ASSERT_FALSE(IsRaftConfigVoter("B", config));
   ASSERT_FALSE(IsRaftConfigVoter("C", config));
   ASSERT_FALSE(IsRaftConfigVoter(no_member_type_peer_uuid, config));
+
+  RaftPeerPB* peer_a;
+  ASSERT_OK(GetRaftConfigMember(&config, "A", &peer_a));
+  RaftPeerPB* peer_b;
+  ASSERT_OK(GetRaftConfigMember(&config, "B", &peer_b));
+  ASSERT_FALSE(ReplicaTypesEqual(*peer_a, *peer_b));
+  ASSERT_TRUE(ReplicaTypesEqual(*peer_b, *peer_b));
+  RaftPeerPB* peer_c;
+  ASSERT_OK(GetRaftConfigMember(&config, "C", &peer_c));
+  ASSERT_FALSE(ReplicaTypesEqual(*peer_b, *peer_c));
 }
 
 } // namespace consensus

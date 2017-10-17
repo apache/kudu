@@ -738,7 +738,40 @@ Status RemoveServer(const TServerDetails* leader,
   rpc.set_timeout(timeout);
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
-    if (error_code) *error_code = resp.error().code();
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status ChangeReplicaType(const TServerDetails* leader,
+                         const std::string& tablet_id,
+                         const TServerDetails* target_replica,
+                         RaftPeerPB::MemberType replica_type,
+                         const MonoDelta& timeout,
+                         const boost::optional<int64_t>& cas_config_index,
+                         tserver::TabletServerErrorPB::Code* error_code) {
+  ChangeConfigRequestPB req;
+  req.set_dest_uuid(leader->uuid());
+  req.set_tablet_id(tablet_id);
+  req.set_type(consensus::CHANGE_REPLICA_TYPE);
+  if (cas_config_index) {
+    req.set_cas_config_opid_index(*cas_config_index);
+  }
+  RaftPeerPB* peer = req.mutable_server();
+  peer->set_permanent_uuid(target_replica->uuid());
+  peer->set_member_type(replica_type);
+
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();

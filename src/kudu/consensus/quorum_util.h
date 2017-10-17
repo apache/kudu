@@ -56,6 +56,10 @@ Status GetRaftConfigLeader(ConsensusStatePB* cstate, RaftPeerPB** peer_pb);
 // Returns true on success.
 bool RemoveFromRaftConfig(RaftConfigPB* config, const std::string& uuid);
 
+// Returns true iff the two peers have equivalent replica types and associated
+// options.
+bool ReplicaTypesEqual(const RaftPeerPB& peer1, const RaftPeerPB& peer2);
+
 // Counts the number of voters in the configuration.
 int CountVoters(const RaftConfigPB& config);
 

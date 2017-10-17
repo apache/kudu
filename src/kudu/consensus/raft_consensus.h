@@ -563,6 +563,14 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the failure detector is already disabled, has no effect.
   void DisableFailureDetector();
 
+  // Disable leader failure detector if transitioning from VOTER to NON_VOTER,
+  // and vice versa. The decision is based on the type of membership of the
+  // peer in the active Raft configuration.
+  //
+  // If it's time to enable the leader failure detection, the specified
+  // 'delta' value is used as described in EnableFailureDetector()'s comment.
+  void ToggleFailureDetector(boost::optional<MonoDelta> delta = boost::none);
+
   // "Reset" the failure detector to indicate leader activity.
   //
   // When this is called a failure is guaranteed not to be detected before

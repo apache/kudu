@@ -16,12 +16,14 @@
 // under the License.
 
 #include <cstdint>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -97,6 +99,14 @@ class RaftConsensusNonVoterITest : public RaftConsensusITestBase {
   Status RemoveReplica(const string& tablet_id,
                        const TServerDetails* replica,
                        const MonoDelta& timeout);
+
+  // Change replica membership to the specified type, i.e. promote a replica
+  // in case of RaftPeerPB::VOTER member_type, and demote a replica in case of
+  // RaftPeerPB::NON_VOTER member_type.
+  Status ChangeReplicaMembership(RaftPeerPB::MemberType member_type,
+                                 const string& tablet_id,
+                                 const TServerDetails* replica,
+                                 const MonoDelta& timeout);
 };
 
 Status RaftConsensusNonVoterITest::GetTabletCopySourceSessionsCount(
@@ -140,6 +150,22 @@ Status RaftConsensusNonVoterITest::RemoveReplica(const string& tablet_id,
   RETURN_NOT_OK(WaitForOpFromCurrentTerm(leader, tablet_id,
                                          consensus::COMMITTED_OPID, timeout));
   return RemoveServer(leader, tablet_id, replica, timeout);
+}
+
+Status RaftConsensusNonVoterITest::ChangeReplicaMembership(
+    RaftPeerPB::MemberType member_type,
+    const string& tablet_id,
+    const TServerDetails* replica,
+    const MonoDelta& timeout) {
+  TServerDetails* leader = nullptr;
+  RETURN_NOT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+
+  // Wait for at least one operation committed by the leader in current term.
+  // Otherwise, any Raft configuration change attempt might end up with error
+  // 'Illegal state: Leader has not yet committed an operation in its own term'.
+  RETURN_NOT_OK(WaitForOpFromCurrentTerm(leader, tablet_id,
+                                         consensus::COMMITTED_OPID, timeout));
+  return ChangeReplicaType(leader, tablet_id, replica, member_type, timeout);
 }
 
 // Ensure that adding a NON_VOTER replica is properly handled by the system:
@@ -378,7 +404,7 @@ TEST_F(RaftConsensusNonVoterITest, AddThenRemoveNonVoterReplica) {
       new_replica_idx, tablet_id, { TABLET_DATA_TOMBSTONED }, kTimeout));
 
   // The added and then removed tablet replica should be gone, and the master
-  // should report approrpiate replica count at this point. The tablet leader
+  // should report appropriate replica count at this point. The tablet leader
   // should be established.
   bool has_leader;
   master::TabletLocationsPB tablet_locations;
@@ -409,6 +435,11 @@ TEST_F(RaftConsensusNonVoterITest, AddThenRemoveNonVoterReplica) {
 //  * does not start leader elections
 //  * returns an error on RunLeaderElection() RPC call
 TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasDoNotVote) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
   const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
   const int kOriginalReplicasNum = 2;
   const int kHbIntervalMs = 64;
@@ -527,6 +558,198 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasDoNotVote) {
     const Status s = StartElection(new_replica, tablet_id_, kTimeout);
     ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   }
+}
+
+// Test that it's possible to promote a NON_VOTER replica into a VOTER one
+// and demote a VOTER replica into NON_VOTER (if not a leader). The new VOTER
+// replica should be able to participate in elections, and the quorum should
+// change accordingly. Promote and demote a replica under active workload.
+// Promote a replica and remove it, making sure it gets tombstoned.
+TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int kInitialReplicasNum = 3;
+  const int kHbIntervalMs = 50;
+  const vector<string> kTserverFlags = {
+    Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
+  };
+
+  FLAGS_num_tablet_servers = 4;
+  FLAGS_num_replicas = kInitialReplicasNum;
+  NO_FATALS(BuildAndStart(kTserverFlags));
+  ASSERT_EQ(4, tablet_servers_.size());
+  ASSERT_EQ(kInitialReplicasNum, tablet_replicas_.size());
+
+  const string& tablet_id = tablet_id_;
+  TabletServerMap replica_servers;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id) {
+      replica_servers.emplace(e.second->uuid(), e.second);
+    }
+  }
+  ASSERT_EQ(FLAGS_num_replicas, replica_servers.size());
+
+  ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id, 1));
+
+  TServerDetails* new_replica = nullptr;
+  for (const auto& ts : tablet_servers_) {
+    if (replica_servers.find(ts.first) == replica_servers.end()) {
+      new_replica = ts.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, new_replica);
+
+  ASSERT_OK(AddReplica(tablet_id, new_replica, RaftPeerPB::NON_VOTER, kTimeout));
+
+  {
+    // It should not be possible to demote the tablet leader.
+    TServerDetails* leader;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+    const Status s_demote = ChangeReplicaMembership(RaftPeerPB::NON_VOTER,
+                                                    tablet_id, leader, kTimeout);
+    const auto s_demote_str = s_demote.ToString();
+    ASSERT_TRUE(s_demote.IsInvalidArgument()) << s_demote_str;
+    ASSERT_STR_MATCHES(s_demote_str,
+        "Cannot change the replica type of peer .* because it is the leader");
+
+    // It should not be possible to promote a leader replica since it's
+    // already a voter.
+    const Status s_promote = ChangeReplicaMembership(RaftPeerPB::VOTER,
+                                                     tablet_id, leader, kTimeout);
+    const auto s_promote_str = s_promote.ToString();
+    ASSERT_TRUE(s_promote.IsInvalidArgument()) << s_promote_str;
+    ASSERT_STR_MATCHES(s_promote_str,
+        "Cannot change the replica type of peer .* because it is the leader");
+  }
+
+  {
+    // It should not be possible to demote a non-voter.
+    Status s = ChangeReplicaMembership(RaftPeerPB::NON_VOTER,
+                                       tablet_id, new_replica, kTimeout);
+    const auto s_str = s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s_str;
+    ASSERT_STR_CONTAINS(s_str, "Cannot change replica type to same type");
+  }
+
+  // It should be possible to promote a non-voter to voter.
+  ASSERT_OK(ChangeReplicaMembership(RaftPeerPB::VOTER, tablet_id,
+                                    new_replica, kTimeout));
+
+  {
+    // It should not be possible to promote a voter since it's a voter already.
+    Status s = ChangeReplicaMembership(RaftPeerPB::VOTER,
+                                       tablet_id, new_replica, kTimeout);
+    const auto s_str = s.ToString();
+    ASSERT_TRUE(s.IsInvalidArgument()) << s_str;
+    ASSERT_STR_CONTAINS(s_str, "Cannot change replica type to same type");
+  }
+
+  // Make sure the promoted replica is in the quorum.
+  {
+    // Pause both the current leader and the new voter, and make sure
+    // no new leader can be elected since the majority is now 3 out of 4 voters.
+    TServerDetails* leader;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+    ExternalTabletServer* leader_ts =
+        cluster_->tablet_server_by_uuid(leader->uuid());
+    ASSERT_OK(leader_ts->Pause());
+    auto cleanup_leader = MakeScopedCleanup([&]() {
+      ASSERT_OK(leader_ts->Resume());
+    });
+
+    ExternalTabletServer* new_replica_ts =
+        cluster_->tablet_server_by_uuid(new_replica->uuid());
+    ASSERT_OK(new_replica_ts->Pause());
+    auto cleanup_new_replica = MakeScopedCleanup([&]() {
+      ASSERT_OK(new_replica_ts->Resume());
+    });
+
+    {
+      TServerDetails* leader;
+      Status s = GetLeaderReplicaWithRetries(tablet_id, &leader, 10);
+      const auto s_str = s.ToString();
+      ASSERT_TRUE(s.IsNotFound()) << s_str;
+      ASSERT_STR_CONTAINS(s_str, "leader replica not found");
+    }
+
+    // Resume the newly promoted replica: there should be 3 out of 4 voters
+    // available now, so they should be able to elect a leader among them.
+    ASSERT_OK(new_replica_ts->Resume());
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+
+    // It should be possible to demote a replica back: 2 out of 3 voters
+    // of the result configuration are available, so 2 active voters out of 3
+    // (1 is still paused) and 1 non-votes in the tablet constitute a functional
+    // tablet, so they should be able to elect a leader replica among them.
+    ASSERT_OK(ChangeReplicaMembership(RaftPeerPB::NON_VOTER,
+                                      tablet_id, new_replica, kTimeout));
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+  }
+
+  // Promote/demote a replica under active workload.
+  {
+    TestWorkload workload(cluster_.get());
+    workload.set_table_name(kTableId);
+    workload.Setup();
+    workload.Start();
+    while (workload.rows_inserted() < 10) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+
+    ASSERT_OK(ChangeReplicaMembership(RaftPeerPB::VOTER,
+                                      tablet_id, new_replica, kTimeout));
+    auto rows_inserted = workload.rows_inserted();
+    while (workload.rows_inserted() < rows_inserted * 2) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+
+    ASSERT_OK(ChangeReplicaMembership(RaftPeerPB::NON_VOTER,
+                                      tablet_id, new_replica, kTimeout));
+    rows_inserted = workload.rows_inserted();
+    while (workload.rows_inserted() < rows_inserted * 2) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+    workload.StopAndJoin();
+
+    ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id, 1));
+
+    ClusterVerifier v(cluster_.get());
+    NO_FATALS(v.CheckCluster());
+    NO_FATALS(v.CheckRowCount(workload.table_name(),
+                              ClusterVerifier::EXACTLY,
+                              workload.rows_inserted()));
+  }
+
+  // Promote the non-voter replica again and then remove it when it's a voter,
+  // making sure it gets tombstoned.
+  {
+    ASSERT_OK(ChangeReplicaMembership(RaftPeerPB::VOTER,
+                                      tablet_id, new_replica, kTimeout));
+    ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id, 1));
+    ASSERT_OK(RemoveReplica(tablet_id, new_replica, kTimeout));
+
+    // Verify the removed replica gets tombstoned.
+    const int new_replica_idx =
+        cluster_->tablet_server_index_by_uuid(new_replica->uuid());
+    ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
+        new_replica_idx, tablet_id, { TABLET_DATA_TOMBSTONED }, kTimeout));
+
+    // The removed tablet replica should be gone, and the master should report
+    // appropriate replica count at this point.
+    bool has_leader;
+    master::TabletLocationsPB tablet_locations;
+    ASSERT_OK(WaitForReplicasReportedToMaster(
+        cluster_->master_proxy(), kInitialReplicasNum, tablet_id, kTimeout,
+        WAIT_FOR_LEADER, &has_leader, &tablet_locations));
+    ASSERT_TRUE(has_leader);
+  }
+
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 }  // namespace tserver

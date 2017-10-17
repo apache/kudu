@@ -98,6 +98,12 @@ bool RemoveFromRaftConfig(RaftConfigPB* config, const string& uuid) {
   return true;
 }
 
+bool ReplicaTypesEqual(const RaftPeerPB& peer1, const RaftPeerPB& peer2) {
+  // TODO(mpercy): Include comparison of replica intentions once they are
+  // implemented.
+  return peer1.member_type() == peer2.member_type();
+}
+
 int CountVoters(const RaftConfigPB& config) {
   int voters = 0;
   for (const RaftPeerPB& peer : config.peers()) {

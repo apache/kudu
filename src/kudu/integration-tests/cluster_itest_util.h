@@ -288,6 +288,16 @@ Status RemoveServer(const TServerDetails* leader,
                     const boost::optional<int64_t>& cas_config_index = boost::none,
                     tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
+// Change type of the given replica to the specified type.
+// The RPC request is sent to 'leader'.
+Status ChangeReplicaType(const TServerDetails* leader,
+                         const std::string& tablet_id,
+                         const TServerDetails* target_replica,
+                         consensus::RaftPeerPB::MemberType replica_type,
+                         const MonoDelta& timeout,
+                         const boost::optional<int64_t>& cas_config_index = boost::none,
+                         tserver::TabletServerErrorPB::Code* error_code = nullptr);
+
 // Get the list of tablets from the remote server.
 Status ListTablets(const TServerDetails* ts,
                    const MonoDelta& timeout,

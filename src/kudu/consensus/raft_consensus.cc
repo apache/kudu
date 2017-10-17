@@ -316,7 +316,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
       }
     }
 
-    // Now assume "follower" duties.
+    // Now assume non-leader replica duties.
     RETURN_NOT_OK(BecomeReplicaUnlocked(fd_initial_delta));
 
     SetStateUnlocked(kRunning);
@@ -585,15 +585,9 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
                                  << ToStringUnlocked();
   ClearLeaderUnlocked();
 
-  if (consensus::IsVoterRole(cmeta_->active_role())) {
-    // A voter should run failure detector, if not a leader.
-    EnableFailureDetector(std::move(fd_delta));
-  } else {
-    // A non-voter should not start leader elections. The leader failure
-    // detector should be re-enabled once the non-voter replica is promoted
-    // to voter replica.
-    DisableFailureDetector();
-  }
+  // Enable/disable leader failure detection if becoming VOTER/NON_VOTER replica
+  // correspondingly.
+  ToggleFailureDetector(std::move(fd_delta));
 
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();
@@ -1648,8 +1642,31 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
 
       // TODO(mpercy): Support changing between VOTER and NON_VOTER.
       case CHANGE_REPLICA_TYPE:
+        if (server.member_type() == RaftPeerPB::UNKNOWN_MEMBER_TYPE) {
+          return Status::InvalidArgument("Cannot change replica type to UNKNOWN_MEMBER_TYPE");
+        }
+        if (server_uuid == peer_uuid()) {
+          return Status::InvalidArgument(
+              Substitute("Cannot change the replica type of peer $0 because it is the leader. "
+                         "Force another leader to be elected to modify the type of this replica. "
+                         "Consensus state: $1",
+                         server_uuid,
+                         SecureShortDebugString(cmeta_->ToConsensusStatePB())));
+        }
+        RaftPeerPB* peer_pb;
+        RETURN_NOT_OK(GetRaftConfigMember(&new_config, server_uuid, &peer_pb));
+        // Validate the changes.
+        if (ReplicaTypesEqual(*peer_pb, server)) {
+          return Status::InvalidArgument("Cannot change replica type to same type");
+        }
+        peer_pb->set_member_type(server.member_type());
+        // TODO(mpercy): Copy over replica intentions when implemented.
+        break;
+
       default:
-        return Status::NotSupported("Role change is not yet implemented.");
+        return Status::NotSupported(Substitute(
+            "$0: unsupported type of configuration change",
+            ChangeConfigType_Name(type)));
     }
 
     RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
@@ -2401,6 +2418,10 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting config change with OpId "
                                      << op_id << ": " << status.ToString();
       cmeta_->clear_pending_config();
+
+      // Disable leader failure detection if transitioning from VOTER to
+      // NON_VOTER and vice versa.
+      ToggleFailureDetector();
     } else {
       LOG_WITH_PREFIX_UNLOCKED(INFO)
           << "Skipping abort of non-pending config change with OpId "
@@ -2448,7 +2469,6 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
   }
 }
 
-
 void RaftConsensus::EnableFailureDetector(boost::optional<MonoDelta> delta) {
   if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
     failure_detector_->Start(std::move(delta));
@@ -2458,6 +2478,18 @@ void RaftConsensus::EnableFailureDetector(boost::optional<MonoDelta> delta) {
 void RaftConsensus::DisableFailureDetector() {
   if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
     failure_detector_->Stop();
+  }
+}
+
+void RaftConsensus::ToggleFailureDetector(boost::optional<MonoDelta> delta) {
+  if (IsRaftConfigVoter(peer_uuid(), cmeta_->ActiveConfig())) {
+    // A non-leader voter replica should run failure detector.
+    EnableFailureDetector(std::move(delta));
+  } else {
+    // A non-voter should not start leader elections. The leader failure
+    // detector should be re-enabled once the non-voter replica is promoted
+    // to voter replica.
+    DisableFailureDetector();
   }
 }
 
@@ -2583,6 +2615,11 @@ Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
         << "New pending config: " << SecureShortDebugString(new_config);
   }
   cmeta_->set_pending_config(new_config);
+
+  // Disable leader failure detection if transitioning from VOTER to NON_VOTER
+  // and vice versa.
+  ToggleFailureDetector();
+
   return Status::OK();
 }
 
