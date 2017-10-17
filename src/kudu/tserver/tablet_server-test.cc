@@ -1251,7 +1251,7 @@ TEST_F(TabletServerTest, TestScanCorruptedDeltas) {
   // Ensure some rows get to disk with deltas.
   InsertTestRowsDirect(0, 100);
   ASSERT_OK(tablet_replica_->tablet()->Flush());
-  UpdateTestRowRemote(0, 1, 100);
+  UpdateTestRowRemote(1, 100);
   ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   // Fudge with some delta blocks.
