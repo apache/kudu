@@ -144,8 +144,6 @@ src/kudu/gutil/utf/utf.h
 src/kudu/gutil/utf/utfdef.h
 src/kudu/security/x509_check_host.cc
 src/kudu/security/x509_check_host.h
-src/kudu/twitter-demo/example-deletes.txt
-src/kudu/twitter-demo/example-tweets.txt
 src/kudu/util/cache.h
 src/kudu/util/coding.cc
 src/kudu/util/cache-test.cc

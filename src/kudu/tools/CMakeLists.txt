@@ -62,14 +62,6 @@ target_link_libraries(kudu_tools_util
   ${LINK_LIBS})
 
 #######################################
-# create-demo-table
-#######################################
-
-add_executable(create-demo-table create-demo-table.cc)
-target_link_libraries(create-demo-table
-  ${LINK_LIBS})
-
-#######################################
 # ksck
 #######################################
 

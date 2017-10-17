@@ -70,12 +70,6 @@ DEPS_FOR_ALL = \
      "build/latest/bin/kudu-tserver",
      "build/latest/bin/kudu-master",
 
-     # parser-test requires these data files.
-     # TODO: again, we should do this with some per-test metadata file.
-     # TODO: these are broken now that we separate source and build trees.
-     #".../example-deletes.txt",
-     #".../example-tweets.txt",
-
      # Tests that require tooling require this.
      "build/latest/bin/kudu",
      ]
@@ -148,10 +142,7 @@ def get_test_commandlines():
 
 
 def is_lib_blacklisted(lib):
-  # These particular system libraries, we should ship to the remote nodes.
   # No need to ship things like libc, libstdcxx, etc.
-  if "oauth" in lib:
-    return False
   if lib.startswith("/lib") or lib.startswith("/usr"):
     return True
   return False
