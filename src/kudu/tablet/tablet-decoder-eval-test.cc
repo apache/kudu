@@ -115,7 +115,7 @@ public:
     }
 
     for (int i = 0; i < FLAGS_decoder_eval_test_nrepeats; i++) {
-      TestTimedScanWithBounds(nrows, cardinality, strlen, lower, upper, &fetched);
+      TestTimedScanWithBounds(strlen, lower, upper, &fetched);
 
       // Calculate the expected count, potentially factoring in nulls.
       size_t expected_sel_count = ExpectedCount(nrows, cardinality, lower_not_null, upper);
@@ -156,7 +156,7 @@ public:
     ASSERT_OK(tablet()->Flush());
   }
 
-  void TestTimedScanWithBounds(size_t nrows, size_t cardinality, size_t strlen, size_t lower_val,
+  void TestTimedScanWithBounds(size_t strlen, size_t lower_val,
                                size_t upper_val, int* fetched) {
     Arena arena(128);
     AutoReleasePool pool;

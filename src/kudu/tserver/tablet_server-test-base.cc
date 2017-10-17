@@ -388,9 +388,10 @@ void TabletServerTestBase::VerifyRows(const Schema& schema,
   ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema, &iter));
   ASSERT_OK(iter->Init(NULL));
 
-  const size_t batch_size =
-      std::max(size_t(1), std::min(expected.size() / 10,
-                                   4*1024*1024 / schema.byte_size()));
+  int batch_size = std::max<int>(1,
+     std::min<int>(expected.size() / 10,
+                   4*1024*1024 / schema.byte_size()));
+
   Arena arena(32*1024);
   RowBlock block(schema, batch_size, &arena);
 

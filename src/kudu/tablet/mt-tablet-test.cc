@@ -210,7 +210,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // Thread which iterates slowly over the first 10% of the data.
   // This is meant to test that outstanding iterators don't end up
   // trying to reference already-freed memrowset memory.
-  void SlowReaderThread(int tid) {
+  void SlowReaderThread(int /*tid*/) {
     Arena arena(32*1024);
     RowBlock block(schema_, 1, &arena);
 

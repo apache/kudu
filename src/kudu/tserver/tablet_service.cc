@@ -1877,7 +1877,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   RowBlock block(scanner->iter()->schema(),
                  FLAGS_scanner_batch_size_rows, &arena);
 
-  // TODO: in the future, use the client timeout to set a budget. For now,
+  // TODO(todd): in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.
   int budget_ms = 500;
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);

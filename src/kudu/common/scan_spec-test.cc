@@ -52,9 +52,8 @@ class TestScanSpec : public KuduTest {
  public:
   explicit TestScanSpec(const Schema& s)
     : arena_(1024),
-      pool_(),
-      schema_(s),
-      spec_() {}
+      schema_(s) {
+  }
 
   enum ComparisonOp {
     GE,
