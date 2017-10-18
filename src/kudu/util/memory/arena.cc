@@ -31,11 +31,22 @@ namespace kudu {
 template <bool THREADSAFE>
 const size_t ArenaBase<THREADSAFE>::kMinimumChunkSize = 16;
 
+// The max size of our allocations is set to this magic number
+// corresponding to 127 tcmalloc pages (each being 8KB). tcmalloc
+// internally keeps a free-list of spans up to this size. Larger
+// allocations have to go through a linear search through free
+// space, which can get quite slow in a fragmented heap.
+//
+// See the definition of kMaxPages in tcmalloc/src/common.h
+// as well as https://github.com/gperftools/gperftools/issues/535
+// for a description of the performance issue.
+constexpr int kMaxTcmallocFastAllocation = 8192 * 127;
+
 template <bool THREADSAFE>
 ArenaBase<THREADSAFE>::ArenaBase(BufferAllocator* buffer_allocator,
                                  size_t initial_buffer_size)
     : buffer_allocator_(buffer_allocator),
-      max_buffer_size_(1024 * 1024),
+      max_buffer_size_(kMaxTcmallocFastAllocation),
       arena_footprint_(0) {
   AddComponent(CHECK_NOTNULL(NewComponent(initial_buffer_size, 0)));
 }
@@ -48,8 +59,7 @@ ArenaBase<THREADSAFE>::ArenaBase(size_t initial_buffer_size)
 
 template <bool THREADSAFE>
 void ArenaBase<THREADSAFE>::SetMaxBufferSize(size_t size) {
-  DCHECK_LE(size, 1024 * 1024)
-      << "Should not use buffer sizes larger than 1MB due to tcmalloc inefficiencies";
+  DCHECK_LE(size, kMaxTcmallocFastAllocation);
   max_buffer_size_ = size;
 }
 

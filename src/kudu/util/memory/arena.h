@@ -90,7 +90,7 @@ class ArenaBase {
   // It might be capped by the allocator, or by the max_buffer_size of the Arena,
   // settable by SetMaxBufferSize below.
   //
-  // The default maximum buffer size is 1MB. See 'SetMaxBufferSize' for details
+  // The default maximum buffer size is ~1MB. See 'SetMaxBufferSize' for details
   // on when you would want to configure this differently.
   ArenaBase(BufferAllocator* buffer_allocator,
             size_t initial_buffer_size);
@@ -99,7 +99,7 @@ class ArenaBase {
   explicit ArenaBase(size_t initial_buffer_size);
 
   // Set the maximum buffer size allocated for this arena.
-  // The maximum buffer size allowed is 1MB.
+  // The maximum buffer size allowed is slightly less than ~1MB (8192 * 127 bytes).
   //
   // Consider the following pros/cons of large buffer sizes:
   //
