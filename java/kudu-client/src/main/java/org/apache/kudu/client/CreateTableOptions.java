@@ -87,9 +87,10 @@ public class CreateTableOptions {
   /**
    * Set the columns on which the table will be range-partitioned.
    *
-   * Every column must be a part of the table's primary key. If not set or if
-   * called with an empty vector, the table will be created without range
-   * partitioning.
+   * Every column must be a part of the table's primary key. If not set,
+   * the table is range partitioned by the primary key columns with a single
+   * unbounded partition. If called with an empty vector, the table will be
+   * created without range partitioning.
    *
    * Tables must be created with either range, hash, or range and hash
    * partitioning. To force the use of a single tablet (not recommended),
