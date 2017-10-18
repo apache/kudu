@@ -306,12 +306,13 @@ TEST_F(ClientStressTest, TestUniqueClientIds) {
   set<string> client_ids;
   for (int i = 0; i < 1000; i++) {
     client::sp::shared_ptr<KuduClient> client;
-    CHECK_OK(cluster_->CreateClient(nullptr, &client));
-    string client_id = client->data_->client_id_;
-    auto result = client_ids.insert(client_id);
-    EXPECT_TRUE(result.second) << "Unique id generation failed. New client id: " << client_id
-                                   << " had already been used. Generated ids: "
-                                   << JoinStrings(client_ids, ",");
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    const string& client_id = client->data_->client_id_;
+    auto result = client_ids.emplace(client_id);
+    EXPECT_TRUE(result.second) << "Unique id generation failed. New client id: "
+                               << client_id
+                               << " had already been used. Generated ids: "
+                               << JoinStrings(client_ids, ",");
   }
 }
 
