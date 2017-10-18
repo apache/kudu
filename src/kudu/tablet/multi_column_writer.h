@@ -63,11 +63,6 @@ class MultiColumnWriter {
   // Note that the selection vector here is ignored.
   Status AppendBlock(const RowBlock& block);
 
-  // Close the in-progress files.
-  //
-  // The file's blocks may be retrieved using FlushedBlocks().
-  Status Finish();
-
   // Close the in-progress CFiles, finalizing the underlying writable
   // blocks and releasing them to 'transaction'.
   Status FinishAndReleaseBlocks(fs::BlockCreationTransaction* transaction);

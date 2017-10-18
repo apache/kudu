@@ -53,6 +53,8 @@ using std::shared_ptr;
 
 namespace kudu {
 
+using fs::BlockCreationTransaction;
+using fs::BlockManager;
 using fs::CreateBlockOptions;
 using fs::WritableBlock;
 using std::string;
@@ -228,17 +230,20 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     nrows += n;
   }
 
-  RETURN_NOT_OK(base_data_writer_->Finish());
+  BlockManager* bm = fs_manager_->block_manager();
+  unique_ptr<BlockCreationTransaction> transaction = bm->NewCreationTransaction();
+  RETURN_NOT_OK(base_data_writer_->FinishAndReleaseBlocks(transaction.get()));
 
   if (redo_delta_mutations_written_ > 0) {
     new_redo_delta_writer_->WriteDeltaStats(redo_stats);
-    RETURN_NOT_OK(new_redo_delta_writer_->Finish());
+    RETURN_NOT_OK(new_redo_delta_writer_->FinishAndReleaseBlock(transaction.get()));
   }
 
   if (undo_delta_mutations_written_ > 0) {
     new_undo_delta_writer_->WriteDeltaStats(undo_stats);
-    RETURN_NOT_OK(new_undo_delta_writer_->Finish());
+    RETURN_NOT_OK(new_undo_delta_writer_->FinishAndReleaseBlock(transaction.get()));
   }
+  transaction->CommitCreatedBlocks();
 
   DVLOG(1) << "Applied all outstanding deltas for columns "
            << partial_schema_.ToString()
