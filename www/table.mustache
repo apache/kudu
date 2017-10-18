@@ -125,7 +125,7 @@ under the License.
   {{! Unusual formatting below because <pre> preserves whitespace in the output. }}
   <pre><code>CREATE EXTERNAL TABLE `{{name}}` STORED AS KUDU
 TBLPROPERTIES(
-    'kudu.table_name' = '{{name}}'
+    'kudu.table_name' = '{{name}}',
     'kudu.master_addresses' = '{{master_addresses}}')</code></pre>
 
   <h3>Tasks</h3>
