@@ -101,9 +101,26 @@ struct LogBlockManagerMetrics;
 // deleted in a GC.
 //
 // Care is taken to keep the in-memory representation of the block manager
-// in synch with its persistent representation. To wit, a block is only
-// made available in memory if _all_ on-disk operations (including any
-// necessary synchronization calls) are successful.
+// in sync with its persistent representation. To wit, a block is only made
+// available in memory if _all_ on-disk operations (including any necessary
+// synchronization calls) are successful.
+//
+// Writes to containers are batched together through the use of block
+// transactions: each writer will take ownership of an "available" container,
+// write a block to the container, and release ownership of the container once
+// the writer "finalizes" the block, making the container available to other
+// writers. This can happen concurrently; multiple transactions can interleave
+// writes to single container, provided each writer finalizes its block before
+// the next writer reaches for a container. Once any of the writers is
+// completely done with its IO, it can commit its transaction, syncing its
+// blocks and the container to disk (potentially as others are writing!).
+//
+// In order to maintain on-disk consistency, if the above commit fails, the
+// entire container is marked read-only, and any future writes to the container
+// will fail. There is a tradeoff here to note--having concurrent writers
+// grants better utilization for each container; however a failure to sync by
+// any of the writers will cause the others to fail and potentially corrupt the
+// underlying container.
 //
 // When a new block is created, a container is selected from the data
 // directory group appropriate for the block, as indicated by hints in
@@ -156,6 +173,8 @@ struct LogBlockManagerMetrics;
 //   similarly recoverable errors).
 // - Evaluate and implement a solution for data integrity (e.g. per-block
 //   checksum).
+// - Change the availability semantics to only mark a container as available if
+//   the current writer has committed and synced its transaction.
 
 // The log-backed block manager.
 class LogBlockManager : public BlockManager {
@@ -197,6 +216,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
+  FRIEND_TEST(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer);
 
   friend class internal::LogBlockContainer;
   friend class internal::LogBlockDeletionTransaction;

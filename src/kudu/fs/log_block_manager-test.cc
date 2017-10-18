@@ -834,6 +834,62 @@ TEST_F(LogBlockManagerTest, StartupBenchmark) {
 }
 #endif
 
+TEST_F(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
+  // Create multiple transactions that will share a container.
+  const int kNumTransactions = 3;
+  vector<unique_ptr<BlockCreationTransaction>> block_transactions;
+  for (int i = 0; i < kNumTransactions; i++) {
+    block_transactions.emplace_back(bm_->NewCreationTransaction());
+  }
+
+  // Repeatedly add new blocks for the transactions. Finalizing each block
+  // makes the block's container available, allowing the same container to be
+  // reused by the next block.
+  const int kNumBlocks = 10;
+  for (int i = 0; i < kNumBlocks; i++) {
+    unique_ptr<WritableBlock> block;
+    ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
+    ASSERT_OK_FAST(block->Append("x"));
+    ASSERT_OK_FAST(block->Finalize());
+    block_transactions[i % kNumTransactions]->AddCreatedBlock(std::move(block));
+  }
+  ASSERT_EQ(1, bm_->all_containers_by_name_.size());
+
+  // Briefly inject an error while committing one of the transactions. This
+  // should make the container read-only, preventing the remaining transactions
+  // from proceeding.
+  FLAGS_crash_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+  Status s = block_transactions[0]->CommitCreatedBlocks();
+  ASSERT_TRUE(s.IsIOError());
+  FLAGS_env_inject_eio = 0;
+
+  // Now try to add some more blocks.
+  for (int i = 0; i < kNumTransactions; i++) {
+    unique_ptr<WritableBlock> block;
+    ASSERT_OK_FAST(bm_->CreateBlock(test_block_opts_, &block));
+
+    // The first write will fail, as the container has been marked read-only.
+    // This will leave the container unavailable and force the creation of a
+    // new container.
+    Status s = block->Append("x");
+    if (i == 0) {
+      ASSERT_TRUE(s.IsIOError());
+    } else {
+      ASSERT_OK_FAST(s);
+      ASSERT_OK_FAST(block->Finalize());
+    }
+    block_transactions[i]->AddCreatedBlock(std::move(block));
+  }
+  ASSERT_EQ(2, bm_->all_containers_by_name_.size());
+
+  // At this point, all of the transactions have blocks in read-only containers
+  // and, thus, will be unable to commit.
+  for (const auto& block_transaction : block_transactions) {
+    ASSERT_TRUE(block_transaction->CommitCreatedBlocks().IsIOError());
+  }
+}
+
 TEST_F(LogBlockManagerTest, TestLookupBlockLimit) {
   int64_t limit_1024 = LogBlockManager::LookupBlockLimit(1024);
   int64_t limit_2048 = LogBlockManager::LookupBlockLimit(2048);

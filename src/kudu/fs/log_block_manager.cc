@@ -58,7 +58,6 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/array_view.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/file_cache.h"
 #include "kudu/util/flag_tags.h"
@@ -461,20 +460,32 @@ class LogBlockContainer {
   // truncates the container if full and marks the container as available.
   void FinalizeBlock(int64_t block_offset, int64_t block_length);
 
-  // Run a task on this container's data directory thread pool.
+  // Runs a task on this container's data directory thread pool.
   //
   // Normally the task is performed asynchronously. However, if submission to
   // the pool fails, it runs synchronously on the current thread.
   void ExecClosure(const Closure& task);
 
-  // Mark the container to be read-only.
-  void SetReadOnly();
-
   // Produces a debug-friendly string representation of this container.
   string ToString() const;
 
+  // Makes the container read-only and stores the responsible error.
+  void SetReadOnly(const Status& error);
+
   // Handles errors if the input status is not OK.
   void HandleError(const Status& s) const;
+
+  // Returns whether or not the container has been marked read-only.
+  bool read_only() const {
+    return !read_only_status().ok();
+  }
+
+  // Returns the error that caused the container to become read-only, or OK if
+  // the container has not been marked read-only.
+  Status read_only_status() const {
+    std::lock_guard<simple_spinlock> l(read_only_lock_);
+    return read_only_status_;
+  }
 
   // Simple accessors.
   LogBlockManager* block_manager() const { return block_manager_; }
@@ -491,7 +502,6 @@ class LogBlockContainer {
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   DataDir* data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
-  bool read_only() const { return read_only_.Load(); }
 
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
@@ -570,7 +580,8 @@ class LogBlockContainer {
   // If true, only read operations are allowed. Existing blocks may
   // not be deleted until the next restart, and new blocks may not
   // be added.
-  AtomicBool read_only_;
+  mutable simple_spinlock read_only_lock_;
+  Status read_only_status_;
 
   DISALLOW_COPY_AND_ASSIGN(LogBlockContainer);
 };
@@ -592,8 +603,7 @@ LogBlockContainer::LogBlockContainer(
       live_bytes_(0),
       live_bytes_aligned_(0),
       live_blocks_(0),
-      metrics_(block_manager->metrics()),
-      read_only_(false) {
+      metrics_(block_manager->metrics()) {
 }
 
 void LogBlockContainer::HandleError(const Status& s) const {
@@ -736,6 +746,8 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
 }
 
 Status LogBlockContainer::TruncateDataToNextBlockOffset() {
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
+
   if (full()) {
     VLOG(2) << Substitute("Truncating container $0 to offset $1",
                           ToString(), next_block_offset());
@@ -882,7 +894,6 @@ Status LogBlockContainer::ProcessRecord(
 
 Status LogBlockContainer::DoCloseBlocks(const vector<LogWritableBlock*>& blocks,
                                         SyncMode mode) {
-  DCHECK(!read_only());
   auto sync_blocks = [&]() -> Status {
     if (mode == SYNC) {
       VLOG(3) << "Syncing data file " << data_file_->filename();
@@ -912,16 +923,16 @@ Status LogBlockContainer::DoCloseBlocks(const vector<LogWritableBlock*>& blocks,
 
   Status s = sync_blocks();
   if (!s.ok()) {
-    // Mark container as read-only to forbid further writes in case of
-    // failure. Because the on-disk state may contain partial/complete
-    // data/metadata at this point, it is not safe to either overwrite
-    // it or append to it.
-    SetReadOnly();
+    // Make container read-only to forbid further writes in case of failure.
+    // Because the on-disk state may contain partial/incomplete data/metadata at
+    // this point, it is not safe to either overwrite it or append to it.
+    SetReadOnly(s);
   }
   return s;
 }
 
 Status LogBlockContainer::PunchHole(int64_t offset, int64_t length) {
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
@@ -939,7 +950,7 @@ Status LogBlockContainer::WriteData(int64_t offset, const Slice& data) {
 }
 
 Status LogBlockContainer::WriteVData(int64_t offset, ArrayView<const Slice> data) {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   DCHECK_GE(offset, next_block_offset());
 
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->WriteV(offset, data));
@@ -969,7 +980,7 @@ Status LogBlockContainer::ReadVData(int64_t offset, ArrayView<Slice> results) co
 }
 
 Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   // Note: We don't check for sufficient disk space for metadata writes in
   // order to allow for block deletion on full disks.
   RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Append(pb));
@@ -977,7 +988,7 @@ Status LogBlockContainer::AppendMetadata(const BlockRecordPB& pb) {
 }
 
 Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
   RETURN_NOT_OK_HANDLE_ERROR(data_file_->Flush(RWFile::FLUSH_ASYNC, offset, length));
@@ -985,13 +996,13 @@ Status LogBlockContainer::FlushData(int64_t offset, int64_t length) {
 }
 
 Status LogBlockContainer::FlushMetadata() {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Flush());
   return Status::OK();
 }
 
 Status LogBlockContainer::SyncData() {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   if (FLAGS_enable_data_block_fsync) {
     if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
     RETURN_NOT_OK_HANDLE_ERROR(data_file_->Sync());
@@ -1000,7 +1011,7 @@ Status LogBlockContainer::SyncData() {
 }
 
 Status LogBlockContainer::SyncMetadata() {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   if (FLAGS_enable_data_block_fsync) {
     if (metrics_) metrics_->generic_metrics.total_disk_sync->Increment();
     RETURN_NOT_OK_HANDLE_ERROR(metadata_file_->Sync());
@@ -1023,7 +1034,7 @@ Status LogBlockContainer::ReopenMetadataWriter() {
 
 Status LogBlockContainer::EnsurePreallocated(int64_t block_start_offset,
                                              size_t next_append_length) {
-  DCHECK(!read_only());
+  RETURN_NOT_OK_HANDLE_ERROR(read_only_status());
   DCHECK_GE(block_start_offset, 0);
 
   if (!FLAGS_log_container_preallocate_bytes) {
@@ -1068,7 +1079,6 @@ void LogBlockContainer::FinalizeBlock(int64_t block_offset, int64_t block_length
 }
 
 void LogBlockContainer::UpdateNextBlockOffset(int64_t block_offset, int64_t block_length) {
-  DCHECK(!read_only());
   DCHECK_GE(block_offset, 0);
 
   // The log block manager maintains block contiguity as an invariant, which
@@ -1094,7 +1104,6 @@ void LogBlockContainer::UpdateNextBlockOffset(int64_t block_offset, int64_t bloc
 }
 
 void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
-  DCHECK(!read_only());
   DCHECK_GE(block->offset(), 0);
 
   total_bytes_.IncrementBy(block->fs_aligned_length());
@@ -1105,7 +1114,6 @@ void LogBlockContainer::BlockCreated(const scoped_refptr<LogBlock>& block) {
 }
 
 void LogBlockContainer::BlockDeleted(const scoped_refptr<LogBlock>& block) {
-  DCHECK(!read_only());
   DCHECK_GE(block->offset(), 0);
 
   live_bytes_.IncrementBy(-block->length());
@@ -1124,8 +1132,12 @@ string LogBlockContainer::ToString() const {
   return s;
 }
 
-void LogBlockContainer::SetReadOnly() {
-  read_only_.Store(true);
+void LogBlockContainer::SetReadOnly(const Status& error) {
+  DCHECK(!error.ok());
+  LOG(WARNING) << Substitute("Container $0 being marked read-only: $1",
+                             ToString(), error.ToString());
+  std::lock_guard<simple_spinlock> l(read_only_lock_);
+  read_only_status_ = error;
 }
 
 ///////////////////////////////////////////////////////////
@@ -1328,8 +1340,8 @@ Status LogWritableBlock::Abort() {
             block_length_);
       }
     }
-    return Status::Aborted(Substitute("container $0 is read-only",
-                                      container_->ToString()));
+    return container_->read_only_status().CloneAndPrepend(
+        Substitute("container $0 is read-only", container_->ToString()));
   }
 
   // Close the block and then delete it. Theoretically, we could do nothing
@@ -1380,14 +1392,6 @@ Status LogWritableBlock::Append(const Slice& data) {
 Status LogWritableBlock::AppendV(ArrayView<const Slice> data) {
   DCHECK(state_ == CLEAN || state_ == DIRTY)
       << "Invalid state: " << state_;
-
-  // This could be true if Finalize() is successful but DoCloseBlocks() is not.
-  // That means the container is read-only but marked as available. Another
-  // block can actually try to write to it.
-  if (container_->read_only()) {
-    return Status::IllegalState(Substitute("container $0 is read-only",
-                                           container_->ToString()));
-  }
 
   // Calculate the amount of data to write
   size_t data_size = accumulate(data.begin(), data.end(), static_cast<size_t>(0),
@@ -1835,10 +1839,8 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
     }
 
     lb = it->second;
-    if (lb->container()->read_only()) {
-      return Status::IllegalState(Substitute("container $0 is read-only",
-                                             lb->container()->ToString()));
-    }
+    HANDLE_DISK_FAILURE(lb->container()->read_only_status(),
+        error_manager_->RunErrorNotificationCb(lb->container()->data_dir()));
 
     // Return early if deleting a block in a failed directory.
     set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
@@ -1963,6 +1965,7 @@ void LogBlockManager::MakeContainerAvailableUnlocked(LogBlockContainer* containe
   if (container->full() || container->read_only()) {
     return;
   }
+  VLOG(3) << Substitute("container $0 being made available", container->ToString());
   available_containers_by_data_dir_[container->data_dir()].push_front(container);
 }
 
