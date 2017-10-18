@@ -15,14 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -137,9 +135,7 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
 
     // Now that heartbeat injection is enabled, evict one follower and trigger
     // an election on another follower immediately thereafter.
-    ASSERT_OK(itest::RemoveServer(leader, tablet_id, followers[0],
-                                  /*cas_config_opid_index=*/ boost::none,
-                                  kTimeout));
+    ASSERT_OK(itest::RemoveServer(leader, tablet_id, followers[0], kTimeout));
 
     // Immediately start an election on the remaining follower. This will cause
     // the initial leader's term to rev and it will have to step down. When it

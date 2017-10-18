@@ -21,7 +21,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -405,7 +404,7 @@ TEST_F(RaftConsensusElectionITest, ElectPendingVoter) {
   // Now remove server 4 from the configuration.
   TabletServerMap active_tablet_servers = tablet_servers_;
   LOG(INFO) << "Removing tserver with uuid " << final_leader->uuid();
-  ASSERT_OK(RemoveServer(initial_leader, tablet_id_, final_leader, boost::none,
+  ASSERT_OK(RemoveServer(initial_leader, tablet_id_, final_leader,
                          MonoDelta::FromSeconds(10)));
   ASSERT_EQ(1, active_tablet_servers.erase(final_leader->uuid()));
   int64_t cur_log_index = 2;
@@ -423,7 +422,7 @@ TEST_F(RaftConsensusElectionITest, ElectPendingVoter) {
   // Now add server 4 back to the peers.
   // This operation will time out on the client side.
   LOG(INFO) << "Adding back Peer " << final_leader->uuid() << " and expecting timeout...";
-  Status s = AddServer(initial_leader, tablet_id_, final_leader, RaftPeerPB::VOTER, boost::none,
+  Status s = AddServer(initial_leader, tablet_id_, final_leader, RaftPeerPB::VOTER,
                        MonoDelta::FromMilliseconds(100));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected AddServer() to time out. Result: " << s.ToString();
   LOG(INFO) << "Timeout achieved.";
@@ -510,7 +509,7 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
   auto* leader_ts = tablet_servers_[leader_uuid];
   auto* follower_ts = tablet_servers_[follower_uuid];
   ASSERT_OK(itest::AddServer(leader_ts, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                             boost::none, kTimeout));
+                             kTimeout));
   ASSERT_OK(cluster_->tablet_server_by_uuid(follower_uuid)->WaitForInjectedCrash(kTimeout));
 
   // Shut down the rest of the cluster, then only bring back the node we

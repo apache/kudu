@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -23,7 +22,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -58,6 +56,7 @@ using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
 using kudu::cluster::ScopedResumeExternalDaemon;
 using kudu::itest::TServerDetails;
+using kudu::itest::DeleteTablet;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using std::set;
 using std::string;
@@ -167,8 +166,7 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
 
   // Delete the leader replica. This will cause the next scan to the same
   // leader to get a TABLET_NOT_FOUND error.
-  ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED,
-                                boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   int old_leader_index = leader_index;
   TServerDetails* old_leader = leader;
@@ -185,14 +183,13 @@ TEST_P(ClientFailoverParamITest, TestDeleteLeaderWhileScanning) {
 
   // Do a config change to remove the old replica and add a new one.
   // Cause the new replica to become leader, then do the scan again.
-  ASSERT_OK(RemoveServer(leader, tablet_id, old_leader, boost::none, kTimeout));
+  ASSERT_OK(RemoveServer(leader, tablet_id, old_leader, kTimeout));
   // Wait until the config is committed, otherwise AddServer() will fail.
   ASSERT_OK(WaitUntilCommittedConfigOpIdIndexIs(workload.batches_completed() + 4, leader, tablet_id,
                                                 kTimeout));
 
   TServerDetails* to_add = ts_map_[cluster_->tablet_server(missing_replica_index)->uuid()];
-  ASSERT_OK(AddServer(leader, tablet_id, to_add, consensus::RaftPeerPB::VOTER,
-                      boost::none, kTimeout));
+  ASSERT_OK(AddServer(leader, tablet_id, to_add, consensus::RaftPeerPB::VOTER, kTimeout));
   HostPort hp;
   ASSERT_OK(HostPortFromPB(leader->registration.rpc_addresses(0), &hp));
   ASSERT_OK(StartTabletCopy(to_add, tablet_id, leader->uuid(), hp, 1, kTimeout));

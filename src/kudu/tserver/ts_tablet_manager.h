@@ -124,15 +124,15 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // Delete the specified tablet.
   // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED
   // or else returns Status::IllegalArgument.
-  // 'cas_config_opid_index_less_or_equal' is optionally specified to enable an
+  // 'cas_config_index' is optionally specified to enable an
   // atomic DeleteTablet operation that only occurs if the latest committed
-  // raft config change op has an opid_index equal to or less than the specified
+  // Raft config change op has an opid_index equal to or less than the specified
   // value. If not, 'error_code' is set to CAS_FAILED and a non-OK Status is
   // returned.
   Status DeleteTablet(const std::string& tablet_id,
                       tablet::TabletDataState delete_type,
-                      const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
-                      boost::optional<TabletServerErrorPB::Code>* error_code);
+                      const boost::optional<int64_t>& cas_config_index,
+                      TabletServerErrorPB::Code* error_code = nullptr);
 
   // Lookup the given tablet replica by its ID.
   // Returns true if the tablet is found successfully.
@@ -221,7 +221,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   }
 
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
-  Status CheckRunningUnlocked(boost::optional<TabletServerErrorPB::Code>* error_code) const;
+  Status CheckRunningUnlocked(TabletServerErrorPB::Code* error_code) const;
 
   // Registers the start of a tablet state transition by inserting the tablet
   // id and reason string into the transition_in_progress_ map.

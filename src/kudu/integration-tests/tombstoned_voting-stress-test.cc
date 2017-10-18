@@ -25,7 +25,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -289,8 +288,7 @@ TEST_F(TombstonedVotingStressTest, TestTombstonedVotingUnderStress) {
     // 1. Tombstone tablet.
     LOG(INFO) << "tombstoning tablet...";
     SetState(kTombstoning);
-    ASSERT_OK(itest::DeleteTablet(ts1_ets, tablet_id_, TABLET_DATA_TOMBSTONED, boost::none,
-                                  kTimeout));
+    ASSERT_OK(DeleteTablet(ts1_ets, tablet_id_, TABLET_DATA_TOMBSTONED, kTimeout));
     SetState(kTombstoned);
 
     // Loop on voting for a while in tombstoned state.

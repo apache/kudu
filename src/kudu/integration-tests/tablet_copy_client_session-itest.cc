@@ -25,7 +25,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -188,9 +187,9 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopyWhileSourceBootstrapping
     // tablet copy operation completing, so we retry tablet deletion attempts.
     // We want a clean deletion so only one thread wins, then we have to
     // restart TS 1 to clear knowledge of the replica from memory.
-    NO_FATALS(DeleteTabletWithRetries(ts1, tablet_id,
+    ASSERT_OK(DeleteTabletWithRetries(ts1, tablet_id,
                                       TabletDataState::TABLET_DATA_DELETED,
-                                      boost::none, kTimeout));
+                                      kTimeout));
     cluster_->tablet_server(1)->Shutdown();
     ASSERT_OK(cluster_->tablet_server(1)->Restart());
   }
@@ -215,9 +214,9 @@ TEST_F(TabletCopyClientSessionITest, TestStartTabletCopy) {
   };
   for (int scenario = 0; scenario < kLast; scenario++) {
     if (scenario == kTombstoned) {
-      NO_FATALS(DeleteTabletWithRetries(ts1, tablet_id,
+      ASSERT_OK(DeleteTabletWithRetries(ts1, tablet_id,
                                         TabletDataState::TABLET_DATA_TOMBSTONED,
-                                        boost::none, kDefaultTimeout));
+                                        kDefaultTimeout));
     }
 
     // Run tablet copy.

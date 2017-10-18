@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -24,7 +23,6 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -53,6 +51,8 @@
 #include "kudu/util/test_util.h"
 
 using kudu::consensus::RaftPeerPB;
+using kudu::itest::AddServer;
+using kudu::itest::RemoveServer;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
@@ -107,7 +107,7 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   ASSERT_OK(itest::WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id, timeout));
 
   // Remove a follower from the config.
-  ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, follower_ts, boost::none, timeout));
+  ASSERT_OK(RemoveServer(leader_ts, tablet_id, follower_ts, timeout));
 
   // Wait for the Master to tombstone the replica.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id,
@@ -129,8 +129,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
     ASSERT_EQ(1, active_ts_map.erase(cluster_->tablet_server(i)->uuid()));
   }
   // This will time out, but should take effect.
-  Status s = itest::AddServer(leader_ts, tablet_id, follower_ts, RaftPeerPB::VOTER,
-                              boost::none, MonoDelta::FromSeconds(5));
+  Status s = AddServer(leader_ts, tablet_id, follower_ts, RaftPeerPB::VOTER,
+                       MonoDelta::FromSeconds(5));
   ASSERT_TRUE(s.IsTimedOut());
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kFollowerIndex, tablet_id, { TABLET_DATA_READY },
                                                  timeout));
@@ -259,7 +259,7 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
 
   // Remove the follower from the config and wait for the Master to notice the
   // config change.
-  ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, follower_ts, boost::none, timeout));
+  ASSERT_OK(RemoveServer(leader_ts, tablet_id, follower_ts, timeout));
   ASSERT_OK(itest::WaitForNumVotersInConfigOnMaster(cluster_->master_proxy(), tablet_id, 2,
                                                     timeout));
 
@@ -332,7 +332,7 @@ TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits)
     return;
   }
 
-  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags;
   ts_flags.emplace_back("--enable_leader_failure_detection=false");
   vector<string> master_flags;
@@ -395,11 +395,10 @@ TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits)
   // Manually evict the server from the cluster, tombstone the replica, then
   // add the replica back to the cluster. Without the fix for KUDU-1233, this
   // will cause the replica to fail to start up.
-  ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, ts_to_remove, boost::none, timeout));
+  ASSERT_OK(RemoveServer(leader_ts, tablet_id, ts_to_remove, timeout));
   ASSERT_OK(itest::DeleteTablet(ts_to_remove, tablet_id, TABLET_DATA_TOMBSTONED,
-                                boost::none, timeout));
-  ASSERT_OK(itest::AddServer(leader_ts, tablet_id, ts_to_remove, RaftPeerPB::VOTER,
-                             boost::none, timeout));
+                                timeout));
+  ASSERT_OK(AddServer(leader_ts, tablet_id, ts_to_remove, RaftPeerPB::VOTER, timeout));
   ASSERT_OK(itest::WaitUntilTabletRunning(ts_to_remove, tablet_id, timeout));
 
   ClusterVerifier v(cluster_.get());

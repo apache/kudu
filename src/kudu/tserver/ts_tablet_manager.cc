@@ -740,8 +740,8 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
 Status TSTabletManager::DeleteTablet(
     const string& tablet_id,
     TabletDataState delete_type,
-    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
-    boost::optional<TabletServerErrorPB::Code>* error_code) {
+    const boost::optional<int64_t>& cas_config_index,
+    TabletServerErrorPB::Code* error_code) {
 
   if (delete_type != TABLET_DATA_DELETED && delete_type != TABLET_DATA_TOMBSTONED) {
     return Status::InvalidArgument("DeleteTablet() requires an argument that is one of "
@@ -762,13 +762,17 @@ Status TSTabletManager::DeleteTablet(
     RETURN_NOT_OK(CheckRunningUnlocked(error_code));
 
     if (!LookupTabletUnlocked(tablet_id, &replica)) {
-      *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
+      if (error_code) {
+        *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
+      }
       return Status::NotFound("Tablet not found", tablet_id);
     }
     // Sanity check that the tablet's deletion isn't already in progress
     Status s = StartTabletStateTransitionUnlocked(tablet_id, "deleting tablet", &deleter);
     if (PREDICT_FALSE(!s.ok())) {
-      *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+      if (error_code) {
+        *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+      }
       return s;
     }
   }
@@ -785,17 +789,17 @@ Status TSTabletManager::DeleteTablet(
   // restarting the tablet if the local replica committed a higher config change
   // op during that time, or potentially something else more invasive.
   shared_ptr<RaftConsensus> consensus = replica->shared_consensus();
-  if (cas_config_opid_index_less_or_equal && !tablet_already_deleted) {
+  if (cas_config_index && !tablet_already_deleted) {
     if (!consensus) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
       return Status::IllegalState("Raft Consensus not available. Tablet shutting down");
     }
     RaftConfigPB committed_config = consensus->CommittedConfig();
-    if (committed_config.opid_index() > *cas_config_opid_index_less_or_equal) {
+    if (committed_config.opid_index() > *cas_config_index) {
       *error_code = TabletServerErrorPB::CAS_FAILED;
       return Status::IllegalState(Substitute("Request specified cas_config_opid_index_less_or_equal"
                                              " of $0 but the committed config has opid_index of $1",
-                                             *cas_config_opid_index_less_or_equal,
+                                             *cas_config_index,
                                              committed_config.opid_index()));
     }
   }
@@ -844,11 +848,13 @@ string TSTabletManager::LogPrefix(const string& tablet_id, FsManager *fs_manager
 }
 
 Status TSTabletManager::CheckRunningUnlocked(
-    boost::optional<TabletServerErrorPB::Code>* error_code) const {
+    TabletServerErrorPB::Code* error_code) const {
   if (state_ == MANAGER_RUNNING) {
     return Status::OK();
   }
-  *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+  if (error_code) {
+    *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+  }
   return Status::ServiceUnavailable(Substitute("Tablet Manager is not running: $0",
                                                TSTabletManagerStatePB_Name(state_)));
 }

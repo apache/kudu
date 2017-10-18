@@ -23,7 +23,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -49,6 +48,7 @@ DECLARE_int64(fs_wal_dir_reserved_bytes);
 
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TabletReplica;
+using kudu::itest::DeleteTablet;
 using std::atomic;
 using std::string;
 using std::thread;
@@ -110,8 +110,8 @@ TEST_F(DeleteTabletITest, TestDeleteFailedReplica) {
   }
 
   // We should still be able to delete the failed tablet.
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_replica->tablet_id(), tablet::TABLET_DATA_DELETED,
-                                boost::none, MonoDelta::FromSeconds(30)));
+  ASSERT_OK(DeleteTablet(ts, tablet_replica->tablet_id(), tablet::TABLET_DATA_DELETED,
+                         MonoDelta::FromSeconds(30)));
   ASSERT_EVENTUALLY([&] {
     vector<scoped_refptr<TabletReplica>> tablet_replicas;
     mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
@@ -148,7 +148,7 @@ TEST_F(DeleteTabletITest, TestLeaderElectionDuringDeleteTablet) {
 
   // Sequentially delete all of the tablets.
   for (const string& tablet_id : tablet_ids) {
-    ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, boost::none, kTimeout));
+    ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, kTimeout));
   }
 
   // Wait until all tablets are deleted.

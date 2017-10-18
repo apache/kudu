@@ -21,7 +21,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
@@ -125,8 +124,7 @@ Status RaftConsensusNonVoterITest::AddReplica(const string& tablet_id,
   // 'Illegal state: Leader has not yet committed an operation in its own term'.
   RETURN_NOT_OK(WaitForOpFromCurrentTerm(leader, tablet_id,
                                          consensus::COMMITTED_OPID, timeout));
-  return AddServer(leader, tablet_id, replica, replica_type,
-                   boost::none, timeout);
+  return AddServer(leader, tablet_id, replica, replica_type, timeout);
 }
 
 Status RaftConsensusNonVoterITest::RemoveReplica(const string& tablet_id,
@@ -140,7 +138,7 @@ Status RaftConsensusNonVoterITest::RemoveReplica(const string& tablet_id,
   // 'Illegal state: Leader has not yet committed an operation in its own term'.
   RETURN_NOT_OK(WaitForOpFromCurrentTerm(leader, tablet_id,
                                          consensus::COMMITTED_OPID, timeout));
-  return RemoveServer(leader, tablet_id, replica, boost::none, timeout);
+  return RemoveServer(leader, tablet_id, replica, timeout);
 }
 
 // Ensure that adding a NON_VOTER replica is properly handled by the system:

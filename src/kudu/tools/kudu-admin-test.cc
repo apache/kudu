@@ -695,8 +695,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   // Now try to replicate a ChangeConfig operation. This should get stuck and time out
   // because the server can't replicate any operations.
   Status s = RemoveServer(leader_ts, tablet_id_, followers[1],
-                          -1, MonoDelta::FromSeconds(2),
-                          nullptr);
+                          MonoDelta::FromSeconds(2), -1);
   ASSERT_TRUE(s.IsTimedOut());
 
   LOG(INFO) << "Change Config Op timed out, Sending a Replace config "
@@ -795,8 +794,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   // Now try to replicate a ChangeConfig operation. This should get stuck and time out
   // because the server can't replicate any operations.
   Status s = RemoveServer(leader_ts, tablet_id_, followers[1],
-                          -1, MonoDelta::FromSeconds(2),
-                          nullptr);
+                          MonoDelta::FromSeconds(2), -1);
   ASSERT_TRUE(s.IsTimedOut());
 
   // Force leader to step down, best effort command since the leadership
@@ -899,8 +897,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   // Now try to replicate a ChangeConfig operation. This should get stuck and time out
   // because the server can't replicate any operations.
   Status s = RemoveServer(leader_ts, tablet_id_, followers[1],
-                          -1, MonoDelta::FromSeconds(2),
-                          nullptr);
+                          MonoDelta::FromSeconds(2), -1);
   ASSERT_TRUE(s.IsTimedOut());
 
   LOG(INFO) << "Change Config Op timed out, Sending a Replace config "

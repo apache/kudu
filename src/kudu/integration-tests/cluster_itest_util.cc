@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/integration-tests/cluster_itest_util.h"
 
 #include <algorithm>
@@ -22,7 +23,6 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
-#include <gtest/gtest.h>
 
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
@@ -53,7 +53,6 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/test_macros.h"
 
 namespace kudu {
 namespace itest {
@@ -684,14 +683,10 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 const boost::optional<int64_t>& cas_config_opid_index,
                  const MonoDelta& timeout,
+                 const boost::optional<int64_t>& cas_config_index,
                  TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
-  ChangeConfigResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(timeout);
-
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::ADD_SERVER);
@@ -699,12 +694,18 @@ Status AddServer(const TServerDetails* leader,
   peer->set_permanent_uuid(replica_to_add->uuid());
   peer->set_member_type(member_type);
   *peer->mutable_last_known_addr() = replica_to_add->registration.rpc_addresses(0);
-  if (cas_config_opid_index) {
-    req.set_cas_config_opid_index(*cas_config_opid_index);
+  if (cas_config_index) {
+    req.set_cas_config_opid_index(*cas_config_index);
   }
+
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
-    if (error_code) *error_code = resp.error().code();
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
@@ -713,23 +714,22 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    const boost::optional<int64_t>& cas_config_opid_index,
                     const MonoDelta& timeout,
+                    const boost::optional<int64_t>& cas_config_index,
                     TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
-  ChangeConfigResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(timeout);
-
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::REMOVE_SERVER);
-  if (cas_config_opid_index) {
-    req.set_cas_config_opid_index(*cas_config_opid_index);
+  if (cas_config_index) {
+    req.set_cas_config_opid_index(*cas_config_index);
   }
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_remove->uuid());
 
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     if (error_code) *error_code = resp.error().code();
@@ -934,21 +934,20 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const TabletDataState& delete_type,
-                    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                     const MonoDelta& timeout,
+                    const boost::optional<int64_t>& cas_config_index,
                     tserver::TabletServerErrorPB::Code* error_code) {
   DeleteTabletRequestPB req;
-  DeleteTabletResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(timeout);
-
   req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
   req.set_delete_type(delete_type);
-  if (cas_config_opid_index_less_or_equal) {
-    req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal);
+  if (cas_config_index) {
+    req.set_cas_config_opid_index_less_or_equal(*cas_config_index);
   }
 
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
   RETURN_NOT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
   if (resp.has_error()) {
     if (error_code) {
@@ -959,23 +958,24 @@ Status DeleteTablet(const TServerDetails* ts,
   return Status::OK();
 }
 
-void DeleteTabletWithRetries(const TServerDetails* ts,
-                             const string& tablet_id,
-                             TabletDataState delete_type,
-                             const boost::optional<int64_t>& config_opid_index,
-                             const MonoDelta& timeout) {
-  MonoTime start(MonoTime::Now());
-  MonoTime deadline = start + timeout;
+Status DeleteTabletWithRetries(const TServerDetails* ts,
+                               const string& tablet_id,
+                               TabletDataState delete_type,
+                               const MonoDelta& timeout,
+                               const boost::optional<int64_t>& cas_config_index) {
+  const MonoTime deadline = MonoTime::Now() + timeout;
   Status s;
   while (true) {
-    s = DeleteTablet(ts, tablet_id, delete_type, config_opid_index, timeout);
-    if (s.ok()) return;
+    s = DeleteTablet(ts, tablet_id, delete_type, timeout, cas_config_index);
+    if (s.ok()) {
+      return s;
+    }
     if (deadline < MonoTime::Now()) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  ASSERT_OK(s);
+  return s;
 }
 
 Status StartTabletCopy(const TServerDetails* ts,

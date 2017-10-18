@@ -90,6 +90,10 @@ using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
+using kudu::itest::AddServer;
+using kudu::itest::DeleteTablet;
+using kudu::itest::DeleteTabletWithRetries;
+using kudu::itest::RemoveServer;
 using kudu::itest::TServerDetails;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -381,8 +385,8 @@ TEST_F(DeleteTableITest, TestAtomicDeleteTablet) {
 
   Status s;
   for (int i = 0; i < 100; i++) {
-    s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
-                            &error_code);
+    s = DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout, opid_index,
+                     &error_code);
     if (error_code == TabletServerErrorPB::CAS_FAILED) break;
     // If we didn't get the expected CAS_FAILED error, it's OK to get 'TABLET_NOT_RUNNING'
     // because the "creating" maintenance state persists just slightly after it starts to
@@ -396,20 +400,16 @@ TEST_F(DeleteTableITest, TestAtomicDeleteTablet) {
   ASSERT_STR_CONTAINS(s.ToString(), "of -2 but the committed config has opid_index of -1");
 
   // Now use the "latest", which is -1.
-  opid_index = -1;
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
-                                &error_code));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout, -1));
   inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED });
 
   // Now that the tablet is already tombstoned, our opid_index should be
   // ignored (because it's impossible to check it).
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, -9999, timeout,
-                                &error_code));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout, -9999));
   inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_TOMBSTONED });
 
   // Same with TOMBSTONED -> DELETED.
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, -9999, timeout,
-                                &error_code));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_DELETED, timeout, -9999));
   inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, { TABLET_DATA_DELETED });
 }
 
@@ -552,8 +552,7 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), replicated_tablet_id);
   TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
-  ASSERT_OK(itest::AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER,
-                             boost::none, timeout));
+  ASSERT_OK(AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
   cluster_->tablet_server(kTsIndex)->Shutdown();
 
@@ -584,14 +583,13 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
 
   // Now we want to test the case where crashed while copying over a previously-tombstoned tablet.
   // So, we first remove the server, causing it to get tombstoned.
-  ASSERT_OK(itest::RemoveServer(leader, replicated_tablet_id, ts, boost::none, timeout));
+  ASSERT_OK(RemoveServer(leader, replicated_tablet_id, ts, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, replicated_tablet_id, CMETA_EXPECTED));
 
   // ... and then add it back, with the fault runtime-enabled.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex),
                               "fault_crash_after_tc_files_fetched", "1.0"));
-  ASSERT_OK(itest::AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER,
-                             boost::none, timeout));
+  ASSERT_OK(AddServer(leader, replicated_tablet_id, ts, RaftPeerPB::VOTER, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
   LOG(INFO) << "Test progress: crashed on attempt to copy over tombstoned";
 
@@ -674,7 +672,7 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   TServerDetails* leader = ts_map_[kLeaderUuid];
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
   // The server may crash before responding to our RPC.
-  Status s = itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, kTimeout);
+  Status s = AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, kTimeout);
   ASSERT_TRUE(s.ok() || s.IsNetworkError()) << s.ToString();
   NO_FATALS(WaitForTSToCrash(kLeaderIndex));
 
@@ -712,7 +710,7 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
   // Now pause the other replicas and tombstone our replica again.
   ASSERT_OK(cluster_->tablet_server(1)->Pause());
   ASSERT_OK(cluster_->tablet_server(2)->Pause());
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
   // Bring them back again, let them yet again Copy a new replica on top of our tombstoned replica.
@@ -786,7 +784,7 @@ TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
   ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
 
   // Tombstone our special little guy, then shut him down.
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
   cluster_->tablet_server(kTsIndex)->Shutdown();
 
@@ -819,8 +817,7 @@ TEST_F(DeleteTableITest, TestMergeConsensusMetadata) {
   cluster_->tablet_server(2)->Shutdown();
 
   // Delete with retries because the tablet might still be bootstrapping.
-  NO_FATALS(itest::DeleteTabletWithRetries(ts, tablet_id,
-                                           TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
   // Shut down the tablet server so it won't vote while tombstoned.
@@ -911,7 +908,7 @@ TEST_F(DeleteTableITest, TestDeleteFollowerWithReplicatingTransaction) {
   // Now tombstone the follower tablet. This should succeed even though there
   // are uncommitted operations on the replica.
   LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << ts->uuid();
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 }
 
 // Test that orphaned blocks are cleared from the superblock when a tablet is
@@ -971,8 +968,7 @@ TEST_F(DeleteTableITest, TestOrphanedBlocksClearedOnDelete) {
 
   // Tombstone the follower and check that there are no rowsets or orphaned
   // blocks retained in the superblock.
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED,
-                                boost::none, timeout));
+  ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kFollowerIndex, tablet_id, CMETA_EXPECTED));
   ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kFollowerIndex, tablet_id, &superblock_pb));
   ASSERT_EQ(0, superblock_pb.rowsets_size()) << SecureDebugString(superblock_pb);
@@ -1032,8 +1028,8 @@ TEST_F(DeleteTableITest, TestFDsNotLeakedOnTabletTombstone) {
   // Tombstone the tablet and then ensure that lsof does not list any
   // tablet-related paths.
   ExternalTabletServer* ets = cluster_->tablet_server(0);
-  ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
-                                tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTablet(ts_map_[ets->uuid()],
+                         tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   ASSERT_EQ(0, PrintOpenTabletFiles(ets->pid(), tablet_id));
 
   // Restart the TS after deletion and then do the same lsof check again.
@@ -1062,8 +1058,8 @@ TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
   // Tombstone the tablet.
   ExternalTabletServer* ets = cluster_->tablet_server(0);
   ASSERT_EVENTUALLY([&]() {
-    ASSERT_OK(itest::DeleteTablet(ts_map_[ets->uuid()],
-                                  tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+    ASSERT_OK(DeleteTablet(ts_map_[ets->uuid()], tablet_id,
+                           TABLET_DATA_TOMBSTONED, timeout));
   });
 
   // Check the various web pages associated with the tablet, ensuring
@@ -1187,8 +1183,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   ASSERT_NE(nullptr, to_remove);
 
   // Do the config changes and wait for the master to delete the old node.
-  ASSERT_OK(AddServer(leader, tablet_id, to_add, RaftPeerPB::VOTER, boost::none, kTimeout));
-  ASSERT_OK(RemoveServer(leader, tablet_id, to_remove, boost::none, kTimeout));
+  ASSERT_OK(AddServer(leader, tablet_id, to_add, RaftPeerPB::VOTER, kTimeout));
+  ASSERT_OK(RemoveServer(leader, tablet_id, to_remove, kTimeout));
 
   LOG(INFO) << "waiting for no data on ts...";
 
@@ -1404,7 +1400,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   string tablet_id = tablets[0].tablet_status().tablet_id();
   LOG(INFO) << "Tombstoning first tablet " << tablet_id << "...";
   ASSERT_TRUE(inspect_->DoesConsensusMetaExistForTabletOnTS(kTsIndex, tablet_id)) << tablet_id;
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   LOG(INFO) << "Waiting for first tablet to be tombstoned...";
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
@@ -1421,7 +1417,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), fault_flag, "1.0"));
   tablet_id = tablets[1].tablet_status().tablet_id();
   LOG(INFO) << "Tombstoning second tablet " << tablet_id << "...";
-  ignore_result(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ignore_result(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
 
   // Restart the tablet server and wait for the WALs to be deleted and for the
@@ -1456,8 +1452,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     string tablet_id = tablet.tablet_status().tablet_id();
     // We need retries here, since some of the tablets may still be
     // bootstrapping after being restarted above.
-    NO_FATALS(itest::DeleteTabletWithRetries(ts, tablet_id,
-                                             TABLET_DATA_DELETED, boost::none, timeout));
+    ASSERT_OK(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_DELETED, timeout));
   }
   ASSERT_OK(inspect_->WaitForNoDataOnTS(kTsIndex));
 }

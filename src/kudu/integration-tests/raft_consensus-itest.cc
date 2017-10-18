@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -1354,7 +1353,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_tserver, tablet_id_, kTimeout));
 
   // Make sure the server rejects removal of itself from the configuration.
-  Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, boost::none, kTimeout);
+  Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, kTimeout);
   ASSERT_TRUE(s.IsInvalidArgument()) << "Should not be able to remove self from config: "
                                      << s.ToString();
 
@@ -1382,7 +1381,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
     TServerDetails* tserver_to_remove = tservers[to_remove_idx];
     LOG(INFO) << "Removing tserver with uuid " << tserver_to_remove->uuid();
-    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove, boost::none, kTimeout));
+    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove, kTimeout));
     ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
     ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, ++cur_log_index));
 
@@ -1401,8 +1400,8 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
     TServerDetails* tserver_to_add = tservers[to_add_idx];
     LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
-    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, RaftPeerPB::VOTER, boost::none,
-                        kTimeout));
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add,
+                        RaftPeerPB::VOTER, kTimeout));
     InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
     ASSERT_OK(WaitForServersToAgree(kTimeout, active_tablet_servers, tablet_id_, ++cur_log_index));
 
@@ -1451,7 +1450,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // Now try to replicate a ChangeConfig operation. This should get stuck and time out
   // because the server can't replicate any operations.
   Status s = RemoveServer(leader_tserver, tablet_id_, tservers[1],
-                          -1, MonoDelta::FromSeconds(1));
+                          MonoDelta::FromSeconds(1), -1);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
   // Pause the leader, and restart the other servers.
@@ -1479,7 +1478,7 @@ TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
   // This acts as a regression test for KUDU-1338, in which aborting the original
   // config change didn't properly unset the 'pending' configuration.
   ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[2],
-                         -1, MonoDelta::FromSeconds(5)));
+                         MonoDelta::FromSeconds(5), -1));
   NO_FATALS(InsertTestRowsRemoteThread(10, 10, 1, vector<CountDownLatch*>()));
 }
 
@@ -1514,18 +1513,16 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
 
   // Initial committed config should have opid_index == -1.
   // Server should reject request to change config from opid other than this.
-  int64_t invalid_committed_opid_index = 7;
   TabletServerErrorPB::Code error_code;
   Status s = RemoveServer(leader_tserver, tablet_id_, follower_ts,
-                          invalid_committed_opid_index, MonoDelta::FromSeconds(10),
-                          &error_code);
+                          MonoDelta::FromSeconds(10), 7, &error_code);
   ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);
   ASSERT_STR_CONTAINS(s.ToString(), "of 7 but the committed config has opid_index of -1");
 
   // Specifying the correct committed opid index should work.
   int64_t committed_opid_index = -1;
   ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, follower_ts,
-                         committed_opid_index, MonoDelta::FromSeconds(10)));
+                         MonoDelta::FromSeconds(10), committed_opid_index));
 
   ASSERT_EQ(1, active_tablet_servers.erase(follower_ts->uuid()));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
@@ -1533,10 +1530,8 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
 
   // Now, add the server back. Again, specifying something other than the
   // latest committed_opid_index should fail.
-  invalid_committed_opid_index = -1; // The old one is no longer valid.
   s = AddServer(leader_tserver, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                invalid_committed_opid_index, MonoDelta::FromSeconds(10),
-                &error_code);
+                MonoDelta::FromSeconds(10), -1, &error_code);
   ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);
   ASSERT_STR_CONTAINS(s.ToString(), "of -1 but the committed config has opid_index of 2");
 
@@ -1544,7 +1539,7 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   // The previous config change op is the latest entry in the log.
   committed_opid_index = cur_log_index;
   ASSERT_OK(AddServer(leader_tserver, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                      committed_opid_index, MonoDelta::FromSeconds(10)));
+                      MonoDelta::FromSeconds(10), committed_opid_index));
 
   InsertOrDie(&active_tablet_servers, follower_ts->uuid(), follower_ts);
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
@@ -1622,7 +1617,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
     TServerDetails* tserver_to_remove = tservers[to_remove_idx];
     LOG(INFO) << "Removing tserver with uuid " << tserver_to_remove->uuid();
-    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove, boost::none,
+    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove,
                            MonoDelta::FromSeconds(10)));
     ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
     ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -1639,8 +1634,8 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
     TServerDetails* tserver_to_add = tservers[to_add_idx];
     LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
-    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, RaftPeerPB::VOTER, boost::none,
-                        MonoDelta::FromSeconds(10)));
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add,
+                        RaftPeerPB::VOTER, MonoDelta::FromSeconds(10)));
     InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
     ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                   leader_tserver, tablet_id_,
@@ -1714,7 +1709,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Change the config.
   TServerDetails* tserver_to_add = tablet_servers_[uuid_to_add];
   LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
-  ASSERT_OK(AddServer(leader_ts, tablet_id_, tserver_to_add, RaftPeerPB::VOTER, boost::none,
+  ASSERT_OK(AddServer(leader_ts, tablet_id_, tserver_to_add, RaftPeerPB::VOTER,
                       timeout));
   ASSERT_OK(WaitForServersToAgree(timeout, tablet_servers_, tablet_id_, 2));
 
@@ -1730,7 +1725,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   // Change the config again.
   LOG(INFO) << "Removing tserver with uuid " << tserver_to_add->uuid();
-  ASSERT_OK(RemoveServer(leader_ts, tablet_id_, tserver_to_add, boost::none, timeout));
+  ASSERT_OK(RemoveServer(leader_ts, tablet_id_, tserver_to_add, timeout));
   active_tablet_servers = tablet_servers_;
   ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_add->uuid()));
   ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 3));
@@ -1903,7 +1898,7 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   }
 
   LOG(INFO) << "Adding tserver with uuid " << new_node->uuid() << " as VOTER...";
-  ASSERT_OK(AddServer(leader, tablet_id_, new_node, RaftPeerPB::VOTER, boost::none,
+  ASSERT_OK(AddServer(leader, tablet_id_, new_node, RaftPeerPB::VOTER,
                       MonoDelta::FromSeconds(10)));
   InsertOrDie(&active_tablet_servers, new_node->uuid(), new_node);
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -2316,7 +2311,7 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
   // that have been committed yet.
   Status s = RemoveServer(leader_ts, tablet_id_,
                           tablet_servers_[cluster_->tablet_server(1)->uuid()],
-                          boost::none, timeout);
+                          timeout);
   ASSERT_TRUE(!s.ok()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Leader has not yet committed an operation in its own term");
 }
@@ -2356,7 +2351,7 @@ TEST_F(RaftConsensusITest, Test_KUDU_1735) {
 
   // Run a config change. This will cause the other servers to crash with pending config
   // change operations due to the above fault injection.
-  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[1], boost::none, kTimeout));
+  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[1], kTimeout));
   for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
     ASSERT_OK(external_tservers[i]->WaitForInjectedCrash(kTimeout));
   }

@@ -43,7 +43,6 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -66,7 +65,6 @@ using kudu::itest::WaitForServersToAgree;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
-using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::TSTabletManager;
 using std::string;
 using std::vector;
@@ -113,9 +111,8 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteAfterShutdown) {
 
   // Tombstone TS1's replica.
   LOG(INFO) << "Tombstoning ts1...";
-  boost::optional<TabletServerErrorPB::Code> error_code;
-  ASSERT_OK(ts_tablet_manager->DeleteTablet(tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                            &error_code));
+  ASSERT_OK(ts_tablet_manager->DeleteTablet(tablet_id, TABLET_DATA_TOMBSTONED,
+                                            boost::none));
   ASSERT_EQ(TabletStatePB::STOPPED, ts1_replica->state());
 
   scoped_refptr<TabletReplica> ts0_replica;
@@ -190,8 +187,8 @@ TEST_F(TombstonedVotingIMCITest, TestVotingLogic) {
                                          &last_logged_opid));
 
   // Tombstone TS1 (actually, the tablet replica hosted on TS1).
-  ASSERT_OK(itest::DeleteTablet(ts_map_[cluster_->mini_tablet_server(1)->uuid()], tablet_id,
-                                TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(ts_map_[cluster_->mini_tablet_server(1)->uuid()],
+                         tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // Loop this series of tests twice: the first time without restarting the TS,
   // the 2nd time after a restart.
@@ -280,7 +277,7 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteIfTombstonedVotingDisabled) {
 
   // Tombstone TS1 and try to get TS0 to vote for it.
   TServerDetails* ts1 = ts_map_[cluster_->mini_tablet_server(1)->uuid()];
-  ASSERT_OK(DeleteTablet(ts1, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(ts1, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   scoped_refptr<TabletReplica> ts0_replica;
   ASSERT_OK(cluster_->mini_tablet_server(0)->server()->tablet_manager()->GetTabletReplica(
@@ -357,8 +354,7 @@ TEST_F(TombstonedVotingIMCITest, TestNoVoteIfNoLastLoggedOpId) {
   ASSERT_EQ(tablet::FAILED, replica->state());
 
   // Now tombstone the failed replica on TS0.
-  ASSERT_OK(itest::DeleteTablet(ts_map_[ts0_uuid], tablet_id,
-                                TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(ts_map_[ts0_uuid], tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // Wait until TS1 is running.
   ASSERT_EVENTUALLY([&] {
@@ -428,7 +424,7 @@ TEST_P(TsRecoveryTombstonedIMCITest, TestTombstonedVoter) {
 
   LOG(INFO) << "tombstoning replica on TS " << cluster_->mini_tablet_server(1)->uuid();
   TServerDetails* ts1 = ts_map_[cluster_->mini_tablet_server(1)->uuid()];
-  ASSERT_OK(DeleteTablet(ts1, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(ts1, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   if (to_restart == kRestart) {
     LOG(INFO) << "restarting tombstoned TS " << cluster_->mini_tablet_server(1)->uuid();

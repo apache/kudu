@@ -273,8 +273,8 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 const boost::optional<int64_t>& cas_config_opid_index,
                  const MonoDelta& timeout,
+                 const boost::optional<int64_t>& cas_config_index = boost::none,
                  tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.
@@ -282,8 +282,8 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    const boost::optional<int64_t>& cas_config_opid_index,
                     const MonoDelta& timeout,
+                    const boost::optional<int64_t>& cas_config_index = boost::none,
                     tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Get the list of tablets from the remote server.
@@ -350,21 +350,24 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
                               const MonoDelta& timeout);
 
 // Send a DeleteTablet() to the server at 'ts' of the specified 'delete_type'.
+// If set, the 'cas_config_index' corresponds to the
+// 'cas_config_opid_index_less_or_equal' field of the request.
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const tablet::TabletDataState& delete_type,
-                    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                     const MonoDelta& timeout,
+                    const boost::optional<int64_t>& cas_config_index = boost::none,
                     tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Repeatedly try to delete the tablet, retrying on failure up to the
 // specified timeout. Deletion can fail when other operations, such as
 // bootstrap or tablet copy, are running.
-void DeleteTabletWithRetries(const TServerDetails* ts,
-                             const std::string& tablet_id,
-                             tablet::TabletDataState delete_type,
-                             const boost::optional<int64_t>& config_opid_index,
-                             const MonoDelta& timeout);
+Status DeleteTabletWithRetries(
+    const TServerDetails* ts,
+    const std::string& tablet_id,
+    tablet::TabletDataState delete_type,
+    const MonoDelta& timeout,
+    const boost::optional<int64_t>& cas_config_index = boost::none);
 
 // Cause the remote to initiate tablet copy using the specified host as a
 // source.

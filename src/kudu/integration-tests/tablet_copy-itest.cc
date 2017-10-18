@@ -28,7 +28,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -102,8 +101,14 @@ using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::MakeOpId;
 using kudu::consensus::RaftPeerPB;
+using kudu::itest::AddServer;
+using kudu::itest::DeleteTablet;
+using kudu::itest::FindTabletLeader;
+using kudu::itest::StartElection;
+using kudu::itest::StartTabletCopy;
 using kudu::itest::TServerDetails;
 using kudu::itest::WaitForNumTabletServers;
+using kudu::itest::WaitUntilTabletRunning;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -179,8 +184,8 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, timeout));
   }
 
   LOG(INFO) << "loading data...";
@@ -188,7 +193,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // Elect a leader for term 1, then run some data through the cluster.
   int zombie_leader_index = 1;
   string zombie_leader_uuid = cluster_->tablet_server(zombie_leader_index)->uuid();
-  ASSERT_OK(itest::StartElection(ts_map_[zombie_leader_uuid], tablet_id, timeout));
+  ASSERT_OK(StartElection(ts_map_[zombie_leader_uuid], tablet_id, timeout));
   workload.Start();
   ASSERT_EVENTUALLY([&] {
     ASSERT_GE(workload.rows_inserted(), 100);
@@ -200,10 +205,10 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // Come out of the blue and try to initiate Tablet Copy from a running server while
   // specifying an old term. That running server should reject the request.
   // We are essentially masquerading as a rogue leader here.
-  Status s = itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
-                                    HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
-                                    /*caller_term=*/ 0, // Say I'm from term 0.
-                                    timeout);
+  Status s = StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
+                             HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                             /*caller_term=*/ 0, // Say I'm from term 0.
+                             timeout);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "term 0, which is lower than last-logged term 1");
 
@@ -213,7 +218,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // Trigger TS 2 to become leader of term 2.
   int new_leader_index = 2;
   string new_leader_uuid = cluster_->tablet_server(new_leader_index)->uuid();
-  ASSERT_OK(itest::StartElection(ts_map_[new_leader_uuid], tablet_id, timeout));
+  ASSERT_OK(StartElection(ts_map_[new_leader_uuid], tablet_id, timeout));
   ASSERT_OK(itest::WaitUntilLeader(ts_map_[new_leader_uuid], tablet_id, timeout));
   LOG(INFO) << "successfully elected new leader";
 
@@ -240,7 +245,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   cluster_->tablet_server(new_leader_index)->Shutdown();
 
   LOG(INFO) << "tombstoning original follower...";
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
   // Zombies!!! Resume the rogue zombie leader.
   // He should attempt to tablet copy TS 0 but fail.
@@ -270,10 +275,10 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   // It's not necessarily part of the API but this could return faliure due to
   // rejecting the remote. We intend to make that part async though, so ignoring
   // this return value in this test.
-  ignore_result(itest::StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
-                                       HostPort(zombie_ets->bound_rpc_addr()),
-                                       /* caller_term=*/ 2, // Say I'm from term 2.
-                                       timeout));
+  ignore_result(StartTabletCopy(ts, tablet_id, zombie_leader_uuid,
+                                HostPort(zombie_ets->bound_rpc_addr()),
+                                /* caller_term=*/ 2, // Say I'm from term 2.
+                                timeout));
 
   // Wait another few seconds to be sure the tablet copy is rejected.
   deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
@@ -355,9 +360,7 @@ TEST_F(TabletCopyITest, TestListTabletsDuringTabletCopy) {
   // Tombstone the tablet on the follower.
   LOG(INFO) << "Tombstoning follower tablet " << tablet_id
             << " on TS " << follower_ts->uuid();
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
-                                TABLET_DATA_TOMBSTONED,
-                                boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // A new good copy should automatically get created via tablet copy.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
@@ -425,8 +428,7 @@ TEST_F(TabletCopyITest, TestDeleteTabletDuringTabletCopy) {
                               &meta));
 
     // Tombstone the tablet on the remote!
-    ASSERT_OK(itest::DeleteTablet(ts, tablet_id,
-                                  TABLET_DATA_TOMBSTONED, boost::none, timeout));
+    ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
     // Now finish copying!
     ASSERT_OK(tc_client.FetchAll(nullptr /* no listener */));
@@ -468,14 +470,14 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, timeout));
   }
 
   // Elect a leader for term 1, then run some data through the cluster.
   const int kLeaderIndex = 1;
   TServerDetails* leader_ts = ts_map_[cluster_->tablet_server(kLeaderIndex)->uuid()];
-  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  ASSERT_OK(StartElection(leader_ts, tablet_id, timeout));
   workload.Start();
   while (workload.rows_inserted() < 100) {
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -488,7 +490,7 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   // election on the follower. The election will fail asynchronously but we
   // just wait until we see that its term has incremented.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Pause());
-  ASSERT_OK(itest::StartElection(follower_ts, tablet_id, timeout));
+  ASSERT_OK(StartElection(follower_ts, tablet_id, timeout));
   int64_t term = 0;
   for (int i = 0; i < 1000; i++) {
     consensus::ConsensusStatePB cstate;
@@ -500,8 +502,7 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   ASSERT_EQ(2, term);
 
   // Now tombstone the follower.
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                timeout));
+  ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
   // Restart the follower's TS so that the leader's TS won't get its queued
   // vote request messages. This is a hack but seems to work.
@@ -572,8 +573,8 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     for (const string& tablet_id : tablet_ids) {
-      ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                              tablet_id, timeout));
+      ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                       tablet_id, timeout));
     }
   }
 
@@ -581,7 +582,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   const int kLeaderIndex = 1;
   const string kLeaderUuid = cluster_->tablet_server(kLeaderIndex)->uuid();
   for (const string& tablet_id : tablet_ids) {
-    ASSERT_OK(itest::StartElection(ts_map_[kLeaderUuid], tablet_id, timeout));
+    ASSERT_OK(StartElection(ts_map_[kLeaderUuid], tablet_id, timeout));
   }
 
   TestWorkload workload(cluster_.get());
@@ -605,15 +606,15 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
 
   for (const string& tablet_id : tablet_ids) {
     LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << target_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                  MonoDelta::FromSeconds(10)));
+    ASSERT_OK(DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED,
+                           MonoDelta::FromSeconds(10)));
   }
 
   // Unpause the leader TS and wait for it to initiate Tablet Copy and replace the tombstoned
   // tablets, in parallel.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
   for (const string& tablet_id : tablet_ids) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(target_ts, tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(target_ts, tablet_id, timeout));
   }
 
   ClusterVerifier v(cluster_.get());
@@ -654,8 +655,8 @@ TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, timeout));
   }
 
   int leader_index = -1;
@@ -684,8 +685,7 @@ TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
 
     // Tombstone the follower.
     LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << follower_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                  timeout));
+    ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
     // Wait for tablet copy to start.
     ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
@@ -695,8 +695,7 @@ TEST_F(TabletCopyITest, TestDeleteLeaderDuringTabletCopyStressTest) {
 
     // Tombstone the leader.
     LOG(INFO) << "Tombstoning leader tablet " << tablet_id << " on TS " << leader_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(leader_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                  timeout));
+    ASSERT_OK(DeleteTablet(leader_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
     // Quiesce and rebuild to full strength. This involves electing a new
     // leader from the remaining three, which requires a unanimous vote, and
@@ -794,13 +793,13 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, timeout));
   }
 
   // Elect a leader (TS 0)
   ExternalTabletServer* leader_ts = cluster_->tablet_server(0);
-  ASSERT_OK(itest::StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
+  ASSERT_OK(StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
 
   // Start writing, wait for some rows to be inserted.
   workload.Start();
@@ -809,8 +808,7 @@ TEST_F(TabletCopyITest, TestDisableTabletCopy_NoTightLoopWhenTabletDeleted) {
   }
 
   // Tombstone the tablet on one of the servers (TS 1)
-  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                timeout));
+  ASSERT_OK(DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
   // Ensure that, if we sleep for a second while still doing writes to the leader:
   // a) we don't spew logs on the leader side
@@ -858,13 +856,13 @@ TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, timeout));
   }
 
   // Elect a leader (TS 0)
   ExternalTabletServer* leader_ts = cluster_->tablet_server(0);
-  ASSERT_OK(itest::StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
+  ASSERT_OK(StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
 
   // Start writing, wait for some rows to be inserted.
   workload.Start();
@@ -875,8 +873,7 @@ TEST_F(TabletCopyITest, TestSlowCopyDoesntFail) {
 
   // Tombstone the follower.
   LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << replica_ts->uuid();
-  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                timeout));
+  ASSERT_OK(DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 
   // Wait for tablet copy to start.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(1, tablet_id,
@@ -917,23 +914,23 @@ TEST_F(TabletCopyITest, TestTabletCopyingDeletedTabletFails) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, kTimeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, kTimeout));
   }
 
   // Elect a leader for term 1, then run some data through the cluster.
-  ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
+  ASSERT_OK(StartElection(leader, tablet_id, kTimeout));
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
   // Now delete the leader with TABLET_DATA_DELETED. We should not be able to
   // bring back the leader after that until restarting the process.
-  ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_DELETED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(leader, tablet_id, TABLET_DATA_DELETED, kTimeout));
 
-  Status s = itest::StartTabletCopy(leader, tablet_id,
-                                         cluster_->tablet_server(1)->uuid(),
-                                         HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
-                                         1, // We are in term 1.
-                                         kTimeout);
+  Status s = StartTabletCopy(leader, tablet_id,
+                             cluster_->tablet_server(1)->uuid(),
+                             HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                             1, // We are in term 1.
+                             kTimeout);
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Cannot transition from state TABLET_DATA_DELETED");
 
@@ -942,11 +939,11 @@ TEST_F(TabletCopyITest, TestTabletCopyingDeletedTabletFails) {
   cluster_->tablet_server(0)->Shutdown();
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-  ASSERT_OK(itest::StartTabletCopy(leader, tablet_id,
-                                        cluster_->tablet_server(1)->uuid(),
-                                        HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
-                                        1, // We are in term 1.
-                                        kTimeout));
+  ASSERT_OK(StartTabletCopy(leader, tablet_id,
+                            cluster_->tablet_server(1)->uuid(),
+                            HostPort(cluster_->tablet_server(1)->bound_rpc_addr()),
+                            1, // We are in term 1.
+                            kTimeout));
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 }
 
@@ -970,12 +967,12 @@ TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, kTimeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, kTimeout));
   }
 
   // Elect a leader for term 1, then generate some data to copy.
-  ASSERT_OK(itest::StartElection(leader, tablet_id, kTimeout));
+  ASSERT_OK(StartElection(leader, tablet_id, kTimeout));
   workload.Start();
   const int kMinBatches = 10;
   while (workload.batches_completed() < kMinBatches) {
@@ -990,7 +987,7 @@ TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
   ASSERT_FALSE(superblock_pb.has_tombstone_last_logged_opid());
 
   // Now tombstone the leader.
-  ASSERT_OK(itest::DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(leader, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // We should end up with a last-logged opid in the superblock.
   ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(leader_index, tablet_id, &superblock_pb));
@@ -1000,11 +997,11 @@ TEST_F(TabletCopyITest, TestTabletCopyClearsLastLoggedOpId) {
   ASSERT_GT(last_logged_opid.index(), kMinBatches);
 
   int follower_index = 1;
-  ASSERT_OK(itest::StartTabletCopy(leader, tablet_id,
-                                   cluster_->tablet_server(follower_index)->uuid(),
-                                   cluster_->tablet_server(follower_index)->bound_rpc_hostport(),
-                                   1, // We are in term 1.
-                                   kTimeout));
+  ASSERT_OK(StartTabletCopy(leader, tablet_id,
+                            cluster_->tablet_server(follower_index)->uuid(),
+                            cluster_->tablet_server(follower_index)->bound_rpc_hostport(),
+                            1, // We are in term 1.
+                            kTimeout));
 
   ASSERT_EVENTUALLY([&] {
     // Ensure that the last-logged opid has been cleared from the superblock
@@ -1163,12 +1160,11 @@ TEST_P(TabletCopyFailureITest, TestTabletCopyNewReplicaFailureCanVote) {
   // Allow retries in case the tablet leadership is unstable.
   ASSERT_EVENTUALLY([&] {
     TServerDetails* leader_ts;
-    ASSERT_OK(itest::FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_ts));
     ASSERT_OK(itest::WaitForOpFromCurrentTerm(leader_ts, tablet_id, COMMITTED_OPID, kTimeout));
 
     // Adding a server will trigger a tablet copy.
-    ASSERT_OK(itest::AddServer(leader_ts, tablet_id, new_replica_ts, RaftPeerPB::VOTER,
-                              boost::none, kTimeout));
+    ASSERT_OK(AddServer(leader_ts, tablet_id, new_replica_ts, RaftPeerPB::VOTER, kTimeout));
   });
 
   // Wait until the new replica has done its initial download, and has either
@@ -1236,12 +1232,12 @@ TEST_P(TabletCopyFailureITest, TestFailedTabletCopyRetainsLastLoggedOpId) {
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, kTimeout));
+    ASSERT_OK(WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                     tablet_id, kTimeout));
   }
 
   // Elect a leader for term 1, then generate some data to copy.
-  ASSERT_OK(itest::StartElection(first_leader, tablet_id, kTimeout));
+  ASSERT_OK(StartElection(first_leader, tablet_id, kTimeout));
   workload.Start();
   const int kMinBatches = 10;
   ASSERT_EVENTUALLY([&] {
@@ -1251,8 +1247,7 @@ TEST_P(TabletCopyFailureITest, TestFailedTabletCopyRetainsLastLoggedOpId) {
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
 
   // Tombstone the first leader.
-  ASSERT_OK(itest::DeleteTablet(first_leader, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
-                                kTimeout));
+  ASSERT_OK(DeleteTablet(first_leader, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // We should end up with a last-logged opid in the superblock of the first leader.
   tablet::TabletSuperBlockPB superblock_pb;
@@ -1266,7 +1261,7 @@ TEST_P(TabletCopyFailureITest, TestFailedTabletCopyRetainsLastLoggedOpId) {
   // Elect a new leader.
   int second_leader_index = 1;
   TServerDetails* second_leader = ts_map_[cluster_->tablet_server(second_leader_index)->uuid()];
-  ASSERT_OK(itest::StartElection(second_leader, tablet_id, kTimeout));
+  ASSERT_OK(StartElection(second_leader, tablet_id, kTimeout));
 
   // The second leader will initiate a tablet copy on the first leader. Wait
   // for it to fail (via crash or abort).
@@ -1567,9 +1562,7 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
 
   LOG(INFO) << "Tombstoning follower tablet " << tablet_id
             << " on TS " << follower_ts->uuid();
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
-                                TABLET_DATA_TOMBSTONED,
-                                boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // Wait for copying to start.
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(
@@ -1679,9 +1672,7 @@ TEST_F(TabletCopyITest, TestTabletStateMetricsDuringTabletCopy) {
   });
 
   // Tombstone the tablet on the follower.
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
-                                TABLET_DATA_TOMBSTONED,
-                                boost::none, kTimeout));
+  ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
 
   // State: 0 running tablets.
   ASSERT_EVENTUALLY([&] {
@@ -1738,9 +1729,7 @@ TEST_F(TabletCopyITest, TestMetricsResetAfterRevival) {
     ASSERT_GT(CountRowsInserted(cluster_->tablet_server(follower_index)), 0);
 
     // Tombstone the tablet on the follower.
-    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id,
-                                  TABLET_DATA_TOMBSTONED,
-                                  boost::none, kTimeout));
+    ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
   });
 
   // Wait for the tablet to be revived via tablet copy.
