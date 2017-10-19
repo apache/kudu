@@ -18,9 +18,6 @@
 // This file is the entry-point for the gradle build and contains
 // common logic for the various subprojects in the build.
 
-// Load the buildscript file to apply dependencies needed for the gradle build itself.
-buildscript { apply from: file("gradle/buildscript.gradle"), to: buildscript }
-
 // Plugins and scripts applied at the root level only, instead of per module.
 apply plugin: "idea"
 apply plugin: "eclipse"
