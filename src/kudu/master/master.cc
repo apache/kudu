@@ -18,7 +18,12 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
+#include <ostream>
+#include <set>
+#include <string>
+#include <type_traits>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -26,6 +31,13 @@
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master_cert_authority.h"
@@ -287,6 +299,12 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
     return Status::OK();
   }
 
+  // Since --master_addresses may contain duplicates, including different names
+  // for the same server, we deduplicate the masters by UUID here.
+  auto uuid_cmp = [](const ServerEntryPB& left, const ServerEntryPB& right) {
+    return left.instance_id().permanent_uuid() < right.instance_id().permanent_uuid();
+  };
+  std::set<ServerEntryPB, decltype(uuid_cmp)> masters_by_uuid(uuid_cmp);
   for (const HostPort& peer_addr : opts_.master_addresses) {
     ServerEntryPB peer_entry;
     Status s = GetMasterEntryForHost(messenger_, peer_addr, &peer_entry);
@@ -297,9 +315,10 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
       LOG(WARNING) << s.ToString();
       StatusToPB(s, peer_entry.mutable_error());
     }
-    masters->push_back(peer_entry);
+    InsertIfNotPresent(&masters_by_uuid, peer_entry);
   }
 
+  std::copy(masters_by_uuid.begin(), masters_by_uuid.end(), std::back_inserter(*masters));
   return Status::OK();
 }
 
