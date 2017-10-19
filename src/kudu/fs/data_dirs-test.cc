@@ -364,10 +364,9 @@ TEST_F(DataDirsTest, TestLoadBalancingBias) {
 
 class DataDirManagerTest : public DataDirsTest {
  public:
-  DataDirManagerTest() :
-    test_roots_(JoinPathSegmentsV(GetDirNames(kNumDirs), "root")) {}
-
   void SetUp() override {
+    test_roots_ = JoinPathSegmentsV(GetDirNames(GetNumDirs()), "root");
+
     // Don't call DataDirsTest::SetUp() to avoid creating the default directory
     // manager.
     KuduTest::SetUp();
@@ -377,6 +376,8 @@ class DataDirManagerTest : public DataDirsTest {
     return DataDirManager::OpenExistingForTests(env_, test_roots_,
         DataDirManagerOptions(), &dd_manager_);
   }
+
+  virtual int GetNumDirs() const { return kNumDirs; }
 
  protected:
   // The test roots. Data will be placed in a data directory within the root.
@@ -423,6 +424,23 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   ASSERT_STR_CONTAINS(s.ToString(), "Could not open directory manager");
   ASSERT_TRUE(s.IsIOError());
   FLAGS_env_inject_eio = 0;
+}
+
+class TooManyDataDirManagerTest : public DataDirManagerTest {
+ public:
+  // TraceMetrics::g_intern_map has a limited number of entries, and each data
+  // dir used to consume three of them via its threadpool. This value was just
+  // enough to exceed the map's capacity.
+  int GetNumDirs() const override { return 34; }
+};
+
+// Regression test for KUDU-2194.
+TEST_F(TooManyDataDirManagerTest, TestTooManyInternedStrings) {
+  for (const auto& r : test_roots_) {
+    ASSERT_OK(env_->CreateDir(r));
+  }
+  ASSERT_OK(DataDirManager::CreateNewForTests(
+      env_, test_roots_, DataDirManagerOptions(), &dd_manager_));
 }
 
 } // namespace fs

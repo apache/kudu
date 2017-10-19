@@ -43,6 +43,7 @@ namespace kudu {
 
 using std::deque;
 using std::shared_ptr;
+using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
@@ -82,15 +83,14 @@ class ClosureRunnable : public Runnable {
 // ThreadPoolBuilder
 ////////////////////////////////////////////////////////
 
-ThreadPoolBuilder::ThreadPoolBuilder(std::string name)
+ThreadPoolBuilder::ThreadPoolBuilder(string name)
     : name_(std::move(name)),
       min_threads_(0),
       max_threads_(base::NumCPUs()),
       max_queue_size_(std::numeric_limits<int>::max()),
       idle_timeout_(MonoDelta::FromMilliseconds(500)) {}
 
-ThreadPoolBuilder& ThreadPoolBuilder::set_trace_metric_prefix(
-    const std::string& prefix) {
+ThreadPoolBuilder& ThreadPoolBuilder::set_trace_metric_prefix(const string& prefix) {
   trace_metric_prefix_ = prefix;
   return *this;
 }
@@ -322,7 +322,7 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     total_queued_tasks_(0),
     tokenless_(NewToken(ExecutionMode::CONCURRENT)),
     metrics_(builder.metrics_) {
-  std::string prefix = !builder.trace_metric_prefix_.empty() ?
+  string prefix = !builder.trace_metric_prefix_.empty() ?
       builder.trace_metric_prefix_ : builder.name_;
 
   queue_time_trace_metric_name_ = TraceMetrics::InternName(

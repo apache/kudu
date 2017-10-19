@@ -483,6 +483,7 @@ Status DataDirManager::Open() {
     gscoped_ptr<ThreadPool> pool;
     RETURN_NOT_OK(ThreadPoolBuilder(Substitute("data dir $0", i))
                   .set_max_threads(1)
+                  .set_trace_metric_prefix("data dirs")
                   .Build(&pool));
 
     // Figure out what filesystem the data directory is on.
