@@ -20,19 +20,22 @@
 #include "kudu/tools/tool_test_util.h"
 
 #include <ostream>
+#include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace tools {
 
-string GetKuduCtlAbsolutePath() {
+string GetKuduToolAbsolutePath() {
   static const string kKuduCtlFileName = "kudu";
   string exe;
   CHECK_OK(Env::Default()->GetExecutablePath(&exe));
@@ -41,6 +44,17 @@ string GetKuduCtlAbsolutePath() {
   CHECK(Env::Default()->FileExists(tool_abs_path))
       << kKuduCtlFileName << " binary not found at " << tool_abs_path;
   return tool_abs_path;
+}
+
+Status RunKuduTool(const vector<string>& args, string* out, string* err) {
+  vector<string> total_args = { GetKuduToolAbsolutePath() };
+
+  // Speed up filesystem-based operations.
+  total_args.emplace_back("--unlock_unsafe_flags");
+  total_args.emplace_back("--never_fsync");
+
+  total_args.insert(total_args.end(), args.begin(), args.end());
+  return Subprocess::Call(total_args, "", out, err);
 }
 
 } // namespace tools

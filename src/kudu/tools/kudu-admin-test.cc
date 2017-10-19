@@ -58,7 +58,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
-#include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -85,6 +84,8 @@ using kudu::itest::WaitUntilCommittedOpIdIndexIs;
 using kudu::itest::WaitUntilTabletInState;
 using kudu::itest::WaitUntilTabletRunning;
 using kudu::pb_util::SecureDebugString;
+using std::back_inserter;
+using std::copy;
 using std::deque;
 using std::string;
 using std::vector;
@@ -152,8 +153,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
 
   LOG(INFO) << "Adding tserver with uuid " << new_node->uuid() << " as VOTER...";
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "tablet",
     "change_config",
     "add_replica",
@@ -190,8 +190,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
 
   // Now remove the server once again.
   LOG(INFO) << "Removing tserver with uuid " << new_node->uuid() << " from the config...";
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "tablet",
     "change_config",
     "remove_replica",
@@ -250,16 +249,15 @@ TEST_F(AdminCliTest, TestMoveTablet) {
   for (int i = 0; i < num_moves; i++) {
     const string remove = active_tservers.front();
     const string add = inactive_tservers.front();
-    ASSERT_OK(Subprocess::Call({
-                                   GetKuduCtlAbsolutePath(),
-                                   "tablet",
-                                   "change_config",
-                                   "move_replica",
-                                   cluster_->master()->bound_rpc_addr().ToString(),
-                                   tablet_id_,
-                                   remove,
-                                   add
-                               }));
+    ASSERT_OK(RunKuduTool({
+      "tablet",
+      "change_config",
+      "move_replica",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      tablet_id_,
+      remove,
+      add
+    }));
     active_tservers.pop_front();
     active_tservers.push_back(add);
     inactive_tservers.pop_front();
@@ -283,12 +281,14 @@ TEST_F(AdminCliTest, TestMoveTablet) {
 Status RunUnsafeChangeConfig(const string& tablet_id,
                              const string& dst_host,
                              vector<string> peer_uuid_list) {
-  vector<string> command_args = { GetKuduCtlAbsolutePath(), "remote_replica",
-      "unsafe_change_config", dst_host, tablet_id };
-  for (const auto& peer_uuid : peer_uuid_list) {
-    command_args.push_back(peer_uuid);
-  }
-  return Subprocess::Call(command_args);
+  vector<string> command_args = {
+      "remote_replica",
+      "unsafe_change_config",
+      dst_host,
+      tablet_id
+  };
+  copy(peer_uuid_list.begin(), peer_uuid_list.end(), back_inserter(command_args));
+  return RunKuduTool(command_args);
 }
 
 // Test unsafe config change when there is one follower survivor in the cluster.
@@ -802,10 +802,12 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   // Force leader to step down, best effort command since the leadership
   // could change anytime during cluster lifetime.
   string stderr;
-  s = Subprocess::Call({GetKuduCtlAbsolutePath(), "tablet", "leader_step_down",
-                        cluster_->master()->bound_rpc_addr().ToString(),
-                        tablet_id_},
-                       "", nullptr, &stderr);
+  s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
   bool not_currently_leader = stderr.find(
       Status::IllegalState("").CodeAsString()) != string::npos;
   ASSERT_TRUE(s.ok() || not_currently_leader);
@@ -1106,10 +1108,12 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
   // the term advancement without honoring status of the command since
   // there may not have been another election in the meanwhile.
   string stderr;
-  Status s = Subprocess::Call({GetKuduCtlAbsolutePath(),
-                               "tablet", "leader_step_down",
-                               cluster_->master()->bound_rpc_addr().ToString(),
-                               tablet_id_}, "", nullptr, &stderr);
+  Status s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
   bool not_currently_leader = stderr.find(
       Status::IllegalState("").CodeAsString()) != string::npos;
   ASSERT_TRUE(s.ok() || not_currently_leader);
@@ -1142,13 +1146,12 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
   ASSERT_TRUE(GetTermFromConsensus(tservers, tablet_id_,
                                    &current_term).IsNotFound());
   string stdout;
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "tablet",
     "leader_step_down",
     cluster_->master()->bound_rpc_addr().ToString(),
     tablet_id_
-  }, "", &stdout));
+  }, &stdout));
   ASSERT_STR_CONTAINS(stdout,
                       Substitute("No leader replica found for tablet $0",
                                  tablet_id_));
@@ -1165,8 +1168,7 @@ TEST_F(AdminCliTest, TestDeleteTable) {
             .add_master_server_addr(master_address)
             .Build(&client));
 
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "table",
     "delete",
     master_address,
@@ -1185,12 +1187,11 @@ TEST_F(AdminCliTest, TestListTables) {
   NO_FATALS(BuildAndStart());
 
   string stdout;
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "table",
     "list",
     cluster_->master()->bound_rpc_addr().ToString()
-  }, "", &stdout, nullptr));
+  }, &stdout));
 
   vector<string> stdout_lines = Split(stdout, ",", strings::SkipEmpty());
   ASSERT_EQ(1, stdout_lines.size());
@@ -1221,13 +1222,12 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
                        MonoDelta::FromSeconds(30), &tablet_ids);
 
   string stdout;
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "table",
     "list",
     "--list_tablets",
     cluster_->master()->bound_rpc_addr().ToString()
-  }, "", &stdout, nullptr));
+  }, &stdout));
 
   vector<string> stdout_lines = Split(stdout, "\n", strings::SkipEmpty());
 

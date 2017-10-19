@@ -36,7 +36,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
-#include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 
 using kudu::itest::TabletServerMap;
@@ -74,14 +73,13 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
                                             tablet_id, timeout));
   }
   string out;
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "remote_replica",
     "delete",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id,
     "Deleting for kudu-ts-cli-test"
-  }, "", &out));
+  }, &out));
   ASSERT_EQ("", out);
 
   ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(0, tablet_id, { tablet::TABLET_DATA_TOMBSTONED }));
@@ -113,13 +111,12 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
 
   string out;
   // Test for dump_tablet when there is no data in tablet.
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "remote_replica",
     "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id
-  }, "", &out));
+  }, &out));
   ASSERT_EQ("", out);
 
   // Insert very little data and dump_tablet again.
@@ -129,13 +126,12 @@ TEST_F(KuduTsCliTest, TestDumpTablet) {
   }
   workload.StopAndJoin();
   ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
-  ASSERT_OK(Subprocess::Call({
-    GetKuduCtlAbsolutePath(),
+  ASSERT_OK(RunKuduTool({
     "remote_replica",
     "dump",
     cluster_->tablet_server(0)->bound_rpc_addr().ToString(),
     tablet_id
-  }, "", &out));
+  }, &out));
 
   // Split the output into multiple rows and check format of each row,
   // and also check total number of rows are at least kNumRows.

@@ -20,12 +20,23 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace tools {
 
 // Get full path to the top-level 'kudu' tool binary.
-std::string GetKuduCtlAbsolutePath();
+std::string GetKuduToolAbsolutePath();
+
+// Runs the 'kudu' tool binary with the given arguments.
+//
+// If 'out' or 'err' is set, the tool's stdout or stderr output will be
+// written to each respectively.
+Status RunKuduTool(const std::vector<std::string>& args,
+                   std::string* out = nullptr,
+                   std::string* err = nullptr);
 
 } // namespace tools
 } // namespace kudu

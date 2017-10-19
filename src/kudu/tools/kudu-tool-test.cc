@@ -168,10 +168,6 @@ using tserver::TabletServerServiceProxy;
 
 class ToolTest : public KuduTest {
  public:
-  ToolTest()
-      : tool_path_(GetKuduCtlAbsolutePath()) {
-  }
-
   ~ToolTest() {
     STLDeleteValues(&ts_map_);
   }
@@ -187,14 +183,10 @@ class ToolTest : public KuduTest {
                  string* stderr,
                  vector<string>* stdout_lines,
                  vector<string>* stderr_lines) const {
-    vector<string> args = { tool_path_ };
-    vector<string> more_args = strings::Split(arg_str, " ",
-                                              strings::SkipEmpty());
-    args.insert(args.end(), more_args.begin(), more_args.end());
-
     string out;
     string err;
-    Status s = Subprocess::Call(args, "", &out, &err);
+    Status s = RunKuduTool(strings::Split(arg_str, " ", strings::SkipEmpty()),
+                           &out, &err);
     if (stdout) {
       *stdout = out;
       StripTrailingNewline(stdout);
@@ -259,11 +251,11 @@ class ToolTest : public KuduTest {
     ASSERT_TRUE(stdout.empty());
     ASSERT_FALSE(stderr.empty());
 
-    // If it was an invalid command, the usage string is on the second line.
-    int usage_idx = 0;
+    // If it was an invalid command, the usage string is on the third line.
+    int usage_idx = 1;
     if (!expected_status.ok()) {
-      ASSERT_EQ(expected_status.ToString(), stderr[0]);
-      usage_idx = 1;
+      ASSERT_EQ(expected_status.ToString(), stderr[1]);
+      usage_idx = 2;
     }
     ASSERT_EQ(0, stderr[usage_idx].find("Usage: "));
 
@@ -286,8 +278,8 @@ class ToolTest : public KuduTest {
     vector<string> err_lines;
     RunTool(arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
     ASSERT_GE(err_lines.size(), 3) << err_lines;
-    ASSERT_EQ(expected_status.ToString(), err_lines[0]);
-    ASSERT_STR_MATCHES(err_lines[2], "Usage: kudu.*");
+    ASSERT_EQ(expected_status.ToString(), err_lines[1]);
+    ASSERT_STR_MATCHES(err_lines[3], "Usage: kudu.*");
   }
 
   void RunFsCheck(const string& arg_str,
@@ -337,7 +329,6 @@ class ToolTest : public KuduTest {
   unordered_map<string, TServerDetails*> ts_map_;
   unique_ptr<InternalMiniCluster> mini_cluster_;
   ExternalMiniClusterOptions cluster_opts_;
-  string tool_path_;
 };
 
 void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags,
@@ -798,7 +789,7 @@ TEST_F(ToolTest, TestPbcTools) {
     Status s = DoEdit(path, &stdout, &stderr);
     ASSERT_FALSE(s.ok());
     ASSERT_EQ("", stdout);
-    ASSERT_EQ("Aborted: editor returned non-zero exit code", stderr);
+    ASSERT_STR_CONTAINS(stderr, "Aborted: editor returned non-zero exit code");
   }
 
   // Test 'edit' with an edit which tries to write some invalid JSON (missing required fields).
@@ -817,9 +808,11 @@ TEST_F(ToolTest, TestPbcTools) {
     string stdout, stderr;
     Status s = DoEdit("echo not-a-json-string > $@\n", &stdout, &stderr);
     ASSERT_EQ("", stdout);
-    ASSERT_EQ("Invalid argument: Unable to parse JSON line: not-a-json-string: Unexpected token.\n"
-              "not-a-json-string\n"
-              "^", stderr);
+    ASSERT_STR_CONTAINS(
+        stderr,
+        "Invalid argument: Unable to parse JSON line: not-a-json-string: Unexpected token.\n"
+        "not-a-json-string\n"
+        "^");
   }
 
   // The file should be unchanged by the unsuccessful edits above.
@@ -1297,7 +1290,6 @@ void ToolTest::RunLoadgen(int num_tservers,
               .Create());
   }
   vector<string> args = {
-    GetKuduCtlAbsolutePath(),
     "perf",
     "loadgen",
     cluster_->master()->bound_rpc_addr().ToString(),
@@ -1306,7 +1298,7 @@ void ToolTest::RunLoadgen(int num_tservers,
     args.push_back(Substitute("-table_name=$0", table_name));
   }
   copy(tool_args.begin(), tool_args.end(), back_inserter(args));
-  ASSERT_OK(Subprocess::Call(args));
+  ASSERT_OK(RunKuduTool(args));
 }
 
 // Run the loadgen benchmark with all optional parameters set to defaults.
@@ -1772,7 +1764,7 @@ class ControlShellToolTest :
       default: LOG(FATAL) << "Unknown serialization mode";
     }
     shell_.reset(new Subprocess({
-      tool_path_,
+      GetKuduToolAbsolutePath(),
       "test",
       "mini_cluster",
       Substitute("--serialization=$0", mode)
