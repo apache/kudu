@@ -32,7 +32,7 @@ versions += [
     commonsIo      : "2.5",
     findbugs       : "3.0.1",
     flume          : "1.7.0",
-    gradle         : "4.1",
+    gradle         : "4.2.1",
     guava          : "20.0",
     hadoop         : "2.8.1",
     hamcrest       : "1.3",
