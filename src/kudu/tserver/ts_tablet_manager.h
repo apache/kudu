@@ -35,6 +35,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
 
 namespace boost {
@@ -280,7 +281,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                                  int64_t last_logged_term);
 
   TSTabletManagerStatePB state() const {
-    shared_lock<rw_spinlock> l(lock_);
+    shared_lock<RWMutex> l(lock_);
     return state_;
   }
 
@@ -302,7 +303,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Lock protecting tablet_map_, dirty_tablets_, state_,
   // transition_in_progress_, and perm_deleted_tablet_ids_.
-  mutable rw_spinlock lock_;
+  mutable RWMutex lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
@@ -333,7 +334,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 // when tablet bootstrap, create, and delete operations complete.
 class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
  public:
-  TransitionInProgressDeleter(TransitionInProgressMap* map, rw_spinlock* lock,
+  TransitionInProgressDeleter(TransitionInProgressMap* map, RWMutex* lock,
                               std::string entry);
 
  private:
@@ -341,7 +342,7 @@ class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProg
   ~TransitionInProgressDeleter();
 
   TransitionInProgressMap* const in_progress_;
-  rw_spinlock* const lock_;
+  RWMutex* const lock_;
   const std::string entry_;
 };
 
