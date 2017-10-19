@@ -24,6 +24,7 @@
 #include <memory>
 #include <ostream>
 #include <set>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -196,6 +197,11 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     for (const auto& hp : master_->opts().master_addresses) {
       peer_addrs_from_opts.insert(hp.ToString());
     }
+    if (peer_addrs_from_opts.size() < master_->opts().master_addresses.size()) {
+      LOG(WARNING) << Substitute("Found duplicates in --master_addresses: "
+                                 "the unique set of addresses is $0",
+                                 JoinStrings(peer_addrs_from_opts, ", "));
+    }
     set<string> peer_addrs_from_disk;
     for (const auto& p : cstate.committed_config().peers()) {
       HostPort hp;
@@ -210,8 +216,11 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
                                   std::back_inserter(symm_diff));
     if (!symm_diff.empty()) {
       string msg = Substitute(
-          "on-disk and provided master lists are different: $0",
-          JoinStrings(symm_diff, " "));
+          "on-disk master list ($0) and provided master list ($1) differ. "
+          "Their symmetric difference is: $2",
+          JoinStrings(peer_addrs_from_opts, ", "),
+          JoinStrings(peer_addrs_from_disk, ", "),
+          JoinStrings(symm_diff, ", "));
       return Status::InvalidArgument(msg);
     }
   }
