@@ -319,37 +319,24 @@ class ToolTest : public KuduTest {
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
                   const string& table_name = "");
-  void StartExternalMiniCluster(const vector<string>& extra_master_flags = {},
-                                const vector<string>& extra_tserver_flags = {},
-                                int num_tablet_servers = 1);
-  void StartMiniCluster(int num_masters = 1,
-                        int num_tablet_servers = 1);
+  void StartExternalMiniCluster(ExternalMiniClusterOptions opts = {});
+  void StartMiniCluster(InternalMiniClusterOptions opts = {});
   unique_ptr<ExternalMiniCluster> cluster_;
   unique_ptr<ExternalMiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
   unique_ptr<InternalMiniCluster> mini_cluster_;
-  ExternalMiniClusterOptions cluster_opts_;
 };
 
-void ToolTest::StartExternalMiniCluster(const vector<string>& extra_master_flags,
-                                        const vector<string>& extra_tserver_flags,
-                                        int num_tablet_servers) {
-  cluster_opts_.extra_master_flags = extra_master_flags;
-  cluster_opts_.extra_tserver_flags = extra_tserver_flags;
-  cluster_opts_.num_tablet_servers = num_tablet_servers;
-  cluster_.reset(new ExternalMiniCluster(cluster_opts_));
+void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new ExternalMiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(),
                                   cluster_->messenger(), &ts_map_));
 }
 
-void ToolTest::StartMiniCluster(int num_masters,
-                                int num_tablet_servers) {
-  InternalMiniClusterOptions opts;
-  opts.num_masters = num_masters;
-  opts.num_tablet_servers = num_tablet_servers;
-  mini_cluster_.reset(new InternalMiniCluster(env_, opts));
+void ToolTest::StartMiniCluster(InternalMiniClusterOptions opts) {
+  mini_cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
   ASSERT_OK(mini_cluster_->Start());
 }
 
@@ -1260,7 +1247,9 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 void ToolTest::RunLoadgen(int num_tservers,
                           const vector<string>& tool_args,
                           const string& table_name) {
-  NO_FATALS(StartExternalMiniCluster({}, {}, num_tservers));
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = num_tservers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
   if (!table_name.empty()) {
     static const string kKeyColumnName = "key";
     static const Schema kSchema = Schema(
@@ -1369,10 +1358,13 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   // on the tablet servers in the cluster giving us the test coverage
   // for KUDU-1776. With this, 'kudu remote_replica copy' can be used to
   // connect to tablet servers bound to wildcard ip addresses.
-  cluster_opts_.bind_mode = cluster::MiniCluster::WILDCARD;
-  NO_FATALS(StartExternalMiniCluster(
-      {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false"},
-      {"--enable_leader_failure_detection=false"}, kNumTservers));
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTservers;
+  opts.bind_mode = cluster::MiniCluster::WILDCARD;
+  opts.extra_master_flags.emplace_back(
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  opts.extra_tserver_flags.emplace_back("--enable_leader_failure_detection=false");
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   // TestWorkLoad.Setup() internally generates a table.
   TestWorkload workload(cluster_.get());
@@ -1677,7 +1669,7 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
 }
 
 TEST_F(ToolTest, TestTserverList) {
-  NO_FATALS(StartExternalMiniCluster({}, {}, 1));
+  NO_FATALS(StartExternalMiniCluster());
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   const auto& tserver = cluster_->tablet_server(0);
@@ -1733,7 +1725,9 @@ TEST_F(ToolTest, TestTserverList) {
 }
 
 TEST_F(ToolTest, TestMasterList) {
-  NO_FATALS(StartExternalMiniCluster({}, {}, 0));
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 0;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   auto* master = cluster_->master();
