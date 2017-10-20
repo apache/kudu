@@ -275,6 +275,14 @@ Status DumpFsTree(const RunnerContext& /*context*/) {
   return Status::OK();
 }
 
+Status Update(const RunnerContext& /*context*/) {
+  Env* env = Env::Default();
+  FsManagerOpts opts;
+  opts.update_on_disk = true;
+  FsManager fs(env, std::move(opts));
+  return fs.Open();
+}
+
 } // anonymous namespace
 
 static unique_ptr<Mode> BuildFsDumpMode() {
@@ -340,9 +348,18 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("uuid")
       .Build();
 
+  unique_ptr<Action> update =
+      ActionBuilder("update_dirs", &Update)
+      .Description("Updates the set of data directories in an existing Kudu filesystem")
+      .ExtraDescription("Cannot currently be used to remove data directories")
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .Build();
+
   return ModeBuilder("fs")
       .Description("Operate on a local Kudu filesystem")
       .AddMode(BuildFsDumpMode())
+      .AddAction(std::move(update))
       .AddAction(std::move(check))
       .AddAction(std::move(format))
       .Build();

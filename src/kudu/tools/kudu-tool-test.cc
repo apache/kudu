@@ -126,6 +126,8 @@ namespace tools {
 using cfile::CFileWriter;
 using cfile::StringDataGenerator;
 using cfile::WriterOptions;
+using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::sp::shared_ptr;
 using cluster::ExternalMiniCluster;
 using cluster::ExternalMiniClusterOptions;
@@ -402,8 +404,9 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kFsModeRegexes = {
         "check.*Kudu filesystem for inconsistencies",
+        "dump.*Dump a Kudu filesystem",
         "format.*new Kudu filesystem",
-        "dump.*Dump a Kudu filesystem"
+        "update_dirs.*Updates the set of data directories"
     };
     NO_FATALS(RunTestHelp("fs", kFsModeRegexes));
     NO_FATALS(RunTestHelp("fs not_a_mode", kFsModeRegexes,
@@ -1271,7 +1274,7 @@ void ToolTest::RunLoadgen(int num_tservers,
 
     shared_ptr<client::KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
-    client::KuduSchema client_schema(client::KuduSchemaFromSchema(kSchema));
+    KuduSchema client_schema(client::KuduSchemaFromSchema(kSchema));
     unique_ptr<client::KuduTableCreator> table_creator(
         client->NewTableCreator());
     ASSERT_OK(table_creator->table_name(table_name)
@@ -1921,12 +1924,12 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     }
     shared_ptr<client::KuduClient> client;
     ASSERT_OK(client_builder.Build(&client));
-    client::KuduSchemaBuilder schema_builder;
+    KuduSchemaBuilder schema_builder;
     schema_builder.AddColumn("foo")
               ->Type(client::KuduColumnSchema::INT32)
               ->NotNull()
               ->PrimaryKey();
-    client::KuduSchema schema;
+    KuduSchema schema;
     ASSERT_OK(schema_builder.Build(&schema));
     unique_ptr<client::KuduTableCreator> table_creator(
         client->NewTableCreator());
@@ -2056,6 +2059,87 @@ TEST_P(ControlShellToolTest, TestControlShell) {
     req.mutable_destroy_cluster();
     ASSERT_OK(SendReceive(req, &resp));
   }
+}
+
+static void CreateTableWithFlushedData(const string& table_name,
+                                        InternalMiniCluster* cluster) {
+  // Use a schema with a high number of columns to encourage the creation of
+  // many data blocks.
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  for (int i = 0; i < 50; i++) {
+    schema_builder.AddColumn(Substitute("col$0", i))
+        ->Type(client::KuduColumnSchema::INT32)
+        ->NotNull();
+  }
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create a table and write some data to it.
+  TestWorkload workload(cluster);
+  workload.set_schema(schema);
+  workload.set_table_name(table_name);
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+  ASSERT_EVENTUALLY([&](){
+    ASSERT_GE(workload.rows_inserted(), 10000);
+  });
+  workload.StopAndJoin();
+
+  // Flush all tablets belonging to this table.
+  for (int i = 0; i < cluster->num_tablet_servers(); i++) {
+    vector<scoped_refptr<TabletReplica>> replicas;
+    cluster->mini_tablet_server(i)->server()->tablet_manager()->GetTabletReplicas(&replicas);
+    for (const auto& r : replicas) {
+      if (r->tablet_metadata()->table_name() == table_name) {
+        ASSERT_OK(r->tablet()->Flush());
+      }
+    }
+  }
+}
+
+TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, only log block manager is supported";
+    return;
+  }
+
+  // Start a cluster whose tserver has multiple data directories.
+  InternalMiniClusterOptions opts;
+  opts.num_data_dirs = 2;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+
+  // Create a table and flush some test data to it.
+  NO_FATALS(CreateTableWithFlushedData("foo", mini_cluster_.get()));
+
+  // Add a new data directory.
+  MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
+  const string& wal_root = mts->options()->fs_opts.wal_root;
+  vector<string> data_roots = mts->options()->fs_opts.data_roots;
+  string to_add = JoinPathSegments(DirName(data_roots.back()), "data-new");
+  data_roots.emplace_back(to_add);
+  mts->Shutdown();
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(data_roots, ","))));
+
+  // Reconfigure the tserver to use the newly added data directory and restart it.
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+
+  // Create a second table and flush some data. The flush should write some
+  // data to the newly added data directory.
+  uint64_t disk_space_used_before;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(to_add, &disk_space_used_before));
+  NO_FATALS(CreateTableWithFlushedData("bar", mini_cluster_.get()));
+  uint64_t disk_space_used_after;
+  ASSERT_OK(env_->GetFileSizeOnDiskRecursively(to_add, &disk_space_used_after));
+  ASSERT_GT(disk_space_used_after, disk_space_used_before);
 }
 
 } // namespace tools

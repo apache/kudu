@@ -27,7 +27,6 @@
 
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/status.h"
@@ -109,8 +108,7 @@ TEST_F(KuduTest, Locking) {
 static void RunCheckIntegrityTest(Env* env,
                                   const vector<PathSetPB>& path_sets,
                                   const string& expected_status_string) {
-  vector<PathInstanceMetadataFile*> instances;
-  ElementDeleter deleter(&instances);
+  vector<unique_ptr<PathInstanceMetadataFile>> instances;
 
   int i = 0;
   for (const PathSetPB& ps : path_sets) {
@@ -121,7 +119,7 @@ static void RunCheckIntegrityTest(Env* env,
     metadata->set_filesystem_block_size_bytes(1);
     metadata->mutable_path_set()->CopyFrom(ps);
     instance->SetMetadataForTests(std::move(metadata));
-    instances.push_back(instance.release());
+    instances.emplace_back(std::move(instance));
     i++;
   }
 

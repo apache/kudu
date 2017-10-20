@@ -64,6 +64,7 @@ class PathInstanceMetadataFile;
 struct CreateBlockOptions;
 
 const char kInstanceMetadataFileName[] = "block_manager_instance";
+const char kDataDirName[] = "data";
 
 namespace internal {
 
@@ -216,6 +217,15 @@ struct DataDirManagerOptions {
   //
   // Defaults to false.
   bool read_only;
+
+  // Whether or not the provided directories should be considered the new
+  // canonical set. If true, on-disk data structures will be updated
+  // accordingly when the DataDirManager is opened.
+  //
+  // Defaults to false. If true, 'read_only' must be false.
+  //
+  // Currently only supports adding new data directories.
+  bool update_on_disk;
 };
 
 // Encapsulates knowledge of data directory management on behalf of block
@@ -381,9 +391,6 @@ class DataDirManager {
   FRIEND_TEST(DataDirsTest, TestLoadBalancingDistribution);
   FRIEND_TEST(DataDirsTest, TestFailedDirNotAddedToGroup);
 
-  // The base name of a data directory.
-  static const char* kDataDirName;
-
   // Constructs a directory manager.
   DataDirManager(Env* env,
                  DataDirManagerOptions opts,
@@ -401,6 +408,32 @@ class DataDirManager {
   // max allowed, if locks need to be acquired and cannot be, or if the
   // metadata directory (i.e. the first one) fails to load.
   Status Open();
+
+  // Loads the instance files for each directory, populating 'missing_roots'
+  // with the data roots that are missing instance files, and
+  // 'loaded_instances' with successfully loaded instances.
+  //
+  // Returns an error if the metadata directory fails to load.
+  Status LoadInstances(std::vector<std::string>* missing_roots,
+      std::vector<std::unique_ptr<PathInstanceMetadataFile>>* loaded_instances);
+
+  // Initializes new data directories specified by 'root_uuid_pairs_to_create'
+  // and updates the on-disk instance files of existing data directories
+  // specified by 'instances_to_update' using the contents of 'all_uuids'.
+  //
+  // Returns an error if any disk operations fail.
+  Status CreateNewDataDirectoriesAndUpdateExistingOnes(
+      std::vector<std::pair<std::string, std::string>> root_uuid_pairs_to_create,
+      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
+      std::vector<std::string> all_uuids);
+
+  // Updates the on-disk instance files specified by 'instances_to_update'
+  // using the contents of 'new_all_uuids'.
+  //
+  // Returns an error if any disk operations fail.
+  Status UpdateExistingInstances(
+      std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
+      std::vector<std::string> new_all_uuids);
 
   // Repeatedly selects directories from those available to put into a new
   // DataDirGroup until 'group_indices' reaches 'target_size' elements.

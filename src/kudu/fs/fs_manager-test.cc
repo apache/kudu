@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -36,7 +37,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -61,6 +61,7 @@ using strings::Substitute;
 
 DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
+DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 DECLARE_string(umask);
 
@@ -68,6 +69,10 @@ namespace kudu {
 
 class FsManagerTestBase : public KuduTest {
  public:
+  FsManagerTestBase()
+     : fs_root_(GetTestPath("fs_root")) {
+  }
+
   void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
@@ -78,13 +83,17 @@ class FsManagerTestBase : public KuduTest {
   }
 
   void ReinitFsManager() {
-    ReinitFsManager(GetTestPath("fs_root"), { GetTestPath("fs_root")} );
+    ReinitFsManagerWithPaths(fs_root_, { fs_root_ });
   }
 
-  void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
+  void ReinitFsManagerWithPaths(string wal_path, vector<string> data_paths) {
     FsManagerOpts opts;
-    opts.wal_root = wal_path;
-    opts.data_roots = data_paths;
+    opts.wal_root = std::move(wal_path);
+    opts.data_roots = std::move(data_paths);
+    ReinitFsManagerWithOpts(std::move(opts));
+  }
+
+  void ReinitFsManagerWithOpts(FsManagerOpts opts) {
     fs_manager_.reset(new FsManager(env_, std::move(opts)));
   }
 
@@ -108,8 +117,11 @@ class FsManagerTestBase : public KuduTest {
 
   FsManager *fs_manager() const { return fs_manager_.get(); }
 
+ protected:
+  const string fs_root_;
+
  private:
-  gscoped_ptr<FsManager> fs_manager_;
+  unique_ptr<FsManager> fs_manager_;
 };
 
 TEST_F(FsManagerTestBase, TestBaseOperations) {
@@ -124,7 +136,7 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
 TEST_F(FsManagerTestBase, TestIllegalPaths) {
   vector<string> illegal = { "", "asdf", "/foo\n\t" };
   for (const string& path : illegal) {
-    ReinitFsManager(path, { path });
+    ReinitFsManagerWithPaths(path, { path });
     ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsIOError());
   }
 }
@@ -132,7 +144,7 @@ TEST_F(FsManagerTestBase, TestIllegalPaths) {
 TEST_F(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
   vector<string> data_paths = { GetTestPath("a"), GetTestPath("b"), GetTestPath("c") };
-  ReinitFsManager(wal_path, data_paths);
+  ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   ASSERT_OK(fs_manager()->Open());
 }
@@ -140,13 +152,13 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
 TEST_F(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
   string wal_path = GetTestPath("foo");
   vector<string> data_paths = { wal_path + "/" };
-  ReinitFsManager(wal_path, data_paths);
+  ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 }
 
 TEST_F(FsManagerTestBase, TestDuplicatePaths) {
   string path = GetTestPath("foo");
-  ReinitFsManager(path, { path, path, path });
+  ReinitFsManagerWithPaths(path, { path, path, path });
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   ASSERT_EQ(vector<string>({ JoinPathSegments(path, fs_manager()->kDataDirName) }),
             fs_manager()->GetDataRootDirs());
@@ -182,12 +194,12 @@ TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   }
 
   // Try to create the FS layout. It should fail.
-  ReinitFsManager(path, { path });
+  ReinitFsManagerWithPaths(path, { path });
   ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsAlreadyPresent());
 }
 
 TEST_F(FsManagerTestBase, TestEmptyWALPath) {
-  ReinitFsManager("", {});
+  ReinitFsManagerWithPaths("", {});
   Status s = fs_manager()->CreateInitialFileSystemLayout();
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "directory (fs_wal_dir) not provided");
@@ -197,7 +209,7 @@ TEST_F(FsManagerTestBase, TestOnlyWALPath) {
   string path = GetTestPath("new_fs_root");
   ASSERT_OK(env_->CreateDir(path));
 
-  ReinitFsManager(path, {});
+  ReinitFsManagerWithPaths(path, {});
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   ASSERT_TRUE(HasPrefixString(fs_manager()->GetWalsRootDir(), path));
   ASSERT_TRUE(HasPrefixString(fs_manager()->GetConsensusMetadataDir(), path));
@@ -209,7 +221,7 @@ TEST_F(FsManagerTestBase, TestOnlyWALPath) {
 
 TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
   string path = GetTestPath("new_fs_root");
-  ReinitFsManager(path, {});
+  ReinitFsManagerWithPaths(path, {});
 
   // Use an invalid uuid at first.
   string uuid = "not_a_valid_uuid";
@@ -276,9 +288,9 @@ TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
 
   // Fail a directory, avoiding the metadata directory.
   FLAGS_env_inject_eio_globs = data_paths[1];
-  ReinitFsManager(wal_path, data_roots);
+  ReinitFsManagerWithPaths(wal_path, data_roots);
   Status s = fs_manager()->CreateInitialFileSystemLayout();
-  ASSERT_STR_MATCHES(s.ToString(), "Cannot create FS layout; at least one directory "
+  ASSERT_STR_MATCHES(s.ToString(), "cannot create FS layout; at least one directory "
                                    "failed to canonicalize");
   FLAGS_env_inject_eio = 0;
 }
@@ -292,14 +304,14 @@ TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
   }
   vector<string> data_roots = { GetTestPath("data1/roots"), GetTestPath("data2/roots"),
                                 GetTestPath("data3/roots") };
-  ReinitFsManager(wal_path, data_roots);
+  ReinitFsManagerWithPaths(wal_path, data_roots);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 
   // Now fail one of the directories.
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
   FLAGS_env_inject_eio_globs = JoinPathSegments(Substitute("$0,$0", data_paths[1]), "**");
-  ReinitFsManager(wal_path, data_roots);
+  ReinitFsManagerWithPaths(wal_path, data_roots);
   ASSERT_OK(fs_manager()->Open(nullptr));
   ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 
@@ -309,7 +321,7 @@ TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
 TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   string wal_path = GetTestPath("wals");
   vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
-  ReinitFsManager(wal_path, data_paths);
+  ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 
   // Create a few tmp files here
@@ -352,7 +364,7 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   ASSERT_EQ(6, n_tmp_files);
 
   // Opening fs_manager should remove tmp files
-  ReinitFsManager(wal_path, data_paths);
+  ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->Open());
 
   n_tmp_files = 0;
@@ -385,7 +397,7 @@ TEST_F(FsManagerTestBase, TestUmask) {
   HandleCommonFlags();
   ASSERT_EQ(007, g_parsed_umask);
   root = GetTestPath("new_root");
-  ReinitFsManager({ root }, { root });
+  ReinitFsManagerWithPaths(root, { root });
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   EXPECT_EQ("770", FilePermsAsString(root));
   EXPECT_EQ("770", FilePermsAsString(fs_manager()->GetConsensusMetadataDir()));
@@ -396,7 +408,7 @@ TEST_F(FsManagerTestBase, TestUmask) {
   FLAGS_umask = "077";
   HandleCommonFlags();
   ASSERT_EQ(077, g_parsed_umask);
-  ReinitFsManager({ root }, { root });
+  ReinitFsManagerWithPaths(root, { root });
   ASSERT_OK(fs_manager()->Open());
   EXPECT_EQ("700", FilePermsAsString(root));
 }
@@ -415,6 +427,172 @@ TEST_F(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
   s = fs_manager()->Open();
   ASSERT_TRUE(s.IsCorruption());
   ASSERT_STR_CONTAINS(s.ToString(), "exists but is not a directory");
+}
+
+
+TEST_F(FsManagerTestBase, TestAddDataDirs) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, file block manager not supported";
+    return;
+  }
+
+  // Try to open with a new data dir in the list to be opened; this should fail.
+  const string new_path1 = GetTestPath("new_path1");
+  FsManagerOpts opts;
+  opts.wal_root = fs_root_;
+  opts.data_roots = { fs_root_, new_path1 };
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), fs_manager()->GetInstanceMetadataPath(new_path1));
+
+  // This time allow new data directories to be created.
+  opts.update_on_disk = true;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // Try to open with a data dir removed; this should fail.
+  opts.data_roots = { fs_root_ };
+  ReinitFsManagerWithOpts(opts);
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
+
+  // Try to open with a new data dir at the front of the list; this should fail.
+  const string new_path2 = GetTestPath("new_path2");
+  opts.data_roots = { new_path2, fs_root_, new_path1 };
+  ReinitFsManagerWithOpts(opts);
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
+
+  // But adding a new data dir elsewhere in the list is OK.
+  opts.data_roots = { fs_root_, new_path2, new_path1 };
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // Try to open with a new data dir although an existing data dir has failed;
+  // this should fail.
+  {
+    google::FlagSaver saver;
+    FLAGS_crash_on_eio = false;
+    FLAGS_env_inject_eio = 1.0;
+    FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
+
+    const string new_path3 = GetTestPath("new_path3");
+    opts.data_roots = { fs_root_, new_path2, new_path1, new_path3 };
+    ReinitFsManagerWithOpts(opts);
+    Status s = fs_manager()->Open();
+    ASSERT_TRUE(s.IsIOError());
+    ASSERT_STR_CONTAINS(s.ToString(), "found failed data directory");
+  }
+}
+
+TEST_F(FsManagerTestBase, TestAddDataDirsFuzz) {
+  const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
+
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, file block manager not supported";
+    return;
+  }
+
+  FsManagerOpts fs_opts;
+  fs_opts.wal_root = fs_root_;
+  fs_opts.data_roots = { fs_root_ };
+  for (int i = 0; i < kNumAttempts; i++) {
+    // Create a new fs root.
+    string new_data_root = GetTestPath(Substitute("new_data_$0", i));
+    fs_opts.data_roots.emplace_back(new_data_root);
+
+    // Try to add it with failure injection enabled.
+    bool add_succeeded;
+    {
+      google::FlagSaver saver;
+      FLAGS_crash_on_eio = false;
+
+      // This value isn't arbitrary: most attempts fail and only some succeed.
+      FLAGS_env_inject_eio = 0.01;
+
+      fs_opts.update_on_disk = true;
+      ReinitFsManagerWithOpts(fs_opts);
+      add_succeeded = fs_manager()->Open().ok();
+    }
+
+    // Reopen regardless, to ensure that failures didn't corrupt anything.
+    fs_opts.update_on_disk = false;
+    ReinitFsManagerWithOpts(fs_opts);
+    Status open_status = fs_manager()->Open();
+    if (add_succeeded) {
+      ASSERT_OK(open_status);
+    }
+
+    // The rollback logic built into the add fs root operation isn't robust
+    // enough to handle every possible sequence of injected failures. Let's see
+    // if we need to apply a "workaround" in order to fix the filesystem.
+    if (!open_status.ok()) {
+      // Failed? Perhaps the new fs root and data directory were created, but
+      // there was an injected failure later on, which led to a rollback and
+      // the removal of the new fs instance file.
+      //
+      // Fix this as a user might (by copying the original fs instance file
+      // into the new fs root) then retry.
+      string source_instance = fs_manager()->GetInstanceMetadataPath(fs_root_);
+      bool is_dir;
+      Status s = env_->IsDirectory(new_data_root, &is_dir);
+      if (s.ok()) {
+        ASSERT_TRUE(is_dir);
+        string new_instance = fs_manager()->GetInstanceMetadataPath(new_data_root);
+        if (!env_->FileExists(new_instance)) {
+          WritableFileOptions wr_opts;
+          wr_opts.mode = Env::CREATE_NON_EXISTING;
+          ASSERT_OK(env_util::CopyFile(env_, source_instance, new_instance, wr_opts));
+          ReinitFsManagerWithOpts(fs_opts);
+          open_status = fs_manager()->Open();
+        }
+      }
+    }
+    if (!open_status.ok()) {
+      // Still failing? Unfortunately, there's not enough information to know
+      // whether the injected failure occurred during creation of the new data
+      // directory or just afterwards, when the DataDirManager reopened itself.
+      // If the former, the add itself failed and the failure should resolve if
+      // we drop the new fs root and retry.
+      fs_opts.data_roots.pop_back();
+      ReinitFsManagerWithOpts(fs_opts);
+      open_status = fs_manager()->Open();
+    }
+    if (!open_status.ok()) {
+      // We're still failing? Okay, there's only one legitimate case left, and
+      // that's if an error was injected during the update of existing data
+      // directory instance files AND during the restoration phase of cleanup.
+      //
+      // Fix this as a user might (by completing the restoration phase
+      // manually), then retry.
+      ASSERT_TRUE(open_status.IsIOError());
+      bool repaired = false;
+      for (const auto& root : fs_opts.data_roots) {
+        string data_dir = JoinPathSegments(root, fs::kDataDirName);
+        string instance = JoinPathSegments(data_dir,
+                                           fs::kInstanceMetadataFileName);
+        ASSERT_TRUE(env_->FileExists(instance));
+        string copy = instance + kTmpInfix;
+        if (env_->FileExists(copy)) {
+          ASSERT_OK(env_->RenameFile(copy, instance));
+          repaired = true;
+        }
+      }
+      if (repaired) {
+        ReinitFsManagerWithOpts(fs_opts);
+        open_status = fs_manager()->Open();
+      }
+    }
+
+    // We've exhausted all of our manual repair options; if this still fails,
+    // something else is wrong.
+    ASSERT_OK(open_status);
+  }
 }
 
 } // namespace kudu

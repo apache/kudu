@@ -89,12 +89,14 @@ class PathInstanceMetadataFile {
     return health_status_;
   }
 
-  std::string path() const { return DirName(filename_); }
+  std::string dir() const { return DirName(filename_); }
+  const std::string& path() const { return filename_; }
   PathInstanceMetadataPB* const metadata() const { return metadata_.get(); }
 
   // Check the integrity of the provided instances' path sets, ignoring any
   // unhealthy instances.
-  static Status CheckIntegrity(const std::vector<PathInstanceMetadataFile*>& instances);
+  static Status CheckIntegrity(
+      const std::vector<std::unique_ptr<PathInstanceMetadataFile>>& instances);
 
  private:
   Env* env_;

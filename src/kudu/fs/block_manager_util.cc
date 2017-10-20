@@ -159,7 +159,7 @@ void PathInstanceMetadataFile::SetMetadataForTests(
 }
 
 Status PathInstanceMetadataFile::CheckIntegrity(
-    const vector<PathInstanceMetadataFile*>& instances) {
+    const vector<unique_ptr<PathInstanceMetadataFile>>& instances) {
   CHECK(!instances.empty());
 
   // Note: although this verification works at the level of UUIDs and instance
@@ -183,7 +183,7 @@ Status PathInstanceMetadataFile::CheckIntegrity(
                    instances.size(), all_uuids.size()));
   }
 
-  for (PathInstanceMetadataFile* instance : instances) {
+  for (const auto& instance : instances) {
     // If the instance has failed (e.g. due to disk failure), there's no
     // telling what its metadata looks like. Ignore it, and continue checking
     // integrity across the healthy instances.
@@ -193,11 +193,12 @@ Status PathInstanceMetadataFile::CheckIntegrity(
     const PathSetPB& path_set = instance->metadata()->path_set();
 
     // Check that the instance's UUID has not been claimed by another instance.
-    PathInstanceMetadataFile** other = InsertOrReturnExisting(&uuids, path_set.uuid(), instance);
+    PathInstanceMetadataFile** other = InsertOrReturnExisting(
+        &uuids, path_set.uuid(), instance.get());
     if (other) {
       return Status::IOError(
           Substitute("Data directories $0 and $1 have duplicate instance metadata UUIDs",
-                     (*other)->path(), instance->path()),
+                     (*other)->dir(), instance->dir()),
           path_set.uuid());
     }
 
@@ -205,7 +206,7 @@ Status PathInstanceMetadataFile::CheckIntegrity(
     if (!ContainsKey(all_uuids, path_set.uuid())) {
       return Status::IOError(
           Substitute("Data directory $0 instance metadata contains unexpected UUID",
-                     instance->path()),
+                     instance->dir()),
           path_set.uuid());
     }
 
@@ -216,7 +217,7 @@ Status PathInstanceMetadataFile::CheckIntegrity(
     if (deduplicated_uuids.size() != path_set.all_uuids_size()) {
       return Status::IOError(
           Substitute("Data directory $0 instance metadata path set contains duplicate UUIDs",
-                     instance->path()),
+                     instance->dir()),
           JoinStrings(path_set.all_uuids(), ","));
     }
 
@@ -224,7 +225,7 @@ Status PathInstanceMetadataFile::CheckIntegrity(
     if (deduplicated_uuids != all_uuids) {
       return Status::IOError(
           Substitute("Data directories $0 and $1 have different instance metadata UUID sets",
-                     instances[0]->path(), instance->path()),
+                     instances[0]->dir(), instance->dir()),
           Substitute("$0 vs $1", JoinStrings(all_uuids, ","), all_uuids_str));
     }
   }

@@ -38,6 +38,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -57,7 +58,6 @@ DECLARE_int32(fs_target_data_dirs_per_tablet);
 DECLARE_int64(disk_reserved_bytes_free_for_testing);
 DECLARE_int64(fs_data_dirs_reserved_bytes);
 DECLARE_string(env_inject_eio_globs);
-DECLARE_string(block_manager);
 
 METRIC_DECLARE_gauge_uint64(data_dirs_failed);
 
@@ -91,7 +91,8 @@ class DataDirsTest : public KuduTest {
     for (int i = 0; i < num_dirs; i++) {
       string dir_name = Substitute("$0-$1", kDirNamePrefix, i);
       ret.push_back(GetTestPath(dir_name));
-      CHECK_OK(env_->CreateDir(ret[i]));
+      bool created;
+      CHECK_OK(env_util::CreateDirIfMissing(env_, ret[i], &created));
     }
     return ret;
   }
@@ -422,7 +423,7 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(test_roots_, "**"), ",");
   Status s = DataDirManager::OpenExistingForTests(env_, test_roots_,
       DataDirManagerOptions(), &dd_manager_);
-  ASSERT_STR_CONTAINS(s.ToString(), "Could not open directory manager");
+  ASSERT_STR_CONTAINS(s.ToString(), "could not open directory manager");
   ASSERT_TRUE(s.IsIOError());
   FLAGS_env_inject_eio = 0;
 }

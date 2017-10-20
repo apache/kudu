@@ -28,6 +28,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -52,6 +53,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -113,10 +115,13 @@ namespace fs {
 using internal::DataDirGroup;
 using std::default_random_engine;
 using std::iota;
+using std::pair;
 using std::set;
 using std::shuffle;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -275,11 +280,10 @@ Status DataDir::RefreshIsFull(RefreshMode mode) {
   return Status::OK();
 }
 
-const char* DataDirManager::kDataDirName = "data";
-
 DataDirManagerOptions::DataDirManagerOptions()
   : block_manager_type(FLAGS_block_manager),
-    read_only(false) {}
+    read_only(false),
+    update_on_disk(false) {}
 
 vector<string> DataDirManager::GetRootNames(const CanonicalizedRootsList& root_list) {
   vector<string> roots;
@@ -296,6 +300,7 @@ DataDirManager::DataDirManager(Env* env,
       canonicalized_data_fs_roots_(std::move(canonicalized_data_roots)),
       rng_(GetRandomSeed32()) {
   DCHECK_GT(canonicalized_data_fs_roots_.size(), 0);
+  DCHECK(!opts_.update_on_disk || !opts_.read_only);
 
   if (opts_.metric_entity) {
     metrics_.reset(new DataDirMetrics(opts_.metric_entity));
@@ -327,8 +332,8 @@ Status DataDirManager::OpenExistingForTests(Env* env, vector<string> data_fs_roo
                                             DataDirManagerOptions opts,
                                             unique_ptr<DataDirManager>* dd_manager) {
   CanonicalizedRootsList roots;
-  for (string& root : data_fs_roots) {
-    roots.push_back({ root, Status::OK() });
+  for (const auto& r : data_fs_roots) {
+    roots.push_back({ r, Status::OK() });
   }
   return DataDirManager::OpenExisting(env, std::move(roots), std::move(opts), dd_manager);
 }
@@ -347,8 +352,8 @@ Status DataDirManager::CreateNewForTests(Env* env, vector<string> data_fs_roots,
                                          DataDirManagerOptions opts,
                                          unique_ptr<DataDirManager>* dd_manager) {
   CanonicalizedRootsList roots;
-  for (string& root : data_fs_roots) {
-    roots.push_back({ root, Status::OK() });
+  for (const auto& r : data_fs_roots) {
+    roots.push_back({ r, Status::OK() });
   }
   return DataDirManager::CreateNew(env, std::move(roots), std::move(opts), dd_manager);
 }
@@ -367,37 +372,50 @@ Status DataDirManager::CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
 Status DataDirManager::Create() {
   CHECK(!opts_.read_only);
 
-  vector<string> dirs_to_delete;
-  vector<string> files_to_delete;
+  // Generate a new UUID for each data directory.
+  ObjectIdGenerator gen;
+  vector<string> all_uuids;
+  vector<pair<string, string>> root_uuid_pairs_to_create;
+  for (const auto& r : canonicalized_data_fs_roots_) {
+    RETURN_NOT_OK_PREPEND(r.status, "Could not create directory manager with disks failed");
+    string uuid = gen.Next();
+    all_uuids.emplace_back(uuid);
+    root_uuid_pairs_to_create.emplace_back(r.path, std::move(uuid));
+  }
+  RETURN_NOT_OK_PREPEND(CreateNewDataDirectoriesAndUpdateExistingOnes(
+      std::move(root_uuid_pairs_to_create), {}, std::move(all_uuids)),
+                        "could not create new data directories");
+  return Status::OK();
+}
+
+Status DataDirManager::CreateNewDataDirectoriesAndUpdateExistingOnes(
+    vector<pair<string, string>> root_uuid_pairs_to_create,
+    vector<unique_ptr<PathInstanceMetadataFile>> instances_to_update,
+    vector<string> all_uuids) {
+  CHECK(!opts_.read_only);
+
+  vector<string> created_dirs;
+  vector<string> created_files;
   auto deleter = MakeScopedCleanup([&]() {
     // Delete files first so that the directories will be empty when deleted.
-    for (const auto& f : files_to_delete) {
+    for (const auto& f : created_files) {
       WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
     }
     // Delete directories in reverse order since parent directories will have
     // been added before child directories.
-    for (auto it = dirs_to_delete.rbegin(); it != dirs_to_delete.rend(); it++) {
+    for (auto it = created_dirs.rbegin(); it != created_dirs.rend(); it++) {
       WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
     }
   });
 
-  // The UUIDs and indices will be included in every instance file.
-  ObjectIdGenerator gen;
-  vector<string> all_uuids(canonicalized_data_fs_roots_.size());
-  for (string& u : all_uuids) {
-    u = gen.Next();
-  }
-  int idx = 0;
-
   // Ensure the data dirs exist and create the instance files.
-  for (const auto& root : canonicalized_data_fs_roots_) {
-    RETURN_NOT_OK_PREPEND(root.status, "Could not create directory manager with disks failed");
-    string data_dir = JoinPathSegments(root.path, kDataDirName);
+  for (const auto& p : root_uuid_pairs_to_create) {
+    string data_dir = JoinPathSegments(p.first, kDataDirName);
     bool created;
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, data_dir, &created),
         Substitute("Could not create directory $0", data_dir));
     if (created) {
-      dirs_to_delete.emplace_back(data_dir);
+      created_dirs.emplace_back(data_dir);
     }
 
     if (opts_.block_manager_type == "log") {
@@ -407,16 +425,19 @@ Status DataDirManager::Create() {
     string instance_filename = JoinPathSegments(data_dir, kInstanceMetadataFileName);
     PathInstanceMetadataFile metadata(env_, opts_.block_manager_type,
                                       instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids), instance_filename);
-    files_to_delete.emplace_back(instance_filename);
-
-    idx++;
+    RETURN_NOT_OK_PREPEND(metadata.Create(p.second, all_uuids), instance_filename);
+    created_files.emplace_back(instance_filename);
   }
+
+  // Update existing instances, if any.
+  RETURN_NOT_OK_PREPEND(UpdateExistingInstances(
+      std::move(instances_to_update), std::move(all_uuids)),
+                        "could not update existing data directories");
 
   // Ensure newly created directories are synchronized to disk.
   if (FLAGS_enable_data_block_fsync) {
-    RETURN_NOT_OK_PREPEND(env_util::SyncAllParentDirs(
-        env_, dirs_to_delete, files_to_delete), "could not sync data directories");
+    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_files),
+                "could not sync newly created data directories");
   }
 
   // Success: don't delete any files.
@@ -424,9 +445,70 @@ Status DataDirManager::Create() {
   return Status::OK();
 }
 
-Status DataDirManager::Open() {
-  vector<PathInstanceMetadataFile*> instances;
-  vector<unique_ptr<DataDir>> dds;
+Status DataDirManager::UpdateExistingInstances(
+    vector<unique_ptr<PathInstanceMetadataFile>> instances_to_update,
+    vector<string> new_all_uuids) {
+  // Prepare a scoped cleanup for managing instance metadata copies.
+  unordered_map<string, string> copies_to_restore;
+  unordered_set<string> copies_to_delete;
+  auto copy_cleanup = MakeScopedCleanup([&]() {
+    for (const auto& f : copies_to_delete) {
+      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+    }
+    for (const auto& f : copies_to_restore) {
+      WARN_NOT_OK(env_->RenameFile(f.first, f.second),
+                  Substitute("Could not restore file $0 from $1", f.second, f.first));
+    }
+  });
+
+  // Make a copy of every existing instance metadata file.
+  //
+  // This is done before performing any updates, so that if there's a failure
+  // while copying, there's no metadata to restore.
+  WritableFileOptions opts;
+  opts.sync_on_close = true;
+  for (const auto& instance : instances_to_update) {
+    const string& instance_filename = instance->path();
+    string copy_filename = instance_filename + kTmpInfix;
+    RETURN_NOT_OK_PREPEND(env_util::CopyFile(
+        env_, instance_filename, copy_filename, opts),
+                          "unable to backup existing data directory instance metadata");
+    InsertOrDie(&copies_to_delete, copy_filename);
+  }
+
+  // Update existing instance metadata files with the new value of all_uuids.
+  for (const auto& instance : instances_to_update) {
+    const string& instance_filename = instance->path();
+    string copy_filename = instance_filename + kTmpInfix;
+
+    // We've made enough progress on this instance that we should restore its
+    // copy on failure, even if the update below fails. That's because it's a
+    // multi-step process and it's possible for it to return failure despite
+    // the update taking place (e.g. synchronization failure).
+    CHECK_EQ(1, copies_to_delete.erase(copy_filename));
+    InsertOrDie(&copies_to_restore, copy_filename, instance_filename);
+
+    // Perform the update.
+    PathInstanceMetadataPB new_pb = *instance->metadata();
+    new_pb.mutable_path_set()->mutable_all_uuids()->Clear();
+    for (const auto& uuid : new_all_uuids) {
+      new_pb.mutable_path_set()->add_all_uuids(uuid);
+    }
+    RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
+        env_, instance_filename, new_pb, pb_util::OVERWRITE,
+        FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
+                          "unable to overwrite existing data directory instance metadata");
+  }
+
+  // Success; instance metadata copies will be deleted by 'copy_cleanup'.
+  InsertKeysFromMap(copies_to_restore, &copies_to_delete);
+  copies_to_restore.clear();
+  return Status::OK();
+}
+
+Status DataDirManager::LoadInstances(
+    vector<string>* missing_roots,
+    vector<unique_ptr<PathInstanceMetadataFile>>* loaded_instances) {
   LockMode lock_mode;
   if (!FLAGS_fs_lock_data_dirs) {
     lock_mode = LockMode::NONE;
@@ -435,26 +517,34 @@ Status DataDirManager::Open() {
   } else {
     lock_mode = LockMode::MANDATORY;
   }
-  const int kMaxDataDirs = opts_.block_manager_type == "file" ? (1 << 16) - 1 : kint32max;
-
-  int i = 0;
-  // Create a directory for all data dirs specified by the user.
-  for (const auto& root : canonicalized_data_fs_roots_) {
+  vector<string> missing_roots_tmp;
+  vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances_tmp;
+  for (int i = 0; i < canonicalized_data_fs_roots_.size(); i++) {
+    const auto& root = canonicalized_data_fs_roots_[i];
     string data_dir = JoinPathSegments(root.path, kDataDirName);
     string instance_filename = JoinPathSegments(data_dir, kInstanceMetadataFileName);
-    // Open and lock the data dir's metadata instance file.
-    gscoped_ptr<PathInstanceMetadataFile> instance(
-        new PathInstanceMetadataFile(env_, opts_.block_manager_type,
-                                     instance_filename));
+
+    unique_ptr<PathInstanceMetadataFile> instance(
+        new PathInstanceMetadataFile(env_, opts_.block_manager_type, instance_filename));
     if (PREDICT_FALSE(!root.status.ok())) {
+      DCHECK_GT(i, 0);  // Guaranteed by FsManager::Init().
       instance->SetInstanceFailed(root.status);
     } else {
-      RETURN_NOT_OK_PREPEND(instance->LoadFromDisk(),
-                            Substitute("Could not open $0", instance_filename));
+      // This may return OK and mark 'instance' as failed.
+      Status s = instance->LoadFromDisk();
+      if (s.IsNotFound() && opts_.update_on_disk && i > 0) {
+        // A missing instance is only tolerated if we've been asked to add new
+        // data directories and this isn't the first one (i.e. the data
+        // directory used for metadata).
+        missing_roots_tmp.emplace_back(root.path);
+        continue;
+      }
+      RETURN_NOT_OK_PREPEND(s, Substitute("could not load $0", instance_filename));
     }
 
-    // Try locking the directory.
-    if (lock_mode != LockMode::NONE) {
+    // Try locking the instance.
+    if (instance->healthy() && lock_mode != LockMode::NONE) {
+      // This may return OK and mark 'instance' as failed.
       Status s = instance->Lock();
       if (!s.ok()) {
         Status new_status = s.CloneAndPrepend(Substitute(
@@ -469,13 +559,83 @@ Status DataDirManager::Open() {
       }
     }
 
-    // Crash if the metadata directory, i.e. the first specified by the user, failed.
-    if (!instance->healthy() && i == 0) {
-      return Status::IOError(Substitute("Could not open directory manager; "
-          "metadata directory failed: $0", instance->health_status().ToString()));
+    loaded_instances_tmp.emplace_back(std::move(instance));
+  }
+
+  // Check that the first data directory (used for metadata) exists and is healthy.
+  CHECK(!loaded_instances_tmp.empty());  // enforced above
+  if (!loaded_instances_tmp[0]->healthy()) {
+    return Status::IOError(Substitute(
+        "could not open directory manager; metadata directory failed: $0",
+        loaded_instances_tmp[0]->health_status().ToString()));
+  }
+  missing_roots->swap(missing_roots_tmp);
+  loaded_instances->swap(loaded_instances_tmp);
+  return Status::OK();
+}
+
+Status DataDirManager::Open() {
+  const int kMaxDataDirs = opts_.block_manager_type == "file" ? (1 << 16) - 1 : kint32max;
+
+  // Find and load existing data directory instances.
+  vector<string> missing_roots;
+  vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
+  RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
+
+  // Check the integrity of all loaded instances.
+  RETURN_NOT_OK_PREPEND(
+      PathInstanceMetadataFile::CheckIntegrity(loaded_instances),
+      Substitute("could not verify integrity of files: $0",
+                 JoinStrings(GetDataDirs(), ",")));
+
+  // Create any missing data directories, if desired.
+  if (!missing_roots.empty()) {
+    if (opts_.block_manager_type == "file") {
+      return Status::InvalidArgument(
+          "file block manager may not add new data directories");
     }
 
-    instances.push_back(instance.get());
+    // Prepare to create new directories and update existing instances. We
+    // must generate a new UUID for each missing root, and update all_uuids in
+    // all existing instances to include those new UUIDs.
+    //
+    // Note: all data directories must be healthy to perform this operation.
+    ObjectIdGenerator gen;
+    vector<string> new_all_uuids;
+    vector<pair<string, string>> root_uuid_pairs_to_create;
+    for (const auto& i : loaded_instances) {
+      RETURN_NOT_OK_PREPEND(
+          i->health_status(),
+          "found failed data directory while adding new data directories");
+      new_all_uuids.emplace_back(i->metadata()->path_set().uuid());
+    }
+    for (const auto& m : missing_roots) {
+      string uuid = gen.Next();
+      new_all_uuids.emplace_back(uuid);
+      root_uuid_pairs_to_create.emplace_back(m, std::move(uuid));
+    }
+    RETURN_NOT_OK_PREPEND(
+        CreateNewDataDirectoriesAndUpdateExistingOnes(
+            std::move(root_uuid_pairs_to_create),
+            std::move(loaded_instances),
+            std::move(new_all_uuids)),
+            "could not add new data directories");
+
+    // Now that we've created the missing directories, try loading the
+    // directories again.
+    // Note: 'loaded_instances' must be cleared to unlock the instance files.
+    loaded_instances.clear();
+    missing_roots.clear();
+    RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
+    DCHECK(missing_roots.empty());
+  }
+
+  // All instances are present and accounted for. Time to create the in-memory
+  // data directory structures.
+  int i = 0;
+  vector<unique_ptr<DataDir>> dds;
+  for (auto& instance : loaded_instances) {
+    const string data_dir = instance->dir();
 
     // Create a per-dir thread pool.
     gscoped_ptr<ThreadPool> pool;
@@ -499,21 +659,12 @@ Status DataDirManager::Open() {
       }
     }
 
-    // Create the data directory in-memory structure itself.
     unique_ptr<DataDir> dd(new DataDir(
-        env_, metrics_.get(), fs_type, data_dir,
-        unique_ptr<PathInstanceMetadataFile>(instance.release()),
+        env_, metrics_.get(), fs_type, data_dir, std::move(instance),
         unique_ptr<ThreadPool>(pool.release())));
-
     dds.emplace_back(std::move(dd));
     i++;
   }
-
-  // Check integrity and determine which instances need updating.
-  RETURN_NOT_OK_PREPEND(
-      PathInstanceMetadataFile::CheckIntegrity(instances),
-      Substitute("Could not verify integrity of files: $0",
-                 JoinStrings(GetDataDirs(), ",")));
 
   // Use the per-dir thread pools to delete temporary files in parallel.
   for (const auto& dd : dds) {
@@ -562,7 +713,7 @@ Status DataDirManager::Open() {
     DCHECK_NE(idx, -1); // Guaranteed by CheckIntegrity().
     if (idx > kMaxDataDirs) {
       return Status::NotSupported(
-          Substitute("Block manager supports a maximum of $0 paths", kMaxDataDirs));
+          Substitute("block manager supports a maximum of $0 paths", kMaxDataDirs));
     }
     insert_to_maps(idx, path_set.uuid(), dd.get());
   }

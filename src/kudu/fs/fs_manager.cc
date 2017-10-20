@@ -20,8 +20,9 @@
 #include <cinttypes>
 #include <ctime>
 #include <iostream>
-#include <map>
 #include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include <boost/optional/optional.hpp>
@@ -101,11 +102,11 @@ using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
 using kudu::fs::WritableBlock;
 using kudu::pb_util::SecureDebugString;
-using std::map;
 using std::ostream;
-using std::set;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -126,7 +127,8 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 FsManagerOpts::FsManagerOpts()
   : wal_root(FLAGS_fs_wal_dir),
     block_manager_type(FLAGS_block_manager),
-    read_only(false) {
+    read_only(false),
+    update_on_disk(false) {
   data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
@@ -134,19 +136,23 @@ FsManagerOpts::FsManagerOpts(const string& root)
   : wal_root(root),
     data_roots({ root }),
     block_manager_type(FLAGS_block_manager),
-    read_only(false) {}
+    read_only(false),
+    update_on_disk(false) {}
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
     opts_(FsManagerOpts(root_path)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {}
+    initted_(false) {
+}
 
 FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
     opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {}
+    initted_(false) {
+  DCHECK(!opts_.update_on_disk || !opts_.read_only);
+}
 
 FsManager::~FsManager() {}
 
@@ -169,12 +175,12 @@ Status FsManager::Init() {
   }
 
   // Deduplicate all of the roots.
-  set<string> all_roots = { opts_.wal_root };
+  unordered_set<string> all_roots = { opts_.wal_root };
   all_roots.insert(opts_.data_roots.begin(), opts_.data_roots.end());
 
   // Build a map of original root --> canonicalized root, sanitizing each
   // root as we go and storing the canonicalization status.
-  typedef map<string, CanonicalizedRootAndStatus> RootMap;
+  typedef unordered_map<string, CanonicalizedRootAndStatus> RootMap;
   RootMap canonicalized_roots;
   for (const string& root : all_roots) {
     if (root.empty()) {
@@ -209,9 +215,10 @@ Status FsManager::Init() {
   }
 
   // All done, use the map to set the canonicalized state.
+
   canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, opts_.wal_root);
   if (!opts_.data_roots.empty()) {
-    set<string> unique_roots;
+    unordered_set<string> unique_roots;
     for (const string& data_fs_root : opts_.data_roots) {
       const auto& root = FindOrDie(canonicalized_roots, data_fs_root);
       if (InsertIfNotPresent(&unique_roots, root.path)) {
@@ -274,6 +281,7 @@ Status FsManager::Open(FsReport* report) {
   //
   // Done first to minimize side effects in the case that the configured roots
   // are not yet initialized on disk.
+  CanonicalizedRootsList missing_roots;
   for (auto& root : canonicalized_all_fs_roots_) {
     if (!root.status.ok()) {
       continue;
@@ -282,6 +290,10 @@ Status FsManager::Open(FsReport* report) {
     Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
                                                 pb.get());
     if (PREDICT_FALSE(!s.ok())) {
+      if (s.IsNotFound() && opts_.update_on_disk) {
+        missing_roots.emplace_back(root);
+        continue;
+      }
       if (s.IsDiskFailure()) {
         root.status = s.CloneAndPrepend("Failed to open instance file");
         continue;
@@ -299,6 +311,10 @@ Status FsManager::Open(FsReport* report) {
     }
   }
 
+  if (!metadata_) {
+    return Status::Corruption("All instance files are missing");
+  }
+
   // Ensure all of the ancillary directories exist.
   vector<string> ancillary_dirs = { GetWalsRootDir(),
                                     GetTabletMetadataDir(),
@@ -311,6 +327,28 @@ Status FsManager::Open(FsReport* report) {
       return Status::Corruption(
           Substitute("Required directory $0 exists but is not a directory", d));
     }
+  }
+
+  // In the event of failure, delete everything we created.
+  vector<string> created_dirs;
+  vector<string> created_files;
+  auto deleter = MakeScopedCleanup([&]() {
+    // Delete files first so that the directories will be empty when deleted.
+    for (const auto& f : created_dirs) {
+      WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
+    }
+    // Delete directories in reverse order since parent directories will have
+    // been added before child directories.
+    for (auto it = created_dirs.rbegin(); it != created_dirs.rend(); it++) {
+      WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
+    }
+  });
+
+  // Create any missing roots.
+  if (!missing_roots.empty()) {
+    RETURN_NOT_OK_PREPEND(CreateFileSystemRoots(
+        missing_roots, *metadata_, &created_dirs, &created_files),
+                          "unable to create missing filesystem roots");
   }
 
   // Remove leftover temporary files from the WAL root and fix permissions.
@@ -328,6 +366,7 @@ Status FsManager::Open(FsReport* report) {
     dm_opts.metric_entity = opts_.metric_entity;
     dm_opts.block_manager_type = opts_.block_manager_type;
     dm_opts.read_only = opts_.read_only;
+    dm_opts.update_on_disk = opts_.update_on_disk;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
           canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));
@@ -353,9 +392,28 @@ Status FsManager::Open(FsReport* report) {
     return Status::IOError("Cannot open the FS layout; metadata directory failed");
   }
 
+  if (FLAGS_enable_data_block_fsync) {
+    // Files/directories created by the directory manager in the fs roots have
+    // been synchronized, so now is a good time to sync the roots themselves.
+    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_dirs),
+                "could not sync newly created fs roots");
+  }
+
   LOG(INFO) << "Opened local filesystem: " <<
-    JoinStrings(DataDirManager::GetRootNames(canonicalized_all_fs_roots_), ",")
+      JoinStrings(DataDirManager::GetRootNames(canonicalized_all_fs_roots_), ",")
             << std::endl << SecureDebugString(*metadata_);
+
+  if (!created_dirs.empty()) {
+    LOG(INFO) << "New directories created while opening local filesystem: " <<
+        JoinStrings(created_dirs, ", ");
+  }
+  if (!created_dirs.empty()) {
+    LOG(INFO) << "New files created while opening local filesystem: " <<
+        JoinStrings(created_files, ", ");
+  }
+
+  // Success: do not delete any missing roots created.
+  deleter.cancel();
   return Status::OK();
 }
 
@@ -364,63 +422,32 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
 
   RETURN_NOT_OK(Init());
 
-  // It's OK if a root already exists as long as there's nothing in it.
-  for (const auto& root : canonicalized_all_fs_roots_) {
-    if (!root.status.ok()) {
-      return Status::IOError("Cannot create FS layout; at least one directory "
-                             "failed to canonicalize", root.path);
-    }
-    if (!env_->FileExists(root.path)) {
-      // We'll create the directory below.
-      continue;
-    }
-    bool is_empty;
-    RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
-                          "Unable to check if FSManager root is empty");
-    if (!is_empty) {
-      return Status::AlreadyPresent(
-          Substitute("FSManager root is not empty. See $0", KuduDocsTroubleshootingUrl()),
-          root.path);
-    }
-  }
-
-  // All roots are either empty or non-existent. Create missing roots and all
-  // subdirectories.
-  //
   // In the event of failure, delete everything we created.
-  vector<string> dirs_to_delete;
-  vector<string> files_to_delete;
+  vector<string> created_dirs;
+  vector<string> created_files;
   auto deleter = MakeScopedCleanup([&]() {
     // Delete files first so that the directories will be empty when deleted.
-    for (const auto& f : files_to_delete) {
+    for (const auto& f : created_files) {
       WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
     }
     // Delete directories in reverse order since parent directories will have
     // been added before child directories.
-    for (auto it = dirs_to_delete.rbegin(); it != dirs_to_delete.rend(); it++) {
+    for (auto it = created_dirs.rbegin(); it != created_dirs.rend(); it++) {
       WARN_NOT_OK(env_->DeleteDir(*it), "Could not delete dir " + *it);
     }
   });
 
+  // Create the filesystem roots.
+  //
+  // Files/directories created will NOT be synchronized to disk.
   InstanceMetadataPB metadata;
-  RETURN_NOT_OK(CreateInstanceMetadata(std::move(uuid), &metadata));
-  for (const auto& root : canonicalized_all_fs_roots_) {
-    if (!root.status.ok()) {
-      continue;
-    }
-    string root_name = root.path;
-    bool created;
-    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_name, &created),
-                          "Unable to create FSManager root");
-    if (created) {
-      dirs_to_delete.emplace_back(root_name);
-    }
-    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root_name),
-                          "Unable to write instance metadata");
-    files_to_delete.emplace_back(GetInstanceMetadataPath(root_name));
-  }
+  RETURN_NOT_OK_PREPEND(CreateInstanceMetadata(std::move(uuid), &metadata),
+                        "unable to create instance metadata");
+  RETURN_NOT_OK_PREPEND(FsManager::CreateFileSystemRoots(
+      canonicalized_all_fs_roots_, metadata, &created_dirs, &created_files),
+                        "unable to create file system roots");
 
-  // Initialize ancillary directories.
+  // Create ancillary directories.
   vector<string> ancillary_dirs = { GetWalsRootDir(),
                                     GetTabletMetadataDir(),
                                     GetConsensusMetadataDir() };
@@ -429,17 +456,11 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, dir, &created),
                           Substitute("Unable to create directory $0", dir));
     if (created) {
-      dirs_to_delete.emplace_back(dir);
+      created_dirs.emplace_back(dir);
     }
   }
 
-  // Ensure newly created directories are synchronized to disk.
-  if (FLAGS_enable_data_block_fsync) {
-    RETURN_NOT_OK_PREPEND(env_util::SyncAllParentDirs(
-        env_, dirs_to_delete, files_to_delete), "could not sync fs roots");
-  }
-
-  // And lastly, create the directory manager.
+  // Create the directory manager.
   //
   // All files/directories created will be synchronized to disk.
   DataDirManagerOptions dm_opts;
@@ -451,8 +472,62 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
                           "Unable to create directory manager");
   }
 
+  if (FLAGS_enable_data_block_fsync) {
+    // Files/directories created by the directory manager in the fs roots have
+    // been synchronized, so now is a good time to sync the roots themselves.
+    WARN_NOT_OK(env_util::SyncAllParentDirs(env_, created_dirs, created_files),
+                "could not sync newly created fs roots");
+  }
+
   // Success: don't delete any files.
   deleter.cancel();
+  return Status::OK();
+}
+
+Status FsManager::CreateFileSystemRoots(
+    CanonicalizedRootsList canonicalized_roots,
+    const InstanceMetadataPB& metadata,
+    vector<string>* created_dirs,
+    vector<string>* created_files) {
+  CHECK(!opts_.read_only);
+
+  // It's OK if a root already exists as long as there's nothing in it.
+  for (const auto& root : canonicalized_roots) {
+    if (!root.status.ok()) {
+      return Status::IOError("cannot create FS layout; at least one directory "
+                             "failed to canonicalize", root.path);
+    }
+    if (!env_->FileExists(root.path)) {
+      // We'll create the directory below.
+      continue;
+    }
+    bool is_empty;
+    RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
+                          "unable to check if FSManager root is empty");
+    if (!is_empty) {
+      return Status::AlreadyPresent(
+          Substitute("FSManager root is not empty. See $0", KuduDocsTroubleshootingUrl()),
+          root.path);
+    }
+  }
+
+  // All roots are either empty or non-existent. Create missing roots and all
+  // subdirectories.
+  for (const auto& root : canonicalized_roots) {
+    if (!root.status.ok()) {
+      continue;
+    }
+    string root_name = root.path;
+    bool created;
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_name, &created),
+                          "unable to create FSManager root");
+    if (created) {
+      created_dirs->emplace_back(root_name);
+    }
+    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root_name),
+                          "unable to write instance metadata");
+    created_files->emplace_back(GetInstanceMetadataPath(root_name));
+  }
   return Status::OK();
 }
 

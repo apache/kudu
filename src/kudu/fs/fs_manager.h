@@ -91,6 +91,15 @@ struct FsManagerOpts {
 
   // Whether or not read-write operations should be allowed. Defaults to false.
   bool read_only;
+
+  // Whether or not the contents of 'data_roots' should be considered the new
+  // canonical set. If true, on-disk data structures will be updated
+  // accordingly when the FsManager is opened.
+  //
+  // If true, 'read_only' must be false.
+  //
+  // TODO(KUDU-2202): only supports adding new data directories.
+  bool update_on_disk;
 };
 
 // FsManager provides helpers to read data and metadata files,
@@ -248,6 +257,18 @@ class FsManager {
   //
   // Does not actually perform any on-disk operations.
   void InitBlockManager();
+
+  // Creates filesystem roots from 'canonicalized_roots', writing new on-disk
+  // instances using 'metadata'.
+  //
+  //
+  // All created directories and files will be appended to 'created_dirs' and
+  // 'created_files' respectively. It is the responsibility of the caller to
+  // synchronize the directories containing these newly created file objects.
+  Status CreateFileSystemRoots(CanonicalizedRootsList canonicalized_roots,
+                               const InstanceMetadataPB& metadata,
+                               std::vector<std::string>* created_dirs,
+                               std::vector<std::string>* created_files);
 
   // Create a new InstanceMetadataPB.
   Status CreateInstanceMetadata(boost::optional<std::string> uuid,
