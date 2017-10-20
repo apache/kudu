@@ -266,8 +266,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                                         scoped_refptr<tablet::TabletReplica>* replica_out);
 
   // Helper to generate the report for a single tablet.
-  void CreateReportedTabletPB(const std::string& tablet_id,
-                              const scoped_refptr<tablet::TabletReplica>& replica,
+  void CreateReportedTabletPB(const scoped_refptr<tablet::TabletReplica>& replica,
                               master::ReportedTabletPB* reported_tablet) const;
 
   // Handle the case on startup where we find a tablet that is not in

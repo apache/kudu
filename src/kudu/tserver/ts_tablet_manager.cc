@@ -1006,10 +1006,9 @@ void TSTabletManager::InitLocalRaftPeerPB() {
   CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
 }
 
-void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
-                                             const scoped_refptr<TabletReplica>& replica,
+void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>& replica,
                                              ReportedTabletPB* reported_tablet) const {
-  reported_tablet->set_tablet_id(tablet_id);
+  reported_tablet->set_tablet_id(replica->tablet_id());
   reported_tablet->set_state(replica->state());
   reported_tablet->set_tablet_data_state(replica->tablet_metadata()->tablet_data_state());
   const Status& error = replica->error();
@@ -1026,25 +1025,40 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
 }
 
 void TSTabletManager::PopulateFullTabletReport(TabletReportPB* report) const {
-  shared_lock<RWMutex> shared_lock(lock_);
-  for (const auto& e : tablet_map_) {
-    CreateReportedTabletPB(e.first, e.second, report->add_updated_tablets());
+  // Creating the tablet report can be slow in the case that it is in the
+  // middle of flushing its consensus metadata. We don't want to hold
+  // lock_ for too long, even in read mode, since it can cause other readers
+  // to block if there is a waiting writer (see KUDU-2193). So, we just make
+  // a local copy of the set of replicas.
+  vector<scoped_refptr<tablet::TabletReplica>> to_report;
+  GetTabletReplicas(&to_report);
+  for (const auto& replica : to_report) {
+    CreateReportedTabletPB(replica, report->add_updated_tablets());
   }
 }
 
 void TSTabletManager::PopulateIncrementalTabletReport(TabletReportPB* report,
                                                       const vector<string>& tablet_ids) const {
-  shared_lock<RWMutex> shared_lock(lock_);
-  for (const auto& id : tablet_ids) {
-    const scoped_refptr<tablet::TabletReplica>* replica =
-        FindOrNull(tablet_map_, id);
-    if (replica) {
-      // Dirty entry, report on it.
-      CreateReportedTabletPB(id, *replica, report->add_updated_tablets());
-    } else {
-      // Removed.
-      report->add_removed_tablet_ids(id);
+  // See comment in PopulateFullTabletReport for rationale on making a local
+  // copy of the set of tablets to report.
+  vector<scoped_refptr<tablet::TabletReplica>> to_report;
+  to_report.reserve(tablet_ids.size());
+  {
+    shared_lock<RWMutex> shared_lock(lock_);
+    for (const auto& id : tablet_ids) {
+      const scoped_refptr<tablet::TabletReplica>* replica =
+          FindOrNull(tablet_map_, id);
+      if (replica) {
+        // Dirty entry, report on it.
+        to_report.push_back(*replica);
+      } else {
+        // Removed.
+        report->add_removed_tablet_ids(id);
+      }
     }
+  }
+  for (const auto& replica : to_report) {
+    CreateReportedTabletPB(replica, report->add_updated_tablets());
   }
 }
 
