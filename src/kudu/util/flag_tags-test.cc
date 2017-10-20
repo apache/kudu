@@ -126,6 +126,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
 TEST_F(FlagTagsTest, TestSensitiveFlags) {
   // Setting a sensitive flag should return a redacted value.
   {
+    kudu::g_should_redact = kudu::RedactContext::LOG;
     ASSERT_STR_CONTAINS(CommandlineFlagsIntoString(EscapeMode::NONE), strings::Substitute(
                         "--test_sensitive_flag=$0", kRedactionMessage));
   }

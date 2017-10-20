@@ -51,6 +51,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/url-coding.h"
@@ -458,7 +459,14 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
   ostringstream content;
   PrerenderedWebResponse resp { HttpStatusCode::Ok, HttpResponseHeaders{}, &content };
-  handler.callback()(req, &resp);
+  // Enable or disable redaction from the web UI based on the setting of --redact.
+  // This affects operations like default value and scan predicate pretty printing.
+  if (kudu::g_should_redact == kudu::RedactContext::ALL) {
+    handler.callback()(req, &resp);
+  } else {
+    ScopedDisableRedaction s;
+    handler.callback()(req, &resp);
+  }
 
   string full_content;
   if (use_style) {

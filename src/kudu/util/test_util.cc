@@ -83,8 +83,8 @@ KuduTest::KuduTest()
     // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
     // tests rely on cutting power to a machine or equivalent.
     {"never_fsync", "true"},
-    // Disable log redaction.
-    {"redact", "flag"},
+    // Disable redaction.
+    {"redact", "none"},
     // Reduce default RSA key length for faster tests. We are using strong/high
     // TLS v1.2 cipher suites, so minimum possible for TLS-related RSA keys is
     // 768 bits. However, for the external mini cluster we use 1024 bits because

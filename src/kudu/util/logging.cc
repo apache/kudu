@@ -79,8 +79,7 @@ using base::SpinLockHolder;
 namespace kudu {
 
 __thread bool tls_redact_user_data = true;
-bool g_should_redact_log;
-bool g_should_redact_flag;
+kudu::RedactContext g_should_redact;
 const char* const kRedactionMessage = "<redacted>";
 
 namespace {

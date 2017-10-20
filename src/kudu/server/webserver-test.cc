@@ -176,6 +176,7 @@ TEST_F(WebserverTest, TestDefaultPaths) {
 }
 
 TEST_F(WebserverTest, TestRedactFlagsDump) {
+  kudu::g_should_redact = kudu::RedactContext::ALL;
   // Test varz -- check for the sensitive flag is redacted and HTML-escaped.
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/varz", addr_.ToString()),
                            &buf_));

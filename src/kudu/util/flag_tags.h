@@ -82,7 +82,7 @@
 //
 // - "sensitive":
 //         The values of these flags are considered sensitive and will be redacted
-//         if --redact is set with 'flag'.
+//         if redaction is enabled.
 //
 // A given flag may have zero or more tags associated with it. The system does
 // not make any attempt to check integrity of the tags - for example, it allows

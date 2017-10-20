@@ -715,8 +715,8 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Disable minidumps by default since many tests purposely inject faults.
   argv.emplace_back("--enable_minidumps=false");
 
-  // Disable log redaction.
-  argv.emplace_back("--redact=flag");
+  // Disable redaction.
+  argv.emplace_back("--redact=none");
 
   // Enable metrics logging.
   argv.emplace_back("--metrics_log_interval_ms=1000");

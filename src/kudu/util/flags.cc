@@ -128,18 +128,17 @@ TAG_FLAG(unlock_unsafe_flags, advanced);
 TAG_FLAG(unlock_unsafe_flags, stable);
 
 DEFINE_string(redact, "all",
-              "Comma-separated list of redactions. Supported options are 'flag', "
-              "'log', 'all', and 'none'. If 'flag' is specified, configuration flags which may "
-              "include sensitive data will be redacted whenever server configuration "
-              "is emitted. If 'log' is specified, row data will be redacted from log "
-              "and error messages. If 'all' is specified, all of above will be redacted. "
+              "Comma-separated list that controls redaction context. Supported options "
+              "are 'all','log', and 'none'. If 'all' is specified, sensitive data "
+              "(sensitive configuration flags and row data) will be redacted from "
+              "the web UI as well as glog and error messages. If 'log' is specified, "
+              "sensitive data will only be redacted from glog and error messages. "
               "If 'none' is specified, no redaction will occur.");
 TAG_FLAG(redact, advanced);
 TAG_FLAG(redact, evolving);
 
 static bool ValidateRedact(const char* /*flagname*/, const string& value) {
-  kudu::g_should_redact_log = false;
-  kudu::g_should_redact_flag = false;
+  kudu::g_should_redact = kudu::RedactContext::NONE;
 
   // Flag value is case insensitive.
   string redact_flags;
@@ -147,8 +146,7 @@ static bool ValidateRedact(const char* /*flagname*/, const string& value) {
 
   // 'all', 'none', and '' must be specified without any other option.
   if (redact_flags == "ALL") {
-    kudu::g_should_redact_log = true;
-    kudu::g_should_redact_flag = true;
+    kudu::g_should_redact = kudu::RedactContext::ALL;
     return true;
   }
   if (redact_flags == "NONE" || redact_flags.empty()) {
@@ -157,16 +155,14 @@ static bool ValidateRedact(const char* /*flagname*/, const string& value) {
 
   for (const auto& t : strings::Split(redact_flags, ",", strings::SkipEmpty())) {
     if (t == "LOG") {
-      kudu::g_should_redact_log = true;
-    } else if (t == "FLAG") {
-      kudu::g_should_redact_flag = true;
+      kudu::g_should_redact = kudu::RedactContext::LOG;
     } else if (t == "ALL" || t == "NONE") {
       LOG(ERROR) << "Invalid redaction options: "
                  << value << ", '" << t << "' must be specified by itself.";
       return false;
     } else {
-      LOG(ERROR) << "Invalid redaction type: " << t <<
-                    ". Available types are 'flag', 'log', 'all', and 'none'.";
+      LOG(ERROR) << "Invalid redaction context: " << t <<
+                    ". Available types are 'all', 'log', and 'none'.";
       return false;
     }
   }
@@ -433,15 +429,15 @@ void RunCustomValidators() {
   }
 }
 
-// Redact the flag tagged as 'sensitive', if --redact is set
-// with 'flag'. Otherwise, return its value as-is. If EscapeMode
-// is set to HTML, return HTML escaped string.
+// If --redact indicates, redact the flag tagged as 'sensitive'.
+// Otherwise, return its value as-is. If EscapeMode is set to HTML,
+// return HTML escaped string.
 string CheckFlagAndRedact(const CommandLineFlagInfo& flag, EscapeMode mode) {
   string ret_value;
   unordered_set<string> tags;
   GetFlagTags(flag.name, &tags);
 
-  if (ContainsKey(tags, "sensitive") && g_should_redact_flag) {
+  if (ContainsKey(tags, "sensitive") && KUDU_SHOULD_REDACT()) {
     ret_value = kRedactionMessage;
   } else {
     ret_value = flag.current_value;
@@ -544,8 +540,7 @@ string GetNonDefaultFlags(const GFlagsMap& default_flags) {
           args << '\n';
         }
 
-        // Redact the flags tagged as sensitive, if --redact is set
-        // with 'flag'.
+        // Redact the flags tagged as sensitive, if redaction is enabled.
         string flag_value = CheckFlagAndRedact(flag, EscapeMode::NONE);
         args << "--" << flag.name << '=' << flag_value;
       }

@@ -127,9 +127,9 @@ static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse
 }
 
 // Registered to handle "/flags", and prints out all command-line flags and their HTML
-// escaped values. If --redact is set with 'flag', the values of flags tagged as
-// sensitive will be redacted. The values would not be HTML escaped if in the raw text
-// mode, e.g. "/varz?raw".
+// escaped values. If --redact indicates that redaction is enabled for the web UI, the
+// values of flags tagged as sensitive will be redacted. The values would not be HTML
+// escaped if in the raw text mode, e.g. "/varz?raw".
 static void FlagsHandler(const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp) {
   std::ostringstream* output = resp->output;
