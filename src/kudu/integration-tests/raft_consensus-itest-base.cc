@@ -75,6 +75,7 @@ using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::OpId;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::TServerDetails;
 using kudu::pb_util::SecureDebugString;
 using kudu::rpc::RpcController;
@@ -270,8 +271,9 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
 
 Status RaftConsensusITestBase::GetTermMetricValue(ExternalTabletServer* ts,
                                                   int64_t *term) {
-  return ts->GetInt64Metric(&METRIC_ENTITY_tablet, nullptr, &METRIC_raft_term,
-                            "value", term);
+  return GetInt64Metric(ts->bound_http_hostport(),
+                        &METRIC_ENTITY_tablet, nullptr, &METRIC_raft_term,
+                        "value", term);
 }
 
 }  // namespace tserver

@@ -29,7 +29,6 @@ target_link_libraries(mini_cluster
   gutil
   kudu_client
   kudu_common
-  kudu_curl_util
   kudu_test_util
   kudu_util
   krpc

@@ -31,6 +31,7 @@
 
 #include "kudu/client/schema.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -181,11 +182,9 @@ TEST_F(DenseNodeTest, RunTest) {
                          &METRIC_log_block_manager_full_containers,
                          &METRIC_threads_running }) {
     int64_t value;
-    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(&METRIC_ENTITY_server,
-                                 "kudu.tabletserver",
-                                 m,
-                                 "value",
-                                 &value));
+    ASSERT_OK(itest::GetInt64Metric(
+        cluster_->tablet_server(0)->bound_http_hostport(), &METRIC_ENTITY_server,
+        "kudu.tabletserver", m, "value", &value));
     metrics.emplace_back(m->name(), value);
   }
   cluster_->Shutdown();

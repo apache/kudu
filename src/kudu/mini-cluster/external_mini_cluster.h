@@ -43,8 +43,6 @@
 
 namespace kudu {
 
-class MetricEntityPrototype;
-class MetricPrototype;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
@@ -455,21 +453,6 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Return a pointer to the flags used for this server on restart.
   // Modifying these flags will only take effect on the next restart.
   std::vector<std::string>* mutable_flags() { return &opts_.extra_flags; }
-
-  // Retrieve the value of a given metric from this server. The metric must
-  // be of int64_t type.
-  //
-  // 'value_field' represents the particular field of the metric to be read.
-  // For example, for a counter or gauge, this should be 'value'. For a
-  // histogram, it might be 'total_count' or 'mean'.
-  //
-  // 'entity_id' may be NULL, in which case the first entity of the same type
-  // as 'entity_proto' will be matched.
-  Status GetInt64Metric(const MetricEntityPrototype* entity_proto,
-                        const char* entity_id,
-                        const MetricPrototype* metric_proto,
-                        const char* value_field,
-                        int64_t* value) const;
 
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;

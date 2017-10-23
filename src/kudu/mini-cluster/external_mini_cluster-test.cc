@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,14 +27,11 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-
-METRIC_DECLARE_gauge_uint64(threads_running);
 
 namespace kudu {
 
@@ -119,15 +115,6 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
 
     HostPort master_http = master->bound_http_hostport();
     EXPECT_TRUE(HasPrefixString(master_http.ToString(), expected_prefix)) << master_http.ToString();
-
-    // Retrieve a thread metric, which should always be present on any master.
-    int64_t value;
-    ASSERT_OK(master->GetInt64Metric(&METRIC_ENTITY_server,
-                                     "kudu.master",
-                                     &METRIC_threads_running,
-                                     "value",
-                                     &value));
-    EXPECT_GT(value, 0);
   }
 
   // Verify each of the tablet servers.
@@ -143,15 +130,6 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
 
     HostPort ts_http = ts->bound_http_hostport();
     EXPECT_TRUE(HasPrefixString(ts_http.ToString(), expected_prefix)) << ts_http.ToString();
-
-    // Retrieve a thread metric, which should always be present on any TS.
-    int64_t value;
-    ASSERT_OK(ts->GetInt64Metric(&METRIC_ENTITY_server,
-                                 "kudu.tabletserver",
-                                 &METRIC_threads_running,
-                                 "value",
-                                 &value));
-    EXPECT_GT(value, 0);
   }
 
   // Ensure that all of the tablet servers can register with the masters.

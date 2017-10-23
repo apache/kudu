@@ -45,6 +45,7 @@ METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_TSHeartbeat);
 using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::MakeOpId;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
@@ -58,11 +59,12 @@ class TombstonedVotingITest : public ExternalMiniClusterITestBase {
 };
 
 Status CountMasterHeartbeatsRecvd(ExternalMaster* m, int64_t* count) {
-  return m->GetInt64Metric(&METRIC_ENTITY_server,
-                           "kudu.master",
-                           &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
-                           "total_count",
-                           count);
+  return GetInt64Metric(m->bound_http_hostport(),
+                        &METRIC_ENTITY_server,
+                        "kudu.master",
+                        &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
+                        "total_count",
+                        count);
 }
 
 // Test that a replica that crashes during a first-time tablet copy after

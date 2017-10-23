@@ -103,6 +103,7 @@ using kudu::consensus::MakeOpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
 using kudu::itest::DeleteTablet;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::FindTabletLeader;
 using kudu::itest::StartElection;
 using kudu::itest::StartTabletCopy;
@@ -716,52 +717,57 @@ namespace {
 // LogBlockManager (not used on OS X).
 int64_t CountBlocksUnderManagement(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
-               &METRIC_ENTITY_server,
-               "kudu.tabletserver",
-               &METRIC_log_block_manager_blocks_under_management,
-               "value",
-               &ret));
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_log_block_manager_blocks_under_management,
+      "value",
+      &ret));
   return ret;
 }
 #endif // #ifndef __APPLE__
 
 int64_t CountUpdateConsensusCalls(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
-               &METRIC_ENTITY_server,
-               "kudu.tabletserver",
-               &METRIC_handler_latency_kudu_consensus_ConsensusService_UpdateConsensus,
-               "total_count",
-               &ret));
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_handler_latency_kudu_consensus_ConsensusService_UpdateConsensus,
+      "total_count",
+      &ret));
   return ret;
 }
 int64_t CountLogMessages(ExternalTabletServer* ets) {
   int64_t total = 0;
 
   int64_t count;
-  CHECK_OK(ets->GetInt64Metric(
-               &METRIC_ENTITY_server,
-               "kudu.tabletserver",
-               &METRIC_glog_info_messages,
-               "value",
-               &count));
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_glog_info_messages,
+      "value",
+      &count));
   total += count;
 
-  CHECK_OK(ets->GetInt64Metric(
-               &METRIC_ENTITY_server,
-               "kudu.tabletserver",
-               &METRIC_glog_warning_messages,
-               "value",
-               &count));
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_glog_warning_messages,
+      "value",
+      &count));
   total += count;
 
-  CHECK_OK(ets->GetInt64Metric(
-               &METRIC_ENTITY_server,
-               "kudu.tabletserver",
-               &METRIC_glog_error_messages,
-               "value",
-               &count));
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      "kudu.tabletserver",
+      &METRIC_glog_error_messages,
+      "value",
+      &count));
   total += count;
 
   return total;
@@ -1478,7 +1484,8 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
 namespace {
 int64_t TabletCopyBytesSent(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       "kudu.tabletserver",
       &METRIC_tablet_copy_bytes_sent,
@@ -1489,7 +1496,8 @@ int64_t TabletCopyBytesSent(ExternalTabletServer* ets) {
 
 int64_t TabletCopyBytesFetched(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       "kudu.tabletserver",
       &METRIC_tablet_copy_bytes_fetched,
@@ -1500,7 +1508,8 @@ int64_t TabletCopyBytesFetched(ExternalTabletServer* ets) {
 
 int64_t TabletCopyOpenSourceSessions(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       "kudu.tabletserver",
       &METRIC_tablet_copy_open_source_sessions,
@@ -1511,7 +1520,8 @@ int64_t TabletCopyOpenSourceSessions(ExternalTabletServer* ets) {
 
 int64_t TabletCopyOpenClientSessions(ExternalTabletServer* ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       "kudu.tabletserver",
       &METRIC_tablet_copy_open_client_sessions,
@@ -1600,7 +1610,8 @@ TEST_F(TabletCopyITest, TestTabletCopyMetrics) {
 namespace {
 int64_t CountRunningTablets(ExternalTabletServer *ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       nullptr,
       &METRIC_tablets_num_running,
@@ -1611,7 +1622,8 @@ int64_t CountRunningTablets(ExternalTabletServer *ets) {
 
 int64_t CountBootstrappingTablets(ExternalTabletServer *ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_server,
       nullptr,
       &METRIC_tablets_num_bootstrapping,
@@ -1622,7 +1634,8 @@ int64_t CountBootstrappingTablets(ExternalTabletServer *ets) {
 
 int64_t CountRowsInserted(ExternalTabletServer *ets) {
   int64_t ret;
-  CHECK_OK(ets->GetInt64Metric(
+  CHECK_OK(GetInt64Metric(
+      ets->bound_http_hostport(),
       &METRIC_ENTITY_tablet,
       nullptr,
       &METRIC_rows_inserted,

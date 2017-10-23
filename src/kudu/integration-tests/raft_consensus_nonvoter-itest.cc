@@ -54,6 +54,7 @@ using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::LeaderStepDown;
 using kudu::itest::RemoveServer;
 using kudu::itest::StartElection;
@@ -100,14 +101,14 @@ class RaftConsensusNonVoterITest : public RaftConsensusITestBase {
 
 Status RaftConsensusNonVoterITest::GetTabletCopySourceSessionsCount(
     const ExternalDaemon& server, int64_t* count) {
-  return server.GetInt64Metric(
+  return GetInt64Metric(server.bound_http_hostport(),
       &METRIC_ENTITY_server, "kudu.tabletserver",
       &METRIC_tablet_copy_open_source_sessions, "value", count);
 }
 
 Status RaftConsensusNonVoterITest::GetTabletCopyTargetSessionsCount(
     const ExternalDaemon& server, int64_t* count) {
-  return server.GetInt64Metric(
+  return GetInt64Metric(server.bound_http_hostport(),
       &METRIC_ENTITY_server, "kudu.tabletserver",
       &METRIC_tablet_copy_open_client_sessions, "value", count);
 }

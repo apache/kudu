@@ -41,6 +41,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/master/master.pb.h"
@@ -104,7 +105,8 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   int64_t num_create_attempts = 0;
   while (num_create_attempts < 3) {
     SleepFor(MonoDelta::FromMilliseconds(100));
-    ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+    ASSERT_OK(itest::GetInt64Metric(
+        cluster_->tablet_server(0)->bound_http_hostport(),
         &METRIC_ENTITY_server,
         "kudu.tabletserver",
         &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_CreateTablet,

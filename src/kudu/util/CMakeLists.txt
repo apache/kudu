@@ -285,15 +285,15 @@ endif()
 #######################################
 # kudu_curl_util
 #######################################
-
-# Used by mini-cluster, so must be built even when NO_TESTS=0.
-add_library(kudu_curl_util
-  curl_util.cc)
-target_link_libraries(kudu_curl_util
-  security
-  ${CURL_LIBRARIES}
-  glog
-  gutil)
+if(NOT NO_TESTS)
+  add_library(kudu_curl_util
+    curl_util.cc)
+  target_link_libraries(kudu_curl_util
+    security
+    ${CURL_LIBRARIES}
+    glog
+    gutil)
+endif()
 
 #######################################
 # kudu_test_main

@@ -22,15 +22,17 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/fs/block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
-#include "kudu/fs/block_manager.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -56,7 +58,7 @@ class DiskFailureITest : public ExternalMiniClusterITestBase,
                            int64_t target_failed_disks = 1) const {
     ASSERT_EVENTUALLY([&] {
       int64_t failed_on_ts;
-      ASSERT_OK(ext_tserver->GetInt64Metric(
+      ASSERT_OK(itest::GetInt64Metric(ext_tserver->bound_http_hostport(),
           &METRIC_ENTITY_server, nullptr, &METRIC_data_dirs_failed, "value", &failed_on_ts));
       ASSERT_EQ(target_failed_disks, failed_on_ts);
     });

@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -48,12 +49,12 @@ using cluster::ExternalTabletServer;
 
 namespace {
 Status GetTsCounterValue(ExternalTabletServer* ets, MetricPrototype* metric, int64_t* value) {
-  return ets->GetInt64Metric(
-             &METRIC_ENTITY_server,
-             "kudu.tabletserver",
-             metric,
-             "value",
-             value);
+  return itest::GetInt64Metric(ets->bound_http_hostport(),
+                               &METRIC_ENTITY_server,
+                               "kudu.tabletserver",
+                               metric,
+                               "value",
+                               value);
 }
 } // namespace
 

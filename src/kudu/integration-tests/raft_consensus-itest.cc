@@ -105,6 +105,7 @@ using kudu::consensus::RaftPeerPB;
 using kudu::consensus::ReplicateMsg;
 using kudu::itest::AddServer;
 using kudu::itest::DONT_WAIT_FOR_LEADER;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::LeaderStepDown;
 using kudu::itest::RemoveServer;
 using kudu::itest::StartElection;
@@ -1964,7 +1965,8 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
   MonoTime deadline = MonoTime::Now() + kMaxWaitTime;
   while (true) {
     int64_t num_rejections = 0;
-    ASSERT_OK(cluster_->tablet_server(leader_ts_idx)->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        cluster_->tablet_server(leader_ts_idx)->bound_http_hostport(),
         &METRIC_ENTITY_tablet,
         nullptr,
         &METRIC_transaction_memory_pressure_rejections,

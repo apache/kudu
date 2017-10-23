@@ -93,6 +93,7 @@ using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
 using kudu::itest::DeleteTablet;
 using kudu::itest::DeleteTabletWithRetries;
+using kudu::itest::GetInt64Metric;
 using kudu::itest::RemoveServer;
 using kudu::itest::TServerDetails;
 using kudu::pb_util::SecureDebugString;
@@ -1111,13 +1112,15 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   int64_t num_delete_attempts;
   ASSERT_EVENTUALLY([&]() {
     int64_t num_heartbeats;
-    ASSERT_OK(cluster_->master()->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        cluster_->master()->bound_http_hostport(),
         &METRIC_ENTITY_server, "kudu.master",
         &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat, "total_count",
         &num_heartbeats));
     ASSERT_GE(num_heartbeats, 1);
   });
-  ASSERT_OK(cluster_->tablet_server(0)->GetInt64Metric(
+  ASSERT_OK(GetInt64Metric(
+      cluster_->tablet_server(0)->bound_http_hostport(),
       &METRIC_ENTITY_server, "kudu.tabletserver",
       &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
       "total_count", &num_delete_attempts));
@@ -1201,7 +1204,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
     inspect_->WaitForNoDataOnTS(to_remove_index, kTimeout);
 
     int64_t num_delete_attempts;
-    ASSERT_OK(cluster_->tablet_server(to_remove_index)->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        cluster_->tablet_server(to_remove_index)->bound_http_hostport(),
         &METRIC_ENTITY_server, "kudu.tabletserver",
         &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
         "total_count", &num_delete_attempts));
@@ -1228,7 +1232,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
     SCOPED_TRACE(max_expected_deletes);
 
     int64_t prev_heartbeats;
-    ASSERT_OK(cluster_->master()->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        cluster_->master()->bound_http_hostport(),
         &METRIC_ENTITY_server, "kudu.master",
         &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
         "total_count",
@@ -1239,7 +1244,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
     SCOPED_LOG_TIMING(INFO, "waiting for heartbeats");
     ASSERT_EVENTUALLY([&] {
       int64_t num_delete_attempts;
-      ASSERT_OK(cluster_->tablet_server(to_remove_index)->GetInt64Metric(
+      ASSERT_OK(GetInt64Metric(
+          cluster_->tablet_server(to_remove_index)->bound_http_hostport(),
           &METRIC_ENTITY_server, "kudu.tabletserver",
           &METRIC_handler_latency_kudu_tserver_TabletServerAdminService_DeleteTablet,
           "total_count",
@@ -1247,7 +1253,8 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
       ASSERT_LE(num_delete_attempts, max_expected_deletes);
 
       int64_t num_heartbeats;
-      ASSERT_OK(cluster_->master()->GetInt64Metric(
+      ASSERT_OK(GetInt64Metric(
+          cluster_->master()->bound_http_hostport(),
           &METRIC_ENTITY_server, "kudu.master",
           &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat,
           "total_count",

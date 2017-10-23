@@ -33,6 +33,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/metrics.h"
@@ -60,6 +61,7 @@ using cluster::ExternalMaster;
 using cluster::ExternalMiniCluster;
 using cluster::ExternalMiniClusterOptions;
 using cluster::ScopedResumeExternalDaemon;
+using itest::GetInt64Metric;
 using sp::shared_ptr;
 using std::set;
 using std::string;
@@ -331,7 +333,8 @@ TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
   // their UUIDs.
   for (int i = 0; i < cluster_->num_masters(); i++) {
     int64_t num_get_node_instances;
-    ASSERT_OK(cluster_->master(i)->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        cluster_->master(i)->bound_http_hostport(),
         &METRIC_ENTITY_server, "kudu.master",
         &METRIC_handler_latency_kudu_consensus_ConsensusService_GetNodeInstance,
         "total_count", &num_get_node_instances));
@@ -351,7 +354,8 @@ TEST_F(MasterFailoverTest, TestMasterUUIDResolution) {
   for (int i = 0; i < cluster_->num_masters(); i++) {
     ExternalMaster* master = cluster_->master(i);
     int64_t num_get_node_instances;
-    ASSERT_OK(master->GetInt64Metric(
+    ASSERT_OK(GetInt64Metric(
+        master->bound_http_hostport(),
         &METRIC_ENTITY_server, "kudu.master",
         &METRIC_handler_latency_kudu_consensus_ConsensusService_GetNodeInstance,
         "total_count", &num_get_node_instances));

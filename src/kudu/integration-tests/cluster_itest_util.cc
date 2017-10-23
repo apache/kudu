@@ -23,6 +23,7 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
@@ -48,6 +49,10 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/curl_util.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/jsonreader.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -81,8 +86,9 @@ using master::ListTabletServersResponsePB;
 using master::ListTabletServersResponsePB_Entry;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
-using kudu::pb_util::SecureDebugString;
-using kudu::pb_util::SecureShortDebugString;
+using pb_util::SecureDebugString;
+using pb_util::SecureShortDebugString;
+using rapidjson::Value;
 using rpc::Messenger;
 using rpc::RpcController;
 using std::min;
@@ -1030,6 +1036,66 @@ Status BeginTabletCopySession(const TServerDetails* ts,
     return StatusFromPB(error.status());
   }
   return Status::OK();
+}
+
+
+Status GetInt64Metric(const HostPort& http_hp,
+                      const MetricEntityPrototype* entity_proto,
+                      const char* entity_id,
+                      const MetricPrototype* metric_proto,
+                      const char* value_field,
+                      int64_t* value) {
+  // Fetch metrics whose name matches the given prototype.
+  string url = Substitute(
+      "http://$0/jsonmetricz?metrics=$1",
+      http_hp.ToString(), metric_proto->name());
+  EasyCurl curl;
+  faststring dst;
+  RETURN_NOT_OK(curl.FetchURL(url, &dst));
+
+  // Parse the results, beginning with the top-level entity array.
+  JsonReader r(dst.ToString());
+  RETURN_NOT_OK(r.Init());
+  vector<const Value*> entities;
+  RETURN_NOT_OK(r.ExtractObjectArray(r.root(), nullptr, &entities));
+  for (const Value* entity : entities) {
+    // Find the desired entity.
+    string type;
+    RETURN_NOT_OK(r.ExtractString(entity, "type", &type));
+    if (type != entity_proto->name()) {
+      continue;
+    }
+    if (entity_id) {
+      string id;
+      RETURN_NOT_OK(r.ExtractString(entity, "id", &id));
+      if (id != entity_id) {
+        continue;
+      }
+    }
+
+    // Find the desired metric within the entity.
+    vector<const Value*> metrics;
+    RETURN_NOT_OK(r.ExtractObjectArray(entity, "metrics", &metrics));
+    for (const Value* metric : metrics) {
+      string name;
+      RETURN_NOT_OK(r.ExtractString(metric, "name", &name));
+      if (name != metric_proto->name()) {
+        continue;
+      }
+      RETURN_NOT_OK(r.ExtractInt64(metric, value_field, value));
+      return Status::OK();
+    }
+  }
+  string msg;
+  if (entity_id) {
+    msg = Substitute("Could not find metric $0.$1 for entity $2",
+                     entity_proto->name(), metric_proto->name(),
+                     entity_id);
+  } else {
+    msg = Substitute("Could not find metric $0.$1",
+                     entity_proto->name(), metric_proto->name());
+  }
+  return Status::NotFound(msg);
 }
 
 } // namespace itest

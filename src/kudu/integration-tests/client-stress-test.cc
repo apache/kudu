@@ -38,6 +38,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/countdown_latch.h"
@@ -269,7 +270,8 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
     // or metric is truly missing, we'll eventually timeout and fail.
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       int64_t value;
-      Status s = cluster_->tablet_server(i)->GetInt64Metric(
+      Status s = itest::GetInt64Metric(
+          cluster_->tablet_server(i)->bound_http_hostport(),
           &METRIC_ENTITY_tablet,
           nullptr,
           &METRIC_leader_memory_pressure_rejections,
@@ -279,7 +281,8 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
         ASSERT_OK(s);
         total_num_rejections += value;
       }
-      s = cluster_->tablet_server(i)->GetInt64Metric(
+      s = itest::GetInt64Metric(
+          cluster_->tablet_server(i)->bound_http_hostport(),
           &METRIC_ENTITY_tablet,
           nullptr,
           &METRIC_follower_memory_pressure_rejections,

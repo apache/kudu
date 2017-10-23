@@ -50,6 +50,8 @@
 
 namespace kudu {
 class HostPort;
+class MetricEntityPrototype;
+class MetricPrototype;
 class MonoDelta;
 class Status;
 
@@ -385,6 +387,23 @@ Status BeginTabletCopySession(const TServerDetails* ts,
                               const std::string& caller_uuid,
                               const MonoDelta& timeout,
                               tserver::TabletCopyErrorPB::Code* error_code = nullptr);
+
+// Retrieve the value of a given metric from the server whose webserver is
+// bound to 'http_hp'. The metric must be of int64_t type.
+//
+// 'value_field' represents the particular field of the metric to be read.
+// For example, for a counter or gauge, this should be 'value'. For a
+// histogram, it might be 'total_count' or 'mean'.
+//
+// 'entity_id' may be NULL, in which case the first entity of the same type
+// as 'entity_proto' will be matched.
+Status GetInt64Metric(const HostPort& http_hp,
+                      const MetricEntityPrototype* entity_proto,
+                      const char* entity_id,
+                      const MetricPrototype* metric_proto,
+                      const char* value_field,
+                      int64_t* value);
+
 
 } // namespace itest
 } // namespace kudu

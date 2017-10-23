@@ -30,7 +30,6 @@
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
-#include <rapidjson/document.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/master_rpc.h"
@@ -52,13 +51,9 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/async_util.h"
-#include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/fault_injection.h"
-#include "kudu/util/jsonreader.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
@@ -79,7 +74,6 @@ using kudu::server::ServerStatusPB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerServiceProxy;
-using rapidjson::Value;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -1054,66 +1048,6 @@ const NodeInstancePB& ExternalDaemon::instance_id() const {
 const string& ExternalDaemon::uuid() const {
   CHECK(status_);
   return status_->node_instance().permanent_uuid();
-}
-
-Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
-                                      const char* entity_id,
-                                      const MetricPrototype* metric_proto,
-                                      const char* value_field,
-                                      int64_t* value) const {
-  CHECK(bound_http_hostport().Initialized());
-  // Fetch metrics whose name matches the given prototype.
-  string url = Substitute(
-      "http://$0/jsonmetricz?metrics=$1",
-      bound_http_hostport().ToString(),
-      metric_proto->name());
-  EasyCurl curl;
-  faststring dst;
-  RETURN_NOT_OK(curl.FetchURL(url, &dst));
-
-  // Parse the results, beginning with the top-level entity array.
-  JsonReader r(dst.ToString());
-  RETURN_NOT_OK(r.Init());
-  vector<const Value*> entities;
-  RETURN_NOT_OK(r.ExtractObjectArray(r.root(), NULL, &entities));
-  for (const Value* entity : entities) {
-    // Find the desired entity.
-    string type;
-    RETURN_NOT_OK(r.ExtractString(entity, "type", &type));
-    if (type != entity_proto->name()) {
-      continue;
-    }
-    if (entity_id) {
-      string id;
-      RETURN_NOT_OK(r.ExtractString(entity, "id", &id));
-      if (id != entity_id) {
-        continue;
-      }
-    }
-
-    // Find the desired metric within the entity.
-    vector<const Value*> metrics;
-    RETURN_NOT_OK(r.ExtractObjectArray(entity, "metrics", &metrics));
-    for (const Value* metric : metrics) {
-      string name;
-      RETURN_NOT_OK(r.ExtractString(metric, "name", &name));
-      if (name != metric_proto->name()) {
-        continue;
-      }
-      RETURN_NOT_OK(r.ExtractInt64(metric, value_field, value));
-      return Status::OK();
-    }
-  }
-  string msg;
-  if (entity_id) {
-    msg = Substitute("Could not find metric $0.$1 for entity $2",
-                     entity_proto->name(), metric_proto->name(),
-                     entity_id);
-  } else {
-    msg = Substitute("Could not find metric $0.$1",
-                     entity_proto->name(), metric_proto->name());
-  }
-  return Status::NotFound(msg);
 }
 
 //------------------------------------------------------------
