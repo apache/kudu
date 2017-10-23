@@ -42,7 +42,6 @@ To summarize the key points of the presentation:
 For more details and for the full benchmark numbers, check out the slide deck
 below:
 
-<iframe src="//www.slideshare.net/slideshow/embed_code/key/loQpO2vzlwGGgz" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen> </iframe> <div style="margin-bottom:15px"> <strong> <a href="//www.slideshare.net/secret/loQpO2vzlwGGgz" title="A brave new world in mutable big data relational storage (Strata NYC 2017)" target="_blank">A brave new world in mutable big data relational storage (Strata NYC 2017)</a> </strong> from <strong><a href="https://www.slideshare.net/ToddLipcon" target="_blank">Todd Lipcon</a></strong> </div>
-
+<iframe src="//www.slideshare.net/slideshow/embed_code/key/loQpO2vzlwGGgz" width="595" height="485" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style="border:1px solid #CCC; border-width:1px; margin-bottom:5px; max-width: 100%;" allowfullscreen> </iframe> <div style="margin-bottom:15px"> <strong> <a href="//www.slideshare.net/ToddLipcon/a-brave-new-world-in-mutable-big-data-relational-storage-strata-nyc-2017" title="A brave new world in mutable big data relational storage (Strata NYC 2017)" target="_blank">A brave new world in mutable big data relational storage (Strata NYC 2017)</a> </strong> from <strong><a href="https://www.slideshare.net/ToddLipcon" target="_blank">Todd Lipcon</a></strong> </div>
 
 Questions or comments? Join the [Apache Kudu Community](/community.html) to discuss.
