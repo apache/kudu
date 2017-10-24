@@ -71,6 +71,22 @@ DEFINE_bool(allow_world_readable_credentials, false,
             "world-readable permissions.");
 TAG_FLAG(allow_world_readable_credentials, unsafe);
 
+#ifndef __APPLE__
+static constexpr bool kDefaultSystemAuthToLocal = true;
+#else
+// macOS's Heimdal library has a no-op implementation of
+// krb5_aname_to_localname, so instead we just use the simple
+// implementation.
+static constexpr bool kDefaultSystemAuthToLocal = false;
+#endif
+DEFINE_bool(use_system_auth_to_local, kDefaultSystemAuthToLocal,
+            "When enabled, use the system krb5 library to map Kerberos principal "
+            "names to local (short) usernames. If not enabled, the first component "
+            "of the principal will be used as the short name. For example, "
+            "'kudu/foo.example.com@EXAMPLE' will map to 'kudu'.");
+TAG_FLAG(use_system_auth_to_local, advanced);
+
+
 using std::mt19937;
 using std::random_device;
 using std::string;
@@ -414,18 +430,15 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
       krb5_free_principal(g_krb5_ctx, princ);
     });
   char buf[1024];
-  krb5_error_code rc;
-#ifndef __APPLE__
-  rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
-#else
-  // macOS's Heimdal library has a no-op implementation of
-  // krb5_aname_to_localname, so instead we fall down to below and grab the
-  // first component of the principal.
-  rc = KRB5_LNAME_NOTRANS;
-#endif
+  krb5_error_code rc = KRB5_LNAME_NOTRANS;
+  if (FLAGS_use_system_auth_to_local) {
+    rc = krb5_aname_to_localname(g_krb5_ctx, princ, arraysize(buf), buf);
+  }
   if (rc == KRB5_LNAME_NOTRANS || rc == KRB5_PLUGIN_NO_HANDLE) {
-    // No name mapping specified. We fall back to simply taking the first component
-    // of the principal, for compatibility with the default behavior of Hadoop.
+    // No name mapping specified, or krb5-based name mapping is disabled.
+    //
+    // We fall back to simply taking the first component of the principal, for
+    // compatibility with the default behavior of Hadoop.
     //
     // NOTE: KRB5_PLUGIN_NO_HANDLE isn't typically expected here, but works around
     // a bug in SSSD's auth_to_local implementation: https://pagure.io/SSSD/sssd/issue/3459
