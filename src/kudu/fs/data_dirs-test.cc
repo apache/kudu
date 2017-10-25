@@ -116,7 +116,7 @@ TEST_F(DataDirsTest, TestCreateGroup) {
 
   DataDirGroupPB orig_pb;
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
-  ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &orig_pb));
+  ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &orig_pb));
 
   // Ensure that the DataDirManager will not create a group for a tablet that
   // it already knows about.
@@ -125,7 +125,7 @@ TEST_F(DataDirsTest, TestCreateGroup) {
   ASSERT_STR_CONTAINS(s.ToString(), "Tried to create directory group for tablet "
                                     "but one is already registered");
   DataDirGroupPB pb;
-  ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
+  ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
 
   // Verify that the data directory is unchanged after failing to create an
   // existing tablet.
@@ -153,7 +153,7 @@ TEST_F(DataDirsTest, TestLoadFromPB) {
   // Create a PB, delete the group, then load the group from the PB.
   DataDirGroupPB orig_pb;
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
-  ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &orig_pb));
+  ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &orig_pb));
   dd_manager_->DeleteDataDirGroup(test_tablet_name_);
   ASSERT_OK(dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, orig_pb));
 
@@ -171,8 +171,7 @@ TEST_F(DataDirsTest, TestLoadFromPB) {
   // knows about the tablet.
   Status s = dd_manager_->LoadDataDirGroupFromPB(test_tablet_name_, orig_pb);
   ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Tried to load directory group for tablet but "
-                                    "one is already registered");
+  ASSERT_STR_CONTAINS(s.ToString(), "tried to load directory group for tablet");
 }
 
 TEST_F(DataDirsTest, TestDeleteDataDirGroup) {
@@ -237,7 +236,7 @@ TEST_F(DataDirsTest, TestFailedDirNotAddedToGroup) {
         entity_->FindOrNull(METRIC_data_dirs_failed).get())->value());
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
   DataDirGroupPB pb;
-  ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
+  ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &pb));
   ASSERT_EQ(kNumDirs - 1, pb.uuids_size());
 
   // Check that all uuid_indices are valid and are not in the failed directory

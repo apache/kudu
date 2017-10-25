@@ -350,8 +350,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             superblock_->tombstone_last_logged_opid(),
                                             &meta_));
   }
-  CHECK(fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_,
-                                                     superblock_->mutable_data_dir_group()));
+  CHECK_OK(fs_manager_->dd_manager()->GetDataDirGroupPB(
+      tablet_id_, superblock_->mutable_data_dir_group()));
 
   // Create the ConsensusMetadata before returning from Start() so that it's
   // possible to vote while we are copying the replica for the first time.

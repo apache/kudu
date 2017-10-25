@@ -116,7 +116,7 @@ class LogBlockManagerTest : public KuduTest {
     FsReport report;
     ASSERT_OK(bm_->Open(&report));
     ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
-    ASSERT_TRUE(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
  protected:

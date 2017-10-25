@@ -217,7 +217,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
 
   // Keep a copy of the old data dir group in case of flush failure.
   DataDirGroupPB pb;
-  bool old_group_exists = fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &pb);
+  bool old_group_exists = fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &pb).ok();
 
   // Remove the tablet's data dir group tracked by the DataDirManager.
   fs_manager_->dd_manager()->DeleteDataDirGroup(tablet_id_);
@@ -420,8 +420,11 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     fs_manager()->block_manager()->NotifyBlockId(max_block_id);
 
     if (superblock.has_data_dir_group()) {
-      RETURN_NOT_OK_PREPEND(fs_manager_->dd_manager()->LoadDataDirGroupFromPB(
-          tablet_id_, superblock.data_dir_group()), "Failed to load DataDirGroup from superblock");
+      // An error loading the data dir group is non-fatal, it just means the
+      // tablet will fail to bootstrap later.
+      WARN_NOT_OK(fs_manager_->dd_manager()->LoadDataDirGroupFromPB(
+          tablet_id_, superblock.data_dir_group()),
+          "failed to load DataDirGroup from superblock");
     } else if (tablet_data_state_ == TABLET_DATA_READY) {
       // If the superblock does not contain a DataDirGroup, this server has
       // likely been upgraded from before 1.5.0. Create a new DataDirGroup for
@@ -675,7 +678,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   // Serialize the tablet's DataDirGroupPB if one exists. One may not exist if
   // this is called during a tablet deletion.
   DataDirGroupPB group_pb;
-  if (fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &group_pb)) {
+  if (fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &group_pb).ok()) {
     pb.mutable_data_dir_group()->Swap(&group_pb);
   }
 

@@ -49,6 +49,8 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -87,7 +89,6 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
-
 
 DECLARE_int32(group_commit_queue_size_bytes);
 
@@ -550,6 +551,16 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     TabletSuperBlockPB super_block;
     RETURN_NOT_OK(tablet_meta_->ToSuperBlock(&super_block));
     VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << SecureDebugString(super_block);
+  }
+
+
+  // Ensure the tablet's data dirs are present and healthy before it is opened.
+  DataDirGroupPB data_dir_group;
+  RETURN_NOT_OK_PREPEND(
+      tablet_meta_->fs_manager()->dd_manager()->GetDataDirGroupPB(tablet_id, &data_dir_group),
+      "error retrieving tablet data dir group (one or more data dirs may have been removed)");
+  if (tablet_meta_->fs_manager()->dd_manager()->IsTabletInFailedDir(tablet_id)) {
+    return Status::IOError("some tablet data is in a failed directory");
   }
 
   RETURN_NOT_OK(flushed_stores_.InitFrom(*tablet_meta_.get()));

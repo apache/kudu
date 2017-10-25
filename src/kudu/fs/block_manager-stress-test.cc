@@ -150,7 +150,7 @@ class BlockManagerStressTest : public KuduTest {
     bm_.reset(CreateBlockManager());
     bm_->Open(nullptr);
     dd_manager_->CreateDataDirGroup(test_tablet_name_);
-    CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    CHECK_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
   virtual void TearDown() override {

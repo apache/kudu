@@ -38,6 +38,7 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/block_manager_util.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
@@ -187,12 +188,20 @@ void DeleteTmpFilesRecursively(Env* env, const string& path) {
 
 } // anonymous namespace
 
+////////////////////////////////////////////////////////////
+// DataDirMetrics
+////////////////////////////////////////////////////////////
+
 #define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 DataDirMetrics::DataDirMetrics(const scoped_refptr<MetricEntity>& entity)
   : GINIT(data_dirs_failed),
     GINIT(data_dirs_full) {
 }
 #undef GINIT
+
+////////////////////////////////////////////////////////////
+// DataDir
+////////////////////////////////////////////////////////////
 
 DataDir::DataDir(Env* env,
                  DataDirMetrics* metrics,
@@ -280,10 +289,61 @@ Status DataDir::RefreshIsFull(RefreshMode mode) {
   return Status::OK();
 }
 
+////////////////////////////////////////////////////////////
+// DataDirGroup
+////////////////////////////////////////////////////////////
+
+DataDirGroup::DataDirGroup() {}
+
+DataDirGroup::DataDirGroup(vector<int> uuid_indices)
+    : uuid_indices_(std::move(uuid_indices)) {}
+
+Status DataDirGroup::LoadFromPB(const UuidIndexByUuidMap& uuid_idx_by_uuid,
+                                const DataDirGroupPB& pb) {
+  vector<int> uuid_indices;
+  for (const auto& uuid : pb.uuids()) {
+    int uuid_idx;
+    if (!FindCopy(uuid_idx_by_uuid, uuid, &uuid_idx)) {
+      return Status::NotFound(Substitute(
+          "could not find data dir with uuid $0", uuid));
+    }
+    uuid_indices.emplace_back(uuid_idx);
+  }
+
+  uuid_indices_ = std::move(uuid_indices);
+  return Status::OK();
+}
+
+Status DataDirGroup::CopyToPB(const UuidByUuidIndexMap& uuid_by_uuid_idx,
+                              DataDirGroupPB* pb) const {
+  DCHECK(pb);
+  DataDirGroupPB group;
+  for (auto uuid_idx : uuid_indices_) {
+    string uuid;
+    if (!FindCopy(uuid_by_uuid_idx, uuid_idx, &uuid)) {
+      return Status::NotFound(Substitute(
+          "could not find data dir with uuid index $0", uuid_idx));
+    }
+    group.mutable_uuids()->Add(std::move(uuid));
+  }
+
+  *pb = std::move(group);
+  return Status::OK();
+}
+
+////////////////////////////////////////////////////////////
+// DataDirManagerOptions
+////////////////////////////////////////////////////////////
+
 DataDirManagerOptions::DataDirManagerOptions()
-  : block_manager_type(FLAGS_block_manager),
-    read_only(false),
-    update_on_disk(false) {}
+    : block_manager_type(FLAGS_block_manager),
+      read_only(false),
+      update_on_disk(false) {
+}
+
+////////////////////////////////////////////////////////////
+// DataDirManager
+////////////////////////////////////////////////////////////
 
 vector<string> DataDirManager::GetRootNames(const CanonicalizedRootsList& root_list) {
   vector<string> roots;
@@ -782,13 +842,16 @@ Status DataDirManager::Open() {
 Status DataDirManager::LoadDataDirGroupFromPB(const std::string& tablet_id,
                                               const DataDirGroupPB& pb) {
   std::lock_guard<percpu_rwlock> lock(dir_group_lock_);
-  DataDirGroup group_from_pb = DataDirGroup::FromPB(pb, idx_by_uuid_);
+  DataDirGroup group_from_pb;
+  RETURN_NOT_OK_PREPEND(group_from_pb.LoadFromPB(idx_by_uuid_, pb), Substitute(
+      "could not load data dir group for tablet $0", tablet_id));
   DataDirGroup* other = InsertOrReturnExisting(&group_by_tablet_map_,
                                                tablet_id,
                                                group_from_pb);
   if (other != nullptr) {
-    return Status::AlreadyPresent("Tried to load directory group for tablet but one is already "
-                                  "registered", tablet_id);
+    return Status::AlreadyPresent(Substitute(
+        "tried to load directory group for tablet $0 but one is already registered",
+        tablet_id));
   }
   for (int uuid_idx : group_from_pb.uuid_indices()) {
     InsertOrDie(&FindOrDie(tablets_by_uuid_idx_map_, uuid_idx), tablet_id);
@@ -919,15 +982,16 @@ void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
   group_by_tablet_map_.erase(tablet_id);
 }
 
-bool DataDirManager::GetDataDirGroupPB(const std::string& tablet_id,
-                                       DataDirGroupPB* pb) const {
+Status DataDirManager::GetDataDirGroupPB(const string& tablet_id,
+                                         DataDirGroupPB* pb) const {
   shared_lock<rw_spinlock> lock(dir_group_lock_.get_lock());
   const DataDirGroup* group = FindOrNull(group_by_tablet_map_, tablet_id);
-  if (group != nullptr) {
-    group->CopyToPB(uuid_by_idx_, pb);
-    return true;
+  if (group == nullptr) {
+    return Status::NotFound(Substitute(
+        "could not find data dir group for tablet $0", tablet_id));
   }
-  return false;
+  RETURN_NOT_OK(group->CopyToPB(uuid_by_idx_, pb));
+  return Status::OK();
 }
 
 void DataDirManager::GetDirsForGroupUnlocked(int target_size,

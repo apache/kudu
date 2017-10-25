@@ -119,9 +119,9 @@ class BlockManagerTest : public KuduTest {
   virtual void SetUp() override {
     // Pass in a report to prevent the block manager from logging unnecessarily.
     FsReport report;
-    CHECK_OK(bm_->Open(&report));
-    CHECK_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
-    CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+    ASSERT_OK(bm_->Open(&report));
+    ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
+    ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
   }
 
   void DistributeBlocksAcrossDirs(int num_dirs, int num_blocks_per_dir) {
@@ -231,7 +231,7 @@ void BlockManagerTest<LogBlockManager>::SetUp() {
   ASSERT_OK(dd_manager_->CreateDataDirGroup(test_tablet_name_));
 
   // Store the DataDirGroupPB for tests that reopen the block manager.
-  CHECK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
+  ASSERT_OK(dd_manager_->GetDataDirGroupPB(test_tablet_name_, &test_group_pb_));
 }
 
 template <>
@@ -486,7 +486,7 @@ TYPED_TEST(BlockManagerTest, CreateBlocksInDataDirs) {
 
   DataDirGroupPB test_group_pb;
   // Check that the in-memory DataDirGroup did not change.
-  ASSERT_TRUE(this->dd_manager_->GetDataDirGroupPB(
+  ASSERT_OK(this->dd_manager_->GetDataDirGroupPB(
       this->test_tablet_name_, &test_group_pb));
   ASSERT_TRUE(MessageDifferencer::Equals(test_group_pb, this->test_group_pb_));
 }
