@@ -177,8 +177,9 @@ WARNING: Disabling the web UI will also disable REST endpoints such as
 == Log Security
 
 To prevent sensitive data from being included in Kudu server logs, all row data
-is redacted by default. This feature can be turned off configuring the
-`--redact` flag.
+is redacted by default. By setting the `--redact=log` flag, redaction will be
+disabled in the web UI but retained for server logs. Alternatively, `--redact=none`
+can be used to disable redaction completely.
 // TODO(dan): add link to configuration reference.
 
 [[configuration]]
