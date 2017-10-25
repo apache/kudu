@@ -96,7 +96,11 @@ METRIC_DEFINE_histogram(server, reactor_load_percent,
 METRIC_DEFINE_histogram(server, reactor_active_latency_us,
                         "Reactor Thread Active Latency",
                         kudu::MetricUnit::kMicroseconds,
-                        "TODO", 1000000, 2);
+                        "Histogram of the wall clock time for reactor thread wake-ups. "
+                        "The reactor thread is responsible for all network I/O and "
+                        "therefore outliers in this latency histogram directly contribute "
+                        "to the latency of both inbound and outbound RPCs.",
+                        1000000, 2);
 
 namespace kudu {
 namespace rpc {
