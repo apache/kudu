@@ -52,6 +52,15 @@
     if (PREDICT_FALSE(!s.ok())) return (to_return);  \
   } while (0);
 
+/// @brief Return the given status if it is not OK, evaluating `on_error` if so.
+#define KUDU_RETURN_NOT_OK_EVAL(s, on_error) do { \
+    const ::kudu::Status& _s = (s); \
+    if (PREDICT_FALSE(!_s.ok())) { \
+      (on_error); \
+      return _s; \
+    } \
+  } while (0);
+
 /// @brief Emit a warning if @c to_call returns a bad status.
 #define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
     const ::kudu::Status& _s = (to_call);              \
@@ -115,6 +124,7 @@
 #define RETURN_NOT_OK         KUDU_RETURN_NOT_OK
 #define RETURN_NOT_OK_PREPEND KUDU_RETURN_NOT_OK_PREPEND
 #define RETURN_NOT_OK_RET     KUDU_RETURN_NOT_OK_RET
+#define RETURN_NOT_OK_EVAL    KUDU_RETURN_NOT_OK_EVAL
 #define WARN_NOT_OK           KUDU_WARN_NOT_OK
 #define LOG_AND_RETURN        KUDU_LOG_AND_RETURN
 #define RETURN_NOT_OK_LOG     KUDU_RETURN_NOT_OK_LOG

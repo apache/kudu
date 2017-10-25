@@ -141,13 +141,13 @@ class FsManager {
   //
   // If a disk failure is detected, this callback will be invoked with the
   // relevant DataDir's UUID as its input parameter.
-  void SetErrorNotificationCb(fs::ErrorNotificationCb cb);
+  void SetErrorNotificationCb(fs::ErrorHandlerType e, fs::ErrorNotificationCb cb);
 
   // Unregisters the error-handling callback with the FsErrorManager.
   //
   // This must be called before the callback's callee is destroyed. Calls to
   // this are idempotent and are safe even if a callback has not been set.
-  void UnsetErrorNotificationCb();
+  void UnsetErrorNotificationCb(fs::ErrorHandlerType e);
 
   // Create the initial filesystem layout. If 'uuid' is provided, uses it as
   // uuid of the filesystem. Otherwise generates one at random.
@@ -324,9 +324,9 @@ class FsManager {
 
   std::unique_ptr<InstanceMetadataPB> metadata_;
 
+  std::unique_ptr<fs::FsErrorManager> error_manager_;
   std::unique_ptr<fs::DataDirManager> dd_manager_;
   std::unique_ptr<fs::BlockManager> block_manager_;
-  std::unique_ptr<fs::FsErrorManager> error_manager_;
 
   bool initted_;
 

@@ -25,6 +25,7 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/fs/error_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
@@ -42,6 +43,7 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 
 namespace kudu {
@@ -112,8 +114,8 @@ Status TabletServer::WaitInited() {
 Status TabletServer::Start() {
   CHECK(initted_);
 
-  fs_manager_->SetErrorNotificationCb(Bind(&TSTabletManager::FailTabletsInDataDir,
-                                           Unretained(tablet_manager_.get())));
+  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
+      Bind(&TSTabletManager::FailTabletsInDataDir, Unretained(tablet_manager_.get())));
 
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
@@ -146,7 +148,7 @@ void TabletServer::Shutdown() {
     // 2. Shut down the tserver's subsystems.
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    fs_manager_->UnsetErrorNotificationCb();
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK);
     tablet_manager_->Shutdown();
 
     // 3. Shut down generic subsystems.

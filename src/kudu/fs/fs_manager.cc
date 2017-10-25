@@ -95,6 +95,8 @@ using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
 using kudu::fs::DataDirManagerOptions;
+using kudu::fs::ErrorHandlerType;
+using kudu::fs::ErrorNotificationCb;
 using kudu::fs::FsErrorManager;
 using kudu::fs::FileBlockManager;
 using kudu::fs::FsReport;
@@ -156,12 +158,12 @@ FsManager::FsManager(Env* env, FsManagerOpts opts)
 
 FsManager::~FsManager() {}
 
-void FsManager::SetErrorNotificationCb(fs::ErrorNotificationCb cb) {
-  error_manager_->SetErrorNotificationCb(std::move(cb));
+void FsManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
+  error_manager_->SetErrorNotificationCb(e, std::move(cb));
 }
 
-void FsManager::UnsetErrorNotificationCb() {
-  error_manager_->UnsetErrorNotificationCb();
+void FsManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
+  error_manager_->UnsetErrorNotificationCb(e);
 }
 
 Status FsManager::Init() {
@@ -374,8 +376,8 @@ Status FsManager::Open(FsReport* report) {
   }
 
   // Set an initial error handler to mark data directories as failed.
-  error_manager_->SetErrorNotificationCb(Bind(&DataDirManager::MarkDataDirFailedByUuid,
-                                              Unretained(dd_manager_.get())));
+  error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
+      Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
 
   // Finally, initialize and open the block manager.
   InitBlockManager();

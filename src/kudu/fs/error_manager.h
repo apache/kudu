@@ -17,16 +17,16 @@
 
 #pragma once
 
-#include <map>
 #include <string>
+
+#include <glog/logging.h>
 
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/data_dirs.h"
-#include "kudu/gutil/bind.h"
-#include "kudu/gutil/callback_forward.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/fault_injection.h"
-#include "kudu/util/status.h"
+#include "kudu/fs/fs.pb.h"
+#include "kudu/gutil/callback.h"
+#include "kudu/gutil/port.h"
+#include "kudu/util/mutex.h"
 
 namespace kudu {
 namespace fs {
@@ -37,7 +37,6 @@ namespace fs {
 // e.g. the ErrorNotificationCb for disk failure handling takes the UUID of a
 // directory, marks it failed, and shuts down the tablets in that directory.
 typedef Callback<void(const std::string&)> ErrorNotificationCb;
-static void DoNothingErrorNotification(const std::string& /* uuid */) {}
 
 // Evaluates the expression and handles it if it results in an error.
 // Returns if the status is an error.
@@ -72,47 +71,70 @@ static void DoNothingErrorNotification(const std::string& /* uuid */) {}
   } \
 } while (0);
 
-// When certain operations fail, the side effects of the error can span
-// multiple layers, many of which we prefer to keep separate. The FsErrorManager
+enum ErrorHandlerType {
+  // For errors that affect a disk and all of its tablets (e.g. disk failure).
+  DISK,
+
+  // For errors that affect a single tablet (e.g. failure to create a block).
+  TABLET
+};
+
+// When certain operations fail, the side effects of the error can span multiple
+// layers, many of which we prefer to keep separate. The FsErrorManager
 // registers and runs error handlers without adding cross-layer dependencies.
+// Additionally, it enforces one callback is run at a time, and that each
+// callback fully completes before returning.
 //
 // e.g. the TSTabletManager registers a callback to handle disk failure.
 // Blocks and other entities that may hit disk failures can call it without
 // knowing about the TSTabletManager.
 class FsErrorManager {
  public:
-  FsErrorManager()
-    : notify_cb_(Bind(DoNothingErrorNotification)) {}
+  // TODO(awong): Register an actual error-handling function for tablet. Some
+  // errors may surface indirectly due to disk errors, but may not
+  // necessarily be caused by the failure of a specific disk.
+  //
+  // For example, if all of the disks in a tablet's directory group have
+  // already failed, the tablet would not be able to create a new block and
+  // return an error, despite CreateNewBlock() not actually touching disk.
+  // Before CreateNewBlock() returns, in order to satisfy various saftey
+  // checks surrounding the state of tablet post-failure, it must wait for
+  // disk failure handling of the failed disks to return.
+  //
+  // While this callback is a no-op, it serves to enforce that any
+  // error-handling caused by ERROR1 that may have indirectly caused ERROR2
+  // must complete before ERROR2 can be returned to its caller.
+  FsErrorManager();
 
   // Sets the error notification callback.
   //
   // This should be called when the callback's callee is initialized.
-  void SetErrorNotificationCb(ErrorNotificationCb cb) {
-    notify_cb_ = std::move(cb);
-  }
+  void SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb);
 
   // Resets the error notification callback.
   //
   // This must be called before the callback's callee is destroyed.
-  void UnsetErrorNotificationCb() {
-    notify_cb_ = Bind(DoNothingErrorNotification);
-  }
+  void UnsetErrorNotificationCb(ErrorHandlerType e);
 
   // Runs the error notification callback.
   //
   // 'uuid' is the full UUID of the component that failed.
-  void RunErrorNotificationCb(const std::string& uuid) const {
-    notify_cb_.Run(uuid);
-  }
+  void RunErrorNotificationCb(ErrorHandlerType e, const std::string& uuid) const;
 
   // Runs the error notification callback with the UUID of 'dir'.
-  void RunErrorNotificationCb(const DataDir* dir) const {
-    notify_cb_.Run(dir->instance()->metadata()->path_set().uuid());
+  void RunErrorNotificationCb(ErrorHandlerType e, const DataDir* dir) const {
+    DCHECK_EQ(e, ErrorHandlerType::DISK);
+    RunErrorNotificationCb(e, dir->instance()->metadata()->path_set().uuid());
   }
 
  private:
-   // Callback to be run when an error occurs.
-   ErrorNotificationCb notify_cb_;
+   // Callbacks to be run when an error occurs.
+  ErrorNotificationCb disk_cb_;
+  ErrorNotificationCb tablet_cb_;
+
+   // Protects calls to notifications, enforcing that a single callback runs at
+   // a time.
+   mutable Mutex lock_;
 };
 
 }  // namespace fs

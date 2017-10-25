@@ -394,8 +394,8 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   for (const string& test_root : test_roots_) {
     ASSERT_OK(env_->CreateDir(test_root));
   }
-  ASSERT_OK(DataDirManager::CreateNewForTests(env_, test_roots_,
-      DataDirManagerOptions(), &dd_manager_));
+  ASSERT_OK(DataDirManager::CreateNewForTests(
+      env_, test_roots_, DataDirManagerOptions(), &dd_manager_));
 
   // Kill the first non-metadata directory.
   FLAGS_crash_on_eio = false;
@@ -441,8 +441,8 @@ TEST_F(TooManyDataDirManagerTest, TestTooManyInternedStrings) {
   for (const auto& r : test_roots_) {
     ASSERT_OK(env_->CreateDir(r));
   }
-  ASSERT_OK(DataDirManager::CreateNewForTests(
-      env_, test_roots_, DataDirManagerOptions(), &dd_manager_));
+  ASSERT_OK(DataDirManager::CreateNewForTests(env_, test_roots_,
+      DataDirManagerOptions(), &dd_manager_));
 }
 
 } // namespace fs

@@ -313,7 +313,8 @@ FileWritableBlock::~FileWritableBlock() {
 
 void FileWritableBlock::HandleError(const Status& s) const {
   HANDLE_DISK_FAILURE(
-      s, block_manager_->error_manager()->RunErrorNotificationCb(location_.data_dir()));
+      s, block_manager_->error_manager()->RunErrorNotificationCb(
+          ErrorHandlerType::DISK, location_.data_dir()));
 }
 
 Status FileWritableBlock::Close() {
@@ -471,7 +472,8 @@ class FileReadableBlock : public ReadableBlock {
 void FileReadableBlock::HandleError(const Status& s) const {
   const DataDir* dir = block_manager_->dd_manager_->FindDataDirByUuidIndex(
       internal::FileBlockLocation::GetDataDirIdx(block_id_));
-  HANDLE_DISK_FAILURE(s, block_manager_->error_manager()->RunErrorNotificationCb(dir));
+  HANDLE_DISK_FAILURE(s, block_manager_->error_manager()->RunErrorNotificationCb(
+      ErrorHandlerType::DISK, dir));
 }
 
 FileReadableBlock::FileReadableBlock(FileBlockManager* block_manager,
@@ -666,7 +668,8 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
     for (const string& s : to_sync) {
       if (metrics_) metrics_->total_disk_sync->Increment();
       RETURN_NOT_OK_HANDLE_DISK_FAILURE(env_->SyncDir(s),
-          error_manager_->RunErrorNotificationCb(location.data_dir()));
+          error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK,
+                                                 location.data_dir()));
     }
   }
   return Status::OK();
@@ -740,7 +743,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   CHECK(!opts_.read_only);
 
   DataDir* dir;
-  RETURN_NOT_OK(dd_manager_->GetNextDataDir(opts, &dir));
+  RETURN_NOT_OK_EVAL(dd_manager_->GetNextDataDir(opts, &dir),
+      error_manager_->RunErrorNotificationCb(ErrorHandlerType::TABLET, opts.tablet_id));
   int uuid_idx;
   CHECK(dd_manager_->FindUuidIndexByDataDir(dir, &uuid_idx));
 
@@ -775,7 +779,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     // We could create a block in a different directory, but there's currently
     // no point in doing so. On disk failure, the tablet specified by 'opts'
     // will be shut down, so the returned block would not be used.
-    RETURN_NOT_OK_HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
+    RETURN_NOT_OK_HANDLE_DISK_FAILURE(s,
+        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK, dir));
     WritableFileOptions wr_opts;
     wr_opts.mode = Env::CREATE_NON_EXISTING;
     s = env_util::OpenFileForWrite(wr_opts, env_, path, &writer);
@@ -794,7 +799,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
     }
     block->reset(new internal::FileWritableBlock(this, location, writer));
   } else {
-    HANDLE_DISK_FAILURE(s, error_manager_->RunErrorNotificationCb(dir));
+    HANDLE_DISK_FAILURE(s,
+        error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK, dir));
     return s;
   }
   return Status::OK();
@@ -802,7 +808,8 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
 
 #define RETURN_NOT_OK_FBM_DISK_FAILURE(status_expr) do { \
   RETURN_NOT_OK_HANDLE_DISK_FAILURE((status_expr), \
-      error_manager_->RunErrorNotificationCb(dd_manager_->FindDataDirByUuidIndex( \
+      error_manager_->RunErrorNotificationCb(ErrorHandlerType::DISK, \
+      dd_manager_->FindDataDirByUuidIndex( \
       internal::FileBlockLocation::GetDataDirIdx(block_id)))); \
 } while (0);
 
