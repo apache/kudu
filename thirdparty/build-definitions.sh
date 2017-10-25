@@ -686,6 +686,12 @@ build_boost() {
     # and clang, even when they're called through ccache.
     local COMPILER=$($CC --version | awk 'NR==1 {print $1;}')
 
+    # If the compiler binary used was 'cc' and not 'gcc', it will also report
+    # itself as 'cc'. Coerce it to gcc.
+    if [ "$COMPILER" = "cc" ]; then
+      COMPILER=gcc
+    fi
+
     TOOLSET="toolset=${COMPILER}"
     echo "Using $TOOLSET"
     echo "using ${COMPILER} : : $CXX ;" > $USER_JAMFILE
