@@ -17,19 +17,19 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Enables the Red Hat devtoolset on RHEL 6 based systems and executes the
-# arguments. On non-RHEL 6 systems, the arguments are executed without changes
-# to the environment.
-# USAGE: ./enable_devtoolset.sh <command> <args>...
+# Executes the provided arguments within the context of a Red Hat devtoolset.
+#
+# This script should not be used directly; it is called by enable_devtoolset.sh.
 
 set -e
 
-if [[ "$OSTYPE" =~ ^linux ]] && \
-   [[ "$(lsb_release -irs)" =~ (CentOS|RedHatEnterpriseServer)[[:space:]]+6\.[[:digit:]]+ ]]; then
-  # Invoke the inner script, which may do some additional customization within
-  # the devtoolset.
+# If ccache was on the PATH and CC/CXX have not already been set, set them to
+# devtoolset-3 specific ccache helper scripts (thus enabling ccache).
+if [ $(which ccache 2> /dev/null) -a ! "$CC" -a ! "$CXX" ]; then
   ROOT=$(cd $(dirname "$BASH_SOURCE") ; pwd)
-  scl enable devtoolset-3 "$ROOT/enable_devtoolset_inner.sh $*"
-else
-  $@
+  export CC="$ROOT/ccache-devtoolset-3/cc"
+  export CXX="$ROOT/ccache-devtoolset-3/c++"
 fi
+
+# Execute the arguments.
+$*
