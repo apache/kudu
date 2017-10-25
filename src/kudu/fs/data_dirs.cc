@@ -670,7 +670,7 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
         return Status::IOError("No healthy data directories available", "", ENODEV);
       }
     }
-    RETURN_NOT_OK(GetDirsForGroupUnlocked(group_target_size, &group_indices));
+    GetDirsForGroupUnlocked(group_target_size, &group_indices);
     if (PREDICT_FALSE(group_indices.empty())) {
       return Status::IOError("All healthy data directories are full", "", ENOSPC);
     }
@@ -724,8 +724,9 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
   for (int i : random_indices) {
     int uuid_idx = (*group_uuid_indices)[i];
     DataDir* candidate = FindOrDie(data_dir_by_uuid_idx_, uuid_idx);
-    RETURN_NOT_OK(candidate->RefreshIsFull(DataDir::RefreshMode::EXPIRED_ONLY));
-    if (!candidate->is_full()) {
+    Status s = candidate->RefreshIsFull(DataDir::RefreshMode::EXPIRED_ONLY);
+    WARN_NOT_OK(s, Substitute("failed to refresh fullness of $0", candidate->dir()));
+    if (s.ok() && !candidate->is_full()) {
       *dir = candidate;
       return Status::OK();
     }
@@ -740,8 +741,8 @@ Status DataDirManager::GetNextDataDir(const CreateBlockOptions& opts, DataDir** 
                                 metrics_->data_dirs_full->value(), dirs_state_str);
   }
   return Status::IOError(Substitute("No directories available to add to $0directory group ($1 "
-                        "dirs total, $2).", tablet_id_str, data_dirs_.size(), dirs_state_str),
-                        "", ENOSPC);
+                         "dirs total, $2).", tablet_id_str, data_dirs_.size(), dirs_state_str),
+                         "", ENOSPC);
 }
 
 void DataDirManager::DeleteDataDirGroup(const std::string& tablet_id) {
@@ -768,19 +769,20 @@ bool DataDirManager::GetDataDirGroupPB(const std::string& tablet_id,
   return false;
 }
 
-Status DataDirManager::GetDirsForGroupUnlocked(int target_size,
-                                               vector<int>* group_indices) {
+void DataDirManager::GetDirsForGroupUnlocked(int target_size,
+                                             vector<int>* group_indices) {
   DCHECK(dir_group_lock_.is_locked());
   vector<int> candidate_indices;
   for (auto& e : data_dir_by_uuid_idx_) {
     if (ContainsKey(failed_data_dirs_, e.first)) {
       continue;
     }
-    RETURN_NOT_OK(e.second->RefreshIsFull(DataDir::RefreshMode::ALWAYS));
-    // TODO(awong): If a disk is unhealthy at the time of group creation, the
-    // resulting group may be below targeted size. Add functionality to resize
-    // groups. See KUDU-2040 for more details.
-    if (!e.second->is_full()) {
+    Status s = e.second->RefreshIsFull(DataDir::RefreshMode::ALWAYS);
+    WARN_NOT_OK(s, Substitute("failed to refresh fullness of $0", e.second->dir()));
+    if (s.ok() && !e.second->is_full()) {
+      // TODO(awong): If a disk is unhealthy at the time of group creation, the
+      // resulting group may be below targeted size. Add functionality to
+      // resize groups. See KUDU-2040 for more details.
       candidate_indices.push_back(e.first);
     }
   }
@@ -796,7 +798,6 @@ Status DataDirManager::GetDirsForGroupUnlocked(int target_size,
       candidate_indices.erase(candidate_indices.begin() + 1);
     }
   }
-  return Status::OK();
 }
 
 DataDir* DataDirManager::FindDataDirByUuidIndex(int uuid_idx) const {

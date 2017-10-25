@@ -414,7 +414,7 @@ class DataDirManager {
   // added. Although this function does not itself change DataDirManager state,
   // its expected usage warrants that it is called within the scope of a
   // lock_guard of dir_group_lock_.
-  Status GetDirsForGroupUnlocked(int target_size, std::vector<int>* group_indices);
+  void GetDirsForGroupUnlocked(int target_size, std::vector<int>* group_indices);
 
   // Goes through the data dirs in 'uuid_indices' and populates
   // 'healthy_indices' with those that haven't failed.
