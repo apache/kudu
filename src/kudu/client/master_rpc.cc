@@ -27,6 +27,7 @@
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/basictypes.h"
@@ -318,13 +319,38 @@ void ConnectToClusterRpc::SingleNodeCallback(int master_idx,
     }
     if (new_status.ok()) {
       if (resp.role() != RaftPeerPB::LEADER) {
-        // Use a Status::NotFound() to indicate that the node is not
-        // the leader: this way, we can handle the case where we've
-        // received a reply from all of the nodes in the cluster (no
-        // network or other errors encountered), but haven't found a
-        // leader (which means that SendRpcCb() above can perform a
-        // delayed retry).
-        new_status = Status::NotFound("no leader found: " + ToString());
+        string msg;
+        if (resp.master_addrs_size() > 0 &&
+            resp.master_addrs_size() != addrs_with_names_.size()) {
+          // If we connected to a non-leader, and it responds that the
+          // number of masters in the cluster don't match the client's
+          // view of the number of masters, then it's likely the client
+          // is mis-configured (i.e with a subset of the masters).
+          // We'll include that info in the error message.
+          string client_config = JoinMapped(
+              addrs_with_names_,
+              [](const pair<Sockaddr, string>& addr_with_name) {
+                return Substitute("$0:$1", addr_with_name.second, addr_with_name.first.port());
+              }, ",");
+          string cluster_config = JoinMapped(
+              resp.master_addrs(),
+              [](const HostPortPB& pb) {
+                return Substitute("$0:$1", pb.host(), pb.port());
+              }, ",");
+          new_status = Status::ConfigurationError(Substitute(
+              "no leader master found. Client configured with $0 master(s) ($1) "
+              "but cluster indicates it expects $2 master(s) ($3)",
+              addrs_with_names_.size(), client_config,
+              resp.master_addrs_size(), cluster_config));
+        } else {
+          // Use a Status::NotFound() to indicate that the node is not
+          // the leader: this way, we can handle the case where we've
+          // received a reply from all of the nodes in the cluster (no
+          // network or other errors encountered), but haven't found a
+          // leader (which means that SendRpcCb() above can perform a
+          // delayed retry).
+          new_status = Status::NotFound("no leader found", ToString());
+        }
       } else {
         // We've found a leader.
         leader_idx_ = master_idx;

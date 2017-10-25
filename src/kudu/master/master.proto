@@ -609,6 +609,18 @@ message ConnectToMasterResponsePB {
   // If the client requested an authentication token, and security is
   // enabled on the cluster, the master returns a signed authn token.
   optional security.SignedTokenPB authn_token = 4;
+
+  // The hosts and ports of the masters in this cluster.
+  //
+  // NOTE: Added in Kudu 1.6.
+  //
+  // NOTE: it is likely, but not guaranteed that the hostnames advertised here
+  // will be usable by all clients. Client implementations should not use this
+  // field for "discovery" of other masters, since then it's likely that
+  // users will configure applications to only talk to one the masters in
+  // an HA setup. If that master then fails, the applications would go
+  // offline.
+  repeated HostPortPB master_addrs = 5;
 }
 
 // ============================================================================

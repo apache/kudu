@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
@@ -300,5 +301,16 @@ public class ProtobufHelper {
    */
   public static HostAndPort hostAndPortFromPB(Common.HostPortPB hostPortPB) {
     return HostAndPort.fromParts(hostPortPB.getHost(), hostPortPB.getPort());
+  }
+
+  /**
+   * Convert a list of HostPortPBs into a comma-separated string.
+   */
+  public static String hostPortPbListToString(List<Common.HostPortPB> pbs) {
+    List<String> strs = new ArrayList<>(pbs.size());
+    for (Common.HostPortPB pb : pbs) {
+      strs.add(pb.getHost() + ":" + pb.getPort());
+    }
+    return Joiner.on(',').join(strs);
   }
 }

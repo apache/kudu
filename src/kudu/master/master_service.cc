@@ -20,11 +20,13 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -417,6 +419,18 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   }
   auto role = server_->catalog_manager()->Role();
   resp->set_role(role);
+
+  // Set the info about the other masters, so that the client can verify
+  // it has the full set of info.
+  {
+    vector<HostPortPB> hostports;
+    WARN_NOT_OK(server_->GetMasterHostPorts(&hostports),
+                "unable to get HostPorts for masters");
+    resp->mutable_master_addrs()->Reserve(hostports.size());
+    for (auto& hp : hostports) {
+      *resp->add_master_addrs() = std::move(hp);
+    }
+  }
 
   if (l.leader_status().ok()) {
     // TODO(KUDU-1924): it seems there is some window when 'role' is LEADER but

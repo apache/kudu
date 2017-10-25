@@ -30,14 +30,17 @@
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/move.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
@@ -45,6 +48,7 @@
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/master_path_handlers.h"
 #include "kudu/master/master_service.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -52,6 +56,7 @@
 #include "kudu/security/token_signer.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
+#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
@@ -329,6 +334,32 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
   std::copy(masters_by_uuid.begin(), masters_by_uuid.end(), std::back_inserter(*masters));
   return Status::OK();
 }
+
+Status Master::GetMasterHostPorts(std::vector<HostPortPB>* hostports) const {
+  auto consensus = catalog_manager_->sys_catalog()->tablet_replica()->shared_consensus();
+  if (!consensus) {
+    return Status::IllegalState("consensus not running");
+  }
+
+  hostports->clear();
+  consensus::RaftConfigPB config = consensus->CommittedConfig();
+  for (auto& peer : *config.mutable_peers()) {
+    if (peer.member_type() == consensus::RaftPeerPB::VOTER) {
+      // In non-distributed master configurations, we don't store our own
+      // last known address in the Raft config. So, we'll fill it in from
+      // the server Registration instead.
+      if (!peer.has_last_known_addr()) {
+        DCHECK_EQ(config.peers_size(), 1);
+        DCHECK(registration_initialized_.load());
+        hostports->emplace_back(registration_.rpc_addresses(0));
+      } else {
+        hostports->emplace_back(std::move(*peer.mutable_last_known_addr()));
+      }
+    }
+  }
+  return Status::OK();
+}
+
 
 } // namespace master
 } // namespace kudu

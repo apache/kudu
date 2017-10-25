@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
@@ -34,7 +35,7 @@ import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.consensus.Metadata.RaftPeerPB.Role;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.rpc.RpcHeader.ErrorStatusPB.RpcErrorCodePB;
@@ -62,6 +63,12 @@ final class ConnectToCluster {
   // Exceptions received so far: kept for debugging purposes.
   private final List<Exception> exceptionsReceived =
       Collections.synchronizedList(new ArrayList<Exception>());
+
+  /**
+   * If we've received a response from a master which indicates the full
+   * list of masters in the cluster, it is stored here. Otherwise, null.
+   */
+  private AtomicReference<List<HostPortPB>> knownMasters = new AtomicReference<>();
 
   /**
    * Creates an object that holds the state needed to retrieve master table's location.
@@ -222,6 +229,34 @@ final class ConnectToCluster {
         Status s = Status.ServiceUnavailable(msg);
         responseD.callback(new NonRecoverableException(s));
       } else {
+        // We couldn't find a leader master. A common case here is that the user only
+        // specified a subset of the masters, so check for that. We could try to do
+        // something fancier like compare the actual host/ports to see if they don't
+        // match, but it's possible that the hostnames used by clients are not the
+        // same as the hostnames that the servers use for each other in some network
+        // setups.
+
+        List<HostPortPB> knownMastersLocal = knownMasters.get();
+        if (knownMastersLocal != null &&
+            knownMastersLocal.size() != numMasters) {
+          String msg = String.format(
+              "Could not connect to a leader master. " +
+              "Client configured with %s master(s) (%s) but cluster indicates it expects " +
+              "%s master(s) (%s)",
+              numMasters, allHosts,
+              knownMastersLocal.size(),
+              ProtobufHelper.hostPortPbListToString(knownMastersLocal));
+          LOG.warn(msg);
+          Exception e = new NonRecoverableException(Status.ConfigurationError(msg));
+          if (!LOG.isDebugEnabled()) {
+            // Stack trace is just internal guts of netty, etc, no need for the detail
+            // level.
+            e.setStackTrace(new StackTraceElement[]{});
+          }
+          responseD.callback(e);
+          return;
+        }
+
         String message = String.format("Master config (%s) has no leader.",
             allHosts);
         Exception ex;
@@ -242,6 +277,15 @@ final class ConnectToCluster {
     }
   }
 
+  private void recordKnownMasters(ConnectToMasterResponsePB r) {
+    // Old versions don't set this field.
+    if (r.getMasterAddrsCount() == 0) {
+      return;
+    }
+
+    knownMasters.compareAndSet(null, r.getMasterAddrsList());
+  }
+
   /**
    * Callback for each ConnectToCluster RPC sent in connectToMaster() above.
    * If a request (paired to a specific master) returns a reply that indicates it's a leader,
@@ -260,6 +304,7 @@ final class ConnectToCluster {
 
     @Override
     public Void call(ConnectToMasterResponsePB r) throws Exception {
+      recordKnownMasters(r);
       if (!r.getRole().equals(Role.LEADER)) {
         incrementCountAndCheckExhausted();
         return null;

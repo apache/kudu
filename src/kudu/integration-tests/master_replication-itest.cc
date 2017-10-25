@@ -32,6 +32,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -51,6 +52,8 @@
 
 using std::string;
 using std::vector;
+
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
@@ -287,6 +290,50 @@ TEST_F(MasterReplicationTest, TestMasterPeerSetsDontMatch) {
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "55555");
 }
+
+TEST_F(MasterReplicationTest, TestConnectToClusterReturnsAddresses) {
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    SCOPED_TRACE(Substitute("Connecting to master $0", i));
+    auto proxy = cluster_->master_proxy(i);
+    rpc::RpcController rpc;
+    ConnectToMasterRequestPB req;
+    ConnectToMasterResponsePB resp;
+    ASSERT_OK(proxy->ConnectToMaster(req, &resp, &rpc));
+    ASSERT_EQ(cluster_->num_masters(), resp.master_addrs_size());
+    for (int j = 0; j < cluster_->num_masters(); j++) {
+      const auto& addr = resp.master_addrs(j);
+      ASSERT_EQ(cluster_->mini_master(j)->bound_rpc_addr().ToString(),
+                Substitute("$0:$1", addr.host(), addr.port()));
+    }
+  }
+}
+
+
+// Test for KUDU-2200: if a user specifies just one of the masters, and that master is a
+// follower, we should give a status message that explains their mistake.
+TEST_F(MasterReplicationTest, TestConnectToFollowerMasterOnly) {
+  int successes = 0;
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    SCOPED_TRACE(Substitute("Connecting to master $0", i));
+
+    shared_ptr<KuduClient> client;
+    KuduClientBuilder builder;
+    builder.add_master_server_addr(cluster_->mini_master(i)->bound_rpc_addr_str());
+    Status s = builder.Build(&client);
+    if (s.ok()) {
+      successes++;
+    } else {
+      ASSERT_STR_MATCHES(s.ToString(),
+                         R"(Configuration error: .*Client configured with 1 master\(s\) \(.+\) )"
+                         R"(but cluster indicates it expects 3.*)");
+    }
+  }
+  // It's possible that we get either 0 or 1 success in the above loop:
+  // - 0, in the case that no master had elected itself yet
+  // - 1, in the case that one master had become leader by the time we connected.
+  EXPECT_LE(successes, 1);
+}
+
 
 } // namespace master
 } // namespace kudu

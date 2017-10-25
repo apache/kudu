@@ -27,6 +27,8 @@ import java.util.List;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
+
+import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
@@ -65,6 +67,51 @@ public class TestConnectToCluster {
       cluster.shutdown();
     }
   }
+
+  /**
+   * Test for KUDU-2200: if a cluster is running multiple masters, but
+   * the user only specifies one of them in the connection string,
+   * the resulting exception should clarify their error rather than
+   * saying that no leader was found.
+   */
+  @Test(timeout=60000)
+  public void testConnectToOneOfManyMasters() throws Exception {
+    MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+        .numMasters(3)
+        .numTservers(0)
+        .build();
+    int successes = 0;
+    try {
+      String[] masterAddrs = cluster.getMasterAddresses().split(",");
+      assertEquals(3, masterAddrs.length);
+      for (String masterAddr : masterAddrs) {
+        KuduClient c = null;
+        try {
+          c = new KuduClient.KuduClientBuilder(masterAddr).build();
+          // Call some method which uses the master. This forces us to connect.
+          c.listTabletServers();
+          successes++;
+        } catch (Exception e) {
+          Assert.assertTrue("unexpected exception: " + e.toString(),
+              e.toString().matches(
+                  ".*Client configured with 1 master\\(s\\) " +
+                  "\\(.+?\\) but cluster indicates it expects 3 master\\(s\\) " +
+                  "\\(.+?,.+?,.+?\\).*"));
+        } finally {
+          if (c != null) {
+            c.close();
+          }
+        }
+      }
+    } finally {
+      cluster.shutdown();
+    }
+    // Typically, one of the connections will have succeeded. However, it's possible
+    // that 0 succeeded in the case that the masters were slow at electing
+    // themselves.
+    Assert.assertTrue(successes <= 1);
+  }
+
 
   /**
    * Unit test which checks that the ConnectToCluster aggregates the

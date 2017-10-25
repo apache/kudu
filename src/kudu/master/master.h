@@ -34,6 +34,7 @@
 
 namespace kudu {
 
+class HostPortPB;
 class MaintenanceManager;
 class MonoDelta;
 class ThreadPool;
@@ -88,11 +89,19 @@ class Master : public kserver::KuduServer {
   // Get node instance, Raft role, RPC and HTTP addresses for all
   // masters.
   //
-  // TODO move this to a separate class to be re-used in TS and
+  // NOTE: this performs a round-trip RPC to all of the masters so
+  // should not be used in any performance-critical paths.
+  //
+  // TODO(todd) move this to a separate class to be re-used in TS and
   // client; cache this information with a TTL (possibly in another
   // SysTable), so that we don't have to perform an RPC call on every
   // request.
   Status ListMasters(std::vector<ServerEntryPB>* masters) const;
+
+  // Gets the HostPorts for all of the masters in the cluster.
+  // This is not as complete as ListMasters() above, but operates just
+  // based on local state.
+  Status GetMasterHostPorts(std::vector<HostPortPB>* hostports) const;
 
   bool IsShutdown() const {
     return state_ == kStopped;

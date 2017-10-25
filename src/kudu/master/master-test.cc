@@ -1424,6 +1424,10 @@ TEST_F(MasterTest, TestConnectToMaster) {
   security::TokenPB token;
   ASSERT_TRUE(token.ParseFromString(resp.authn_token().token_data()));
   ASSERT_TRUE(token.authn().has_username());
+
+  ASSERT_EQ(1, resp.master_addrs_size());
+  ASSERT_EQ("127.0.0.1", resp.master_addrs(0).host());
+  ASSERT_NE(0, resp.master_addrs(0).port());
 }
 
 // Test that the master signs its on server certificate when it becomes the leader,
