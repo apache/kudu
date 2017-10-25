@@ -502,17 +502,17 @@ public final class AsyncKuduScanner {
       @Override
       public Deferred<RowResultIterator> call(Exception e) throws Exception {
         final RemoteTablet old_tablet = tablet;  // Save before invalidate().
-        String message = old_tablet + " pretends to not know " + AsyncKuduScanner.this;
-        LOG.warn(message, e);
         invalidate();  // If there was an error, don't assume we're still OK.
-        // If encountered ScannerExpiredException, it means the scanner
-        // on the server side expired. This exception is only thrown for fault
-        // tolerant scanner. Therefore, open a new scanner.
-        if (e instanceof ScannerExpiredException) {
+        // If encountered FaultTolerantScannerExpiredException, it means the
+        // fault tolerant scanner on the server side expired. Therefore, open
+        // a new scanner.
+        if (e instanceof FaultTolerantScannerExpiredException) {
           scannerId = null;
           sequenceId = 0;
+          LOG.warn("Scanner expired, creating a new one {}", AsyncKuduScanner.this);
           return nextRows();
         } else {
+          LOG.warn("{} pretends to not know {}", old_tablet, AsyncKuduScanner.this, e);
           return Deferred.fromError(e); // Let the error propagate.
         }
       }
@@ -715,10 +715,10 @@ public final class AsyncKuduScanner {
     }
 
     public String toString() {
-      String ret = "AsyncKuduScanner$Response(scannerId=" + Bytes.pretty(scannerId) +
-          ", data=" + data + ", more=" + more;
+      String ret = "AsyncKuduScanner$Response(scannerId = " + Bytes.pretty(scannerId) +
+          ", data = " + data + ", more = " + more;
       if (scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
-        ret += ", responseScanTimestamp =" + scanTimestamp;
+        ret += ", responseScanTimestamp = " + scanTimestamp;
       }
       ret += ")";
       return ret;
@@ -858,7 +858,7 @@ public final class AsyncKuduScanner {
           case SCANNER_EXPIRED:
             if (isFaultTolerant) {
               Status status = Status.fromTabletServerErrorPB(error);
-              throw new ScannerExpiredException(status);
+              throw new FaultTolerantScannerExpiredException(status);
             }
             // fall through
           default:
@@ -870,7 +870,7 @@ public final class AsyncKuduScanner {
           callResponse);
 
       boolean hasMore = resp.getHasMoreResults();
-      if (id.length  != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
+      if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
         Status statusIllegalState = Status.IllegalState("Scan RPC response was for scanner" +
             " ID " + Bytes.pretty(id) + " but we expected " +
             Bytes.pretty(scannerId));
@@ -883,14 +883,14 @@ public final class AsyncKuduScanner {
                                         : AsyncKuduClient.NO_TIMESTAMP,
           resp.getLastPrimaryKey().toByteArray());
       if (LOG.isDebugEnabled()) {
-        LOG.debug(response.toString());
+        LOG.debug("{} for scanner {}", response.toString(), AsyncKuduScanner.this);
       }
       return new Pair<Response, Object>(response, error);
     }
 
     public String toString() {
       return "ScanRequest(scannerId=" + Bytes.pretty(scannerId) +
-          (tablet != null ? ", tabletSlice=" + tablet.getTabletId() : "") +
+          (tablet != null ? ", tablet=" + tablet.getTabletId() : "") +
           ", attempt=" + attempt + ", " + super.toString() + ")";
     }
 

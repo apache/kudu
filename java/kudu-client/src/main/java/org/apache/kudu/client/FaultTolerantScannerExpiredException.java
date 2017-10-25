@@ -21,18 +21,18 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 /**
- * A scanner expired exception.
+ * A scanner expired exception only used for fault tolerant scanner.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
-class ScannerExpiredException extends RecoverableException {
+class FaultTolerantScannerExpiredException extends RecoverableException {
   /**
    * Constructor.
    * @param status status object containing the reason for the exception
    * trace
    */
-  ScannerExpiredException(Status status) {
+  FaultTolerantScannerExpiredException(Status status) {
     super(status);
   }
 
@@ -41,7 +41,7 @@ class ScannerExpiredException extends RecoverableException {
    * @param status status object containing the reason for the exception
    * @param cause the exception that caused this one to be thrown
    */
-  ScannerExpiredException(Status status, Throwable cause) {
+  FaultTolerantScannerExpiredException(Status status, Throwable cause) {
     super(status, cause);
   }
 }

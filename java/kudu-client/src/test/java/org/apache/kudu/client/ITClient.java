@@ -69,7 +69,7 @@ public class ITClient extends BaseKuduTest {
     runtimeInSeconds = runtimeProp == null ? DEFAULT_RUNTIME_SECONDS : Long.parseLong(runtimeProp);
 
     if (runtimeInSeconds < TEST_MIN_RUNTIME_SECONDS || runtimeInSeconds > TEST_TIMEOUT_SECONDS) {
-      Assert.fail("This test needs to run more more than " + TEST_MIN_RUNTIME_SECONDS + " seconds" +
+      Assert.fail("This test needs to run more than " + TEST_MIN_RUNTIME_SECONDS + " seconds" +
           " and less than " + TEST_TIMEOUT_SECONDS + " seconds");
     }
 
@@ -397,9 +397,12 @@ public class ITClient extends BaseKuduTest {
             LOG.info("New row count {}", lastRowCount);
           }
           return true;
+        } else {
+          reportError("Row count unexpectedly decreased from " + lastRowCount + "to " + rowCount,
+              null);
         }
 
-        // Due to the lack of KUDU-430, we need to loop until the row count stops regressing.
+        // Due to the lack of KUDU-430, we need to loop for a while.
         try {
           KEEP_RUNNING_LATCH.await(50, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
