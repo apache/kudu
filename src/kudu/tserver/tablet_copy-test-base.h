@@ -43,7 +43,10 @@ class TabletCopyTest : public TabletServerTestBase {
  public:
   virtual void SetUp() OVERRIDE {
     NO_FATALS(TabletServerTestBase::SetUp());
-    NO_FATALS(StartTabletServer(/* num_data_dirs */ 1));
+    // Create a tablet server with multiple data dirs. In most cases, this is
+    // unimportant, but in some cases can be helpful to test multi-disk
+    // behavior and disk failures.
+    NO_FATALS(StartTabletServer(/* num_data_dirs */ 3));
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to

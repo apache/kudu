@@ -174,6 +174,10 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Internal helper method for Init().
   Status InitOnce();
 
+  // Returns an error if any directories in the tablet's directory group are
+  // unhealthy and sets 'error_code' appropriately.
+  Status CheckHealthyDirGroup(TabletCopyErrorPB::Code* error_code = nullptr) const;
+
   // Open the block and add it to the block map.
   Status OpenBlock(const BlockId& block_id);
 

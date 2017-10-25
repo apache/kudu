@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -34,7 +35,9 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -55,6 +58,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+DECLARE_bool(crash_on_eio);
+DECLARE_double(env_inject_eio);
 DECLARE_uint64(tablet_copy_idle_timeout_sec);
 DECLARE_uint64(tablet_copy_timeout_poll_period_ms);
 
@@ -507,6 +512,41 @@ TEST_F(TabletCopyServiceTest, TestSessionTimeout) {
   } while (MonoTime::Now().GetDeltaSince(start_time).ToSeconds() < 10);
 
   ASSERT_FALSE(resp.session_is_active()) << "Tablet Copy session did not time out!";
+}
+
+// Test that the tablet copy session will terminate on disk failures.
+TEST_F(TabletCopyServiceTest, TestDiskFailureDuringSession) {
+  string session_id;
+  tablet::TabletSuperBlockPB superblock;
+  ASSERT_OK(DoBeginValidTabletCopySession(&session_id, &superblock));
+
+  // Get a block id locally that we'll copy.
+  BlockId block_id = FirstColumnBlockId(superblock);
+  Slice local_data;
+  faststring scratch;
+  ASSERT_OK(ReadLocalBlockFile(mini_server_->server()->fs_manager(), block_id,
+                               &scratch, &local_data));
+
+  // Copy over the block while one of the directories is failed.
+  FetchDataResponsePB resp;
+  RpcController controller;
+  ASSERT_OK(mini_server_->server()->fs_manager()->dd_manager()->MarkDataDirFailed(1));
+  Status s = DoFetchData(session_id, AsDataTypeId(block_id), nullptr, nullptr, &resp, &controller);
+  LOG(INFO) << "Fetch data request responded with: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Unable to get piece of data block");
+  ASSERT_TRUE(s.IsRemoteError());
+
+  // Now close the copy session.
+  RpcController end_copy_controller;
+  EndTabletCopySessionResponsePB end_session_resp;
+  ASSERT_OK(DoEndTabletCopySession(
+      session_id, true, nullptr, &end_session_resp, &end_copy_controller));
+
+  // Starting a new session should fail.
+  s = DoBeginValidTabletCopySession(&session_id, &superblock);
+  LOG(INFO) << "Begin copy session request responded with: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Error beginning tablet copy session");
+  ASSERT_TRUE(s.IsRemoteError());
 }
 
 } // namespace tserver

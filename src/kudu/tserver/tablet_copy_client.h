@@ -145,6 +145,10 @@ class TabletCopyClient {
 
   static Status UnwindRemoteError(const Status& status, const rpc::RpcController& controller);
 
+  // Returns an error if any directories in the tablet's directory group are
+  // unhealthy.
+  Status CheckHealthyDirGroup() const;
+
   // Set a new status message on the TabletReplica.
   // The string "TabletCopy: " will be prepended to each message.
   void SetStatusMessage(const std::string& message);

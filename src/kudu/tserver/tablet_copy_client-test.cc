@@ -20,7 +20,9 @@
 #include <limits>
 #include <memory>
 #include <ostream>
+#include <stdlib.h>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -38,6 +40,7 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -64,6 +67,7 @@
 
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::vector;
 
 DECLARE_string(block_manager);
@@ -77,6 +81,7 @@ using consensus::ConsensusMetadataManager;
 using consensus::ConsensusStatePB;
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
+using fs::DataDirManager;
 using std::tuple;
 using std::unique_ptr;
 using tablet::TabletMetadata;
@@ -86,10 +91,14 @@ class TabletCopyClientTest : public TabletCopyTest {
   virtual void SetUp() OVERRIDE {
     NO_FATALS(TabletCopyTest::SetUp());
 
-    const string kTestDir = GetTestPath("client_tablet");
+    // To be a bit more flexible in testing, create a FS layout with multiple disks.
+    const string kTestWalDir = GetTestPath("client_tablet_wal");
+    const string kTestDataDirPrefix = GetTestPath("client_tablet_data");
     FsManagerOpts opts;
-    opts.wal_root = kTestDir;
-    opts.data_roots = { kTestDir };
+    opts.wal_root = kTestWalDir;
+    opts.data_roots.emplace_back(kTestDataDirPrefix + "A");
+    opts.data_roots.emplace_back(kTestDataDirPrefix + "B");
+
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
     fs_manager_.reset(new FsManager(Env::Default(), opts));
@@ -251,10 +260,10 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
 
   // Verify the disk synchronization count.
   if (FLAGS_block_manager == "log") {
-    ASSERT_EQ(3, down_cast<Counter*>(
+    ASSERT_EQ(6, down_cast<Counter*>(
         metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
   } else {
-    ASSERT_EQ(14, down_cast<Counter*>(
+    ASSERT_EQ(18, down_cast<Counter*>(
         metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
   }
 
@@ -269,6 +278,34 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
     unique_ptr<fs::ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   }
+}
+
+// Test that failing a disk outside fo the tablet copy client will eventually
+// stop the copy client and cause it to fail.
+TEST_F(TabletCopyClientTest, TestFailedDiskStopsClient) {
+  DataDirManager* dd_manager = fs_manager_->dd_manager();
+
+  // Repeatedly fetch files for the client.
+  Status s;
+  auto copy_thread = thread([&] {
+    while (s.ok()) {
+      s = client_->FetchAll(nullptr);
+    }
+  });
+
+  // In a separate thread, mark one of the directories as failed.
+  while (true) {
+    if (rand() % 10 == 0) {
+      dd_manager->MarkDataDirFailed(0, "injected failure in non-client thread");
+      LOG(INFO) << "INJECTING FAILURE";
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+
+  // The copy thread should stop and the copy client should return an error.
+  copy_thread.join();
+  ASSERT_TRUE(s.IsIOError());
 }
 
 enum DownloadBlocks {

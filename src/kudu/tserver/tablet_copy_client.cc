@@ -325,7 +325,8 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                           tablet::TABLET_DATA_COPYING,
                                           /*last_logged_opid=*/ boost::none),
         "Could not replace superblock with COPYING data state");
-    CHECK_OK(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_));
+    RETURN_NOT_OK_PREPEND(fs_manager_->dd_manager()->CreateDataDirGroup(tablet_id_),
+        "Could not create a new directory group for tablet copy");
   } else {
     // HACK: Set the initial tombstoned last-logged OpId to 1.0 when copying a
     // replica for the first time, so that if the tablet copy fails, the
@@ -586,6 +587,8 @@ Status TabletCopyClient::DownloadBlocks() {
 
 Status TabletCopyClient::DownloadWAL(uint64_t wal_segment_seqno) {
   VLOG_WITH_PREFIX(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
+  RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(), "Not downloading WAL for replica");
+
   DataIdPB data_id;
   data_id.set_type(DataIdPB::LOG_SEGMENT);
   data_id.set_wal_segment_seqno(wal_segment_seqno);
@@ -648,6 +651,7 @@ Status TabletCopyClient::DownloadAndRewriteBlock(const BlockIdPB& src_block_id,
 Status TabletCopyClient::DownloadBlock(const BlockId& old_block_id,
                                        BlockId* new_block_id) {
   VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
+  RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(), "Not downloading block for replica");
 
   unique_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(CreateBlockOptions({ tablet_id_ }), &block),
@@ -738,6 +742,14 @@ Status TabletCopyClient::VerifyData(uint64_t offset, const DataChunkPB& chunk) {
 string TabletCopyClient::LogPrefix() {
   return Substitute("T $0 P $1: tablet copy: ",
                     tablet_id_, fs_manager_->uuid());
+}
+
+Status TabletCopyClient::CheckHealthyDirGroup() const {
+  if (fs_manager_->dd_manager()->IsTabletInFailedDir(tablet_id_)) {
+    return Status::IOError(
+        Substitute("Tablet $0 is in a failed directory", tablet_id_));
+  }
+  return Status::OK();
 }
 
 template<typename F>

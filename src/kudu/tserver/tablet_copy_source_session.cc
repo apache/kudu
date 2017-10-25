@@ -34,6 +34,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
@@ -129,6 +130,7 @@ Status TabletCopySourceSession::InitOnce() {
   }
 
   RETURN_NOT_OK(tablet_replica_->CheckRunning());
+  RETURN_NOT_OK(CheckHealthyDirGroup());
 
   const string& tablet_id = tablet_replica_->tablet_id();
 
@@ -300,6 +302,8 @@ Status TabletCopySourceSession::GetBlockPiece(const BlockId& block_id,
                                              string* data, int64_t* block_file_size,
                                              TabletCopyErrorPB::Code* error_code) {
   DCHECK(init_once_.init_succeeded());
+  RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(error_code),
+                        "Tablet copy source could not get block");
   ImmutableReadableBlockInfo* block_info;
   RETURN_NOT_OK(FindBlock(block_id, &block_info, error_code));
 
@@ -320,6 +324,8 @@ Status TabletCopySourceSession::GetLogSegmentPiece(uint64_t segment_seqno,
                                                    std::string* data, int64_t* log_file_size,
                                                    TabletCopyErrorPB::Code* error_code) {
   DCHECK(init_once_.init_succeeded());
+  RETURN_NOT_OK_PREPEND(CheckHealthyDirGroup(error_code),
+                        "Tablet copy source could not get log segment");
   ImmutableRandomAccessFileInfo* file_info;
   RETURN_NOT_OK(FindLogSegment(segment_seqno, &file_info, error_code));
   RETURN_NOT_OK(ReadFileChunkToBuf(file_info, offset, client_maxlen,
@@ -353,6 +359,17 @@ static Status AddImmutableFileToMap(Collection* const cache,
   typedef typename base::remove_pointer<InfoPtr>::type Info;
   InsertOrDie(cache, key, new Info(readable, size));
 
+  return Status::OK();
+}
+
+Status TabletCopySourceSession::CheckHealthyDirGroup(TabletCopyErrorPB::Code* error_code) const {
+  if (fs_manager_->dd_manager()->IsTabletInFailedDir(tablet_id())) {
+    if (error_code) {
+      *error_code = TabletCopyErrorPB::IO_ERROR;
+    }
+    return Status::IOError(
+        Substitute("Tablet $0 is in a failed directory", tablet_id()));
+  }
   return Status::OK();
 }
 
