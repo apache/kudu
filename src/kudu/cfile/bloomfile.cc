@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -37,7 +36,6 @@
 #include "kudu/common/types.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/coding.h"
@@ -196,8 +194,8 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
 Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
                              ReaderOptions options,
-                             gscoped_ptr<BloomFileReader> *reader) {
-  gscoped_ptr<BloomFileReader> bf_reader;
+                             unique_ptr<BloomFileReader> *reader) {
+  unique_ptr<BloomFileReader> bf_reader;
   RETURN_NOT_OK(OpenNoInit(std::move(block),
                            std::move(options), &bf_reader));
   RETURN_NOT_OK(bf_reader->Init());
@@ -208,11 +206,11 @@ Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
 
 Status BloomFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                    ReaderOptions options,
-                                   gscoped_ptr<BloomFileReader> *reader) {
+                                   unique_ptr<BloomFileReader> *reader) {
   unique_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         options, &cf_reader));
-  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(
+  unique_ptr<BloomFileReader> bf_reader(new BloomFileReader(
       std::move(cf_reader), std::move(options)));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(bf_reader->Init());

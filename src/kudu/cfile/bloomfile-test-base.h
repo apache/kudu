@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BLOOMFILE_TEST_BASE_H
-#define KUDU_CFILE_BLOOMFILE_TEST_BASE_H
+
+#pragma once
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -120,12 +120,11 @@ class BloomFileTestBase : public KuduTest {
   }
 
  protected:
-  gscoped_ptr<FsManager> fs_manager_;
-  gscoped_ptr<BloomFileReader> bfr_;
+  std::unique_ptr<FsManager> fs_manager_;
+  std::unique_ptr<BloomFileReader> bfr_;
   BlockId block_id_;
 };
 
 } // namespace cfile
 } // namespace kudu
 
-#endif

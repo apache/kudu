@@ -18,39 +18,46 @@
 #include <algorithm>
 #include <memory>
 #include <ostream>
-#include <utility>
+#include <string>
+#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/bloomfile.h"
+#include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 TAG_FLAG(consult_bloom_filters, hidden);
 
 namespace kudu {
 
-class BlockId;
 class MemTracker;
 
 namespace tablet {
@@ -224,10 +231,7 @@ uint64_t CFileSet::AdhocIndexOnDiskSize() const {
 }
 
 uint64_t CFileSet::BloomFileOnDiskSize() const {
-  if (bloom_reader_) {
-    return bloom_reader_->FileSize();
-  }
-  return 0;
+  return bloom_reader_->FileSize();
 }
 
 uint64_t CFileSet::OnDiskDataSize() const {
@@ -241,7 +245,7 @@ uint64_t CFileSet::OnDiskDataSize() const {
 Status CFileSet::FindRow(const RowSetKeyProbe &probe,
                          boost::optional<rowid_t>* idx,
                          ProbeStats* stats) const {
-  if (bloom_reader_ != nullptr && FLAGS_consult_bloom_filters) {
+  if (FLAGS_consult_bloom_filters) {
     // Fully open the BloomFileReader if it was lazily opened earlier.
     //
     // If it's already initialized, this is a no-op.
@@ -255,9 +259,8 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
       return Status::OK();
     }
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to query bloom: " << s.ToString()
-                   << " (disabling bloom for this rowset from this point forward)";
-      const_cast<CFileSet *>(this)->bloom_reader_.reset(nullptr);
+      KLOG_EVERY_N_SECS(WARNING, 1) << Substitute("Unable to query bloom in $0: $1",
+          rowset_metadata_->bloom_block().ToString(), s.ToString());
       if (PREDICT_FALSE(s.IsDiskFailure())) {
         // If the bloom lookup failed because of a disk failure, return early
         // since I/O to the tablet should be stopped.
@@ -271,7 +274,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
   CFileIterator *key_iter = nullptr;
   RETURN_NOT_OK(NewKeyIterator(&key_iter));
 
-  gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
+  unique_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   bool exact;
   Status s = key_iter->SeekAtOrAfter(probe.encoded_key(), &exact);

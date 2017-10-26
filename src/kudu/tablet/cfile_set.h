@@ -159,7 +159,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // and is not embedded with the column's data blocks. This is used when the
   // index pertains to more than one column, as in the case of composite keys.
   std::unique_ptr<cfile::CFileReader> ad_hoc_idx_reader_;
-  gscoped_ptr<cfile::BloomFileReader> bloom_reader_;
+  std::unique_ptr<cfile::BloomFileReader> bloom_reader_;
 };
 
 

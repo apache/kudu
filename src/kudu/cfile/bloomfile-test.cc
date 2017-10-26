@@ -31,7 +31,6 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/endian.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/slice.h"
@@ -123,7 +122,7 @@ TEST_F(BloomFileTest, TestLazyInit) {
 
   // Lazily opening the bloom file should not trigger any reads,
   // and the file size should be available before Init().
-  gscoped_ptr<BloomFileReader> reader;
+  unique_ptr<BloomFileReader> reader;
   ReaderOptions opts;
   opts.parent_mem_tracker = tracker;
   ASSERT_OK(BloomFileReader::OpenNoInit(std::move(count_block), opts, &reader));

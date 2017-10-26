@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CFILE_BLOOMFILE_H
-#define KUDU_CFILE_BLOOMFILE_H
+
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +23,6 @@
 
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
@@ -68,7 +67,7 @@ class BloomFileWriter {
 
   Status FinishCurrentBloomBlock();
 
-  gscoped_ptr<cfile::CFileWriter> writer_;
+  std::unique_ptr<cfile::CFileWriter> writer_;
 
   BloomFilterBuilder bloom_builder_;
 
@@ -92,7 +91,7 @@ class BloomFileReader {
   // After this call, the bloom reader is safe for use.
   static Status Open(std::unique_ptr<fs::ReadableBlock> block,
                      ReaderOptions options,
-                     gscoped_ptr<BloomFileReader> *reader);
+                     std::unique_ptr<BloomFileReader>* reader);
 
   // Lazily opens a bloom file using a previously opened block. A lazy open
   // does not incur additional I/O, nor does it validate the contents of
@@ -101,7 +100,7 @@ class BloomFileReader {
   // Init() must be called before using CheckKeyPresent().
   static Status OpenNoInit(std::unique_ptr<fs::ReadableBlock> block,
                            ReaderOptions options,
-                           gscoped_ptr<BloomFileReader> *reader);
+                           std::unique_ptr<BloomFileReader>* reader);
 
   // Fully opens a previously lazily opened bloom file, parsing and
   // validating its contents.
@@ -114,7 +113,7 @@ class BloomFileReader {
   // Sets *maybe_present to false if the key is definitely not
   // present, otherwise sets it to true to indicate maybe present.
   Status CheckKeyPresent(const BloomKeyProbe &probe,
-                         bool *maybe_present);
+                         bool* maybe_present);
 
   // Can be called before Init().
   uint64_t FileSize() const {
@@ -132,8 +131,8 @@ class BloomFileReader {
   // a Slice to the true bloom filter data inside
   // *bloom_data.
   Status ParseBlockHeader(const Slice &block,
-                          BloomBlockHeaderPB *hdr,
-                          Slice *bloom_data) const;
+                          BloomBlockHeaderPB* hdr,
+                          Slice* bloom_data) const;
 
   // Callback used in 'init_once_' to initialize this bloom file.
   Status InitOnce();
@@ -158,4 +157,3 @@ class BloomFileReader {
 } // namespace cfile
 } // namespace kudu
 
-#endif
