@@ -258,6 +258,11 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
       LOG(WARNING) << "Unable to query bloom: " << s.ToString()
                    << " (disabling bloom for this rowset from this point forward)";
       const_cast<CFileSet *>(this)->bloom_reader_.reset(nullptr);
+      if (PREDICT_FALSE(s.IsDiskFailure())) {
+        // If the bloom lookup failed because of a disk failure, return early
+        // since I/O to the tablet should be stopped.
+        return s;
+      }
       // Continue with the slow path
     }
   }
@@ -270,7 +275,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
 
   bool exact;
   Status s = key_iter->SeekAtOrAfter(probe.encoded_key(), &exact);
-  if (s.IsNotFound() || !exact) {
+  if (s.IsNotFound() || (s.ok() && !exact)) {
     *idx = boost::none;
     return Status::OK();
   }

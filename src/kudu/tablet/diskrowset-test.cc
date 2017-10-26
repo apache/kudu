@@ -64,7 +64,9 @@
 
 DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
 DECLARE_bool(cfile_lazy_open);
+DECLARE_bool(crash_on_eio);
 DECLARE_int32(cfile_default_block_size);
+DECLARE_double(env_inject_eio);
 DECLARE_double(tablet_delta_store_major_compact_min_ratio);
 DECLARE_int32(tablet_delta_store_minor_compact_max);
 
@@ -194,6 +196,35 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   // Now read back the value column, and verify that the updates
   // are visible.
   VerifyUpdates(*rs, updated);
+}
+
+TEST_F(TestRowSet, TestErrorDuringUpdate) {
+  WriteTestRowSet();
+  shared_ptr<DiskRowSet> rs;
+  ASSERT_OK(OpenTestRowSet(&rs));
+
+  faststring buf;
+  RowChangeListEncoder enc(&buf);
+  enc.SetToDelete();
+
+  // Get a row that we expect to be in the rowset.
+  Timestamp timestamp(0);
+  RowBuilder rb(schema_.CreateKeyProjection());
+  rb.AddString(Slice("hello 000000000000050"));
+  RowSetKeyProbe probe(rb.row());
+
+  // But fail while reading it!
+  FLAGS_crash_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+
+  // The mutation should result in an IOError.
+  OperationResultPB result;
+  ProbeStats stats;
+  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, &stats, &result);
+  LOG(INFO) << s.ToString();
+  ASSERT_TRUE(s.IsIOError());
+
+  FLAGS_env_inject_eio = 0;
 }
 
 TEST_F(TestRowSet, TestRandomRead) {
