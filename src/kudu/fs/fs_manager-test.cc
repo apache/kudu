@@ -400,4 +400,20 @@ TEST_F(FsManagerTestBase, TestUmask) {
   EXPECT_EQ("700", FilePermsAsString(root));
 }
 
+TEST_F(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
+  const string kWalRoot = fs_manager()->GetWalsRootDir();
+
+  ASSERT_OK(env_->DeleteDir(kWalRoot));
+  ReinitFsManager();
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
+
+  unique_ptr<WritableFile> f;
+  ASSERT_OK(env_->NewWritableFile(kWalRoot, &f));
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsCorruption());
+  ASSERT_STR_CONTAINS(s.ToString(), "exists but is not a directory");
+}
+
 } // namespace kudu

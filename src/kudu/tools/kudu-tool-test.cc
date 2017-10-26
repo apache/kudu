@@ -67,6 +67,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -639,8 +640,9 @@ TEST_F(ToolTest, TestFsCheck) {
 
 TEST_F(ToolTest, TestFsCheckLiveServer) {
   NO_FATALS(StartExternalMiniCluster());
-  string master_data_dir = cluster_->GetDataPath("master-0");
-  string args = Substitute("fs check --fs_wal_dir $0", master_data_dir);
+  string args = Substitute("fs check --fs_wal_dir $0 --fs_data_dirs $1",
+                           cluster_->GetWalPath("master-0"),
+                           JoinStrings(cluster_->GetDataPaths("master-0"), ","));
   NO_FATALS(RunFsCheck(args, 0, "", {}, 0));
   args += " --repair";
   string stdout;
@@ -1421,11 +1423,11 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   // Shut down the destination server and delete one tablet from
   // local fs on destination tserver while it is offline.
   cluster_->tablet_server(kDstTsIndex)->Shutdown();
-  const string& tserver_dir = cluster_->tablet_server(kDstTsIndex)->data_dir();
   const string& deleted_tablet_id = tablets[1].tablet_status().tablet_id();
-  NO_FATALS(RunActionStdoutNone(Substitute("local_replica delete $0 --fs_wal_dir=$1 "
-                                           "--fs_data_dirs=$1 --clean_unsafe",
-                                           deleted_tablet_id, tserver_dir)));
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "local_replica delete $0 --fs_wal_dir=$1 --fs_data_dirs=$2 --clean_unsafe",
+      deleted_tablet_id, cluster_->tablet_server(kDstTsIndex)->wal_dir(),
+      JoinStrings(cluster_->tablet_server(kDstTsIndex)->data_dirs(), ","))));
 
   // At this point, we expect only 2 tablets to show up on destination when
   // we restart the destination tserver. deleted_tablet_id should not be found on

@@ -307,6 +307,20 @@ Status FsManager::Open(FsReport* report) {
     }
   }
 
+  // Ensure all of the ancillary directories exist.
+  vector<string> ancillary_dirs = { GetWalsRootDir(),
+                                    GetTabletMetadataDir(),
+                                    GetConsensusMetadataDir() };
+  for (const auto& d : ancillary_dirs) {
+    bool is_dir;
+    RETURN_NOT_OK_PREPEND(env_->IsDirectory(d, &is_dir),
+                          Substitute("could not verify required directory $0", d));
+    if (!is_dir) {
+      return Status::Corruption(
+          Substitute("Required directory $0 exists but is not a directory", d));
+    }
+  }
+
   // Remove leftover temporary files from the WAL root and fix permissions.
   //
   // Temporary files in the data directory roots will be removed by the block
