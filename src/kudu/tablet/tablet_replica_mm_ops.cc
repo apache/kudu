@@ -141,8 +141,7 @@ void FlushMRSOp::Perform() {
 
   Status s = tablet->FlushUnlocked();
   if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << Substitute("FlushMRS failed on $0: $1",
-                               tablet->tablet_id(), s.ToString());
+    LOG(WARNING) << tablet->LogPrefix() << "failed to flush MRS: " << s.ToString();
     CHECK(tablet->HasBeenStopped()) << "FlushMRS failure is only allowed if the "
                                        "tablet is stopped first";
     return;
@@ -194,10 +193,15 @@ void FlushDeltaMemStoresOp::Perform() {
                  << tablet_replica_->tablet_id();
     return;
   }
-  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushDMSWithHighestRetention(
-                            max_idx_to_replay_size),
-                            Substitute("Failed to flush DMS on $0",
-                                       tablet_replica_->tablet()->tablet_id()));
+  Tablet* tablet = tablet_replica_->tablet();
+  Status s = tablet->FlushDMSWithHighestRetention(max_idx_to_replay_size);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << tablet->LogPrefix() << "failed to flush DMS: " << s.ToString();
+    CHECK(tablet->HasBeenStopped()) << "FlushDMS failure is only allowed if the "
+                                       "tablet is stopped first";
+    return;
+  }
+
   {
     std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();

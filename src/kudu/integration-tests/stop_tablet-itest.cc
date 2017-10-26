@@ -97,6 +97,12 @@ class StopTabletITest : public MiniClusterITestBase,
     LOG(INFO) << Substitute("Stopping T $0 P $1", tablet_id, ts->uuid());;
     ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
     replica->tablet()->Stop();
+
+    // We need to also stop replica ops since, upon running with a stopped
+    // tablet, they'll abort immediately and hog the maintenance threads. In
+    // production, this isn't an issue because replica ops are expected to be
+    // unregistered shortly after stopping the tablet.
+    replica->CancelMaintenanceOpsForTests();
   }
 
   // Starts a new cluster and creates a tablet with the specified number of

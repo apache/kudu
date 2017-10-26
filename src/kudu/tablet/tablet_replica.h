@@ -271,6 +271,10 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // This method is not thread safe.
   void UnregisterMaintenanceOps();
 
+  // Cancels the maintenance ops associated with this replica's tablet.
+  // Only to be used in tests.
+  void CancelMaintenanceOpsForTests();
+
   // Return pointer to the transaction tracker for this peer.
   const TransactionTracker* transaction_tracker() const { return &txn_tracker_; }
 

@@ -686,6 +686,13 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   tablet_->RegisterMaintenanceOps(maint_mgr);
 }
 
+void TabletReplica::CancelMaintenanceOpsForTests() {
+  std::lock_guard<simple_spinlock> l(state_change_lock_);
+  for (MaintenanceOp* op : maintenance_ops_) {
+    op->CancelAndDisable();
+  }
+}
+
 void TabletReplica::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
   for (MaintenanceOp* op : maintenance_ops_) {

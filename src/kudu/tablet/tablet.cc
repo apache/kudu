@@ -1065,6 +1065,10 @@ Status Tablet::Flush() {
 
 Status Tablet::FlushUnlocked() {
   TRACE_EVENT0("tablet", "Tablet::FlushUnlocked");
+  {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked());
+  }
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
   {
@@ -1665,8 +1669,7 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  return DoMergeCompactionOrFlush(input,
-                                  TabletMetadata::kNoMrsFlushed);
+  return DoMergeCompactionOrFlush(input, TabletMetadata::kNoMrsFlushed);
 }
 
 void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
@@ -1874,6 +1877,7 @@ void Tablet::GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
 }
 
 Status Tablet::FlushDMSWithHighestRetention(const ReplaySizeMap& replay_size_map) const {
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
   if (rowset) {
     return rowset->FlushDeltas();
@@ -2112,6 +2116,7 @@ Status Tablet::InitAncientUndoDeltas(MonoDelta time_budget, int64_t* bytes_in_an
 }
 
 Status Tablet::DeleteAncientUndoDeltas(int64_t* blocks_deleted, int64_t* bytes_deleted) {
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   MonoTime tablet_delete_start = MonoTime::Now();
 
   Timestamp ancient_history_mark;
