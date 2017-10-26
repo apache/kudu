@@ -840,3 +840,68 @@ leading to lower storage volume and reduced read parallelism. Since removing
 data directories is not currently supported in Kudu, the administrator should
 schedule a window to bring the node down for maintenance and
 <<rebuilding_kudu,rebuild the node>> at their convenience.
+
+[[tablet_majority_down_recovery]]
+=== Bringing a tablet that has lost a majority of replicas back online
+
+If a tablet has permanently lost a majority of its replicas, it cannot recover
+automatically and operator intervention is required. The steps below may cause
+recent edits to the tablet to be lost, potentially resulting in permanent data
+loss. Only attempt the procedure below if it is impossible to bring
+a majority back online.
+
+Suppose a tablet has lost a majority of its replicas. The first step in
+diagnosing and fixing the problem is to examine the tablet's state using ksck:
+
+[source,bash]
+----
+$ kudu cluster ksck --tablets=e822cab6c0584bc0858219d1539a17e6 master-00,master-01,master-02
+Connected to the Master
+Fetched info from all 5 Tablet Servers
+Tablet e822cab6c0584bc0858219d1539a17e6 of table 'my_table' is unavailable: 2 replica(s) not RUNNING
+  638a20403e3e4ae3b55d4d07d920e6de (tserver-00:7150): RUNNING
+  9a56fa85a38a4edc99c6229cba68aeaa (tserver-01:7150): bad state
+    State:       FAILED
+    Data state:  TABLET_DATA_READY
+    Last status: <failure message>
+  c311fef7708a4cf9bb11a3e4cbcaab8c (tserver-02:7150): bad state
+    State:       FAILED
+    Data state:  TABLET_DATA_READY
+    Last status: <failure message>
+----
+
+This output shows that, for tablet `e822cab6c0584bc0858219d1539a17e6`, the two
+tablet replicas on `tserver-01` and `tserver-02` failed. The remaining replica
+is not the leader, so the leader replica failed as well. This means the chance
+of data loss is higher since the remaining replica on `tserver-00` may have
+been lagging. In general, to accept the potential data loss and restore the
+tablet from the remaining replicas, divide the tablet replicas into two groups:
+
+1. Healthy replicas: Those in `RUNNING` state as reported by ksck
+2. Unhealthy replicas
+
+For example, in the above ksck output, the replica on tablet server `tserver-00`
+is healthy, while the replicas on `tserver-01` and `tserver-02` are unhealthy.
+On each tablet server with a healthy replica, alter the consensus configuration
+to remove unhealthy replicas. In the typical case of 1 out of 3 surviving
+replicas, there will be only one healthy replica, so the consensus configuration
+will be rewritten to include only the healthy replica.
+
+[source,bash]
+----
+$ kudu remote_replica unsafe_change_config tserver-00:7150 <tablet-id> <tserver-00-uuid>
+----
+
+where `<tablet-id>` is `e822cab6c0584bc0858219d1539a17e6` and
+`<tserver-00-uuid>` is the uuid of `tserver-00`,
+`638a20403e3e4ae3b55d4d07d920e6de`.
+
+Once the healthy replicas' consensus configurations have been forced to exclude
+the unhealthy replicas, the healthy replicas will be able to elect a leader.
+The tablet will become available for writes, though it will still be
+under-replicated. Shortly after the tablet becomes available, the leader master
+will notice that it is under-replicated, and will cause the tablet to
+re-replicate until the proper replication factor is restored. The unhealthy
+replicas will be tombstoned by the master, causing their remaining data to be
+deleted.
+
