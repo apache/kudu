@@ -30,7 +30,7 @@
 // of length 64 for binary and string fields
 // with Kudu master server listening on the default port at localhost:
 //
-//   kudu test loadgen \
+//   kudu perf loadgen \
 //     --num_threads=1 \
 //     --num_rows_per_thread=8000000 \
 //     --string_len=64 \
@@ -46,7 +46,7 @@
 // using the specified pre-set string for binary and string fields
 // with Kudu master server listening on the default port at localhost:
 //
-//   kudu test loadgen \
+//   kudu perf loadgen \
 //     --num_threads=2 \
 //     --num_rows_per_thread=4000000 \
 //     --string_fixed=012345678901234567890123456789012 \
@@ -62,7 +62,7 @@
 // using the specified pre-set string for binary and string fields
 // with Kudu master server listening at 127.0.0.1:8765
 //
-//   kudu test loadgen \
+//   kudu perf loadgen \
 //     --num_threads=4 \
 //     --num_rows_per_thread=2000000 \
 //     --string_fixed=0123456789 \
@@ -79,9 +79,30 @@
 // plus run post-insertion row scan to verify
 // that the count of the inserted rows matches the expected number:
 //
-//   kudu test loadgen \
+//   kudu perf loadgen \
 //     --run_scan=true \
 //     127.0.0.1
+//
+//
+// If running the tool against already existing table multiple times,
+// use the '--seq_start' flag to avoid errors on duplicate values in subsequent
+// runs. For example: an already existing table 't3' has 5 columns.
+// The sequence below contains 3 runs which insert 6000 rows in total
+// (3 runs * 1000 rows per thread * 2 threads)
+// with no duplicate values across all columns:
+//
+//   kudu perf loadgen 127.0.0.1 --table_name=t3 --num_threads=2 \
+//     --num_rows_per_thread=1000 --seq_start=0
+//
+//   kudu perf loadgen 127.0.0.1 --table_name=t3 --num_threads=2 \
+//     --num_rows_per_thread=1000 --seq_start=10000
+//
+//   perf perf loadgen 127.0.0.1 --table_name=t3 --num_threads=2 \
+//     --num_rows_per_thread=1000 --seq_start=20000
+//
+// The single sequence number is used to generate values for all table columns,
+// so for the example above each run increments the sequence number by 10000:
+// 1000 rows per thread * 2 threads * 5 columns
 //
 
 #include "kudu/tools/tool_action.h"
@@ -103,7 +124,6 @@
 #include <gflags/gflags.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -131,11 +151,10 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
-using kudu::client::KuduRowResult;
-using kudu::client::KuduSchema;
-using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
@@ -150,8 +169,8 @@ using std::numeric_limits;
 using std::ostringstream;
 using std::string;
 using std::thread;
-using std::vector;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 
@@ -161,6 +180,11 @@ DEFINE_int32(buffer_size_bytes, 4 * 1024 * 1024,
              "Size of the mutation buffer, per session (bytes).");
 DEFINE_int32(buffers_num, 2,
              "Number of mutation buffers per session.");
+DEFINE_int32(error_buffer_size_bytes, 16 * 1024 * 1024,
+             "Size of the error buffer, per session (bytes). 0 means 'unlimited'. "
+             "This setting may impose an additional upper limit for the "
+             "effective number of errors controlled by the "
+             "'--show_first_n_errors' flag.");
 DEFINE_int32(flush_per_n_rows, 0,
              "Perform async flush per given number of rows added. "
              "Setting to non-zero implicitly turns on manual flush mode.");
@@ -168,7 +192,7 @@ DEFINE_bool(keep_auto_table, false,
             "If using the auto-generated table, enabling this option "
             "retains the table populated with the data after the test "
             "finishes. By default, the auto-generated table is dropped "
-            "after sucessfully finishing the test. NOTE: this parameter "
+            "after successfully finishing the test. NOTE: this parameter "
             "has no effect if using already existing table "
             "(see the '--table_name' flag): the existing tables nor their data "
             "are never dropped/deleted.");
@@ -191,7 +215,11 @@ DEFINE_uint64(seq_start, 0,
               "(num_threads * num_rows_per_thread * column_num + seq_start).");
 DEFINE_int32(show_first_n_errors, 0,
              "Output detailed information on the specified number of "
-             "first n errors (if any).");
+             "first n errors (if any). The limit on the per-session error "
+             "buffer space may impose an additional upper limit for the "
+             "effective number of errors in the output. If so, consider "
+             "increasing the size of the error buffer using the "
+             "'--error_buffer_size_bytes' flag.");
 DEFINE_string(string_fixed, "",
               "Pre-defined string to write into binary and string columns. "
               "Client generates more data per second using pre-defined string "
@@ -363,6 +391,7 @@ void GeneratorThread(
     RETURN_NOT_OK(session->SetMutationBufferSpace(
                      FLAGS_buffer_size_bytes));
     RETURN_NOT_OK(session->SetMutationBufferMaxNum(FLAGS_buffers_num));
+    RETURN_NOT_OK(session->SetErrorBufferSpace(FLAGS_error_buffer_size_bytes));
     RETURN_NOT_OK(session->SetFlushMode(
         flush_per_n_rows == 0 ? KuduSession::AUTO_FLUSH_BACKGROUND
                               : KuduSession::MANUAL_FLUSH));
@@ -618,6 +647,7 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("buffer_flush_watermark_pct")
       .AddOptionalParameter("buffer_size_bytes")
       .AddOptionalParameter("buffers_num")
+      .AddOptionalParameter("error_buffer_size_bytes")
       .AddOptionalParameter("flush_per_n_rows")
       .AddOptionalParameter("keep_auto_table")
       .AddOptionalParameter("num_rows_per_thread")
