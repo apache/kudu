@@ -1,6 +1,5 @@
 pytest
 cython == 0.26.1
-setuptools >= 0.8
 six
 unittest2
 pytz

@@ -416,7 +416,27 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   virtualenv $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
 
-  # Download all necessary requirements.
+  # Old versions of pip (such as the one found in el6) default to pypi's http://
+  # endpoint which no longer exists. The -i option lets us switch to the
+  # https:// endpoint in such cases.
+  #
+  # Unfortunately, in these old versions of pip, -i doesn't appear to apply
+  # recursively to transitive dependencies installed via a direct dependency's
+  # "python setup.py" command. Therefore we have no choice but to upgrade to a
+  # new version of pip to proceed.
+  pip install -i https://pypi.python.org/simple --upgrade pip
+
+  # New versions of pip raise an exception when upgrading old versions of
+  # setuptools (such as the one found in el6). The workaround is to upgrade
+  # setuptools on its own, outside of requirements.txt, and with the pip version
+  # check disabled.
+  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
+
+  # We've got a new pip and new setuptools. We can now install the rest of the
+  # Python client's requirements.
+  #
+  # Installing the Cython dependency may involve some compiler work, so we must
+  # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
@@ -454,7 +474,27 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   virtualenv -p python3 $KUDU_BUILD/py_env
   source $KUDU_BUILD/py_env/bin/activate
 
-  # Download all necessary requirements.
+  # Old versions of pip (such as the one found in el6) default to pypi's http://
+  # endpoint which no longer exists. The -i option lets us switch to the
+  # https:// endpoint in such cases.
+  #
+  # Unfortunately, in these old versions of pip, -i doesn't appear to apply
+  # recursively to transitive dependencies installed via a direct dependency's
+  # "python setup.py" command. Therefore we have no choice but to upgrade to a
+  # new version of pip to proceed.
+  pip install -i https://pypi.python.org/simple --upgrade pip
+
+  # New versions of pip raise an exception when upgrading old versions of
+  # setuptools (such as the one found in el6). The workaround is to upgrade
+  # setuptools on its own, outside of requirements.txt, and with the pip version
+  # check disabled.
+  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
+
+  # We've got a new pip and new setuptools. We can now install the rest of the
+  # Python client's requirements.
+  #
+  # Installing the Cython dependency may involve some compiler work, so we must
+  # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
