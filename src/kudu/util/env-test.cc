@@ -806,6 +806,20 @@ TEST_F(TestEnv, TestGlob) {
   }
 }
 
+// Test that the status returned when 'glob' fails with a permission
+// error is reasonable.
+TEST_F(TestEnv, TestGlobPermissionDenied) {
+  string dir = GetTestPath("glob");
+  ASSERT_OK(env_->CreateDir(dir));
+  chmod(dir.c_str(), 0000);
+  auto cleanup = MakeScopedCleanup([&]() {
+      chmod(dir.c_str(), 0700);
+    });
+  vector<string> matches;
+  Status s = env_->Glob(JoinPathSegments(dir, "*"), &matches);
+  ASSERT_STR_MATCHES(s.ToString(), "IO error: glob failed for /.*: Permission denied");
+}
+
 TEST_F(TestEnv, TestGetBlockSize) {
   uint64_t block_size;
 

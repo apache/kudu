@@ -1504,12 +1504,18 @@ class PosixEnv : public Env {
     glob_t result;
     auto cleanup = MakeScopedCleanup([&] { globfree(&result); });
 
+    errno = 0;
     int ret = glob(path_pattern.c_str(), GLOB_TILDE | GLOB_ERR , NULL, &result);
     switch (ret) {
       case 0: break;
       case GLOB_NOMATCH: return Status::OK();
       case GLOB_NOSPACE: return Status::RuntimeError("glob out of memory");
-      default: return Status::IOError("glob failure", std::to_string(ret));
+      default: {
+        string err = (errno != 0) ? ErrnoToString(errno) : "unknown error";
+        return Status::IOError(Substitute("glob failed for $0: $1",
+                                          path_pattern,
+                                          err));
+      }
     }
 
     for (size_t i = 0; i < result.gl_pathc; ++i) {
