@@ -95,6 +95,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
@@ -127,6 +128,9 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
              "Number of rows to insert in the testing phase of the single threaded"
              " tablet server insert latency micro-benchmark");
 
+DEFINE_int32(delete_tablet_bench_num_flushes, 200,
+             "Number of disk row sets to flush in the delete tablet benchmark");
+
 DECLARE_bool(fail_dns_resolution);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
@@ -140,6 +144,8 @@ METRIC_DECLARE_counter(rows_updated);
 METRIC_DECLARE_counter(rows_deleted);
 METRIC_DECLARE_counter(scanners_expired);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
+METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
+METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_gauge_size(active_scanners);
 METRIC_DECLARE_gauge_size(tablet_active_scanners);
 
@@ -2281,6 +2287,53 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_FOUND, resp.error().code());
   }
+}
+
+TEST_F(TabletServerTest, TestDeleteTabletBenchmark) {
+  // Collect some related metrics.
+  scoped_refptr<AtomicGauge<uint64_t>> block_count =
+      METRIC_log_block_manager_blocks_under_management.Instantiate(
+          mini_server_->server()->metric_entity(), 0);
+  scoped_refptr<AtomicGauge<uint64_t>> container =
+      METRIC_log_block_manager_containers.Instantiate(
+          mini_server_->server()->metric_entity(), 0);
+  scoped_refptr<Counter> holes_punched =
+      METRIC_log_block_manager_holes_punched.Instantiate(
+          mini_server_->server()->metric_entity());
+
+  // Put some data in the tablet. We insert rows and flush immediately to
+  // ensure that there is enough blocks on disk to run the benchmark.
+  for (int i = 0; i < FLAGS_delete_tablet_bench_num_flushes; i++) {
+    NO_FATALS(InsertTestRowsRemote(i, 1));
+    ASSERT_OK(tablet_replica_->tablet()->Flush());
+  }
+  const int block_count_before_delete = block_count->value();
+
+  // Drop any local references to the tablet from within this test,
+  // so that when we delete it on the server, it's not held alive
+  // by the test code.
+  tablet_replica_.reset();
+
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
+  req.set_tablet_id(kTabletId);
+  req.set_delete_type(tablet::TABLET_DATA_DELETED);
+
+  // Send the call and measure the time spent deleting the tablet.
+  LOG_TIMING(INFO, "deleting tablet") {
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(admin_proxy_->DeleteTablet(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Log the related metrics.
+  LOG(INFO) << "block_count_before_delete : " << block_count_before_delete;
+  LOG(INFO) << "log_block_manager_containers : " << container->value();
+  LOG(INFO) << "log_block_manager_holes_punched : " << holes_punched->value();
 }
 
 // Test that with concurrent requests to delete the same tablet, one wins and
