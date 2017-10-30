@@ -75,9 +75,8 @@ TAG_FLAG(tsk_rotation_seconds, experimental);
 
 DEFINE_int64(authn_token_validity_seconds, 60 * 60 * 24 * 7,
              "Period of time for which an issued authentication token is valid. "
-             "It's not possible to renew a token, hence the token validity "
-             "interval defines the longest possible lifetime of an external "
-             "job which uses a token for authentication.");
+             "Clients will automatically attempt to reacquire a token after the "
+             "validity period expires.");
 TAG_FLAG(authn_token_validity_seconds, experimental);
 
 using std::min;
