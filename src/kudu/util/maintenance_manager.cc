@@ -462,7 +462,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
     InsertOrDie(&running_instances_, thread_id, &op_instance);
   }
 
-  auto cleanup = MakeScopedCleanup([&] {
+  SCOPED_CLEANUP({
     op->RunningGauge()->Decrement();
 
     std::lock_guard<Mutex> l(lock_);

@@ -1359,7 +1359,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   // Ensure that we drop the name reservation upon return.
-  auto cleanup = MakeScopedCleanup([&] () {
+  SCOPED_CLEANUP({
     std::lock_guard<LockType> l(lock_);
     CHECK_EQ(1, reserved_table_names_.erase(req.name()));
   });

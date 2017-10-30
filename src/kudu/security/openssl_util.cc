@@ -146,7 +146,7 @@ STACK_OF(X509)* PEM_read_STACK_OF_X509(BIO* bio, void* /* unused */, pem_passwor
   // Extract information from the chain certificate.
   STACK_OF(X509_INFO)* info = PEM_X509_INFO_read_bio(bio, nullptr, nullptr, nullptr);
   if (!info) return nullptr;
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     sk_X509_INFO_pop_free(info, X509_INFO_free);
   });
 

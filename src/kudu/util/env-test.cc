@@ -747,7 +747,7 @@ TEST_F(TestEnv, TestWalkBadPermissions) {
   struct stat stat_buf;
   PCHECK(stat(kTestPath.c_str(), &stat_buf) == 0);
   PCHECK(chmod(kTestPath.c_str(), 0000) == 0);
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     // Restore the old permissions so the path can be successfully deleted.
     PCHECK(chmod(kTestPath.c_str(), stat_buf.st_mode) == 0);
   });
@@ -812,7 +812,7 @@ TEST_F(TestEnv, TestGlobPermissionDenied) {
   string dir = GetTestPath("glob");
   ASSERT_OK(env_->CreateDir(dir));
   chmod(dir.c_str(), 0000);
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       chmod(dir.c_str(), 0700);
     });
   vector<string> matches;

@@ -173,7 +173,7 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
       });
     // An automatic clean-up to handle both success and failure cases
     // in the code below.
-    auto cleanup = MakeScopedCleanup([&]() {
+    SCOPED_CLEANUP({
         resume_thread.join();
       });
 
@@ -268,7 +268,7 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu2021NegotiateWithMaster) {
       CHECK_OK(m->Pause())
     });
   // An automatic clean-up to handle both success and failure cases.
-  auto pause_thread_cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       pause_thread.join();
       CHECK_OK(m->Resume());
     });

@@ -2082,7 +2082,7 @@ TEST_F(AlterTableTest, TestRenameStillCreatingTable) {
              .num_replicas(1)
              .Create());
   });
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     creator_thread.join();
   });
 

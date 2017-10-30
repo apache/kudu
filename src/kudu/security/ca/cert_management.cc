@@ -315,7 +315,7 @@ Status CertSigner::CopyExtensions(X509_REQ* req, X509* x) {
   CHECK(req);
   CHECK(x);
   STACK_OF(X509_EXTENSION)* exts = X509_REQ_get_extensions(req);
-  auto exts_cleanup = MakeScopedCleanup([&exts]() {
+  SCOPED_CLEANUP({
     sk_X509_EXTENSION_pop_free(exts, X509_EXTENSION_free);
   });
   for (size_t i = 0; i < sk_X509_EXTENSION_num(exts); ++i) {

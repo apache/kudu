@@ -290,7 +290,7 @@ Status GetLocalNetworks(std::vector<Network>* net) {
   struct ifaddrs *ifap = nullptr;
 
   int ret = getifaddrs(&ifap);
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     if (ifap) freeifaddrs(ifap);
   });
 

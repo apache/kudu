@@ -192,7 +192,7 @@ TEST_F(ThreadPoolTest, TestThreadPoolWithNoMinimum) {
   ASSERT_TRUE(pool_->num_threads() == 0);
   // We get up to 3 threads when submitting work.
   CountDownLatch latch(1);
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     latch.CountDown();
   });
   ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
@@ -565,7 +565,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenSubmitsProcessedConcurrently) {
   // A violation to the tested invariant would yield a deadlock, so let's set
   // up an alarm to bail us out.
   alarm(60);
-  auto cleanup = MakeScopedCleanup([&] {
+  SCOPED_CLEANUP({
       alarm(0); // Disable alarm on test exit.
   });
   shared_ptr<Barrier> b = std::make_shared<Barrier>(kNumTokens + 1);
@@ -588,7 +588,7 @@ TEST_F(ThreadPoolTest, TestTokenSubmitsNonSequential) {
   // A violation to the tested invariant would yield a deadlock, so let's set
   // up an alarm to bail us out.
   alarm(60);
-  auto cleanup = MakeScopedCleanup([&] {
+  SCOPED_CLEANUP({
       alarm(0); // Disable alarm on test exit.
   });
   shared_ptr<Barrier> b = std::make_shared<Barrier>(kNumSubmissions + 1);
@@ -615,7 +615,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenShutdown) {
   // A violation to the tested invariant would yield a deadlock, so let's set
   // up an alarm to bail us out.
   alarm(60);
-  auto cleanup = MakeScopedCleanup([&] {
+  SCOPED_CLEANUP({
       alarm(0); // Disable alarm on test exit.
   });
 
@@ -764,7 +764,7 @@ TEST_P(ThreadPoolTestTokenTypes, TestTokenSubmissionsAdhereToMaxQueueSize) {
 
   CountDownLatch latch(1);
   unique_ptr<ThreadPoolToken> t = pool_->NewToken(GetParam());
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     latch.CountDown();
   });
   // We will be able to submit two tasks: one for max_threads == 1 and one for

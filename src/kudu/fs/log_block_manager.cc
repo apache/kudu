@@ -1482,7 +1482,7 @@ Status LogWritableBlock::Finalize() {
     return Status::OK();
   }
 
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
     container_->FinalizeBlock(block_offset_, block_length_);
     state_ = FINALIZED;
   });

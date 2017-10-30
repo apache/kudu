@@ -213,7 +213,7 @@ Status Krb5UnparseName(krb5_principal princ, string* name) {
   char* c_name;
   KRB5_RETURN_NOT_OK_PREPEND(krb5_unparse_name(g_krb5_ctx, princ, &c_name),
                              "krb5_unparse_name");
-  auto cleanup_name = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       krb5_free_unparsed_name(g_krb5_ctx, c_name);
     });
   *name = c_name;
@@ -278,7 +278,7 @@ Status KinitContext::DoRenewal() {
   // Setup a cursor to iterate through the credential cache.
   KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_start_seq_get(g_krb5_ctx, ccache_, &cursor),
                              "Failed to peek into ccache");
-  auto cleanup_cursor = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       krb5_cc_end_seq_get(g_krb5_ctx, ccache_, &cursor); });
 
   krb5_creds creds;
@@ -287,7 +287,7 @@ Status KinitContext::DoRenewal() {
   krb5_error_code rc;
   // Iterate through the credential cache.
   while (!(rc = krb5_cc_next_cred(g_krb5_ctx, ccache_, &cursor, &creds))) {
-    auto cleanup_creds = MakeScopedCleanup([&]() {
+    SCOPED_CLEANUP({
         krb5_free_cred_contents(g_krb5_ctx, &creds); });
     if (krb5_is_config_principal(g_krb5_ctx, creds.server)) continue;
 
@@ -302,7 +302,7 @@ Status KinitContext::DoRenewal() {
 
     krb5_creds new_creds;
     memset(&new_creds, 0, sizeof(krb5_creds));
-    auto cleanup_new_creds = MakeScopedCleanup([&]() {
+    SCOPED_CLEANUP({
         krb5_free_cred_contents(g_krb5_ctx, &new_creds); });
     // Acquire a new ticket using the keytab. This ticket will automatically be put into the
     // credential cache.
@@ -356,7 +356,7 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
                                                         0 /* valid from now */,
                                                         nullptr /* TKT service name */, opts_),
                              "unable to login from keytab");
-  auto cleanup_creds = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       krb5_free_cred_contents(g_krb5_ctx, &creds); });
 
   ticket_end_timestamp_ = creds.times.endtime;
@@ -413,7 +413,7 @@ Status CanonicalizeKrb5Principal(std::string* principal) {
   krb5_principal princ;
   KRB5_RETURN_NOT_OK_PREPEND(krb5_parse_name(g_krb5_ctx, principal->c_str(), &princ),
                              "could not parse principal");
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       krb5_free_principal(g_krb5_ctx, princ);
     });
   RETURN_NOT_OK_PREPEND(Krb5UnparseName(princ, principal),
@@ -426,7 +426,7 @@ Status MapPrincipalToLocalName(const std::string& principal, std::string* local_
   krb5_principal princ;
   KRB5_RETURN_NOT_OK_PREPEND(krb5_parse_name(g_krb5_ctx, principal.c_str(), &princ),
                              "could not parse principal");
-  auto cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       krb5_free_principal(g_krb5_ctx, princ);
     });
   char buf[1024];

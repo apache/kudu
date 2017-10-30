@@ -324,7 +324,7 @@ TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
     });
 
   // An automatic clean-up to handle failure cases in the code below.
-  auto importer_cleanup = MakeScopedCleanup([&]() {
+  SCOPED_CLEANUP({
       importer.join();
     });
 

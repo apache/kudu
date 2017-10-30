@@ -19,10 +19,26 @@
 
 #include <utility>
 
+#include "kudu/gutil/macros.h"
+
+// Run the given function body (which is typically a block of code surrounded by
+// curly-braces) when the current scope exits.
+//
+// Example:
+//   int fd = open(...);
+//   SCOPED_CLEANUP({ close(fd); });
+//
+// NOTE: in the case that you want to cancel the cleanup, use the more verbose
+// (non-macro) form below.
+#define SCOPED_CLEANUP(func_body) \
+  auto VARNAME_LINENUM(scoped_cleanup) = MakeScopedCleanup([&] { func_body });
+
 namespace kudu {
 
 // A scoped object which runs a cleanup function when going out of scope. Can
 // be used for scoped resource cleanup.
+//
+// Use 'MakeScopedCleanup()' below to instantiate.
 template<typename F>
 class ScopedCleanup {
  public:

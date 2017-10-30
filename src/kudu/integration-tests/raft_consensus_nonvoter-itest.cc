@@ -504,7 +504,7 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasDoNotVote) {
     ASSERT_OK(GetTermMetricValue(leader_ts, &term_leader));
 
     ASSERT_OK(leader_ts->Pause());
-    auto cleanup = MakeScopedCleanup([&]() {
+    SCOPED_CLEANUP({
       ASSERT_OK(leader_ts->Resume());
     });
     TServerDetails* new_leader;

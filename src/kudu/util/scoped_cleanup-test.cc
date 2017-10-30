@@ -31,6 +31,17 @@ TEST(ScopedCleanup, TestCleanup) {
   ASSERT_EQ(0, var);
 }
 
+TEST(ScopedCleanup, TestCleanupMacro) {
+  int var = 0;
+  {
+    auto saved = var;
+    SCOPED_CLEANUP({ var = saved; });
+    var = 42;
+  }
+  ASSERT_EQ(0, var);
+}
+
+
 TEST(ScopedCleanup, TestCancelCleanup) {
   int var = 0;
   {

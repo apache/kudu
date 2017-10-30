@@ -272,7 +272,7 @@ TEST_F(TombstonedVotingStressTest, TestTombstonedVotingUnderStress) {
   // Startup the voting thread.
   LOG(INFO) << "starting stress thread...";
   thread voter_thread([this] { RunVoteRequestLoop(); });
-  auto cleanup = MakeScopedCleanup([&] {
+  SCOPED_CLEANUP({
     SetState(kTestComplete);
     voter_thread.join();
   });
