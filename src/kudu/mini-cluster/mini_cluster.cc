@@ -34,15 +34,28 @@ namespace kudu {
 namespace cluster {
 
 string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind_mode) {
+  static const int kPidBits = 18;
+  static const int kServerIdxBits = 24 - kPidBits;
+  static const int kServersMaxNum = (1 << kServerIdxBits) - 2;
+  CHECK(0 <= index && index < kServersMaxNum) << Substitute(
+      "server index $0 is not in range [$1, $2)", index, 0, kServersMaxNum);
+
   switch (bind_mode) {
     case UNIQUE_LOOPBACK: {
-      // IP address last octet range: [1 - 254].
-      uint8_t last_octet = (type == TSERVER) ? index + 1 : UINT8_MAX - 1 - index;
-      CHECK_GE(last_octet, 1);
-      CHECK_LE(last_octet, 254);
-      pid_t p = getpid();
-      CHECK_LE(p, UINT16_MAX) << "Cannot run on systems with >16-bit pid";
-      return Substitute("127.$0.$1.$2", p >> 8, p & 0xff, last_octet);
+      uint32_t pid = getpid();
+      CHECK_LT(pid, 1 << kPidBits) << Substitute(
+          "PID $0 is more than $1 bits wide", pid, kPidBits);
+      int idx = (type == TSERVER) ? index + 1 : kServersMaxNum - index;
+      uint32_t ip = (pid << kServerIdxBits) | static_cast<uint32_t>(idx);
+      uint8_t octets[] = {
+          static_cast<uint8_t>((ip >> 16) & 0xff),
+          static_cast<uint8_t>((ip >>  8) & 0xff),
+          static_cast<uint8_t>((ip >>  0) & 0xff),
+      };
+      // Range for the last octet of a valid unicast IP address is (0, 255).
+      CHECK(0 < octets[2] && octets[2] < UINT8_MAX) << Substitute(
+          "last IP octet $0 is not in range ($1, $2)", octets[2], 0, UINT8_MAX);
+      return Substitute("127.$0.$1.$2", octets[0], octets[1], octets[2]);
     }
     case WILDCARD:
       return kWildcardIpAddr;
