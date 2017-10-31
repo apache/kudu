@@ -229,7 +229,7 @@ public final class AsyncKuduScanner {
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    long htTimestamp, int batchSizeBytes, PartitionPruner pruner,
                    ReplicaSelection replicaSelection) {
-    checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
+    checkArgument(batchSizeBytes >= 0, "Need non-negative number of bytes, " +
         "got %s", batchSizeBytes);
     checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
         "got %s", limit);

@@ -92,6 +92,11 @@ message ScanTokenPB {
 
   // Whether the scan should be fault tolerant.
   optional bool fault_tolerant = 14 [default = false];
+
+  // The maximum number of bytes to send in the response.
+  // This is a hint, not a requirement: the server may send
+  // arbitrarily fewer or more bytes than requested.
+  optional uint32 batch_size_bytes = 15;
 }
 
 

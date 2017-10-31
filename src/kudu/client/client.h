@@ -2089,6 +2089,7 @@ class KUDU_EXPORT KuduScanner {
   FRIEND_TEST(ClientTest, TestScanTimeout);
   FRIEND_TEST(ClientTest, TestReadAtSnapshotNoTimestampSet);
   FRIEND_TEST(ConsistencyITest, TestSnapshotScanTimestampReuse);
+  FRIEND_TEST(ScanTokenTest, TestScanTokens);
 
   // Owned.
   Data* data_;

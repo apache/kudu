@@ -31,6 +31,7 @@
 #include "kudu/client/client.pb.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
+#include "kudu/client/scanner-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
@@ -43,6 +44,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -174,6 +176,23 @@ TEST_F(ScanTokenTest, TestScanTokens) {
       ASSERT_OK(session->Apply(insert.release()));
   }
   ASSERT_OK(session->Flush());
+
+  { // KUDU-1809, with batchSizeBytes configured to '0',
+    // the first call to the tablet server won't return
+    // any data.
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.SetBatchSizeBytes(0));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(8, tokens.size());
+    KuduScanner* scanner_ptr;
+    ASSERT_OK(tokens[0]->IntoKuduScanner(&scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    ASSERT_OK(scanner->Open());
+    ASSERT_EQ(0, scanner->data_->last_response_.data().num_rows());
+  }
 
   { // no predicates
     vector<KuduScanToken*> tokens;

@@ -593,9 +593,18 @@ public class TestKuduClient extends BaseKuduTest {
       session.flush();
 
       KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
+      tokenBuilder.batchSizeBytes(0);
       tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
       List<KuduScanToken> tokens = tokenBuilder.build();
       assertEquals(16, tokens.size());
+
+      // KUDU-1809, with batchSizeBytes configured to '0',
+      // the first call to the tablet server won't return
+      // any data.
+      {
+        KuduScanner scanner = tokens.get(0).intoScanner(syncClient);
+        assertEquals(0, scanner.nextRows().getNumRows());
+      }
 
       for (KuduScanToken token : tokens) {
         // Sanity check to make sure the debug printing does not throw.
