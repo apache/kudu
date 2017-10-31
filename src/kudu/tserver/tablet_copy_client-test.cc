@@ -88,8 +88,8 @@ class TabletCopyClientTest : public TabletCopyTest {
 
     const string kTestDir = GetTestPath("client_tablet");
     FsManagerOpts opts;
-    opts.wal_path = kTestDir;
-    opts.data_paths = { kTestDir };
+    opts.wal_root = kTestDir;
+    opts.data_roots = { kTestDir };
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
     fs_manager_.reset(new FsManager(Env::Default(), opts));

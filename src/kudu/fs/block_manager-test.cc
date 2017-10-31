@@ -154,7 +154,8 @@ class BlockManagerTest : public KuduTest {
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
     opts.parent_mem_tracker = parent_mem_tracker;
-    return new T(env_, this->dd_manager_.get(), test_error_manager_.get(), opts);
+    return new T(env_, this->dd_manager_.get(), test_error_manager_.get(),
+                 std::move(opts));
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
@@ -168,9 +169,11 @@ class BlockManagerTest : public KuduTest {
     DataDirManagerOptions opts;
     opts.metric_entity = metric_entity;
     if (create) {
-      RETURN_NOT_OK(DataDirManager::CreateNewForTests(env_, paths, opts, &dd_manager_));
+      RETURN_NOT_OK(DataDirManager::CreateNewForTests(
+          env_, paths, std::move(opts), &dd_manager_));
     } else {
-      RETURN_NOT_OK(DataDirManager::OpenExistingForTests(env_, paths, opts, &dd_manager_));
+      RETURN_NOT_OK(DataDirManager::OpenExistingForTests(
+          env_, paths, std::move(opts), &dd_manager_));
     }
     bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker));
     RETURN_NOT_OK(bm_->Open(nullptr));

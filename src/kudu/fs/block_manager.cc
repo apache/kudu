@@ -27,7 +27,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/metrics.h"
 
 // The default value is optimized for throughput in the case that
 // there are multiple drives backing the tablet. By asynchronously
@@ -78,11 +77,7 @@ namespace kudu {
 namespace fs {
 
 BlockManagerOptions::BlockManagerOptions()
-  : read_only(false) {
-}
-
-BlockManagerOptions::~BlockManagerOptions() {
-}
+  : read_only(false) {}
 
 int64_t GetFileCacheCapacityForBlockManager(Env* env) {
   // Maximize this process' open file limit first, if possible.

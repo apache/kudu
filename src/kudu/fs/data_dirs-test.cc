@@ -81,7 +81,8 @@ class DataDirsTest : public KuduTest {
     FLAGS_fs_target_data_dirs_per_tablet = kNumDirs / 2 + 1;
     DataDirManagerOptions opts;
     opts.metric_entity = entity_;
-    ASSERT_OK(DataDirManager::CreateNewForTests(env_, GetDirNames(kNumDirs), opts, &dd_manager_));
+    ASSERT_OK(DataDirManager::CreateNewForTests(
+        env_, GetDirNames(kNumDirs), std::move(opts), &dd_manager_));
   }
 
  protected:

@@ -279,8 +279,7 @@ const char* DataDirManager::kDataDirName = "data";
 
 DataDirManagerOptions::DataDirManagerOptions()
   : block_manager_type(FLAGS_block_manager),
-    read_only(false) {
-}
+    read_only(false) {}
 
 vector<string> DataDirManager::GetRootNames(const CanonicalizedRootsList& root_list) {
   vector<string> roots;
@@ -293,14 +292,13 @@ DataDirManager::DataDirManager(Env* env,
                                DataDirManagerOptions opts,
                                CanonicalizedRootsList canonicalized_data_roots)
     : env_(env),
-      block_manager_type_(std::move(opts.block_manager_type)),
-      read_only_(opts.read_only),
+      opts_(std::move(opts)),
       canonicalized_data_fs_roots_(std::move(canonicalized_data_roots)),
       rng_(GetRandomSeed32()) {
   DCHECK_GT(canonicalized_data_fs_roots_.size(), 0);
 
-  if (opts.metric_entity) {
-    metrics_.reset(new DataDirMetrics(opts.metric_entity));
+  if (opts_.metric_entity) {
+    metrics_.reset(new DataDirMetrics(opts_.metric_entity));
   }
 }
 
@@ -367,7 +365,7 @@ Status DataDirManager::CreateNew(Env* env, CanonicalizedRootsList data_fs_roots,
 }
 
 Status DataDirManager::Create() {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   vector<string> dirs_to_delete;
   vector<string> files_to_delete;
@@ -402,12 +400,12 @@ Status DataDirManager::Create() {
       dirs_to_delete.emplace_back(data_dir);
     }
 
-    if (block_manager_type_ == "log") {
+    if (opts_.block_manager_type == "log") {
       RETURN_NOT_OK_PREPEND(CheckHolePunch(env_, data_dir), kHolePunchErrorMsg);
     }
 
     string instance_filename = JoinPathSegments(data_dir, kInstanceMetadataFileName);
-    PathInstanceMetadataFile metadata(env_, block_manager_type_,
+    PathInstanceMetadataFile metadata(env_, opts_.block_manager_type,
                                       instance_filename);
     RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids), instance_filename);
     files_to_delete.emplace_back(instance_filename);
@@ -432,12 +430,12 @@ Status DataDirManager::Open() {
   LockMode lock_mode;
   if (!FLAGS_fs_lock_data_dirs) {
     lock_mode = LockMode::NONE;
-  } else if (read_only_) {
+  } else if (opts_.read_only) {
     lock_mode = LockMode::OPTIONAL;
   } else {
     lock_mode = LockMode::MANDATORY;
   }
-  const int kMaxDataDirs = block_manager_type_ == "file" ? (1 << 16) - 1 : kint32max;
+  const int kMaxDataDirs = opts_.block_manager_type == "file" ? (1 << 16) - 1 : kint32max;
 
   int i = 0;
   // Create a directory for all data dirs specified by the user.
@@ -446,7 +444,7 @@ Status DataDirManager::Open() {
     string instance_filename = JoinPathSegments(data_dir, kInstanceMetadataFileName);
     // Open and lock the data dir's metadata instance file.
     gscoped_ptr<PathInstanceMetadataFile> instance(
-        new PathInstanceMetadataFile(env_, block_manager_type_,
+        new PathInstanceMetadataFile(env_, opts_.block_manager_type,
                                      instance_filename));
     if (PREDICT_FALSE(!root.status.ok())) {
       instance->SetInstanceFailed(root.status);

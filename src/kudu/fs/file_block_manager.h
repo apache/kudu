@@ -73,9 +73,10 @@ class FileBlockManager : public BlockManager {
  public:
   // Note: all objects passed as pointers should remain alive for the lifetime
   // of the block manager.
-  FileBlockManager(Env* env, DataDirManager* dd_manager,
+  FileBlockManager(Env* env,
+                   DataDirManager* dd_manager,
                    FsErrorManager* error_manager,
-                   const BlockManagerOptions& opts);
+                   BlockManagerOptions opts);
 
   virtual ~FileBlockManager();
 
@@ -122,15 +123,15 @@ class FileBlockManager : public BlockManager {
   // For manipulating files.
   Env* env_;
 
-  // If true, only read operations are allowed.
-  const bool read_only_;
-
   // Manages and owns the data directories in which the block manager will
   // place its blocks.
   DataDirManager* dd_manager_;
 
   // Manages callbacks used to handle disk failure.
   FsErrorManager* error_manager_;
+
+  // The options that the FileBlockManager was created with.
+  const BlockManagerOptions opts_;
 
   // Manages files opened for reading.
   FileCache<RandomAccessFile> file_cache_;

@@ -34,6 +34,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -44,7 +45,6 @@ namespace kudu {
 class BlockId;
 class InstanceMetadataPB;
 class MemTracker;
-class MetricEntity;
 
 namespace fs {
 
@@ -61,8 +61,14 @@ class ExternalMiniClusterFsInspector;
 } // namespace itest
 
 struct FsManagerOpts {
+  // Creates a new FsManagerOpts with default values.
   FsManagerOpts();
-  ~FsManagerOpts();
+
+  // Creates a new FsManagerOpts with default values except 'wal_root' and
+  // 'data_roots', which are both initialized to 'root'.
+  //
+  // Should only be used in unit tests.
+  explicit FsManagerOpts(const std::string& root);
 
   // The entity under which all metrics should be grouped. If NULL, metrics
   // will not be produced.
@@ -74,11 +80,11 @@ struct FsManagerOpts {
   // If NULL, new memory trackers will be parented to the root tracker.
   std::shared_ptr<MemTracker> parent_mem_tracker;
 
-  // The path where WALs will be stored. Cannot be empty.
-  std::string wal_path;
+  // The directory root where WALs will be stored. Cannot be empty.
+  std::string wal_root;
 
-  // The paths where data blocks will be stored. Cannot be empty.
-  std::vector<std::string> data_paths;
+  // The directory root where data blocks will be stored. Cannot be empty.
+  std::vector<std::string> data_roots;
 
   // The block manager type. Must be either "file" or "log".
   // Defaults to the value of FLAGS_block_manager.
@@ -106,7 +112,7 @@ class FsManager {
   // Only for unit tests.
   FsManager(Env* env, const std::string& root_path);
 
-  FsManager(Env* env, const FsManagerOpts& opts);
+  FsManager(Env* env, FsManagerOpts opts);
   ~FsManager();
 
   // Initialize and load the basic filesystem metadata, checking it for
@@ -210,7 +216,7 @@ class FsManager {
   Env* env() { return env_; }
 
   bool read_only() const {
-    return read_only_;
+    return opts_.read_only;
   }
 
   // ==========================================================================
@@ -282,22 +288,11 @@ class FsManager {
   static const char *kTabletSuperBlockMagicNumber;
   static const char *kConsensusMetadataDirName;
 
+  // The environment to be used for all filesystem operations.
   Env* env_;
 
-  // If false, operations that mutate on-disk state are prohibited.
-  const bool read_only_;
-
-  // The block manager type.
-  const std::string block_manager_type_;
-
-  // These roots are the constructor input verbatim. None of them are used
-  // as-is; they are first canonicalized during Init().
-  const std::string wal_fs_root_;
-  const std::vector<std::string> data_fs_roots_;
-
-  scoped_refptr<MetricEntity> metric_entity_;
-
-  std::shared_ptr<MemTracker> parent_mem_tracker_;
+  // The options that the FsManager was created with.
+  const FsManagerOpts opts_;
 
   // Canonicalized forms of the root directories. Constructed during Init()
   // with ordering maintained.

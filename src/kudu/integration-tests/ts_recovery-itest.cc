@@ -384,8 +384,8 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
     // Append a no-op to the WAL with an overflowed term and index to simulate a
     // crash after KUDU-1933.
     FsManagerOpts opts;
-    opts.wal_path = ets->wal_dir();
-    opts.data_paths = ets->data_dirs();
+    opts.wal_root = ets->wal_dir();
+    opts.data_roots = ets->data_dirs();
     gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
     ASSERT_OK(fs_manager->Open());
     scoped_refptr<ConsensusMetadataManager> cmeta_manager(

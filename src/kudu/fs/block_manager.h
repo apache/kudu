@@ -21,13 +21,10 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
-#include "kudu/fs/block_id.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/array_view.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -35,7 +32,6 @@ namespace kudu {
 class BlockId;
 class Env;
 class MemTracker;
-class MetricEntity;
 class Slice;
 
 template <typename T>
@@ -181,7 +177,6 @@ struct CreateBlockOptions {
 // Block manager creation options.
 struct BlockManagerOptions {
   BlockManagerOptions();
-  ~BlockManagerOptions();
 
   // The entity under which all metrics should be grouped. If NULL, metrics
   // will not be produced.

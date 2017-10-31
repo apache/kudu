@@ -1493,7 +1493,7 @@ TEST_F(ToolTest, TestLocalReplicaDelete) {
     ASSERT_OK(tablet->Flush());
     tablet_id = tablet_replicas[0]->tablet_id();
   }
-  const string& tserver_dir = ts->options()->fs_opts.wal_path;
+  const string& tserver_dir = ts->options()->fs_opts.wal_root;
   // Using the delete tool with tablet server running fails.
   string stderr;
   Status s = RunTool(
@@ -1573,7 +1573,7 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
     Tablet* tablet = tablet_replicas[0]->tablet();
     ASSERT_OK(tablet->Flush());
   }
-  const string& tserver_dir = ts->options()->fs_opts.wal_path;
+  const string& tserver_dir = ts->options()->fs_opts.wal_root;
 
   // Shut down tablet server and use the delete tool.
   ts->Shutdown();
@@ -1622,7 +1622,7 @@ TEST_F(ToolTest, TestLocalReplicaCMetaOps) {
   workload.Setup();
   MiniTabletServer* ts = mini_cluster_->mini_tablet_server(0);
   const string ts_uuid = ts->uuid();
-  const string& flags = Substitute("-fs-wal-dir $0", ts->options()->fs_opts.wal_path);
+  const string& flags = Substitute("-fs-wal-dir $0", ts->options()->fs_opts.wal_root);
   string tablet_id;
   {
     vector<string> tablets;

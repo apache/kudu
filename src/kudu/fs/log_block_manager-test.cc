@@ -128,7 +128,8 @@ class LogBlockManagerTest : public KuduTest {
     }
     BlockManagerOptions opts;
     opts.metric_entity = metric_entity;
-    return new LogBlockManager(env_, dd_manager_.get(), test_error_manager_.get(), opts);
+    return new LogBlockManager(env_, dd_manager_.get(), test_error_manager_.get(),
+                               std::move(opts));
   }
 
   Status ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity = nullptr,

@@ -73,8 +73,8 @@ Status LogVerifier::OpenFsManager(ExternalTabletServer* ets,
                                   unique_ptr<FsManager>* fs) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
-  fs_opts.wal_path = ets->wal_dir();
-  fs_opts.data_paths = ets->data_dirs();
+  fs_opts.wal_root = ets->wal_dir();
+  fs_opts.data_roots = ets->data_dirs();
   fs_opts.block_manager_type = cluster_->block_manager_type();
 
   unique_ptr<FsManager> ret(new FsManager(Env::Default(), fs_opts));

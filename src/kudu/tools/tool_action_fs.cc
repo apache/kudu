@@ -81,9 +81,9 @@ using tablet::TabletMetadata;
 namespace {
 
 Status Check(const RunnerContext& /*context*/) {
-  FsManagerOpts opts;
-  opts.read_only = !FLAGS_repair;
-  FsManager fs_manager(Env::Default(), opts);
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = !FLAGS_repair;
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
   FsReport report;
   RETURN_NOT_OK(fs_manager.Open(&report));
 
@@ -185,9 +185,9 @@ Status Format(const RunnerContext& /*context*/) {
 }
 
 Status DumpUuid(const RunnerContext& /*context*/) {
-  FsManagerOpts opts;
-  opts.read_only = true;
-  FsManager fs_manager(Env::Default(), opts);
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
   cout << fs_manager.uuid() << endl;
   return Status::OK();
@@ -211,7 +211,7 @@ Status DumpCFile(const RunnerContext& context) {
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
-  FsManager fs_manager(Env::Default(), fs_opts);
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
   unique_ptr<fs::ReadableBlock> block;
@@ -242,7 +242,7 @@ Status DumpBlock(const RunnerContext& context) {
 
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
-  FsManager fs_manager(Env::Default(), fs_opts);
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
   unique_ptr<fs::ReadableBlock> block;
@@ -268,7 +268,7 @@ Status DumpBlock(const RunnerContext& context) {
 Status DumpFsTree(const RunnerContext& /*context*/) {
   FsManagerOpts fs_opts;
   fs_opts.read_only = true;
-  FsManager fs_manager(Env::Default(), fs_opts);
+  FsManager fs_manager(Env::Default(), std::move(fs_opts));
   RETURN_NOT_OK(fs_manager.Open());
 
   fs_manager.DumpFileSystemTree(std::cout);

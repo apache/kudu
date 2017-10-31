@@ -190,8 +190,8 @@ class BlockManagerStressTest : public KuduTest {
       CHECK_OK(DataDirManager::OpenExistingForTests(env_, data_dirs,
           DataDirManagerOptions(), &dd_manager_));
     }
-    BlockManagerOptions opts;
-    return new T(env_, dd_manager_.get(), test_error_manager_.get(), opts);
+    return new T(env_, dd_manager_.get(), test_error_manager_.get(),
+                 BlockManagerOptions());
   }
 
   void RunTest(double secs) {

@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -82,9 +83,9 @@ class FsManagerTestBase : public KuduTest {
 
   void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
     FsManagerOpts opts;
-    opts.wal_path = wal_path;
-    opts.data_paths = data_paths;
-    fs_manager_.reset(new FsManager(env_, opts));
+    opts.wal_root = wal_path;
+    opts.data_roots = data_paths;
+    fs_manager_.reset(new FsManager(env_, std::move(opts)));
   }
 
   void TestReadWriteDataFile(const Slice& data) {

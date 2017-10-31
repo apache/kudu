@@ -421,9 +421,11 @@ class DataDirManager {
   void RemoveUnhealthyDataDirsUnlocked(const std::vector<int>& uuid_indices,
                                        std::vector<int>* healthy_indices) const;
 
+  // The environment to be used for all data directory operations.
   Env* env_;
-  const std::string block_manager_type_;
-  const bool read_only_;
+
+  // The options that the DataDirManager was created with.
+  const DataDirManagerOptions opts_;
 
   // The canonicalized roots provided to the constructor, taken verbatim.
   //

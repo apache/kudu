@@ -72,15 +72,15 @@ MiniTabletServer::MiniTabletServer(string fs_root,
   opts_.webserver_opts.bind_interface = rpc_bind_addr.host();
   opts_.webserver_opts.port = 0;
   if (num_data_dirs == 1) {
-    opts_.fs_opts.wal_path = fs_root_;
-    opts_.fs_opts.data_paths = { fs_root_ };
+    opts_.fs_opts.wal_root = fs_root_;
+    opts_.fs_opts.data_roots = { fs_root_ };
   } else {
     vector<string> fs_data_dirs;
     for (int dir = 0; dir < num_data_dirs; dir++) {
       fs_data_dirs.emplace_back(JoinPathSegments(fs_root_, Substitute("data-$0", dir)));
     }
-    opts_.fs_opts.wal_path = JoinPathSegments(fs_root_, "wal");
-    opts_.fs_opts.data_paths = fs_data_dirs;
+    opts_.fs_opts.wal_root = JoinPathSegments(fs_root_, "wal");
+    opts_.fs_opts.data_roots = fs_data_dirs;
   }
 }
 

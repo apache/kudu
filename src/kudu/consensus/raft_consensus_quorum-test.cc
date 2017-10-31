@@ -142,8 +142,8 @@ class RaftConsensusQuorumTest : public KuduTest {
       string test_path = GetTestPath(Substitute("peer-$0-root", i));
       FsManagerOpts opts;
       opts.parent_mem_tracker = parent_mem_tracker;
-      opts.wal_path = test_path;
-      opts.data_paths = { test_path };
+      opts.wal_root = test_path;
+      opts.data_roots = { test_path };
       gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
       RETURN_NOT_OK(fs_manager->Open());

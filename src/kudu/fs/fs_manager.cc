@@ -124,41 +124,31 @@ const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManagerOpts::FsManagerOpts()
-  : wal_path(FLAGS_fs_wal_dir),
+  : wal_root(FLAGS_fs_wal_dir),
     block_manager_type(FLAGS_block_manager),
     read_only(false) {
-  data_paths = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
+  data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
-FsManagerOpts::~FsManagerOpts() {
-}
+FsManagerOpts::FsManagerOpts(const string& root)
+  : wal_root(root),
+    data_roots({ root }),
+    block_manager_type(FLAGS_block_manager),
+    read_only(false) {}
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
-    read_only_(false),
-    block_manager_type_(FLAGS_block_manager),
-    wal_fs_root_(root_path),
-    data_fs_roots_({ root_path }),
-    metric_entity_(nullptr),
+    opts_(FsManagerOpts(root_path)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {
-}
+    initted_(false) {}
 
-FsManager::FsManager(Env* env,
-                     const FsManagerOpts& opts)
+FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
-    read_only_(opts.read_only),
-    block_manager_type_(opts.block_manager_type),
-    wal_fs_root_(opts.wal_path),
-    data_fs_roots_(opts.data_paths),
-    metric_entity_(opts.metric_entity),
-    parent_mem_tracker_(opts.parent_mem_tracker),
+    opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {
-}
+    initted_(false) {}
 
-FsManager::~FsManager() {
-}
+FsManager::~FsManager() {}
 
 void FsManager::SetErrorNotificationCb(fs::ErrorNotificationCb cb) {
   error_manager_->SetErrorNotificationCb(std::move(cb));
@@ -174,13 +164,13 @@ Status FsManager::Init() {
   }
 
   // The wal root must be set.
-  if (wal_fs_root_.empty()) {
+  if (opts_.wal_root.empty()) {
     return Status::IOError("Write-ahead log directory (fs_wal_dir) not provided");
   }
 
   // Deduplicate all of the roots.
-  set<string> all_roots = { wal_fs_root_ };
-  all_roots.insert(data_fs_roots_.begin(), data_fs_roots_.end());
+  set<string> all_roots = { opts_.wal_root };
+  all_roots.insert(opts_.data_roots.begin(), opts_.data_roots.end());
 
   // Build a map of original root --> canonicalized root, sanitizing each
   // root as we go and storing the canonicalization status.
@@ -219,17 +209,17 @@ Status FsManager::Init() {
   }
 
   // All done, use the map to set the canonicalized state.
-  canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, wal_fs_root_);
-  if (!data_fs_roots_.empty()) {
+  canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, opts_.wal_root);
+  if (!opts_.data_roots.empty()) {
     set<string> unique_roots;
-    for (const string& data_fs_root : data_fs_roots_) {
+    for (const string& data_fs_root : opts_.data_roots) {
       const auto& root = FindOrDie(canonicalized_roots, data_fs_root);
       if (InsertIfNotPresent(&unique_roots, root.path)) {
         canonicalized_data_fs_roots_.emplace_back(root);
         canonicalized_all_fs_roots_.emplace_back(root);
       }
     }
-    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
+    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, opts_.data_roots[0]);
     if (!ContainsKey(unique_roots, canonicalized_wal_fs_root_.path)) {
       canonicalized_all_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
     }
@@ -264,14 +254,16 @@ Status FsManager::Init() {
 }
 
 void FsManager::InitBlockManager() {
-  BlockManagerOptions opts;
-  opts.metric_entity = metric_entity_;
-  opts.parent_mem_tracker = parent_mem_tracker_;
-  opts.read_only = read_only_;
-  if (block_manager_type_ == "file") {
-    block_manager_.reset(new FileBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
+  BlockManagerOptions bm_opts;
+  bm_opts.metric_entity = opts_.metric_entity;
+  bm_opts.parent_mem_tracker = opts_.parent_mem_tracker;
+  bm_opts.read_only = opts_.read_only;
+  if (opts_.block_manager_type == "file") {
+    block_manager_.reset(new FileBlockManager(
+        env_, dd_manager_.get(), error_manager_.get(), std::move(bm_opts)));
   } else {
-    block_manager_.reset(new LogBlockManager(env_, dd_manager_.get(), error_manager_.get(), opts));
+    block_manager_.reset(new LogBlockManager(
+        env_, dd_manager_.get(), error_manager_.get(), std::move(bm_opts)));
   }
 }
 
@@ -325,7 +317,7 @@ Status FsManager::Open(FsReport* report) {
   //
   // Temporary files in the data directory roots will be removed by the block
   // manager.
-  if (!read_only_) {
+  if (!opts_.read_only) {
     CleanTmpFiles();
     CheckAndFixPermissions();
   }
@@ -333,12 +325,12 @@ Status FsManager::Open(FsReport* report) {
   // Open the directory manager if it has not been opened already.
   if (!dd_manager_) {
     DataDirManagerOptions dm_opts;
-    dm_opts.metric_entity = metric_entity_;
-    dm_opts.block_manager_type = block_manager_type_;
-    dm_opts.read_only = read_only_;
+    dm_opts.metric_entity = opts_.metric_entity;
+    dm_opts.block_manager_type = opts_.block_manager_type;
+    dm_opts.read_only = opts_.read_only;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
-          canonicalized_data_fs_roots_, dm_opts, &dd_manager_));
+          canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));
     }
   }
 
@@ -368,7 +360,7 @@ Status FsManager::Open(FsReport* report) {
 }
 
 Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   RETURN_NOT_OK(Init());
 
@@ -450,12 +442,13 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
   // And lastly, create the directory manager.
   //
   // All files/directories created will be synchronized to disk.
-  DataDirManagerOptions opts;
-  opts.metric_entity = metric_entity_;
-  opts.read_only = read_only_;
+  DataDirManagerOptions dm_opts;
+  dm_opts.metric_entity = opts_.metric_entity;
+  dm_opts.read_only = opts_.read_only;
   LOG_TIMING(INFO, "creating directory manager") {
-    RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(env_,
-        canonicalized_data_fs_roots_, opts, &dd_manager_), "Unable to create directory manager");
+    RETURN_NOT_OK_PREPEND(DataDirManager::CreateNew(
+        env_, canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_),
+                          "Unable to create directory manager");
   }
 
   // Success: don't delete any files.
@@ -575,7 +568,7 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
 }
 
 void FsManager::CleanTmpFiles() {
-  DCHECK(!read_only_);
+  DCHECK(!opts_.read_only);
   for (const auto& s : { GetWalsRootDir(),
                          GetTabletMetadataDir(),
                          GetConsensusMetadataDir() }) {
@@ -641,7 +634,7 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 // ==========================================================================
 
 Status FsManager::CreateNewBlock(const CreateBlockOptions& opts, unique_ptr<WritableBlock>* block) {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   return block_manager_->CreateBlock(opts, block);
 }

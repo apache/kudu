@@ -184,9 +184,10 @@ class LogBlockManager : public BlockManager {
 
   // Note: all objects passed as pointers should remain alive for the lifetime
   // of the block manager.
-  LogBlockManager(Env* env, DataDirManager* dd_manager,
+  LogBlockManager(Env* env,
+                  DataDirManager* dd_manager,
                   FsErrorManager* error_manager,
-                  const BlockManagerOptions& opts);
+                  BlockManagerOptions opts);
 
   virtual ~LogBlockManager();
 
@@ -388,12 +389,8 @@ class LogBlockManager : public BlockManager {
   // number of blocks per container, given a particular filesystem block size.
   static const std::map<int64_t, int64_t> kPerFsBlockSizeBlockLimits;
 
-  // Tracks memory consumption of any allocations numerous enough to be
-  // interesting (e.g. LogBlocks).
-  std::shared_ptr<MemTracker> mem_tracker_;
-
-  // Protects the block map, container structures, and 'dirty_dirs'.
-  mutable simple_spinlock lock_;
+  // For manipulating files.
+  Env* env_;
 
   // Manages and owns the data directories in which the block manager will
   // place its blocks.
@@ -401,6 +398,16 @@ class LogBlockManager : public BlockManager {
 
   // Manages callbacks used to handle disk failure.
   FsErrorManager* error_manager_;
+
+  // The options that the LogBlockManager was created with.
+  const BlockManagerOptions opts_;
+
+  // Tracks memory consumption of any allocations numerous enough to be
+  // interesting (e.g. LogBlocks).
+  std::shared_ptr<MemTracker> mem_tracker_;
+
+  // Protects the block map, container structures, and 'dirty_dirs'.
+  mutable simple_spinlock lock_;
 
   // Maps a data directory to an upper bound on the number of blocks that a
   // container residing in that directory should observe, if one is necessary.
@@ -437,12 +444,6 @@ class LogBlockManager : public BlockManager {
   //
   // Synced and cleared by SyncMetadata().
   std::unordered_set<std::string> dirty_dirs_;
-
-  // For manipulating files.
-  Env* env_;
-
-  // If true, only read operations are allowed.
-  const bool read_only_;
 
   // If true, the kernel is vulnerable to KUDU-1508.
   const bool buggy_el6_kernel_;

@@ -1678,20 +1678,20 @@ const map<int64_t, int64_t> LogBlockManager::kPerFsBlockSizeBlockLimits({
 LogBlockManager::LogBlockManager(Env* env,
                                  DataDirManager* dd_manager,
                                  FsErrorManager* error_manager,
-                                 const BlockManagerOptions& opts)
-  : mem_tracker_(MemTracker::CreateTracker(-1,
-                                           "log_block_manager",
-                                           opts.parent_mem_tracker)),
+                                 BlockManagerOptions opts)
+  : env_(DCHECK_NOTNULL(env)),
     dd_manager_(DCHECK_NOTNULL(dd_manager)),
     error_manager_(DCHECK_NOTNULL(error_manager)),
+    opts_(std::move(opts)),
+    mem_tracker_(MemTracker::CreateTracker(-1,
+                                           "log_block_manager",
+                                           opts_.parent_mem_tracker)),
     file_cache_("lbm", env, GetFileCacheCapacityForBlockManager(env),
-                opts.metric_entity),
+                opts_.metric_entity),
     blocks_by_block_id_(10,
                         BlockMap::hasher(),
                         BlockMap::key_equal(),
                         BlockAllocator(mem_tracker_)),
-    env_(DCHECK_NOTNULL(env)),
-    read_only_(opts.read_only),
     buggy_el6_kernel_(IsBuggyEl6Kernel(env->GetKernelRelease())),
     next_block_id_(1) {
   blocks_by_block_id_.set_deleted_key(BlockId());
@@ -1708,8 +1708,8 @@ LogBlockManager::LogBlockManager(Env* env,
     next_block_id_.Store(r.Next64());
   }
 
-  if (opts.metric_entity) {
-    metrics_.reset(new internal::LogBlockManagerMetrics(opts.metric_entity));
+  if (opts_.metric_entity) {
+    metrics_.reset(new internal::LogBlockManagerMetrics(opts_.metric_entity));
   }
 }
 
@@ -1834,7 +1834,7 @@ Status LogBlockManager::Open(FsReport* report) {
 
 Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                     unique_ptr<WritableBlock>* block) {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   // Find a free container. If one cannot be found, create a new one.
   //
@@ -1878,13 +1878,13 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
 }
 
 unique_ptr<BlockCreationTransaction> LogBlockManager::NewCreationTransaction() {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
   return unique_ptr<internal::LogBlockCreationTransaction>(
       new internal::LogBlockCreationTransaction());
 }
 
 shared_ptr<BlockDeletionTransaction> LogBlockManager::NewDeletionTransaction() {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
   return std::make_shared<internal::LogBlockDeletionTransaction>(this);
 }
 
@@ -2427,7 +2427,7 @@ Status LogBlockManager::Repair(
     vector<scoped_refptr<internal::LogBlock>> need_repunching,
     vector<string> dead_containers,
     unordered_map<string, vector<BlockRecordPB>> low_live_block_containers) {
-  if (read_only_) {
+  if (opts_.read_only) {
     LOG(INFO) << "Read-only block manager, skipping repair";
     return Status::OK();
   }

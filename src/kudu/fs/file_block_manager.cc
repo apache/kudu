@@ -686,20 +686,20 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
 FileBlockManager::FileBlockManager(Env* env,
                                    DataDirManager* dd_manager,
                                    FsErrorManager* error_manager,
-                                   const BlockManagerOptions& opts)
+                                   BlockManagerOptions opts)
   : env_(DCHECK_NOTNULL(env)),
-    read_only_(opts.read_only),
     dd_manager_(dd_manager),
     error_manager_(DCHECK_NOTNULL(error_manager)),
+    opts_(std::move(opts)),
     file_cache_("fbm", env_, GetFileCacheCapacityForBlockManager(env_),
-                opts.metric_entity),
+                opts_.metric_entity),
     rand_(GetRandomSeed32()),
     next_block_id_(rand_.Next64()),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
-                                           opts.parent_mem_tracker)) {
-  if (opts.metric_entity) {
-    metrics_.reset(new internal::BlockManagerMetrics(opts.metric_entity));
+                                           opts_.parent_mem_tracker)) {
+  if (opts_.metric_entity) {
+    metrics_.reset(new internal::BlockManagerMetrics(opts_.metric_entity));
   }
 }
 
@@ -737,7 +737,7 @@ Status FileBlockManager::Open(FsReport* report) {
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                      unique_ptr<WritableBlock>* block) {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   DataDir* dir;
   RETURN_NOT_OK(dd_manager_->GetNextDataDir(opts, &dir));
@@ -823,7 +823,7 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 }
 
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
 
   // Return early if deleting a block in a failed directory.
   set<int> failed_dirs = dd_manager_->GetFailedDataDirs();
@@ -856,13 +856,13 @@ Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
 }
 
 unique_ptr<BlockCreationTransaction> FileBlockManager::NewCreationTransaction() {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
   return unique_ptr<internal::FileBlockCreationTransaction>(
       new internal::FileBlockCreationTransaction());
 }
 
 shared_ptr<BlockDeletionTransaction> FileBlockManager::NewDeletionTransaction() {
-  CHECK(!read_only_);
+  CHECK(!opts_.read_only);
   return std::make_shared<internal::FileBlockDeletionTransaction>(this);
 }
 
