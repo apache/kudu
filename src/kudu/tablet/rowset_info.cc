@@ -257,12 +257,13 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 }
 
 RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
-  : rowset_(rs),
-    size_bytes_(rs->OnDiskBaseDataSizeWithRedos()),
-    size_mb_(std::max(implicit_cast<int>(size_bytes_ / 1024 / 1024), kMinSizeMb)),
-    cdf_min_key_(init_cdf),
-    cdf_max_key_(init_cdf) {
-  has_bounds_ = rs->GetBounds(&min_key_, &max_key_).ok();
+    : cdf_min_key_(init_cdf),
+      cdf_max_key_(init_cdf),
+      extra_(new ExtraData()) {
+  extra_->rowset = rs;
+  extra_->size_bytes = rs->OnDiskBaseDataSizeWithRedos();
+  extra_->has_bounds = rs->GetBounds(&extra_->min_key, &extra_->max_key).ok();
+  size_mb_ = std::max(implicit_cast<int>(extra_->size_bytes / 1024 / 1024), kMinSizeMb);
 }
 
 void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
@@ -270,7 +271,7 @@ void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
   if (quot == 0) return;
   for (RowSetInfo& cdf_rs : *vec) {
     CHECK_GT(cdf_rs.size_mb_, 0) << "Expected file size to be at least 1MB "
-                                 << "for RowSet " << cdf_rs.rowset_->ToString()
+                                 << "for RowSet " << cdf_rs.rowset()->ToString()
                                  << ", was " << cdf_rs.size_bytes()
                                  << " bytes.";
     cdf_rs.cdf_min_key_ /= quot;
@@ -282,12 +283,12 @@ void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
 
 string RowSetInfo::ToString() const {
   string ret;
-  ret.append(rowset_->ToString());
+  ret.append(rowset()->ToString());
   StringAppendF(&ret, "(% 3dM) [%.04f, %.04f]", size_mb_,
                 cdf_min_key_, cdf_max_key_);
-  if (has_bounds_) {
-    ret.append(" [").append(KUDU_REDACT(Slice(min_key_).ToDebugString()));
-    ret.append(",").append(KUDU_REDACT(Slice(max_key_).ToDebugString()));
+  if (extra_->has_bounds) {
+    ret.append(" [").append(KUDU_REDACT(Slice(extra_->min_key).ToDebugString()));
+    ret.append(",").append(KUDU_REDACT(Slice(extra_->max_key).ToDebugString()));
     ret.append("]");
   }
   return ret;

@@ -66,9 +66,14 @@ struct QueryStruct {
 
 // Entry for use in the interval tree.
 struct RowSetWithBounds {
-  RowSet *rowset;
   string min_key;
   string max_key;
+
+  // NOTE: the ordering of struct fields here is purposeful: we access
+  // min_key and max_key frequently, so putting them first in the struct
+  // ensures they fill a single 64-byte cache line (each is 32 bytes).
+  // The 'rowset' pointer is accessed comparitively rarely.
+  RowSet *rowset;
 };
 
 // Traits struct for IntervalTree.
