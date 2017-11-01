@@ -202,9 +202,19 @@ class BoundCalculator {
     // This is a 2-approximation (i.e. no worse than 1/2 of the best solution).
     // See https://courses.engr.illinois.edu/cs598csc/sp2009/lectures/lecture_4.pdf
     double lower_bound = std::max(total_value_ - top.width(), top.width());
-    double fraction_of_top_to_remove = static_cast<double>(excess_weight) / top.size_mb();
-    DCHECK_GT(fraction_of_top_to_remove, 0);
-    double upper_bound = total_value_ - fraction_of_top_to_remove * top.width();
+
+    // An upper bound for the integer problem is the solution to the fractional problem:
+    // in the fractional problem we can add just a portion of the top element. The
+    // portion to remove is determined by the amount of excess weight:
+    //
+    //   fraction_to_remove = excess_weight / top.size_mb();
+    //   portion_to_remove = fraction_to_remove * top.width()
+    //
+    // To avoid the division, we can just use the fact that density = width/size:
+    double portion_of_top_to_remove = static_cast<double>(excess_weight) * top.density();
+    DCHECK_GT(portion_of_top_to_remove, 0);
+    double upper_bound = total_value_ - portion_of_top_to_remove;
+
     return {lower_bound, upper_bound};
   }
 
