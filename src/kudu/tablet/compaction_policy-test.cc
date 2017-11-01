@@ -26,6 +26,7 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -39,8 +40,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
-using std::shared_ptr;
 using std::unordered_set;
 using std::string;
 using std::vector;
@@ -48,25 +49,97 @@ using std::vector;
 namespace kudu {
 namespace tablet {
 
+class TestCompactionPolicy : public KuduTest {
+ protected:
+  void RunTestCase(const RowSetVector& vec,
+                   int size_budget_mb,
+                   unordered_set<RowSet*>* picked,
+                   double* quality) {
+    RowSetTree tree;
+    ASSERT_OK(tree.Reset(vec));
+
+    BudgetedCompactionPolicy policy(size_budget_mb);
+
+    ASSERT_OK(policy.PickRowSets(tree, picked, quality, nullptr));
+  }
+};
+
+
 // Simple test for budgeted compaction: with three rowsets which
 // mostly overlap, and an high budget, they should all be selected.
-TEST(TestCompactionPolicy, TestBudgetedSelection) {
-  RowSetVector vec;
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("C", "c")));
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("B", "a")));
-  vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("A", "b")));
-
-  RowSetTree tree;
-  ASSERT_OK(tree.Reset(vec));
+TEST_F(TestCompactionPolicy, TestBudgetedSelection) {
+  RowSetVector vec = {
+    std::make_shared<MockDiskRowSet>("C", "c"),
+    std::make_shared<MockDiskRowSet>("B", "a"),
+    std::make_shared<MockDiskRowSet>("A", "b")
+  };
 
   const int kBudgetMb = 1000; // enough to select all
-  BudgetedCompactionPolicy policy(kBudgetMb);
-
   unordered_set<RowSet*> picked;
   double quality = 0;
-  ASSERT_OK(policy.PickRowSets(tree, &picked, &quality, nullptr));
+  NO_FATALS(RunTestCase(vec, kBudgetMb, &picked, &quality));
   ASSERT_EQ(3, picked.size());
   ASSERT_GE(quality, 1.0);
+}
+
+// Test for the case when we have many rowsets, but none of them
+// overlap at all. This is likely to occur in workloads where the
+// primary key is always increasing (such as a timestamp).
+TEST_F(TestCompactionPolicy, TestNonOverlappingRowsets) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipped";
+    return;
+  }
+  RowSetVector vec;
+  for (int i = 0; i < 10000;  i++) {
+    vec.emplace_back(new MockDiskRowSet(
+        StringPrintf("%010d", i * 2),
+        StringPrintf("%010d", i * 2 + 1)));
+  }
+  unordered_set<RowSet*> picked;
+  double quality = 0;
+  NO_FATALS(RunTestCase(vec, /*size_budget_mb=*/128, &picked, &quality));
+  ASSERT_EQ(quality, 0);
+  ASSERT_TRUE(picked.empty());
+}
+
+// Similar to the above, but with some small overlap between adjacent
+// rowsets.
+TEST_F(TestCompactionPolicy, TestTinyOverlapRowsets) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipped";
+    return;
+  }
+
+  RowSetVector vec;
+  for (int i = 0; i < 10000;  i++) {
+    vec.emplace_back(new MockDiskRowSet(
+        StringPrintf("%010d", i * 10000),
+        StringPrintf("%010d", i * 10000 + 11000)));
+  }
+  unordered_set<RowSet*> picked;
+  double quality = 0;
+  NO_FATALS(RunTestCase(vec, /*size_budget_mb=*/128, &picked, &quality));
+  ASSERT_EQ(quality, 0);
+  ASSERT_TRUE(picked.empty());
+}
+
+// Test case with 100 rowsets, each of which overlaps with its two
+// neighbors to the right.
+TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
+  RowSetVector vec;
+  for (int i = 0; i < 100;  i++) {
+    vec.emplace_back(new MockDiskRowSet(
+        StringPrintf("%010d", i * 10000),
+        StringPrintf("%010d", (i + 2) * 10000)));
+  }
+  unordered_set<RowSet*> picked;
+  double quality = 0;
+  const int kBudgetMb = 64;
+  NO_FATALS(RunTestCase(vec, kBudgetMb, &picked, &quality));
+  ASSERT_GT(quality, 0.5);
+  // Each rowset is 1MB so we should exactly fill the budget.
+  ASSERT_EQ(picked.size(), kBudgetMb);
 }
 
 // Return the directory of the currently-running executable.
@@ -100,8 +173,8 @@ static RowSetVector LoadFile(const string& name) {
 // Realistic test using data scraped from a tablet containing 200+GB of YCSB data.
 // This test can be used as a benchmark for optimizing the compaction policy,
 // and also serves as a basic regression/stress test using real data.
-TEST(TestCompactionPolicy, TestYcsbCompaction) {
-  RowSetVector vec = LoadFile("ycsb-test-rowsets.tsv");;
+TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
+  RowSetVector vec = LoadFile("ycsb-test-rowsets.tsv");
   RowSetTree tree;
   ASSERT_OK(tree.Reset(vec));
   vector<double> qualities;
