@@ -49,11 +49,7 @@ namespace kudu {
 namespace hms {
 
 MiniHms::~MiniHms() {
-  if (hms_process_) {
-    VLOG(1) << "Stopping HMS";
-    unique_ptr<Subprocess> proc = std::move(hms_process_);
-    WARN_NOT_OK(proc->KillAndWait(SIGTERM), "failed to stop the Hive MetaStore process");
-  }
+  WARN_NOT_OK(Stop(), "Failed to stop MiniHms");
 }
 
 namespace {
@@ -112,7 +108,7 @@ Status MiniHms::Start() {
         Substitute("$0/bin/hive", hive_home),
         "--service", "metastore",
         "-v",
-        "-p", "0", // Use an ephemeral port.
+        "-p", std::to_string(port_),
   }));
 
   hms_process_->SetEnvVars(env_vars);
@@ -126,6 +122,31 @@ Status MiniHms::Start() {
     WARN_NOT_OK(hms_process_->Kill(SIGQUIT), "failed to send SIGQUIT to HMS");
   }
   return wait;
+}
+
+Status MiniHms::Stop() {
+  if (hms_process_) {
+    VLOG(1) << "Stopping HMS";
+    unique_ptr<Subprocess> proc = std::move(hms_process_);
+    RETURN_NOT_OK_PREPEND(proc->KillAndWait(SIGTERM), "failed to stop the Hive MetaStore process");
+  }
+  return Status::OK();
+}
+
+Status MiniHms::Pause() {
+  CHECK(hms_process_);
+  VLOG(1) << "Pausing HMS";
+  RETURN_NOT_OK_PREPEND(hms_process_->Kill(SIGSTOP),
+                        "failed to pause the Hive MetaStore process");
+  return Status::OK();
+}
+
+Status MiniHms::Resume() {
+  CHECK(hms_process_);
+  VLOG(1) << "Resuming HMS";
+  RETURN_NOT_OK_PREPEND(hms_process_->Kill(SIGCONT),
+                        "failed to unpause the Hive MetaStore process");
+  return Status::OK();
 }
 
 Status MiniHms::CreateHiveSite(const string& tmp_dir) const {

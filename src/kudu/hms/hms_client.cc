@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -46,6 +47,7 @@ using apache::thrift::protocol::TJSONProtocol;
 using apache::thrift::transport::TBufferedTransport;
 using apache::thrift::transport::TMemoryBuffer;
 using apache::thrift::transport::TSocket;
+using apache::thrift::transport::TTransportException;
 using std::make_shared;
 using std::shared_ptr;
 using std::string;
@@ -73,7 +75,14 @@ namespace hms {
   } catch (const hive::InvalidOperationException& e) { \
     return Status::IllegalState((msg), e.what()); \
   } catch (const hive::MetaException& e) { \
-    return Status::RuntimeError((msg), e.what()); \
+    return Status::RemoteError((msg), e.what()); \
+  } catch (const TTransportException& e) { \
+    switch (e.getType()) { \
+      case TTransportException::TIMED_OUT: return Status::TimedOut((msg), e.what()); \
+      case TTransportException::BAD_ARGS: return Status::InvalidArgument((msg), e.what()); \
+      case TTransportException::CORRUPTED_DATA: return Status::Corruption((msg), e.what()); \
+      default: return Status::NetworkError((msg), e.what()); \
+    } \
   } catch (const TException& e) { \
     return Status::IOError((msg), e.what()); \
   }
@@ -89,11 +98,30 @@ const char* const HmsClient::kDbNotificationListener =
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
 
-const int kSlowExecutionWarningThresholdMs = 500;
+const int kSlowExecutionWarningThresholdMs = 1000;
 
-HmsClient::HmsClient(const HostPort& hms_address)
-    : client_(nullptr) {
+namespace {
+// A logging callback for Thrift.
+//
+// Normally this would be defined in a more neutral location (e.g. Impala
+// defines it in thrift-util.cc), but since Hive is currently Kudu's only user
+// of Thrift, it's nice to have the log messsages originate from hms_client.cc.
+void ThriftOutputFunction(const char* output) {
+  LOG(INFO) << output;
+}
+} // anonymous namespace
+
+HmsClient::HmsClient(const HostPort& hms_address, const HmsClientOptions& options)
+      : client_(nullptr) {
+  static std::once_flag set_thrift_logging_callback;
+  std::call_once(set_thrift_logging_callback, [] {
+      apache::thrift::GlobalOutput.setOutputFunction(ThriftOutputFunction);
+  });
+
   auto socket = make_shared<TSocket>(hms_address.host(), hms_address.port());
+  socket->setSendTimeout(options.send_timeout.ToMilliseconds());
+  socket->setRecvTimeout(options.recv_timeout.ToMilliseconds());
+  socket->setConnTimeout(options.conn_timeout.ToMilliseconds());
   auto transport = make_shared<TBufferedTransport>(std::move(socket));
   auto protocol = make_shared<TBinaryProtocol>(std::move(transport));
   client_ = hive::ThriftHiveMetastoreClient(std::move(protocol));
@@ -104,7 +132,7 @@ HmsClient::~HmsClient() {
 }
 
 Status HmsClient::Start() {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 1000 /* ms */, "starting HMS client");
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "starting HMS client");
   HMS_RET_NOT_OK(client_.getOutputProtocol()->getTransport()->open(),
                  "failed to open Hive MetaStore connection");
 
@@ -177,6 +205,7 @@ Status HmsClient::CreateTable(const hive::Table& table) {
 Status HmsClient::AlterTable(const std::string& database_name,
                              const std::string& table_name,
                              const hive::Table& table) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "alter HMS table");
   HMS_RET_NOT_OK(client_.alter_table(database_name, table_name, table),
                  "failed to alter Hive MetaStore table");
   return Status::OK();

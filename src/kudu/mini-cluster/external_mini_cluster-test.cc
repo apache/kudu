@@ -204,7 +204,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
 
   // Verify that the HMS is reachable.
   if (opts.enable_hive_metastore) {
-    hms::HmsClient hms_client(cluster.hms()->address());
+    hms::HmsClient hms_client(cluster.hms()->address(), hms::HmsClientOptions());
     ASSERT_OK(hms_client.Start());
     vector<string> tables;
     ASSERT_OK(hms_client.GetAllTables("default", &tables));

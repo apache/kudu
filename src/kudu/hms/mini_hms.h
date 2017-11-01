@@ -46,7 +46,19 @@ class MiniHms {
   }
 
   // Starts the mini Hive metastore.
+  //
+  // If the MiniHms has already been started and stopped, it will be restarted
+  // using the same listening port.
   Status Start() WARN_UNUSED_RESULT;
+
+  // Stops the mini Hive metastore.
+  Status Stop() WARN_UNUSED_RESULT;
+
+  // Pause the Hive metastore process.
+  Status Pause() WARN_UNUSED_RESULT;
+
+  // Unpause the Hive metastore process.
+  Status Resume() WARN_UNUSED_RESULT;
 
   // Returns the address of the Hive metastore. Should only be called after the
   // metastore is started.

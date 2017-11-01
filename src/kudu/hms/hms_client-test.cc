@@ -28,6 +28,10 @@
 #include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/mini_hms.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -75,7 +79,7 @@ TEST_F(HmsClientTest, TestHmsOperations) {
   MiniHms hms;
   ASSERT_OK(hms.Start());
 
-  HmsClient client(hms.address());
+  HmsClient client(hms.address(), HmsClientOptions());
   ASSERT_OK(client.Start());
 
   // Create a database.
@@ -123,7 +127,7 @@ TEST_F(HmsClientTest, TestHmsOperations) {
   hive::Table altered_table(my_table);
   altered_table.tableName = new_table_name;
   altered_table.parameters[HmsClient::kKuduTableIdKey] = "bogus-table-id";
-  ASSERT_TRUE(client.AlterTable(database_name, table_name, altered_table).IsRuntimeError());
+  ASSERT_TRUE(client.AlterTable(database_name, table_name, altered_table).IsRemoteError());
 
   // Rename the table.
   altered_table.parameters[HmsClient::kKuduTableIdKey] = table_id;
@@ -157,7 +161,7 @@ TEST_F(HmsClientTest, TestHmsOperations) {
       << "Tables: " << tables;
 
   // Check that the HMS rejects Kudu table drops with a bogus table ID.
-  ASSERT_TRUE(DropTable(&client, database_name, new_table_name, "bogus-table-id").IsRuntimeError());
+  ASSERT_TRUE(DropTable(&client, database_name, new_table_name, "bogus-table-id").IsRemoteError());
   // Check that the HMS rejects non-existent table drops.
   ASSERT_TRUE(DropTable(&client, database_name, "foo-bar", "bogus-table-id").IsNotFound());
 
@@ -194,6 +198,80 @@ TEST_F(HmsClientTest, TestHmsOperations) {
   ASSERT_EQ(1, events.size()) << "events: " << events;
   EXPECT_EQ("ALTER_TABLE", events[0].eventType);
   ASSERT_OK(client.Stop());
+}
+
+TEST_F(HmsClientTest, TestHmsFaultHandling) {
+  MiniHms hms;
+  ASSERT_OK(hms.Start());
+
+  HmsClientOptions options;
+  options.recv_timeout = MonoDelta::FromMilliseconds(500),
+  options.send_timeout = MonoDelta::FromMilliseconds(500);
+  HmsClient client(hms.address(), options);
+  ASSERT_OK(client.Start());
+
+  // Get a specific database.
+  hive::Database my_db;
+  ASSERT_OK(client.GetDatabase("default", &my_db));
+
+  // Shutdown the HMS.
+  ASSERT_OK(hms.Stop());
+  ASSERT_TRUE(client.GetDatabase("default", &my_db).IsNetworkError());
+  ASSERT_OK(client.Stop());
+
+  // Restart the HMS and ensure the client can connect.
+  ASSERT_OK(hms.Start());
+  ASSERT_OK(client.Start());
+  ASSERT_OK(client.GetDatabase("default", &my_db));
+
+  // Pause the HMS and ensure the client times-out appropriately.
+  ASSERT_OK(hms.Pause());
+  ASSERT_TRUE(client.GetDatabase("default", &my_db).IsTimedOut());
+
+  // Unpause the HMS and ensure the client can continue.
+  ASSERT_OK(hms.Resume());
+  ASSERT_OK(client.GetDatabase("default", &my_db));
+}
+
+// Test connecting the HMS client to TCP sockets in various invalid states.
+TEST_F(HmsClientTest, TestHmsConnect) {
+  Sockaddr loopback;
+  ASSERT_OK(loopback.ParseString("127.0.0.1", 0));
+
+  HmsClientOptions options;
+  options.recv_timeout = MonoDelta::FromMilliseconds(100),
+  options.send_timeout = MonoDelta::FromMilliseconds(100);
+  options.conn_timeout = MonoDelta::FromMilliseconds(100);
+
+  auto start_client = [&options] (Sockaddr addr) -> Status {
+    HmsClient client(HostPort(addr), options);
+    return client.Start();
+  };
+
+  // Listening, but not accepting socket.
+  Sockaddr listening;
+  Socket listening_socket;
+  ASSERT_OK(listening_socket.Init(0));
+  ASSERT_OK(listening_socket.BindAndListen(loopback, 1));
+  listening_socket.GetSocketAddress(&listening);
+  ASSERT_TRUE(start_client(listening).IsTimedOut());
+
+  // Bound, but not listening socket.
+  Sockaddr bound;
+  Socket bound_socket;
+  ASSERT_OK(bound_socket.Init(0));
+  ASSERT_OK(bound_socket.Bind(loopback));
+  bound_socket.GetSocketAddress(&bound);
+  ASSERT_TRUE(start_client(bound).IsNetworkError());
+
+  // Unbound socket.
+  Sockaddr unbound;
+  Socket unbound_socket;
+  ASSERT_OK(unbound_socket.Init(0));
+  ASSERT_OK(unbound_socket.Bind(loopback));
+  unbound_socket.GetSocketAddress(&unbound);
+  ASSERT_OK(unbound_socket.Close());
+  ASSERT_TRUE(start_client(unbound).IsNetworkError());
 }
 
 TEST_F(HmsClientTest, TestDeserializeJsonTable) {

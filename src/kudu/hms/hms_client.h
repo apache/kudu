@@ -24,6 +24,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
 #include "kudu/hms/hive_metastore_types.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -41,20 +42,42 @@ enum class Cascade {
   kFalse,
 };
 
+struct HmsClientOptions {
+
+  // Thrift socket send timeout
+  MonoDelta send_timeout = MonoDelta::FromSeconds(60);
+
+  // Thrift socket receive timeout.
+  MonoDelta recv_timeout = MonoDelta::FromSeconds(60);
+
+  // Thrift socket connect timeout.
+  MonoDelta conn_timeout = MonoDelta::FromSeconds(60);
+};
+
 // A client for the Hive MetaStore.
 //
 // All operations are synchronous, and may block.
 //
 // HmsClient is not thread safe.
 //
-// TODO(dan): this client is lacking adequate failure handling, including:
-//  - Documentation of specific Status codes returned in error scenarios
-//  - Connection timeouts
-//  - Handling and/or documentation of retry and reconnection behavior
+// HmsClient wraps a single TCP connection to an HMS, and does not attempt to
+// handle or retry on failure. It's expected that a higher-level component will
+// wrap HmsClient to provide retry, pooling, and HA deployment features if
+// necessary.
 //
-// TODO(dan): this client does not handle HA (multi) HMS deployments.
+// Note: Thrift provides a handy TSocketPool class which could be useful in
+// allowing the HmsClient to transparently handle connecting to a pool of HA HMS
+// instances. However, because TSocketPool handles choosing the instance during
+// socket connect, it can't determine if the remote endpoint is actually an HMS,
+// or just a random listening TCP socket. Nor can it do application-level checks
+// like ensuring that the connected HMS is configured with the Kudu Metastore
+// plugin. So, it's better for a higher-level construct to handle connecting to
+// HA deployments by wrapping multiple HmsClient instances. HmsClient punts on
+// handling connection retries, because the higher-level construct which is
+// handling HA deployments will naturally want to retry across HMS instances as
+// opposed to retrying repeatedly on a single instance.
 //
-// TODO(dan): this client does not handle Kerberized HMS deployments.
+// TODO(dan): this client does not yet handle Kerberized HMS deployments.
 class HmsClient {
  public:
 
@@ -66,13 +89,18 @@ class HmsClient {
   static const char* const kDbNotificationListener;
   static const char* const kKuduMetastorePlugin;
 
-  explicit HmsClient(const HostPort& hms_address);
+  // Create an HmsClient connection to the proided HMS Thrift RPC address.
+  //
+  // The individual timeouts may be set to enforce per-operation
+  // (read/write/connect) timeouts.
+  HmsClient(const HostPort& hms_address, const HmsClientOptions& options);
   ~HmsClient();
 
   // Starts the HMS client.
   //
   // This method will open a synchronous TCP connection to the HMS. If the HMS
-  // can not be reached, an error is returned.
+  // can not be reached within the connection timeout interval, an error is
+  // returned.
   //
   // Must be called before any subsequent operations using the client.
   Status Start() WARN_UNUSED_RESULT;
