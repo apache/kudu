@@ -50,6 +50,11 @@ DEFINE_double(compaction_approximation_ratio, 1.05f,
               "if it is known to be within 5% of the optimal solution.");
 TAG_FLAG(compaction_approximation_ratio, experimental);
 
+DEFINE_double(compaction_minimum_improvement, 0.01f,
+              "The minimum quality for a compaction to run. If a compaction does not "
+              "improve the average height of DiskRowSets by at least this amount, the "
+              "compaction will be considered ineligible.");
+
 namespace kudu {
 namespace tablet {
 
@@ -301,7 +306,7 @@ void BudgetedCompactionPolicy::RunExact(
     // Here we also build in the approximation ratio as slop: the upper bound doesn't need
     // to just be better than the current solution, but needs to be better by at least
     // the approximation ratio before we bother looking for it.
-    if (upper_bound < best_solution->value * FLAGS_compaction_approximation_ratio) {
+    if (upper_bound <= best_solution->value * FLAGS_compaction_approximation_ratio) {
       continue;
     }
 
@@ -414,6 +419,17 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   vector<double> best_upper_bounds;
   RunApproximation(asc_min_key, asc_max_key, &best_upper_bounds, &best_solution);
 
+  // If the best solution found above is less than some tiny threshold, we don't
+  // need to bother searching for the exact solution, since it could be at most twice
+  // the approximate solution.
+  if (best_solution.value * 2 <= FLAGS_compaction_minimum_improvement ||
+      *std::max_element(best_upper_bounds.begin(), best_upper_bounds.end()) <=
+      FLAGS_compaction_minimum_improvement) {
+    VLOG(1) << "Approximation algorithm short-circuited exact compaction calculation";
+    *quality = 0;
+    return Status::OK();
+  }
+
   // Pass 2 (precise)
   // ------------------------------------------------------------
   // Now that we've found an approximate solution and upper bounds, do another pass.
@@ -437,8 +453,11 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
 
   *quality = best_solution.value;
 
-  if (best_solution.value <= 0) {
-    VLOG(1) << "Best compaction available makes things worse. Not compacting.";
+  if (best_solution.value <= FLAGS_compaction_minimum_improvement) {
+    VLOG(1) << "Best compaction available (" << best_solution.value << " less than "
+            << "minimum quality " << FLAGS_compaction_minimum_improvement
+            << ": not compacting.";
+    *quality = 0;
     return Status::OK();
   }
 
