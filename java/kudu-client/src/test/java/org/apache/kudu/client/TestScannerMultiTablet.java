@@ -30,6 +30,7 @@ import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import org.apache.kudu.client.Client.ScanTokenPB;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 
@@ -259,6 +260,32 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       asyncTsRef = asyncTs;
     }
     assertNotEquals(0, rowCount);
+  }
+
+  @Test(timeout = 100000)
+  public void testScanTokenPropagatesTimestamp() throws Exception {
+    // Initially, the client does not have the timestamp set.
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(KuduClient.NO_TIMESTAMP, syncClient.getLastPropagatedTimestamp());
+    AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+    KuduScanner syncScanner = new KuduScanner(scanner);
+
+    // Let the client receive the propagated timestamp in the scanner response.
+    syncScanner.nextRows().getNumRows();
+    final long tsPrev = client.getLastPropagatedTimestamp();
+    final long tsPropagated = tsPrev + 1000000;
+
+    ScanTokenPB.Builder pbBuilder = ScanTokenPB.newBuilder();
+    pbBuilder.setTableName(table.getName());
+    pbBuilder.setPropagatedTimestamp(tsPropagated);
+    Client.ScanTokenPB scanTokenPB = pbBuilder.build();
+    final byte[] serializedToken = KuduScanToken.serialize(scanTokenPB);
+
+    // Deserialize scan tokens and make sure the client's last propagated
+    // timestamp is updated accordingly.
+    assertEquals(tsPrev, client.getLastPropagatedTimestamp());
+    KuduScanToken.deserializeIntoScanner(serializedToken, syncClient);
+    assertEquals(tsPropagated, client.getLastPropagatedTimestamp());
   }
 
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,

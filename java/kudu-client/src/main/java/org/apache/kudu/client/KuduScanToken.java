@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -88,6 +89,16 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    * @throws IOException
    */
   public byte[] serialize() throws IOException {
+    return serialize(message);
+  }
+
+  /**
+   * Serializes a {@code KuduScanToken} into a byte array.
+   * @return the serialized scan token
+   * @throws IOException
+   */
+  @VisibleForTesting
+  static byte[] serialize(ScanTokenPB message) throws IOException {
     byte[] buf = new byte[message.getSerializedSize()];
     CodedOutputStream cos = CodedOutputStream.newInstance(buf);
     message.writeTo(cos);
@@ -212,8 +223,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       }
     }
 
-    if (message.hasPropagatedTimestamp()) {
-      // TODO (KUDU-1411)
+    if (message.hasPropagatedTimestamp() &&
+        message.getPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+      client.updateLastPropagatedTimestamp(message.getPropagatedTimestamp());
     }
 
     if (message.hasCacheBlocks()) {
