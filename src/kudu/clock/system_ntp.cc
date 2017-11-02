@@ -22,12 +22,9 @@
 
 #include <cerrno>
 #include <ostream>
-#include <string>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/port.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/status.h"
@@ -35,37 +32,21 @@
 namespace kudu {
 namespace clock {
 
-using strings::Substitute;
-
 const double SystemNtp::kAdjtimexScalingFactor = 65536;
-const uint64_t SystemNtp::kNanosPerSec = 1000000;
+const uint64_t SystemNtp::kMicrosPerSec = 1000000;
 
 namespace {
 
-// Returns the clock modes and checks if the clock is synchronized.
-Status GetClockModes(timex* timex) {
-  // this makes ntp_adjtime a read-only call
-  timex->modes = 0;
-  int rc = ntp_adjtime(timex);
-  if (PREDICT_FALSE(rc == TIME_ERROR)) {
-    return Status::ServiceUnavailable(
-        Substitute("Error reading clock. Clock considered unsynchronized. Return code: $0", rc));
-  }
-  // TODO what to do about leap seconds? see KUDU-146
-  if (PREDICT_FALSE(rc != TIME_OK)) {
-    LOG(ERROR) << Substitute("TODO Server undergoing leap second. Return code: $0", rc);
-  }
-  return Status::OK();
-}
-
 // Returns the current time/max error and checks if the clock is synchronized.
-Status GetClockTime(ntptimeval* timeval) {
-  int rc = ntp_gettime(timeval);
+Status CallAdjTime(timex* tx) {
+  // Set mode to 0 to query the current time.
+  tx->modes = 0;
+  int rc = ntp_adjtime(tx);
   switch (rc) {
     case TIME_OK:
       return Status::OK();
     case -1: // generic error
-      return Status::ServiceUnavailable("Error reading clock. ntp_gettime() failed",
+      return Status::ServiceUnavailable("Error reading clock. ntp_adjtime() failed",
                                         ErrnoToString(errno));
     case TIME_ERROR:
       return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
@@ -80,30 +61,16 @@ Status GetClockTime(ntptimeval* timeval) {
 } // anonymous namespace
 
 Status SystemNtp::Init() {
-  // Read the current time. This will return an error if the clock is not synchronized.
-  uint64_t now_usec;
-  uint64_t error_usec;
-  RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
-
   timex timex;
-  RETURN_NOT_OK(GetClockModes(&timex));
-  // read whether the STA_NANO bit is set to know whether we'll get back nanos
-  // or micros in timeval.time.tv_usec. See:
-  // http://stackoverflow.com/questions/16063408/does-ntp-gettime-actually-return-nanosecond-precision
-  // set the timeval.time.tv_usec divisor so that we always get micros
-  if (timex.status & STA_NANO) {
-    divisor_ = 1000;
-  } else {
-    divisor_ = 1;
-  }
+  RETURN_NOT_OK(CallAdjTime(&timex));
 
   // Calculate the sleep skew adjustment according to the max tolerance of the clock.
   // Tolerance comes in parts per million but needs to be applied a scaling factor.
   skew_ppm_ = timex.tolerance / kAdjtimexScalingFactor;
 
-  LOG(INFO) << "NTP initialized. Resolution in nanos?: " << (divisor_ == 1000)
-            << " Skew PPM: " << skew_ppm_
-            << " Current error: " << error_usec;
+  LOG(INFO) << "NTP initialized."
+            << " Skew: " << skew_ppm_ << "ppm"
+            << " Current error: " << timex.maxerror <<  "us";
 
   return Status::OK();
 }
@@ -112,10 +79,16 @@ Status SystemNtp::Init() {
 Status SystemNtp::WalltimeWithError(uint64_t *now_usec,
                                     uint64_t *error_usec) {
   // Read the time. This will return an error if the clock is not synchronized.
-  ntptimeval timeval;
-  RETURN_NOT_OK(GetClockTime(&timeval));
-  *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
-  *error_usec = timeval.maxerror;
+  timex tx;
+  RETURN_NOT_OK(CallAdjTime(&tx));
+
+  if (tx.status & STA_NANO) {
+    tx.time.tv_usec /= 1000;
+  }
+  DCHECK_LE(tx.time.tv_usec, 1e6);
+
+  *now_usec = tx.time.tv_sec * kMicrosPerSec + tx.time.tv_usec;
+  *error_usec = tx.maxerror;
   return Status::OK();
 }
 

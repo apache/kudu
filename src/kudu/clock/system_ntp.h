@@ -50,12 +50,7 @@ class SystemNtp : public TimeService {
   // "scale factor used by adjtimex freq param.  1 ppm = 65536"
   static const double kAdjtimexScalingFactor;
 
-  static const uint64_t kNanosPerSec;
-
-  // The divisor for the 'timeval.time.tv_usec' returned from the kernel.
-  // Despite the name 'tv_usec', in fact in some cases it will return a nanosecond
-  // value, in which case we may need to divide.
-  uint64_t divisor_ = 1;
+  static const uint64_t kMicrosPerSec;
 
   // The skew rate in PPM reported by the kernel.
   uint64_t skew_ppm_ = 0;
