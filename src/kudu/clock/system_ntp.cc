@@ -23,11 +23,18 @@
 #include <cerrno>
 #include <ostream>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/status.h"
+
+DEFINE_bool(inject_adjtimex_errors, false,
+            "If true, will return a fake 'unsynchronized' status from NTP.");
+TAG_FLAG(inject_adjtimex_errors, unsafe);
 
 namespace kudu {
 namespace clock {
@@ -42,6 +49,9 @@ Status CallAdjTime(timex* tx) {
   // Set mode to 0 to query the current time.
   tx->modes = 0;
   int rc = ntp_adjtime(tx);
+  if (PREDICT_FALSE(FLAGS_inject_adjtimex_errors)) {
+    rc = TIME_ERROR;
+  }
   switch (rc) {
     case TIME_OK:
       return Status::OK();

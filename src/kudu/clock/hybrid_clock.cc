@@ -34,6 +34,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -170,11 +171,8 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 
   uint64_t now_usec;
   uint64_t error_usec;
-  Status s = WalltimeWithError(&now_usec, &error_usec);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(FATAL) << Substitute("Couldn't get the current time: Clock unsynchronized. "
-        "Status: $0", s.ToString());
-  }
+  CHECK_OK_PREPEND(WalltimeWithError(&now_usec, &error_usec),
+                   "Couldn't get the current time");
 
   // If the physical time from the system clock is higher than our last-returned
   // time, we should use the physical timestamp.
@@ -336,12 +334,69 @@ bool HybridClock::IsAfter(Timestamp t) {
 }
 
 kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
-  RETURN_NOT_OK(time_service_->WalltimeWithError(now_usec, error_usec));
+  bool is_extrapolated = false;
+  auto read_time_before = MonoTime::Now();
+  Status s = time_service_->WalltimeWithError(now_usec, error_usec);
+  auto read_time_after = MonoTime::Now();
+
+  if (PREDICT_TRUE(s.ok())) {
+    // We got a good clock read. Remember this in case the clock later becomes
+    // unsynchronized and we need to extrapolate from here.
+    //
+    // Note that the actual act of reading the clock could have taken some time
+    // (eg if we context-switched out) so we need to account for that by adding
+    // some extra error.
+    //
+    //  A         B          C
+    //  |---------|----------|
+    //
+    //  A = read_time_before (monotime)
+    //  B = now_usec (walltime reading)
+    //  C = read_time_after (monotime)
+    //
+    // We don't know whether 'B' was halfway in between 'A' and 'C' or elsewhere.
+    // The max likelihood estimate is that 'B' corresponds to the average of 'A'
+    // and 'C'. Then we need to add in this uncertainty (half of C - A) into any
+    // future clock readings that we extrapolate from this estimate.
+    int64_t read_duration_us = (read_time_after - read_time_before).ToMicroseconds();
+    int64_t read_time_error_us = read_duration_us / 2;
+    MonoTime read_time_max_likelihood = read_time_before +
+        MonoDelta::FromMicroseconds(read_time_error_us);
+
+    std::unique_lock<simple_spinlock> l(last_clock_read_lock_);
+    if (!last_clock_read_time_.Initialized() ||
+        last_clock_read_time_ < read_time_max_likelihood) {
+      last_clock_read_time_ = read_time_max_likelihood;
+      last_clock_read_physical_ = *now_usec;
+      last_clock_read_error_ = *error_usec + read_time_error_us;
+    }
+  } else {
+    // We failed to read the clock. Extrapolate the new time based on our
+    // last successful read.
+    std::unique_lock<simple_spinlock> l(last_clock_read_lock_);
+    if (!last_clock_read_time_.Initialized()) {
+      RETURN_NOT_OK_PREPEND(s, "could not read system time source");
+    }
+    MonoDelta time_since_last_read = read_time_after - last_clock_read_time_;
+    int64_t micros_since_last_read = time_since_last_read.ToMicroseconds();
+    int64_t accum_error_us = (micros_since_last_read * time_service_->skew_ppm()) / 1e6;
+    *now_usec = last_clock_read_physical_ + micros_since_last_read;
+    *error_usec = last_clock_read_error_ + accum_error_us;
+    is_extrapolated = true;
+    l.unlock();
+    // Log after unlocking to minimize the lock hold time.
+    KLOG_EVERY_N_SECS(ERROR, 1) << "Unable to read clock for last "
+                                << time_since_last_read.ToString() << ": " << s.ToString();
+
+  }
+
   // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec
   // we also return a non-ok status.
   if (*error_usec > FLAGS_max_clock_sync_error_usec) {
-    return Status::ServiceUnavailable(Substitute("Error: Clock synchronized but error was"
-        "too high ($0 us).", *error_usec));
+    return Status::ServiceUnavailable(Substitute(
+        "clock error estimate ($0us) too high (clock considered $1 by the kernel)",
+        *error_usec,
+        is_extrapolated ? "unsynchronized" : "synchronized"));
   }
   return kudu::Status::OK();
 }

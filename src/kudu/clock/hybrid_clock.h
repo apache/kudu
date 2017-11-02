@@ -28,13 +28,10 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class MonoDelta;
-class MonoTime;
-
 namespace clock {
 
 // The HybridTime clock.
@@ -184,6 +181,13 @@ class HybridClock : public Clock {
   // The next timestamp to be generated from this clock, assuming that
   // the physical clock hasn't advanced beyond the value stored here.
   uint64_t next_timestamp_;
+
+  // The last valid clock reading we got from the time source, along
+  // with the monotime that we took that reading.
+  mutable simple_spinlock last_clock_read_lock_;
+  MonoTime last_clock_read_time_;
+  uint64_t last_clock_read_physical_;
+  uint64_t last_clock_read_error_;
 
   // How many bits to left shift a microseconds clock read. The remainder
   // of the timestamp will be reserved for logical values.

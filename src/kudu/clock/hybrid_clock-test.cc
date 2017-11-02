@@ -41,6 +41,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_bool(inject_adjtimex_errors);
 DECLARE_string(time_source);
 
 namespace kudu {
@@ -308,6 +309,43 @@ TEST_F(HybridClockTest, TestGetPhysicalComponentDifference) {
   ASSERT_EQ(100, delta.ToMicroseconds());
   ASSERT_EQ(-100, negative_delta.ToMicroseconds());
 }
+
+
+TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
+  Timestamp timestamps[3];
+  uint64_t max_error_usec[3];
+
+  // Get the clock once, with a working NTP.
+  clock_->NowWithError(&timestamps[0], &max_error_usec[0]);
+
+  // Try to read the clock again a second later, but with an error
+  // injected. It should extrapolate from the first read.
+  SleepFor(MonoDelta::FromSeconds(1));
+  FLAGS_inject_adjtimex_errors = true;
+  clock_->NowWithError(&timestamps[1], &max_error_usec[1]);
+
+  // The new clock reading should be a second or longer from the
+  // first one, since SleepFor guarantees sleeping at least as long
+  // as specified.
+  MonoDelta phys_diff = clock_->GetPhysicalComponentDifference(
+      timestamps[1], timestamps[0]);
+  ASSERT_GE(phys_diff.ToSeconds(), 1);
+
+  // The new clock reading should have higher error than the first.
+  // The error should have increased based on the clock skew.
+  int64_t error_diff = max_error_usec[1] - max_error_usec[0];
+  ASSERT_NEAR(error_diff, clock_->time_service()->skew_ppm() * phys_diff.ToSeconds(),
+              10);
+
+  // Now restore the ability to read the system clock, and
+  // read it again.
+  FLAGS_inject_adjtimex_errors = false;
+  clock_->NowWithError(&timestamps[2], &max_error_usec[2]);
+
+  ASSERT_LT(timestamps[0].ToUint64(), timestamps[1].ToUint64());
+  ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
+}
+
 
 }  // namespace clock
 }  // namespace kudu
