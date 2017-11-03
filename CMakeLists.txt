@@ -863,14 +863,12 @@ ADD_THIRDPARTY_LIB(thrift
   STATIC_LIB "${THRIFT_STATIC_LIBRARY}"
   SHARED_LIB "${THRIFT_SHARED_LIBRARY}")
 
-if (NOT NO_TESTS)
-  # The HMS tests rely on JAVA_HOME being set in order to run the HMS, and
-  # the JDK 1.7 or later for compiling the Kudu metastore plugin.
-  find_package(JavaHome REQUIRED)
-  find_package(Java 1.7 REQUIRED)
-  # Defines the add_jar() CMake command.
-  include(UseJava)
-endif()
+# The mini-HMS relies on JAVA_HOME being set in order to run the HMS, and
+# JDK 1.7 or later for compiling the Kudu metastore plugin.
+find_package(JavaHome REQUIRED)
+find_package(Java 1.7 REQUIRED)
+# Defines the add_jar() CMake command.
+include(UseJava)
 
 ## Snappy
 find_package(Snappy REQUIRED)
