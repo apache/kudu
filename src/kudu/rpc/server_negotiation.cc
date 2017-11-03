@@ -183,7 +183,7 @@ Status ServerNegotiation::Negotiate() {
   DCHECK(token_verifier_);
 
   // Ensure we can use blocking calls on the socket during negotiation.
-  RETURN_NOT_OK(EnsureBlockingMode(socket_.get()));
+  RETURN_NOT_OK(CheckInBlockingMode(socket_.get()));
 
   faststring recv_buf;
 

@@ -158,7 +158,7 @@ Status ClientNegotiation::Negotiate(unique_ptr<ErrorStatusPB>* rpc_error) {
   TRACE("Beginning negotiation");
 
   // Ensure we can use blocking calls on the socket during negotiation.
-  RETURN_NOT_OK(EnsureBlockingMode(socket_.get()));
+  RETURN_NOT_OK(CheckInBlockingMode(socket_.get()));
 
   // Step 1: send the connection header.
   RETURN_NOT_OK(SendConnectionHeader());
