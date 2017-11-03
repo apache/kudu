@@ -52,9 +52,14 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
 
   errno = 0;
   int32_t bytes_written = SSL_write(ssl_.get(), buf, amt);
+  int save_errno = errno;
   if (bytes_written <= 0) {
     auto error_code = SSL_get_error(ssl_.get(), bytes_written);
     if (error_code == SSL_ERROR_WANT_WRITE) {
+      if (save_errno != 0) {
+        return Status::NetworkError("SSL_write error",
+                                    ErrnoToString(save_errno), save_errno);
+      }
       // Socket not ready to write yet.
       *nwritten = 0;
       return Status::OK();
@@ -99,6 +104,10 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
     }
     auto error_code = SSL_get_error(ssl_.get(), bytes_read);
     if (error_code == SSL_ERROR_WANT_READ) {
+      if (save_errno != 0) {
+        return Status::NetworkError("SSL_read error",
+                                    ErrnoToString(save_errno), save_errno);
+      }
       // Nothing available to read yet.
       *nread = 0;
       return Status::OK();
