@@ -66,6 +66,10 @@ Windows::
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.
 
+.Java
+- JDK 7 or JDK 8 is required to build Kudu, but a JRE is not required at runtime
+  except for tests.
+
 [[install_packages]]
 == Install Using Packages
 You can install Kudu using packages managed by the operating system.
@@ -253,7 +257,7 @@ on a version older than 7.0, the Red Hat Developer Toolset must be installed
 +
 ----
 $ sudo yum install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
-  cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
+  cyrus-sasl-plain flex gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
   make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common which
 ----
 
@@ -334,7 +338,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 #!/bin/bash
 
 sudo yum -y install autoconf automake cyrus-sasl-devel cyrus-sasl-gssapi \
-  cyrus-sasl-plain gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
+  cyrus-sasl-plain flex gcc gcc-c++ gdb git krb5-server krb5-workstation libtool \
   make openssl-devel patch pkgconfig redhat-lsb-core rsync unzip vim-common which
 DTLS_RPM=rhscl-devtoolset-3-epel-6-x86_64-1-2.noarch.rpm
 DTLS_RPM_URL=https://www.softwarecollections.org/repos/rhscl/devtoolset-3/epel-6-x86_64/noarch/${DTLS_RPM}
@@ -360,7 +364,7 @@ make -j4
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ sudo apt-get install autoconf automake curl g++ gcc gdb git \
+$ sudo apt-get install autoconf automake curl flex g++ gcc gdb git \
   krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
   libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
   patch pkg-config python rsync unzip vim-common
@@ -425,7 +429,7 @@ the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo apt-get -y install autoconf automake curl g++ gcc gdb git \
+sudo apt-get -y install autoconf automake curl flex g++ gcc gdb git \
   krb5-admin-server krb5-kdc krb5-user libkrb5-dev libsasl2-dev libsasl2-modules \
   libsasl2-modules-gssapi-mit libssl-dev libtool lsb-release make ntp openssl \
   patch pkg-config python rsync unzip vim-common
@@ -448,8 +452,8 @@ make -j4
 +
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi gcc gcc-c++ gdb git krb5-devel libtool lsb-release make ntp \
-  openssl-devel patch pkg-config python rsync unzip vim
+  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git krb5-devel libtool lsb-release \
+  make ntp openssl-devel patch pkg-config python rsync unzip vim
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -501,8 +505,8 @@ the steps marked *Optional* above.
 #!/bin/bash
 
 sudo zypper install -y autoconf automake curl cyrus-sasl-devel \
-  cyrus-sasl-gssapi gcc gcc-c++ gdb git krb5-devel libtool lsb-release make ntp \
-  openssl-devel patch pkg-config python rsync unzip vim
+  cyrus-sasl-gssapi flex gcc gcc-c++ gdb git krb5-devel libtool lsb-release \
+  make ntp openssl-devel patch pkg-config python rsync unzip vim
 git clone https://github.com/apache/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
