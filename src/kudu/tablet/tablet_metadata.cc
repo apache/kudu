@@ -69,6 +69,7 @@ using kudu::pb_util::SecureShortDebugString;
 using std::memory_order_relaxed;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -393,16 +394,30 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 
     rowsets_.clear();
     for (const RowSetDataPB& rowset_pb : superblock.rowsets()) {
-      gscoped_ptr<RowSetMetadata> rowset_meta;
+      unique_ptr<RowSetMetadata> rowset_meta;
       RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
       next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
       rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
     }
 
+    // Determine the largest block ID known to the tablet metadata so we can
+    // notify the block manager of blocks it may have missed (e.g. if a data
+    // directory failed and the blocks on it were not read).
+    BlockId max_block_id;
+    const auto& block_ids = CollectBlockIds();
+    for (BlockId block_id : block_ids) {
+      max_block_id = std::max(max_block_id, block_id);
+    }
+
     for (const BlockIdPB& block_pb : superblock.orphaned_blocks()) {
-      orphaned_blocks.push_back(BlockId::FromPB(block_pb));
+      BlockId orphaned_block_id = BlockId::FromPB(block_pb);
+      max_block_id = std::max(max_block_id, orphaned_block_id);
+      orphaned_blocks.push_back(orphaned_block_id);
     }
     AddOrphanedBlocksUnlocked(orphaned_blocks);
+
+    // Notify the block manager of the highest block ID seen.
+    fs_manager()->block_manager()->NotifyBlockId(max_block_id);
 
     if (superblock.has_data_dir_group()) {
       RETURN_NOT_OK_PREPEND(fs_manager_->dd_manager()->LoadDataDirGroupFromPB(
@@ -663,10 +678,9 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   return Status::OK();
 }
 
-Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset,
-                                    const Schema& schema) {
+Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata>* rowset) {
   AtomicWord rowset_idx = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
-  gscoped_ptr<RowSetMetadata> scoped_rsm;
+  unique_ptr<RowSetMetadata> scoped_rsm;
   RETURN_NOT_OK(RowSetMetadata::CreateNew(this, rowset_idx, &scoped_rsm));
   rowset->reset(DCHECK_NOTNULL(scoped_rsm.release()));
   return Status::OK();

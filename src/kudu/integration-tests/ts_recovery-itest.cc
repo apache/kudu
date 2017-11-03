@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -44,29 +45,39 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
+#include "kudu/fs/block_id.h"
+#include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
+
+METRIC_DECLARE_gauge_uint64(tablets_num_failed);
 
 using std::string;
 using std::unique_ptr;
@@ -81,15 +92,22 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduUpdate;
 using client::sp::shared_ptr;
+using cluster::ExternalTabletServer;
+using cluster::ExternalMiniClusterOptions;
 using clock::Clock;
 using clock::HybridClock;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
+using fs::BlockManager;
+using itest::ExternalMiniClusterFsInspector;
 using log::AppendNoOpsToLogSync;
 using log::Log;
 using log::LogOptions;
+using strings::Substitute;
+using tablet::TabletMetadata;
+using tablet::TabletSuperBlockPB;
 
 namespace {
 // Generate a row key such that an increasing sequence (0...N) ends up spreading writes
@@ -101,44 +119,141 @@ int IntToKey(int i) {
 } // anonymous namespace
 
 class TsRecoveryITest : public ExternalMiniClusterITestBase,
-                        public ::testing::WithParamInterface<const char*> {
+                        public ::testing::WithParamInterface<string> {
  public:
-  TsRecoveryITest() { extra_tserver_flags_.emplace_back(GetParam()); }
 
  protected:
-  void StartClusterOneTs(const vector<string>& extra_tserver_flags,
-                         const vector<string>& extra_master_flags = {});
+  void StartClusterOneTs(vector<string> extra_tserver_flags = {},
+                         vector<string> extra_master_flags = {});
 
-  vector<string> extra_tserver_flags_ = {};
 };
 
-void TsRecoveryITest::StartClusterOneTs(const vector<string>& extra_tserver_flags,
-                                        const vector<string>& extra_master_flags) {
-  StartCluster(extra_tserver_flags, extra_master_flags, 1 /* replicas */);
+void TsRecoveryITest::StartClusterOneTs(vector<string> extra_tserver_flags,
+                                        vector<string> extra_master_flags) {
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 1;
+  opts.block_manager_type = GetParam();
+  opts.extra_tserver_flags = std::move(extra_tserver_flags);
+  opts.extra_master_flags = std::move(extra_master_flags);
+  StartClusterWithOpts(opts);
 }
 
-#if defined(__APPLE__)
-static const char* kBlockManagerFlags[] = {"--block_manager=file"};
-#else
-static const char* kBlockManagerFlags[] = {"--block_manager=log",
-                                           "--block_manager=file"};
-#endif
+// Test for KUDU-2202 that ensures that blocks not found in the FS layer but
+// that are referenced by a tablet will not be reused.
+TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
+  if (GetParam() != "log") {
+    LOG(INFO) << "Missing blocks is currently only supported by the log "
+                 "block manager. Exiting early!";
+    return;
+  }
+  // Set up a basic server that flushes often so we create blocks quickly.
+  NO_FATALS(StartClusterOneTs({
+    "--flush_threshold_secs=1",
+    "--flush_threshold_mb=1"
+  }));
 
-// Passes block manager types to the recovery test so we get some extra
-// testing to cover non-default block manager types.
-// Note that this could actually be any other flags you want to pass to
-// the cluster startup, as long as they don't conflict with any test
-// specific flags.
-INSTANTIATE_TEST_CASE_P(BlockManagerType,
-                        TsRecoveryITest,
-                        ::testing::ValuesIn(kBlockManagerFlags));
+  // Write to the tserver and wait for some blocks to be written.
+  const auto StartSingleTabletWorkload = [&] (const string& table_name) {
+    TestWorkload* write_workload(new TestWorkload(cluster_.get()));
+    write_workload->set_table_name(table_name);
+    write_workload->set_num_tablets(1);
+    write_workload->set_num_replicas(1);
+    write_workload->Setup();
+    write_workload->Start();
+    return write_workload;
+  };
 
+  unique_ptr<TestWorkload> write_workload(StartSingleTabletWorkload("foo"));
+  unique_ptr<ExternalMiniClusterFsInspector> inspect(
+      new ExternalMiniClusterFsInspector(cluster_.get()));
+  vector<string> tablets = inspect->ListTabletsOnTS(0);
+  ASSERT_EQ(1, tablets.size());
+  const string tablet_id = tablets[0];
+
+  // Get the block ids for a given tablet.
+  const auto BlocksForTablet = [&] (const string& tablet_id,
+                                    vector<BlockId>* live_block_ids,
+                                    vector<BlockId>* orphaned_block_ids = nullptr) {
+    TabletSuperBlockPB superblock_pb;
+    RETURN_NOT_OK(inspect->ReadTabletSuperBlockOnTS(0, tablet_id, &superblock_pb));
+    if (orphaned_block_ids) {
+      orphaned_block_ids->clear();
+      for (const auto& pb : superblock_pb.orphaned_blocks()) {
+        orphaned_block_ids->push_back(BlockId::FromPB(pb));
+      }
+    }
+    live_block_ids->clear();
+    vector<BlockIdPB> block_id_pbs = TabletMetadata::CollectBlockIdPBs(superblock_pb);
+    for (const auto& pb : block_id_pbs) {
+      live_block_ids->push_back(BlockId::FromPB(pb));
+    }
+    return Status::OK();
+  };
+
+  // Wait until we have some live blocks and some orphaned blocks and collect
+  // all of the blocks ids.
+  vector<BlockId> block_ids;
+  vector<BlockId> orphaned_block_ids;
+  ASSERT_EVENTUALLY([&] () {
+    ASSERT_OK(BlocksForTablet(tablet_id, &block_ids, &orphaned_block_ids));
+    ASSERT_TRUE(!block_ids.empty());
+    ASSERT_TRUE(!orphaned_block_ids.empty());
+    block_ids.insert(block_ids.end(), orphaned_block_ids.begin(), orphaned_block_ids.end());
+  });
+  write_workload->StopAndJoin();
+  ExternalTabletServer* ts = cluster_->tablet_server(0);
+  ts->Shutdown();
+
+  // Now empty the data directories of blocks. The server will start up, not
+  // read any blocks, but should still avoid the old tablet's blocks.
+  for (const string& dir : ts->data_dirs()) {
+    const string& data_dir = JoinPathSegments(dir, "data");
+    vector<string> children;
+    ASSERT_OK(env_->GetChildren(data_dir, &children));
+    for (const string& child : children) {
+      if (child != "." && child != ".." && child != fs::kInstanceMetadataFileName) {
+        ASSERT_OK(env_->DeleteFile(JoinPathSegments(data_dir, child)));
+      }
+    }
+  }
+  ASSERT_OK(ts->Restart());
+
+  // Sanity check that the tablet goes into a failed state with its missing blocks.
+  int64_t failed_on_ts = 0;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(itest::GetInt64Metric(ts->bound_http_hostport(),
+        &METRIC_ENTITY_server, nullptr, &METRIC_tablets_num_failed, "value", &failed_on_ts));
+    ASSERT_EQ(1, failed_on_ts);
+  });
+
+  // Create a new tablet and collect its blocks.
+  write_workload.reset(StartSingleTabletWorkload("bar"));
+  tablets = inspect->ListTabletsOnTS(0);
+  ASSERT_EQ(2, tablets.size());
+  const string& new_tablet_id = tablets[0] == tablet_id ? tablets[1] : tablets[0];
+  vector<BlockId> new_block_ids;
+  ASSERT_EVENTUALLY([&] () {
+    ASSERT_OK(BlocksForTablet(new_tablet_id, &new_block_ids));
+    ASSERT_TRUE(!new_block_ids.empty());
+  });
+
+  // Compare the tablets' block IDs and ensure there is no overlap.
+  vector<BlockId> block_id_intersection;
+  std::set_intersection(block_ids.begin(), block_ids.end(),
+                        new_block_ids.begin(), new_block_ids.end(),
+                        std::back_inserter(block_id_intersection));
+  {
+    SCOPED_TRACE(Substitute("First tablet's blocks: $0", BlockId::JoinStrings(block_ids)));
+    SCOPED_TRACE(Substitute("Second tablet's blocks: $0", BlockId::JoinStrings(new_block_ids)));
+    SCOPED_TRACE(Substitute("Intersection: $0", BlockId::JoinStrings(block_id_intersection)));
+    ASSERT_TRUE(block_id_intersection.empty());
+  }
+}
 // Test crashing a server just before appending a COMMIT message.
 // We then restart the server and ensure that all rows successfully
 // inserted before the crash are recovered.
 TEST_P(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
-  // Add the block manager type.
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
+  NO_FATALS(StartClusterOneTs());
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -180,7 +295,7 @@ TEST_P(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 // bootstrap to fail if that message only included errors and no
 // successful operations.
 TEST_P(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
+  NO_FATALS(StartClusterOneTs());
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
                               "fault_crash_before_append_commit", "0.01"));
 
@@ -219,9 +334,7 @@ TEST_P(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
 
 // Test that we replay from the recovery directory, if it exists.
 TEST_P(TsRecoveryITest, TestCrashDuringLogReplay) {
-  vector<string> extra_tserver_flags_with_crash = extra_tserver_flags_;
-  extra_tserver_flags_with_crash.emplace_back("--fault_crash_during_log_replay=0.05");
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_with_crash));
+  NO_FATALS(StartClusterOneTs({ "--fault_crash_during_log_replay=0.05" }));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
@@ -268,9 +381,10 @@ TEST_P(TsRecoveryITest, TestCrashDuringLogReplay) {
 // but before writing its header, the TS would previously crash on restart.
 // Instead, it should ignore the uninitialized segment.
 TEST_P(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
-  extra_tserver_flags_.emplace_back("--log_segment_size_mb=1");
-  extra_tserver_flags_.emplace_back("--log_compression_codec=NO_COMPRESSION");
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
+  NO_FATALS(StartClusterOneTs({
+    "--log_segment_size_mb=1",
+    "--log_compression_codec=NO_COMPRESSION"
+  }));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_write_timeout_millis(1000);
@@ -308,8 +422,7 @@ TEST_P(TsRecoveryITest, TestCrashBeforeWriteLogSegmentHeader) {
 TEST_P(TsRecoveryITest, TestChangeMaxCellSize) {
   // Prevent the master from tombstoning the evicted tablet so we can observe
   // its FAILED state.
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_,
-      { "--master_tombstone_evicted_tablet_replicas=false" }));
+  NO_FATALS(StartClusterOneTs({}, { "--master_tombstone_evicted_tablet_replicas=false" }));
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);
   work.set_payload_bytes(10000);
@@ -362,7 +475,7 @@ TEST_P(TsRecoveryITestDeathTest, TestRecoverFromOpIdOverflow) {
 
   // Create the initial tablet files on disk, then shut down the cluster so we
   // can meddle with the WAL.
-  NO_FATALS(StartClusterOneTs(extra_tserver_flags_));
+  NO_FATALS(StartClusterOneTs());
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup();
@@ -654,5 +767,10 @@ TEST_P(Kudu969Test, Test) {
   v.SetVerificationTimeout(MonoDelta::FromSeconds(30));
   NO_FATALS(v.CheckCluster());
 }
+
+// Passes block manager types to the recovery test so we get some extra
+// testing to cover non-default block manager types.
+INSTANTIATE_TEST_CASE_P(BlockManagerType, TsRecoveryITest,
+    ::testing::ValuesIn(BlockManager::block_manager_types()));
 
 } // namespace kudu

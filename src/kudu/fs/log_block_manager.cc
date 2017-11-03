@@ -1895,6 +1895,10 @@ Status LogBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
   return Status::OK();
 }
 
+void LogBlockManager::NotifyBlockId(BlockId block_id) {
+  next_block_id_.StoreMax(block_id.id() + 1);
+}
+
 void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   DCHECK(lock_.is_locked());
   InsertOrDie(&all_containers_by_name_, container->ToString(), container);

@@ -939,5 +939,11 @@ Status FileBlockManager::GetAllBlockIds(vector<BlockId>* block_ids) {
   return Status::OK();
 }
 
+void FileBlockManager::NotifyBlockId(BlockId /* block_id */) {
+  // Since the FileBlockManager doesn't keep a record of blocks, this does
+  // nothing. This opens it up for block ID reuse if, say, a directory were
+  // removed.
+}
+
 } // namespace fs
 } // namespace kudu

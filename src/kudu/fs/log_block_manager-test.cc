@@ -485,6 +485,38 @@ TEST_F(LogBlockManagerTest, ContainerPreallocationTest) {
   ASSERT_EQ(FLAGS_log_container_preallocate_bytes, size);
 }
 
+// Test for KUDU-2202 to ensure that once the block manager has been notified
+// of a block ID, it will not reuse it.
+TEST_F(LogBlockManagerTest, TestBumpBlockIds) {
+  const int kNumBlocks = 10;
+  vector<BlockId> block_ids;
+  unique_ptr<WritableBlock> writer;
+  for (int i = 0; i < kNumBlocks; i++) {
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    block_ids.push_back(writer->id());
+  }
+  BlockId max_so_far = *std::max_element(block_ids.begin(), block_ids.end());
+
+  // Simulate a complete reset of the block manager's block ID record, e.g.
+  // from restarting but with all the blocks gone.
+  bm_->next_block_id_.Store(1);
+
+  // Now simulate being notified by some other component (e.g. tablet metadata)
+  // of the presence of a block ID.
+  bm_->NotifyBlockId(BlockId(max_so_far));
+
+  // Once notified, new blocks should be assigned higher IDs.
+  ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+  ASSERT_LT(max_so_far, writer->id());
+  max_so_far = writer->id();
+
+  // Notifications of lower or invalid block IDs should not disrupt ordering.
+  bm_->NotifyBlockId(BlockId(1));
+  bm_->NotifyBlockId(BlockId());
+  ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+  ASSERT_LT(max_so_far, writer->id());
+}
+
 // Regression test for KUDU-1190, a crash at startup when a block ID has been
 // reused.
 TEST_F(LogBlockManagerTest, TestReuseBlockIds) {

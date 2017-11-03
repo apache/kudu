@@ -94,6 +94,8 @@ class FileBlockManager : public BlockManager {
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
+  void NotifyBlockId(BlockId block_id) override;
+
   FsErrorManager* error_manager() override { return error_manager_; }
 
  private:

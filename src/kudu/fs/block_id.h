@@ -59,6 +59,10 @@ class BlockId {
     return id_ != other.id_;
   }
 
+  bool operator<(const BlockId& other) const {
+    return id_ < other.id_;
+  }
+
   // Returns the raw ID. Use with care; in most cases the BlockId should be
   // treated as a completely opaque value.
   uint64_t id() const { return id_; }
@@ -86,13 +90,13 @@ struct BlockIdHash {
 
 struct BlockIdCompare {
   bool operator()(const BlockId& first, const BlockId& second) const {
-    return first.id() < second.id();
+    return first < second;
   }
 };
 
 struct BlockIdEqual {
   bool operator()(const BlockId& first, const BlockId& second) const {
-    return first.id() == second.id();
+    return first == second;
   }
 };
 

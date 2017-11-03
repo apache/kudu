@@ -216,7 +216,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
   // calls to do so.
-  Status CreateRowSet(std::shared_ptr<RowSetMetadata> *rowset, const Schema& schema);
+  Status CreateRowSet(std::shared_ptr<RowSetMetadata>* rowset);
 
   const RowSetMetadataVector& rowsets() const { return rowsets_; }
 

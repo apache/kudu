@@ -30,6 +30,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/metadata.pb.h"
 
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -41,16 +42,16 @@ namespace tablet {
 // ============================================================================
 Status RowSetMetadata::Load(TabletMetadata* tablet_metadata,
                             const RowSetDataPB& pb,
-                            gscoped_ptr<RowSetMetadata>* metadata) {
-  gscoped_ptr<RowSetMetadata> ret(new RowSetMetadata(tablet_metadata));
+                            unique_ptr<RowSetMetadata>* metadata) {
+  unique_ptr<RowSetMetadata> ret(new RowSetMetadata(tablet_metadata));
   RETURN_NOT_OK(ret->InitFromPB(pb));
-  metadata->reset(ret.release());
+  *metadata = std::move(ret);
   return Status::OK();
 }
 
 Status RowSetMetadata::CreateNew(TabletMetadata* tablet_metadata,
                                  int64_t id,
-                                 gscoped_ptr<RowSetMetadata>* metadata) {
+                                 unique_ptr<RowSetMetadata>* metadata) {
   metadata->reset(new RowSetMetadata(tablet_metadata, id));
   return Status::OK();
 }

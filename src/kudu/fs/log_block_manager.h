@@ -205,6 +205,8 @@ class LogBlockManager : public BlockManager {
 
   Status GetAllBlockIds(std::vector<BlockId>* block_ids) override;
 
+  void NotifyBlockId(BlockId block_id) override;
+
   FsErrorManager* error_manager() override { return error_manager_; }
 
  private:
@@ -216,6 +218,7 @@ class LogBlockManager : public BlockManager {
   FRIEND_TEST(LogBlockManagerTest, TestLookupBlockLimit);
   FRIEND_TEST(LogBlockManagerTest, TestMetadataTruncation);
   FRIEND_TEST(LogBlockManagerTest, TestParseKernelRelease);
+  FRIEND_TEST(LogBlockManagerTest, TestBumpBlockIds);
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
   FRIEND_TEST(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer);
 

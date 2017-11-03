@@ -260,6 +260,12 @@ class BlockManager {
   // even exist after the call.
   virtual Status GetAllBlockIds(std::vector<BlockId>* block_ids) = 0;
 
+  // Notifies the block manager of the presence of a block id. This allows
+  // block managers that use sequential block ids to avoid reusing
+  // externally-referenced ids that they may not have previously found (e.g.
+  // because those ids' blocks were on a data directory that failed).
+  virtual void NotifyBlockId(BlockId block_id) = 0;
+
   // Exposes the FsErrorManager used to handle fs errors.
   virtual FsErrorManager* error_manager() = 0;
 };

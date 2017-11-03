@@ -338,7 +338,7 @@ Status RollingDiskRowSetWriter::RollWriter() {
   // Close current writer if it is open
   RETURN_NOT_OK(FinishCurrentWriter());
 
-  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_, schema_));
+  RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_));
 
   cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), &schema_, bloom_sizing_));
   RETURN_NOT_OK(cur_writer_->Open());
