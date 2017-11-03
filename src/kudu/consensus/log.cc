@@ -438,7 +438,8 @@ Status Log::Open(const LogOptions &options,
                  scoped_refptr<Log>* log) {
 
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
-  RETURN_NOT_OK(fs_manager->CreateDirIfMissing(tablet_wal_path));
+  RETURN_NOT_OK(env_util::CreateDirIfMissing(
+      fs_manager->env(), tablet_wal_path));
 
   scoped_refptr<Log> new_log(new Log(options,
                                      fs_manager,

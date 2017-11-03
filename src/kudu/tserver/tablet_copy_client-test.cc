@@ -189,7 +189,8 @@ TEST_F(TabletCopyClientTest, TestDownloadBlock) {
 
 // Basic WAL segment download unit test.
 TEST_F(TabletCopyClientTest, TestDownloadWalSegment) {
-  ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
+  ASSERT_OK(env_util::CreateDirIfMissing(
+      env_, fs_manager_->GetTabletWalDir(GetTabletId())));
 
   uint64_t seqno = client_->wal_seqnos_[0];
   string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
@@ -348,7 +349,8 @@ TEST_P(TabletCopyClientAbortTest, TestAbort) {
   ASSERT_EQ(kNumBlocksToCreate + num_blocks_downloaded, new_local_block_ids.size());
 
   // Download a WAL segment.
-  ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
+  ASSERT_OK(env_util::CreateDirIfMissing(
+      env_, fs_manager_->GetTabletWalDir(GetTabletId())));
   uint64_t seqno = client_->wal_seqnos_[0];
   ASSERT_OK(client_->DownloadWAL(seqno));
   string wal_path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);

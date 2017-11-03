@@ -410,7 +410,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
     }
     string root_name = root.path;
     bool created;
-    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root_name, &created),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_name, &created),
                           "Unable to create FSManager root");
     if (created) {
       dirs_to_delete.emplace_back(root_name);
@@ -426,7 +426,7 @@ Status FsManager::CreateInitialFileSystemLayout(boost::optional<string> uuid) {
                                     GetConsensusMetadataDir() };
   for (const string& dir : ancillary_dirs) {
     bool created;
-    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(dir, &created),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, dir, &created),
                           Substitute("Unable to create directory $0", dir));
     if (created) {
       dirs_to_delete.emplace_back(dir);
@@ -490,10 +490,6 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << SecureDebugString(metadata);
   return Status::OK();
-}
-
-Status FsManager::CreateDirIfMissing(const string& path, bool* created) {
-  return env_util::CreateDirIfMissing(env_, path, created);
 }
 
 const string& FsManager::uuid() const {

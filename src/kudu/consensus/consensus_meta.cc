@@ -31,6 +31,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -273,7 +274,8 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
   // Create directories if needed.
   string dir = fs_manager_->GetConsensusMetadataDir();
   bool created_dir = false;
-  RETURN_NOT_OK_PREPEND(fs_manager_->CreateDirIfMissing(dir, &created_dir),
+  RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(
+      fs_manager_->env(), dir, &created_dir),
                         "Unable to create consensus metadata root dir");
   // fsync() parent dir if we had to create the dir.
   if (PREDICT_FALSE(created_dir)) {

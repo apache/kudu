@@ -78,6 +78,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -639,7 +640,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
                             "Could not recursively delete old log dir " + log_dir);
     }
 
-    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->env(), log_dir),
                           "Failed to create log directory " + log_dir);
 
     *needs_recovery = true;
@@ -649,7 +650,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   // If we made it here, there was no pre-existing recovery dir.
   // Now we look for log files in log_dir, and if we find any then we rename
   // the whole log_dir to a recovery dir and return needs_recovery = true.
-  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+  RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(fs_manager->env(), log_dir),
                         "Failed to create log dir");
 
   vector<string> children;

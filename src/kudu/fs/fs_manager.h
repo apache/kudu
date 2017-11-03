@@ -17,7 +17,6 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
@@ -229,8 +228,6 @@ class FsManager {
   Status ListDir(const std::string& path, std::vector<std::string> *objects) const {
     return env_->GetChildren(path, objects);
   }
-
-  Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
 
   fs::DataDirManager* dd_manager() const {
     return dd_manager_.get();
