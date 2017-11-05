@@ -278,7 +278,7 @@ void TabletServerTestBase::DeleteTestRowsRemote(int64_t first_row,
   }
 
   SCOPED_TRACE(SecureDebugString(req));
-  ASSERT_OK(proxy_->Write(req, &resp, &controller));
+  ASSERT_OK(DCHECK_NOTNULL(proxy)->Write(req, &resp, &controller));
   SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_FALSE(resp.has_error()) << SecureShortDebugString(resp);
 }
