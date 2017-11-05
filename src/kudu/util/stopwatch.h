@@ -25,6 +25,7 @@
 #if defined(__APPLE__)
 #include <mach/clock.h>
 #include <mach/mach.h>
+#include <mach/thread_info.h>
 #endif  // defined(__APPLE__)
 
 #include "kudu/gutil/macros.h"
@@ -167,8 +168,8 @@ class Stopwatch {
 
   // Construct a new stopwatch. The stopwatch is initially stopped.
   explicit Stopwatch(Mode mode = THIS_THREAD)
-    : stopped_(true),
-      mode_(mode) {
+      : mode_(mode),
+        stopped_(true) {
     times_.clear();
   }
 
@@ -240,15 +241,17 @@ class Stopwatch {
 
 #if defined(__APPLE__)
     if (mode_ == THIS_THREAD) {
-      //Adapted from http://blog.kuriositaet.de/?p=257.
-      struct task_basic_info t_info;
-      mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
-      CHECK_EQ(KERN_SUCCESS, task_info(mach_task_self(), TASK_THREAD_TIMES_INFO,
-                                       (task_info_t)&t_info, &t_info_count));
+      // Adapted from https://codereview.chromium.org/16818003
+      thread_basic_info_data_t t_info;
+      mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
+      CHECK_EQ(KERN_SUCCESS, thread_info(mach_thread_self(), THREAD_BASIC_INFO,
+                                         (thread_info_t)&t_info, &count));
       usage.ru_utime.tv_sec = t_info.user_time.seconds;
       usage.ru_utime.tv_usec = t_info.user_time.microseconds;
       usage.ru_stime.tv_sec = t_info.system_time.seconds;
       usage.ru_stime.tv_usec = t_info.system_time.microseconds;
+      usage.ru_nivcsw = t_info.suspend_count;
+      usage.ru_nvcsw = 0;
     } else {
       CHECK_EQ(0, getrusage(RUSAGE_SELF, &usage));
     }
@@ -267,10 +270,9 @@ class Stopwatch {
     times->context_switches = usage.ru_nvcsw + usage.ru_nivcsw;
   }
 
+  const Mode mode_;
   bool stopped_;
-
   CpuTimes times_;
-  Mode mode_;
 };
 
 

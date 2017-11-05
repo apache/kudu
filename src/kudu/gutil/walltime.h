@@ -74,7 +74,7 @@ extern void InitializeTimebaseInfo();
 inline void GetCurrentTime(mach_timespec_t* ts) {
   clock_serv_t cclock;
   host_get_clock_service(mach_host_self(), CALENDAR_CLOCK, &cclock);
-  clock_get_time(cclock, ts);
+  CHECK_EQ(KERN_SUCCESS, clock_get_time(cclock, ts));
   mach_port_deallocate(mach_task_self(), cclock);
 }
 
