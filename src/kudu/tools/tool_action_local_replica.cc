@@ -849,27 +849,23 @@ Status DumpRowSet(const RunnerContext& context) {
 
   // If rowset index is provided, only dump that rowset.
   if (FLAGS_rowset_index != -1) {
-    bool found = false;
     for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
       if (rs_meta->id() == FLAGS_rowset_index) {
-        found = true;
         return DumpRowSetInternal(fs_manager.get(), meta->schema(),
                                   rs_meta, 0);
       }
     }
-    if (!found) {
-      return Status::InvalidArgument(
-          Substitute("Could not find rowset $0 in tablet id $1",
-                     FLAGS_rowset_index, tablet_id));
-    }
-  } else {
-    // Rowset index not provided, dump all rowsets
-    size_t idx = 0;
-    for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
-      cout << endl << "Dumping rowset " << idx++ << endl << kSeparatorLine;
-      RETURN_NOT_OK(DumpRowSetInternal(fs_manager.get(), meta->schema(),
-                                       rs_meta, 2));
-    }
+    return Status::InvalidArgument(
+        Substitute("Could not find rowset $0 in tablet id $1",
+                   FLAGS_rowset_index, tablet_id));
+  }
+
+  // Rowset index not provided, dump all rowsets
+  size_t idx = 0;
+  for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
+    cout << endl << "Dumping rowset " << idx++ << endl << kSeparatorLine;
+    RETURN_NOT_OK(DumpRowSetInternal(fs_manager.get(), meta->schema(),
+                                     rs_meta, 2));
   }
   return Status::OK();
 }
