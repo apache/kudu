@@ -83,6 +83,13 @@ simulating a 'schemaless' table using string or binary columns for data which
 may otherwise be structured. In addition to encoding, Kudu allows compression to
 be specified on a per-column basis.
 
+[[no_version_column]]
+[IMPORTANT]
+.No Version or Timestamp Column
+Unlike HBase, Kudu does not provide a version or timestamp column to track changes
+to a row. If version or timestamp information is needed, the schema should include
+an explicit version or timestamp column.
+
 [[encoding]]
 === Column Encoding
 
