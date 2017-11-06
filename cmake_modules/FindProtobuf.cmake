@@ -177,8 +177,7 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS TGTS)
     # This custom target enforces that there's just one invocation of protoc
     # when there are multiple consumers of the generated files. The target name
     # must be unique; adding parts of the filename helps ensure this.
-    set(TGT_NAME ${REL_DIR}${FIL})
-    string(REPLACE "/" "-" TGT_NAME ${TGT_NAME})
+    string(MAKE_C_IDENTIFIER "${REL_DIR}${FIL}" TGT_NAME)
     add_custom_target(${TGT_NAME}
       DEPENDS "${PROTO_CC_OUT}" "${PROTO_H_OUT}")
     list(APPEND ${TGTS} "${TGT_NAME}")

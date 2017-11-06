@@ -123,8 +123,7 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
     # This custom target enforces that there's just one invocation of thrift
     # when there are multiple consumers of the generated files. The target name
     # must be unique; adding parts of the filename helps ensure this.
-    set(TGT_NAME "${ARG_BINARY_ROOT}/${FIL}")
-    string(REPLACE "/" "-" TGT_NAME ${TGT_NAME})
+    string(MAKE_C_IDENTIFIER "${ARG_BINARY_ROOT}${FIL}" TGT_NAME)
     add_custom_target(${TGT_NAME}
       DEPENDS "${THRIFT_CC_OUT}" "${THRIFT_H_OUT}")
     list(APPEND ${TGTS} "${TGT_NAME}")
