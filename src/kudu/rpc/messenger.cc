@@ -567,7 +567,7 @@ void Messenger::ScheduleOnReactor(const boost::function<void(const Status&)>& fu
 const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_name) const {
   scoped_refptr<RpcService> service;
   {
-    std::lock_guard<percpu_rwlock> guard(lock_);
+    shared_lock<rw_spinlock> guard(lock_.get_lock());
     if (!FindCopy(rpc_services_, service_name, &service)) {
       return scoped_refptr<RpcService>(nullptr);
     }
