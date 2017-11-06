@@ -385,7 +385,7 @@ string ReasonString(RaftConsensus::ElectionReason reason, StringPiece leader_uui
 } // anonymous namespace
 
 Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
-  const char* mode_str = ModeString(mode);
+  const char* const mode_str = ModeString(mode);
 
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
                "peer", LogPrefixThreadSafe(),
@@ -398,7 +398,8 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
 
     RaftPeerPB::Role active_role = cmeta_->active_role();
     if (active_role == RaftPeerPB::LEADER) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting " << mode << " -- already leader";
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << Substitute(
+          "Not starting $0 -- already a leader", mode_str);
       return Status::OK();
     }
     if (PREDICT_FALSE(!consensus::IsVoterRole(active_role))) {

@@ -33,6 +33,8 @@
 
 namespace kudu {
 
+class MonoDelta;
+
 namespace client {
 class KuduClient;
 class KuduTable;
@@ -130,6 +132,14 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Tablet servers that have been manually Shutdown() are allowed.
   void AssertNoTabletServersCrashed();
 
+  // Find the tablet leader replica and wait for at least one operation
+  // committed in current term. This is useful when finding a leader replica
+  // to commence a Raft configuration change. Otherwise, any Raft configuration
+  // change attempt ends up with error:
+  // 'Illegal state: Leader has not yet committed an operation in its own term'.
+  Status WaitForLeaderWithCommittedOp(const std::string& tablet_id,
+                                      const MonoDelta& timeout,
+                                      itest::TServerDetails** leader);
  protected:
   gscoped_ptr<cluster::ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;

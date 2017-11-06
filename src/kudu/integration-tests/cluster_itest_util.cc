@@ -1071,7 +1071,6 @@ Status BeginTabletCopySession(const TServerDetails* ts,
   return Status::OK();
 }
 
-
 Status GetInt64Metric(const HostPort& http_hp,
                       const MetricEntityPrototype* entity_proto,
                       const char* entity_id,
