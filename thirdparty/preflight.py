@@ -40,6 +40,7 @@ REQUIRED_TOOLS = [
   "autoconf",
   "automake",
   "curl",
+  "flex",
   "git",
   "make",
   "patch",
