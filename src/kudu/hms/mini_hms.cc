@@ -43,6 +43,8 @@ using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
+static constexpr int kHmsStartTimeoutMs = 60000;
+
 namespace kudu {
 namespace hms {
 
@@ -73,7 +75,7 @@ Status FindHomeDir(const char* name, const string& bin_dir, string* home_dir) {
 } // anonymous namespace
 
 Status MiniHms::Start() {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, 20000, "Starting HMS");
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kHmsStartTimeoutMs / 2, "Starting HMS");
   CHECK(!hms_process_);
 
   VLOG(1) << "Starting HMS";
@@ -118,7 +120,8 @@ Status MiniHms::Start() {
 
   // Wait for HMS to start listening on its ports and commencing operation.
   VLOG(1) << "Waiting for HMS ports";
-  return WaitForTcpBind(hms_process_->pid(), &port_, MonoDelta::FromSeconds(20));
+  return WaitForTcpBind(hms_process_->pid(), &port_,
+                        MonoDelta::FromMilliseconds(kHmsStartTimeoutMs));
 }
 
 Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
