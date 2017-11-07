@@ -41,7 +41,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-DECLARE_bool(inject_adjtimex_errors);
+DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(time_source);
 
 namespace kudu {
@@ -310,7 +310,6 @@ TEST_F(HybridClockTest, TestGetPhysicalComponentDifference) {
   ASSERT_EQ(-100, negative_delta.ToMicroseconds());
 }
 
-
 TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   Timestamp timestamps[3];
   uint64_t max_error_usec[3];
@@ -321,7 +320,7 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   // Try to read the clock again a second later, but with an error
   // injected. It should extrapolate from the first read.
   SleepFor(MonoDelta::FromSeconds(1));
-  FLAGS_inject_adjtimex_errors = true;
+  FLAGS_inject_unsync_time_errors = true;
   clock_->NowWithError(&timestamps[1], &max_error_usec[1]);
 
   // The new clock reading should be a second or longer from the
@@ -339,13 +338,12 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
 
   // Now restore the ability to read the system clock, and
   // read it again.
-  FLAGS_inject_adjtimex_errors = false;
+  FLAGS_inject_unsync_time_errors = false;
   clock_->NowWithError(&timestamps[2], &max_error_usec[2]);
 
   ASSERT_LT(timestamps[0].ToUint64(), timestamps[1].ToUint64());
   ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
 }
-
 
 }  // namespace clock
 }  // namespace kudu
