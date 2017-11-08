@@ -123,17 +123,21 @@ endif()
 ############################################################
 
 # compiler flags that are common across debug/release builds
-#  - msse4.2: Enable sse4.2 compiler intrinsics.
+#  -msse4.2: Enable sse4.2 compiler intrinsics.
 set(CXX_COMMON_FLAGS "-msse4.2")
-#  - Wall: Enable all warnings.
+#  -Wall: Enable all warnings.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wall")
-#  - Wno-sign-compare: suppress warnings for comparison between signed and unsigned
-#    integers
+#  -Wno-sign-compare: suppress warnings for comparison between signed and unsigned
+#     integers
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
+#  -Wno-comment: suppress warnings about backslash-newline in "//" comments,
+#     which appear in the Kudu source code due to the use of ASCII art and
+#     multi-line command line examples in comments.
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-comment")
 #  -Wno-deprecated: we currently have a number of places using deprecated functions
 #     (mostly our own functions). TODO(todd) remove or individually suppress call sites.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated")
-#  - pthread: enable multithreaded malloc
+#  -pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing
 #     Assume programs do not follow strict aliasing rules.
