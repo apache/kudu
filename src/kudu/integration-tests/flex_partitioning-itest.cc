@@ -329,7 +329,7 @@ Status FlexPartitioningITest::InsertRows(const RangePartitionOptions& range_part
     range_partition.bounds.empty() ? kDefaultBounds : range_partition.bounds;
 
   shared_ptr<KuduSession> session(client_->NewSession());
-  session->SetTimeoutMillis(10000);
+  session->SetTimeoutMillis(60000);
   RETURN_NOT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
 
   int count = 0;
