@@ -53,7 +53,8 @@ def run_tidy(sha="HEAD", is_rev_range=False):
         [CLANG_TIDY_DIFF,
          "-clang-tidy-binary", CLANG_TIDY,
          "-p0",
-         "--"] + compile_flags.get_flags(),
+         "--",
+         "-DCLANG_TIDY"] + compile_flags.get_flags(),
         stdin=file(patch_file.name))
 
 

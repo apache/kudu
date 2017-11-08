@@ -101,6 +101,23 @@ namespace kudu {
   kudu::sw_internal::LogTiming VARNAME_LINENUM(_log_timing)(__FILE__, __LINE__, \
       google::INFO, "", description, -1, VLOG_IS_ON(vlog_level));
 
+
+// Workaround for the clang analyzer being confused by the above loop-based macros.
+// The analyzer thinks the macros might loop more than once, and thus generates
+// false positives. So, for its purposes, just make them empty.
+#if defined(CLANG_TIDY) || defined(__clang_analyzer__)
+
+#undef LOG_TIMING_PREFIX_IF
+#define LOG_TIMING_PREFIX_IF(severity, condition, prefix, description)
+
+#undef VLOG_TIMING
+#define VLOG_TIMING(vlog_level, description)
+
+#undef LOG_SLOW_EXECUTION
+#define LOG_SLOW_EXECUTION(severity, max_expected_millis, description)
+#endif
+
+
 #define NANOS_PER_SECOND 1000000000.0
 #define NANOS_PER_MILLISECOND 1000000.0
 
