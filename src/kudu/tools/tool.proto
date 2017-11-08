@@ -76,7 +76,7 @@ enum DaemonType {
 
 // Identifier for a cluster daemon, unique to the cluster.
 message DaemonIdentifierPB {
-  // Whether the daemon is amaster, tserver, or whatever.
+  // Whether the daemon is a master, tserver, or whatever.
   optional DaemonType type = 1;
 
   // Index of the daemon in the cluster, if the cluster has multiple daemons

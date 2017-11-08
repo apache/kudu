@@ -177,7 +177,7 @@ class LeaderMasterProxy {
 class ControlShellProtocol {
  public:
   enum class SerializationMode {
-    // Each message is serialized as a four byte little-endian size followed by
+    // Each message is serialized as a four byte big-endian size followed by
     // the protobuf-encoded message itself.
     PB,
 

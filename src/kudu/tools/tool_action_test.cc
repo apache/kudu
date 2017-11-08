@@ -48,7 +48,7 @@
 DEFINE_string(serialization, "json", "Serialization method to be used by the "
               "control shell. Valid values are 'json' (protobuf serialized "
               "into JSON and terminated with a newline character) or 'pb' "
-              "(four byte protobuf message length in little endian followed by "
+              "(four byte protobuf message length in big endian followed by "
               "the protobuf message itself).");
 DEFINE_validator(serialization, [](const char* /*n*/, const std::string& v) {
   return boost::iequals(v, "pb") ||
