@@ -24,7 +24,6 @@ import json
 import logging
 import os
 import re
-import requests
 import subprocess
 import sys
 import unittest
@@ -112,6 +111,7 @@ def get_gerrit_revision_url(git_ref):
 
 
 def post_comments(revision_url_base, gerrit_json_obj):
+    import requests
     r = requests.post(revision_url_base + "/review",
                       auth=(GERRIT_USER, GERRIT_PASSWORD),
                       data=json.dumps(gerrit_json_obj),
