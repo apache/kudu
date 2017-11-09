@@ -98,8 +98,7 @@ Status MiniHms::Start() {
   RETURN_NOT_OK(CreateHiveSite(tmp_dir));
 
   // Comma-separated list of additional jars to add to the HMS classpath.
-  string aux_jars = Substitute("$0/hcatalog/share/hcatalog,$1/hms-plugin.jar",
-                               hive_home, bin_dir);
+  string aux_jars = Substitute("$0/hms-plugin.jar", bin_dir);
   map<string, string> env_vars {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
@@ -120,8 +119,12 @@ Status MiniHms::Start() {
 
   // Wait for HMS to start listening on its ports and commencing operation.
   VLOG(1) << "Waiting for HMS ports";
-  return WaitForTcpBind(hms_process_->pid(), &port_,
-                        MonoDelta::FromMilliseconds(kHmsStartTimeoutMs));
+  Status wait = WaitForTcpBind(hms_process_->pid(), &port_,
+                               MonoDelta::FromMilliseconds(kHmsStartTimeoutMs));
+  if (!wait.ok()) {
+    WARN_NOT_OK(hms_process_->Kill(SIGQUIT), "failed to send SIGQUIT to HMS");
+  }
+  return wait;
 }
 
 Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
@@ -163,7 +166,6 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
     <name>hive.metastore.event.db.listener.timetolive</name>
     <value>$0s</value>
   </property>
-
 </configuration>
   )";
 
