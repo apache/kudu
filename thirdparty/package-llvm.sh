@@ -37,7 +37,7 @@
 # Usage:
 #  $ env VERSION=4.0.0 thirdparty/package-llvm.sh
 
-set -ex
+set -eux
 
 for ARTIFACT in llvm cfe compiler-rt libcxx libcxxabi lld clang-tools-extra; do
   wget http://releases.llvm.org/$VERSION/$ARTIFACT-$VERSION.src.tar.xz

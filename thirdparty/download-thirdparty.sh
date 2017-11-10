@@ -360,7 +360,7 @@ fi
 
 HIVE_PATCHLEVEL=0
 if [ ! -d "$HIVE_SOURCE" ]; then
-  fetch_and_expand $HIVE_NAME.tar.gz
+  fetch_and_expand $HIVE_NAME-stripped.tar.gz
   pushd $HIVE_SOURCE
   touch patchlevel-$HIVE_PATCHLEVEL
   popd
@@ -368,7 +368,7 @@ fi
 
 HADOOP_PATCHLEVEL=0
 if [ ! -d "$HADOOP_SOURCE" ]; then
-  fetch_and_expand $HADOOP_NAME.tar.gz
+  fetch_and_expand $HADOOP_NAME-stripped.tar.gz
   pushd $HADOOP_SOURCE
   touch patchlevel-$HADOOP_PATCHLEVEL
   popd
