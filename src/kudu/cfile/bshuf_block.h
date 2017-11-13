@@ -265,6 +265,7 @@ class BShufBlockDecoder final : public BlockDecoder {
       case 2:
       case 4:
       case 8:
+      case 16:
         break;
       default:
         return Status::Corruption(strings::Substitute("invalid size_of_elem: $0", size_of_elem_));

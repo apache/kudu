@@ -274,6 +274,10 @@ class TypeEncodingResolver {
     AddMapping<BINARY, PREFIX_ENCODING>();
     AddMapping<BOOL, RLE>();
     AddMapping<BOOL, PLAIN_ENCODING>();
+    AddMapping<INT128, BIT_SHUFFLE>();
+    AddMapping<INT128, PLAIN_ENCODING>();
+    // TODO: Add 128 bit support to RLE
+    // AddMapping<INT128, RLE>();
   }
 
   template<DataType type, EncodingType encoding> void AddMapping() {

@@ -69,3 +69,4 @@ ADD_EXPORTABLE_LIBRARY(gutil
   COMPILE_FLAGS "-funsigned-char -Wno-char-subscripts")
 
 add_kudu_test(strings/string_util-test)
+add_kudu_test(strings/numbers-test)

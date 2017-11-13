@@ -182,11 +182,13 @@ DECL_SIGNED_INT_LIMITS(signed short int, unsigned short int)
 DECL_SIGNED_INT_LIMITS(signed int, unsigned int)
 DECL_SIGNED_INT_LIMITS(signed long int, unsigned long int)
 DECL_SIGNED_INT_LIMITS(signed long long int, unsigned long long int)
+DECL_SIGNED_INT_LIMITS(signed __int128, unsigned __int128)
 DECL_UNSIGNED_INT_LIMITS(unsigned char)
 DECL_UNSIGNED_INT_LIMITS(unsigned short int)
 DECL_UNSIGNED_INT_LIMITS(unsigned int)
 DECL_UNSIGNED_INT_LIMITS(unsigned long int)
 DECL_UNSIGNED_INT_LIMITS(unsigned long long int)
+DECL_UNSIGNED_INT_LIMITS(unsigned __int128)
 
 #undef DECL_SIGNED_INT_LIMITS
 #undef DECL_UNSIGNED_INT_LIMITS

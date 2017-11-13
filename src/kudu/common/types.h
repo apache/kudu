@@ -35,6 +35,7 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 // IWYU pragma: no_include "kudu/util/status.h"
@@ -324,6 +325,30 @@ struct DataTypeTraits<INT64> {
 };
 
 template<>
+struct DataTypeTraits<INT128> {
+  static const DataType physical_type = INT128;
+  typedef int128_t cpp_type;
+  static const char *name() {
+    return "int128";
+  }
+  static void AppendDebugStringForValue(const void *val, std::string *str) {
+    str->append(SimpleItoa(*reinterpret_cast<const int128_t *>(val)));
+  }
+  static int Compare(const void *lhs, const void *rhs) {
+    return GenericCompare<INT128>(lhs, rhs);
+  }
+  static bool AreConsecutive(const void* a, const void* b) {
+    return AreIntegersConsecutive<INT128>(a, b);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
+  static const cpp_type* max_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
+};
+
+template<>
 struct DataTypeTraits<FLOAT> {
   static const DataType physical_type = FLOAT;
   typedef float cpp_type;
@@ -578,6 +603,9 @@ class Variant {
       case UINT64:
         numeric_.u64 = *static_cast<const uint64_t *>(value);
         break;
+      case INT128:
+        numeric_.i128 = *static_cast<const int128_t *>(value);
+        break;
       case FLOAT:
         numeric_.float_val = *static_cast<const float *>(value);
         break;
@@ -641,6 +669,7 @@ class Variant {
       case INT32:        return &(numeric_.i32);
       case UINT32:       return &(numeric_.u32);
       case INT64:        return &(numeric_.i64);
+      case INT128:       return &(numeric_.i128);
       case UNIXTIME_MICROS:    return &(numeric_.i64);
       case UINT64:       return &(numeric_.u64);
       case FLOAT:        return (&numeric_.float_val);
@@ -682,6 +711,7 @@ class Variant {
     uint32_t u32;
     int64_t  i64;
     uint64_t u64;
+    int128_t i128;
     float    float_val;
     double   double_val;
   };

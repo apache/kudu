@@ -54,6 +54,11 @@ inline uint64 gbswap_64(uint64 host_int) {
 #endif  // bswap_64
 }
 
+inline unsigned __int128 gbswap_128(unsigned __int128 host_int) {
+  return static_cast<unsigned __int128>(bswap_64(static_cast<uint64>(host_int >> 64))) |
+         (static_cast<unsigned __int128>(bswap_64(static_cast<uint64>(host_int))) << 64);
+}
+
 #ifdef IS_LITTLE_ENDIAN
 
 // Definitions for ntohl etc. that don't require us to include
@@ -108,6 +113,9 @@ class LittleEndian {
 
   static uint64 FromHost64(uint64 x) { return x; }
   static uint64 ToHost64(uint64 x) { return x; }
+
+  static unsigned __int128 FromHost128(unsigned __int128 x) { return x; }
+  static unsigned __int128 ToHost128(unsigned __int128 x) { return x; }
 
   static bool IsLittleEndian() { return true; }
 
@@ -240,6 +248,9 @@ class BigEndian {
   static uint64 FromHost64(uint64 x) { return gbswap_64(x); }
   static uint64 ToHost64(uint64 x) { return gbswap_64(x); }
 
+  static unsigned __int128 FromHost128(unsigned __int128 x) { return gbswap_128(x); }
+  static unsigned __int128 ToHost128(unsigned __int128 x) { return gbswap_128(x); }
+
   static bool IsLittleEndian() { return true; }
 
 #elif defined IS_BIG_ENDIAN
@@ -252,6 +263,9 @@ class BigEndian {
 
   static uint64 FromHost64(uint64 x) { return x; }
   static uint64 ToHost64(uint64 x) { return x; }
+
+  static uint128 FromHost128(uint128 x) { return x; }
+  static uint128 ToHost128(uint128 x) { return x; }
 
   static bool IsLittleEndian() { return false; }
 

@@ -877,6 +877,8 @@ TYPED_TEST(IntEncodingTest, TestSeekAllTypes) {
   this->template DoIntSeekTest<INT32>(10000, 1000, true);
   this->template DoIntSeekTest<UINT64>(10000, 1000, true);
   this->template DoIntSeekTest<INT64>(10000, 1000, true);
+  // TODO: Uncomment when adding 128 bit support to RLE
+  // this->template DoIntSeekTest<INT128>();
 }
 
 TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
@@ -888,6 +890,8 @@ TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
   this->template DoIntSeekTestTinyBlock<INT32>();
   this->template DoIntSeekTestTinyBlock<UINT64>();
   this->template DoIntSeekTestTinyBlock<INT64>();
+  // TODO: Uncomment when adding 128 bit support to RLE
+  // this->template DoIntSeekTestTinyBlock<INT128>();
 }
 
 TYPED_TEST(IntEncodingTest, TestRoundTrip) {
@@ -899,6 +903,8 @@ TYPED_TEST(IntEncodingTest, TestRoundTrip) {
   this->template DoIntRoundTripTest<INT32>();
   this->template DoIntRoundTripTest<UINT64>();
   this->template DoIntRoundTripTest<INT64>();
+  // TODO: Uncomment when adding 128 bit support to RLE
+  // this->template DoIntRoundTripTest<INT128>();
 }
 
 #ifdef NDEBUG

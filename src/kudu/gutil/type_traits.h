@@ -128,6 +128,8 @@ template<> struct is_integral<unsigned long> : true_type { };
 template<> struct is_integral<long long> : true_type { };
 template<> struct is_integral<unsigned long long> : true_type { };
 #endif
+template<> struct is_integral<__int128> : true_type { };
+template<> struct is_integral<unsigned __int128> : true_type { };
 template <class T> struct is_integral<const T> : is_integral<T> { };
 template <class T> struct is_integral<volatile T> : is_integral<T> { };
 template <class T> struct is_integral<const volatile T> : is_integral<T> { };

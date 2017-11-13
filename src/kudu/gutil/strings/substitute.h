@@ -113,6 +113,12 @@ class SubstituteArg {
   inline SubstituteArg(unsigned long long value)  // NOLINT(runtime/explicit)
     : text_(scratch_),
       size_(FastUInt64ToBufferLeft(value, scratch_) - scratch_) {}
+  inline SubstituteArg(__int128 value)  // NOLINT(runtime/explicit)
+      : text_(scratch_),
+        size_(FastInt64ToBufferLeft(value, scratch_) - scratch_) {}
+  inline SubstituteArg(unsigned __int128 value)  // NOLINT(runtime/explicit)
+      : text_(scratch_),
+        size_(FastUInt64ToBufferLeft(value, scratch_) - scratch_) {}
   inline SubstituteArg(float value)  // NOLINT(runtime/explicit)
     : text_(FloatToBuffer(value, scratch_)), size_(strlen(text_)) {}
   inline SubstituteArg(double value)  // NOLINT(runtime/explicit)

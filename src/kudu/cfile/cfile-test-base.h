@@ -31,6 +31,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
@@ -224,6 +225,16 @@ class Int64DataGenerator : public DataGenerator<INT64, HAS_NULLS> {
   Int64DataGenerator() {}
   int64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
     int64_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
+    return value % 2 == 0 ? r : -r;
+  }
+};
+
+template<bool HAS_NULLS>
+class Int128DataGenerator : public DataGenerator<INT128, HAS_NULLS> {
+public:
+  Int128DataGenerator() {}
+  int128_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
+    int128_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
     return value % 2 == 0 ? r : -r;
   }
 };
@@ -508,6 +519,11 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
     case INT64:
     {
       TimeReadFileForDataType<INT64, uint64_t>(iter, count);
+      break;
+    }
+    case INT128:
+    {
+      TimeReadFileForDataType<INT128, int128_t>(iter, count);
       break;
     }
     case FLOAT:

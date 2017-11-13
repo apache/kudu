@@ -50,6 +50,7 @@ enum DataType {
   DOUBLE = 11;
   BINARY = 12;
   UNIXTIME_MICROS = 13;
+  INT128 = 14;
 }
 
 enum EncodingType {

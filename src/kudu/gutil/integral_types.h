@@ -29,6 +29,7 @@ typedef __int64             int64;
 #else
 typedef int64_t             int64;
 #endif /* _MSC_VER */
+typedef __int128            int128;
 
 // NOTE: unsigned types are DANGEROUS in loops and other arithmetical
 // places.  Use the signed types unless your variable represents a bit
