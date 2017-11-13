@@ -54,6 +54,7 @@
 #define KUDU_UTIL_KERNEL_STACK_WATCHDOG_H
 
 #include <ctime>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -164,14 +165,27 @@ class KernelStackWatchdog {
   ~KernelStackWatchdog();
 
   // Get or create the TLS for the current thread.
-  static TLS* GetTLS();
+  static TLS* GetTLS() {
+    if (PREDICT_FALSE(!tls_)) {
+      CreateAndRegisterTLS();
+    }
+    return tls_;
+  }
+
+  // Create a new TLS for the current thread, and register it with the watchdog.
+  // Installs a callback to automatically unregister the thread upon its exit.
+  static void CreateAndRegisterTLS();
+
+  // Callback which is registered to run at thread-exit time by CreateAndRegisterTLS().
+  static void ThreadExiting(void* tls_void);
 
   // Register a new thread's TLS with the watchdog.
   // Called by any thread the first time it enters a watched section, when its TLS
   // is constructed.
   void Register(TLS* tls);
 
-  // Called when a thread's TLS is destructed (i.e. when the thread exits).
+  // Called when a thread is in the process of exiting, and has a registered TLS
+  // object.
   void Unregister();
 
   // The actual watchdog loop that the watchdog thread runs.
@@ -182,6 +196,11 @@ class KernelStackWatchdog {
   typedef std::unordered_map<pid_t, TLS*> TLSMap;
   TLSMap tls_by_tid_;
 
+  // If a thread exits while the watchdog is in the middle of accessing the TLS
+  // objects, we can't immediately delete the TLS struct. Instead, the thread
+  // enqueues it here for later deletion by the watchdog thread within RunThread().
+  std::vector<std::unique_ptr<TLS>> pending_delete_;
+
   // If non-NULL, warnings will be emitted into this vector instead of glog.
   // Used by tests.
   gscoped_ptr<std::vector<std::string> > log_collector_;
@@ -189,7 +208,7 @@ class KernelStackWatchdog {
   // Lock protecting log_collector_.
   mutable simple_spinlock log_lock_;
 
-  // Lock protecting tls_by_tid_.
+  // Lock protecting tls_by_tid_ and pending_delete_.
   mutable simple_spinlock tls_lock_;
 
   // Lock which prevents threads from unregistering while the watchdog

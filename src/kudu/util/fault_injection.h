@@ -17,6 +17,8 @@
 #ifndef KUDU_UTIL_FAULT_INJECTION_H
 #define KUDU_UTIL_FAULT_INJECTION_H
 
+#include <stdint.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
@@ -43,6 +45,10 @@
 #define MAYBE_INJECT_RANDOM_LATENCY(max_ms_flag) \
   kudu::fault_injection::MaybeInjectRandomLatency(max_ms_flag)
 
+// Inject a specific amount of latency.
+#define MAYBE_INJECT_FIXED_LATENCY(ms_flag) \
+  kudu::fault_injection::MaybeInjectFixedLatency(ms_flag)
+
 // With some probability, return the status described by 'status_expr'.
 // This will not evaluate 'status_expr' if 'fraction_flag' is zero.
 #define MAYBE_RETURN_FAILURE(fraction_flag, status_expr) \
@@ -63,6 +69,7 @@ constexpr int kExitStatus = 85;
 // Out-of-line implementation.
 void DoMaybeFault(const char* fault_str, double fraction);
 void DoInjectRandomLatency(double max_latency_ms);
+void DoInjectFixedLatency(int32_t latency_ms);
 bool DoMaybeTrue(double fraction);
 
 inline bool MaybeTrue(double fraction) {
@@ -79,6 +86,12 @@ inline void MaybeInjectRandomLatency(double max_latency) {
   if (PREDICT_TRUE(max_latency <= 0)) return;
   DoInjectRandomLatency(max_latency);
 }
+
+inline void MaybeInjectFixedLatency(int32_t latency) {
+  if (PREDICT_TRUE(latency <= 0)) return;
+  DoInjectFixedLatency(latency);
+}
+
 
 } // namespace fault_injection
 } // namespace kudu

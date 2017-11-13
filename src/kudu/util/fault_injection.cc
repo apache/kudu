@@ -65,6 +65,10 @@ void DoInjectRandomLatency(double max_latency_ms) {
   SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_latency_ms));
 }
 
+void DoInjectFixedLatency(int32_t latency_ms) {
+  SleepFor(MonoDelta::FromMilliseconds(latency_ms));
+}
+
 bool DoMaybeTrue(double fraction) {
   GoogleOnceInit(&g_random_once, InitRandom);
   return PREDICT_FALSE(g_random->NextDoubleFraction() <= fraction);
