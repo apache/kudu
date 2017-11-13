@@ -184,10 +184,6 @@ class HybridClock : public Clock {
   // For testing purposes only.
   uint64_t mock_clock_max_error_usec_;
 
-#if !defined(__APPLE__)
-  uint64_t divisor_;
-#endif
-
   double tolerance_adjustment_;
 
   mutable simple_spinlock lock_;
@@ -203,7 +199,7 @@ class HybridClock : public Clock {
   // Mask to extract the pure logical bits.
   static const uint64_t kLogicalBitMask;
 
-  static const uint64_t kNanosPerSec;
+  static const uint64_t kMicrosPerSec;
 
   // The scaling factor used to obtain ppms. From the adjtimex source:
   // "scale factor used by adjtimex freq param.  1 ppm = 65536"

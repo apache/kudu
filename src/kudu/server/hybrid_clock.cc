@@ -70,30 +70,17 @@ namespace server {
 namespace {
 
 #if !defined(__APPLE__)
-// Returns the clock modes and checks if the clock is synchronized.
-Status GetClockModes(timex* timex) {
-  // this makes ntp_adjtime a read-only call
-  timex->modes = 0;
-  int rc = ntp_adjtime(timex);
-  if (PREDICT_FALSE(rc == TIME_ERROR)) {
-    return Status::ServiceUnavailable(
-        Substitute("Error reading clock. Clock considered unsynchronized. Return code: $0", rc));
-  }
-  // TODO what to do about leap seconds? see KUDU-146
-  if (PREDICT_FALSE(rc != TIME_OK)) {
-    LOG(ERROR) << Substitute("TODO Server undergoing leap second. Return code: $0", rc);
-  }
-  return Status::OK();
-}
 
 // Returns the current time/max error and checks if the clock is synchronized.
-kudu::Status GetClockTime(ntptimeval* timeval) {
-  int rc = ntp_gettime(timeval);
+Status CallAdjTime(timex* tx) {
+  // Set mode to 0 to query the current time.
+  tx->modes = 0;
+  int rc = ntp_adjtime(tx);
   switch (rc) {
     case TIME_OK:
       return Status::OK();
     case -1: // generic error
-      return Status::ServiceUnavailable("Error reading clock. ntp_gettime() failed",
+      return Status::ServiceUnavailable("Error reading clock. ntp_adjtime() failed",
                                         ErrnoToString(errno));
     case TIME_ERROR:
       return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
@@ -128,16 +115,13 @@ const int HybridClock::kBitsToShift = 12;
 // This mask gives us back the logical bits.
 const uint64_t HybridClock::kLogicalBitMask = (1 << kBitsToShift) - 1;
 
-const uint64_t HybridClock::kNanosPerSec = 1000000;
+const uint64_t HybridClock::kMicrosPerSec = 1000000;
 
 const double HybridClock::kAdjtimexScalingFactor = 65536;
 
 HybridClock::HybridClock()
     : mock_clock_time_usec_(0),
       mock_clock_max_error_usec_(0),
-#if !defined(__APPLE__)
-      divisor_(1),
-#endif
       tolerance_adjustment_(1),
       next_timestamp_(0),
       state_(kNotInitialized) {
@@ -153,30 +137,16 @@ Status HybridClock::Init() {
   LOG(WARNING) << "HybridClock initialized in local mode (OS X only). "
                << "Not suitable for distributed clusters.";
 #else
-  // Read the current time. This will return an error if the clock is not synchronized.
-  uint64_t now_usec;
-  uint64_t error_usec;
-  RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
-
   timex timex;
-  RETURN_NOT_OK(GetClockModes(&timex));
-  // read whether the STA_NANO bit is set to know whether we'll get back nanos
-  // or micros in timeval.time.tv_usec. See:
-  // http://stackoverflow.com/questions/16063408/does-ntp-gettime-actually-return-nanosecond-precision
-  // set the timeval.time.tv_usec divisor so that we always get micros
-  if (timex.status & STA_NANO) {
-    divisor_ = 1000;
-  } else {
-    divisor_ = 1;
-  }
+  RETURN_NOT_OK(CallAdjTime(&timex));
 
   // Calculate the sleep skew adjustment according to the max tolerance of the clock.
   // Tolerance comes in parts per million but needs to be applied a scaling factor.
   tolerance_adjustment_ = (1 + ((timex.tolerance / kAdjtimexScalingFactor) / 1000000.0));
 
-  LOG(INFO) << "HybridClock initialized. Resolution in nanos?: " << (divisor_ == 1000)
+  LOG(INFO) << "HybridClock initialized. "
             << " Wait times tolerance adjustment: " << tolerance_adjustment_
-            << " Current error: " << error_usec;
+            << " Current error: " << timex.maxerror << "us";
 #endif // defined(__APPLE__)
 
   state_ = kInitialized;
@@ -398,13 +368,19 @@ kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_
 #if defined(__APPLE__)
     *now_usec = GetCurrentTimeMicros();
     *error_usec = 0;
-  }
 #else
     // Read the time. This will return an error if the clock is not synchronized.
-    ntptimeval timeval;
-    RETURN_NOT_OK(GetClockTime(&timeval));
-    *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
-    *error_usec = timeval.maxerror;
+    timex tx;
+    RETURN_NOT_OK(CallAdjTime(&tx));
+
+    if (tx.status & STA_NANO) {
+      tx.time.tv_usec /= 1000;
+    }
+    DCHECK_LE(tx.time.tv_usec, 1e6);
+
+    *now_usec = tx.time.tv_sec * kMicrosPerSec + tx.time.tv_usec;
+    *error_usec = tx.maxerror;
+#endif // defined(__APPLE__)
   }
 
   // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec
@@ -413,8 +389,8 @@ kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_
     return Status::ServiceUnavailable(Substitute("Error: Clock synchronized but error was"
         "too high ($0 us).", *error_usec));
   }
-#endif // defined(__APPLE__)
-  return kudu::Status::OK();
+
+return kudu::Status::OK();
 }
 
 void HybridClock::SetMockClockWallTimeForTests(uint64_t now_usec) {
