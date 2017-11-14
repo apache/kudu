@@ -366,41 +366,41 @@ class WebserverNegativeTests : public KuduTest {
 };
 
 TEST_F(WebserverNegativeTests, BadCertFile) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->certificate_file = "/dev/null";
     });
 }
 
 TEST_F(WebserverNegativeTests, BadKeyFile) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_file = "/dev/null";
     });
 }
 
 TEST_F(WebserverNegativeTests, WrongPassword) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_password_cmd = "echo wrong_pass";
     });
 }
 
 TEST_F(WebserverNegativeTests, BadPasswordCommand) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       SetSslOptions(opts);
       opts->private_key_password_cmd = "/bin/false";
     });
 }
 
 TEST_F(WebserverNegativeTests, BadAdvertisedAddresses) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       opts->webserver_advertised_addresses = ";;;;;";
     });
 }
 
 TEST_F(WebserverNegativeTests, BadAdvertisedAddressesZeroPort) {
-  ExpectFailedStartup([this](WebserverOptions* opts) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
       opts->webserver_advertised_addresses = "localhost:0";
     });
 }

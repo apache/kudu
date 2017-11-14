@@ -4643,7 +4643,7 @@ enum BinaryEncoding {
 };
 
 class BinaryEncodingNullPredicatesTest : public ClientTest,
-                                         public ::testing::WithParamInterface<IntEncoding> {
+                                         public ::testing::WithParamInterface<BinaryEncoding> {
 };
 
 TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
@@ -4652,7 +4652,7 @@ TEST_P(BinaryEncodingNullPredicatesTest, TestBinaryEncodings) {
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   auto string_col = b.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
-  IntEncoding enc = GetParam();
+  BinaryEncoding enc = GetParam();
   switch (enc) {
     case kPlainBin:
       string_col->Encoding(KuduColumnStorageAttributes::PLAIN_ENCODING);

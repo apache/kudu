@@ -259,14 +259,14 @@ static void CheckGaugeMetric(const scoped_refptr<MetricEntity>& entity,
                              int expected_value, const MetricPrototype* prototype) {
   AtomicGauge<uint64_t>* gauge = down_cast<AtomicGauge<uint64_t>*>(
       entity->FindOrNull(*prototype).get());
-  DCHECK_NOTNULL(gauge);
+  DCHECK(gauge);
   ASSERT_EQ(expected_value, gauge->value());
 }
 
 static void CheckCounterMetric(const scoped_refptr<MetricEntity>& entity,
                                int expected_value, const MetricPrototype* prototype) {
   Counter* counter = down_cast<Counter*>(entity->FindOrNull(*prototype).get());
-  DCHECK_NOTNULL(counter);
+  DCHECK(counter);
   ASSERT_EQ(expected_value, counter->value());
 }
 
