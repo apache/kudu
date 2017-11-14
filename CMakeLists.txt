@@ -334,6 +334,10 @@ if (${KUDU_USE_ASAN})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
 endif()
 
+if (${KUDU_USE_XRAY})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fxray-instrument")
+endif()
+
 # For any C code, use the same flags.
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
