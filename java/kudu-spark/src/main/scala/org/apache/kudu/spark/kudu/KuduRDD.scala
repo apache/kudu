@@ -61,7 +61,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
     val client: KuduClient = kuduContext.syncClient
     val partition: KuduPartition = part.asInstanceOf[KuduPartition]
     val scanner = KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner)
+    new RowIterator(scanner, kuduContext)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -79,8 +79,10 @@ private class KuduPartition(val index: Int,
 /**
   * A Spark SQL [[Row]] iterator which wraps a [[KuduScanner]].
   * @param scanner the wrapped scanner
+  * @param kuduContext the kudu context
   */
-private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row] {
+private class RowIterator(private val scanner: KuduScanner,
+                          private val kuduContext: KuduContext) extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = null
 
@@ -91,6 +93,9 @@ private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row
         throw new RuntimeException("Kudu task interrupted")
       }
       currentIterator = scanner.nextRows()
+      // Update timestampAccumulator with the client's last propagated
+      // timestamp on each executor.
+      kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
     }
     currentIterator.hasNext
   }

@@ -195,7 +195,6 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     val df = sqlContext.read.options(kuduOptions).kudu.select( "c2_s", "c1_i", "key")
     val collected = df.collect()
     assert(collected(0).getString(0).equals("0"))
-
   }
 
   test("table non fault tolerant scan") {
@@ -495,6 +494,45 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     intercept[IllegalArgumentException] {
       sqlContext.read.options(kuduOptions).schema(userSchema).kudu
     }.getMessage should include ("Unknown column: foo")
+  }
 
+  // Verify that the propagated timestamp is properly updated inside
+  // the same client.
+  test("timestamp propagation") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val insertDF = df.limit(1)
+                      .withColumn("key", df("key")
+                      .plus(100))
+                      .withColumn("c2_s", lit("abc"))
+
+    // Initiate a write via KuduContext, and verify that the client should
+    // have propagated timestamp.
+    kuduContext.insertRows(insertDF, tableName)
+    assert(kuduContext.syncClient.getLastPropagatedTimestamp > 0)
+    var prevTimestamp = kuduContext.syncClient.getLastPropagatedTimestamp
+
+    // Initiate a read via DataFrame, and verify that the client should
+    // move the propagated timestamp further.
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collected = newDF.filter("key = 100").collect()
+    assertEquals("abc", collected(0).getAs[String]("c2_s"))
+    assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
+    prevTimestamp = kuduContext.syncClient.getLastPropagatedTimestamp
+
+    // Initiate a read via KuduContext, and verify that the client should
+    // move the propagated timestamp further.
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, tableName, List("key"))
+    assert(rdd.collect.length == 11)
+    assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
+    prevTimestamp = kuduContext.syncClient.getLastPropagatedTimestamp
+
+    // Initiate another write via KuduContext, and verify that the client should
+    // move the propagated timestamp further.
+    val updateDF = df.limit(1)
+                     .withColumn("key", df("key")
+                     .plus(100))
+                     .withColumn("c2_s", lit("def"))
+    kuduContext.insertIgnoreRows(updateDF, tableName)
+    assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
   }
 }

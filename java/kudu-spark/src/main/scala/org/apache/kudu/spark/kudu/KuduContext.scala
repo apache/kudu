@@ -30,6 +30,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.util.AccumulatorV2
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -48,6 +49,45 @@ import org.apache.kudu.{ColumnSchema, Schema, Type}
 @InterfaceStability.Unstable
 class KuduContext(val kuduMaster: String,
                   sc: SparkContext) extends Serializable {
+
+  /**
+    * TimestampAccumulator accumulates the maximum value of client's
+    * propagated timestamp of all executors and can only read by the
+    * driver.
+    */
+  private[kudu] class TimestampAccumulator(var timestamp: Long = 0L)
+      extends AccumulatorV2[Long, Long] {
+    override def isZero: Boolean = {
+      timestamp == 0
+    }
+
+    override def copy(): AccumulatorV2[Long, Long] = {
+      new TimestampAccumulator(timestamp)
+    }
+
+    override def reset(): Unit = {
+      timestamp = 0L
+    }
+
+    override def add(v: Long): Unit = {
+      timestamp = timestamp.max(v)
+    }
+
+    override def merge(other: AccumulatorV2[Long, Long]): Unit = {
+      timestamp = timestamp.max(other.value)
+
+      // Since for every write/scan operation, each executor holds its own copy of
+      // client. We need to update the propagated timestamp on the driver based on
+      // the latest propagated timestamp from all executors through TimestampAccumulator.
+      syncClient.updateLastPropagatedTimestamp(timestampAccumulator.value)
+    }
+
+    override def value: Long = timestamp
+  }
+
+  val timestampAccumulator = new TimestampAccumulator()
+  sc.register(timestampAccumulator)
+
   import kudu.KuduContext._
 
   @Deprecated()
@@ -200,8 +240,11 @@ class KuduContext(val kuduMaster: String,
 
   private[kudu] def writeRows(data: DataFrame, tableName: String, operation: OperationType) {
     val schema = data.schema
+    // Get the client's last propagated timestamp on the driver.
+    val lastPropagatedTimestamp = syncClient.getLastPropagatedTimestamp
     data.foreachPartition(iterator => {
-      val pendingErrors = writePartitionRows(iterator, schema, tableName, operation)
+      val pendingErrors = writePartitionRows(iterator, schema, tableName, operation,
+                                             lastPropagatedTimestamp)
       val errorCount = pendingErrors.getRowErrors.length
       if (errorCount > 0) {
         val errors = pendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
@@ -214,7 +257,11 @@ class KuduContext(val kuduMaster: String,
   private def writePartitionRows(rows: Iterator[Row],
                                  schema: StructType,
                                  tableName: String,
-                                 operationType: OperationType): RowErrorsAndOverflowStatus = {
+                                 operationType: OperationType,
+                                 lastPropagatedTimestamp: Long): RowErrorsAndOverflowStatus = {
+    // Since each executor has its own KuduClient, update executor's propagated timestamp
+    // based on the last one on the driver.
+    syncClient.updateLastPropagatedTimestamp(lastPropagatedTimestamp)
     val table: KuduTable = syncClient.openTable(tableName)
     val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.map({ case (field, sparkIdx) =>
       sparkIdx -> table.getSchema.getColumnIndex(field.name)
@@ -246,6 +293,9 @@ class KuduContext(val kuduMaster: String,
       }
     } finally {
       session.close()
+      // Update timestampAccumulator with the client's last propagated
+      // timestamp on each executor.
+      timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
     }
     session.getPendingErrors
   }
