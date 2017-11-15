@@ -76,12 +76,12 @@ class ExternalMiniClusterTest : public KuduTest,
                                 public testing::WithParamInterface<pair<Kerberos, HiveMetastore>> {
 };
 
-// TODO(dan): Add ENABLED/ENABLED when the mini HMS supports Kerberos.
 INSTANTIATE_TEST_CASE_P(KerberosOnAndOff,
                         ExternalMiniClusterTest,
                         testing::Values(make_pair(Kerberos::DISABLED, HiveMetastore::DISABLED),
                                         make_pair(Kerberos::ENABLED, HiveMetastore::DISABLED),
-                                        make_pair(Kerberos::DISABLED, HiveMetastore::ENABLED)));
+                                        make_pair(Kerberos::DISABLED, HiveMetastore::ENABLED),
+                                        make_pair(Kerberos::ENABLED, HiveMetastore::ENABLED)));
 
 void SmokeTestKerberizedCluster(ExternalMiniClusterOptions opts) {
   ASSERT_TRUE(opts.enable_kerberos);
@@ -190,6 +190,17 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   ASSERT_EQ(ts_rpc.ToString(), ts->bound_rpc_hostport().ToString());
   ASSERT_EQ(ts_http.ToString(), ts->bound_http_hostport().ToString());
 
+  // Verify that the HMS is reachable.
+  if (opts.enable_hive_metastore) {
+    hms::HmsClientOptions hms_client_opts;
+    hms_client_opts.enable_kerberos = opts.enable_kerberos;
+    hms::HmsClient hms_client(cluster.hms()->address(), hms_client_opts);
+    ASSERT_OK(hms_client.Start());
+    vector<string> tables;
+    ASSERT_OK(hms_client.GetAllTables("default", &tables));
+    ASSERT_TRUE(tables.empty()) << "tables: " << tables;
+  }
+
   // Verify that, in a Kerberized cluster, if we drop our Kerberos environment,
   // we can't make RPCs to a server.
   if (opts.enable_kerberos) {
@@ -202,16 +213,6 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
                         "but client does not have Kerberos credentials available");
   }
 
-  // Verify that the HMS is reachable.
-  if (opts.enable_hive_metastore) {
-    hms::HmsClient hms_client(cluster.hms()->address(), hms::HmsClientOptions());
-    ASSERT_OK(hms_client.Start());
-    vector<string> tables;
-    ASSERT_OK(hms_client.GetAllTables("default", &tables));
-    ASSERT_TRUE(tables.empty()) << "tables: " << tables;
-  }
-
-  // Test that if we inject a fault into a tablet server's boot process
   // ExternalTabletServer::Restart() still returns OK, even if the tablet server crashed.
   ts->Shutdown();
   ts->mutable_flags()->push_back("--fault_before_start=1.0");

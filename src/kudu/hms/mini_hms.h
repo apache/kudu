@@ -24,6 +24,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/rpc/sasl_common.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -44,6 +45,12 @@ class MiniHms {
     CHECK(hms_process_);
     notification_log_ttl_ = ttl;
   }
+
+  // Configures the mini HMS to use Kerberos.
+  void EnableKerberos(std::string krb5_conf,
+                      std::string service_principal,
+                      std::string keytab_file,
+                      rpc::SaslProtection::Type protection);
 
   // Starts the mini Hive metastore.
   //
@@ -71,12 +78,21 @@ class MiniHms {
   // Creates a hive-site.xml for the mini HMS.
   Status CreateHiveSite(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
 
+  // Creates a core-site.xml for the mini HMS.
+  Status CreateCoreSite(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
+
   // Waits for the metastore process to bind to a port.
   Status WaitForHmsPorts() WARN_UNUSED_RESULT;
 
   std::unique_ptr<Subprocess> hms_process_;
   MonoDelta notification_log_ttl_ = MonoDelta::FromSeconds(86400);
   uint16_t port_ = 0;
+
+  // Kerberos configuration
+  std::string krb5_conf_;
+  std::string service_principal_;
+  std::string keytab_file_;
+  rpc::SaslProtection::Type protection_ = rpc::SaslProtection::kAuthentication;
 };
 
 } // namespace hms

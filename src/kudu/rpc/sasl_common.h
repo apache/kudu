@@ -19,13 +19,15 @@
 #define KUDU_RPC_SASL_COMMON_H
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <string>
 #include <set>
+#include <string>
 
 #include <sasl/sasl.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -37,7 +39,7 @@ namespace rpc {
 // Constants
 extern const char* const kSaslMechPlain;
 extern const char* const kSaslMechGSSAPI;
-extern const size_t kSaslMaxOutBufLen;
+extern const size_t kSaslMaxBufSize;
 
 struct SaslMechanism {
   enum Type {
@@ -46,6 +48,18 @@ struct SaslMechanism {
     GSSAPI
   };
   static Type value_of(const std::string& mech);
+  static const char* name_of(Type val);
+};
+
+struct SaslProtection {
+  enum Type {
+    // SASL authentication without integrity or privacy.
+    kAuthentication = 0,
+    // Integrity protection, i.e. messages are HMAC'd.
+    kIntegrity = 1,
+    // Privacy protection, i.e. messages are encrypted.
+    kPrivacy = 2,
+  };
   static const char* name_of(Type val);
 };
 
@@ -93,19 +107,38 @@ std::set<SaslMechanism::Type> SaslListAvailableMechs();
 // context: An object to pass to the callback as the context pointer, or NULL.
 sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context);
 
-// Require integrity protection on the SASL connection. Should be called before
-// initiating the SASL negotiation.
-Status EnableIntegrityProtection(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
+// Enable SASL integrity and privacy protection on the connection. Also allows
+// setting the minimum required protection level, and the maximum receive buffer
+// size.
+Status EnableProtection(sasl_conn_t* sasl_conn,
+                        SaslProtection::Type minimum_protection = SaslProtection::kAuthentication,
+                        size_t max_recv_buf_size = kSaslMaxBufSize) WARN_UNUSED_RESULT;
 
-// Encode the provided data and append it to 'encoded'.
+// Returns true if the SASL connection has been negotiated with auth-int or
+// auth-conf. 'sasl_conn' must already be negotiated.
+bool NeedsWrap(sasl_conn_t* sasl_conn);
+
+// Retrieves the negotiated maximum send buffer size for auth-int or auth-conf
+// protected channels.
+uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn) WARN_UNUSED_RESULT;
+
+// Encode the provided data.
+//
+// The plaintext data must not be longer than the negotiated maximum buffer size.
+//
+// The output 'ciphertext' slice is only valid until the next use of the SASL connection.
 Status SaslEncode(sasl_conn_t* conn,
-                  const std::string& plaintext,
-                  std::string* encoded) WARN_UNUSED_RESULT;
+                  Slice plaintext,
+                  Slice* ciphertext) WARN_UNUSED_RESULT;
 
-// Decode the provided SASL-encoded data and append it to 'plaintext'.
+// Decode the provided SASL-encoded data.
+//
+// The decoded plaintext must not be longer than the negotiated maximum buffer size.
+//
+// The output 'plaintext' slice is only valid until the next use of the SASL connection.
 Status SaslDecode(sasl_conn_t* conn,
-                  const std::string& encoded,
-                  std::string* plaintext) WARN_UNUSED_RESULT;
+                  Slice ciphertext,
+                  Slice* plaintext) WARN_UNUSED_RESULT;
 
 // Deleter for sasl_conn_t instances, for use with gscoped_ptr after calling sasl_*_new()
 struct SaslDeleter {

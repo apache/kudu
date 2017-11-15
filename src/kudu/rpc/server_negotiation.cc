@@ -789,7 +789,7 @@ Status ServerNegotiation::HandleSaslInitiate(const NegotiatePB& request) {
   // integrity protection so that the channel bindings and nonce can be
   // verified.
   if (negotiated_mech_ == SaslMechanism::GSSAPI) {
-    RETURN_NOT_OK(EnableIntegrityProtection(sasl_conn_.get()));
+    RETURN_NOT_OK(EnableProtection(sasl_conn_.get(), SaslProtection::kIntegrity));
   }
 
   const char* server_out = nullptr;
@@ -884,9 +884,12 @@ Status ServerNegotiation::SendSaslSuccess() {
 
       string plaintext_channel_bindings;
       RETURN_NOT_OK(cert.GetServerEndPointChannelBindings(&plaintext_channel_bindings));
+
+      Slice ciphertext;
       RETURN_NOT_OK(SaslEncode(sasl_conn_.get(),
                                plaintext_channel_bindings,
-                               response.mutable_channel_bindings()));
+                               &ciphertext));
+      *response.mutable_channel_bindings() = ciphertext.ToString();
     }
   }
 
@@ -919,7 +922,7 @@ Status ServerNegotiation::RecvConnectionContext(faststring* recv_buf) {
       return Status::NotAuthorized("ConnectionContextPB wrapped nonce missing");
     }
 
-    string decoded_nonce;
+    Slice decoded_nonce;
     s = SaslDecode(sasl_conn_.get(), conn_context.encoded_nonce(), &decoded_nonce);
     if (!s.ok()) {
       return Status::NotAuthorized("failed to decode nonce", s.message());

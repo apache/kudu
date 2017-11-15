@@ -52,6 +52,9 @@ struct HmsClientOptions {
 
   // Thrift socket connect timeout.
   MonoDelta conn_timeout = MonoDelta::FromSeconds(60);
+
+  // Whether to use SASL Kerberos authentication when connecting to the HMS.
+  bool enable_kerberos = false;
 };
 
 // A client for the Hive MetaStore.
@@ -76,8 +79,6 @@ struct HmsClientOptions {
 // handling connection retries, because the higher-level construct which is
 // handling HA deployments will naturally want to retry across HMS instances as
 // opposed to retrying repeatedly on a single instance.
-//
-// TODO(dan): this client does not yet handle Kerberized HMS deployments.
 class HmsClient {
  public:
 
@@ -159,6 +160,16 @@ class HmsClient {
   Status GetNotificationEvents(int64_t last_event_id,
                                int32_t max_events,
                                std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
+
+  // Adds partitions to an HMS table.
+  Status AddPartitions(const std::string& database_name,
+                       const std::string& table_name,
+                       std::vector<hive::Partition> partitions) WARN_UNUSED_RESULT;
+
+  // Retrieves the partitions of an HMS table.
+  Status GetPartitions(const std::string& database_name,
+                       const std::string& table_name,
+                       std::vector<hive::Partition>* partitions) WARN_UNUSED_RESULT;
 
   // Deserializes a JSON encoded table.
   //

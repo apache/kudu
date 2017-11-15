@@ -37,9 +37,21 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
 #include "kudu/hms/hive_metastore_constants.h"
+#include "kudu/hms/sasl_client_transport.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+
+// Default to 100 MiB to match Thrift TSaslTransport.receiveSaslMessage and the
+// HMS metastore.server.max.message.size config.
+DEFINE_int32(hms_client_max_buf_size, 100 * 1024 * 1024,
+             "Maximum size of Hive MetaStore objects that can be received by the "
+             "HMS client in bytes.");
+TAG_FLAG(hms_client_max_buf_size, experimental);
+// Note: despite being marked as a runtime flag, the new buf size value will
+// only take effect for new HMS clients.
+TAG_FLAG(hms_client_max_buf_size, runtime);
 
 using apache::thrift::TException;
 using apache::thrift::protocol::TBinaryProtocol;
@@ -47,6 +59,7 @@ using apache::thrift::protocol::TJSONProtocol;
 using apache::thrift::transport::TBufferedTransport;
 using apache::thrift::transport::TMemoryBuffer;
 using apache::thrift::transport::TSocket;
+using apache::thrift::transport::TTransport;
 using apache::thrift::transport::TTransportException;
 using std::make_shared;
 using std::shared_ptr;
@@ -76,6 +89,8 @@ namespace hms {
     return Status::IllegalState((msg), e.what()); \
   } catch (const hive::MetaException& e) { \
     return Status::RemoteError((msg), e.what()); \
+  } catch (const SaslException& e) { \
+    return e.status().CloneAndPrepend((msg)); \
   } catch (const TTransportException& e) { \
     switch (e.getType()) { \
       case TTransportException::TIMED_OUT: return Status::TimedOut((msg), e.what()); \
@@ -85,6 +100,8 @@ namespace hms {
     } \
   } catch (const TException& e) { \
     return Status::IOError((msg), e.what()); \
+  } catch (const std::exception& e) { \
+    return Status::RuntimeError((msg), e.what()); \
   }
 
 const char* const HmsClient::kKuduTableIdKey = "kudu.table_id";
@@ -122,7 +139,16 @@ HmsClient::HmsClient(const HostPort& hms_address, const HmsClientOptions& option
   socket->setSendTimeout(options.send_timeout.ToMilliseconds());
   socket->setRecvTimeout(options.recv_timeout.ToMilliseconds());
   socket->setConnTimeout(options.conn_timeout.ToMilliseconds());
-  auto transport = make_shared<TBufferedTransport>(std::move(socket));
+  shared_ptr<TTransport> transport;
+
+  if (options.enable_kerberos) {
+    transport = make_shared<SaslClientTransport>(hms_address.host(),
+                                                 std::move(socket),
+                                                 FLAGS_hms_client_max_buf_size);
+  } else {
+    transport = make_shared<TBufferedTransport>(std::move(socket));
+  }
+
   auto protocol = make_shared<TBinaryProtocol>(std::move(transport));
   client_ = hive::ThriftHiveMetastoreClient(std::move(protocol));
 }
@@ -266,6 +292,32 @@ Status HmsClient::GetNotificationEvents(int64_t last_event_id,
   events->swap(response.events);
   return Status::OK();
 }
+
+Status HmsClient::AddPartitions(const string& database_name,
+                                const string& table_name,
+                                vector<hive::Partition> partitions) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "add HMS table partitions");
+  hive::AddPartitionsRequest request;
+  hive::AddPartitionsResult response;
+
+  request.dbName = database_name;
+  request.tblName = table_name;
+  request.parts = std::move(partitions);
+
+  HMS_RET_NOT_OK(client_.add_partitions_req(response, request),
+                 "failed to add Hive MetaStore table partitions");
+  return Status::OK();
+}
+
+Status HmsClient::GetPartitions(const string& database_name,
+                                const string& table_name,
+                                vector<hive::Partition>* partitions) {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "get HMS table partitions");
+  HMS_RET_NOT_OK(client_.get_partitions(*partitions, database_name, table_name, -1),
+                 "failed to get Hive Metastore table partitions");
+  return Status::OK();
+}
+
 
 Status HmsClient::DeserializeJsonTable(Slice json, hive::Table* table)  {
   shared_ptr<TMemoryBuffer> membuffer(new TMemoryBuffer(json.size()));

@@ -44,6 +44,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/sasl_common.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
@@ -185,6 +186,16 @@ Status ExternalMiniCluster::Start() {
 
   if (opts_.enable_hive_metastore) {
     hms_.reset(new hms::MiniHms());
+
+    if (opts_.enable_kerberos) {
+      string spn = "hive/127.0.0.1";
+      string ktpath;
+      RETURN_NOT_OK_PREPEND(kdc_->CreateServiceKeytab(spn, &ktpath),
+                            "could not create keytab");
+      hms_->EnableKerberos(kdc_->GetEnvVars()["KRB5_CONFIG"], spn, ktpath,
+                           rpc::SaslProtection::kAuthentication);
+    }
+
     RETURN_NOT_OK_PREPEND(hms_->Start(),
                           "Failed to start the Hive Metastore");
   }

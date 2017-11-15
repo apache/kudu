@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/sasl_common.h"
 
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -46,7 +45,7 @@ namespace rpc {
 
 const char* const kSaslMechPlain = "PLAIN";
 const char* const kSaslMechGSSAPI = "GSSAPI";
-extern const size_t kSaslMaxOutBufLen = 1024;
+extern const size_t kSaslMaxBufSize = 1024;
 
 // See WrapSaslCall().
 static __thread string* g_auth_failure_capture = nullptr;
@@ -351,45 +350,44 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
   }
 }
 
-Status SaslEncode(sasl_conn_t* conn, const std::string& plaintext, std::string* encoded) {
-  size_t offset = 0;
+bool NeedsWrap(sasl_conn_t* sasl_conn) {
+  const unsigned* ssf;
+  int rc = sasl_getprop(sasl_conn, SASL_SSF, reinterpret_cast<const void**>(&ssf));
+  CHECK_EQ(rc, SASL_OK) << "Failed to get SSF property on authenticated SASL connection";
+  return *ssf != 0;
+}
 
-  // The SASL library can only encode up to a maximum amount at a time, so we
-  // have to call encode multiple times if our input is larger than this max.
-  while (offset < plaintext.size()) {
-    const char* out;
-    unsigned out_len;
-    size_t len = std::min(kSaslMaxOutBufLen, plaintext.size() - offset);
+uint32_t GetMaxSendBufferSize(sasl_conn_t* sasl_conn) {
+  const unsigned* max_buf_size;
+  int rc = sasl_getprop(sasl_conn, SASL_MAXOUTBUF, reinterpret_cast<const void**>(&max_buf_size));
+  CHECK_EQ(rc, SASL_OK)
+      << "Failed to get max output buffer property on authenticated SASL connection";
+  return *max_buf_size;
+}
 
-    RETURN_NOT_OK(WrapSaslCall(conn, [&]() {
-        return sasl_encode(conn, plaintext.data() + offset, len, &out, &out_len);
-    }));
-
-    encoded->append(out, out_len);
-    offset += len;
-  }
-
+Status SaslEncode(sasl_conn_t* conn, Slice plaintext, Slice* ciphertext) {
+  const char* out;
+  unsigned out_len;
+  RETURN_NOT_OK_PREPEND(WrapSaslCall(conn, [&] {
+      return sasl_encode(conn,
+                         reinterpret_cast<const char*>(plaintext.data()),
+                         plaintext.size(),
+                         &out, &out_len);
+  }), "SASL encode failed");
+  *ciphertext = Slice(out, out_len);
   return Status::OK();
 }
 
-Status SaslDecode(sasl_conn_t* conn, const string& encoded, string* plaintext) {
-  size_t offset = 0;
-
-  // The SASL library can only decode up to a maximum amount at a time, so we
-  // have to call decode multiple times if our input is larger than this max.
-  while (offset < encoded.size()) {
-    const char* out;
-    unsigned out_len;
-    size_t len = std::min(kSaslMaxOutBufLen, encoded.size() - offset);
-
-    RETURN_NOT_OK(WrapSaslCall(conn, [&]() {
-        return sasl_decode(conn, encoded.data() + offset, len, &out, &out_len);
-    }));
-
-    plaintext->append(out, out_len);
-    offset += len;
-  }
-
+Status SaslDecode(sasl_conn_t* conn, Slice ciphertext, Slice* plaintext) {
+  const char* out;
+  unsigned out_len;
+  RETURN_NOT_OK_PREPEND(WrapSaslCall(conn, [&] {
+    return sasl_decode(conn,
+                       reinterpret_cast<const char*>(ciphertext.data()),
+                       ciphertext.size(),
+                       &out, &out_len);
+  }), "SASL decode failed");
+  *plaintext = Slice(out, out_len);
   return Status::OK();
 }
 
@@ -425,14 +423,16 @@ sasl_callback_t SaslBuildCallback(int id, int (*proc)(void), void* context) {
   return callback;
 }
 
-Status EnableIntegrityProtection(sasl_conn_t* sasl_conn) {
+Status EnableProtection(sasl_conn_t* sasl_conn,
+                        SaslProtection::Type minimum_protection,
+                        size_t max_recv_buf_size) {
   sasl_security_properties_t sec_props;
   memset(&sec_props, 0, sizeof(sec_props));
-  sec_props.min_ssf = 1;
+  sec_props.min_ssf = minimum_protection;
   sec_props.max_ssf = std::numeric_limits<sasl_ssf_t>::max();
-  sec_props.maxbufsize = kSaslMaxOutBufLen;
+  sec_props.maxbufsize = max_recv_buf_size;
 
-  RETURN_NOT_OK_PREPEND(WrapSaslCall(sasl_conn, [&] () {
+  RETURN_NOT_OK_PREPEND(WrapSaslCall(sasl_conn, [&] {
     return sasl_setprop(sasl_conn, SASL_SEC_PROPS, &sec_props);
   }), "failed to set SASL security properties");
   return Status::OK();
@@ -455,6 +455,15 @@ const char* SaslMechanism::name_of(SaslMechanism::Type val) {
     default:
       return "INVALID";
   }
+}
+
+const char* SaslProtection::name_of(SaslProtection::Type val) {
+  switch (val) {
+    case SaslProtection::kAuthentication: return "authentication";
+    case SaslProtection::kIntegrity: return "integrity";
+    case SaslProtection::kPrivacy: return "privacy";
+  }
+  LOG(FATAL) << "unknown SASL protection type: " << val;
 }
 
 } // namespace rpc

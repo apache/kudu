@@ -596,7 +596,7 @@ Status ClientNegotiation::SendSaslInitiate() {
   // integrity protection so that the channel bindings and nonce can be
   // verified.
   if (negotiated_mech_ == SaslMechanism::GSSAPI) {
-    RETURN_NOT_OK(EnableIntegrityProtection(sasl_conn_.get()));
+    RETURN_NOT_OK(EnableProtection(sasl_conn_.get(), SaslProtection::kIntegrity));
   }
 
   NegotiatePB msg;
@@ -662,7 +662,7 @@ Status ClientNegotiation::HandleSaslSuccess(const NegotiatePB& response) {
       RETURN_NOT_OK_PREPEND(cert.GetServerEndPointChannelBindings(&expected_channel_bindings),
                             "failed to generate channel bindings");
 
-      string received_channel_bindings;
+      Slice received_channel_bindings;
       RETURN_NOT_OK_PREPEND(SaslDecode(sasl_conn_.get(),
                                        response.channel_bindings(),
                                        &received_channel_bindings),
@@ -704,7 +704,9 @@ Status ClientNegotiation::SendConnectionContext() {
 
   if (nonce_) {
     // Reply with the SASL-protected nonce. We only set the nonce when using SASL GSSAPI.
-    RETURN_NOT_OK(SaslEncode(sasl_conn_.get(), *nonce_, conn_context.mutable_encoded_nonce()));
+    Slice ciphertext;
+    RETURN_NOT_OK(SaslEncode(sasl_conn_.get(), *nonce_, &ciphertext));
+    *conn_context.mutable_encoded_nonce() = ciphertext.ToString();
   }
 
   return SendFramedMessageBlocking(socket(), header, conn_context, deadline_);

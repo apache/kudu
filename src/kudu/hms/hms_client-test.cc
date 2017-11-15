@@ -22,12 +22,15 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
 #include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/mini_hms.h"
+#include "kudu/rpc/sasl_common.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -36,6 +39,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using boost::optional;
+using kudu::rpc::SaslProtection;
 using std::make_pair;
 using std::string;
 using std::vector;
@@ -43,7 +48,8 @@ using std::vector;
 namespace kudu {
 namespace hms {
 
-class HmsClientTest : public KuduTest {
+class HmsClientTest : public KuduTest,
+                      public ::testing::WithParamInterface<optional<SaslProtection::Type>> {
  public:
 
   Status CreateTable(HmsClient* client,
@@ -75,11 +81,47 @@ class HmsClientTest : public KuduTest {
   }
 };
 
-TEST_F(HmsClientTest, TestHmsOperations) {
+INSTANTIATE_TEST_CASE_P(ProtectionTypes,
+                        HmsClientTest,
+                        ::testing::Values(boost::none
+                                        , SaslProtection::kIntegrity
+// On macos, krb5 has issues repeatedly spinning up new KDCs ('unable to reach
+// any KDC in realm KRBTEST.COM, tried 1 KDC'). Integrity protection gives us
+// good coverage, so we disable the other variants.
+#ifndef __APPLE__
+                                        , SaslProtection::kAuthentication
+                                        , SaslProtection::kPrivacy
+#endif
+                                          ));
+
+TEST_P(HmsClientTest, TestHmsOperations) {
+  optional<SaslProtection::Type> protection = GetParam();
+  MiniKdc kdc;
   MiniHms hms;
+  HmsClientOptions hms_client_opts;
+
+  if (protection) {
+    ASSERT_OK(kdc.Start());
+
+    string spn = "hive/127.0.0.1";
+    string ktpath;
+    ASSERT_OK(kdc.CreateServiceKeytab(spn, &ktpath));
+
+    ASSERT_OK(rpc::SaslInit());
+    hms.EnableKerberos(kdc.GetEnvVars()["KRB5_CONFIG"],
+                       spn,
+                       ktpath,
+                       *protection);
+
+    ASSERT_OK(kdc.CreateUserPrincipal("alice"));
+    ASSERT_OK(kdc.Kinit("alice"));
+    ASSERT_OK(kdc.SetKrb5Environment());
+    hms_client_opts.enable_kerberos = true;
+  }
+
   ASSERT_OK(hms.Start());
 
-  HmsClient client(hms.address(), HmsClientOptions());
+  HmsClient client(hms.address(), hms_client_opts);
   ASSERT_OK(client.Start());
 
   // Create a database.
@@ -198,6 +240,77 @@ TEST_F(HmsClientTest, TestHmsOperations) {
   ASSERT_EQ(1, events.size()) << "events: " << events;
   EXPECT_EQ("ALTER_TABLE", events[0].eventType);
   ASSERT_OK(client.Stop());
+}
+
+TEST_P(HmsClientTest, TestLargeObjects) {
+  optional<SaslProtection::Type> protection = GetParam();
+
+  MiniKdc kdc;
+  MiniHms hms;
+  HmsClientOptions hms_client_opts;
+
+  if (protection) {
+    ASSERT_OK(kdc.Start());
+
+    string spn = "hive/127.0.0.1";
+    string ktpath;
+    ASSERT_OK(kdc.CreateServiceKeytab(spn, &ktpath));
+
+    ASSERT_OK(rpc::SaslInit());
+    hms.EnableKerberos(kdc.GetEnvVars()["KRB5_CONFIG"],
+                       spn,
+                       ktpath,
+                       *protection);
+
+    ASSERT_OK(kdc.CreateUserPrincipal("alice"));
+    ASSERT_OK(kdc.Kinit("alice"));
+    ASSERT_OK(kdc.SetKrb5Environment());
+    hms_client_opts.enable_kerberos = true;
+  }
+
+  ASSERT_OK(hms.Start());
+
+  HmsClient client(hms.address(), hms_client_opts);
+  ASSERT_OK(client.Start());
+
+  string database_name = "default";
+  string table_name = "big_table";
+
+  hive::Table table;
+  table.dbName = database_name;
+  table.tableName = table_name;
+  table.tableType = "MANAGED_TABLE";
+  hive::FieldSchema partition_key;
+  partition_key.name = "c1";
+  partition_key.type = "int";
+  table.partitionKeys.emplace_back(std::move(partition_key));
+
+  ASSERT_OK(client.CreateTable(table));
+
+  // Add a bunch of partitions to the table. This ensures we can send and
+  // receive really large thrift objects. We have to add the partitions in small
+  // batches, otherwise Derby chokes.
+  const int kBatches = 25;
+  const int kPartitionsPerBatch = 40;
+
+  for (int batch_idx = 0; batch_idx < kBatches; batch_idx++) {
+    vector<hive::Partition> partitions;
+    for (int partition_idx = 0; partition_idx < kPartitionsPerBatch; partition_idx++) {
+      hive::Partition partition;
+      partition.dbName = database_name;
+      partition.tableName = table_name;
+      partition.values = { std::to_string(batch_idx * kPartitionsPerBatch + partition_idx) };
+      partitions.emplace_back(std::move(partition));
+    }
+
+    ASSERT_OK(client.AddPartitions(database_name, table_name, std::move(partitions)));
+  }
+
+  ASSERT_OK(client.GetTable(database_name, table_name, &table));
+
+  vector<hive::Partition> partitions;
+  ASSERT_OK(client.GetPartitions(database_name, table_name, &partitions));
+  ASSERT_EQ(kBatches * kPartitionsPerBatch, partitions.size());
 }
 
 TEST_F(HmsClientTest, TestHmsFaultHandling) {

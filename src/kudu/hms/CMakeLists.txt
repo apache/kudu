@@ -24,10 +24,13 @@ target_link_libraries(hms_thrift thrift)
 add_dependencies(hms_thrift ${HMS_THRIFT_TGTS})
 
 set(HMS_SRCS
-  hms_client.cc)
+  hms_client.cc
+  sasl_client_transport.cc)
 set(HMS_DEPS
+  gflags
   glog
   hms_thrift
+  krpc
   kudu_util)
 
 add_library(kudu_hms ${HMS_SRCS})
@@ -62,6 +65,7 @@ set(MINI_HMS_SRCS
 add_library(mini_hms ${MINI_HMS_SRCS})
 target_link_libraries(mini_hms
   gutil
+  krpc
   kudu_test_util
   kudu_util)
 add_dependencies(mini_hms hms-plugin)
@@ -71,6 +75,7 @@ if (NOT NO_TESTS)
   set(KUDU_TEST_LINK_LIBS
     kudu_hms
     mini_hms
+    mini_kdc
     ${KUDU_MIN_TEST_LIBS})
 
   # This test has to run serially since otherwise starting the HMS can take a very
