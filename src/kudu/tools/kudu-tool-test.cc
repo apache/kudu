@@ -777,7 +777,7 @@ TEST_F(ToolTest, TestPbcTools) {
   {
     string stdout, stderr;
     string path;
-    ASSERT_OK(GetExecutablePath("false", {}, &path));
+    ASSERT_OK(FindExecutable("false", {}, &path));
     Status s = DoEdit(path, &stdout, &stderr);
     ASSERT_FALSE(s.ok());
     ASSERT_EQ("", stdout);

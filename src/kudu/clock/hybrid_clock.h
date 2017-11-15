@@ -166,6 +166,9 @@ class HybridClock : public Clock {
   // On OS X, the error will always be 0.
   kudu::Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec);
 
+  // Same as above, but exits with a FATAL if there is an error.
+  void WalltimeWithErrorOrDie(uint64_t* now_usec, uint64_t* error_usec);
+
   // Used to get the timestamp for metrics.
   uint64_t NowForMetrics();
 

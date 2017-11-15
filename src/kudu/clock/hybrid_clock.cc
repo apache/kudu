@@ -171,8 +171,7 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 
   uint64_t now_usec;
   uint64_t error_usec;
-  CHECK_OK_PREPEND(WalltimeWithError(&now_usec, &error_usec),
-                   "Couldn't get the current time");
+  WalltimeWithErrorOrDie(&now_usec, &error_usec);
 
   // If the physical time from the system clock is higher than our last-returned
   // time, we should use the physical timestamp.
@@ -323,7 +322,7 @@ bool HybridClock::IsAfter(Timestamp t) {
   // a time update.
   uint64_t now_usec;
   uint64_t error_usec;
-  CHECK_OK(WalltimeWithError(&now_usec, &error_usec));
+  WalltimeWithErrorOrDie(&now_usec, &error_usec);
 
   Timestamp now;
   {
@@ -333,7 +332,15 @@ bool HybridClock::IsAfter(Timestamp t) {
   return t.value() < now.value();
 }
 
-kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
+void HybridClock::WalltimeWithErrorOrDie(uint64_t* now_usec, uint64_t* error_usec) {
+  Status s = WalltimeWithError(now_usec, error_usec);
+  if (PREDICT_FALSE(!s.ok())) {
+    time_service_->DumpDiagnostics(/*log=*/nullptr);
+    CHECK_OK_PREPEND(s, "unable to get current time with error bound");
+  }
+}
+
+Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   bool is_extrapolated = false;
   auto read_time_before = MonoTime::Now();
   Status s = time_service_->WalltimeWithError(now_usec, error_usec);

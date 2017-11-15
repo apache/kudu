@@ -16,6 +16,9 @@
 // under the License.
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "kudu/gutil/macros.h"
 
 namespace kudu {
@@ -49,6 +52,13 @@ class TimeService {
   // and skew_ppm() returns 500, then the actual time may have actually changed by
   // 1sec +/- 500us.
   virtual int64_t skew_ppm() const = 0;
+
+  // Run diagnostics tool related to this time service and save the output into 'log'.
+  // If 'log' is null, logs to LOG(ERROR).
+  //
+  // NOTE: this may fork out to external processes which may time out waiting on network
+  // responses, etc. As such, it may take several seconds to run.
+  virtual void DumpDiagnostics(std::vector<std::string>* /*log*/) const {}
 };
 
 } // namespace clock

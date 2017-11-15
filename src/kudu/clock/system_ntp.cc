@@ -22,16 +22,26 @@
 
 #include <cerrno>
 #include <ostream>
+#include <string>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 
 DECLARE_bool(inject_unsync_time_errors);
+
+using std::string;
+using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace clock {
@@ -65,11 +75,66 @@ Status CallAdjTime(timex* tx) {
   }
 }
 
+void TryRun(vector<string> cmd, vector<string>* log) {
+  string exe, out, err;
+  Status s = FindExecutable(cmd[0], {"/sbin", "/usr/sbin/"}, &exe);
+  if (!s.ok()) {
+    LOG_STRING(WARNING, log) << "could not find executable: " << cmd[0];
+    return;
+  }
+
+  cmd[0] = exe;
+  s = Subprocess::Call(cmd, "", &out, &err);
+  // Subprocess::Call() returns RuntimeError in the case that the process returns
+  // a non-zero exit code, but that might still generate useful err.
+  if (s.ok() || (s.IsRuntimeError() && (!out.empty() || !err.empty()))) {
+    LOG_STRING(ERROR, log)
+        << JoinStrings(cmd, " ")
+        << "\n------------------------------------------"
+        << (!out.empty() ? Substitute("\nstdout:\n$0", out) : "")
+        << (!err.empty() ? Substitute("\nstderr:\n$0", err) : "")
+        << "\n";
+  } else {
+    LOG_STRING(WARNING, log) << "failed to run executable: " << cmd[0];
+  }
+
+}
+
 } // anonymous namespace
+
+void SystemNtp::DumpDiagnostics(vector<string>* log) const {
+  LOG_STRING(ERROR, log) << "Dumping NTP diagnostics";
+  TryRun({"ntptime"}, log);
+  // Gather as much info as possible from both ntpq and ntpdc, even
+  // though some of it might be redundant. Different versions of ntp
+  // expose different sets of commands through these two tools.
+  // The tools will happily ignore commmands they don't understand.
+  TryRun({"ntpq", "-n",
+          "-c", "timeout 1000",
+          "-c", "readvar",
+          "-c", "sysinfo",
+          "-c", "lpeers",
+          "-c", "opeers",
+          "-c", "version"}, log);
+  TryRun({"ntpdc", "-n",
+          "-c", "timeout 1000",
+          "-c", "peers",
+          "-c", "sysinfo",
+          "-c", "sysstats",
+          "-c", "version"}, log);
+
+  TryRun({"chronyc", "-n", "tracking"}, log);
+  TryRun({"chronyc", "-n", "sources"}, log);
+}
+
 
 Status SystemNtp::Init() {
   timex timex;
-  RETURN_NOT_OK(CallAdjTime(&timex));
+  Status s = CallAdjTime(&timex);
+  if (!s.ok()) {
+    DumpDiagnostics(/* log= */nullptr);
+    return s;
+  }
 
   // Calculate the sleep skew adjustment according to the max tolerance of the clock.
   // Tolerance comes in parts per million but needs to be applied a scaling factor.

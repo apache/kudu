@@ -32,6 +32,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
@@ -41,8 +42,12 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+
 DECLARE_bool(inject_unsync_time_errors);
 DECLARE_string(time_source);
+
+using std::string;
+using std::vector;
 
 namespace kudu {
 namespace clock {
@@ -282,7 +287,7 @@ void StresserThread(HybridClock* clock, AtomicBool* stop) {
 // Regression test for KUDU-953: if threads are updating and polling the
 // clock concurrently, the clock should still never run backwards.
 TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
-  std::vector<scoped_refptr<kudu::Thread> > threads;
+  vector<scoped_refptr<kudu::Thread> > threads;
 
   AtomicBool stop(false);
   for (int i = 0; i < 4; i++) {
@@ -344,6 +349,17 @@ TEST_F(HybridClockTest, TestRideOverNtpInterruption) {
   ASSERT_LT(timestamps[0].ToUint64(), timestamps[1].ToUint64());
   ASSERT_LT(timestamps[1].ToUint64(), timestamps[2].ToUint64());
 }
+
+#ifndef __APPLE__
+TEST_F(HybridClockTest, TestNtpDiagnostics) {
+  vector<string> log;
+  clock_->time_service()->DumpDiagnostics(&log);
+  string s = JoinStrings(log, "\n");
+  SCOPED_TRACE(s);
+  ASSERT_STR_CONTAINS(s, "ntpq");
+  ASSERT_STR_CONTAINS(s, "ntp_gettime");
+}
+#endif
 
 }  // namespace clock
 }  // namespace kudu

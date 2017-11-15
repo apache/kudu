@@ -17,6 +17,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "kudu/clock/time_service.h"
 #include "kudu/gutil/macros.h"
@@ -44,6 +46,8 @@ class SystemNtp : public TimeService {
   virtual int64_t skew_ppm() const override {
     return skew_ppm_;
   }
+
+  virtual void DumpDiagnostics(std::vector<std::string>* log) const override;
 
  private:
   // The scaling factor used to obtain ppms. From the adjtimex source:

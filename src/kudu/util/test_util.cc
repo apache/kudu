@@ -304,32 +304,6 @@ int CountOpenFds(Env* env) {
   return num_fds - 1;
 }
 
-Status GetExecutablePath(const string& binary,
-                         const vector<string>& search,
-                         string* path) {
-  string p;
-
-  // First, check specified locations. This is necessary to check first so that
-  // the system binaries won't be found before the specified search locations.
-  for (const auto& location : search) {
-    p = JoinPathSegments(location, binary);
-    if (Env::Default()->FileExists(p)) {
-      *path = p;
-      return Status::OK();
-    }
-  }
-
-  // Next check if the binary is on the PATH.
-  Status s = Subprocess::Call({ "which", binary }, "", &p);
-  if (s.ok()) {
-    StripTrailingNewline(&p);
-    *path = p;
-    return Status::OK();
-  }
-
-  return Status::NotFound("Unable to find binary", binary);
-}
-
 namespace {
 Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeout) {
   // In general, processes do not expose the port they bind to, and
@@ -339,7 +313,7 @@ Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeou
   // time for it to initialize and bind a port.
 
   string lsof;
-  RETURN_NOT_OK(GetExecutablePath("lsof", {"/sbin", "/usr/sbin"}, &lsof));
+  RETURN_NOT_OK(FindExecutable("lsof", {"/sbin", "/usr/sbin"}, &lsof));
 
   const vector<string> cmd = {
     lsof, "-wbnP", "-Ffn",

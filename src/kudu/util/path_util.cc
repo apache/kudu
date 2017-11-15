@@ -32,6 +32,10 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/strip.h"
+#include "kudu/util/env.h"
+#include "kudu/util/status.h"
+#include "kudu/util/subprocess.h"
 
 
 using std::string;
@@ -87,6 +91,32 @@ string DirName(const string& path) {
 string BaseName(const string& path) {
   gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
   return basename(path_copy.get());
+}
+
+Status FindExecutable(const string& binary,
+                      const vector<string>& search,
+                      string* path) {
+  string p;
+
+  // First, check specified locations. This is necessary to check first so that
+  // the system binaries won't be found before the specified search locations.
+  for (const auto& location : search) {
+    p = JoinPathSegments(location, binary);
+    if (Env::Default()->FileExists(p)) {
+      *path = p;
+      return Status::OK();
+    }
+  }
+
+  // Next check if the binary is on the PATH.
+  Status s = Subprocess::Call({ "which", binary }, "", &p);
+  if (s.ok()) {
+    StripTrailingNewline(&p);
+    *path = p;
+    return Status::OK();
+  }
+
+  return Status::NotFound("Unable to find binary", binary);
 }
 
 } // namespace kudu

@@ -109,7 +109,7 @@ Status GetBinaryPath(const string& binary, string* path) {
     "/usr/lib/mit/sbin", // SLES
     "/usr/sbin", // Linux
   };
-  return GetExecutablePath(binary, kCommonLocations, path);
+  return FindExecutable(binary, kCommonLocations, path);
 }
 } // namespace
 
