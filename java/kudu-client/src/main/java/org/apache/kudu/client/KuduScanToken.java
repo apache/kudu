@@ -223,6 +223,20 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       }
     }
 
+    if (message.hasReplicaSelection()) {
+      switch (message.getReplicaSelection()) {
+        case LEADER_ONLY: {
+          builder.replicaSelection(ReplicaSelection.LEADER_ONLY);
+          break;
+        }
+        case CLOSEST_REPLICA: {
+          builder.replicaSelection(ReplicaSelection.CLOSEST_REPLICA);
+          break;
+        }
+        default: throw new IllegalArgumentException("unknown replica selection policy");
+      }
+    }
+
     if (message.hasPropagatedTimestamp() &&
         message.getPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
       client.updateLastPropagatedTimestamp(message.getPropagatedTimestamp());
@@ -329,6 +343,12 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
       proto.setLimit(limit);
       proto.setReadMode(readMode.pbVersion());
+
+      if (replicaSelection == ReplicaSelection.LEADER_ONLY) {
+        proto.setReplicaSelection(Common.ReplicaSelection.LEADER_ONLY);
+      } else if (replicaSelection == ReplicaSelection.CLOSEST_REPLICA) {
+        proto.setReplicaSelection(Common.ReplicaSelection.CLOSEST_REPLICA);
+      }
 
       // If the last propagated timestamp is set send it with the scan.
       if (table.getAsyncClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {

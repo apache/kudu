@@ -231,6 +231,16 @@ enum OrderMode {
   ORDERED = 2;
 }
 
+// Policy with which to choose among multiple replicas.
+enum ReplicaSelection {
+  UNKNOWN_REPLICA_SELECTION = 0;
+  // Select the LEADER replica.
+  LEADER_ONLY = 1;
+  // Select the closest replica to the client, or a random one if all replicas
+  // are equidistant.
+  CLOSEST_REPLICA = 2;
+}
+
 // The serialized format of a Kudu table partition schema.
 message PartitionSchemaPB {
 

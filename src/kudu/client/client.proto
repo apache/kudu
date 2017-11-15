@@ -97,6 +97,10 @@ message ScanTokenPB {
   // This is a hint, not a requirement: the server may send
   // arbitrarily fewer or more bytes than requested.
   optional uint32 batch_size_bytes = 15;
+
+  // The replica selection policy for the scan request.
+  // See common.proto for further information about replica selections.
+  optional ReplicaSelection replica_selection = 16 [default = LEADER_ONLY];
 }
 
 

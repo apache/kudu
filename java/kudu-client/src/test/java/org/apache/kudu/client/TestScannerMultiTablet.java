@@ -32,6 +32,7 @@ import org.junit.Test;
 
 import org.apache.kudu.client.Client.ScanTokenPB;
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 
 public class TestScannerMultiTablet extends BaseKuduTest {
@@ -192,6 +193,21 @@ public class TestScannerMultiTablet extends BaseKuduTest {
         .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
         .build();
 
+    assertEquals(9, countRowsInScan(scanner));
+  }
+
+  @Test(timeout = 100000)
+  public void testScanTokenReplicaSelections() throws Exception {
+    ScanTokenPB.Builder pbBuilder = ScanTokenPB.newBuilder();
+    pbBuilder.setTableName(table.getName());
+    pbBuilder.setReplicaSelection(Common.ReplicaSelection.CLOSEST_REPLICA);
+    Client.ScanTokenPB scanTokenPB = pbBuilder.build();
+    final byte[] serializedToken = KuduScanToken.serialize(scanTokenPB);
+
+    // Deserialize the scan token into a scanner, and make sure it is using
+    // 'CLOSEST_REPLICA' selection policy.
+    KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serializedToken, syncClient);
+    assertEquals(ReplicaSelection.CLOSEST_REPLICA, scanner.getReplicaSelection());
     assertEquals(9, countRowsInScan(scanner));
   }
 
