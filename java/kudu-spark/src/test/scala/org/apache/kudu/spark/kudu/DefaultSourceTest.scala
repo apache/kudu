@@ -496,6 +496,21 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     }.getMessage should include ("Unknown column: foo")
   }
 
+  test("scan locality") {
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.scanLocality" -> "closest_replica")
+
+    val table = "scanLocalityTest"
+    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(table)
+    val results = sqlContext.sql(s"SELECT * FROM $table").collectAsList()
+    assert(results.size() == rowCount)
+
+    assert(!results.get(0).isNullAt(2))
+    assert(results.get(1).isNullAt(2))
+  }
+
   // Verify that the propagated timestamp is properly updated inside
   // the same client.
   test("timestamp propagation") {

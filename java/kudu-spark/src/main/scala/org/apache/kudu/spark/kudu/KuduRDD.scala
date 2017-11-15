@@ -36,6 +36,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              @transient val predicates: Array[client.KuduPredicate],
                              @transient val table: KuduTable,
                              @transient val isFaultTolerant: Boolean,
+                             @transient val scanLocality: ReplicaSelection,
                              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
@@ -45,6 +46,15 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              .setProjectedColumnNames(projectedCols.toSeq.asJava)
                              .setFaultTolerant(isFaultTolerant)
                              .cacheBlocks(true)
+
+    // A scan is partitioned to multiple ones. If scan locality is enabled,
+    // each will take place at the closet replica from the executor. In this
+    // case, to ensure the consistency of such scan, we use READ_AT_SNAPSHOT
+    // read mode without setting a timestamp.
+    if (scanLocality == ReplicaSelection.CLOSEST_REPLICA) {
+      builder.replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
+             .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+    }
 
     for (predicate <- predicates) {
       builder.addPredicate(predicate)

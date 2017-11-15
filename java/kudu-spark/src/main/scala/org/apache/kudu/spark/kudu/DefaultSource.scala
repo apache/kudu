@@ -49,6 +49,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   val KUDU_MASTER = "kudu.master"
   val OPERATION = "kudu.operation"
   val FAULT_TOLERANT_SCANNER = "kudu.faultTolerantScan"
+  val SCAN_LOCALITY = "kudu.scanLocality"
 
   def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
 
@@ -69,8 +70,10 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "leader_only"))
 
-    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType, None)(sqlContext)
+    new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
+      scanLocality, operationType, None)(sqlContext)
   }
 
   /**
@@ -103,9 +106,10 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "leader_only"))
 
-    new KuduRelation(tableName, kuduMaster, faultTolerantScanner, operationType,
-      Some(schema))(sqlContext)
+    new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
+      scanLocality, operationType, Some(schema))(sqlContext)
   }
 
   private def getOperationType(opParam: String): OperationType = {
@@ -118,6 +122,14 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
       case _ => throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
     }
   }
+
+  private def getScanLocalityType(opParam: String): ReplicaSelection = {
+    opParam.toLowerCase match {
+      case "leader_only" => ReplicaSelection.LEADER_ONLY
+      case "closest_replica" => ReplicaSelection.CLOSEST_REPLICA
+      case _ => throw new IllegalArgumentException(s"Unsupported replica selection type '$opParam'")
+    }
+  }
 }
 
 /**
@@ -127,6 +139,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   * @param masterAddrs Kudu master addresses
   * @param faultTolerantScanner scanner type to be used. Fault tolerant if true,
   *                             otherwise, use non fault tolerant one
+  * @param scanLocality If true scan locality is enabled, so that the scan will
+  *                     take place at the closest replica.
   * @param operationType The default operation type to perform when writing to the relation
   * @param userSchema A schema used to select columns for the relation
   * @param sqlContext SparkSQL context
@@ -135,6 +149,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
 class KuduRelation(private val tableName: String,
                    private val masterAddrs: String,
                    private val faultTolerantScanner: Boolean,
+                   private val scanLocality: ReplicaSelection,
                    private val operationType: OperationType,
                    private val userSchema: Option[StructType])(
                    val sqlContext: SQLContext)
@@ -182,7 +197,7 @@ class KuduRelation(private val tableName: String,
   override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val predicates = filters.flatMap(filterToPredicate)
     new KuduRDD(context, 1024 * 1024 * 20, requiredColumns, predicates,
-                table, faultTolerantScanner, sqlContext.sparkContext)
+                table, faultTolerantScanner, scanLocality, sqlContext.sparkContext)
   }
 
   /**
