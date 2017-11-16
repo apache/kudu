@@ -71,6 +71,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
 METRIC_DECLARE_entity(tablet);
@@ -265,9 +266,14 @@ class TabletReplicaTest : public KuduTabletTest {
     return Status::OK();
   }
 
+  // Assert that there are no log anchors held on the tablet replica.
+  //
+  // NOTE: when a transaction finishes and notifies the completion callback, it still is
+  // registered with the transaction tracker for a very short time before being
+  // destructed. So, this should always be called with an ASSERT_EVENTUALLY wrapper.
   void AssertNoLogAnchors() {
     // Make sure that there are no registered anchors in the registry
-    CHECK_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
+    ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   }
 
   // Assert that the Log GC() anchor is earlier than the latest OpId in the Log.
@@ -330,7 +336,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
   Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
 
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -350,7 +356,7 @@ TEST_F(TabletReplicaTest, TestMRSAnchorPreventsLogGC) {
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
   tablet_replica_->tablet()->Flush();
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // The first two segments should be deleted.
   // The last is anchored due to the commit in the last segment being the last
@@ -371,7 +377,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   shared_ptr<RaftConsensus> consensus = tablet_replica_->shared_consensus();
   int32_t num_gced;
 
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -383,6 +389,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
   ASSERT_OK(tablet_replica_->tablet()->Flush());
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
   log::RetentionIndexes retention = tablet_replica_->GetRetentionIndexes();
   ASSERT_OK(log->GC(retention, &num_gced));
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
@@ -390,7 +397,6 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
-  AssertNoLogAnchors();
 
   boost::optional<OpId> id = consensus->GetLastOpId(consensus::RECEIVED_OPID);
   ASSERT_NE(boost::none, id);
@@ -429,7 +435,7 @@ TEST_F(TabletReplicaTest, TestDMSAnchorPreventsLogGC) {
   tablet_replica_->tablet()->FlushBiggestDMS();
 
   // Verify no anchors after Flush().
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // We should only hang onto one segment due to no anchors.
   // The last log OpId is the commit in the last segment, so it only anchors
@@ -450,7 +456,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   Log* log = tablet_replica_->log_.get();
   int32_t num_gced;
 
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   log::SegmentSequence segments;
   ASSERT_OK(log->reader()->GetSegmentsSnapshot(&segments));
@@ -465,7 +471,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   tablet_replica_->tablet()->Flush();
 
   // Verify no anchors after Flush().
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // Now create a long-lived Transaction that hangs during Apply().
   // Allow other transactions to go through. Logs should be populated, but the
@@ -523,8 +529,11 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_EQ(5, segments.size());
   ASSERT_EQ(1, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
   tablet_replica_->tablet()->FlushBiggestDMS();
-  ASSERT_EQ(0, tablet_replica_->log_anchor_registry()->GetAnchorCountForTests());
-  ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+
+  ASSERT_EVENTUALLY([&]{
+      AssertNoLogAnchors();
+      ASSERT_EQ(1, tablet_replica_->txn_tracker_.GetNumPendingForTests());
+    });
 
   NO_FATALS(AssertLogAnchorEarlierThanLogLatest());
 
@@ -543,7 +552,7 @@ TEST_F(TabletReplicaTest, TestActiveTransactionPreventsLogGC) {
   tablet_replica_->txn_tracker_.WaitForAllToFinish();
   ASSERT_EQ(0, tablet_replica_->txn_tracker_.GetNumPendingForTests());
   tablet_replica_->tablet()->FlushBiggestDMS();
-  AssertNoLogAnchors();
+  ASSERT_EVENTUALLY([&]{ AssertNoLogAnchors(); });
 
   // All should be deleted except the two last segments.
   retention = tablet_replica_->GetRetentionIndexes();
