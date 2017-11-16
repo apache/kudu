@@ -25,6 +25,32 @@ import "kudu/common/common.proto";
 //  Consensus Metadata
 // ===========================================================================
 
+// Per-replica attributes.
+message RaftPeerAttrsPB {
+  // Whether to promote a replica when it has caught up with the leader,
+  // changing its membership type from NON_VOTER to VOTER. This field is
+  // applicable only for NON_VOTER replicas.
+  optional bool promote = 1 [ default = false ];
+
+  // If set to 'true', the replica needs to be replaced regardless of
+  // its health report.
+  optional bool replace = 2 [ default = false ];
+}
+
+// Report on a replica's (peer's) health.
+message HealthReportPB {
+  enum HealthStatus {
+    UNKNOWN = 999;  // No information on the health status.
+    FAILED = 0;     // Replica has failed and needs replacement.
+    HEALTHY = 1;    // Replica is functioning properly.
+  }
+
+  // Overall health status of a replica. Reflects at least the responsiveness
+  // (i.e. time of last contact) and the lag of the replica's WAL
+  // behind the leader's.
+  optional HealthStatus overall_health = 1;
+}
+
 // A peer in a configuration.
 message RaftPeerPB {
   // The possible roles for peers.
@@ -56,6 +82,7 @@ message RaftPeerPB {
     NON_VOTER = 0;
     VOTER = 1;
   };
+
   // Permanent uuid is optional: RaftPeerPB/RaftConfigPB instances may
   // be created before the permanent uuid is known (e.g., when
   // manually specifying a configuration for Master/CatalogManager);
@@ -63,6 +90,13 @@ message RaftPeerPB {
   optional bytes permanent_uuid = 1;
   optional MemberType member_type = 2;
   optional HostPortPB last_known_addr = 3;
+
+  // Replica attributes.
+  optional RaftPeerAttrsPB attrs = 4;
+
+  // Replica's health report, as seen by the leader. This is a run-time
+  // only field, it should not be persisted or read from the persistent storage.
+  optional HealthReportPB health_report = 5;
 }
 
 // A set of peers, serving a single tablet.
