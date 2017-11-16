@@ -73,5 +73,7 @@ if (NOT NO_TESTS)
     mini_hms
     ${KUDU_MIN_TEST_LIBS})
 
-  ADD_KUDU_TEST(hms_client-test)
+  # This test has to run serially since otherwise starting the HMS can take a very
+  # long time.
+  ADD_KUDU_TEST(hms_client-test RUN_SERIAL true)
 endif()
