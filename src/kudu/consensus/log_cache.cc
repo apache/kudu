@@ -19,9 +19,10 @@
 
 #include <map>
 #include <mutex>
-#include <vector>
 #include <ostream>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -192,7 +193,9 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   }
 
   for (const auto& msg : msgs) {
-    InsertOrDie(&cache_,  msg->get()->id().index(), msg);
+    auto index = msg->get()->id().index();
+    InsertOrDie(&cache_, index, msg);
+    next_sequential_op_index_ = index + 1;
   }
 
   // We drop the lock during the AsyncAppendReplicates call, since it may block
@@ -200,23 +203,22 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   // our callback and blocked on this lock.
   l.unlock();
 
+  metrics_.log_cache_size->IncrementBy(mem_required);
+  metrics_.log_cache_num_ops->IncrementBy(msgs.size());
+
   Status log_status = log_->AsyncAppendReplicates(
     msgs, Bind(&LogCache::LogCallback,
                Unretained(this),
                last_idx_in_batch,
                borrowed_memory,
                callback));
-  l.lock();
+
   if (!log_status.ok()) {
     LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Couldn't append to log: " << log_status.ToString();
     tracker_->Release(mem_required);
     return log_status;
   }
 
-  metrics_.log_cache_size->IncrementBy(mem_required);
-  metrics_.log_cache_num_ops->IncrementBy(msgs.size());
-
-  next_sequential_op_index_ = msgs.back()->get()->id().index() + 1;
 
   return Status::OK();
 }

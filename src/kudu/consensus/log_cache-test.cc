@@ -15,11 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -46,11 +48,15 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::atomic;
 using std::shared_ptr;
+using std::thread;
 using std::vector;
 using strings::Substitute;
 
@@ -369,6 +375,39 @@ TEST_F(LogCacheTest, TestTruncation) {
     ASSERT_TRUE(s.IsIncomplete()) << "should be truncated, but got: " << s.ToString();
     ASSERT_FALSE(cache_->HasOpBeenWritten(4));
   }
+}
+
+TEST_F(LogCacheTest, TestMTReadAndWrite) {
+  atomic<bool> stop { false };
+  vector<thread> threads;
+  SCOPED_CLEANUP({
+      stop = true;
+      for (auto& t : threads) {
+        t.join();
+      }
+    });
+
+  // Add a writer thread.
+  threads.emplace_back([&] {
+      const int kBatch = 10;
+      int64_t index = 1;
+      while (!stop) {
+        CHECK_OK(AppendReplicateMessagesToCache(index, kBatch));
+        index += kBatch;
+      }
+    });
+  // Add a reader thread.
+  threads.emplace_back([&] {
+      int64_t index = 0;
+      while (!stop) {
+        vector<ReplicateRefPtr> messages;
+        OpId preceding;
+        CHECK_OK(cache_->ReadOps(index, 1024 * 1024, &messages, &preceding));
+        index += messages.size();
+      }
+    });
+
+  SleepFor(MonoDelta::FromSeconds(AllowSlowTests() ? 10 : 2));
 }
 
 } // namespace consensus
