@@ -28,6 +28,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/net/socket.h"
 
 namespace kudu {
 namespace security {
@@ -45,11 +46,11 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   CHECK(ssl_);
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
 
+  *nwritten = 0;
   if (PREDICT_FALSE(amt == 0)) {
     // Writing an empty buffer is a no-op. This happens occasionally, eg in the
     // case where the response has an empty sidecar. We have to special case
     // it, because SSL_write can return '0' to indicate certain types of errors.
-    *nwritten = 0;
     return Status::OK();
   }
 
@@ -64,7 +65,6 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
                                     ErrnoToString(save_errno), save_errno);
       }
       // Socket not ready to write yet.
-      *nwritten = 0;
       return Status::OK();
     }
     return Status::NetworkError("failed to write to TLS socket",
@@ -93,6 +93,12 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritt
   }
   RETURN_NOT_OK(SetTcpCork(0));
   *nwritten = total_written;
+  // If we did manage to write something, but not everything, due to a temporary socket
+  // error, then we should still return an OK status indicating a successful _partial_
+  // write.
+  if (total_written > 0 && Socket::IsTemporarySocketError(write_status.posix_code())) {
+    return Status::OK();
+  }
   return write_status;
 }
 
