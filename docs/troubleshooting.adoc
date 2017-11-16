@@ -156,7 +156,8 @@ controlled by setting the `--max_minidumps` gflag.
 
 Minidumps contain information specific to the binary that created them and so
 are not usable without access to the exact binary that crashed, or a very
-similar binary.
+similar binary. For more information on processing and using minidump files,
+see scripts/dump_breakpad_symbols.py.
 
 NOTE: A minidump can be emailed to a Kudu developer or attached to a JIRA in
 order to help a Kudu developer debug a crash. In order for it to be useful, the

@@ -1,0 +1,76 @@
+From ed2d80d0c2d559df2ae3361f59212d24409c54b4 Mon Sep 17 00:00:00 2001
+From: Lars Volker <lv@cloudera.com>
+Date: Mon, 19 Sep 2016 13:20:53 -0700
+Subject: [PATCH 1/2] Add basic support for dwz dwarf extension
+
+The dwz tool [1] can be used to compress symbols that occur in multiple object files by moving them into a shared object file. It introduces new DWARF macros to reference to those symbols.
+
+Breakpad currently does not support those macros, which can lead to
+crashes.
+
+This change makes breakpad ignore these symbols.
+
+[1] https://sourceware.org/git/?p=dwz.git;a=summary
+
+BUG:google-breakpad:717
+---
+ src/common/dwarf/dwarf2enums.h   |  7 ++++++-
+ src/common/dwarf/dwarf2reader.cc | 17 +++++++++++++++++
+ 2 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/src/common/dwarf/dwarf2enums.h b/src/common/dwarf/dwarf2enums.h
+index 4316a89..fae01f7 100644
+--- a/src/common/dwarf/dwarf2enums.h
++++ b/src/common/dwarf/dwarf2enums.h
+@@ -152,7 +152,12 @@ enum DwarfForm {
+   DW_FORM_ref_sig8 = 0x20,
+   // Extensions for Fission.  See http://gcc.gnu.org/wiki/DebugFission.
+   DW_FORM_GNU_addr_index = 0x1f01,
+-  DW_FORM_GNU_str_index = 0x1f02
++  DW_FORM_GNU_str_index = 0x1f02,
++
++  // Extensions for dwz compression tool. See
++  // https://fedoraproject.org/wiki/Features/DwarfCompressor
++  DW_FORM_GNU_ref_alt = 0x1f20,
++  DW_FORM_GNU_strp_alt = 0x1f21
+ };
+
+ // Attribute names and codes
+diff --git a/src/common/dwarf/dwarf2reader.cc b/src/common/dwarf/dwarf2reader.cc
+index fda049d..974e13a 100644
+--- a/src/common/dwarf/dwarf2reader.cc
++++ b/src/common/dwarf/dwarf2reader.cc
+@@ -224,6 +224,11 @@ const uint8_t *CompilationUnit::SkipAttribute(const uint8_t *start,
+       }
+       break;
+
++    case DW_FORM_GNU_ref_alt:
++    case DW_FORM_GNU_strp_alt:
++      return start + reader_->OffsetSize();
++      break;
++
+     case DW_FORM_block1:
+       return start + 1 + reader_->ReadOneByte(start);
+     case DW_FORM_block2:
+@@ -519,7 +524,19 @@ const uint8_t *CompilationUnit::ProcessAttribute(
+       ProcessAttributeUnsigned(dieoffset, attr, form,
+                                reader_->ReadAddress(addr_ptr));
+       return start + len;
++      break;
+     }
++    case DW_FORM_GNU_ref_alt: {
++      // TODO: This effectively ignores attributes stored in alternate object
++      // files. We should process them properly instead.
++      return start + reader_->OffsetSize();
++      break;
++    }
++    case DW_FORM_GNU_strp_alt: {
++      return start + reader_->OffsetSize();
++      break;
++    }
++
+   }
+   fprintf(stderr, "Unhandled form type\n");
+   return NULL;
+--
+2.10.2
