@@ -87,6 +87,7 @@ class LookupRpc;
 class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
+class ReplicaController;
 class WriteRpc;
 } // namespace internal
 
@@ -259,6 +260,8 @@ class KUDU_EXPORT KuduClientBuilder {
 
  private:
   class KUDU_NO_EXPORT Data;
+
+  friend class internal::ReplicaController;
 
   // Owned.
   Data* data_;
@@ -607,6 +610,7 @@ class KUDU_EXPORT KuduReplica {
  private:
   friend class KuduClient;
   friend class KuduScanTokenBuilder;
+  friend class internal::ReplicaController;
 
   class KUDU_NO_EXPORT Data;
 

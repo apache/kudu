@@ -16,14 +16,16 @@
 // under the License.
 
 #include "kudu/client/client_builder-internal.h"
+#include "kudu/client/replica_controller-internal.h"
 
 namespace kudu {
 
 namespace client {
 
 KuduClientBuilder::Data::Data()
-  : default_admin_operation_timeout_(MonoDelta::FromSeconds(30)),
-    default_rpc_timeout_(MonoDelta::FromSeconds(10)) {
+    : default_admin_operation_timeout_(MonoDelta::FromSeconds(30)),
+      default_rpc_timeout_(MonoDelta::FromSeconds(10)),
+      replica_visibility_(internal::ReplicaController::Visibility::VOTERS) {
 }
 
 KuduClientBuilder::Data::~Data() {

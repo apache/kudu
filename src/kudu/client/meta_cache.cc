@@ -70,6 +70,7 @@ class Messenger;
 }
 
 using consensus::RaftPeerPB;
+using master::ANY_REPLICA;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::MasterServiceProxy;
@@ -502,9 +503,11 @@ void MetaCacheServerPicker::InitProxyCb(const ServerPickedCallback& callback,
 
 ////////////////////////////////////////////////////////////
 
-MetaCache::MetaCache(KuduClient* client)
-  : client_(client),
-    master_lookup_sem_(50) {
+MetaCache::MetaCache(KuduClient* client,
+                     ReplicaController::Visibility replica_visibility)
+    : client_(client),
+      master_lookup_sem_(50),
+      replica_visibility_(replica_visibility) {
 }
 
 MetaCache::~MetaCache() {
@@ -529,7 +532,7 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
 // Keeps a reference on the owning metacache while alive.
 class LookupRpc : public Rpc {
  public:
-  LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
+  LookupRpc(scoped_refptr<MetaCache> meta_cache,
             StatusCallback user_cb,
             const KuduTable* table,
             string partition_key,
@@ -537,7 +540,8 @@ class LookupRpc : public Rpc {
             const MonoTime& deadline,
             shared_ptr<Messenger> messenger,
             int max_returned_locations,
-            bool is_exact_lookup);
+            bool is_exact_lookup,
+            ReplicaController::Visibility replica_visibility);
   virtual ~LookupRpc();
   virtual void SendRpc() OVERRIDE;
   virtual string ToString() const OVERRIDE;
@@ -593,31 +597,38 @@ class LookupRpc : public Rpc {
   bool has_permit_;
 
   // The max number of tablets to fetch per round trip from the master
-  int max_returned_locations_;
+  const int max_returned_locations_;
 
   // If true, this lookup is for an exact tablet match with the requested
   // partition key. If false, the next tablet after the partition key should be
   // returned if the partition key falls in a non-covered partition range.
-  bool is_exact_lookup_;
+  const bool is_exact_lookup_;
+
+  // Controlling which replicas to look up. If set to Visibility::ALL,
+  // non-voter tablet replicas, if any, appear in the lookup result in addition
+  // to 'regular' voter replicas.
+  const ReplicaController::Visibility replica_visibility_;
 };
 
-LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
+LookupRpc::LookupRpc(scoped_refptr<MetaCache> meta_cache,
                      StatusCallback user_cb, const KuduTable* table,
                      string partition_key,
                      scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
                      shared_ptr<Messenger> messenger,
                      int max_returned_locations,
-                     bool is_exact_lookup)
+                     bool is_exact_lookup,
+                     ReplicaController::Visibility replica_visibility)
     : Rpc(deadline, std::move(messenger)),
-      meta_cache_(meta_cache),
+      meta_cache_(std::move(meta_cache)),
       user_cb_(std::move(user_cb)),
       table_(table),
       partition_key_(std::move(partition_key)),
       remote_tablet_(remote_tablet),
       has_permit_(false),
       max_returned_locations_(max_returned_locations),
-      is_exact_lookup_(is_exact_lookup) {
+      is_exact_lookup_(is_exact_lookup),
+      replica_visibility_(replica_visibility) {
   DCHECK(deadline.Initialized());
 }
 
@@ -668,7 +679,9 @@ void LookupRpc::SendRpc() {
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
   req_.set_max_returned_locations(max_returned_locations_);
-  req_.set_replica_type_filter(master::ANY_REPLICA);
+  if (replica_visibility_ == ReplicaController::Visibility::ALL) {
+    req_.set_replica_type_filter(master::ANY_REPLICA);
+  }
 
   // The end partition key is left unset intentionally so that we'll prefetch
   // some additional tablets.
@@ -1022,7 +1035,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
                                  deadline,
                                  client_->data_->messenger_,
                                  kFetchTabletsPerPointLookup,
-                                 true);
+                                 true, replica_visibility_);
   rpc->SendRpc();
 }
 
@@ -1040,7 +1053,7 @@ void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
                                  deadline,
                                  client_->data_->messenger_,
                                  max_returned_locations,
-                                 false);
+                                 false, replica_visibility_);
   rpc->SendRpc();
 }
 

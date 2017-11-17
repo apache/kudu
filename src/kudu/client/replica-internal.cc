@@ -27,8 +27,9 @@ namespace client {
 
 using std::unique_ptr;
 
-KuduReplica::Data::Data(bool is_leader, unique_ptr<KuduTabletServer> ts)
+KuduReplica::Data::Data(bool is_leader, bool is_voter, unique_ptr<KuduTabletServer> ts)
     : is_leader_(is_leader),
+      is_voter_(is_voter),
       ts_(std::move(ts)) {
 }
 

@@ -28,6 +28,7 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -68,6 +69,7 @@ using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
 using client::KuduTable;
 using client::KuduTabletServer;
+using client::internal::ReplicaController;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RpcController;
@@ -311,10 +313,11 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
 }
 
 Status RemoteKsckMaster::Connect() {
-  client::sp::shared_ptr<KuduClient> client;
   KuduClientBuilder builder;
   builder.default_rpc_timeout(GetDefaultTimeout());
   builder.master_server_addrs(master_addresses_);
+  ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
+  client::sp::shared_ptr<KuduClient> client;
   return builder.Build(&client_);
 }
 
@@ -380,9 +383,9 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
     vector<shared_ptr<KsckTabletReplica>> replicas;
     for (const auto* r : t->tablet().replicas()) {
       replicas.push_back(std::make_shared<KsckTabletReplica>(
-          r->ts().uuid(), r->is_leader()));
+          r->ts().uuid(), r->is_leader(), ReplicaController::is_voter(*r)));
     }
-    tablet->set_replicas(replicas);
+    tablet->set_replicas(std::move(replicas));
     tablets.push_back(tablet);
   }
 
