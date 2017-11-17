@@ -367,8 +367,8 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(Instabilit
       cluster_->tablet_server(kFollower2Index)->Shutdown();
       break;
     case NODE_STOPPED:
-      cluster_->tablet_server(kFollower1Index)->Pause();
-      cluster_->tablet_server(kFollower2Index)->Pause();
+      ASSERT_OK(cluster_->tablet_server(kFollower1Index)->Pause());
+      ASSERT_OK(cluster_->tablet_server(kFollower2Index)->Pause());
       break;
   }
 
