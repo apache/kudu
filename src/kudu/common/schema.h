@@ -452,7 +452,13 @@ class Schema {
 
   // Return the number of columns in this schema
   size_t num_columns() const {
-    return cols_.size();
+    // Use name_to_index_.size() instead of cols_.size() since the former
+    // just reads a member variable of the unordered_map whereas the
+    // latter involves division by sizeof(ColumnSchema). Even though
+    // division-by-a-constant gets optimized into multiplication,
+    // the multiplication instruction has a significantly higher latency
+    // than the simple load.
+    return name_to_index_.size();
   }
 
   // Return the length of the key prefix in this schema.
@@ -683,9 +689,9 @@ class Schema {
   bool Equals(const Schema &other) const {
     if (this == &other) return true;
     if (this->num_key_columns_ != other.num_key_columns_) return false;
-    if (this->cols_.size() != other.cols_.size()) return false;
+    if (this->num_columns() != other.num_columns()) return false;
 
-    for (size_t i = 0; i < other.cols_.size(); i++) {
+    for (size_t i = 0; i < other.num_columns(); i++) {
       if (!this->cols_[i].Equals(other.cols_[i])) return false;
     }
 
@@ -747,7 +753,7 @@ class Schema {
     const bool use_column_ids = base_schema.has_column_ids() && has_column_ids();
 
     int proj_idx = 0;
-    for (int i = 0; i < cols_.size(); ++i) {
+    for (int i = 0; i < num_columns(); ++i) {
       const ColumnSchema& col_schema = cols_[i];
 
       // try to lookup the column by ID if present or just by name.
