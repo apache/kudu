@@ -1271,7 +1271,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
   vector<string> stdout_lines = Split(stdout, "\n", strings::SkipEmpty());
 
   // Verify multiple tables along with their tablets and replica-uuids.
-  ASSERT_EQ(4, stdout_lines.size());
+  ASSERT_EQ(10, stdout_lines.size());
   ASSERT_STR_CONTAINS(stdout, kTableId);
   ASSERT_STR_CONTAINS(stdout, kAnotherTableId);
   ASSERT_STR_CONTAINS(stdout, tablet_ids.front());

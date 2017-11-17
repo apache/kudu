@@ -14,36 +14,27 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_CLIENT_CLIENT_BUILDER_INTERNAL_H
-#define KUDU_CLIENT_CLIENT_BUILDER_INTERNAL_H
 
-#include <string>
-#include <vector>
+#include "kudu/client/replica_controller-internal.h"
 
 #include "kudu/client/client.h"
-#include "kudu/client/replica_controller-internal.h"
-#include "kudu/gutil/macros.h"
-#include "kudu/util/monotime.h"
+#include "kudu/client/client_builder-internal.h"
+#include "kudu/client/replica-internal.h"
 
 namespace kudu {
-
 namespace client {
+namespace internal {
 
-class KuduClientBuilder::Data {
- public:
-  Data();
-  ~Data();
+ReplicaController::ReplicaController() {}
 
-  std::vector<std::string> master_server_addrs_;
-  MonoDelta default_admin_operation_timeout_;
-  MonoDelta default_rpc_timeout_;
-  std::string authn_creds_;
-  internal::ReplicaController::Visibility replica_visibility_;
+void ReplicaController::SetVisibility(KuduClientBuilder* builder, Visibility visibility) {
+  builder->data_->replica_visibility_ = visibility;
+}
 
-  DISALLOW_COPY_AND_ASSIGN(Data);
-};
+bool ReplicaController::is_voter(const KuduReplica& replica) {
+  return replica.data_->is_voter_;
+}
 
+} // namespace internal
 } // namespace client
 } // namespace kudu
-
-#endif

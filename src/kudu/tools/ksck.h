@@ -79,22 +79,29 @@ struct ChecksumOptions {
 // Representation of a tablet replica on a tablet server.
 class KsckTabletReplica {
  public:
-  KsckTabletReplica(std::string ts_uuid, bool is_leader)
-      : is_leader_(is_leader),
-        ts_uuid_(std::move(ts_uuid)) {
-  }
-
-  const bool& is_leader() const {
-    return is_leader_;
+  KsckTabletReplica(std::string ts_uuid, bool is_leader, bool is_voter)
+      : ts_uuid_(std::move(ts_uuid)),
+        is_leader_(is_leader),
+        is_voter_(is_voter) {
   }
 
   const std::string& ts_uuid() const {
     return ts_uuid_;
   }
 
+  bool is_leader() const {
+    return is_leader_;
+  }
+
+  bool is_voter() const {
+    return is_voter_;
+  }
+
  private:
-  const bool is_leader_;
   const std::string ts_uuid_;
+  const bool is_leader_;
+  const bool is_voter_;
+
   DISALLOW_COPY_AND_ASSIGN(KsckTabletReplica);
 };
 
@@ -114,12 +121,14 @@ struct KsckConsensusState {
                      boost::optional<int64_t> term,
                      boost::optional<int64_t> opid_index,
                      boost::optional<std::string> leader_uuid,
-                     std::vector<std::string> peers)
+                     const std::vector<std::string>& voters,
+                     const std::vector<std::string>& non_voters)
     : type(type),
       term(std::move(term)),
       opid_index(std::move(opid_index)),
       leader_uuid(std::move(leader_uuid)),
-      peer_uuids(peers.cbegin(), peers.cend()) {
+      voter_uuids(voters.cbegin(), voters.cend()),
+      non_voter_uuids(non_voters.cbegin(), non_voters.cend()) {
   }
 
   // Two KsckConsensusState structs match if they have the same
@@ -127,7 +136,10 @@ struct KsckConsensusState {
   // - at least one of them is of type MASTER
   // - they are configs of the same type and they have the same term
   bool Matches(const KsckConsensusState &other) const {
-    bool same_leader_and_peers = leader_uuid == other.leader_uuid && peer_uuids == other.peer_uuids;
+    bool same_leader_and_peers =
+        leader_uuid == other.leader_uuid &&
+        voter_uuids == other.voter_uuids &&
+        non_voter_uuids == other.non_voter_uuids;
     if (type == KsckConsensusConfigType::MASTER || other.type == KsckConsensusConfigType::MASTER) {
       return same_leader_and_peers;
     }
@@ -138,7 +150,8 @@ struct KsckConsensusState {
   boost::optional<int64_t> term;
   boost::optional<int64_t> opid_index;
   boost::optional<std::string> leader_uuid;
-  std::set<std::string> peer_uuids;
+  std::set<std::string> voter_uuids;
+  std::set<std::string> non_voter_uuids;
 };
 
 // Representation of a tablet belonging to a table. The tablet is composed of replicas.
@@ -154,12 +167,12 @@ class KsckTablet {
     return id_;
   }
 
-  const std::vector<std::shared_ptr<KsckTabletReplica> >& replicas() const {
+  const std::vector<std::shared_ptr<KsckTabletReplica>>& replicas() const {
     return replicas_;
   }
 
-  void set_replicas(std::vector<std::shared_ptr<KsckTabletReplica> >& replicas) {
-    replicas_.assign(replicas.begin(), replicas.end());
+  void set_replicas(std::vector<std::shared_ptr<KsckTabletReplica>> replicas) {
+    replicas_.swap(replicas);
   }
 
   KsckTable* table() {
@@ -195,7 +208,7 @@ class KsckTable {
     tablets_ = std::move(tablets);
   }
 
-  std::vector<std::shared_ptr<KsckTablet> >& tablets() {
+  std::vector<std::shared_ptr<KsckTablet>>& tablets() {
     return tablets_;
   }
 
@@ -315,7 +328,7 @@ class KsckTabletServer {
 class KsckMaster {
  public:
   // Map of KsckTabletServer objects keyed by tablet server permanent_uuid.
-  typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer> > TSMap;
+  typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
 
   KsckMaster() { }
   virtual ~KsckMaster() { }
@@ -330,7 +343,7 @@ class KsckMaster {
 
   // Gets the list of tables from the Master and stores it in the passed vector.
   // tables is only modified if this method returns OK.
-  virtual Status RetrieveTablesList(std::vector<std::shared_ptr<KsckTable> >* tables) = 0;
+  virtual Status RetrieveTablesList(std::vector<std::shared_ptr<KsckTable>>* tables) = 0;
 
   // Gets the list of tablets for the specified table and stores the list in it.
   // The table's tablet list is only modified if this method returns OK.
@@ -359,7 +372,7 @@ class KsckCluster {
     return tablet_servers_;
   }
 
-  const std::vector<std::shared_ptr<KsckTable> >& tables() {
+  const std::vector<std::shared_ptr<KsckTable>>& tables() {
     return tables_;
   }
 
@@ -377,7 +390,7 @@ class KsckCluster {
 
   const std::shared_ptr<KsckMaster> master_;
   KsckMaster::TSMap tablet_servers_;
-  std::vector<std::shared_ptr<KsckTable> > tables_;
+  std::vector<std::shared_ptr<KsckTable>> tables_;
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
 };
 

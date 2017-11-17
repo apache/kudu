@@ -15,7 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
 #include <cstdint>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -27,11 +29,13 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -45,6 +49,7 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -58,6 +63,13 @@ DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 
+using kudu::client::sp::shared_ptr;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
+using kudu::client::KuduTable;
+using kudu::client::internal::ReplicaController;
 using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalTabletServer;
@@ -335,6 +347,80 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
     count_roles(tablet_locations, &num_leaders, &num_followers, &num_learners);
     ASSERT_EQ(kOriginalReplicasNum, num_leaders + num_followers);
     ASSERT_EQ(1, num_learners);
+  }
+}
+
+// Verify that non-voters replicas are not exposed to a regular Kudu client.
+// However, it's possible to see the replicas.
+TEST_F(RaftConsensusNonVoterITest, ReplicaMatchPolicy) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int kOriginalReplicasNum = 3;
+  FLAGS_num_tablet_servers = kOriginalReplicasNum + 1;
+  FLAGS_num_replicas = kOriginalReplicasNum;
+  NO_FATALS(BuildAndStart());
+  ASSERT_EQ(FLAGS_num_tablet_servers, tablet_servers_.size());
+  ASSERT_EQ(kOriginalReplicasNum, tablet_replicas_.size());
+
+  const string& tablet_id = tablet_id_;
+  TabletServerMap replica_servers;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id) {
+      replica_servers.emplace(e.second->uuid(), e.second);
+    }
+  }
+  ASSERT_EQ(FLAGS_num_replicas, replica_servers.size());
+
+  TServerDetails* new_replica = nullptr;
+  for (const auto& ts : tablet_servers_) {
+    if (replica_servers.find(ts.first) == replica_servers.end()) {
+      new_replica = ts.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, new_replica);
+
+  ASSERT_OK(AddReplica(tablet_id, new_replica, RaftPeerPB::NON_VOTER, kTimeout));
+  // Wait the newly added replica to start.
+  ASSERT_OK(WaitForNumTabletsOnTS(
+      new_replica, 1, kTimeout, nullptr, tablet::RUNNING));
+
+  auto count_replicas = [this](KuduTable* table, size_t* count) {
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table);
+    RETURN_NOT_OK(builder.Build(&tokens));
+    size_t replicas_count = std::accumulate(
+        tokens.begin(), tokens.end(), 0,
+        [](size_t sum, const KuduScanToken* token) {
+          return sum + token->tablet().replicas().size();
+        });
+    *count = replicas_count;
+    return Status::OK();
+  };
+
+  // The case of regular client: the non-voter replica should not be seen.
+  {
+    size_t count = 0;
+    ASSERT_OK(count_replicas(table_.get(), &count));
+    EXPECT_EQ(kOriginalReplicasNum, count);
+  }
+
+  // The case of special client used for internal tools, etc.: non-voter
+  // replicas should be visible.
+  {
+    KuduClientBuilder builder;
+    ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(builder
+              .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
+              .Build(&client));
+    ASSERT_NE(nullptr, client.get());
+    shared_ptr<KuduTable> t;
+    ASSERT_OK(client->OpenTable(table_->name(), &t));
+
+    size_t count = 0;
+    ASSERT_OK(count_replicas(t.get(), &count));
+    EXPECT_EQ(kOriginalReplicasNum + 1, count);
   }
 }
 

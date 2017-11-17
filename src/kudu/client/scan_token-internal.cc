@@ -307,8 +307,9 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       client_ts->data_ = new KuduTabletServer::Data(r.ts->permanent_uuid(),
                                                     host_ports[0]);
       bool is_leader = r.role == consensus::RaftPeerPB::LEADER;
+      bool is_voter = is_leader || r.role == consensus::RaftPeerPB::FOLLOWER;
       unique_ptr<KuduReplica> client_replica(new KuduReplica);
-      client_replica->data_ = new KuduReplica::Data(is_leader,
+      client_replica->data_ = new KuduReplica::Data(is_leader, is_voter,
                                                     std::move(client_ts));
       client_replicas.push_back(client_replica.release());
     }

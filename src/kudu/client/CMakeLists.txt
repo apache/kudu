@@ -44,6 +44,7 @@ set(CLIENT_SRCS
   scan_token-internal.cc
   scanner-internal.cc
   replica-internal.cc
+  replica_controller-internal.cc
   resource_metrics.cc
   schema.cc
   session-internal.cc

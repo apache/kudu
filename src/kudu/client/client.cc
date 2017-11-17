@@ -324,7 +324,7 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
     RETURN_NOT_OK(ImportAuthnCredsToMessenger(data_->authn_creds_, messenger.get()));
   }
 
-  shared_ptr<KuduClient> c(new KuduClient());
+  shared_ptr<KuduClient> c(new KuduClient);
   c->data_->messenger_ = std::move(messenger);
   c->data_->master_server_addrs_ = data_->master_server_addrs_;
   c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
@@ -336,8 +336,8 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK_PREPEND(c->data_->ConnectToCluster(c.get(), deadline),
                         "Could not connect to the cluster");
 
-  c->data_->meta_cache_.reset(new MetaCache(c.get()));
-  c->data_->dns_resolver_.reset(new DnsResolver());
+  c->data_->meta_cache_.reset(new MetaCache(c.get(), data_->replica_visibility_));
+  c->data_->dns_resolver_.reset(new DnsResolver);
 
   // Init local host names used for locality decisions.
   RETURN_NOT_OK_PREPEND(c->data_->InitLocalHostNames(),
@@ -547,9 +547,11 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
     ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp);
 
+    // TODO(aserbin): try to use member_type instead of role for metacache.
     bool is_leader = r.role() == consensus::RaftPeerPB::LEADER;
+    bool is_voter = is_leader || r.role() == consensus::RaftPeerPB::FOLLOWER;
     unique_ptr<KuduReplica> replica(new KuduReplica);
-    replica->data_ = new KuduReplica::Data(is_leader, std::move(ts));
+    replica->data_ = new KuduReplica::Data(is_leader, is_voter, std::move(ts));
 
     replicas.push_back(replica.release());
   }

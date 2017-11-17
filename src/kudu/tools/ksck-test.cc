@@ -213,15 +213,17 @@ class KsckTest : public KuduTest {
 
   void CreateAndFillTablet(shared_ptr<KsckTablet>& tablet, int num_replicas,
                            bool has_leader, bool is_running) {
-    vector<shared_ptr<KsckTabletReplica>> replicas;
-    if (has_leader) {
-      CreateReplicaAndAdd(&replicas, tablet->id(), true, is_running);
-      num_replicas--;
+    {
+      vector<shared_ptr<KsckTabletReplica>> replicas;
+      if (has_leader) {
+        CreateReplicaAndAdd(&replicas, tablet->id(), true, is_running);
+        num_replicas--;
+      }
+      for (int i = 0; i < num_replicas; i++) {
+        CreateReplicaAndAdd(&replicas, tablet->id(), false, is_running);
+      }
+      tablet->set_replicas(std::move(replicas));
     }
-    for (int i = 0; i < num_replicas; i++) {
-      CreateReplicaAndAdd(&replicas, tablet->id(), false, is_running);
-    }
-    tablet->set_replicas(replicas);
 
     // Set up the consensus state on each tablet server.
     consensus::ConsensusStatePB cstate;
@@ -247,8 +249,8 @@ class KsckTest : public KuduTest {
                            const string& tablet_id,
                            bool is_leader,
                            bool is_running) {
-    shared_ptr<KsckTabletReplica> replica(new KsckTabletReplica(assignment_plan_.back(),
-                                                                is_leader));
+    shared_ptr<KsckTabletReplica> replica(
+        new KsckTabletReplica(assignment_plan_.back(), is_leader, true));
     shared_ptr<MockKsckTabletServer> ts = static_pointer_cast<MockKsckTabletServer>(
             master_->tablet_servers_.at(assignment_plan_.back()));
 
@@ -415,7 +417,7 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      " Config source |      Voters      | Current term | Config index | Committed?\n"
+      " Config source |     Replicas     | Current term | Config index | Committed?\n"
       "---------------+------------------+--------------+--------------+------------\n"
       " master        | A*  B   C        |              |              | Yes\n"
       " A             | A*  B   C   D    | 0            |              | Yes\n"
@@ -441,7 +443,7 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      " Config source |    Voters    | Current term | Config index | Committed?\n"
+      " Config source |   Replicas   | Current term | Config index | Committed?\n"
       "---------------+--------------+--------------+--------------+------------\n"
       " master        | A*  B   C    |              |              | Yes\n"
       " A             | A*  B        | 0            |              | Yes\n"
@@ -467,7 +469,7 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are bad", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      " Config source |    Voters    | Current term | Config index | Committed?\n"
+      " Config source |   Replicas   | Current term | Config index | Committed?\n"
       "---------------+--------------+--------------+--------------+------------\n"
       " master        | A*  B   C    |              |              | Yes\n"
       " A             | A   B*  C    | 0            |              | Yes\n"
@@ -579,7 +581,7 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
-      " Config source |         Voters         | Current term | Config index | Committed?\n"
+      " Config source |        Replicas        | Current term | Config index | Committed?\n"
       "---------------+------------------------+--------------+--------------+------------\n"
       " master        | A*  B   C              |              |              | Yes\n"
       " A             | [config not available] |              |              | \n"

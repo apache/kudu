@@ -27,10 +27,12 @@
 #include <gflags/gflags.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
@@ -45,11 +47,56 @@ using client::KuduClientBuilder;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
 using client::KuduTable;
+using client::internal::ReplicaController;
 using std::cout;
 using std::endl;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
+
+// This class only exists so that ListTables() can easily be friended by
+// KuduReplica, KuduReplica::Data, and KuduClientBuilder.
+class TableLister {
+ public:
+  static Status ListTablets(const vector<string>& master_addresses) {
+    KuduClientBuilder builder;
+    ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
+    client::sp::shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(builder
+                  .master_server_addrs(master_addresses)
+                  .Build(&client));
+    vector<string> table_names;
+    RETURN_NOT_OK(client->ListTables(&table_names));
+
+    for (const auto& tname : table_names) {
+      cout << tname << endl;
+      if (!FLAGS_list_tablets) {
+        continue;
+      }
+      client::sp::shared_ptr<KuduTable> client_table;
+      RETURN_NOT_OK(client->OpenTable(tname, &client_table));
+      vector<KuduScanToken*> tokens;
+      ElementDeleter deleter(&tokens);
+      KuduScanTokenBuilder builder(client_table.get());
+      RETURN_NOT_OK(builder.Build(&tokens));
+
+      for (const auto* token : tokens) {
+        cout << "  T " << token->tablet().id() << endl;
+        for (const auto* replica : token->tablet().replicas()) {
+          const bool is_voter = ReplicaController::is_voter(*replica);
+          const bool is_leader = replica->is_leader();
+          cout << strings::Substitute("    $0 $1 $2:$3",
+              is_leader ? "L" : (is_voter ? "V" : "N"), replica->ts().uuid(),
+              replica->ts().hostname(), replica->ts().port()) << endl;
+        }
+        cout << endl;
+      }
+      cout << endl;
+    }
+    return Status::OK();
+  }
+};
 
 namespace {
 
@@ -58,7 +105,7 @@ const char* const kTableNameArg = "table_name";
 Status DeleteTable(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
 
   client::sp::shared_ptr<KuduClient> client;
@@ -71,39 +118,7 @@ Status DeleteTable(const RunnerContext& context) {
 Status ListTables(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
-
-  client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
-  vector<string> table_names;
-  RETURN_NOT_OK(client->ListTables(&table_names));
-
-  for (const auto& tname : table_names) {
-    cout << tname << endl;
-    if (!FLAGS_list_tablets) {
-      continue;
-    }
-    client::sp::shared_ptr<KuduTable> client_table;
-    RETURN_NOT_OK(client->OpenTable(tname, &client_table));
-    vector<KuduScanToken*> tokens;
-    ElementDeleter deleter(&tokens);
-    KuduScanTokenBuilder builder(client_table.get());
-    RETURN_NOT_OK(builder.Build(&tokens));
-
-    for (const auto* token : tokens) {
-      cout << "T " << token->tablet().id() << "\t";
-      for (const auto* replica : token->tablet().replicas()) {
-        cout << "P" << (replica->is_leader() ? "(L) " : "    ")
-             << replica->ts().uuid() << "(" << replica->ts().hostname()
-             << ":" << replica->ts().port() << ")" << "    ";
-      }
-      cout << endl;
-    }
-    cout << endl;
-  }
-  return Status::OK();
+  return TableLister::ListTablets(Split(master_addresses_str, ","));
 }
 
 } // anonymous namespace

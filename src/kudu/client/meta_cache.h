@@ -30,6 +30,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/client/replica_controller-internal.h"
 #include "kudu/common/partition.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
@@ -369,7 +370,7 @@ class MetaCacheEntry {
 class MetaCache : public RefCountedThreadSafe<MetaCache> {
  public:
   // The passed 'client' object must remain valid as long as MetaCache is alive.
-  explicit MetaCache(KuduClient* client);
+  MetaCache(KuduClient* client, ReplicaController::Visibility replica_visibility);
   ~MetaCache();
 
   // Look up which tablet hosts the given partition key for a table. When it is
@@ -470,6 +471,9 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.
   Semaphore master_lookup_sem_;
+
+  // Policy on tablet replica visibility: what type of replicas to expose.
+  const ReplicaController::Visibility replica_visibility_;
 
   DISALLOW_COPY_AND_ASSIGN(MetaCache);
 };
