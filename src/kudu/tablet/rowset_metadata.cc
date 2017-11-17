@@ -56,6 +56,10 @@ Status RowSetMetadata::CreateNew(TabletMetadata* tablet_metadata,
   return Status::OK();
 }
 
+void RowSetMetadata::AddOrphanedBlocks(const vector<BlockId>& blocks) {
+  tablet_metadata_->AddOrphanedBlocks(blocks);
+}
+
 Status RowSetMetadata::Flush() {
   return tablet_metadata_->Flush();
 }
@@ -63,38 +67,48 @@ Status RowSetMetadata::Flush() {
 Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   CHECK(!initted_);
 
+  LoadFromPB(pb);
+
+  initted_ = true;
+  return Status::OK();
+}
+
+void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
+  std::lock_guard<LockType> l(lock_);
   id_ = pb.id();
 
-  // Load Bloom File
+  // Load Bloom File.
+  bloom_block_ = BlockId();
   if (pb.has_bloom_block()) {
     bloom_block_ = BlockId::FromPB(pb.bloom_block());
   }
 
-  // Load AdHoc Index File
+  // Load AdHoc Index File.
+  adhoc_index_block_ = BlockId();
   if (pb.has_adhoc_index_block()) {
     adhoc_index_block_ = BlockId::FromPB(pb.adhoc_index_block());
   }
 
-  // Load Column Files
+  // Load Column Files.
+  blocks_by_col_id_.clear();
   for (const ColumnDataPB& col_pb : pb.columns()) {
     ColumnId col_id = ColumnId(col_pb.column_id());
     blocks_by_col_id_[col_id] = BlockId::FromPB(col_pb.block());
   }
 
-  // Load redo delta files
+  // Load redo delta files.
+  redo_delta_blocks_.clear();
   for (const DeltaDataPB& redo_delta_pb : pb.redo_deltas()) {
     redo_delta_blocks_.push_back(BlockId::FromPB(redo_delta_pb.block()));
   }
 
   last_durable_redo_dms_id_ = pb.last_durable_dms_id();
 
-  // Load undo delta files
+  // Load undo delta files.
+  undo_delta_blocks_.clear();
   for (const DeltaDataPB& undo_delta_pb : pb.undo_deltas()) {
     undo_delta_blocks_.push_back(BlockId::FromPB(undo_delta_pb.block()));
   }
-
-  initted_ = true;
-  return Status::OK();
 }
 
 void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
@@ -161,13 +175,14 @@ Status RowSetMetadata::CommitUndoDeltaDataBlock(const BlockId& block_id) {
   return Status::OK();
 }
 
-Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
-  vector<BlockId> removed;
+void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
+                                  vector<BlockId>* removed) {
+  removed->clear();
   {
     std::lock_guard<LockType> l(lock_);
 
-    for (const RowSetMetadataUpdate::ReplaceDeltaBlocks rep :
-                  update.replace_redo_blocks_) {
+    // Find the exact sequence of blocks to remove.
+    for (const auto& rep : update.replace_redo_blocks_) {
       CHECK(!rep.to_remove.empty());
 
       auto start_it = std::find(redo_delta_blocks_.begin(),
@@ -175,16 +190,14 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
 
       auto end_it = start_it;
       for (const BlockId& b : rep.to_remove) {
-        if (end_it == redo_delta_blocks_.end() || *end_it != b) {
-          return Status::InvalidArgument(
-              Substitute("Cannot find subsequence <$0> in <$1>",
-                         BlockId::JoinStrings(rep.to_remove),
-                         BlockId::JoinStrings(redo_delta_blocks_)));
-        }
+        CHECK(end_it != redo_delta_blocks_.end() && *end_it == b) <<
+            Substitute("Cannot find subsequence <$0> in <$1>",
+                       BlockId::JoinStrings(rep.to_remove),
+                       BlockId::JoinStrings(redo_delta_blocks_));
         ++end_it;
       }
 
-      removed.insert(removed.end(), start_it, end_it);
+      removed->insert(removed->end(), start_it, end_it);
       redo_delta_blocks_.erase(start_it, end_it);
       redo_delta_blocks_.insert(start_it, rep.to_add.begin(), rep.to_add.end());
     }
@@ -197,14 +210,12 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
     // Remove undo blocks.
     BlockIdSet undos_to_remove(update.remove_undo_blocks_.begin(),
                                update.remove_undo_blocks_.end());
-    int64_t num_removed = 0;
     auto iter = undo_delta_blocks_.begin();
     while (iter != undo_delta_blocks_.end()) {
       if (ContainsKey(undos_to_remove, *iter)) {
-        removed.push_back(*iter);
+        removed->push_back(*iter);
         undos_to_remove.erase(*iter);
         iter = undo_delta_blocks_.erase(iter);
-        num_removed++;
       } else {
         ++iter;
       }
@@ -212,7 +223,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
     CHECK(undos_to_remove.empty())
         << "Tablet " << tablet_metadata_->tablet_id() << " RowSet " << id_ << ": "
         << "Attempted to remove an undo delta block from the RowSetMetadata that is not present. "
-        << "Removed: { " << removed << " }; "
+        << "Removed: { " << *removed << " }; "
         << "Failed to remove: { "
         << vector<BlockId>(undos_to_remove.begin(), undos_to_remove.end())
         << " }";
@@ -228,24 +239,18 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       // block there to replace.
       BlockId old_block_id;
       if (UpdateReturnCopy(&blocks_by_col_id_, e.first, e.second, &old_block_id)) {
-        removed.push_back(old_block_id);
+        removed->push_back(old_block_id);
       }
     }
 
-    for (ColumnId col_id : update.col_ids_to_remove_) {
+    for (const ColumnId& col_id : update.col_ids_to_remove_) {
       BlockId old = FindOrDie(blocks_by_col_id_, col_id);
       CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
-      removed.push_back(old);
+      removed->push_back(old);
     }
   }
 
   blocks_by_col_id_.shrink_to_fit();
-
-  // Should only be NULL in tests.
-  if (tablet_metadata()) {
-    tablet_metadata()->AddOrphanedBlocks(removed);
-  }
-  return Status::OK();
 }
 
 vector<BlockId> RowSetMetadata::GetAllBlocks() {

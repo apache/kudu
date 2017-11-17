@@ -71,7 +71,7 @@ class MajorDeltaCompaction {
   // 1) swaps out the old columns for the new ones
   // 2) removes the compacted deltas
   // 3) adds the new REDO delta which contains any uncompacted deltas
-  Status CreateMetadataUpdate(RowSetMetadataUpdate* update);
+  void CreateMetadataUpdate(RowSetMetadataUpdate* update);
 
   // Apply the changes to the given delta tracker.
   Status UpdateDeltaTracker(DeltaTracker* tracker);

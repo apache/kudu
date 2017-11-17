@@ -141,7 +141,7 @@ class DiskRowSetWriter {
   // (the ad-hoc writer for composite keys, otherwise the key column writer)
   cfile::CFileWriter *key_index_writer();
 
-  RowSetMetadata *rowset_metadata_;
+  RowSetMetadata* rowset_metadata_;
   const Schema* const schema_;
 
   BloomFilterSizing bloom_sizing_;

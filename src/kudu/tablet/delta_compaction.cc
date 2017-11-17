@@ -306,7 +306,7 @@ Status MajorDeltaCompaction::Compact() {
   return Status::OK();
 }
 
-Status MajorDeltaCompaction::CreateMetadataUpdate(
+void MajorDeltaCompaction::CreateMetadataUpdate(
     RowSetMetadataUpdate* update) {
   CHECK(update);
   CHECK_EQ(state_, kFinished);
@@ -355,8 +355,6 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
       }
     }
   }
-
-  return Status::OK();
 }
 
 // We're called under diskrowset's component_lock_ and delta_tracker's compact_flush_lock_
@@ -364,24 +362,40 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
 // operation.
 Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
   CHECK_EQ(state_, kFinished);
-  vector<BlockId> new_delta_blocks;
-  // We created a new delta block only if we had deltas to write back. We still need to update
-  // the tracker so that it removes the included_stores_.
-  if (redo_delta_mutations_written_ > 0) {
-    new_delta_blocks.push_back(new_redo_delta_block_);
-  }
-  RETURN_NOT_OK(tracker->AtomicUpdateStores(included_stores_,
-                                            new_delta_blocks,
-                                            REDO));
 
-  // We only call AtomicUpdateStores() if we wrote UNDOs, we're not removing stores so we don't
-  // need to call it otherwise.
+  // 1. Get all the necessary I/O out of the way. It's OK to fail here
+  //    because we haven't updated any in-memory state.
+  //
+  // TODO(awong): pull the OpenDeltaReaders() calls out of the critical path of
+  // diskrowset's component_lock_. They touch disk and may block other
+  // diskrowset operations.
+
+  // Create blocks for the new redo deltas.
+  vector<BlockId> new_redo_blocks;
+  if (redo_delta_mutations_written_ > 0) {
+    new_redo_blocks.push_back(new_redo_delta_block_);
+  }
+  SharedDeltaStoreVector new_redo_stores;
+  RETURN_NOT_OK(tracker->OpenDeltaReaders(new_redo_blocks, &new_redo_stores, REDO));
+
+  // Create blocks for the new undo deltas.
+  SharedDeltaStoreVector new_undo_stores;
   if (undo_delta_mutations_written_ > 0) {
     vector<BlockId> new_undo_blocks;
     new_undo_blocks.push_back(new_undo_delta_block_);
-    return tracker->AtomicUpdateStores({},
-                                       new_undo_blocks,
-                                       UNDO);
+    RETURN_NOT_OK(tracker->OpenDeltaReaders(new_undo_blocks, &new_undo_stores, UNDO));
+  }
+
+  // 2. Only now that we cannot fail do we update the in-memory state.
+
+  // Even if we didn't create any new redo blocks, we still need to update the
+  // tracker so it removes the included_stores_.
+  tracker->AtomicUpdateStores(included_stores_, new_redo_stores, REDO);
+
+  // We only call AtomicUpdateStores() for UNDOs if we wrote UNDOs. We're not
+  // removing stores so we don't need to call it otherwise.
+  if (!new_undo_stores.empty()) {
+    tracker->AtomicUpdateStores({}, new_undo_stores, UNDO);
   }
   return Status::OK();
 }

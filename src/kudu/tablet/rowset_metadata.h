@@ -82,7 +82,16 @@ class RowSetMetadata {
                      const RowSetDataPB& pb,
                      std::unique_ptr<RowSetMetadata>* metadata);
 
+  // Resets the in-memory state to mirror 'pb'.
+  //
+  // Should only be used to initialize a RowSetMetadata instance or to
+  // immediately roll-back an updated RowSetMetadata instance following an
+  // error after calling CommitUpdate().
+  void LoadFromPB(const RowSetDataPB& pb);
+
   Status Flush();
+
+  void AddOrphanedBlocks(const std::vector<BlockId>& blocks);
 
   const std::string ToString() const;
 
@@ -173,8 +182,10 @@ class RowSetMetadata {
 
   // Atomically commit a set of changes to this object.
   //
-  // On success, calls TabletMetadata::AddOrphanedBlocks() on the removed blocks.
-  Status CommitUpdate(const RowSetMetadataUpdate& update);
+  // Returns the blocks removed from the rowset metadata during the update.
+  // These blocks must be added to the TabletMetadata's orphaned blocks list.
+  void CommitUpdate(const RowSetMetadataUpdate& update,
+                    std::vector<BlockId>* removed);
 
   void ToProtobuf(RowSetDataPB *pb);
 

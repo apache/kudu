@@ -199,9 +199,9 @@ string JoinDeltaStoreStrings(const SharedDeltaStoreVector& stores) {
 
 } // anonymous namespace
 
-void DeltaTracker::ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
-                                      const std::shared_ptr<DeltaStore>& second,
-                                      DeltaType type) {
+Status DeltaTracker::ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
+                                        const std::shared_ptr<DeltaStore>& second,
+                                        DeltaType type) {
   shared_ptr<DeltaStore> first_copy = first;
   shared_ptr<DeltaStore> second_copy = second;
 
@@ -209,16 +209,16 @@ void DeltaTracker::ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
   // tests. We know it's a DeltaFileReader if it's not Initted().
   if (!first_copy->Initted()) {
     shared_ptr<DeltaFileReader> first_clone;
-    DCHECK_OK(down_cast<DeltaFileReader*>(first.get())->CloneForDebugging(
+    RETURN_NOT_OK(down_cast<DeltaFileReader*>(first.get())->CloneForDebugging(
         rowset_metadata_->fs_manager(), mem_trackers_.tablet_tracker, &first_clone));
-    DCHECK_OK(first_clone->Init());
+    RETURN_NOT_OK(first_clone->Init());
     first_copy = first_clone;
   }
   if (!second_copy->Initted()) {
     shared_ptr<DeltaFileReader> second_clone;
-    DCHECK_OK(down_cast<DeltaFileReader*>(second.get())->CloneForDebugging(
+    RETURN_NOT_OK(down_cast<DeltaFileReader*>(second.get())->CloneForDebugging(
         rowset_metadata_->fs_manager(), mem_trackers_.tablet_tracker, &second_clone));
-    DCHECK_OK(second_clone->Init());
+    RETURN_NOT_OK(second_clone->Init());
     second_copy = second_clone;
   }
 
@@ -236,21 +236,19 @@ void DeltaTracker::ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
           << second_copy->ToString() << "}]: type = " << type;
       break;
   }
+  return Status::OK();
 }
 
-void DeltaTracker::ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type) {
-  for (size_t i = 0; i < list.size() - 1; i++) {
-    ValidateDeltaOrder(list[i], list[i + 1], type);
+Status DeltaTracker::ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type) {
+  for (size_t i = 1; i < list.size(); i++) {
+    RETURN_NOT_OK(ValidateDeltaOrder(list[i - 1], list[i], type));
   }
+  return Status::OK();
 }
 
-Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
-                                        const vector<BlockId>& new_delta_blocks,
-                                        DeltaType type) {
-  SharedDeltaStoreVector new_stores;
-  RETURN_NOT_OK_PREPEND(OpenDeltaReaders(new_delta_blocks, &new_stores, type),
-                        "Unable to open delta blocks");
-
+void DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
+                                      const SharedDeltaStoreVector& new_stores,
+                                      DeltaType type) {
   std::lock_guard<rw_spinlock> lock(component_lock_);
   SharedDeltaStoreVector* stores_to_update =
       type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
@@ -274,21 +272,16 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_
   if (stores_to_replace.empty()) {
     // With nothing to remove, we always prepend to the front of the list.
     start_it = stores_to_update->begin();
-
   } else {
     // With something to remove, we do a range-replace.
-    start_it =
-        std::find(stores_to_update->begin(), stores_to_update->end(), stores_to_replace[0]);
-
+    start_it = std::find(stores_to_update->begin(), stores_to_update->end(), stores_to_replace[0]);
     auto end_it = start_it;
     for (const shared_ptr<DeltaStore>& ds : stores_to_replace) {
-      if (end_it == stores_to_update->end() || *end_it != ds) {
-        return Status::InvalidArgument(
-            strings::Substitute("Cannot find $0 deltastore sequence <$1> in <$2>",
-                                DeltaType_Name(type),
-                                JoinDeltaStoreStrings(stores_to_replace),
-                                JoinDeltaStoreStrings(*stores_to_update)));
-      }
+      CHECK(end_it != stores_to_update->end() && *end_it == ds) <<
+          Substitute("Cannot find $0 deltastore sequence <$1> in <$2>",
+                     DeltaType_Name(type),
+                     JoinDeltaStoreStrings(stores_to_replace),
+                     JoinDeltaStoreStrings(*stores_to_update));
       ++end_it;
     }
     // Remove the old stores.
@@ -298,12 +291,15 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_
 #ifndef NDEBUG
   // Perform validation checks to ensure callers do not violate our contract.
   if (!new_stores.empty()) {
-    // Make sure the new stores are already ordered.
-    ValidateDeltasOrdered(new_stores, type);
+    // Make sure the new stores are already ordered. Non-OK Statuses here don't
+    // indicate ordering errors, but rather, physical errors (e.g. disk
+    // failure). These don't indicate incorrectness and are thusly ignored.
+    WARN_NOT_OK(ValidateDeltasOrdered(new_stores, type), "Could not validate delta order");
     if (start_it != stores_to_update->end()) {
       // Sanity check that the last store we are adding would logically appear
       // before the first store that would follow it.
-      ValidateDeltaOrder(*new_stores.rbegin(), *start_it, type);
+      WARN_NOT_OK(ValidateDeltaOrder(*new_stores.rbegin(), *start_it, type),
+                  "Could not validate delta order");
     }
   }
 #endif // NDEBUG
@@ -313,7 +309,6 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_
 
   VLOG_WITH_PREFIX(1) << "New " << DeltaType_Name(type) << " stores: "
                       << JoinDeltaStoreStrings(*stores_to_update);
-  return Status::OK();
 }
 
 Status DeltaTracker::Compact() {
@@ -332,12 +327,17 @@ Status DeltaTracker::CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& 
   // We enforce that with this DCHECK.
   DCHECK(!to_remove.empty());
 
-  // Update the in-memory metadata.
-  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+  SharedDeltaStoreVector new_stores;
+  RETURN_NOT_OK_PREPEND(OpenDeltaReaders(new_delta_blocks, &new_stores, type),
+                        "Unable to open delta blocks");
+
+  vector<BlockId> removed_blocks;
+  rowset_metadata_->CommitUpdate(update, &removed_blocks);
+  rowset_metadata_->AddOrphanedBlocks(removed_blocks);
   // Once we successfully commit to the rowset metadata, let's ensure we update
-  // the delta stores to maintain consistency between the two. We enforce this
-  // with a CHECK_OK here.
-  CHECK_OK(AtomicUpdateStores(to_remove, new_delta_blocks, type));
+  // the delta stores to maintain consistency between the two.
+  AtomicUpdateStores(to_remove, new_stores, type);
+
   if (flush_type == FLUSH_METADATA) {
     // Flushing the metadata is considered best-effort in this function.
     // No consistency problems will be visible if we don't successfully
@@ -714,16 +714,15 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
 
   // Now, actually flush the contents of the old DMS.
+  // TODO(awong): failures here leaves a DeltaMemStore permanently in the store
+  // list. For now, handle this by CHECKing for success, but we're going to
+  // want a more concrete solution if, say, we want to handle arbitrary file
+  // errors.
+  //
   // TODO(todd): need another lock to prevent concurrent flushers
   // at some point.
   shared_ptr<DeltaFileReader> dfr;
-  Status s = FlushDMS(old_dms.get(), &dfr, flush_type);
-  CHECK(s.ok())
-    << "Failed to flush DMS: " << s.ToString()
-    << "\nTODO: need to figure out what to do with error handling "
-    << "if this fails -- we end up with a DeltaMemStore permanently "
-    << "in the store list. For now, abort.";
-
+  CHECK_OK(FlushDMS(old_dms.get(), &dfr, flush_type));
 
   // Now, re-take the lock and swap in the DeltaFileReader in place of
   // of the DeltaMemStore
@@ -732,14 +731,11 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
     size_t idx = redo_delta_stores_.size() - 1;
 
     CHECK_EQ(redo_delta_stores_[idx], old_dms)
-      << "Another thread modified the delta store list during flush";
+        << "Another thread modified the delta store list during flush";
     redo_delta_stores_[idx] = dfr;
   }
 
   return Status::OK();
-
-  // TODO: wherever we write stuff, we should write to a tmp path
-  // and rename to final path!
 }
 
 size_t DeltaTracker::DeltaMemStoreSize() const {

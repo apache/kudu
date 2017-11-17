@@ -45,6 +45,7 @@
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
@@ -54,6 +55,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -525,10 +527,10 @@ Status DiskRowSet::Open() {
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-    RETURN_NOT_OK(DeltaTracker::Open(rowset_metadata_, num_rows,
-                                     log_anchor_registry_,
-                                     mem_trackers_,
-                                     &delta_tracker_));
+  RETURN_NOT_OK(DeltaTracker::Open(rowset_metadata_, num_rows,
+                                   log_anchor_registry_,
+                                   mem_trackers_,
+                                   &delta_tracker_));
 
   open_ = true;
 
@@ -569,28 +571,42 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& 
 
   RETURN_NOT_OK(compaction->Compact());
 
-  // Update the metadata.
-  RowSetMetadataUpdate update;
-  RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
-  RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+  // Before updating anything, create a copy of the rowset metadata so we can
+  // revert changes in case of error.
+  RowSetDataPB original_pb;
+  rowset_metadata_->ToProtobuf(&original_pb);
+  auto revert_metadata_update = MakeScopedCleanup([&] {
+    LOG_WITH_PREFIX(WARNING) << "Error during major delta compaction! Rolling back rowset metadata";
+    rowset_metadata_->LoadFromPB(original_pb);
+  });
 
-  // Since we've already updated the metadata in memory, now we update the
-  // delta tracker's stores. Those stores should match the blocks in the
-  // metadata so, since we've already updated the metadata, we use CHECK_OK
-  // here.
+  // Prepare the changes to the metadata.
+  RowSetMetadataUpdate update;
+  compaction->CreateMetadataUpdate(&update);
+  vector<BlockId> removed_blocks;
+  rowset_metadata_->CommitUpdate(update, &removed_blocks);
+
+  // Now that the metadata has been updated, open a new cfile set with the
+  // appropriate blocks to match the update.
   shared_ptr<CFileSet> new_base;
   RETURN_NOT_OK(CFileSet::Open(rowset_metadata_,
-                               mem_trackers_.tablet_tracker,
-                               &new_base));
+                          mem_trackers_.tablet_tracker,
+                          &new_base));
   {
+    // Update the delta tracker and the base data with the changes.
     std::lock_guard<rw_spinlock> lock(component_lock_);
-    CHECK_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
+    RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
     base_data_.swap(new_base);
   }
 
-  // We don't CHECK_OK on Flush here because if we don't successfully flush we
-  // don't have consistency problems in the case of major delta compaction --
-  // we are not adding additional mutations that weren't already present.
+  // Now that we've successfully compacted, add the removed blocks to the
+  // orphaned blocks list and cancel cleanup.
+  rowset_metadata_->AddOrphanedBlocks(removed_blocks);
+  revert_metadata_update.cancel();
+
+  // Even if we don't successfully flush we don't have consistency problems in
+  // the case of major delta compaction -- we are not adding additional
+  // mutations that werent already present.
   return rowset_metadata_->Flush();
 }
 

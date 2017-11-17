@@ -161,11 +161,12 @@ class DeltaTracker {
   // and if so, compact the stores.
   Status Compact();
 
-  // Persist the given delta updates to disk and then make them visible via the
-  // DeltaTracker. The 'compact_flush_lock_' should be acquired before calling
-  // this method. This method should only be used for compactions or ancient
-  // history data GC, not when adding mutations, since it makes the updated
-  // stores visible before attempting to flush the metadata to disk.
+  // Updates the in-memory list of delta stores and then persists the updated
+  // metadata. This should only be used for compactions or ancient history
+  // data GC, not when adding mutations, since it makes the updated stores
+  // visible before attempting to flush the metadata to disk.
+  //
+  // The 'compact_flush_lock_' should be acquired before calling this method.
   Status CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& update,
                                         const SharedDeltaStoreVector& to_remove,
                                         const std::vector<BlockId>& new_delta_blocks,
@@ -192,23 +193,35 @@ class DeltaTracker {
   Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
                                  int64_t* blocks_deleted, int64_t* bytes_deleted);
 
-  // Validate that 'first' may precede 'second' in an ordered list of deltas,
-  // given a delta type of 'type'. This should only be run in DEBUG mode.
-  void ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
-                          const std::shared_ptr<DeltaStore>& second,
+  // Opens the input 'blocks' of type 'type' and returns the opened delta file
+  // readers in 'stores'.
+  Status OpenDeltaReaders(const std::vector<BlockId>& blocks,
+                          std::vector<std::shared_ptr<DeltaStore> >* stores,
                           DeltaType type);
 
-  // Validate the relative ordering of the deltas in the specified list. This
-  // should only be run in DEBUG mode.
-  void ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type);
+  // Validates that 'first' may precede 'second' in an ordered list of deltas,
+  // given a delta type of 'type'. This should only be run in DEBUG mode.
+  //
+  // Crashes if there is an ordering violation, and returns an error if the
+  // validation could not be performed.
+  Status ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
+                            const std::shared_ptr<DeltaStore>& second,
+                            DeltaType type);
 
-  // Replace the subsequence of stores that matches 'stores_to_replace' with
+  // Validates the relative ordering of the deltas in the specified list. This
+  // should only be run in DEBUG mode.
+  //
+  // Crashes if there is an ordering violation, and returns an error if the
+  // validation could not be performed.
+  Status ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type);
+
+  // Replaces the subsequence of stores that matches 'stores_to_replace' with
   // delta file readers corresponding to 'new_delta_blocks', which may be empty.
   // If 'stores_to_replace' is empty then the stores represented by
   // 'new_delta_blocks' are prepended to the relevant delta stores list.
-  Status AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
-                            const std::vector<BlockId>& new_delta_blocks,
-                            DeltaType type);
+  void AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
+                          const SharedDeltaStoreVector& new_stores,
+                          DeltaType type);
 
   // Return the number of rows encompassed by this DeltaTracker. Note that
   // this is _not_ the number of updated rows, but rather the number of rows
@@ -261,10 +274,6 @@ class DeltaTracker {
                TabletMemTrackers mem_trackers);
 
   Status DoOpen();
-
-  Status OpenDeltaReaders(const std::vector<BlockId>& blocks,
-                          std::vector<std::shared_ptr<DeltaStore> >* stores,
-                          DeltaType type);
 
   Status FlushDMS(DeltaMemStore* dms,
                   std::shared_ptr<DeltaFileReader>* dfr,
