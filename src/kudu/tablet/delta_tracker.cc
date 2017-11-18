@@ -37,6 +37,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_applier.h"
@@ -93,6 +94,7 @@ DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
     : rowset_metadata_(std::move(rowset_metadata)),
       num_rows_(num_rows),
       open_(false),
+      read_only_(false),
       log_anchor_registry_(log_anchor_registry),
       mem_trackers_(std::move(mem_trackers)),
       dms_empty_(true) {}
@@ -350,11 +352,20 @@ Status DeltaTracker::CommitDeltaStoreMetadataUpdate(const RowSetMetadataUpdate& 
   return Status::OK();
 }
 
+Status DeltaTracker::CheckWritableUnlocked() const {
+  compact_flush_lock_.AssertAcquired();
+  if (PREDICT_FALSE(read_only_)) {
+    return Status::IllegalState("delta tracker has been marked read-only");
+  }
+  return Status::OK();
+}
+
 Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Prevent concurrent compactions or a compaction concurrent with a flush
   //
   // TODO(perf): this could be more fine grained
   std::lock_guard<Mutex> l(compact_flush_lock_);
+  RETURN_NOT_OK(CheckWritableUnlocked());
 
   // At the time of writing, minor delta compaction only compacts REDO delta
   // files, so we need at least 2 REDO delta stores to proceed.
@@ -459,6 +470,7 @@ Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
   // we need to be the only thread doing a flush or a compaction on this RowSet
   // while we do our work.
   std::lock_guard<Mutex> l(compact_flush_lock_);
+  RETURN_NOT_OK(CheckWritableUnlocked());
 
   // Get the list of undo deltas.
   SharedDeltaStoreVector undos_newest_first;
@@ -679,6 +691,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
 
 Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   std::lock_guard<Mutex> l(compact_flush_lock_);
+  RETURN_NOT_OK(CheckWritableUnlocked());
 
   // First, swap out the old DeltaMemStore a new one,
   // and add it to the list of delta stores to be reflected
@@ -714,15 +727,19 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
 
   // Now, actually flush the contents of the old DMS.
-  // TODO(awong): failures here leaves a DeltaMemStore permanently in the store
-  // list. For now, handle this by CHECKing for success, but we're going to
-  // want a more concrete solution if, say, we want to handle arbitrary file
-  // errors.
   //
   // TODO(todd): need another lock to prevent concurrent flushers
   // at some point.
   shared_ptr<DeltaFileReader> dfr;
-  CHECK_OK(FlushDMS(old_dms.get(), &dfr, flush_type));
+  Status s = FlushDMS(old_dms.get(), &dfr, flush_type);
+  if (PREDICT_FALSE(!s.ok())) {
+    // A failure here leaves a DeltaMemStore permanently in the store list.
+    // This isn't allowed, and rolling back the store is difficult, so we leave
+    // the delta tracker in an safe, read-only state.
+    CHECK(s.IsDiskFailure()) << LogPrefix() << s.ToString();
+    read_only_ = true;
+    return s;
+  }
 
   // Now, re-take the lock and swap in the DeltaFileReader in place of
   // of the DeltaMemStore

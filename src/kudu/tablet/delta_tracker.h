@@ -259,6 +259,12 @@ class DeltaTracker {
     return &compact_flush_lock_;
   }
 
+  // Returns an error if the delta tracker has been marked read-only.
+  // Else, returns OK.
+  //
+  // 'compact_flush_lock_' must be held when this is called.
+  Status CheckWritableUnlocked() const;
+
   // Init() all of the specified delta stores. For tests only.
   Status InitAllDeltaStoresForTests(WhichStores stores);
 
@@ -320,6 +326,13 @@ class DeltaTracker {
   rowid_t num_rows_;
 
   bool open_;
+
+  // Certain errors (e.g. failed delta tracker flushes) may leave the delta
+  // store lists in a state such that it would be unsafe to run further
+  // maintenance ops.
+  //
+  // Must be checked immediately after locking compact_flush_lock_.
+  bool read_only_;
 
   log::LogAnchorRegistry* log_anchor_registry_;
 
