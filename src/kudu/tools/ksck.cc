@@ -63,6 +63,8 @@ DEFINE_int32(fetch_replica_info_concurrency, 20,
 
 DEFINE_bool(consensus, true,
             "Whether to check the consensus state from each tablet against the master.");
+DEFINE_bool(verbose, false,
+            "Output detailed information even if no inconsistency is found.");
 
 namespace kudu {
 namespace tools {
@@ -808,8 +810,8 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
   }
 
   // In the case that we found something wrong, dump info on all the replicas
-  // to make it easy to debug.
-  if (result != CheckResult::OK) {
+  // to make it easy to debug. Also, do that if verbose output is requested.
+  if (result != CheckResult::OK || FLAGS_verbose) {
     for (const ReplicaInfo& r : replica_infos) {
       string ts_str = r.ts ? r.ts->ToString() : r.replica->ts_uuid();
       const char* leader_str = r.replica->is_leader() ? " [LEADER]" : "";
@@ -841,8 +843,9 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     Out() << endl;
   }
 
-  // If there are consensus conflicts, dump the consensus info too.
-  if (conflicting_states > 0) {
+  // If there are consensus conflicts, dump the consensus info too. Do that also
+  // if the verbose output is requested.
+  if (conflicting_states > 0 || FLAGS_verbose) {
     if (result != CheckResult::CONSENSUS_MISMATCH) {
       Out() << Substitute("$0 replicas' active configs differ from the master's.",
                           conflicting_states)
