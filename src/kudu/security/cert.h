@@ -94,8 +94,8 @@ class Cert : public RawDataWrapper<STACK_OF(X509)> {
   // Returns the end-user certificate's public key.
   Status GetPublicKey(PublicKey* key) const WARN_UNUSED_RESULT;
 
-  // Get the last certificate in the chain, otherwise known as the 'end-user' certificate.
-  X509* GetEndOfChainX509() const;
+  // Get the first certificate in the chain, otherwise known as the 'end-user' certificate.
+  X509* GetTopOfChainX509() const;
 };
 
 class CertSignRequest : public RawDataWrapper<X509_REQ> {

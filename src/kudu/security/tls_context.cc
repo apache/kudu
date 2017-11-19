@@ -182,7 +182,7 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
   auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
 
-  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetEndOfChainX509(), nullptr),
+  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetTopOfChainX509(), nullptr),
                      "could not init X509_STORE_CTX");
   int rc = X509_verify_cert(store_ctx.get());
   if (rc != 1) {
@@ -226,7 +226,7 @@ Status TlsContext::UseCertificateAndKey(const Cert& cert, const PrivateKey& key)
 
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetTopOfChainX509()),
                      "failed to use certificate");
   has_cert_ = true;
   return Status::OK();
@@ -355,7 +355,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   // a leak. Calling this nonsense X509_check_ca() forces the X509 extensions to
   // get cached, so we don't hit the race later. 'VerifyCertChain' also has the
   // effect of triggering the racy codepath.
-  ignore_result(X509_check_ca(cert.GetEndOfChainX509()));
+  ignore_result(X509_check_ca(cert.GetTopOfChainX509()));
   ERR_clear_error(); // in case it left anything on the queue.
 
   // Step 4: Adopt the new key and cert.
@@ -363,7 +363,7 @@ Status TlsContext::GenerateSelfSignedCertAndKey() {
   CHECK(!has_cert_);
   OPENSSL_RET_NOT_OK(SSL_CTX_use_PrivateKey(ctx_.get(), key.GetRawData()),
                      "failed to use private key");
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetTopOfChainX509()),
                      "failed to use certificate");
   has_cert_ = true;
   csr_ = std::move(csr);
@@ -403,7 +403,7 @@ Status TlsContext::AdoptSignedCert(const Cert& cert) {
     return Status::RuntimeError("certificate public key does not match the CSR public key");
   }
 
-  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetEndOfChainX509()),
+  OPENSSL_RET_NOT_OK(SSL_CTX_use_certificate(ctx_.get(), cert.GetTopOfChainX509()),
                      "failed to use certificate");
 
   // This should never fail since we already compared the cert's public key

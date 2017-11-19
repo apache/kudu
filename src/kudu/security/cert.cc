@@ -69,9 +69,9 @@ int GetKuduKerberosPrincipalOidNid() {
   return nid;
 }
 
-X509* Cert::GetEndOfChainX509() const {
+X509* Cert::GetTopOfChainX509() const {
   CHECK_GT(chain_len(), 0);
-  return sk_X509_value(data_.get(), chain_len() - 1);
+  return sk_X509_value(data_.get(), 0);
 }
 
 Status Cert::FromString(const std::string& data, DataFormat format) {
@@ -95,16 +95,16 @@ Status Cert::FromFile(const std::string& fpath, DataFormat format) {
 }
 
 string Cert::SubjectName() const {
-  return X509NameToString(X509_get_subject_name(GetEndOfChainX509()));
+  return X509NameToString(X509_get_subject_name(GetTopOfChainX509()));
 }
 
 string Cert::IssuerName() const {
-  return X509NameToString(X509_get_issuer_name(GetEndOfChainX509()));
+  return X509NameToString(X509_get_issuer_name(GetTopOfChainX509()));
 }
 
 boost::optional<string> Cert::UserId() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  X509_NAME* name = X509_get_subject_name(GetEndOfChainX509());
+  X509_NAME* name = X509_get_subject_name(GetTopOfChainX509());
   char buf[1024];
   int len = X509_NAME_get_text_by_NID(name, NID_userId, buf, arraysize(buf));
   if (len < 0) return boost::none;
@@ -115,7 +115,7 @@ vector<string> Cert::Hostnames() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   vector<string> result;
   auto gens = ssl_make_unique(reinterpret_cast<GENERAL_NAMES*>(X509_get_ext_d2i(
-      GetEndOfChainX509(), NID_subject_alt_name, nullptr, nullptr)));
+      GetTopOfChainX509(), NID_subject_alt_name, nullptr, nullptr)));
   if (gens) {
     for (int i = 0; i < sk_GENERAL_NAME_num(gens.get()); ++i) {
       GENERAL_NAME* gen = sk_GENERAL_NAME_value(gens.get(), i);
@@ -135,9 +135,9 @@ vector<string> Cert::Hostnames() const {
 
 boost::optional<string> Cert::KuduKerberosPrincipal() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  int idx = X509_get_ext_by_NID(GetEndOfChainX509(), GetKuduKerberosPrincipalOidNid(), -1);
+  int idx = X509_get_ext_by_NID(GetTopOfChainX509(), GetKuduKerberosPrincipalOidNid(), -1);
   if (idx < 0) return boost::none;
-  X509_EXTENSION* ext = X509_get_ext(GetEndOfChainX509(), idx);
+  X509_EXTENSION* ext = X509_get_ext(GetTopOfChainX509(), idx);
   ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data(ext);
   const unsigned char* octet_str_data = octet_str->data;
   long len; // NOLINT(runtime/int)
@@ -153,7 +153,7 @@ boost::optional<string> Cert::KuduKerberosPrincipal() const {
 
 Status Cert::CheckKeyMatch(const PrivateKey& key) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  OPENSSL_RET_NOT_OK(X509_check_private_key(GetEndOfChainX509(), key.GetRawData()),
+  OPENSSL_RET_NOT_OK(X509_check_private_key(GetTopOfChainX509(), key.GetRawData()),
                      "certificate does not match private key");
   return Status::OK();
 }
@@ -164,12 +164,12 @@ Status Cert::GetServerEndPointChannelBindings(string* channel_bindings) const {
   // (hash) algorithm, and the public key type which signed the cert.
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-  int signature_nid = X509_get_signature_nid(GetEndOfChainX509());
+  int signature_nid = X509_get_signature_nid(GetTopOfChainX509());
 #else
   // Older version of OpenSSL appear not to have a public way to get the
   // signature digest method from a certificate. Instead, we reach into the
   // 'private' internals.
-  int signature_nid = OBJ_obj2nid(GetEndOfChainX509()->sig_alg->algorithm);
+  int signature_nid = OBJ_obj2nid(GetTopOfChainX509()->sig_alg->algorithm);
 #endif
 
   // Retrieve the digest algorithm type.
@@ -252,7 +252,7 @@ void Cert::AdoptAndAddRefX509(X509* cert) {
 
 Status Cert::GetPublicKey(PublicKey* key) const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  EVP_PKEY* raw_key = X509_get_pubkey(GetEndOfChainX509());
+  EVP_PKEY* raw_key = X509_get_pubkey(GetTopOfChainX509());
   OPENSSL_RET_IF_NULL(raw_key, "unable to get certificate public key");
   key->AdoptRawData(raw_key);
   return Status::OK();

@@ -184,7 +184,7 @@ TEST_P(TestRpc, TestCall) {
   }
 }
 
-TEST_P(TestRpc, TestCallWithChainCert) {
+TEST_P(TestRpc, TestCallWithChainCerts) {
   bool enable_ssl = GetParam();
   // We're only interested in running this test with TLS enabled.
   if (!enable_ssl) return;
