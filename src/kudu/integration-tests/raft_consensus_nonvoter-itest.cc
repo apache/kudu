@@ -57,6 +57,7 @@ METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 
 using kudu::cluster::ExternalDaemon;
+using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
@@ -305,7 +306,7 @@ TEST_F(RaftConsensusNonVoterITest, AddNonVoterReplica) {
   // The master should report about the newly added NON_VOTER tablet replica
   // to the established leader.
   bool has_leader;
-  master::TabletLocationsPB tablet_locations;
+  TabletLocationsPB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(
       cluster_->master_proxy(), kOriginalReplicasNum + 1, tablet_id, kTimeout,
       WAIT_FOR_LEADER, &has_leader, &tablet_locations));
@@ -429,7 +430,7 @@ TEST_F(RaftConsensusNonVoterITest, AddThenRemoveNonVoterReplica) {
   // should report appropriate replica count at this point. The tablet leader
   // should be established.
   bool has_leader;
-  master::TabletLocationsPB tablet_locations;
+  TabletLocationsPB tablet_locations;
   ASSERT_OK(WaitForReplicasReportedToMaster(
       cluster_->master_proxy(), kOriginalReplicasNum, tablet_id, kTimeout,
       WAIT_FOR_LEADER, &has_leader, &tablet_locations));
@@ -745,7 +746,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
     // The removed tablet replica should be gone, and the master should report
     // appropriate replica count at this point.
     bool has_leader;
-    master::TabletLocationsPB tablet_locations;
+    TabletLocationsPB tablet_locations;
     ASSERT_OK(WaitForReplicasReportedToMaster(
         cluster_->master_proxy(), kInitialReplicasNum, tablet_id, kTimeout,
         WAIT_FOR_LEADER, &has_leader, &tablet_locations));
@@ -891,6 +892,152 @@ TEST_F(RaftConsensusNonVoterITest, PromotedReplicaCanVote) {
   }
   ASSERT_NE(nullptr, leader);
   ASSERT_EQ(new_replica_uuid, leader->uuid());
+}
+
+// Add an extra non-voter replica to the tablet and make sure it's evicted
+// by the catalog manager once catalog manager sees its state updated.
+TEST_F(RaftConsensusNonVoterITest, CatalogManagerEvictsExcessNonVoter) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const int kReplicaUnavailableSec = 5;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int kReplicasNum = 3;
+  FLAGS_num_replicas = kReplicasNum;
+  // Need one extra tserver for a new non-voter replica.
+  FLAGS_num_tablet_servers = kReplicasNum + 1;
+  const vector<string> kMasterFlags = {
+    // The scenario runs with the new replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+    // Don't evict excess replicas to avoid races in the scenario.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  const vector<string> kTserverFlags = {
+    // The scenario runs with the new replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+    Substitute("--consensus_rpc_timeout_ms=$0", 1000 * kReplicaUnavailableSec),
+    Substitute("--follower_unavailable_considered_failed_sec=$0",
+              kReplicaUnavailableSec),
+  };
+
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+  ASSERT_EQ(kReplicasNum + 1, tablet_servers_.size());
+  ASSERT_EQ(kReplicasNum, tablet_replicas_.size());
+
+  TabletServerMap replica_servers;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id_) {
+      replica_servers.emplace(e.second->uuid(), e.second);
+    }
+  }
+  ASSERT_EQ(FLAGS_num_replicas, replica_servers.size());
+
+  TServerDetails* new_replica = nullptr;
+  for (const auto& ts : tablet_servers_) {
+    if (replica_servers.find(ts.first) == replica_servers.end()) {
+      new_replica = ts.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, new_replica);
+  ASSERT_OK(AddReplica(tablet_id_, new_replica, RaftPeerPB::NON_VOTER, kTimeout));
+
+  bool has_leader = false;
+  TabletLocationsPB tablet_locations;
+  // Make sure the extra replica is seen by the master.
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum + 1,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader,
+                                            &tablet_locations));
+
+  // Switch the catalog manager to start evicting excess replicas
+  // (that's how it runs by default in the new replica management scheme).
+  // Prior to this point, that might lead to a race, since the newly added
+  // non-voter replica might be evicted before it's spotted by the
+  // WaitForReplicasReportedToMaster() call above.
+  for (auto i = 0; i < cluster_->num_masters(); ++i) {
+    ExternalMaster* m = cluster_->master(i);
+    ASSERT_OK(cluster_->SetFlag(m,
+        "catalog_manager_evict_excess_replicas", "true"));
+  }
+
+  ExternalTabletServer* new_replica_ts =
+      cluster_->tablet_server_by_uuid(new_replica->uuid());
+  ASSERT_NE(nullptr, new_replica_ts);
+  ASSERT_OK(new_replica_ts->Pause());
+  SCOPED_CLEANUP({
+    ASSERT_OK(new_replica_ts->Resume());
+  });
+  SleepFor(MonoDelta::FromSeconds(2 * kReplicaUnavailableSec));
+  ASSERT_OK(new_replica_ts->Resume());
+
+  // Make sure the excess non-voter replica is gone.
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader,
+                                            &tablet_locations));
+  NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Check that the catalog manager adds a non-voter replica to replace failed
+// voter replica in a tablet.
+//
+// TODO(aserbin): and make it run for 5 tablet servers.
+TEST_F(RaftConsensusNonVoterITest, CatalogManagerAddsNonVoter) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const int kReplicaUnavailableSec = 10;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(6 * kReplicaUnavailableSec);
+  const int kReplicasNum = 3;
+  FLAGS_num_replicas = kReplicasNum;
+  // Need one extra tserver after the tserver with on of the replicas stopped.
+  // Otherwise, the catalog manager would not be able to spawn a new non-voter
+  // replacement replica.
+  FLAGS_num_tablet_servers = kReplicasNum + 1;
+  const vector<string> kMasterFlags = {
+    // The scenario runs with the new replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+    // Don't evict excess replicas to avoid races in the scenario.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  const vector<string> kTserverFlags = {
+    // The scenario runs with the new replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+    Substitute("--follower_unavailable_considered_failed_sec=$0",
+               kReplicaUnavailableSec),
+  };
+
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+  ASSERT_EQ(kReplicasNum + 1, tablet_servers_.size());
+  ASSERT_EQ(kReplicasNum, tablet_replicas_.size());
+
+  ExternalTabletServer* ts0 = cluster_->tablet_server(0);
+  ASSERT_NE(nullptr, ts0);
+  ts0->Shutdown();
+
+  // Wait for a new non-voter replica added by the catalog manager to
+  // replace the failed one.
+  bool has_leader = false;
+  TabletLocationsPB tablet_locations;
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum + 1,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader,
+                                            &tablet_locations));
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 }  // namespace tserver

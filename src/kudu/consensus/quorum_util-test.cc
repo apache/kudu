@@ -15,8 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -25,26 +29,68 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using std::string;
+using std::unique_ptr;
+using std::vector;
+
 namespace kudu {
 namespace consensus {
 
-using std::string;
+// Handy notation of membership types used by AddPeer(), etc.
+constexpr auto N = RaftPeerPB::NON_VOTER;
+constexpr auto U = RaftPeerPB::UNKNOWN_MEMBER_TYPE;
+constexpr auto V = RaftPeerPB::VOTER;
+
+typedef std::pair<string, bool> Attr;
 
 // Add a consensus peer into the specified configuration.
 static void AddPeer(RaftConfigPB* config,
                     const string& uuid,
-                    RaftPeerPB::MemberType type) {
+                    RaftPeerPB::MemberType type,
+                    boost::optional<char> overall_health = boost::none,
+                    vector<Attr> attrs = {}) {
   RaftPeerPB* peer = config->add_peers();
   peer->set_permanent_uuid(uuid);
   peer->mutable_last_known_addr()->set_host(uuid + ".example.com");
   peer->set_member_type(type);
+  if (overall_health) {
+    unique_ptr<HealthReportPB> health_report(new HealthReportPB);
+    switch (*overall_health) {
+      case '+':
+        health_report->set_overall_health(HealthReportPB::HEALTHY);
+        break;
+      case '-':
+        health_report->set_overall_health(HealthReportPB::FAILED);
+        break;
+      case '?':
+        health_report->set_overall_health(HealthReportPB::UNKNOWN);
+        break;
+      default:
+        FAIL() << *overall_health << ": unexpected replica health status";
+        break;
+    }
+    peer->set_allocated_health_report(health_report.release());
+  }
+  if (!attrs.empty()) {
+    unique_ptr<RaftPeerAttrsPB> attrs_pb(new RaftPeerAttrsPB);
+    for (const auto& attr : attrs) {
+      if (attr.first == "PROMOTE") {
+        attrs_pb->set_promote(attr.second);
+      } else if (attr.first == "REPLACE") {
+        attrs_pb->set_replace(attr.second);
+      } else {
+        FAIL() << attr.first << ": unexpected attribute to set";
+      }
+    }
+    peer->set_allocated_attrs(attrs_pb.release());
+  }
 }
 
 TEST(QuorumUtilTest, TestMemberExtraction) {
   RaftConfigPB config;
-  AddPeer(&config, "A", RaftPeerPB::VOTER);
-  AddPeer(&config, "B", RaftPeerPB::VOTER);
-  AddPeer(&config, "C", RaftPeerPB::VOTER);
+  AddPeer(&config, "A", V);
+  AddPeer(&config, "B", V);
+  AddPeer(&config, "C", V);
 
   // Basic test for GetRaftConfigMember().
   RaftPeerPB* peer_pb;
@@ -65,9 +111,9 @@ TEST(QuorumUtilTest, TestMemberExtraction) {
 
 TEST(QuorumUtilTest, TestDiffConsensusStates) {
   ConsensusStatePB old_cs;
-  AddPeer(old_cs.mutable_committed_config(), "A", RaftPeerPB::VOTER);
-  AddPeer(old_cs.mutable_committed_config(), "B", RaftPeerPB::VOTER);
-  AddPeer(old_cs.mutable_committed_config(), "C", RaftPeerPB::VOTER);
+  AddPeer(old_cs.mutable_committed_config(), "A", V);
+  AddPeer(old_cs.mutable_committed_config(), "B", V);
+  AddPeer(old_cs.mutable_committed_config(), "C", V);
   old_cs.set_current_term(1);
   old_cs.set_leader_uuid("A");
   old_cs.mutable_committed_config()->set_opid_index(1);
@@ -102,7 +148,7 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   {
     auto new_cs = old_cs;
     new_cs.mutable_committed_config()->set_opid_index(2);
-    AddPeer(new_cs.mutable_committed_config(), "D", RaftPeerPB::NON_VOTER);
+    AddPeer(new_cs.mutable_committed_config(), "D", N);
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "NON_VOTER D (D.example.com) added",
@@ -114,7 +160,7 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
     auto new_cs = old_cs;
     new_cs.mutable_committed_config()->set_opid_index(2);
     new_cs.mutable_committed_config()
-      ->mutable_peers()->Mutable(2)->set_member_type(RaftPeerPB::NON_VOTER);
+      ->mutable_peers()->Mutable(2)->set_member_type(N);
 
     EXPECT_EQ("config changed from index 1 to 2, "
               "C (C.example.com) changed from VOTER to NON_VOTER",
@@ -150,10 +196,10 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
   // Simulate a change in a pending config
   {
     auto before_cs = old_cs;
-    AddPeer(before_cs.mutable_pending_config(), "A", RaftPeerPB::VOTER);
+    AddPeer(before_cs.mutable_pending_config(), "A", V);
     auto after_cs = before_cs;
     after_cs.mutable_pending_config()
-      ->mutable_peers()->Mutable(0)->set_member_type(RaftPeerPB::NON_VOTER);
+      ->mutable_peers()->Mutable(0)->set_member_type(N);
 
     EXPECT_EQ("pending config changed, A (A.example.com) changed from VOTER to NON_VOTER",
               DiffConsensusStates(before_cs, after_cs));
@@ -162,9 +208,9 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
 
 TEST(QuorumUtilTest, TestIsRaftConfigVoter) {
   RaftConfigPB config;
-  AddPeer(&config, "A", RaftPeerPB::VOTER);
-  AddPeer(&config, "B", RaftPeerPB::NON_VOTER);
-  AddPeer(&config, "C", RaftPeerPB::UNKNOWN_MEMBER_TYPE);
+  AddPeer(&config, "A", V);
+  AddPeer(&config, "B", N);
+  AddPeer(&config, "C", U);
 
   // The case when membership type is not specified. That sort of configuration
   // would not pass VerifyRaftConfig(), though. Anyway, that should result
@@ -189,6 +235,372 @@ TEST(QuorumUtilTest, TestIsRaftConfigVoter) {
   RaftPeerPB* peer_c;
   ASSERT_OK(GetRaftConfigMember(&config, "C", &peer_c));
   ASSERT_FALSE(ReplicaTypesEqual(*peer_b, *peer_c));
+}
+
+// Verify logic of the kudu::consensus::IsUnderReplicated.
+TEST(QuorumUtilTest, IsUnderReplicated) {
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V);
+    AddPeer(&config, "B", V);
+    AddPeer(&config, "C", V);
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_FALSE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, '?');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_FALSE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, '-');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", N, '+');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", N, '+');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", N, '+');
+    EXPECT_FALSE(IsUnderReplicated(config, 1));
+    EXPECT_TRUE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", N, '+', {{"PROMOTE", true}});
+    EXPECT_FALSE(IsUnderReplicated(config, 1));
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", N, '-', {{"PROMOTE", true}});
+    EXPECT_FALSE(IsUnderReplicated(config, 1));
+    EXPECT_TRUE(IsUnderReplicated(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "D", N, '+');
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+    EXPECT_FALSE(IsUnderReplicated(config, 3));
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", N, '-');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", N, '+');
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    // The replica does not have the PROMOTE attribute, so a new one is needed.
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_FALSE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(IsUnderReplicated(config, 4));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    EXPECT_FALSE(IsUnderReplicated(config, 2));
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
+}
+
+// Verify logic of the kudu::consensus::CanEvictReplica(), anticipating
+// removal of a voter replica.
+TEST(QuorumUtilTest, CanEvictReplicaVoters) {
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V);
+    AddPeer(&config, "B", V);
+    AddPeer(&config, "C", V);
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, '-');
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '?');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V);
+    AddPeer(&config, "C", V);
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+', {{"REPLACE", false}});
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", V, '+');
+    EXPECT_FALSE(CanEvictReplica(config, 4));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    EXPECT_EQ("C", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '+');
+    EXPECT_FALSE(CanEvictReplica(config, 4));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", V, '?', {{"REPLACE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("D", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", V, '-', {{"REPLACE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("D", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "D", V, '+', {{"REPLACE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("D", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '?');
+    AddPeer(&config, "D", V, '+', {{"REPLACE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("D", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '+');
+    EXPECT_FALSE(CanEvictReplica(config, 4));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+}
+
+// Verify logic of the kudu::consensus::CanEvictReplica(), anticipating
+// removal of a non-voter replica.
+TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V);
+    EXPECT_FALSE(CanEvictReplica(config, 1));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    EXPECT_FALSE(CanEvictReplica(config, 1));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", N);
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", N, '+');
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("C", uuid_to_evict);
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("C", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", N, '-', {{"PROMOTE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", N, '-');
+    AddPeer(&config, "C", N);
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", N, '?');
+    AddPeer(&config, "C", N, '+');
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("B", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V);
+    AddPeer(&config, "C", N);
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    EXPECT_EQ("C", uuid_to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V);
+    AddPeer(&config, "C", N);
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, 1));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", N, '-', {{"PROMOTE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 2));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
+    EXPECT_FALSE(CanEvictReplica(config, 3));
+    string uuid_to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    EXPECT_EQ("D", uuid_to_evict);
+  }
 }
 
 } // namespace consensus

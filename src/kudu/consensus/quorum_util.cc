@@ -17,6 +17,7 @@
 #include "kudu/consensus/quorum_util.h"
 
 #include <map>
+#include <ostream>
 #include <set>
 #include <string>
 #include <utility>
@@ -35,6 +36,7 @@ using google::protobuf::RepeatedPtrField;
 using kudu::pb_util::SecureShortDebugString;
 using std::map;
 using std::pair;
+using std::set;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -380,6 +382,191 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
   }
 
   return JoinStrings(change_strs, ", ");
+}
+
+// The decision is based on:
+//
+//   * the number of voter replicas in definitively bad shape and replicas
+//     marked with the REPLACE attribute
+//
+//   * the number of non-voter replicas marked with the PROMOTE=true attribute
+//     in good or possibly good state.
+//
+// This is because a replica with UNKNOWN reported health state might actually
+// be in good shape. If so, then adding a new replica would lead to
+// over-provisioning. This logic assumes that a non-voter replica does not
+// stay in unknown state for eternity -- the leader replica should take care of
+// that and eventually update the health status either to 'HEALTHY' or 'FAILED'.
+//
+// TODO(aserbin): add a test scenario for the leader replica's logic to cover
+//                the latter case.
+bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
+  int num_voters_total = 0;
+  int num_voters_need_replacement = 0;
+  int num_non_voters_to_promote = 0;
+
+  // While working with the optional fields related to per-replica health status
+  // and attributes, has_a_field()-like methods are not called because of
+  // the appropriate default values of those fields.
+  for (const RaftPeerPB& peer : config.peers()) {
+    switch (peer.member_type()) {
+      case RaftPeerPB::VOTER:
+        ++num_voters_total;
+        if (peer.attrs().replace() ||
+            peer.health_report().overall_health() == HealthReportPB::FAILED) {
+          ++num_voters_need_replacement;
+        }
+        break;
+      case RaftPeerPB::NON_VOTER:
+        if (peer.attrs().promote() &&
+            peer.health_report().overall_health() != HealthReportPB::FAILED) {
+          ++num_non_voters_to_promote;
+        }
+        break;
+      default:
+        LOG(DFATAL) << peer.member_type() << ": unsupported member type";
+        break;
+    }
+  }
+  return replication_factor > (num_voters_total - num_voters_need_replacement) +
+      num_non_voters_to_promote;
+}
+
+// Whether there is an excess replica to evict.
+bool CanEvictReplica(const RaftConfigPB& config,
+                     int replication_factor,
+                     string* uuid_to_evict) {
+  int num_non_voters_total = 0;
+
+  int num_voters_healthy = 0;
+  int num_voters_total = 0;
+
+  string non_voter_any;
+  string non_voter_failed;
+  string non_voter_unknown_health;
+
+  string voter_any;
+  string voter_failed;
+  string voter_replace;
+  string voter_unknown_health;
+
+  // While working with the optional fields related to per-replica health status
+  // and attributes, has_a_field()-like methods are not called because of
+  // the appropriate default values of those fields.
+  for (const RaftPeerPB& peer : config.peers()) {
+    DCHECK(peer.has_permanent_uuid() && !peer.permanent_uuid().empty());
+    const string& peer_uuid = peer.permanent_uuid();
+    const bool failed = peer.health_report().overall_health() == HealthReportPB::FAILED;
+    const bool healthy = peer.health_report().overall_health() == HealthReportPB::HEALTHY;
+    const bool unknown = !peer.has_health_report() ||
+        !peer.health_report().has_overall_health() ||
+        peer.health_report().overall_health() == HealthReportPB::UNKNOWN;
+    const bool has_replace = peer.attrs().replace();
+
+    switch (peer.member_type()) {
+      case RaftPeerPB::VOTER:
+        ++num_voters_total;
+        if (healthy && !has_replace) {
+          ++num_voters_healthy;
+        }
+        if (failed && has_replace) {
+          voter_failed = voter_replace = peer_uuid;
+        }
+        if (failed && voter_failed.empty()) {
+          voter_failed = peer_uuid;
+        }
+        if (has_replace && voter_replace.empty()) {
+          voter_replace = peer_uuid;
+        }
+        if (unknown && voter_unknown_health.empty()) {
+          voter_unknown_health = peer_uuid;
+        }
+        voter_any = peer_uuid;
+        break;
+
+      case RaftPeerPB::NON_VOTER:
+        ++num_non_voters_total;
+        if (failed && non_voter_failed.empty()) {
+          non_voter_failed = peer_uuid;
+        }
+        if (unknown && non_voter_unknown_health.empty()) {
+          non_voter_unknown_health = peer_uuid;
+        }
+        non_voter_any = peer_uuid;
+        break;
+
+      default:
+        LOG(DFATAL) << peer.member_type() << ": unsupported member type";
+        break;
+    }
+  }
+
+  // An conservative approach is used when evicting replicas.
+  //
+  // A non-voter replica may be evicted only if the number of voter replicas
+  // in good health without the REPLACE attribute is greater or equal to the
+  // specified replication factor. The idea is to avoid evicting non-voter
+  // replicas if there is uncertainty about the actual health status of the
+  // voters replicas of the tablet. This is because a present non-voter replica
+  // could to be a good fit to replace a voter replica which actual health
+  // status is not yet known.
+  //
+  // A voter replica may be evicted only if the number of voter replicas in good
+  // health without the REPLACE attribute is greater or equal to the specified
+  // replication factor. Removal of voter replicas from the tablet without exact
+  // knowledge of their health status could lead to removing the healthy ones
+  // and keeping the failed ones.
+  const bool can_evict_non_voter =
+      num_voters_healthy >= replication_factor && num_non_voters_total > 0;
+  const bool can_evict_voter =
+      num_voters_healthy > replication_factor ||
+      (num_voters_healthy == replication_factor &&
+       num_voters_total > replication_factor);
+
+  const bool can_evict = can_evict_non_voter || can_evict_voter;
+  string to_evict;
+  if (can_evict_non_voter) {
+    // First try to evict an excess non-voter, if present. This is to avoid
+    // possible IO load due to tablet copy in progress.
+    //
+    // Non-voter candidates for eviction (in decreasing priority):
+    //   * failed
+    //   * in unknown health state
+    //   * any other
+    if (!non_voter_failed.empty()) {
+      to_evict = non_voter_failed;
+    } else if (!non_voter_unknown_health.empty()) {
+      to_evict = non_voter_unknown_health;
+    } else {
+      to_evict = non_voter_any;
+    }
+  } else if (can_evict_voter) {
+    // Next try to evict an excess voter.
+    //
+    // Voter candidates for eviction (in decreasing priority):
+    //   * failed and having the attribute REPLACE set
+    //   * having the attribute REPLACE set
+    //   * failed
+    //   * in unknown health state
+    //   * any other
+    if (!voter_replace.empty()) {
+      to_evict = voter_replace;
+    } else if (!voter_failed.empty()) {
+      to_evict = voter_failed;
+    } else if (!voter_unknown_health.empty()) {
+      to_evict = voter_unknown_health;
+    } else {
+      to_evict = voter_any;
+    }
+  }
+
+  if (can_evict) {
+    DCHECK(!to_evict.empty());
+    if (uuid_to_evict) {
+      *uuid_to_evict = to_evict;
+    }
+  }
+  return can_evict;
 }
 
 }  // namespace consensus

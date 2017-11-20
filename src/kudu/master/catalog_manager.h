@@ -797,7 +797,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                        uint32_t version);
 
   // Send the "create tablet request" to all peers of a particular tablet.
-  //.
+  //
   // The creation is async, and at the moment there is no error checking on the
   // caller side. We rely on the assignment timeout. If we don't see the tablet
   // after the timeout, we regenerate a new one and proceed with a new

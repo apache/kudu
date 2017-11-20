@@ -60,6 +60,7 @@
 #include <boost/function.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/type_encodings.h"
@@ -225,6 +226,41 @@ DEFINE_int32(catalog_manager_inject_latency_prior_tsk_write_ms, 0,
 TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, hidden);
 TAG_FLAG(catalog_manager_inject_latency_prior_tsk_write_ms, unsafe);
 
+DEFINE_bool(catalog_manager_evict_excess_replicas, true,
+            "Whether catalog manager evicts excess replicas from tablet "
+            "configuration based on replication factor.");
+TAG_FLAG(catalog_manager_evict_excess_replicas, hidden);
+TAG_FLAG(catalog_manager_evict_excess_replicas, runtime);
+
+DECLARE_bool(raft_prepare_replacement_before_eviction);
+
+using base::subtle::NoBarrier_CompareAndSwap;
+using base::subtle::NoBarrier_Load;
+using kudu::cfile::TypeEncodingInfo;
+using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetConsensusRole;
+using kudu::consensus::IsRaftConfigMember;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::StartTabletCopyRequestPB;
+using kudu::consensus::kMinimumTerm;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::RpcContext;
+using kudu::security::Cert;
+using kudu::security::DataFormat;
+using kudu::security::PrivateKey;
+using kudu::security::TokenSigner;
+using kudu::security::TokenSigningPrivateKey;
+using kudu::security::TokenSigningPrivateKeyPB;
+using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TabletReplica;
+using kudu::tablet::TabletStatePB;
+using kudu::tserver::TabletServerErrorPB;
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -233,37 +269,10 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
-
-using base::subtle::NoBarrier_CompareAndSwap;
-using base::subtle::NoBarrier_Load;
-using cfile::TypeEncodingInfo;
-using consensus::ConsensusServiceProxy;
-using consensus::ConsensusStatePB;
-using consensus::GetConsensusRole;
-using consensus::IsRaftConfigMember;
-using consensus::RaftConsensus;
-using consensus::RaftPeerPB;
-using consensus::StartTabletCopyRequestPB;
-using consensus::kMinimumTerm;
-using pb_util::SecureDebugString;
-using pb_util::SecureShortDebugString;
-using rpc::RpcContext;
-using security::Cert;
-using security::DataFormat;
-using security::PrivateKey;
-using security::TokenSigner;
-using security::TokenSigningPrivateKey;
-using security::TokenSigningPrivateKeyPB;
-using strings::Substitute;
-using tablet::TABLET_DATA_DELETED;
-using tablet::TABLET_DATA_TOMBSTONED;
-using tablet::TabletDataState;
-using tablet::TabletReplica;
-using tablet::TabletStatePB;
-using tserver::TabletServerErrorPB;
 
 ////////////////////////////////////////////////////////////
 // Table Loader
@@ -2983,67 +2992,139 @@ class AsyncAlterTable : public RetryingTSRpcTask {
   tserver::AlterSchemaResponsePB resp_;
 };
 
-class AsyncAddServerTask : public RetryingTSRpcTask {
+class AsyncChangeConfigTask : public RetryingTSRpcTask {
  public:
-  AsyncAddServerTask(Master *master,
-                     const scoped_refptr<TabletInfo>& tablet,
-                     ConsensusStatePB cstate,
-                     ThreadSafeRandom* rng)
-    : RetryingTSRpcTask(master,
-                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
-                        tablet->table()),
-      tablet_(tablet),
-      cstate_(std::move(cstate)),
-      rng_(rng) {
-    deadline_ = MonoTime::Max(); // Never time out.
-  }
-
-  string type_name() const override { return "AddServer ChangeConfig"; }
+  AsyncChangeConfigTask(Master* master,
+                        scoped_refptr<TabletInfo> tablet,
+                        ConsensusStatePB cstate,
+                        consensus::ChangeConfigType change_config_type);
 
   string description() const override;
 
  protected:
-  bool SendRequest(int attempt) override;
   void HandleResponse(int attempt) override;
-
- private:
-  string tablet_id() const override { return tablet_->id(); }
+  bool CheckOpIdIndex();
 
   const scoped_refptr<TabletInfo> tablet_;
   const ConsensusStatePB cstate_;
+  const consensus::ChangeConfigType change_config_type_;
 
-  // Used to make random choices in replica selection.
-  ThreadSafeRandom* rng_;
-
-  consensus::ChangeConfigRequestPB req_;
   consensus::ChangeConfigResponsePB resp_;
+
+ private:
+  string tablet_id() const override { return tablet_->id(); }
 };
 
-string AsyncAddServerTask::description() const {
-  return Substitute("AddServer ChangeConfig RPC for tablet $0 "
-                    "with cas_config_opid_index $1",
+AsyncChangeConfigTask::AsyncChangeConfigTask(Master* master,
+                                             scoped_refptr<TabletInfo> tablet,
+                                             ConsensusStatePB cstate,
+                                             consensus::ChangeConfigType change_config_type)
+    : RetryingTSRpcTask(master,
+                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
+                        tablet->table()),
+      tablet_(std::move(tablet)),
+      cstate_(std::move(cstate)),
+      change_config_type_(change_config_type) {
+    deadline_ = MonoTime::Max(); // Never time out.
+  }
+
+string AsyncChangeConfigTask::description() const {
+  return Substitute("$0 RPC for tablet $1 with cas_config_opid_index $2",
+                    type_name(),
                     tablet_->id(),
                     cstate_.committed_config().opid_index());
 }
 
-bool AsyncAddServerTask::SendRequest(int attempt) {
-  LOG(INFO) << Substitute("Sending request for AddServer on tablet $0 (attempt $1)",
-                          tablet_->id(), attempt);
+void AsyncChangeConfigTask::HandleResponse(int attempt) {
+  if (!resp_.has_error()) {
+    MarkComplete();
+    LOG_WITH_PREFIX(INFO) << Substitute("$0 succeeded (attempt $1)",
+                                        type_name(), attempt);
+    return;
+  }
 
-  // Bail if we're retrying in vain.
+  Status status = StatusFromPB(resp_.error().status());
+
+  // Do not retry on a CAS error, otherwise retry forever or until cancelled.
+  switch (resp_.error().code()) {
+    case TabletServerErrorPB::CAS_FAILED:
+      LOG_WITH_PREFIX(WARNING) << Substitute("$0 failed with leader $1 "
+          "due to CAS failure; no further retry: $2",
+          type_name(), target_ts_desc_->ToString(),
+          status.ToString());
+      MarkFailed();
+      break;
+    default:
+      LOG_WITH_PREFIX(INFO) << Substitute("$0 failed with leader $1 "
+          "due to error $2; will retry: $3",
+          type_name(), target_ts_desc_->ToString(),
+          TabletServerErrorPB::Code_Name(resp_.error().code()), status.ToString());
+      break;
+  }
+}
+
+bool AsyncChangeConfigTask::CheckOpIdIndex() {
   int64_t latest_index;
   {
     TabletMetadataLock tablet_lock(tablet_.get(), LockMode::READ);
     latest_index = tablet_lock.data().pb.consensus_state()
-      .committed_config().opid_index();
+        .committed_config().opid_index();
   }
   if (latest_index > cstate_.committed_config().opid_index()) {
-    LOG_WITH_PREFIX(INFO) << Substitute("Latest config for has opid_index of $0 "
-        "while this task has opid_index of $1. Aborting task",
+    LOG_WITH_PREFIX(INFO) << Substitute("aborting the task: "
+        "latest config opid_index $0; task opid_index $1",
         latest_index, cstate_.committed_config().opid_index());
     MarkAborted();
     return false;
   }
+  return true;
+}
+
+class AsyncAddReplicaTask : public AsyncChangeConfigTask {
+ public:
+  AsyncAddReplicaTask(Master* master,
+                      scoped_refptr<TabletInfo> tablet,
+                      ConsensusStatePB cstate,
+                      RaftPeerPB::MemberType member_type,
+                      ThreadSafeRandom* rng);
+
+  string type_name() const override;
+
+ protected:
+  bool SendRequest(int attempt) override;
+
+ private:
+  const RaftPeerPB::MemberType member_type_;
+
+  // Used to make random choices in replica selection.
+  ThreadSafeRandom* rng_;
+};
+
+AsyncAddReplicaTask::AsyncAddReplicaTask(Master* master,
+                                         scoped_refptr<TabletInfo> tablet,
+                                         ConsensusStatePB cstate,
+                                         RaftPeerPB::MemberType member_type,
+                                         ThreadSafeRandom* rng)
+    : AsyncChangeConfigTask(master, std::move(tablet), std::move(cstate),
+                            consensus::ADD_SERVER),
+      member_type_(member_type),
+      rng_(rng) {
+}
+
+string AsyncAddReplicaTask::type_name() const {
+  return Substitute("ChangeConfig:$0:$1",
+                    consensus::ChangeConfigType_Name(change_config_type_),
+                    RaftPeerPB::MemberType_Name(member_type_));
+}
+
+bool AsyncAddReplicaTask::SendRequest(int attempt) {
+  // Bail if we're retrying in vain.
+  if (!CheckOpIdIndex()) {
+    return false;
+  }
+
+  LOG(INFO) << Substitute("Sending $0 on tablet $1 (attempt $2)",
+                          type_name(), tablet_->id(), attempt);
 
   // Select the replica we wish to add to the config.
   // Do not include current members of the config.
@@ -3063,48 +3144,76 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
     return false;
   }
 
-  req_.set_dest_uuid(target_ts_desc_->permanent_uuid());
-  req_.set_tablet_id(tablet_->id());
-  req_.set_type(consensus::ADD_SERVER);
-  req_.set_cas_config_opid_index(cstate_.committed_config().opid_index());
-  RaftPeerPB* peer = req_.mutable_server();
+  consensus::ChangeConfigRequestPB req;
+  req.set_dest_uuid(target_ts_desc_->permanent_uuid());
+  req.set_tablet_id(tablet_->id());
+  req.set_type(consensus::ADD_SERVER);
+  req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
+  RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
   ServerRegistrationPB peer_reg;
   replacement_replica->GetRegistration(&peer_reg);
   CHECK_GT(peer_reg.rpc_addresses_size(), 0);
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
-  peer->set_member_type(RaftPeerPB::VOTER);
-  VLOG(1) << Substitute("Sending AddServer ChangeConfig request to $0: $1",
-                        target_ts_desc_->ToString(), SecureDebugString(req_));
-  consensus_proxy_->ChangeConfigAsync(req_, &resp_, &rpc_,
-                                      boost::bind(&AsyncAddServerTask::RpcCallback, this));
+  peer->set_member_type(member_type_);
+  VLOG(1) << Substitute("Sending $0 request to $1: $2",
+                        type_name(), target_ts_desc_->ToString(), SecureDebugString(req));
+  consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
+                                      boost::bind(&AsyncAddReplicaTask::RpcCallback, this));
   return true;
 }
 
-void AsyncAddServerTask::HandleResponse(int attempt) {
-  if (!resp_.has_error()) {
-    MarkComplete();
-    LOG_WITH_PREFIX(INFO) << "Config change to add server succeeded";
-    return;
+class AsyncEvictReplicaTask : public AsyncChangeConfigTask {
+ public:
+  AsyncEvictReplicaTask(Master *master,
+                        scoped_refptr<TabletInfo> tablet,
+                        ConsensusStatePB cstate,
+                        string peer_uuid_to_evict);
+
+  string type_name() const override;
+
+ protected:
+  bool SendRequest(int attempt) override;
+
+ private:
+  const string peer_uuid_to_evict_;
+};
+
+AsyncEvictReplicaTask::AsyncEvictReplicaTask(Master* master,
+                                             scoped_refptr<TabletInfo> tablet,
+                                             ConsensusStatePB cstate,
+                                             string peer_uuid_to_evict)
+    : AsyncChangeConfigTask(master, std::move(tablet), std::move(cstate),
+                            consensus::REMOVE_SERVER),
+      peer_uuid_to_evict_(std::move(peer_uuid_to_evict)) {
+}
+
+string AsyncEvictReplicaTask::type_name() const {
+  return Substitute("ChangeConfig:$0",
+                    consensus::ChangeConfigType_Name(change_config_type_));
+}
+
+bool AsyncEvictReplicaTask::SendRequest(int attempt) {
+  // Bail if we're retrying in vain.
+  if (!CheckOpIdIndex()) {
+    return false;
   }
 
-  Status status = StatusFromPB(resp_.error().status());
+  LOG(INFO) << Substitute("Sending $0 on tablet $1 (attempt $2)",
+                          type_name(), tablet_->id(), attempt);
 
-  // Do not retry on a CAS error, otherwise retry forever or until cancelled.
-  switch (resp_.error().code()) {
-    case TabletServerErrorPB::CAS_FAILED:
-      LOG_WITH_PREFIX(WARNING) << Substitute("ChangeConfig() failed with leader $0 "
-          "due to CAS failure. No further retry: $1",
-          target_ts_desc_->ToString(), status.ToString());
-      MarkFailed();
-      break;
-    default:
-      LOG_WITH_PREFIX(INFO) << Substitute("ChangeConfig() failed with leader $0 "
-          "due to error $1. This operation will be retried. Error detail: $2",
-          target_ts_desc_->ToString(),
-          TabletServerErrorPB::Code_Name(resp_.error().code()), status.ToString());
-      break;
-  }
+  consensus::ChangeConfigRequestPB req;
+  req.set_dest_uuid(target_ts_desc_->permanent_uuid());
+  req.set_tablet_id(tablet_->id());
+  req.set_type(consensus::REMOVE_SERVER);
+  req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
+  RaftPeerPB* peer = req.mutable_server();
+  peer->set_permanent_uuid(peer_uuid_to_evict_);
+  VLOG(1) << Substitute("Sending $0 request to $1: $2",
+                        type_name(), target_ts_desc_->ToString(), SecureDebugString(req));
+  consensus_proxy_->ChangeConfigAsync(req, &resp_, &rpc_,
+                                      boost::bind(&AsyncEvictReplicaTask::RpcCallback, this));
+  return true;
 }
 
 Status CatalogManager::ProcessTabletReport(
@@ -3265,6 +3374,8 @@ Status CatalogManager::ProcessTabletReport(
       continue;
     }
 
+    const auto replication_factor = table->metadata().state().pb.num_replicas();
+    bool consensus_state_updated = false;
     // 7. Process the report's consensus state. There may be one even when the
     // replica has been tombstoned.
     if (report.has_consensus_state()) {
@@ -3306,11 +3417,12 @@ Status CatalogManager::ProcessTabletReport(
       //   the committed config's opid_index).
       // - The new cstate has a leader, and either the old cstate didn't, or
       //   there was a term change.
-      if (cstate.committed_config().opid_index() > prev_cstate.committed_config().opid_index() ||
+      consensus_state_updated = (cstate.committed_config().opid_index() >
+                                 prev_cstate.committed_config().opid_index()) ||
           (!cstate.leader_uuid().empty() &&
            (prev_cstate.leader_uuid().empty() ||
-            cstate.current_term() > prev_cstate.current_term()))) {
-
+            cstate.current_term() > prev_cstate.current_term()));
+      if (consensus_state_updated) {
         // 7d(i). Retain knowledge of the leader even if it wasn't reported in
         // the latest config.
         //
@@ -3326,13 +3438,12 @@ Status CatalogManager::ProcessTabletReport(
           } else if (!cstate.leader_uuid().empty() &&
               !prev_cstate.leader_uuid().empty() &&
               cstate.leader_uuid() != prev_cstate.leader_uuid()) {
-            string msg = Substitute("Previously reported cstate for tablet $0 gave "
+            LOG(DFATAL) << Substitute("Previously reported cstate for tablet $0 gave "
                 "a different leader for term $1 than the current cstate. "
                 "Previous cstate: $2. Current cstate: $3.",
                 tablet->ToString(), cstate.current_term(),
                 SecureShortDebugString(prev_cstate),
                 SecureShortDebugString(cstate));
-            LOG(DFATAL) << msg;
             continue;
           }
         }
@@ -3368,15 +3479,37 @@ Status CatalogManager::ProcessTabletReport(
             }
           }
         }
+      }
 
-        // 7d(iv). Add a server to the config if it is under-replicated.
+      // 7e. Make tablet configuration change depending on the mode the server
+      // is running with. The choice between two alternative modes is controlled
+      // by the 'raft_prepare_replacement_before_eviction' run-time flag.
+      if (FLAGS_raft_prepare_replacement_before_eviction) {
+        // An alternative scheme of managing tablet replicas: the catalog
+        // manager processes the health-related info on replicas from the tablet
+        // report and initiates appropriate modifications for the tablet Raft
+        // configuration: evict an already-replaced failed voter replica or add
+        // a new non-voter replica marked for promotion as a replacement.
+        const RaftConfigPB& config = cstate.committed_config();
+        string to_evict;
+        if (IsUnderReplicated(config, replication_factor)) {
+          rpcs.emplace_back(new AsyncAddReplicaTask(
+              master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
+        } else if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
+                   CanEvictReplica(config, replication_factor, &to_evict)) {
+          DCHECK(!to_evict.empty());
+          rpcs.emplace_back(new AsyncEvictReplicaTask(
+              master_, tablet, cstate, std::move(to_evict)));
+        }
+      } else if (consensus_state_updated &&
+                 FLAGS_master_add_server_when_underreplicated &&
+                 CountVoters(cstate.committed_config()) < replication_factor) {
+        // Add a server to the config if it is under-replicated.
         //
         // This is an idempotent operation due to a CAS enforced on the
         // committed config's opid_index.
-        if (FLAGS_master_add_server_when_underreplicated &&
-            CountVoters(cstate.committed_config()) < table->metadata().state().pb.num_replicas()) {
-          rpcs.emplace_back(new AsyncAddServerTask(master_, tablet, cstate, &rng_));
-        }
+        rpcs.emplace_back(new AsyncAddReplicaTask(
+            master_, tablet, cstate, RaftPeerPB::VOTER, &rng_));
       }
     }
 
@@ -3820,7 +3953,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
   ConsensusStatePB* cstate = tablet->mutable_metadata()->mutable_dirty()
           ->pb.mutable_consensus_state();
   cstate->set_current_term(kMinimumTerm);
-  consensus::RaftConfigPB *config = cstate->mutable_committed_config();
+  RaftConfigPB *config = cstate->mutable_committed_config();
 
   // Maintain ability to downgrade Kudu to a version with LocalConsensus.
   if (nreplicas == 1) {
@@ -3836,7 +3969,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 
 void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                              const TabletMetadataLock& tablet_lock) {
-  const consensus::RaftConfigPB& config =
+  const RaftConfigPB& config =
       tablet_lock.data().pb.consensus_state().committed_config();
   tablet->set_last_create_tablet_time(MonoTime::Now());
   for (const RaftPeerPB& peer : config.peers()) {
@@ -3850,7 +3983,7 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
 
 void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
                                     int nreplicas,
-                                    consensus::RaftConfigPB *config) {
+                                    RaftConfigPB *config) {
   DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << SecureShortDebugString(*config);
   DCHECK_LE(nreplicas, ts_descs.size());
 
