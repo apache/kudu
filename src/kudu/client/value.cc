@@ -24,9 +24,12 @@
 #include "kudu/client/value-internal.h"
 #include "kudu/client/value.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/decimal_util.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/status.h"
 
 using std::string;
@@ -56,6 +59,8 @@ KuduValue* KuduValue::Clone() const {
       return KuduValue::FromFloat(data_->float_val_);
     case Data::SLICE:
       return KuduValue::CopyString(data_->slice_val_);
+    case Data::DECIMAL:
+      return KuduValue::FromDecimal(data_->decimal_val_, data_->scale_);
   }
   LOG(FATAL);
 }
@@ -93,6 +98,15 @@ KuduValue* KuduValue::FromBool(bool v) {
   return new KuduValue(d);
 }
 
+KuduValue* KuduValue::FromDecimal(int128_t dv, int8_t scale) {
+  auto d = new Data;
+  d->type_ = Data::DECIMAL;
+  d->decimal_val_ = dv;
+  d->scale_ = scale;
+
+  return new KuduValue(d);
+}
+
 KuduValue* KuduValue::CopyString(Slice s) {
   auto copy = new uint8_t[s.size()];
   memcpy(copy, s.data(), s.size());
@@ -106,13 +120,15 @@ KuduValue* KuduValue::CopyString(Slice s) {
 
 Status KuduValue::Data::CheckTypeAndGetPointer(const string& col_name,
                                                DataType t,
+                                               ColumnTypeAttributes type_attributes,
                                                void** val_void) {
   const TypeInfo* ti = GetTypeInfo(t);
-  switch (ti->physical_type()) {
+  switch (t) {
     case kudu::INT8:
     case kudu::INT16:
     case kudu::INT32:
     case kudu::INT64:
+    case kudu::UNIXTIME_MICROS:
       RETURN_NOT_OK(CheckAndPointToInt(col_name, ti->size(), val_void));
       break;
 
@@ -130,7 +146,14 @@ Status KuduValue::Data::CheckTypeAndGetPointer(const string& col_name,
       *val_void = &double_val_;
       break;
 
+    case kudu::DECIMAL32:
+    case kudu::DECIMAL64:
+    case kudu::DECIMAL128:
+      RETURN_NOT_OK(CheckAndPointToDecimal(col_name, t, type_attributes, val_void));
+      break;
+
     case kudu::BINARY:
+    case kudu::STRING:
       RETURN_NOT_OK(CheckAndPointToString(col_name, val_void));
       break;
 
@@ -190,6 +213,28 @@ Status KuduValue::Data::CheckAndPointToInt(const string& col_name,
   return Status::OK();
 }
 
+Status KuduValue::Data::CheckAndPointToDecimal(const string& col_name,
+                                               DataType type,
+                                               ColumnTypeAttributes type_attributes,
+                                               void** val_void) {
+  RETURN_NOT_OK(CheckValType(col_name, KuduValue::Data::DECIMAL, "decimal"));
+  // TODO: Coerce when possible
+  if (scale_ != type_attributes.scale) {
+    return Status::InvalidArgument(
+        Substitute("value scale $0 does not match the decimal column '$1' (expected $2)",
+                   scale_, col_name, type_attributes.scale));
+  }
+  int128_t max_val = MaxUnscaledDecimal(type_attributes.precision);
+  int128_t min_val = -max_val;
+  if (decimal_val_ < min_val || decimal_val_ > max_val) {
+    return Status::InvalidArgument(
+        Substitute("value $0 out of range for decimal column '$1'",
+                   decimal_val_, col_name));
+  }
+  *val_void = &decimal_val_;
+  return Status::OK();
+}
+
 Status KuduValue::Data::CheckAndPointToString(const string& col_name,
                                               void** val_void) {
   RETURN_NOT_OK(CheckValType(col_name, KuduValue::Data::SLICE, "string"));
@@ -209,6 +254,10 @@ const Slice KuduValue::Data::GetSlice() {
     case DOUBLE:
       return Slice(reinterpret_cast<uint8_t*>(&double_val_),
                    sizeof(double));
+    case DECIMAL:
+      return Slice(reinterpret_cast<uint8_t*>(&decimal_val_),
+                   sizeof(int128_t));
+
     case SLICE:
       return slice_val_;
   }

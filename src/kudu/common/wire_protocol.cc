@@ -209,8 +209,16 @@ Status SchemaFromPB(const SchemaPB& pb, Schema *schema) {
 void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int flags) {
   pb->Clear();
   pb->set_name(col_schema.name());
-  pb->set_type(col_schema.type_info()->type());
   pb->set_is_nullable(col_schema.is_nullable());
+  DataType type = col_schema.type_info()->type();
+  pb->set_type(type);
+  // Only serialize precision and scale for decimal types.
+  if (type == DataType::DECIMAL32 ||
+      type == DataType::DECIMAL64 ||
+      type == DataType::DECIMAL128) {
+    pb->mutable_type_attributes()->set_precision(col_schema.type_attributes().precision);
+    pb->mutable_type_attributes()->set_scale(col_schema.type_attributes().scale);
+  }
   if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
     pb->set_encoding(col_schema.attributes().encoding);
     pb->set_compression(col_schema.attributes().compression);
@@ -259,6 +267,17 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
     }
   }
 
+  ColumnTypeAttributes type_attributes;
+  if (pb.has_type_attributes()) {
+    const ColumnTypeAttributesPB& typeAttributesPB = pb.type_attributes();
+    if (typeAttributesPB.has_precision()) {
+      type_attributes.precision = typeAttributesPB.precision();
+    }
+    if (typeAttributesPB.has_scale()) {
+      type_attributes.scale = typeAttributesPB.scale();
+    }
+  }
+
   ColumnStorageAttributes attributes;
   if (pb.has_encoding()) {
     attributes.encoding = pb.encoding();
@@ -271,7 +290,7 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   }
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
-                      attributes);
+                      attributes, type_attributes);
 }
 
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {

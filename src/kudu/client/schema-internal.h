@@ -39,16 +39,30 @@ KuduColumnStorageAttributes::CompressionType FromInternalCompressionType(
     kudu::CompressionType type);
 
 kudu::DataType ToInternalDataType(
-    KuduColumnSchema::DataType type);
-KuduColumnSchema::DataType FromInternalDataType(
-    kudu::DataType type);
+    KuduColumnSchema::DataType type,
+    KuduColumnTypeAttributes attributes);
+KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type);
 
+class KuduColumnTypeAttributes::Data {
+ public:
+  Data(int8_t precision, int8_t scale)
+      : precision(precision),
+        scale(scale) {
+  }
+
+  int8_t precision;
+  int8_t scale;
+};
 
 class KuduColumnSpec::Data {
  public:
   explicit Data(std::string name)
       : name(std::move(name)),
         has_type(false),
+        has_precision(false),
+        precision(-1),
+        has_scale(false),
+        scale(-1),
         has_encoding(false),
         has_compression(false),
         has_block_size(false),
@@ -68,6 +82,12 @@ class KuduColumnSpec::Data {
 
   bool has_type;
   KuduColumnSchema::DataType type;
+
+  bool has_precision;
+  int8_t precision;
+
+  bool has_scale;
+  int8_t scale;
 
   bool has_encoding;
   KuduColumnStorageAttributes::EncodingType encoding;

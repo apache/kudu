@@ -77,7 +77,8 @@ ComparisonPredicateData::~ComparisonPredicateData() {
 Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec, Arena* arena) {
   void* val_void;
   RETURN_NOT_OK(val_->data_->CheckTypeAndGetPointer(col_.name(),
-                                                    col_.type_info()->physical_type(),
+                                                    col_.type_info()->type(),
+                                                    col_.type_attributes(),
                                                     &val_void));
   switch (op_) {
     case KuduPredicate::LESS_EQUAL: {
@@ -136,7 +137,8 @@ Status InListPredicateData::AddToScanSpec(ScanSpec* spec, Arena* /*arena*/) {
     // passed to the ColumnPredicate::InList constructor. The constructor for
     // ColumnPredicate::InList will assume ownership of the pointers via a swap.
     RETURN_NOT_OK(value->data_->CheckTypeAndGetPointer(col_.name(),
-                                                       col_.type_info()->physical_type(),
+                                                       col_.type_info()->type(),
+                                                       col_.type_attributes(),
                                                        &val_void));
     vals_list.push_back(val_void);
   }

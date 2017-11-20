@@ -39,7 +39,9 @@ class PartialRowTest : public KuduTest {
     : schema_({ ColumnSchema("key", INT32),
                 ColumnSchema("int_val", INT32),
                 ColumnSchema("string_val", STRING, true),
-                ColumnSchema("binary_val", BINARY, true) },
+                ColumnSchema("binary_val", BINARY, true),
+                ColumnSchema("decimal_val", DECIMAL32, true, nullptr, nullptr,
+                             ColumnStorageAttributes(), ColumnTypeAttributes(6, 2)) },
               1) {
     SeedRandom();
   }
@@ -202,6 +204,33 @@ TEST_F(PartialRowTest, UnitTest) {
   // Unset the binary column.
   EXPECT_OK(row.Unset("binary_val"));
   EXPECT_EQ("int32 int_val=99999", row.ToString());
+
+  // Unset the column by index
+  EXPECT_OK(row.Unset(1));
+  EXPECT_EQ("", row.ToString());
+
+  // Set a decimal column
+  EXPECT_OK(row.SetUnscaledDecimal("decimal_val", 123456));
+  EXPECT_TRUE(row.IsColumnSet(4));
+  EXPECT_EQ("decimal decimal_val=123456_D32", row.ToString());
+
+  // Set the max decimal value for the decimal_val column
+  EXPECT_OK(row.SetUnscaledDecimal("decimal_val", 999999));
+  EXPECT_EQ("decimal decimal_val=999999_D32", row.ToString());
+
+  // Set the min decimal value for the decimal_val column
+  EXPECT_OK(row.SetUnscaledDecimal("decimal_val", -999999));
+  EXPECT_EQ("decimal decimal_val=-999999_D32", row.ToString());
+
+  // Set a value that's too large for the decimal_val column
+  s = row.SetUnscaledDecimal("decimal_val", 1000000);
+  EXPECT_EQ("Invalid argument: value 10000.00 out of range for decimal column 'decimal_val'",
+            s.ToString());
+
+  // Set a value that's too small for the decimal_val column
+  s = row.SetUnscaledDecimal("decimal_val", -1000000);
+  EXPECT_EQ("Invalid argument: value -10000.00 out of range for decimal column 'decimal_val'",
+            s.ToString());
 
   // Even though the storage is actually the same at the moment, we shouldn't be
   // able to set string columns with SetBinary and vice versa.

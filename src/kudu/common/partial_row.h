@@ -33,9 +33,10 @@
 #include "kudu/client/stubs.h"
 #endif
 
+#include "kudu/util/int128.h"
 #include "kudu/util/kudu_export.h"
-#include "kudu/util/status.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 /// @cond
 namespace kudu {
@@ -104,6 +105,7 @@ class KUDU_EXPORT KuduPartialRow {
 
   Status SetFloat(const Slice& col_name, float val) WARN_UNUSED_RESULT;
   Status SetDouble(const Slice& col_name, double val) WARN_UNUSED_RESULT;
+  Status SetUnscaledDecimal(const Slice& col_name, int128_t val) WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Setters for integral type columns by index.
@@ -132,6 +134,7 @@ class KUDU_EXPORT KuduPartialRow {
 
   Status SetFloat(int col_idx, float val) WARN_UNUSED_RESULT;
   Status SetDouble(int col_idx, double val) WARN_UNUSED_RESULT;
+  Status SetUnscaledDecimal(int col_idx, int128_t val) WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Setters for binary/string columns by name (copying).
@@ -353,6 +356,7 @@ class KUDU_EXPORT KuduPartialRow {
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
+  Status GetUnscaledDecimal(const Slice& col_name, int128_t* val);
   ///@}
 
   /// @name Getters for column of integral type by column index.
@@ -383,6 +387,7 @@ class KUDU_EXPORT KuduPartialRow {
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
+  Status GetUnscaledDecimal(int col_idx, int128_t* val);
   ///@}
 
   /// @name Getters for string/binary column by column name.

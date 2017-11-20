@@ -193,6 +193,7 @@ install(FILES
 # Headers: util
 install(FILES
   ${CMAKE_CURRENT_BINARY_DIR}/../util/kudu_export.h
+  ../util/int128.h
   ../util/monotime.h
   ../util/slice.h
   ../util/status.h

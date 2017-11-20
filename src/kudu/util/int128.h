@@ -22,8 +22,6 @@
 
 #include <iostream>
 
-#include "kudu/gutil/mathlimits.h"
-
 namespace kudu {
 
 typedef unsigned __int128 uint128_t;
@@ -31,82 +29,10 @@ typedef signed __int128 int128_t;
 
 // Note: We don't use numeric_limits because it can give incorrect
 // values for __int128 and unsigned __int128.
-static const uint128_t UINT128_MIN = MathLimits<uint128_t>::kMin;
-static const uint128_t UINT128_MAX = MathLimits<uint128_t>::kMax;
-static const int128_t INT128_MIN = MathLimits<int128_t>::kMin;
-static const int128_t INT128_MAX = MathLimits<int128_t>::kMax;
-
-namespace int128Suffix {
-
-// Convert the characters 0 through 9 to their int value.
-constexpr uint128_t CharValue(char c) {
-  return c - '0';
-}
-
-// Terminate the recursion.
-template <uint128_t VALUE>
-constexpr uint128_t ValidateU128Helper() {
-  return true;
-}
-
-// Recurse the literal from left to right and validate the input.
-// Return true if the input is valid.
-template <uint128_t VALUE, char C, char... CS>
-constexpr bool ValidateU128Helper() {
-  return (VALUE <= UINT128_MAX / 10) &&
-         VALUE * 10 <= UINT128_MAX - CharValue(C) &&
-         ValidateU128Helper<VALUE * 10 + CharValue(C), CS...>();
-}
-
-template <char... CS>
-constexpr bool ValidateU128() {
-  return ValidateU128Helper<0, CS...>();
-}
-
-// Terminate the recursion.
-template <uint128_t VALUE>
-constexpr uint128_t MakeU128Helper() {
-  return VALUE;
-}
-
-// Recurse the literal from left to right calculating the resulting value.
-// C is the current left most character, CS is the rest.
-template <uint128_t VALUE, char C, char... CS>
-constexpr uint128_t MakeU128Helper() {
-  return MakeU128Helper<VALUE * 10 + CharValue(C), CS...>();
-}
-
-template <char... CS>
-constexpr uint128_t MakeU128() {
-  return MakeU128Helper<0, CS...>();
-}
-
-template <char... CS>
-constexpr bool ValidateI128() {
-  return ValidateU128Helper<0, CS...>() && MakeU128<CS...>() <= INT128_MAX;
-}
-
-}  // namespace int128Suffix
-
-// User-defined literal "_u128" to support basic integer constants
-// for uint128_t until officially supported by compilers.
-template <char... CS>
-constexpr uint128_t operator"" _u128() {
-  static_assert(int128Suffix::ValidateU128<CS...>(),
-                "integer literal is too large to be represented in "
-                    "uint128_t integer type");
-  return int128Suffix::MakeU128<CS...>();
-}
-
-// User-defined literal "_u128" to support basic integer constants
-// for int128_t until officially supported by compilers.
-template <char... CS>
-constexpr int128_t operator"" _i128() {
-  static_assert(int128Suffix::ValidateI128<CS...>(),
-                "integer literal is too large to be represented in "
-                    "int128_t integer type");
-  return static_cast<int128_t>(int128Suffix::MakeU128<CS...>());
-}
+static const uint128_t UINT128_MIN = (uint128_t) 0;
+static const uint128_t UINT128_MAX = ((uint128_t) -1);
+static const int128_t INT128_MAX = ((int128_t)(UINT128_MAX >> 1));
+static const int128_t INT128_MIN = (-INT128_MAX - 1);
 
 } // namespace kudu
 

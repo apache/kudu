@@ -60,6 +60,49 @@ class WriteRpc;
 class KuduSchema;
 class KuduValue;
 
+/// @brief Representation of column type attributes.
+class KUDU_EXPORT KuduColumnTypeAttributes {
+ public:
+  KuduColumnTypeAttributes();
+
+  /// Create a KuduColumnTypeAttributes object as a copy of the other one.
+  ///
+  /// @param [in] other
+  ///   The other KuduColumnTypeAttributes object to use as a reference.
+  KuduColumnTypeAttributes(const KuduColumnTypeAttributes& other);
+
+  /// Create a KuduColumnTypeAttributes object
+  ///
+  /// @param [in] precision
+  ///   The precision of a decimal column.
+  /// @param [in] scale
+  ///   The scale of a decimal column.
+  KuduColumnTypeAttributes(int8_t precision, int8_t scale);
+
+  ~KuduColumnTypeAttributes();
+
+  /// @name Assign/copy KuduColumnTypeAttributes.
+  ///
+  /// @param [in] other
+  ///   The source KuduColumnTypeAttributes object to use as a reference.
+  ///
+  ///@{
+  KuduColumnTypeAttributes& operator=(const KuduColumnTypeAttributes& other);
+  void CopyFrom(const KuduColumnTypeAttributes& other);
+  ///@}
+
+  /// @return Precision for the column type.
+  int8_t precision() const;
+
+  /// @return Scale for the column type.
+  int8_t scale() const;
+
+ private:
+  class KUDU_NO_EXPORT Data;
+  // Owned.
+  Data* data_;
+};
+
 /// @brief Representation of column storage attributes.
 class KUDU_EXPORT KuduColumnStorageAttributes {
  public:
@@ -113,7 +156,7 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
     return encoding_;
   }
 
-  /// @return Comporession type for the column storage.
+  /// @return Compression type for the column storage.
   const CompressionType compression() const {
     return compression_;
   }
@@ -142,36 +185,9 @@ class KUDU_EXPORT KuduColumnSchema {
     DOUBLE = 7,
     BINARY = 8,
     UNIXTIME_MICROS = 9,
+    DECIMAL = 10,
     TIMESTAMP = UNIXTIME_MICROS //!< deprecated, use UNIXTIME_MICROS
   };
-
-  /// @param [in] type
-  ///   Column data type.
-  /// @return String representation of the column data type.
-  static std::string DataTypeToString(DataType type);
-
-  /// @deprecated Use KuduSchemaBuilder instead.
-  ///
-  /// @todo KUDU-809: make this hard-to-use constructor private.
-  ///   Clients should use the Builder API. Currently only the Python API
-  ///   uses this old API.
-  ///
-  /// @param [in] name
-  ///   The name of the column.
-  /// @param [in] type
-  ///   The type of the column.
-  /// @param [in] is_nullable
-  ///   Whether the column is nullable.
-  /// @param [in] default_value
-  ///   Default value for the column.
-  /// @param [in] attributes
-  ///   Column storage attributes.
-  KuduColumnSchema(const std::string &name,
-                   DataType type,
-                   bool is_nullable = false,
-                   const void* default_value = NULL,
-                   KuduColumnStorageAttributes attributes = KuduColumnStorageAttributes())
-      ATTRIBUTE_DEPRECATED("use KuduSchemaBuilder instead");
 
   /// Construct KuduColumnSchema object as a copy of another object.
   ///
@@ -224,6 +240,14 @@ class KUDU_EXPORT KuduColumnSchema {
   friend class KuduTableAlterer;
 
   KuduColumnSchema();
+
+  /// This constructor is private because clients should use the Builder API.
+  KuduColumnSchema(const std::string &name,
+                   DataType type,
+                   bool is_nullable = false,
+                   const void* default_value = NULL,
+                   KuduColumnStorageAttributes storage_attributes = KuduColumnStorageAttributes(),
+                   KuduColumnTypeAttributes type_attributes = KuduColumnTypeAttributes());
 
   // Owned.
   ColumnSchema* col_;
@@ -288,6 +312,40 @@ class KUDU_EXPORT KuduColumnSpec {
   ///   Block size (in bytes) to use.
   /// @return Pointer to the modified object.
   KuduColumnSpec* BlockSize(int32_t block_size);
+
+  /// @name Operations only relevant for decimal columns.
+  ///
+  ///@{
+  /// Set the precision for the column.
+  ///
+  /// Clients must specify a precision for decimal columns.
+  /// Precision is the total number of digits that can be
+  /// represented by the column, regardless of the location of the decimal point.
+  /// For example, representing integer values up to 9999, and fractional
+  /// values up to 99.99, both require a precision of 4. You can also represent
+  /// corresponding negative values, without any change in the precision.
+  /// For example, the range -9999 to 9999 still only requires a precision of 4.
+  ///
+  /// The precision must be between 1 and 38.
+  ///
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* Precision(int8_t precision);
+
+  /// Set the scale for the column.
+  ///
+  /// Clients can specify a scale for decimal columns.
+  /// Scale represents the number of fractional digits. This value must be less
+  /// than or equal to precision. A scale of 0 produces integral values,
+  /// with no fractional part. If precision and scale are equal, all the digits
+  /// come after the decimal point, making all the values between
+  /// 0.9999 and -0.9999.
+  ///
+  /// The scale must be greater than 0 and less than the column's precision.
+  /// If no scale is provided a default scale of 0 is used.
+  ///
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* Scale(int8_t scale);
+  ///@}
 
   /// @name Operations only relevant for Create Table
   ///

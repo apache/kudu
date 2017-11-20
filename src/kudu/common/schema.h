@@ -84,6 +84,35 @@ struct ColumnId {
   int32_t t;
 };
 
+// Class for storing column attributes such as precision and scale
+// for decimal types. Column attributes describe logical features of
+// the column; these features are usually relative to the column's type.
+struct ColumnTypeAttributes {
+ public:
+  ColumnTypeAttributes()
+      : precision(0),
+        scale(0) {
+  }
+
+  ColumnTypeAttributes(int8_t precision, int8_t scale)
+      : precision(precision),
+        scale(scale) {
+  }
+
+  // Does `other` represent equivalent attributes for `type`?
+  // For example, if type == DECIMAL64 then attributes are equivalent iff
+  // they have the same precision and scale.
+  bool EqualsForType(ColumnTypeAttributes other, DataType type) const;
+
+  // Return a string representation appropriate for `type`
+  // This is meant to be postfixed to the name of a primitive type to describe
+  // the full type, e.g. decimal(10, 4)
+  std::string ToStringForType(DataType type) const;
+
+  int8_t precision;
+  int8_t scale;
+};
+
 // Class for storing column attributes such as compression and
 // encoding.  Column attributes describe the physical storage and
 // representation of bytes, as opposed to a purely logical description
@@ -171,12 +200,14 @@ class ColumnSchema {
   ColumnSchema(std::string name, DataType type, bool is_nullable = false,
                const void* read_default = NULL,
                const void* write_default = NULL,
-               ColumnStorageAttributes attributes = ColumnStorageAttributes())
+               ColumnStorageAttributes attributes = ColumnStorageAttributes(),
+               ColumnTypeAttributes type_attributes = ColumnTypeAttributes())
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
         read_default_(read_default ? new Variant(type, read_default) : NULL),
-        attributes_(attributes) {
+        attributes_(attributes),
+        type_attributes_(type_attributes) {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != NULL) {
@@ -251,7 +282,8 @@ class ColumnSchema {
   bool EqualsType(const ColumnSchema &other) const {
     if (this == &other) return true;
     return is_nullable_ == other.is_nullable_ &&
-           type_info()->type() == other.type_info()->type();
+           type_info()->type() == other.type_info()->type() &&
+           type_attributes().EqualsForType(other.type_attributes(), type_info()->type());
   }
 
   // compare types in Equals function
@@ -305,6 +337,10 @@ class ColumnSchema {
     return attributes_;
   }
 
+  const ColumnTypeAttributes& type_attributes() const {
+    return type_attributes_;
+  }
+
   int Compare(const void *lhs, const void *rhs) const {
     return type_info_->Compare(lhs, rhs);
   }
@@ -354,6 +390,7 @@ class ColumnSchema {
   std::shared_ptr<Variant> read_default_;
   std::shared_ptr<Variant> write_default_;
   ColumnStorageAttributes attributes_;
+  ColumnTypeAttributes type_attributes_;
 };
 
 // The schema for a set of rows.

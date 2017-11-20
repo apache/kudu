@@ -17,6 +17,7 @@
 
 #include "kudu/common/schema.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -35,6 +36,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -97,6 +99,66 @@ TEST_F(TestSchema, TestSchema) {
             schema.ToString());
   EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
   EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
+}
+
+// Test basic functionality of Schema definition with decimal columns
+TEST_F(TestSchema, TestSchemaWithDecimal) {
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("decimal32val", DECIMAL32, false,
+                    NULL, NULL, ColumnStorageAttributes(),
+                    ColumnTypeAttributes(9, 4));
+  ColumnSchema col3("decimal64val", DECIMAL64, true,
+                    NULL, NULL, ColumnStorageAttributes(),
+                    ColumnTypeAttributes(18, 10));
+  ColumnSchema col4("decimal128val", DECIMAL128, true,
+                    NULL, NULL, ColumnStorageAttributes(),
+                    ColumnTypeAttributes(38, 2));
+
+  vector<ColumnSchema> cols = { col1, col2, col3, col4 };
+  Schema schema(cols, 1);
+
+  ASSERT_EQ(sizeof(Slice) + sizeof(int32_t) +
+                sizeof(int64_t) + sizeof(int128_t),
+            schema.byte_size());
+
+  EXPECT_EQ("Schema [\n"
+                "\tkey[string NOT NULL],\n"
+                "\tdecimal32val[decimal(9, 4) NOT NULL],\n"
+                "\tdecimal64val[decimal(18, 10) NULLABLE],\n"
+                "\tdecimal128val[decimal(38, 2) NULLABLE]\n"
+                "]",
+            schema.ToString());
+
+  EXPECT_EQ("decimal(9, 4) NOT NULL", schema.column(1).TypeToString());
+  EXPECT_EQ("decimal(18, 10) NULLABLE", schema.column(2).TypeToString());
+  EXPECT_EQ("decimal(38, 2) NULLABLE", schema.column(3).TypeToString());
+}
+
+// Test Schema::Equals respects decimal column attributes
+TEST_F(TestSchema, TestSchemaEqualsWithDecimal) {
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col_18_10("decimal64val", DECIMAL64, true,
+                         NULL, NULL, ColumnStorageAttributes(),
+                         ColumnTypeAttributes(18, 10));
+  ColumnSchema col_18_9("decimal64val", DECIMAL64, true,
+                        NULL, NULL, ColumnStorageAttributes(),
+                        ColumnTypeAttributes(18, 9));
+  ColumnSchema col_17_10("decimal64val", DECIMAL64, true,
+                         NULL, NULL, ColumnStorageAttributes(),
+                         ColumnTypeAttributes(17, 10));
+  ColumnSchema col_17_9("decimal64val", DECIMAL64, true,
+                        NULL, NULL, ColumnStorageAttributes(),
+                        ColumnTypeAttributes(17, 9));
+
+  Schema schema_18_10({ col1, col_18_10 }, 1);
+  Schema schema_18_9({ col1, col_18_9 }, 1);
+  Schema schema_17_10({ col1, col_17_10 }, 1);
+  Schema schema_17_9({ col1, col_17_9 }, 1);
+
+  EXPECT_TRUE(schema_18_10.Equals(schema_18_10));
+  EXPECT_FALSE(schema_18_10.Equals(schema_18_9));
+  EXPECT_FALSE(schema_18_10.Equals(schema_17_10));
+  EXPECT_FALSE(schema_18_10.Equals(schema_17_9));
 }
 
 TEST_F(TestSchema, TestSwap) {

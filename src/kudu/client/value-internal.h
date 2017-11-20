@@ -21,7 +21,9 @@
 
 #include "kudu/client/value.h"
 #include "kudu/common/types.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -34,15 +36,19 @@ class KuduValue::Data {
     INT,
     FLOAT,
     DOUBLE,
-    SLICE
+    SLICE,
+    DECIMAL
   };
   Type type_;
   union {
     int64_t int_val_;
     float float_val_;
     double double_val_;
+    int128_t decimal_val_;
   };
   Slice slice_val_;
+  // Scale is only used with DECIMAL types.
+  int8_t scale_;
 
   // Check that this value can be converted to the given datatype 't',
   // and return a pointer to the underlying value in '*val_void'.
@@ -50,10 +56,14 @@ class KuduValue::Data {
   // 'col_name' is used to generate reasonable error messages in the case
   // that the type cannot be coerced.
   //
+  // 'type_attributes' is used to ensure the value matches and fits the
+  //  columns specified "parameterized type".
+  //
   // The returned pointer in *val_void is only guaranteed to live as long
   // as this KuduValue object.
   Status CheckTypeAndGetPointer(const std::string& col_name,
                                 DataType t,
+                                ColumnTypeAttributes type_attributes,
                                 void** val_void);
 
   // Return this KuduValue as a Slice. The KuduValue object retains ownership
@@ -75,6 +85,13 @@ class KuduValue::Data {
   // and set *val_void to point to it if so.
   Status CheckAndPointToInt(const std::string& col_name,
                             size_t int_size, void** val_void);
+
+  // Check that this value is a decimal constant, with a scale that
+  // matches the type_attributes, and within the valid range.
+  // Set *val_void to point to it if so.
+  Status CheckAndPointToDecimal(const std::string& col_name,
+                                DataType t, ColumnTypeAttributes type_attributes,
+                                void** val_void);
 
   // Check that this value is a string constant, and set *val_void to
   // point to it if so.

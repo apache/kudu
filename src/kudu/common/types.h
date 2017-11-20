@@ -341,10 +341,10 @@ struct DataTypeTraits<INT128> {
     return AreIntegersConsecutive<INT128>(a, b);
   }
   static const cpp_type* min_value() {
-    return &MathLimits<cpp_type>::kMin;
+    return &INT128_MIN;
   }
   static const cpp_type* max_value() {
-    return &MathLimits<cpp_type>::kMin;
+    return &INT128_MAX;
   }
 };
 
@@ -534,6 +534,48 @@ struct DataTypeTraits<UNIXTIME_MICROS> : public DerivedTypeTraits<INT64>{
   }
 };
 
+template<>
+struct DataTypeTraits<DECIMAL32> : public DerivedTypeTraits<INT32>{
+  static const char* name() {
+    return "decimal";
+  }
+  // AppendDebugStringForValue appends the (string representation of) the
+  // underlying integer value with the "_D32" suffix as there's no "full"
+  // type information available to format it.
+  static void AppendDebugStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
+    str->append("_D32");
+  }
+};
+
+template<>
+struct DataTypeTraits<DECIMAL64> : public DerivedTypeTraits<INT64>{
+  static const char* name() {
+    return "decimal";
+  }
+  // AppendDebugStringForValue appends the (string representation of) the
+  // underlying integer value with the "_D64" suffix as there's no "full"
+  // type information available to format it.
+  static void AppendDebugStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
+    str->append("_D64");
+  }
+};
+
+template<>
+struct DataTypeTraits<DECIMAL128> : public DerivedTypeTraits<INT128>{
+  static const char* name() {
+    return "decimal";
+  }
+  // AppendDebugStringForValue appends the (string representation of) the
+  // underlying integer value with the "_D128" suffix as there's no "full"
+  // type information available to format it.
+  static void AppendDebugStringForValue(const void *val, std::string *str) {
+    DataTypeTraits<physical_type>::AppendDebugStringForValue(val, str);
+    str->append("_D128");
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -590,12 +632,14 @@ class Variant {
       case UINT16:
         numeric_.u16 = *static_cast<const uint16_t *>(value);
         break;
+      case DECIMAL32:
       case INT32:
         numeric_.i32 = *static_cast<const int32_t *>(value);
         break;
       case UINT32:
         numeric_.u32 = *static_cast<const uint32_t *>(value);
         break;
+      case DECIMAL64:
       case UNIXTIME_MICROS:
       case INT64:
         numeric_.i64 = *static_cast<const int64_t *>(value);
@@ -603,6 +647,7 @@ class Variant {
       case UINT64:
         numeric_.u64 = *static_cast<const uint64_t *>(value);
         break;
+      case DECIMAL128:
       case INT128:
         numeric_.i128 = *static_cast<const int128_t *>(value);
         break;
@@ -666,12 +711,15 @@ class Variant {
       case UINT8:        return &(numeric_.u8);
       case INT16:        return &(numeric_.i16);
       case UINT16:       return &(numeric_.u16);
+      case DECIMAL32:
       case INT32:        return &(numeric_.i32);
       case UINT32:       return &(numeric_.u32);
+      case DECIMAL64:
+      case UNIXTIME_MICROS:
       case INT64:        return &(numeric_.i64);
-      case INT128:       return &(numeric_.i128);
-      case UNIXTIME_MICROS:    return &(numeric_.i64);
       case UINT64:       return &(numeric_.u64);
+      case DECIMAL128:
+      case INT128:       return &(numeric_.i128);
       case FLOAT:        return (&numeric_.float_val);
       case DOUBLE:       return (&numeric_.double_val);
       case STRING:

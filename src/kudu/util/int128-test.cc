@@ -31,12 +31,10 @@ namespace kudu {
 
 TEST(TestInt128, TestOstreamSigned) {
   int128_t INTEGERS[] = {0, -1, 1, -1234567890,
-                         -12345678901011121314151617181920212223_i128,
                          INT64_MIN, UINT64_MAX,
                          INT128_MIN,
                          INT128_MAX};
   std::string STRINGS[] = {"0", "-1", "1", "-1234567890",
-                           "-12345678901011121314151617181920212223",
                            "-9223372036854775808", "18446744073709551615",
                            "-170141183460469231731687303715884105728",
                            "170141183460469231731687303715884105727"};
@@ -48,9 +46,9 @@ TEST(TestInt128, TestOstreamSigned) {
 }
 
 TEST(TestInt128, TestOstreamUnsigned) {
-  uint128_t INTEGERS[] = {0, 1, 1234567890, 123456789101112131415161718192021222324_u128,
+  uint128_t INTEGERS[] = {0, 1, 1234567890,
                           UINT128_MIN, UINT128_MAX};
-  string STRINGS[] = {"0", "1", "1234567890", "123456789101112131415161718192021222324",
+  string STRINGS[] = {"0", "1", "1234567890",
                       "0", "340282366920938463463374607431768211455"};
   for (size_t i = 0; i < arraysize(INTEGERS); i++) {
     std::ostringstream ss;
@@ -65,27 +63,6 @@ TEST(TestInt128, TestCasting) {
 
   uint128_t castToMax = static_cast<uint128_t>(-1);
   ASSERT_EQ(UINT128_MAX, castToMax);
-}
-
-TEST(TestInt128, TestSuffix) {
-  int128_t imax = 170141183460469231731687303715884105727_i128;
-  ASSERT_EQ(INT128_MAX, imax);
-
-  // Note: We can't represent the absolute minimum because numeric literals
-  // never represent negative numbers and the - operator is applied after
-  // the conversion to an int128_t.
-  int128_t imin = -170141183460469231731687303715884105727_i128;
-  ASSERT_EQ(INT128_MIN + 1, imin);
-
-  uint128_t umax = 340282366920938463463374607431768211455_u128;
-  ASSERT_EQ(UINT128_MAX, umax);
-
-  uint128_t umin = 0_u128;
-  ASSERT_EQ(UINT128_MIN, umin);
-
-  // The values below will fail to compile
-  // 170141183460469231731687303715884105728_i128; // Too large int128_t
-  // 3340282366920938463463374607431768211456_u128; // Too large uint128_t
 }
 
 } // namespace kudu

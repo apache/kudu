@@ -45,6 +45,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -240,6 +241,7 @@ struct ExpectedVals {
   bool expected_bool_val;
   float expected_float_val;
   double expected_double_val;
+  int128_t expected_decimal_val;
 };
 
 // Integration that writes, scans and verifies all types.
@@ -269,6 +271,7 @@ class AllTypesItest : public KuduTest {
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
     builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
     builder.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY);
+    builder.AddColumn("decimal_val")->Type(KuduColumnSchema::DECIMAL)->Precision(18)->Scale(8);
     CHECK_OK(builder.Build(&schema_));
   }
 
@@ -336,6 +339,7 @@ class AllTypesItest : public KuduTest {
     RETURN_NOT_OK(row->SetDouble("double_val", double_val));
     RETURN_NOT_OK(row->SetFloat("float_val", double_val));
     RETURN_NOT_OK(row->SetBool("bool_val", int_val % 2));
+    RETURN_NOT_OK(row->SetUnscaledDecimal("decimal_val", int_val));
     VLOG(1) << "Inserting row[" << split_idx << "," << row_idx << "]" << insert->ToString();
     RETURN_NOT_OK(session->Apply(insert));
     return Status::OK();
@@ -372,6 +376,7 @@ class AllTypesItest : public KuduTest {
     projection->push_back("double_val");
     projection->push_back("float_val");
     projection->push_back("bool_val");
+    projection->push_back("decimal_val");
   }
 
   ExpectedVals GetExpectedValsForRow(int split_idx, int row_idx) {
@@ -388,6 +393,7 @@ class AllTypesItest : public KuduTest {
     vals.expected_bool_val = expected_int_val % 2;
     vals.expected_float_val = expected_int_val;
     vals.expected_double_val = expected_int_val;
+    vals.expected_decimal_val = expected_int_val;
     return vals;
   }
 
@@ -426,6 +432,9 @@ class AllTypesItest : public KuduTest {
     float float_val;
     ASSERT_OK(row.GetFloat("float_val", &float_val));
     ASSERT_EQ(float_val, vals.expected_float_val);
+    int128_t decimal_val;
+    ASSERT_OK(row.GetUnscaledDecimal("decimal_val", &decimal_val));
+    ASSERT_EQ(decimal_val, vals.expected_decimal_val);
   }
 
   typedef std::function<Status (KuduScanner* scanner)> ScannerSetup;
@@ -565,7 +574,8 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
           row_stride += kPaddedTimestampSize;
           break;
         default:
-          int col_size = GetTypeInfo(ToInternalDataType(col_schema.type()))->size();
+          int col_size = GetTypeInfo(ToInternalDataType(col_schema.type(),
+                                                        KuduColumnTypeAttributes(18, 8)))->size();
           projection_offsets.push_back(col_size);
           row_stride += col_size;
       }
@@ -588,7 +598,6 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
           ASSERT_OK(this->setup_.VerifyRowKeyRaw(row_data, num_tablet, *total_rows_in_tablet + i));
         } else {
           ExpectedVals vals = this->GetExpectedValsForRow(num_tablet, *total_rows_in_tablet + i);
-
           switch (col_schema.type()) {
             case KuduColumnSchema::INT8:
               ASSERT_EQ(*reinterpret_cast<const int8_t*>(row_data), vals.expected_int8_val);
@@ -619,6 +628,9 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
               break;
             case KuduColumnSchema::DOUBLE:
               ASSERT_EQ(*reinterpret_cast<const double*>(row_data), vals.expected_double_val);
+              break;
+            case KuduColumnSchema::DECIMAL:
+              ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data), vals.expected_decimal_val);
               break;
             default:
               LOG(FATAL) << "Unexpected type: " << col_schema.type();

@@ -167,6 +167,8 @@ void ColumnPredicate::SetToNone() {
   upper_ = nullptr;
 }
 
+// TODO: For decimal columns, use column_.type_attributes().precision
+// to calculate the "true" max/min values for improved simplification.
 void ColumnPredicate::Simplify() {
   auto type_info = column_.type_info();
   switch (predicate_type_) {

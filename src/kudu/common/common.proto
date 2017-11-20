@@ -51,6 +51,9 @@ enum DataType {
   BINARY = 12;
   UNIXTIME_MICROS = 13;
   INT128 = 14;
+  DECIMAL32 = 15;
+  DECIMAL64 = 16;
+  DECIMAL128 = 17;
 }
 
 enum EncodingType {
@@ -63,6 +66,14 @@ enum EncodingType {
   RLE = 4;
   DICT_ENCODING = 5;
   BIT_SHUFFLE = 6;
+}
+
+// Holds detailed attributes for the column. Only certain fields will be set,
+// depending on the type of the column.
+message ColumnTypeAttributesPB {
+  // For decimal columns
+  optional int32 precision = 1;
+  optional int32 scale = 2;
 }
 
 // TODO: Differentiate between the schema attributes
@@ -95,6 +106,8 @@ message ColumnSchemaPB {
   optional EncodingType encoding = 8 [default=AUTO_ENCODING];
   optional CompressionType compression = 9 [default=DEFAULT_COMPRESSION];
   optional int32 cfile_block_size = 10 [default=0];
+
+  optional ColumnTypeAttributesPB type_attributes = 11;
 }
 
 message ColumnSchemaDeltaPB {

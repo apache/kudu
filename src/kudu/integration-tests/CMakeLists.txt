@@ -66,6 +66,7 @@ ADD_KUDU_TEST(client-stress-test
 ADD_KUDU_TEST(consistency-itest)
 ADD_KUDU_TEST(create-table-itest)
 ADD_KUDU_TEST(create-table-stress-test)
+ADD_KUDU_TEST(decimal-itest)
 ADD_KUDU_TEST(delete_table-itest)
 ADD_KUDU_TEST(delete_tablet-itest)
 ADD_KUDU_TEST(disk_failure-itest)

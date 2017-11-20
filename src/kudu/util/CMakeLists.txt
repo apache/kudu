@@ -128,6 +128,7 @@ set(UTIL_SRCS
   cow_object.cc
   crc.cc
   debug-util.cc
+  decimal_util.cc
   debug/trace_event_impl.cc
   debug/trace_event_impl_constants.cc
   debug/trace_event_synthetic_delay.cc
@@ -339,6 +340,7 @@ ADD_KUDU_TEST(callback_bind-test)
 ADD_KUDU_TEST(countdown_latch-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
 ADD_KUDU_TEST(debug-util-test)
+ADD_KUDU_TEST(decimal_util-test)
 ADD_KUDU_TEST(easy_json-test)
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(env_util-test)

@@ -32,6 +32,7 @@
 #include "kudu/client/stubs.h"
 #endif
 
+#include "kudu/util/int128.h"
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -194,6 +195,8 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
+
+  Status GetUnscaledDecimal(const Slice& col_name, int128_t* val) const WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Getters for integral type columns by column index.
@@ -224,6 +227,8 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
+
+  Status GetUnscaledDecimal(int col_idx, int128_t* val) const WARN_UNUSED_RESULT;
   ///@}
 
   /// @name Getters for string/binary column by column name.
