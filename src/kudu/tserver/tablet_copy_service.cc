@@ -170,8 +170,8 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
 
   if (!new_session && !session->IsInitialized()) {
     RPC_RETURN_NOT_OK(
-        Status::ServiceUnavailable("tablet copy session for tablet $0 is initializing",
-                                   tablet_id),
+        Status::ServiceUnavailable(
+            Substitute("tablet copy session for tablet $0 is initializing", tablet_id)),
         TabletCopyErrorPB::UNKNOWN_ERROR,
         "try again later",
         context);
