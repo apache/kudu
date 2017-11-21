@@ -55,13 +55,7 @@ class KuduContext(val kuduMaster: String,
     this(kuduMaster, new SparkContext())
   }
 
-  @transient lazy val syncClient: KuduClient = {
-    val c = KuduConnection.getSyncClient(kuduMaster)
-    if (authnCredentials != null) {
-      c.importAuthenticationCredentials(authnCredentials)
-    }
-    c
-  }
+  @transient lazy val syncClient: KuduClient = asyncClient.syncClient()
 
   @transient lazy val asyncClient: AsyncKuduClient = {
     val c = KuduConnection.getAsyncClient(kuduMaster)
@@ -308,7 +302,6 @@ private object KuduContext {
 }
 
 private object KuduConnection {
-  private[kudu] val syncCache = new mutable.HashMap[String, KuduClient]()
   private[kudu] val asyncCache = new mutable.HashMap[String, AsyncKuduClient]()
 
   /**
@@ -319,19 +312,6 @@ private object KuduConnection {
     * properly. Spark has no shutdown notifications.
     */
   private val ShutdownHookPriority = 100
-
-  def getSyncClient(kuduMaster: String): KuduClient = {
-    syncCache.synchronized {
-      if (!syncCache.contains(kuduMaster)) {
-        val syncClient = new KuduClient.KuduClientBuilder(kuduMaster).build()
-        ShutdownHookManager.get().addShutdownHook(new Runnable {
-          override def run(): Unit = syncClient.close()
-        }, ShutdownHookPriority)
-        syncCache.put(kuduMaster, syncClient)
-      }
-      return syncCache(kuduMaster)
-    }
-  }
 
   def getAsyncClient(kuduMaster: String): AsyncKuduClient = {
     asyncCache.synchronized {

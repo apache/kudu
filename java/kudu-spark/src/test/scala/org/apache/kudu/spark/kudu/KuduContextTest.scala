@@ -50,7 +50,6 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
 
   test("Test KuduContext serialization") {
     val serialized = serialize(kuduContext)
-    KuduConnection.syncCache.clear()
     KuduConnection.asyncCache.clear()
     val deserialized = deserialize(serialized).asInstanceOf[KuduContext]
     assert(deserialized.authnCredentials != null)
