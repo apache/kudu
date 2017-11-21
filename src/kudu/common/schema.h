@@ -243,11 +243,13 @@ class ColumnSchema {
   }
 
   bool EqualsPhysicalType(const ColumnSchema& other) const {
+    if (this == &other) return true;
     return is_nullable_ == other.is_nullable_ &&
            type_info()->physical_type() == other.type_info()->physical_type();
   }
 
   bool EqualsType(const ColumnSchema &other) const {
+    if (this == &other) return true;
     return is_nullable_ == other.is_nullable_ &&
            type_info()->type() == other.type_info()->type();
   }
@@ -263,6 +265,8 @@ class ColumnSchema {
 
   bool Equals(const ColumnSchema &other,
               int flags = COMPARE_ALL) const {
+    if (this == &other) return true;
+
     if ((flags & COMPARE_NAME) && this->name_ != other.name_)
       return false;
 
@@ -703,6 +707,7 @@ class Schema {
   bool KeyEquals(const Schema& other,
                  int flags
                     = ColumnSchema::COMPARE_NAME | ColumnSchema::COMPARE_TYPE) const {
+    if (this == &other) return true;
     if (this->num_key_columns_ != other.num_key_columns_) return false;
     for (size_t i = 0; i < this->num_key_columns_; i++) {
       if (!this->cols_[i].Equals(other.cols_[i], flags)) return false;
