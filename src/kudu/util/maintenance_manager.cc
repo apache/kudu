@@ -183,6 +183,11 @@ void MaintenanceManager::Shutdown() {
   if (monitor_thread_.get()) {
     CHECK_OK(ThreadJoiner(monitor_thread_.get()).Join());
     monitor_thread_.reset();
+    // Wait for all the running and queued tasks before shutting down. Otherwise,
+    // Shutdown() can remove a queued task silently. We count on eventually running the
+    // queued tasks to decrement their "running" count, which is incremented at the time
+    // they are enqueued.
+    thread_pool_->Wait();
     thread_pool_->Shutdown();
   }
 }
