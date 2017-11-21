@@ -51,7 +51,6 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
@@ -944,16 +943,23 @@ Status Tablet::ApplyRowOperation(WriteTransactionState* tx_state,
     row_op->checked_present = true;
   }
 
+  Status s;
   switch (row_op->decoded_op.type) {
     case RowOperationsPB::INSERT:
     case RowOperationsPB::UPSERT:
-      ignore_result(InsertOrUpsertUnlocked(tx_state, row_op, stats));
-      return Status::OK();
+      s = InsertOrUpsertUnlocked(tx_state, row_op, stats);
+      if (s.IsAlreadyPresent()) {
+        return Status::OK();
+      }
+      return s;
 
     case RowOperationsPB::UPDATE:
     case RowOperationsPB::DELETE:
-      ignore_result(MutateRowUnlocked(tx_state, row_op, stats));
-      return Status::OK();
+      s = MutateRowUnlocked(tx_state, row_op, stats);
+      if (s.IsNotFound()) {
+        return Status::OK();
+      }
+      return s;
 
     default:
       LOG_WITH_PREFIX(FATAL) << RowOperationsPB::Type_Name(row_op->decoded_op.type);
