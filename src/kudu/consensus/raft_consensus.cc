@@ -1285,9 +1285,9 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         iter = deduped_req.messages.erase(iter);
         if (need_to_warn) {
           need_to_warn = false;
-          LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Could not prepare transaction for op: "
-              << msg->get()->id() << ". Suppressed " << deduped_req.messages.size() <<
-              " other warnings. Status for this op: " << prepare_status.ToString();
+          LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Could not prepare transaction for op "
+              << msg->get()->id() << " and following " << deduped_req.messages.size() <<
+              " ops. Status for this op: " << prepare_status.ToString();
         }
       }
 

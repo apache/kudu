@@ -304,7 +304,7 @@ void Peer::ProcessResponse() {
   // this path is responsible for KUDU-1779.
   if (response_.status().has_error() &&
       response_.status().error().code() == consensus::ConsensusErrorPB::CANNOT_PREPARE) {
-    Status response_status = StatusFromPB(response_.error().status());
+    Status response_status = StatusFromPB(response_.status().error().status());
     queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), PeerStatus::CANNOT_PREPARE,
                              response_status);
     ProcessResponseError(response_status);
