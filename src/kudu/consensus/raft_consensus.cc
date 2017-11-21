@@ -120,6 +120,13 @@ DEFINE_bool(raft_enable_tombstoned_voting, true,
 TAG_FLAG(raft_enable_tombstoned_voting, experimental);
 TAG_FLAG(raft_enable_tombstoned_voting, runtime);
 
+// Enable improved re-replication (KUDU-1097).
+DEFINE_bool(raft_prepare_replacement_before_eviction, false,
+            "When enabled, failed replicas will only be evicted after a "
+            "replacement has been prepared for them.");
+TAG_FLAG(raft_prepare_replacement_before_eviction, advanced);
+TAG_FLAG(raft_prepare_replacement_before_eviction, experimental);
+
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 
 // Metrics
