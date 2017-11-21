@@ -102,6 +102,10 @@ class TestWorkload {
     network_error_allowed_ = allowed;
   }
 
+  void set_remote_error_allowed(bool allowed) {
+    remote_error_allowed_ = allowed;
+  }
+
   // Set whether to fail if we see a NotFound() error inserting a row.
   // This sort of error is triggered if the table is deleted while the workload
   // is running.
@@ -226,6 +230,7 @@ class TestWorkload {
   bool not_found_allowed_;
   bool already_present_allowed_;
   bool network_error_allowed_;
+  bool remote_error_allowed_;
   WritePattern write_pattern_;
   client::KuduSchema schema_;
 

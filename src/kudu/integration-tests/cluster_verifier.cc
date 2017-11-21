@@ -30,6 +30,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
@@ -44,13 +45,14 @@ using std::vector;
 namespace kudu {
 
 using cluster::ExternalMiniCluster;
+using cluster::MiniCluster;
 using strings::Substitute;
 using tools::Ksck;
 using tools::KsckCluster;
 using tools::KsckMaster;
 using tools::RemoteKsckMaster;
 
-ClusterVerifier::ClusterVerifier(ExternalMiniCluster* cluster)
+ClusterVerifier::ClusterVerifier(MiniCluster* cluster)
     : cluster_(cluster),
       checksum_options_(tools::ChecksumOptions()),
       operations_timeout_(MonoDelta::FromSeconds(60)) {
@@ -87,21 +89,26 @@ void ClusterVerifier::CheckCluster() {
   }
   ASSERT_OK(s);
 
-  // Verify that the committed op indexes match up across the servers.
-  // We have to use "AssertEventually" here because many tests verify clusters
-  // while they are still running, and the verification can fail spuriously in
-  // the case that
-  LogVerifier lv(cluster_);
-  AssertEventually([&]() {
-      ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
-    });
+  // TODO(todd): we should support LogVerifier on internal clusters!
+  if (ExternalMiniCluster* emc = dynamic_cast<ExternalMiniCluster*>(cluster_)) {
+    // Verify that the committed op indexes match up across the servers.
+    // We have to use "AssertEventually" here because many tests verify clusters
+    // while they are still running, and the verification can fail spuriously in
+    // the case that
+    LogVerifier lv(emc);
+    AssertEventually([&]() {
+        ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
+      });
+  }
 }
 
 Status ClusterVerifier::DoKsck() {
-  HostPort hp = cluster_->leader_master()->bound_rpc_hostport();
-
+  vector<string> hp_strs;
+  for (const auto& hp : cluster_->master_rpc_addrs()) {
+    hp_strs.emplace_back(hp.ToString());
+  }
   std::shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK(RemoteKsckMaster::Build({ hp.ToString() }, &master));
+  RETURN_NOT_OK(RemoteKsckMaster::Build(hp_strs, &master));
   std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   std::shared_ptr<Ksck> ksck(new Ksck(cluster));
 

@@ -26,13 +26,13 @@
 namespace kudu {
 
 namespace cluster {
-class ExternalMiniCluster;
+class MiniCluster;
 } // namespace cluster
 
 // Utility class for integration tests to verify that the cluster is in a good state.
 class ClusterVerifier {
  public:
-  explicit ClusterVerifier(cluster::ExternalMiniCluster* cluster);
+  explicit ClusterVerifier(cluster::MiniCluster* cluster);
 
   // Set the timeout for read/write/admin operations.
   void SetOperationsTimeout(const MonoDelta& timeout);
@@ -86,7 +86,7 @@ class ClusterVerifier {
                          int expected_row_count);
 
 
-  cluster::ExternalMiniCluster* cluster_;
+  cluster::MiniCluster* cluster_;
 
   tools::ChecksumOptions checksum_options_;
 

@@ -320,6 +320,7 @@ Status RemoteKsckMaster::Connect() {
 
 Status RemoteKsckMaster::Build(const vector<string>& master_addresses,
                                shared_ptr<KsckMaster>* master) {
+  CHECK(!master_addresses.empty());
   shared_ptr<Messenger> messenger;
   MessengerBuilder builder(kMessengerName);
   RETURN_NOT_OK(builder.Build(&messenger));

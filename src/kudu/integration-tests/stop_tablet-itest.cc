@@ -30,7 +30,9 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -274,6 +276,43 @@ TEST_P(StopTabletITest, TestStoppedTabletsDontWrite) {
     }
   }
   writes.StopAndJoin();
+}
+
+TEST_P(StopTabletITest, TestShutdownWhileWriting) {
+  const int kNumReplicas = 3;
+  string tablet_id;
+  NO_FATALS(StartClusterAndLoadTablet(kNumReplicas, &tablet_id));
+
+  TestWorkload writes(cluster_.get());
+  writes.set_timeout_allowed(true);
+  // TODO(todd): why does the client get a RemoteError in this test?
+  writes.set_remote_error_allowed(true);
+  writes.set_write_timeout_millis(500);
+#ifndef THREAD_SANITIZER // high thread count is too slow in TSAN.
+  writes.set_num_write_threads(base::NumCPUs());
+#endif
+  writes.Setup();
+  writes.Start();
+
+  // Wait at least a few seconds so that maintenance ops can get scheduled.
+  SleepFor(MonoDelta::FromSeconds(2));
+
+  // Ensure we inserted at least some number of rows.
+  while (writes.rows_inserted() < 10000) {
+    SleepFor(MonoDelta::FromMilliseconds(5));
+  }
+
+  for (int i = 0; i < 3; i++) {
+    cluster_->mini_tablet_server(i)->Shutdown();
+  }
+  writes.StopAndJoin();
+
+  for (int i = 0; i < 3; i++) {
+    ASSERT_OK(cluster_->mini_tablet_server(i)->Restart());
+  }
+
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
 }
 
 INSTANTIATE_TEST_CASE_P(StopTablets, StopTabletITest, ::testing::Values(LEADER, FOLLOWER));

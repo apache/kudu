@@ -607,6 +607,10 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
 }
 
 vector<HostPort> ExternalMiniCluster::master_rpc_addrs() const {
+  if (opts_.num_masters == 1) {
+    const auto& addr = CHECK_NOTNULL(master(0))->bound_rpc_addr();
+    return { HostPort(addr.host(), addr.port()) };
+  }
   vector<HostPort> master_rpc_addrs;
   for (int i = 0; i < opts_.master_rpc_ports.size(); i++) {
     master_rpc_addrs.emplace_back(

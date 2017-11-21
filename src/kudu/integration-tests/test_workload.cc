@@ -71,6 +71,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     timeout_allowed_(false),
     not_found_allowed_(false),
     network_error_allowed_(false),
+    remote_error_allowed_(false),
     schema_(KuduSchemaFromSchema(GetSimpleTestSchema())),
     num_replicas_(3),
     num_tablets_(1),
@@ -191,6 +192,10 @@ void TestWorkload::WriteThread() {
         }
 
         if (network_error_allowed_ && e->status().IsNetworkError()) {
+          continue;
+        }
+
+        if (remote_error_allowed_ && e->status().IsRemoteError()) {
           continue;
         }
 
