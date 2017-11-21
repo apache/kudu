@@ -463,8 +463,6 @@ class ShardedLRUCache : public Cache {
  private:
   gscoped_ptr<CacheMetrics> metrics_;
   vector<NvmLRUCache*> shards_;
-  MutexType id_mutex_;
-  uint64_t last_id_;
   VMEM* vmp_;
 
   static inline uint32_t HashSlice(const Slice& s) {
@@ -477,9 +475,8 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& id, VMEM* vmp)
-        : last_id_(0),
-          vmp_(vmp) {
+  explicit ShardedLRUCache(size_t capacity, const string& /*id*/, VMEM* vmp)
+        : vmp_(vmp) {
 
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
@@ -521,10 +518,6 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<LRUHandle*>(handle)->val_ptr();
   }
 
-  virtual uint64_t NewId() OVERRIDE {
-    std::lock_guard<MutexType> l(id_mutex_);
-    return ++(last_id_);
-  }
   virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
     metrics_.reset(new CacheMetrics(entity));
     for (NvmLRUCache* cache : shards_) {
