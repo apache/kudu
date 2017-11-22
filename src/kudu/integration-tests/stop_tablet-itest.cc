@@ -192,8 +192,8 @@ TEST_P(StopTabletITest, TestSingleStoppedTabletsDontScan) {
   // tablet has been stopped, it shouldn't return anything.
   // Even a fault tolerant scanner will not be able to do anything.
   KuduScanner scanner(table.get());
-  scanner.SetTimeoutMillis(500);
-  scanner.SetFaultTolerant();
+  ASSERT_OK(scanner.SetTimeoutMillis(500));
+  ASSERT_OK(scanner.SetFaultTolerant());
   Status s = scanner.Open();
   LOG(INFO) << "Scanner opened with status: " << s.ToString();
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
