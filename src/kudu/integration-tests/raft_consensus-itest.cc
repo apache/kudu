@@ -2424,7 +2424,8 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
 TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
   // Start cluster and wait until we have a stable leader.
   // Switch off tombstoning of evicted replicas to observe the failed tablet state.
-  NO_FATALS(BuildAndStart({}, { "--master_tombstone_evicted_tablet_replicas=false" }));
+  NO_FATALS(BuildAndStart({ "--consensus_rpc_timeout_ms=10000" }, // Ensure we are safe to evict.
+                          { "--master_tombstone_evicted_tablet_replicas=false" }));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
                                   tablet_id_, 1));
 

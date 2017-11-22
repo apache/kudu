@@ -48,6 +48,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/url-coding.h"
 
@@ -70,12 +71,14 @@ TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_bool(safe_time_advancement_without_writes);
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 using kudu::log::Log;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -244,6 +247,25 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
   }
 }
 
+unordered_map<string, HealthReportPB> PeerMessageQueue::ReportHealthOfPeers() const {
+  unordered_map<string, HealthReportPB> reports;
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
+  for (const auto& entry : peers_map_) {
+    const string& peer_uuid = entry.first;
+    const TrackedPeer* peer = entry.second;
+    HealthReportPB report;
+    auto overall_health = peer->last_overall_health_status;
+    // We always consider the local peer (ourselves) to be healthy.
+    // TODO(mpercy): Is this always a safe assumption?
+    if (peer_uuid == local_peer_pb_.permanent_uuid()) {
+      overall_health = HealthReportPB::HEALTHY;
+    }
+    report.set_overall_health(overall_health);
+    reports.emplace(peer_uuid, std::move(report));
+  }
+  return reports;
+}
+
 void PeerMessageQueue::CheckPeersInActiveConfigIfLeaderUnlocked() const {
   DCHECK(queue_lock_.is_locked());
   if (queue_state_.mode != LEADER) return;
@@ -369,20 +391,20 @@ OpId PeerMessageQueue::GetNextOpId() const {
                   queue_state_.last_appended.index() + 1);
 }
 
-bool PeerMessageQueue::SafeToEvict(const string& evict_uuid) {
+bool PeerMessageQueue::SafeToEvictUnlocked(const string& evict_uuid) const {
+  DCHECK(queue_lock_.is_locked());
   auto now = MonoTime::Now();
 
-  std::lock_guard<simple_spinlock> lock(queue_lock_);
   int remaining_voters = 0;
   int remaining_viable_voters = 0;
 
   for (const auto& e : peers_map_) {
     const auto& uuid = e.first;
     const auto& peer = e.second;
-    if (!IsRaftConfigVoter(uuid, *queue_state_.active_config)) {
+    if (uuid == evict_uuid) {
       continue;
     }
-    if (uuid == evict_uuid) {
+    if (!IsRaftConfigVoter(uuid, *queue_state_.active_config)) {
       continue;
     }
     remaining_voters++;
@@ -429,6 +451,76 @@ bool PeerMessageQueue::SafeToEvict(const string& evict_uuid) {
   return true;
 }
 
+void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
+  DCHECK(queue_lock_.is_locked());
+
+  auto overall_health_status = PeerHealthStatus(*peer);
+
+  // Prepare error messages for different conditions.
+  string error_msg;
+  if (overall_health_status == HealthReportPB::FAILED) {
+    if (peer->last_exchange_status == PeerStatus::TABLET_FAILED) {
+      error_msg = Substitute("The tablet replica hosted on peer $0 has failed", peer->uuid);
+    } else if (!peer->wal_catchup_possible) {
+      error_msg = Substitute("The logs necessary to catch up peer $0 have been "
+                             "garbage collected. The replica will never be able "
+                             "to catch up", peer->uuid);
+    } else {
+      error_msg = Substitute("Leader has been unable to successfully communicate "
+                             "with peer $0 for more than $1 seconds ($2)",
+                             peer->uuid,
+                             FLAGS_follower_unavailable_considered_failed_sec,
+                             (MonoTime::Now() - peer->last_communication_time).ToString());
+    }
+  }
+
+  bool changed = overall_health_status != peer->last_overall_health_status;
+  peer->last_overall_health_status = overall_health_status;
+
+  if (FLAGS_raft_prepare_replacement_before_eviction) {
+    if (changed) {
+      if (overall_health_status == HealthReportPB::FAILED) {
+        // Only log when the status changes to FAILED.
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << error_msg;
+      }
+      // Only notify when there is a change.
+      NotifyObserversOfPeerHealthChange();
+    }
+  } else {
+    if (overall_health_status == HealthReportPB::FAILED &&
+        SafeToEvictUnlocked(peer->uuid)) {
+      NotifyObserversOfFailedFollower(peer->uuid, queue_state_.current_term, error_msg);
+    }
+  }
+}
+
+HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPeer& peer) {
+  // Unreachable peers are considered failed.
+  auto max_unreachable = MonoDelta::FromSeconds(FLAGS_follower_unavailable_considered_failed_sec);
+  if (MonoTime::Now() - peer.last_communication_time > max_unreachable) {
+    return HealthReportPB::FAILED;
+  }
+
+  // Replicas returning TABLET_FAILED status are considered to have FAILED health.
+  if (peer.last_exchange_status == PeerStatus::TABLET_FAILED) {
+    return HealthReportPB::FAILED;
+  }
+
+  // If we have never connected to this peer before, and we have not exceeded
+  // the unreachable timeout, its health is unknown.
+  if (peer.last_exchange_status == PeerStatus::NEW) {
+    return HealthReportPB::UNKNOWN;
+  }
+
+  // Tablets that have fallen behind the leader's retained WAL are considered failed.
+  if (!peer.wal_catchup_possible) {
+    return HealthReportPB::FAILED;
+  }
+
+  // All other cases are considered healthy.
+  return HealthReportPB::HEALTHY;
+}
+
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,
@@ -436,18 +528,18 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   // Maintain a thread-safe copy of necessary members.
   OpId preceding_id;
   int64_t current_term;
-  TrackedPeer peer;
+  TrackedPeer peer_copy;
   MonoDelta unreachable_time;
   {
     std::lock_guard<simple_spinlock> lock(queue_lock_);
     DCHECK_EQ(queue_state_.state, kQueueOpen);
     DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
 
-    TrackedPeer* peer_ptr = FindPtrOrNull(peers_map_, uuid);
-    if (PREDICT_FALSE(peer_ptr == nullptr || queue_state_.mode == NON_LEADER)) {
+    TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
+    if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
       return Status::NotFound("Peer not tracked or queue not in leader mode.");
     }
-    peer = *peer_ptr;
+    peer_copy = *peer;
 
     // Clear the requests without deleting the entries, as they may be in use by other peers.
     request->mutable_ops()->ExtractSubrange(0, request->ops_size(), nullptr);
@@ -461,19 +553,22 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     request->set_all_replicated_index(queue_state_.all_replicated_index);
     request->set_last_idx_appended_to_leader(queue_state_.last_appended.index());
     request->set_caller_term(current_term);
-    unreachable_time = MonoTime::Now() - peer.last_communication_time;
+    unreachable_time = MonoTime::Now() - peer_copy.last_communication_time;
   }
-  if (unreachable_time.ToSeconds() > FLAGS_follower_unavailable_considered_failed_sec) {
-    if (SafeToEvict(uuid)) {
-      string msg = Substitute("Leader has been unable to successfully communicate "
-                              "with Peer $0 for more than $1 seconds ($2)",
-                              uuid,
-                              FLAGS_follower_unavailable_considered_failed_sec,
-                              unreachable_time.ToString());
-      NotifyObserversOfFailedFollower(uuid, current_term, msg);
-    }
-  }
-  if (peer.last_exchange_status == PeerStatus::TABLET_NOT_FOUND) {
+
+  // Always trigger a health status update check at the end of this function.
+  bool wal_catchup_progress = false;
+  bool wal_catchup_failure = false;
+  SCOPED_CLEANUP({
+      std::lock_guard<simple_spinlock> lock(queue_lock_);
+      TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
+      if (!peer) return;
+      if (wal_catchup_progress) peer->wal_catchup_possible = true;
+      if (wal_catchup_failure) peer->wal_catchup_possible = false;
+      UpdatePeerHealthUnlocked(peer);
+    });
+
+  if (peer_copy.last_exchange_status == PeerStatus::TABLET_NOT_FOUND) {
     VLOG(3) << LogPrefixUnlocked() << "Peer " << uuid << " needs tablet copy" << THROTTLE_MSG;
     *needs_tablet_copy = true;
     return Status::OK();
@@ -483,14 +578,14 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
   // from the log starting at the last_received point.
-  if (peer.last_exchange_status != PeerStatus::NEW) {
+  if (peer_copy.last_exchange_status != PeerStatus::NEW) {
 
     // The batch of messages to send to the peer.
     vector<ReplicateRefPtr> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
     // We try to get the follower's next_index from our log.
-    Status s = log_cache_.ReadOps(peer.next_index - 1,
+    Status s = log_cache_.ReadOps(peer_copy.next_index - 1,
                                   max_batch_size,
                                   &messages,
                                   &preceding_id);
@@ -501,7 +596,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
         string msg = Substitute("The logs necessary to catch up peer $0 have been "
                                 "garbage collected. The follower will never be able "
                                 "to catch up ($1)", uuid, s.ToString());
-        NotifyObserversOfFailedFollower(uuid, current_term, msg);
+        wal_catchup_failure = true;
         return s;
       // IsIncomplete() means that we tried to read beyond the head of the log
       // (in the future). See KUDU-1078.
@@ -510,13 +605,17 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
         LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Error trying to read ahead of the log "
                                         << "while preparing peer request: "
                                         << s.ToString() << ". Destination peer: "
-                                        << peer.ToString();
+                                        << peer_copy.ToString();
         return s;
       }
       LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
                                       << s.ToString() << ". Destination peer: "
-                                      << peer.ToString();
+                                      << peer_copy.ToString();
     }
+
+    // Since we were able to read ops through the log cache, we know that
+    // catchup is possible.
+    wal_catchup_progress = true;
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
     // "all replicated" point. At some point we may want to allow partially loading
@@ -537,7 +636,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (request->ops_size() > 0) {
     int64_t last_op_sent = request->ops(request->ops_size() - 1).id().index();
     if (last_op_sent < request->committed_index()) {
-      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer.status_log_throttler, "lagging")
+      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer_copy.status_log_throttler, "lagging")
           << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
           << (request->committed_index() - last_op_sent)
           << " ops behind the committed index " << THROTTLE_MSG;
@@ -719,11 +818,7 @@ void PeerMessageQueue::UpdatePeerStatus(const string& peer_uuid,
       break;
 
     case PeerStatus::TABLET_FAILED: {
-      // Use the current term to ensure the peer will be evicted, otherwise this
-      // notification may be ignored.
-      int64_t current_term = queue_state_.current_term;
-      l.unlock();
-      NotifyObserversOfFailedFollower(peer_uuid, current_term, status.ToString());
+      UpdatePeerHealthUnlocked(peer);
       return;
     }
 
@@ -1147,6 +1242,24 @@ void PeerMessageQueue::NotifyObserversOfFailedFollowerTask(const string& uuid,
   }
   for (PeerMessageQueueObserver* observer : observers_copy) {
     observer->NotifyFailedFollower(uuid, term, reason);
+  }
+}
+
+void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversOfPeerHealthChangeTask, Unretained(this))),
+              LogPrefixUnlocked() + "Unable to notify RaftConsensus peer health change.");
+}
+
+void PeerMessageQueue::NotifyObserversOfPeerHealthChangeTask() {
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
+  std::vector<PeerMessageQueueObserver*> observers_copy;
+  {
+    std::lock_guard<simple_spinlock> lock(queue_lock_);
+    observers_copy = observers_;
+  }
+  for (PeerMessageQueueObserver* observer : observers_copy) {
+    observer->NotifyPeerHealthChange();
   }
 }
 

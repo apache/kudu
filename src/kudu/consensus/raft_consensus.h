@@ -277,8 +277,16 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   scoped_refptr<TimeManager> time_manager() const { return time_manager_; }
 
+  enum IncludeHealthReport {
+    EXCLUDE_HEALTH_REPORT,
+    INCLUDE_HEALTH_REPORT
+  };
+
   // Returns a copy of the state of the consensus system.
-  ConsensusStatePB ConsensusState() const;
+  // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
+  // local replica believes it is the leader of the config, it will include a
+  // health report about each active peer in the committed config.
+  ConsensusStatePB ConsensusState(IncludeHealthReport report_health = EXCLUDE_HEALTH_REPORT) const;
 
   // Returns a copy of the current committed Raft configuration.
   RaftConfigPB CommittedConfig() const;
@@ -309,13 +317,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Updates the committed_index and triggers the Apply()s for whatever
   // transactions were pending.
   // This is idempotent.
-  void NotifyCommitIndex(int64_t commit_index);
+  void NotifyCommitIndex(int64_t commit_index) override;
 
-  void NotifyTermChange(int64_t term);
+  void NotifyTermChange(int64_t term) override;
 
   void NotifyFailedFollower(const std::string& uuid,
                             int64_t term,
-                            const std::string& reason);
+                            const std::string& reason) override;
+
+  void NotifyPeerHealthChange() override;
 
   // Return the log indexes which the consensus implementation would like to retain.
   //

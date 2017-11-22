@@ -120,6 +120,8 @@ class PeerMessageQueue {
           last_known_committed_index(MinimumOpId().index()),
           last_exchange_status(PeerStatus::NEW),
           last_communication_time(MonoTime::Now()),
+          wal_catchup_possible(true),
+          last_overall_health_status(HealthReportPB::UNKNOWN),
           last_seen_term_(0) {}
 
     TrackedPeer() = default;
@@ -164,6 +166,13 @@ class PeerMessageQueue {
     // Defaults to the time of construction, so does not necessarily mean that
     // successful communication ever took place.
     MonoTime last_communication_time;
+
+    // Set to false if it is determined that the remote peer has fallen behind
+    // the local peer's WAL.
+    bool wal_catchup_possible;
+
+    // The peer's latest overall health status.
+    HealthReportPB::HealthStatus last_overall_health_status;
 
     // Throttler for how often we will log status messages pertaining to this
     // peer (eg when it is lagging, etc).
@@ -210,6 +219,10 @@ class PeerMessageQueue {
 
   // Makes the queue untrack this peer.
   void UntrackPeer(const std::string& uuid);
+
+  // Returns a health report for all active peers.
+  // Returns IllegalState if the local peer is not the leader of the config.
+  std::unordered_map<std::string, HealthReportPB> ReportHealthOfPeers() const;
 
   // Appends a single message to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
@@ -419,7 +432,14 @@ class PeerMessageQueue {
 
   // Return true if it would be safe to evict the peer 'evict_uuid' at this
   // point in time.
-  bool SafeToEvict(const std::string& evict_uuid);
+  bool SafeToEvictUnlocked(const std::string& evict_uuid) const;
+
+  // Update a peer's last_health_status field and trigger the appropriate
+  // notifications.
+  void UpdatePeerHealthUnlocked(TrackedPeer* peer);
+
+  // Calculate a peer's up-to-date health status based on internal fields.
+  static HealthReportPB::HealthStatus PeerHealthStatus(const TrackedPeer& peer);
 
   void NotifyObserversOfCommitIndexChange(int64_t new_commit_index);
   void NotifyObserversOfCommitIndexChangeTask(int64_t new_commit_index);
@@ -433,6 +453,9 @@ class PeerMessageQueue {
   void NotifyObserversOfFailedFollowerTask(const std::string& uuid,
                                            int64_t term,
                                            const std::string& reason);
+
+  void NotifyObserversOfPeerHealthChange();
+  void NotifyObserversOfPeerHealthChangeTask();
 
   typedef std::unordered_map<std::string, TrackedPeer*> PeersMap;
 
@@ -519,6 +542,9 @@ class PeerMessageQueueObserver {
   virtual void NotifyFailedFollower(const std::string& peer_uuid,
                                     int64_t term,
                                     const std::string& reason) = 0;
+
+  // Notify the observer that the health of one of the peers has changed.
+  virtual void NotifyPeerHealthChange() = 0;
 
   virtual ~PeerMessageQueueObserver() {}
 };

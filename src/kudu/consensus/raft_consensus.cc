@@ -24,8 +24,9 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <unordered_set>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -776,6 +777,10 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
                                                      committed_config,
                                                      reason)),
               LogPrefixThreadSafe() + "Unable to start RemoteFollowerTask");
+}
+
+void RaftConsensus::NotifyPeerHealthChange() {
+  MarkDirty("Peer health change");
 }
 
 void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
@@ -2166,10 +2171,31 @@ const string& RaftConsensus::tablet_id() const {
   return options_.tablet_id;
 }
 
-ConsensusStatePB RaftConsensus::ConsensusState() const {
+ConsensusStatePB RaftConsensus::ConsensusState(IncludeHealthReport report_health) const {
   ThreadRestrictions::AssertWaitAllowed();
-  LockGuard l(lock_);
-  return cmeta_->ToConsensusStatePB();
+  UniqueLock l(lock_);
+  ConsensusStatePB cstate = cmeta_->ToConsensusStatePB();
+
+  // If we need to include the health report, merge it into the committed
+  // config iff we believe we are the current leader of the config.
+  if (report_health == INCLUDE_HEALTH_REPORT &&
+      cmeta_->active_role() == RaftPeerPB::LEADER) {
+    auto reports = queue_->ReportHealthOfPeers();
+
+    // We don't need to access the queue anymore, so drop the consensus lock.
+    l.unlock();
+
+    // Iterate through each peer in the committed config and attach the health
+    // report to it.
+    RaftConfigPB* committed_raft_config = cstate.mutable_committed_config();
+    for (int i = 0; i < committed_raft_config->peers_size(); i++) {
+      RaftPeerPB* peer = committed_raft_config->mutable_peers(i);
+      const HealthReportPB* report = FindOrNull(reports, peer->permanent_uuid());
+      if (!report) continue; // Only attach details if we know about the peer.
+      *peer->mutable_health_report() = *report;
+    }
+  }
+  return cstate;
 }
 
 RaftConfigPB RaftConsensus::CommittedConfig() const {

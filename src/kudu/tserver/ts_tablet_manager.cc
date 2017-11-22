@@ -29,6 +29,7 @@
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
@@ -117,6 +118,8 @@ DEFINE_int32(tablet_state_walk_min_period_ms, 1000,
              "Minimum amount of time in milliseconds between walks of the "
              "tablet map to update tablet state counts.");
 TAG_FLAG(tablet_state_walk_min_period_ms, advanced);
+
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 METRIC_DEFINE_gauge_int32(server, tablets_num_not_initialized,
                           "Number of Not Initialized Tablets",
@@ -1153,7 +1156,10 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
   // We cannot get consensus state information unless the TabletReplica is running.
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (consensus) {
-    *reported_tablet->mutable_consensus_state() = consensus->ConsensusState();
+    auto include_health = FLAGS_raft_prepare_replacement_before_eviction ?
+                          RaftConsensus::INCLUDE_HEALTH_REPORT :
+                          RaftConsensus::EXCLUDE_HEALTH_REPORT;
+    *reported_tablet->mutable_consensus_state() = consensus->ConsensusState(include_health);
   }
 }
 
