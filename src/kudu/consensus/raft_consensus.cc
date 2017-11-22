@@ -776,7 +776,20 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
                                                      uuid,
                                                      committed_config,
                                                      reason)),
-              LogPrefixThreadSafe() + "Unable to start RemoteFollowerTask");
+              LogPrefixThreadSafe() + "Unable to start TryRemoveFollowerTask");
+}
+
+void RaftConsensus::NotifyPeerToPromote(const std::string& peer_uuid,
+                                        int64_t term,
+                                        int64_t committed_config_opid_index) {
+  // Run the config change on the raft thread pool.
+  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryPromoteNonVoterTask,
+                                                     shared_from_this(),
+                                                     peer_uuid,
+                                                     term,
+                                                     committed_config_opid_index)),
+              LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
+
 }
 
 void RaftConsensus::NotifyPeerHealthChange() {
@@ -796,6 +809,56 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
   boost::optional<TabletServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + "Unable to remove follower " + uuid);
+}
+
+void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid,
+                                           int64_t term,
+                                           int64_t committed_config_opid_index) {
+  string msg = Substitute("attempt to promote peer $0: ", peer_uuid);
+  {
+    ThreadRestrictions::AssertWaitAllowed();
+    LockGuard l(lock_);
+    int64_t current_term = CurrentTermUnlocked();
+    if (term != current_term) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "requested in "
+                                     << "previous term " << term
+                                     << ", but a leader election "
+                                     << "likely occurred since then. Doing nothing.";
+      return;
+    }
+
+    int64_t current_committed_config_opid_index =
+        cmeta_->GetConfigOpIdIndex(COMMITTED_CONFIG);
+    if (committed_config_opid_index != current_committed_config_opid_index) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "notified when "
+                                     << "committed config had opid index "
+                                     << committed_config_opid_index << ", but now "
+                                     << "the committed config has opid index "
+                                     << current_committed_config_opid_index
+                                     << ". Doing nothing.";
+      return;
+    }
+
+    if (cmeta_->has_pending_config()) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "there is already a config change operation "
+                                     << "in progress. Unable to promote follower until it "
+                                     << "completes. Doing nothing.";
+      return;
+    }
+  }
+
+  ChangeConfigRequestPB req;
+  req.set_tablet_id(options_.tablet_id);
+  req.set_type(CHANGE_REPLICA_TYPE);
+  req.mutable_server()->set_permanent_uuid(peer_uuid);
+  req.mutable_server()->set_member_type(RaftPeerPB::VOTER);
+  req.mutable_server()->mutable_attrs()->set_promote(false);
+  req.set_cas_config_opid_index(committed_config_opid_index);
+  LOG(INFO) << LogPrefixThreadSafe() << "attempting to promote NON_VOTER "
+            << peer_uuid << " to VOTER";
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
+              LogPrefixThreadSafe() + Substitute("Unable to promote non-voter $0", peer_uuid));
 }
 
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
@@ -1653,7 +1716,6 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
         }
         break;
 
-      // TODO(mpercy): Support changing between VOTER and NON_VOTER.
       case CHANGE_REPLICA_TYPE:
         if (server.member_type() == RaftPeerPB::UNKNOWN_MEMBER_TYPE) {
           return Status::InvalidArgument("Cannot change replica type to UNKNOWN_MEMBER_TYPE");
@@ -1673,7 +1735,17 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
           return Status::InvalidArgument("Cannot change replica type to same type");
         }
         peer_pb->set_member_type(server.member_type());
-        // TODO(mpercy): Copy over replica intentions when implemented.
+        // Override attributes only if they are explicitly passed in the request.
+        // TODO(mpercy): It seems cleaner to bulk-overwrite 'attrs' with
+        // whatever is passed into the request, but that would make it more
+        // complicated to correctly handle a non-voter that had both its
+        // "promote" and "replace" flags set.
+        if (server.attrs().has_promote()) {
+          peer_pb->mutable_attrs()->set_promote(server.attrs().promote());
+        }
+        if (server.attrs().has_replace()) {
+          peer_pb->mutable_attrs()->set_replace(server.attrs().replace());
+        }
         break;
 
       default:

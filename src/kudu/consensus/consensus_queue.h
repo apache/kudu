@@ -454,6 +454,13 @@ class PeerMessageQueue {
                                            int64_t term,
                                            const std::string& reason);
 
+  void NotifyObserversOfPeerToPromote(const std::string& peer_uuid,
+                                      int64_t term,
+                                      int64_t committed_config_opid_index);
+  void NotifyObserversOfPeerToPromoteTask(const std::string& peer_uuid,
+                                          int64_t term,
+                                          int64_t committed_config_opid_index);
+
   void NotifyObserversOfPeerHealthChange();
   void NotifyObserversOfPeerHealthChangeTask();
 
@@ -542,6 +549,12 @@ class PeerMessageQueueObserver {
   virtual void NotifyFailedFollower(const std::string& peer_uuid,
                                     int64_t term,
                                     const std::string& reason) = 0;
+
+  // Notify the observer that the specified peer is ready to be promoted from
+  // NON_VOTER to VOTER.
+  virtual void NotifyPeerToPromote(const std::string& peer_uuid,
+                                   int64_t term,
+                                   int64_t committed_config_opid_index) = 0;
 
   // Notify the observer that the health of one of the peers has changed.
   virtual void NotifyPeerHealthChange() = 0;

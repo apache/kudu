@@ -101,6 +101,7 @@ using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::MajoritySize;
 using kudu::consensus::MakeOpId;
 using kudu::consensus::OpId;
+using kudu::consensus::RaftPeerAttrsPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::ReplicateMsg;
 using kudu::itest::AddServer;
@@ -1532,7 +1533,7 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   // Now, add the server back. Again, specifying something other than the
   // latest committed_opid_index should fail.
   s = AddServer(leader_tserver, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                MonoDelta::FromSeconds(10), -1, &error_code);
+                MonoDelta::FromSeconds(10), {}, -1, &error_code);
   ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);
   ASSERT_STR_CONTAINS(s.ToString(), "of -1 but the committed config has opid_index of 2");
 
@@ -1540,7 +1541,7 @@ TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   // The previous config change op is the latest entry in the log.
   committed_opid_index = cur_log_index;
   ASSERT_OK(AddServer(leader_tserver, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                      MonoDelta::FromSeconds(10), committed_opid_index));
+                      MonoDelta::FromSeconds(10), {}, committed_opid_index));
 
   InsertOrDie(&active_tablet_servers, follower_ts->uuid(), follower_ts);
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),

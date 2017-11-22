@@ -19,12 +19,16 @@
 #include <ostream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -38,8 +42,11 @@
 #include "kudu/util/test_util.h"
 
 using kudu::consensus::COMMITTED_OPID;
+using kudu::consensus::RaftPeerAttrsPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
 using std::string;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -149,6 +156,62 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   // would be unable to add the removed server back, and that replica would be
   // missing the config change op that removed it from the config.
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1));
+}
+
+// Test automatic promotion of a non-voter replica in a 3-4-3 re-replication
+// (KUDU-1097) paradigm.
+TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  // Enable 3-4-3 re-replication.
+  NO_FATALS(StartCluster({"--raft_prepare_replacement_before_eviction=true"},
+                         {"--raft_prepare_replacement_before_eviction=true",
+                          "--catalog_manager_evict_excess_replicas=false"},
+                         /*num_tablet_servers=*/ 4));
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+
+  // The table should initially have replicas on three tservers.
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                                     kTimeout, &table_locations));
+  ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
+  ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
+  string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
+
+  // Find the TS that does not have a replica.
+  unordered_set<string> initial_replicas;
+  for (const auto& replica : table_locations.tablet_locations().begin()->replicas()) {
+    initial_replicas.insert(replica.ts_info().permanent_uuid());
+  }
+  TServerDetails* new_replica = nullptr;
+  for (const auto& entry : ts_map_) {
+    if (!ContainsKey(initial_replicas, entry.first)) {
+      new_replica = entry.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, new_replica);
+
+  TServerDetails* leader_replica = nullptr;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, kTimeout, &leader_replica));
+    ASSERT_NE(new_replica, leader_replica);
+
+    // Add the 4th replica as a NON_VOTER with promote=true.
+    RaftPeerAttrsPB attrs;
+    attrs.set_promote(true);
+    ASSERT_OK(AddServer(leader_replica, tablet_id, new_replica,
+                        RaftPeerPB::NON_VOTER, kTimeout, attrs));
+  });
+
+  // Wait for there to be 4 voters in the config.
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(/*config_size=*/ 4,
+                                                leader_replica,
+                                                tablet_id,
+                                                kTimeout));
+
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 } // namespace kudu

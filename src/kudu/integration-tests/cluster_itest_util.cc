@@ -690,6 +690,7 @@ Status AddServer(const TServerDetails* leader,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
                  const MonoDelta& timeout,
+                 const consensus::RaftPeerAttrsPB& attrs,
                  const boost::optional<int64_t>& cas_config_index,
                  TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
@@ -699,6 +700,7 @@ Status AddServer(const TServerDetails* leader,
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_add->uuid());
   peer->set_member_type(member_type);
+  *peer->mutable_attrs() = attrs;
   *peer->mutable_last_known_addr() = replica_to_add->registration.rpc_addresses(0);
   if (cas_config_index) {
     req.set_cas_config_opid_index(*cas_config_index);

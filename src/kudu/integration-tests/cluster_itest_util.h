@@ -276,6 +276,7 @@ Status AddServer(const TServerDetails* leader,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
                  const MonoDelta& timeout,
+                 const consensus::RaftPeerAttrsPB& attrs = {},
                  const boost::optional<int64_t>& cas_config_index = boost::none,
                  tserver::TabletServerErrorPB::Code* error_code = nullptr);
 

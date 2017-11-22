@@ -325,6 +325,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                             int64_t term,
                             const std::string& reason) override;
 
+  void NotifyPeerToPromote(const std::string& peer_uuid,
+                           int64_t term,
+                           int64_t committed_config_opid_index) override;
+
   void NotifyPeerHealthChange() override;
 
   // Return the log indexes which the consensus implementation would like to retain.
@@ -633,6 +637,12 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   void TryRemoveFollowerTask(const std::string& uuid,
                              const RaftConfigPB& committed_config,
                              const std::string& reason);
+
+  // Attempt to promote the given non-voter to a voter, if the 'term'
+  // and 'committed_config_opid_index' CAS parameters are both still current.
+  void TryPromoteNonVoterTask(const std::string& peer_uuid,
+                              int64_t term,
+                              int64_t committed_config_opid_index);
 
   // Called when the failure detector expires.
   // Submits ReportFailureDetectedTask() to a thread pool.

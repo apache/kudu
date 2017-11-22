@@ -69,6 +69,13 @@ DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
+DEFINE_int32(consensus_promotion_max_wal_entries_behind, 100,
+             "The number of WAL entries that a NON_VOTER with PROMOTE=true can "
+             "be behind the leader's committed index and be considered ready "
+             "for promotion to VOTER.");
+TAG_FLAG(consensus_promotion_max_wal_entries_behind, advanced);
+TAG_FLAG(consensus_promotion_max_wal_entries_behind, experimental);
+
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_bool(safe_time_advancement_without_writes);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
@@ -896,6 +903,39 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       peer->last_received = status.last_received();
       peer->next_index = peer->last_received.index() + 1;
 
+      // Since the peer has a prefix of our log, if we are the leader and they
+      // are a non-voter then it may be time to promote them to a voter.
+      //
+      // TODO(mpercy): Factor this out into a dedicated function.
+
+      int64_t entries_behind = queue_state_.committed_index - peer->last_received.index();
+      if (queue_state_.mode == PeerMessageQueue::LEADER &&
+          entries_behind <= FLAGS_consensus_promotion_max_wal_entries_behind) {
+        RaftPeerPB* peer_pb;
+        // TODO(mpercy): It would be more efficient to cached the member type
+        // in the TrackedPeer data structure. The downside is that we'd end up
+        // with multiple sources of truth that would need to be kept in sync.
+        Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
+                                       peer->uuid, &peer_pb);
+        if (s.ok() &&
+            peer_pb &&
+            peer_pb->member_type() == RaftPeerPB::NON_VOTER &&
+            peer_pb->attrs().promote()) {
+          // This peer is ready to promote.
+          //
+          // TODO(mpercy): Should we introduce a function SafeToPromote() that
+          // does the same calculation as SafeToEvict() but for adding a VOTER?
+          //
+          // Note: we can pass in the active config's 'opid_index' as the
+          // committed config's opid_index because if we're in the middle of a
+          // config change, this requested config change will be rejected
+          // anyway.
+          NotifyObserversOfPeerToPromote(peer->uuid,
+                                         queue_state_.current_term,
+                                         queue_state_.active_config->opid_index());
+        }
+      }
+
     } else if (!OpIdEquals(status.last_received_current_leader(), MinimumOpId())) {
       // Their log may have diverged from ours, however we are in the process
       // of replicating our ops to them, so continue doing so. Eventually, we
@@ -1243,6 +1283,31 @@ void PeerMessageQueue::NotifyObserversOfFailedFollowerTask(const string& uuid,
   for (PeerMessageQueueObserver* observer : observers_copy) {
     observer->NotifyFailedFollower(uuid, term, reason);
   }
+}
+
+void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid,
+                                                      int64_t term,
+                                                      int64_t committed_config_opid_index) {
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversOfPeerToPromoteTask,
+           Unretained(this), peer_uuid, term, committed_config_opid_index)),
+              LogPrefixUnlocked() + "unable to notify RaftConsensus of peer to promote");
+
+}
+
+void PeerMessageQueue::NotifyObserversOfPeerToPromoteTask(const string& peer_uuid,
+                                                          int64_t term,
+                                                          int64_t committed_config_opid_index) {
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
+  std::vector<PeerMessageQueueObserver*> observers_copy;
+  {
+    std::lock_guard<simple_spinlock> lock(queue_lock_);
+    observers_copy = observers_;
+  }
+  for (PeerMessageQueueObserver* observer : observers_copy) {
+    observer->NotifyPeerToPromote(peer_uuid, term, committed_config_opid_index);
+  }
+
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {
