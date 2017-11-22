@@ -14,12 +14,9 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_SERVER_TEST_UTIL_H_
-#define KUDU_TSERVER_TABLET_SERVER_TEST_UTIL_H_
+#pragma once
 
 #include <memory>
-
-#include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
 class Sockaddr;
@@ -44,13 +41,11 @@ class TabletServerServiceProxy;
 // Create tablet server client proxies for tests.
 void CreateTsClientProxies(const Sockaddr& addr,
                            const std::shared_ptr<rpc::Messenger>& messenger,
-                           gscoped_ptr<TabletCopyServiceProxy>* tablet_copy_proxy,
-                           gscoped_ptr<TabletServerServiceProxy>* tablet_server_proxy,
-                           gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
-                           gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy,
-                           gscoped_ptr<server::GenericServiceProxy>* generic_proxy);
+                           std::unique_ptr<TabletCopyServiceProxy>* tablet_copy_proxy,
+                           std::unique_ptr<TabletServerServiceProxy>* tablet_server_proxy,
+                           std::unique_ptr<TabletServerAdminServiceProxy>* admin_proxy,
+                           std::unique_ptr<consensus::ConsensusServiceProxy>* consensus_proxy,
+                           std::unique_ptr<server::GenericServiceProxy>* generic_proxy);
 
 } // namespace tserver
 } // namespace kudu
-
-#endif // KUDU_TSERVER_TABLET_SERVER_TEST_UTIL_H_

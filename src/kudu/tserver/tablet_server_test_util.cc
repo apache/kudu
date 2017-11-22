@@ -33,11 +33,11 @@ using std::shared_ptr;
 
 void CreateTsClientProxies(const Sockaddr& addr,
                            const shared_ptr<Messenger>& messenger,
-                           gscoped_ptr<TabletCopyServiceProxy>* tablet_copy_proxy,
-                           gscoped_ptr<TabletServerServiceProxy>* tablet_server_proxy,
-                           gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
-                           gscoped_ptr<ConsensusServiceProxy>* consensus_proxy,
-                           gscoped_ptr<server::GenericServiceProxy>* generic_proxy) {
+                           std::unique_ptr<TabletCopyServiceProxy>* tablet_copy_proxy,
+                           std::unique_ptr<TabletServerServiceProxy>* tablet_server_proxy,
+                           std::unique_ptr<TabletServerAdminServiceProxy>* admin_proxy,
+                           std::unique_ptr<ConsensusServiceProxy>* consensus_proxy,
+                           std::unique_ptr<server::GenericServiceProxy>* generic_proxy) {
   const auto& host = addr.host();
   tablet_copy_proxy->reset(new TabletCopyServiceProxy(messenger, addr, host));
   tablet_server_proxy->reset(new TabletServerServiceProxy(messenger, addr, host));

@@ -17,12 +17,13 @@
 
 #include "kudu/tserver/tablet_server-test-base.h"
 
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <sstream>
-#include <stddef.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -75,6 +76,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -114,6 +116,7 @@ using kudu::tablet::RowSetDataPB;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletSuperBlockPB;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -131,12 +134,19 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
 DEFINE_int32(delete_tablet_bench_num_flushes, 200,
              "Number of disk row sets to flush in the delete tablet benchmark");
 
+DECLARE_bool(crash_on_eio);
+DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(fail_dns_resolution);
+DECLARE_double(env_inject_eio);
+DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(flush_threshold_secs);
+DECLARE_int32(maintenance_manager_num_threads);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_string(block_manager);
+DECLARE_string(env_inject_eio_globs);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
@@ -346,6 +356,111 @@ TEST_F(TabletServerTest, TestWebPages) {
   // only exists on Linux.
   ASSERT_STR_CONTAINS(buf.ToString(), "tablet_server-test");
 #endif
+}
+
+class TabletServerDiskFailureTest : public TabletServerTestBase {
+ public:
+  virtual void SetUp() override {
+    const int kNumDirs = 5;
+    NO_FATALS(TabletServerTestBase::SetUp());
+    // Ensure the server will flush frequently.
+    FLAGS_enable_maintenance_manager = true;
+    FLAGS_maintenance_manager_num_threads = kNumDirs;
+    FLAGS_flush_threshold_mb = 1;
+    FLAGS_flush_threshold_secs = 1;
+
+    // Create a brand new tablet server with multiple disks, ensuring it can
+    // survive at least one disk failure.
+    NO_FATALS(StartTabletServer(/*num_data_dirs=*/ kNumDirs));
+  }
+};
+
+// Test that applies random operations to a tablet with a non-zero disk-failure
+// injection rate.
+TEST_F(TabletServerDiskFailureTest, TestRandomOpSequence) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Not running slow test. To run, use KUDU_ALLOW_SLOW_TESTS=1";
+    return;
+  }
+  typedef vector<RowOperationsPB::Type> OpTypeList;
+  const OpTypeList kOpsIfKeyNotPresent = { RowOperationsPB::INSERT, RowOperationsPB::UPSERT };
+  const OpTypeList kOpsIfKeyPresent = { RowOperationsPB::UPSERT, RowOperationsPB::UPDATE,
+                                        RowOperationsPB::DELETE };
+  const int kMaxKey = 100000;
+
+  // Set these way up-front so we can change a single value to actually start
+  // injecting errors.
+  FLAGS_crash_on_eio = false;
+  FLAGS_env_inject_eio_globs =
+    JoinPathSegments(mini_server_->options()->fs_opts.data_roots[1], "**");
+
+  set<int> keys;
+  const auto GetRandomString = [] {
+    return StringPrintf("%d", rand() % kMaxKey);
+  };
+
+  // Perform a random op (insert, update, upsert, or delete).
+  const auto PerformOp = [&] {
+    // Set up the request.
+    WriteRequestPB req;
+    req.set_tablet_id(kTabletId);
+    RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
+
+    // Set up the other state.
+    WriteResponsePB resp;
+    RpcController controller;
+    RowOperationsPB::Type op_type;
+    int key = rand() % kMaxKey;
+    auto key_iter = keys.find(key);
+    if (key_iter == keys.end()) {
+      // If the key already exists, insert or upsert.
+      op_type = kOpsIfKeyNotPresent[rand() % kOpsIfKeyNotPresent.size()];
+    } else {
+      // ... else we can do anything but insert.
+      op_type = kOpsIfKeyPresent[rand() % kOpsIfKeyPresent.size()];
+    }
+
+    // Add the op to the request.
+    if (op_type != RowOperationsPB::DELETE) {
+      AddTestRowToPB(op_type, schema_, key, key, GetRandomString(),
+                     req.mutable_row_operations());
+      keys.insert(key);
+    } else {
+      AddTestKeyToPB(RowOperationsPB::DELETE, schema_, key, req.mutable_row_operations());
+      keys.erase(key_iter);
+    }
+
+    // Finally, write to the server and log the response.
+    RETURN_NOT_OK_PREPEND(proxy_->Write(req, &resp, &controller), "Failed to write");
+    LOG(INFO) << "Tablet server responded with: " << SecureDebugString(resp);
+    return resp.has_error() ?  StatusFromPB(resp.error().status()) : Status::OK();
+  };
+
+  // Perform some arbitrarily large number of ops, with some pauses to encourage flushes.
+  for (int i = 0; i < 500; i++) {
+    if (i % 10) {
+      SleepFor(MonoDelta::FromMilliseconds(100));
+    }
+    ASSERT_OK(PerformOp());
+  }
+  // At this point, a bunch of operations have gone through successfully. Fail
+  // one of the disks that the tablet lives on.
+  FLAGS_env_inject_eio = 0.01;
+
+  // The tablet will eventually be failed and will not be able to accept
+  // updates. Keep on inserting until that happens.
+  ASSERT_EVENTUALLY([&] {
+    Status s;
+    for (int i = 0; i < 150 && s.ok(); i++) {
+      s = PerformOp();
+    }
+    ASSERT_FALSE(s.ok());
+  });
+  LOG(INFO) << "Failure was caught by an op!";
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(tablet::FAILED, tablet_replica_->state());
+  });
+  LOG(INFO) << "Tablet was successfully failed";
 }
 
 TEST_F(TabletServerTest, TestInsert) {

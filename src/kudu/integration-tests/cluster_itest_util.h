@@ -23,9 +23,7 @@
 // cluster type if it's general enough to use from multiple tests while not
 // belonging in the InternalMiniCluster / ExternalMiniCluster classes themselves. But
 // consider just putting stuff like that in those classes.
-
-#ifndef KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
-#define KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -39,7 +37,6 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tablet_copy.pb.h"
@@ -79,11 +76,11 @@ namespace itest {
 struct TServerDetails {
   NodeInstancePB instance_id;
   ServerRegistrationPB registration;
-  gscoped_ptr<tserver::TabletCopyServiceProxy> tablet_copy_proxy;
-  gscoped_ptr<tserver::TabletServerServiceProxy> tserver_proxy;
-  gscoped_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
-  gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
-  gscoped_ptr<server::GenericServiceProxy> generic_proxy;
+  std::unique_ptr<tserver::TabletCopyServiceProxy> tablet_copy_proxy;
+  std::unique_ptr<tserver::TabletServerServiceProxy> tserver_proxy;
+  std::unique_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
+  std::unique_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
+  std::unique_ptr<server::GenericServiceProxy> generic_proxy;
 
   // Convenience function to get the UUID from the instance_id struct.
   const std::string& uuid() const;
@@ -418,5 +415,3 @@ Status GetInt64Metric(const HostPort& http_hp,
 
 } // namespace itest
 } // namespace kudu
-
-#endif // KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
