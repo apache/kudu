@@ -293,10 +293,11 @@ TEST_F(TabletCopyClientTest, TestFailedDiskStopsClient) {
     }
   });
 
-  // In a separate thread, mark one of the directories as failed.
+  // In a separate thread, mark one of the directories as failed (not the
+  // metadata directory).
   while (true) {
     if (rand() % 10 == 0) {
-      dd_manager->MarkDataDirFailed(0, "injected failure in non-client thread");
+      dd_manager->MarkDataDirFailed(1, "injected failure in non-client thread");
       LOG(INFO) << "INJECTING FAILURE";
       break;
     }

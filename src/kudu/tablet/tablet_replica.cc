@@ -224,8 +224,12 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
         metric_entity,
         mark_dirty_clbk_));
 
-    // Re-acquire 'lock_' to update our state variable.
     std::lock_guard<simple_spinlock> l(lock_);
+
+    // If an error has been set (e.g. due to a disk failure from a separate
+    // thread), error out.
+    RETURN_NOT_OK(error_);
+
     CHECK_EQ(BOOTSTRAPPING, state_); // We are still protected by 'state_change_lock_'.
     set_state(RUNNING);
   }
@@ -735,6 +739,22 @@ size_t TabletReplica::OnDiskSize() const {
     ret += log->OnDiskSize();
   }
   return ret;
+}
+
+void TabletReplica::MakeUnavailable(const Status& error) {
+  std::shared_ptr<Tablet> tablet;
+  {
+    std::lock_guard<simple_spinlock> lock(lock_);
+    tablet = tablet_;
+    for (MaintenanceOp* op : maintenance_ops_) {
+      op->CancelAndDisable();
+    }
+  }
+  // Stop the Tablet from doing further I/O.
+  if (tablet) tablet->Stop();
+
+  // Set the error; when the replica is shut down, it will end up FAILED.
+  SetError(error);
 }
 
 Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {

@@ -199,6 +199,10 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
       tablet::TabletDataState delete_type,
       boost::optional<consensus::OpId> last_logged_opid);
 
+  // Synchronously makes the specified tablet unavailable for further I/O and
+  // schedules its asynchronous shutdown.
+  void FailTabletAndScheduleShutdown(const std::string& tablet_id);
+
   // Forces shutdown of the tablet replicas in the data dir corresponding to 'uuid'.
   void FailTabletsInDataDir(const std::string& uuid);
 
@@ -235,6 +239,15 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   Status StartTabletStateTransitionUnlocked(const std::string& tablet_id,
                                             const std::string& reason,
                                             scoped_refptr<TransitionInProgressDeleter>* deleter);
+
+  // Marks the replica indicated by 'tablet_id' as being in a transitional
+  // state. Returns an error status if the replica is already in a transitional
+  // state.
+  Status BeginReplicaStateTransition(const std::string& tablet_id,
+                                     const std::string& reason,
+                                     scoped_refptr<tablet::TabletReplica>* replica,
+                                     scoped_refptr<TransitionInProgressDeleter>* deleter,
+                                     TabletServerErrorPB::Code* error_code);
 
   // Open a tablet meta from the local file system by loading its superblock.
   Status OpenTabletMeta(const std::string& tablet_id,

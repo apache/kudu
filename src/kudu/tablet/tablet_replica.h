@@ -274,6 +274,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   // Only to be used in tests.
   void CancelMaintenanceOpsForTests();
 
+  // Stops further I/O on the replica.
+  void MakeUnavailable(const Status& error);
+
   // Return pointer to the transaction tracker for this peer.
   const TransactionTracker* transaction_tracker() const { return &txn_tracker_; }
 

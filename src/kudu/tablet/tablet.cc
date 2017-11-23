@@ -1065,10 +1065,7 @@ Status Tablet::Flush() {
 
 Status Tablet::FlushUnlocked() {
   TRACE_EVENT0("tablet", "Tablet::FlushUnlocked");
-  {
-    std::lock_guard<simple_spinlock> l(state_lock_);
-    RETURN_NOT_OK(CheckHasNotBeenStoppedUnlocked());
-  }
+  RETURN_NOT_OK(CheckHasNotBeenStopped());
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
   {
@@ -2256,6 +2253,7 @@ Tablet::Iterator::Iterator(const Tablet* tablet, const Schema& projection,
 Tablet::Iterator::~Iterator() {}
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {
+  RETURN_NOT_OK(tablet_->CheckHasNotBeenStopped());
   DCHECK(iter_.get() == nullptr);
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));

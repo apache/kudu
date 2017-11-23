@@ -21,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +53,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/metadata.pb.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -156,16 +158,13 @@ METRIC_DEFINE_gauge_int32(server, tablets_num_shutdown,
                           kudu::MetricUnit::kTablets,
                           "Number of tablets currently shut down");
 
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-namespace tablet {
-class Tablet;
-}
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataCreateMode;
@@ -737,6 +736,35 @@ Status TSTabletManager::CreateAndRegisterTabletReplica(
   return Status::OK();
 }
 
+Status TSTabletManager::BeginReplicaStateTransition(
+    const string& tablet_id,
+    const string& reason,
+    scoped_refptr<TabletReplica>* replica,
+    scoped_refptr<TransitionInProgressDeleter>* deleter,
+    TabletServerErrorPB::Code* error_code) {
+  // Acquire the lock in exclusive mode as we'll add a entry to the
+  // transition_in_progress_ map.
+  std::lock_guard<RWMutex> lock(lock_);
+  TRACE("Acquired tablet manager lock");
+  RETURN_NOT_OK(CheckRunningUnlocked(error_code));
+
+  if (!LookupTabletUnlocked(tablet_id, replica)) {
+    if (error_code) {
+      *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
+    }
+    return Status::NotFound("Tablet not found", tablet_id);
+  }
+  // Sanity check that the tablet's transition isn't already in progress
+  Status s = StartTabletStateTransitionUnlocked(tablet_id, reason, deleter);
+  if (PREDICT_FALSE(!s.ok())) {
+    if (error_code) {
+      *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+    }
+    return s;
+  }
+  return Status::OK();
+}
+
 Status TSTabletManager::DeleteTablet(
     const string& tablet_id,
     TabletDataState delete_type,
@@ -754,31 +782,11 @@ Status TSTabletManager::DeleteTablet(
 
   scoped_refptr<TabletReplica> replica;
   scoped_refptr<TransitionInProgressDeleter> deleter;
-  {
-    // Acquire the lock in exclusive mode as we'll add a entry to the
-    // transition_in_progress_ map.
-    std::lock_guard<RWMutex> lock(lock_);
-    TRACE("Acquired tablet manager lock");
-    RETURN_NOT_OK(CheckRunningUnlocked(error_code));
+  RETURN_NOT_OK(BeginReplicaStateTransition(tablet_id, "deleting tablet", &replica,
+                                            &deleter, error_code));
 
-    if (!LookupTabletUnlocked(tablet_id, &replica)) {
-      if (error_code) {
-        *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
-      }
-      return Status::NotFound("Tablet not found", tablet_id);
-    }
-    // Sanity check that the tablet's deletion isn't already in progress
-    Status s = StartTabletStateTransitionUnlocked(tablet_id, "deleting tablet", &deleter);
-    if (PREDICT_FALSE(!s.ok())) {
-      if (error_code) {
-        *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
-      }
-      return s;
-    }
-  }
-
-  // If the tablet is already deleted, the CAS check isn't possible because
-  // consensus and therefore the log is not available.
+  // If the tablet has been deleted or forcefully shut down, the CAS check
+  // isn't possible because consensus and therefore the log is not available.
   TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
   bool tablet_already_deleted = (data_state == TABLET_DATA_DELETED ||
                                  data_state == TABLET_DATA_TOMBSTONED);
@@ -881,7 +889,7 @@ Status TSTabletManager::StartTabletStateTransitionUnlocked(
   }
 
   if (!InsertIfNotPresent(&transition_in_progress_, tablet_id, reason)) {
-    return Status::IllegalState(
+    return Status::AlreadyPresent(
         Substitute("State transition of tablet $0 already in progress: $1",
                     tablet_id, transition_in_progress_[tablet_id]));
   }
@@ -1259,7 +1267,7 @@ Status TSTabletManager::DeleteTabletData(
   CHECK(delete_type == TABLET_DATA_DELETED ||
         delete_type == TABLET_DATA_TOMBSTONED ||
         delete_type == TABLET_DATA_COPYING)
-      << "Unexpected delete_type to delete tablet " << meta->tablet_id() << ": "
+      << "Unexpected delete_type to delete tablet " << tablet_id << ": "
       << TabletDataState_Name(delete_type) << " (" << delete_type << ")";
 
   // Note: Passing an unset 'last_logged_opid' will retain the last_logged_opid
@@ -1271,7 +1279,7 @@ Status TSTabletManager::DeleteTabletData(
             << (last_logged_opid ? OpIdToString(*last_logged_opid) : "(unknown)");
   MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
 
-  RETURN_NOT_OK(Log::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
+  CHECK_OK(Log::DeleteOnDiskData(meta->fs_manager(), tablet_id));
   MAYBE_FAULT(FLAGS_fault_crash_after_wal_deleted);
 
   // We do not delete the superblock or the consensus metadata when tombstoning
@@ -1285,13 +1293,25 @@ Status TSTabletManager::DeleteTabletData(
   DCHECK_EQ(TABLET_DATA_DELETED, delete_type);
 
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager()) << "Deleting consensus metadata";
-  Status s = cmeta_manager->Delete(meta->tablet_id());
+  Status s = cmeta_manager->Delete(tablet_id);
   // NotFound means we already deleted the cmeta in a previous attempt.
   if (PREDICT_FALSE(!s.ok() && !s.IsNotFound())) {
+    if (s.IsDiskFailure()) {
+      LOG(FATAL) << LogPrefix(tablet_id, meta->fs_manager())
+                 << "consensus metadata is on a failed disk";
+    }
     return s;
   }
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
-  return meta->DeleteSuperBlock();
+  s = meta->DeleteSuperBlock();
+  if (PREDICT_FALSE(!s.ok())) {
+    if (s.IsDiskFailure()) {
+      LOG(FATAL) << LogPrefix(tablet_id, meta->fs_manager())
+                 << "tablet metadata is on a failed disk";
+    }
+    return s;
+  }
+  return Status::OK();
 }
 
 void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
@@ -1299,8 +1319,57 @@ void TSTabletManager::FailTabletsInDataDir(const string& uuid) {
   int uuid_idx;
   CHECK(dd_manager->FindUuidIndexByUuid(uuid, &uuid_idx))
       << Substitute("No data directory found with UUID $0", uuid);
-  LOG(FATAL) << Substitute("Data directory $0 failed. Disk failure handling not implemented",
-                           dd_manager->FindDataDirByUuidIndex(uuid_idx)->dir());
+  if (fs_manager_->dd_manager()->IsDataDirFailed(uuid_idx)) {
+    LOG(WARNING) << "Data directory is already marked failed.";
+    return;
+  }
+  // Fail the directory to prevent other tablets from being placed in it.
+  dd_manager->MarkDataDirFailed(uuid_idx);
+  set<string> tablets = dd_manager->FindTabletsByDataDirUuidIdx(uuid_idx);
+  LOG(INFO) << Substitute("Data dir $0 has $1 tablets", uuid, tablets.size());
+  for (const string& tablet_id : dd_manager->FindTabletsByDataDirUuidIdx(uuid_idx)) {
+    FailTabletAndScheduleShutdown(tablet_id);
+  }
+}
+
+void TSTabletManager::FailTabletAndScheduleShutdown(const string& tablet_id) {
+  LOG(INFO) << LogPrefix(tablet_id, fs_manager_) << "failing tablet";
+  scoped_refptr<TabletReplica> replica;
+  if (LookupTablet(tablet_id, &replica)) {
+    // Stop further IO to the replica and set an error in the replica.
+    // When the replica is shutdown, this will leave it in a FAILED state.
+    replica->MakeUnavailable(Status::IOError("failing tablet"));
+
+    // Submit a request to actually shut down the tablet asynchronously.
+    CHECK_OK(open_tablet_pool_->SubmitFunc([tablet_id, this]() {
+      scoped_refptr<TabletReplica> replica;
+      scoped_refptr<TransitionInProgressDeleter> deleter;
+      TabletServerErrorPB::Code error;
+      Status s;
+      // Transition tablet state to ensure nothing else (e.g. tablet copies,
+      // deletions, etc) happens concurrently.
+      while (true) {
+        s = BeginReplicaStateTransition(tablet_id, "failing tablet",
+                                        &replica, &deleter, &error);
+        if (!s.IsAlreadyPresent()) {
+          break;
+        }
+        SleepFor(MonoDelta::FromMilliseconds(10));
+      }
+      // Success: we started the transition.
+      //
+      // Only proceed if there is no Tablet (e.g. a bootstrap terminated early
+      // due to error before creating the Tablet) or if the tablet has been
+      // stopped (e.g. due to the above call to MakeUnavailable).
+      std::shared_ptr<Tablet> tablet = replica->shared_tablet();
+      if (s.ok() && (!tablet || tablet->HasBeenStopped())) {
+        replica->Shutdown();
+      }
+      // Else: the tablet is healthy, or is already either not running or
+      // deleted (e.g. because another thread was able to successfully create a
+      // new replica).
+    }));
+  }
 }
 
 int TSTabletManager::RefreshTabletStateCacheAndReturnCount(tablet::TabletStatePB st) {

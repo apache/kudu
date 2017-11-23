@@ -482,6 +482,12 @@ class Tablet {
   // Must be called while 'state_lock_' is held.
   Status CheckHasNotBeenStoppedUnlocked() const;
 
+  // Returns an error if the tablet is in the 'kStopped' or 'kShutdown' state.
+  Status CheckHasNotBeenStopped() const {
+    std::lock_guard<simple_spinlock> l(state_lock_);
+    return CheckHasNotBeenStoppedUnlocked();
+  }
+
   Status FlushUnlocked();
 
   // Validate the contents of 'op' and return a bad Status if it is invalid.
