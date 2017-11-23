@@ -265,10 +265,9 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   // Register the maintenance ops associated with this peer's tablet, also invokes
   // Tablet::RegisterMaintenanceOps().
-  void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
+  void RegisterMaintenanceOps(MaintenanceManager* maint_mgr);
 
   // Unregister the maintenance ops associated with this replica's tablet.
-  // This method is not thread safe.
   void UnregisterMaintenanceOps();
 
   // Cancels the maintenance ops associated with this replica's tablet.
@@ -337,8 +336,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   std::shared_ptr<consensus::RaftConsensus> consensus_;
   simple_spinlock prepare_replicate_lock_;
 
-  // Lock protecting state_, last_status_, as well as smart pointers to collaborating
-  // classes such as tablet_ and consensus_.
+  // Lock protecting state_, last_status_, as well as pointers to collaborating
+  // classes such as tablet_, consensus_, and maintenance_ops_.
   mutable simple_spinlock lock_;
 
   // The human-readable last status of the tablet, displayed on the web page, command line

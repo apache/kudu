@@ -661,7 +661,7 @@ Status TabletReplica::NewReplicaTransactionDriver(gscoped_ptr<Transaction> trans
 void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   // Taking state_change_lock_ ensures that we don't shut down concurrently with
   // this last start-up task.
-  std::lock_guard<simple_spinlock> l(state_change_lock_);
+  std::lock_guard<simple_spinlock> state_change_lock(state_change_lock_);
 
   if (state() != RUNNING) {
     LOG(WARNING) << "Not registering maintenance operations for " << tablet_
@@ -669,25 +669,32 @@ void TabletReplica::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
     return;
   }
 
-  DCHECK(maintenance_ops_.empty());
+  vector<MaintenanceOp*> maintenance_ops;
 
   gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
   maint_mgr->RegisterOp(mrs_flush_op.get());
-  maintenance_ops_.push_back(mrs_flush_op.release());
+  maintenance_ops.push_back(mrs_flush_op.release());
 
   gscoped_ptr<MaintenanceOp> dms_flush_op(new FlushDeltaMemStoresOp(this));
   maint_mgr->RegisterOp(dms_flush_op.get());
-  maintenance_ops_.push_back(dms_flush_op.release());
+  maintenance_ops.push_back(dms_flush_op.release());
 
   gscoped_ptr<MaintenanceOp> log_gc(new LogGCOp(this));
   maint_mgr->RegisterOp(log_gc.get());
-  maintenance_ops_.push_back(log_gc.release());
+  maintenance_ops.push_back(log_gc.release());
 
-  tablet_->RegisterMaintenanceOps(maint_mgr);
+  std::shared_ptr<Tablet> tablet;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    DCHECK(maintenance_ops_.empty());
+    maintenance_ops_.swap(maintenance_ops);
+    tablet = tablet_;
+  }
+  tablet->RegisterMaintenanceOps(maint_mgr);
 }
 
 void TabletReplica::CancelMaintenanceOpsForTests() {
-  std::lock_guard<simple_spinlock> l(state_change_lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   for (MaintenanceOp* op : maintenance_ops_) {
     op->CancelAndDisable();
   }
@@ -695,10 +702,15 @@ void TabletReplica::CancelMaintenanceOpsForTests() {
 
 void TabletReplica::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
-  for (MaintenanceOp* op : maintenance_ops_) {
+  vector<MaintenanceOp*> maintenance_ops;
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    maintenance_ops.swap(maintenance_ops_);
+  }
+  for (MaintenanceOp* op : maintenance_ops) {
     op->Unregister();
   }
-  STLDeleteElements(&maintenance_ops_);
+  STLDeleteElements(&maintenance_ops);
 }
 
 size_t TabletReplica::OnDiskSize() const {
