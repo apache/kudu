@@ -49,12 +49,23 @@
 
 == Optimizations and improvements
 
-* TBD
+* The log block manager now performs disk data deletion in batches. This
+  optimization can significantly reduce the time taken to delete data on a tablet.
+
+* The usage of sensitive data redaction flag has been slightly changed. By
+  setting `--redact=log` flag, redaction will be disabled in the web UI but
+  retained for server logs. Alternatively, `--redact=none`can be used to
+  disable redaction completely.
+
+* The Spark DataSource integration now can take advantage of scan locality
+  for better scan performance, the scan will take place at the closest replica
+  instead of going to the leader.
 
 [[rn_1.6.0_fixed_issues]]
 == Fixed Issues
 
-* TBD
+* link:https://issues.apache.org/jira/browse/KUDU-1411[KUDU-1411] fixed HT
+  timestamp propagation in Java client's KuduScanToken.
 
 [[rn_1.6.0_wire_compatibility]]
 == Wire Protocol compatibility
