@@ -83,10 +83,8 @@ public class BaseKuduTest {
   public static void tearDownAfterClass() throws Exception {
     try {
       if (client != null) {
-        Deferred<ArrayList<Void>> d = client.shutdown();
-        d.addErrback(defaultErrorCB);
-        d.join(DEFAULT_SLEEP);
-        // No need to explicitly shutdown the sync client,
+        syncClient.shutdown();
+        // No need to explicitly shutdown the async client,
         // shutting down the async client effectively does that.
       }
     } finally {
@@ -120,7 +118,7 @@ public class BaseKuduTest {
     client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
         .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
         .build();
-    syncClient = new KuduClient(client);
+    syncClient = client.syncClient();
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,
@@ -494,5 +492,17 @@ public class BaseKuduTest {
    */
   protected void restartTabletServers() throws IOException {
     miniCluster.restartDeadTservers();
+  }
+
+  /**
+   * Resets the clients so that their state is completely fresh, including meta
+   * cache, connections, open tables, sessions and scanners, and propagated timestamp.
+   */
+  protected void resetClients() throws IOException {
+    syncClient.shutdown();
+    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
+                                .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+                                .build();
+    syncClient = client.syncClient();
   }
 }

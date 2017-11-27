@@ -242,6 +242,9 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testScanPropagatesLatestTimestamp() throws Exception {
+    // Reset the clients in order to clear the propagated timestamp, which may
+    // have been set if other test cases ran before this one.
+    resetClients();
     AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
 
     // Initially, the client does not have the timestamp set.
