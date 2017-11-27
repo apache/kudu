@@ -1745,10 +1745,10 @@ TEST_F(TabletCopyITest, TestMetricsResetAfterRevival) {
     ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
   });
 
-  // Wait for the tablet to be revived via tablet copy.
-  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
-                                                 { tablet::TABLET_DATA_READY },
-                                                 kTimeout));
+  // Wait for the tablet to be successfully bootstrapped.
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)));
+  });
 
   // The rows inserted should have reset back to 0.
   ASSERT_EQ(0, CountRowsInserted(cluster_->tablet_server(follower_index)));
