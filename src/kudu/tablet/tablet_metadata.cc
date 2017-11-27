@@ -617,6 +617,11 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   return Status::OK();
 }
 
+void TabletMetadata::SetPreFlushCallback(StatusClosure callback) {
+  MutexLock l_flush(flush_lock_);
+  pre_flush_callback_ = std::move(callback);
+}
+
 boost::optional<consensus::OpId> TabletMetadata::tombstone_last_logged_opid() const {
   std::lock_guard<LockType> l(data_lock_);
   return tombstone_last_logged_opid_;

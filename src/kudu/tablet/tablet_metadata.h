@@ -22,7 +22,6 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -226,7 +225,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
-  void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = std::move(callback); }
+  void SetPreFlushCallback(StatusClosure callback);
 
   // Return the last-logged opid of a tombstoned tablet, if known.
   boost::optional<consensus::OpId> tombstone_last_logged_opid() const;
@@ -373,7 +372,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   bool needs_flush_;
 
   // A callback that, if set, is called before this metadata is flushed
-  // to disk.
+  // to disk. Protected by the 'flush_lock_'.
   StatusClosure pre_flush_callback_;
 
   // The on-disk size of the tablet metadata, as of the last successful
