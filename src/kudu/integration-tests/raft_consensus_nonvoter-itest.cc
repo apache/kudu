@@ -670,7 +670,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
                                        tablet_id, replica, kTimeout);
     const auto s_str = s.ToString();
     ASSERT_TRUE(s.IsInvalidArgument()) << s_str;
-    ASSERT_STR_CONTAINS(s_str, "Cannot change replica type to same type");
+    ASSERT_STR_CONTAINS(s_str, "must modify a field when calling MODIFY_PEER");
   }
 
   // It should be possible to promote a non-voter to voter.
@@ -683,7 +683,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
                                        tablet_id, replica, kTimeout);
     const auto s_str = s.ToString();
     ASSERT_TRUE(s.IsInvalidArgument()) << s_str;
-    ASSERT_STR_CONTAINS(s_str, "Cannot change replica type to same type");
+    ASSERT_STR_CONTAINS(s_str, "must modify a field when calling MODIFY_PEER");
   }
 
   {
@@ -695,7 +695,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
     const auto s_demote_str = s_demote.ToString();
     ASSERT_TRUE(s_demote.IsInvalidArgument()) << s_demote_str;
     ASSERT_STR_MATCHES(s_demote_str,
-        "Cannot modify peer .* because it is the leader");
+        "Cannot modify member type of peer .* because it is the leader");
 
     // It should be impossible to promote a leader replica since it's
     // already a voter.
@@ -703,8 +703,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
                                                      tablet_id, leader, kTimeout);
     const auto s_promote_str = s_promote.ToString();
     ASSERT_TRUE(s_promote.IsInvalidArgument()) << s_promote_str;
-    ASSERT_STR_MATCHES(s_promote_str,
-        "Cannot modify peer .* because it is the leader");
+    ASSERT_STR_CONTAINS(s_promote_str, "must modify a field when calling MODIFY_PEER");
   }
 
   // Demote the replica back.

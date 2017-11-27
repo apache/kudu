@@ -151,6 +151,30 @@ message ChangeConfigRequestPB {
   optional int64 cas_config_opid_index = 5;
 }
 
+// A config change request that specifies many things to change.
+message BulkChangeConfigRequestPB {
+  // Each sub-request that is being made as part of this bulk change config request.
+  message ConfigChangeItemPB {
+    // The type of config change.
+    optional ChangeConfigType type = 1;
+    // The peer to add, remove, or modify.
+    // The same rules apply here as above in ChangeConfigRequestPB.
+    optional RaftPeerPB peer = 2;
+  }
+
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 1;
+
+  required bytes tablet_id = 2;
+
+  repeated ConfigChangeItemPB config_changes = 3;
+
+  // The OpId index of the committed config to replace.
+  // This parameter serves the same purpose as specified in
+  // ChangeConfigRequestPB.
+  optional int64 cas_config_opid_index = 4;
+}
+
 // The configuration change response. If any immediate error occurred
 // the 'error' field is set with it, otherwise 'new_configuration' is set.
 message ChangeConfigResponsePB {
@@ -527,6 +551,12 @@ service ConsensusService {
   // an operation to change the role of a server between VOTER and NON_VOTER.
   // An OK response means the operation was successful.
   rpc ChangeConfig(ChangeConfigRequestPB) returns (ChangeConfigResponsePB);
+
+  // Implements a one-by-one config change interface that allows for multiple
+  // peers to be modified at once, including setting attributes and adding or
+  // removing various peers, as long not more than one voter is added, removed,
+  // or demoted in a single operation.
+  rpc BulkChangeConfig(BulkChangeConfigRequestPB) returns (ChangeConfigResponsePB);
 
   // Implements unsafe config change operation for manual recovery use cases.
   rpc UnsafeChangeConfig(UnsafeChangeConfigRequestPB) returns (UnsafeChangeConfigResponsePB);

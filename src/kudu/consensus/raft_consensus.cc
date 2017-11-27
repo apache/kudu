@@ -31,6 +31,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <google/protobuf/util/message_differencer.h>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
@@ -144,12 +145,14 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           "each time a leader election is started.");
 
 using boost::optional;
+using google::protobuf::util::MessageDifferencer;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::PeriodicTimer;
 using kudu::tserver::TabletServerErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using std::unordered_set;
 using std::weak_ptr;
 using strings::Substitute;
 
@@ -1635,17 +1638,32 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
 
-  if (PREDICT_FALSE(!req.has_type())) {
-    return Status::InvalidArgument("Must specify 'type' argument to ChangeConfig()",
-                                   SecureShortDebugString(req));
+  BulkChangeConfigRequestPB bulk_req;
+  *bulk_req.mutable_tablet_id() = req.tablet_id();
+
+  if (req.has_dest_uuid()) {
+    *bulk_req.mutable_dest_uuid() = req.dest_uuid();
   }
-  if (PREDICT_FALSE(!req.has_server())) {
-    *error_code = TabletServerErrorPB::INVALID_CONFIG;
-    return Status::InvalidArgument("Must specify 'server' argument to ChangeConfig()",
-                                   SecureShortDebugString(req));
+  if (req.has_cas_config_opid_index()) {
+    bulk_req.set_cas_config_opid_index(req.cas_config_opid_index());
   }
-  ChangeConfigType type = req.type();
-  const RaftPeerPB& server = req.server();
+  auto* change = bulk_req.add_config_changes();
+  if (req.has_type()) {
+    change->set_type(req.type());
+  }
+  if (req.has_server()) {
+    *change->mutable_peer() = req.server();
+  }
+
+  return BulkChangeConfig(bulk_req, std::move(client_cb), error_code);
+}
+
+Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
+                                       StdStatusCallback client_cb,
+                                       boost::optional<TabletServerErrorPB::Code>* error_code) {
+  TRACE_EVENT2("consensus", "RaftConsensus::BulkChangeConfig",
+               "peer", peer_uuid(),
+               "tablet", options_.tablet_id);
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
@@ -1660,11 +1678,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
       return Status::IllegalState("Leader has not yet committed an operation in its own term");
     }
 
-    if (!server.has_permanent_uuid()) {
-      return Status::InvalidArgument("server must have permanent_uuid specified",
-                                     SecureShortDebugString(req));
-    }
-    RaftConfigPB committed_config = cmeta_->CommittedConfig();
+    const RaftConfigPB committed_config = cmeta_->CommittedConfig();
 
     // Support atomic ChangeConfig requests.
     if (req.has_cas_config_opid_index()) {
@@ -1678,81 +1692,150 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
       }
     }
 
+    // 'new_config' will be modified in-place and validated before being used
+    // as the new Raft configuration.
     RaftConfigPB new_config = committed_config;
-    new_config.clear_opid_index();
-    const string& server_uuid = server.permanent_uuid();
-    switch (type) {
-      case ADD_PEER:
-        // Ensure the server we are adding is not already a member of the configuration.
-        if (IsRaftConfigMember(server_uuid, committed_config)) {
-          return Status::InvalidArgument(
-              Substitute("Server with UUID $0 is already a member of the config. RaftConfig: $1",
-                        server_uuid, SecureShortDebugString(committed_config)));
-        }
-        if (!server.has_member_type()) {
-          return Status::InvalidArgument("server must have member_type specified",
-                                         SecureShortDebugString(req));
-        }
-        if (!server.has_last_known_addr()) {
-          return Status::InvalidArgument("server must have last_known_addr specified",
-                                         SecureShortDebugString(req));
-        }
-        *new_config.add_peers() = server;
-        break;
 
-      case REMOVE_PEER:
-        if (server_uuid == peer_uuid()) {
-          return Status::InvalidArgument(
-              Substitute("Cannot remove peer $0 from the config because it is the leader. "
-                         "Force another leader to be elected to remove this server. "
-                         "Consensus state: $1",
-                         server_uuid,
-                         SecureShortDebugString(cmeta_->ToConsensusStatePB())));
-        }
-        if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
-          return Status::NotFound(
-              Substitute("Server with UUID $0 not a member of the config. RaftConfig: $1",
-                        server_uuid, SecureShortDebugString(committed_config)));
-        }
-        break;
+    // Enforce the "one by one" config change rules, even with the bulk API.
+    // Keep track of total voters added, including non-voters promoted to
+    // voters, and removed, including voters demoted to non-voters.
+    int num_voters_modified = 0;
 
-      case MODIFY_PEER:
-        if (server.member_type() == RaftPeerPB::UNKNOWN_MEMBER_TYPE) {
-          return Status::InvalidArgument("Cannot change replica type to UNKNOWN_MEMBER_TYPE");
-        }
-        if (server_uuid == peer_uuid()) {
-          return Status::InvalidArgument(
-              Substitute("Cannot modify peer $0 because it is the leader. "
-                         "Force another leader to be elected to modify this replica. "
-                         "Consensus state: $1",
-                         server_uuid,
-                         SecureShortDebugString(cmeta_->ToConsensusStatePB())));
-        }
-        RaftPeerPB* peer_pb;
-        RETURN_NOT_OK(GetRaftConfigMember(&new_config, server_uuid, &peer_pb));
-        // Validate the changes.
-        if (ReplicaTypesEqual(*peer_pb, server)) {
-          return Status::InvalidArgument("Cannot change replica type to same type");
-        }
-        peer_pb->set_member_type(server.member_type());
-        // Override attributes only if they are explicitly passed in the request.
-        // TODO(mpercy): It seems cleaner to bulk-overwrite 'attrs' with
-        // whatever is passed into the request, but that would make it more
-        // complicated to correctly handle a non-voter that had both its
-        // "promote" and "replace" flags set.
-        if (server.attrs().has_promote()) {
-          peer_pb->mutable_attrs()->set_promote(server.attrs().promote());
-        }
-        if (server.attrs().has_replace()) {
-          peer_pb->mutable_attrs()->set_replace(server.attrs().replace());
-        }
-        break;
+    // A record of the peers being modified so that we can enforce only one
+    // change per peer per request.
+    unordered_set<string> peers_modified;
 
-      default:
-        return Status::NotSupported(Substitute(
-            "$0: unsupported type of configuration change",
-            ChangeConfigType_Name(type)));
+    for (const auto& item : req.config_changes()) {
+      if (PREDICT_FALSE(!item.has_type())) {
+        *error_code = TabletServerErrorPB::INVALID_CONFIG;
+        return Status::InvalidArgument("Must specify 'type' argument",
+                                       SecureShortDebugString(req));
+      }
+      if (PREDICT_FALSE(!item.has_peer())) {
+        *error_code = TabletServerErrorPB::INVALID_CONFIG;
+        return Status::InvalidArgument("Must specify 'peer' argument",
+                                       SecureShortDebugString(req));
+      }
+
+      ChangeConfigType type = item.type();
+      const RaftPeerPB& peer = item.peer();
+
+      if (PREDICT_FALSE(!peer.has_permanent_uuid())) {
+        return Status::InvalidArgument("peer must have permanent_uuid specified",
+                                       SecureShortDebugString(req));
+      }
+
+      if (!InsertIfNotPresent(&peers_modified, peer.permanent_uuid())) {
+        return Status::InvalidArgument(
+            Substitute("only one change allowed per peer: peer $0 appears more "
+                       "than once in the config change request",
+                       peer.permanent_uuid()),
+            SecureShortDebugString(req));
+      }
+
+      const string& server_uuid = peer.permanent_uuid();
+      switch (type) {
+        case ADD_PEER:
+          // Ensure the peer we are adding is not already a member of the configuration.
+          if (IsRaftConfigMember(server_uuid, committed_config)) {
+            return Status::InvalidArgument(
+                Substitute("Server with UUID $0 is already a member of the config. RaftConfig: $1",
+                           server_uuid, SecureShortDebugString(committed_config)));
+          }
+          if (!peer.has_member_type()) {
+            return Status::InvalidArgument("peer must have member_type specified",
+                                           SecureShortDebugString(req));
+          }
+          if (!peer.has_last_known_addr()) {
+            return Status::InvalidArgument("peer must have last_known_addr specified",
+                                           SecureShortDebugString(req));
+          }
+          if (peer.member_type() == RaftPeerPB::VOTER) {
+            num_voters_modified++;
+          }
+          *new_config.add_peers() = peer;
+          break;
+
+        case REMOVE_PEER:
+          if (server_uuid == peer_uuid()) {
+            return Status::InvalidArgument(
+                Substitute("Cannot remove peer $0 from the config because it is the leader. "
+                           "Force another leader to be elected to remove this peer. "
+                           "Consensus state: $1",
+                           server_uuid,
+                           SecureShortDebugString(cmeta_->ToConsensusStatePB())));
+          }
+          if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
+            return Status::NotFound(
+                Substitute("Server with UUID $0 not a member of the config. RaftConfig: $1",
+                           server_uuid, SecureShortDebugString(committed_config)));
+          }
+          if (IsRaftConfigVoter(server_uuid, committed_config)) {
+            num_voters_modified++;
+          }
+          break;
+
+        case MODIFY_PEER: {
+          RaftPeerPB* modified_peer;
+          RETURN_NOT_OK(GetRaftConfigMember(&new_config, server_uuid, &modified_peer));
+          const RaftPeerPB orig_peer(*modified_peer);
+          // Override 'member_type' and items within 'attrs' only if they are
+          // explicitly passed in the request. At least one field must be
+          // modified to be a valid request.
+          if (peer.has_member_type() && peer.member_type() != modified_peer->member_type()) {
+            if (modified_peer->member_type() == RaftPeerPB::VOTER ||
+                peer.member_type() == RaftPeerPB::VOTER) {
+              // This is a 'member_type' change involving a VOTER, i.e. a
+              // promotion or demotion.
+              num_voters_modified++;
+            }
+            // A leader must be forced to step down before demoting it.
+            if (server_uuid == peer_uuid()) {
+              return Status::InvalidArgument(
+                  Substitute("Cannot modify member type of peer $0 because it is the leader. "
+                              "Cause another leader to be elected to modify this peer. "
+                              "Consensus state: $1",
+                              server_uuid,
+                              SecureShortDebugString(cmeta_->ToConsensusStatePB())));
+            }
+            modified_peer->set_member_type(peer.member_type());
+          }
+          if (peer.attrs().has_promote()) {
+            modified_peer->mutable_attrs()->set_promote(peer.attrs().promote());
+          }
+          if (peer.attrs().has_replace()) {
+            modified_peer->mutable_attrs()->set_replace(peer.attrs().replace());
+          }
+          // Ensure that MODIFY_PEER actually modified something.
+          if (MessageDifferencer::Equals(orig_peer, *modified_peer)) {
+            return Status::InvalidArgument("must modify a field when calling MODIFY_PEER");
+          }
+          break;
+        }
+
+        default:
+          return Status::NotSupported(Substitute(
+              "$0: unsupported type of configuration change",
+              ChangeConfigType_Name(type)));
+      }
     }
+
+    // Don't allow no-op config changes to be committed.
+    if (MessageDifferencer::Equals(committed_config, new_config)) {
+      return Status::InvalidArgument("requested configuration change does not "
+                                     "actually modify the config",
+                                     SecureShortDebugString(req));
+    }
+
+    // Ensure this wasn't an illegal bulk change.
+    if (num_voters_modified > 1) {
+      return Status::InvalidArgument("it is not safe to modify the VOTER status "
+                                     "of more than one peer at a time",
+                                     SecureShortDebugString(req));
+    }
+
+    // We'll assign a new opid_index to this config change.
+    new_config.clear_opid_index();
 
     RETURN_NOT_OK(ReplicateConfigChangeUnlocked(
         std::move(committed_config), std::move(new_config), std::bind(
@@ -1761,7 +1844,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
             string("Config change replication complete"),
             std::move(client_cb),
             std::placeholders::_1)));
-  }
+  } // Release lock before signaling request.
   peer_manager_->SignalRequest();
   return Status::OK();
 }

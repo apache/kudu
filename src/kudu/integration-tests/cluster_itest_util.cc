@@ -64,6 +64,7 @@ namespace itest {
 
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
+using consensus::BulkChangeConfigRequestPB;
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
 using consensus::ConsensusStatePB;
@@ -338,6 +339,31 @@ Status GetConsensusState(const TServerDetails* replica,
   DCHECK_EQ(1, resp.tablets_size());
   *consensus_state = resp.tablets(0).cstate();
   return Status::OK();
+}
+
+Status WaitUntilNoPendingConfig(const TServerDetails* replica,
+                                const std::string& tablet_id,
+                                const MonoDelta& timeout,
+                                consensus::ConsensusStatePB* cstate) {
+  ConsensusStatePB cstate_tmp;
+  MonoTime start = MonoTime::Now();
+  MonoTime deadline = start + timeout;
+  MonoTime now;
+  Status s;
+  while ((now = MonoTime::Now()) < deadline) {
+    s = GetConsensusState(replica, tablet_id, deadline - now, &cstate_tmp);
+    if (s.ok() && !cstate_tmp.has_pending_config()) {
+      if (cstate) {
+        *cstate = std::move(cstate_tmp);
+      }
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(30));
+  }
+  return Status::TimedOut(Substitute("There is still a pending config after waiting for $0. "
+                                     "Last consensus state: $1. Last status: $2",
+                                     (MonoTime::Now() - start).ToString(),
+                                     SecureShortDebugString(cstate_tmp), s.ToString()));
 }
 
 Status WaitUntilCommittedConfigNumVotersIs(int config_size,
@@ -771,6 +797,35 @@ Status ChangeReplicaType(const TServerDetails* leader,
   RpcController rpc;
   rpc.set_timeout(timeout);
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status BulkChangeConfig(const TServerDetails* leader,
+                        const std::string& tablet_id,
+                        const vector<BulkChangeConfigRequestPB::ConfigChangeItemPB>& changes,
+                        const MonoDelta& timeout,
+                        const boost::optional<int64_t>& cas_config_index,
+                        tserver::TabletServerErrorPB::Code* error_code) {
+  BulkChangeConfigRequestPB req;
+  req.set_dest_uuid(leader->uuid());
+  req.set_tablet_id(tablet_id);
+  if (cas_config_index) {
+    req.set_cas_config_opid_index(*cas_config_index);
+  }
+  for (const auto& change : changes) {
+    *req.add_config_changes() = change;
+  }
+
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(leader->consensus_proxy->BulkChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     if (error_code) {
       *error_code = resp.error().code();

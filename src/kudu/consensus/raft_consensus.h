@@ -252,6 +252,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                       StdStatusCallback client_cb,
                       boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
+  // Implement a BulkChangeConfig() request.
+  Status BulkChangeConfig(const BulkChangeConfigRequestPB& req,
+                          StdStatusCallback client_cb,
+                          boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+
   // Implement an UnsafeChangeConfig() request.
   Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
                             tserver::TabletServerErrorPB::Code* error_code);

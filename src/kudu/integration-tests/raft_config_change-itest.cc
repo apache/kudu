@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -23,11 +24,15 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -37,14 +42,22 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::consensus::ADD_PEER;
 using kudu::consensus::COMMITTED_OPID;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetRaftConfigMember;
+using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::RaftPeerAttrsPB;
 using kudu::consensus::RaftPeerPB;
+using kudu::consensus::REMOVE_PEER;
+using kudu::itest::BulkChangeConfig;
 using kudu::itest::TServerDetails;
+using kudu::pb_util::SecureShortDebugString;
 using std::string;
 using std::unordered_set;
 using std::vector;
@@ -212,6 +225,222 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
                                                 kTimeout));
 
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Functional test for the BulkChangeConfig RPC API.
+TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumTabletServers = 4;
+  const int kNumInitialReplicas = 3;
+  NO_FATALS(StartCluster({"--enable_leader_failure_detection=false",
+                          "--raft_prepare_replacement_before_eviction=true"},
+                         {"--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+                          "--raft_prepare_replacement_before_eviction=true"},
+                         kNumTabletServers));
+
+  // Create a table.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+
+  ASSERT_OK(inspect_->WaitForReplicaCount(kNumInitialReplicas));
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
+                                     kTimeout, &table_locations));
+  ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
+  ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations().begin()->replicas_size());
+  string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
+  unordered_set<int> replica_indexes;
+  for (int i = 0; i < table_locations.tablet_locations().begin()->replicas_size(); i++) {
+    const auto& replica = table_locations.tablet_locations().begin()->replicas(i);
+    int idx = cluster_->tablet_server_index_by_uuid(replica.ts_info().permanent_uuid());
+    replica_indexes.emplace(idx);
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(idx)->uuid()],
+                                            tablet_id, kTimeout));
+  }
+  ASSERT_EQ(kNumInitialReplicas, replica_indexes.size());
+  const int kLeaderIndex = *replica_indexes.begin();
+  int new_replica_index = -1;
+  for (int i = 0; i < kNumTabletServers; i++) {
+    if (!ContainsKey(replica_indexes, i)) {
+      new_replica_index = i;
+    }
+  }
+  ASSERT_NE(-1, new_replica_index);
+
+  string leader_uuid = cluster_->tablet_server(kLeaderIndex)->uuid();
+  auto* leader_replica = ts_map_[leader_uuid];
+  ASSERT_OK(itest::StartElection(leader_replica, tablet_id, kTimeout));
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // We don't want the master interfering with the rest of the test.
+  cluster_->master()->Shutdown();
+
+  struct BulkSpec {
+    consensus::ChangeConfigType change_type;
+    int tserver_index;
+    RaftPeerPB::MemberType member_type;
+    bool replace;
+    bool promote;
+  };
+
+  // Now comes the actual config change testing.
+  auto bulk_change = [&](const vector<BulkSpec>& changes,
+                         boost::optional<int64_t> cas_config_index = boost::none) {
+    vector<consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB> changes_pb;
+    for (const auto& chg : changes) {
+      const auto& ts_uuid = cluster_->tablet_server(chg.tserver_index)->uuid();
+      auto* replica = ts_map_[ts_uuid];
+
+      consensus::BulkChangeConfigRequestPB::ConfigChangeItemPB change_pb;
+      change_pb.set_type(chg.change_type);
+
+      RaftPeerPB* peer = change_pb.mutable_peer();
+      peer->set_permanent_uuid(ts_uuid);
+      peer->set_member_type(chg.member_type);
+      peer->mutable_attrs()->set_replace(chg.replace);
+      peer->mutable_attrs()->set_promote(chg.promote);
+      *peer->mutable_last_known_addr() = replica->registration.rpc_addresses(0);
+      changes_pb.emplace_back(std::move(change_pb));
+    }
+
+    LOG(INFO) << "submitting config change with changes:";
+    for (const auto& change_pb : changes_pb) {
+      LOG(INFO) << SecureShortDebugString(change_pb);
+    }
+    return BulkChangeConfig(leader_replica, tablet_id, changes_pb,
+                            kTimeout, cas_config_index);
+  };
+
+  // 1) Add a voter. Change config to: V, V, V, V.
+  ASSERT_OK(bulk_change({ { ADD_PEER, new_replica_index, RaftPeerPB::VOTER,
+                            /*replace=*/ false, /*promote=*/ false } }));
+  ConsensusStatePB cstate;
+  ASSERT_OK(WaitUntilNoPendingConfig(leader_replica, tablet_id, kTimeout, &cstate));
+  ASSERT_EQ(kNumTabletServers, cstate.committed_config().peers_size());
+  ASSERT_EQ(kNumTabletServers, CountVoters(cstate.committed_config()));
+
+  // 2) Simultaneous voter modification and attribute modification.
+  //    Change config to: V, V, N, V+p.
+  //    Note: setting a VOTER's attribute promote=true is meaningless.
+  int replica1_idx = (kLeaderIndex + 1) % kNumTabletServers;
+  int replica2_idx = (kLeaderIndex + 2) % kNumTabletServers;
+  ASSERT_OK(bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::NON_VOTER,
+                            /*replace=*/ false, /*promote=*/ false },
+                          { MODIFY_PEER, replica2_idx, RaftPeerPB::VOTER,
+                            /*replace=*/ false,  /*promote=*/ true } }));
+
+  ASSERT_OK(WaitUntilNoPendingConfig(leader_replica, tablet_id, kTimeout, &cstate));
+  ASSERT_EQ(kNumTabletServers, cstate.committed_config().peers_size());
+  ASSERT_EQ(kNumInitialReplicas, CountVoters(cstate.committed_config()));
+
+  RaftPeerPB* peer;
+  ASSERT_OK(GetRaftConfigMember(cstate.mutable_committed_config(),
+                                cluster_->tablet_server(replica2_idx)->uuid(), &peer));
+  ASSERT_EQ(RaftPeerPB::VOTER, peer->member_type());
+  ASSERT_TRUE(peer->attrs().promote()) << SecureShortDebugString(*peer);
+
+  // 3) Single-attribute modification. Change config to: V, V, N+r, V+p.
+  //    Note: at the time of writing, if the master is disabled this
+  //    configuration will not trigger any actions such as promotion or
+  //    eviction.
+  ASSERT_OK(bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::NON_VOTER,
+                            /*replace=*/ true, /*promote=*/ false } }));
+
+  ASSERT_OK(WaitUntilNoPendingConfig(leader_replica, tablet_id, kTimeout, &cstate));
+  ASSERT_EQ(kNumTabletServers, cstate.committed_config().peers_size())
+      << SecureShortDebugString(cstate);
+  ASSERT_EQ(kNumInitialReplicas, CountVoters(cstate.committed_config()))
+      << SecureShortDebugString(cstate);
+
+  ASSERT_OK(GetRaftConfigMember(cstate.mutable_committed_config(),
+                                cluster_->tablet_server(replica1_idx)->uuid(), &peer));
+  ASSERT_EQ(RaftPeerPB::NON_VOTER, peer->member_type());
+  ASSERT_TRUE(peer->attrs().replace()) << SecureShortDebugString(*peer);
+
+  // 4) Deny changing config (illegally) from: { V, V, N, V } to: { V, V, V, N }
+  //    because that would be both a promotion and a demotion in one step.
+  Status s = bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::VOTER,
+                             /*replace=*/ false, /*promote=*/ false },
+                           { MODIFY_PEER, replica2_idx, RaftPeerPB::NON_VOTER,
+                             /*replace=*/ false, /*promote=*/ false } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "not safe to modify the VOTER status of "
+                                    "more than one peer at a time");
+
+  // 5) The caller must not be allowed to make the leader a NON_VOTER.
+  s = bulk_change({ { MODIFY_PEER, kLeaderIndex, RaftPeerPB::NON_VOTER,
+                      /*replace=*/ false, /*promote=*/ false } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "Cannot modify member type of peer .* because it is the leader");
+
+  // 6) The 'cas_config_index' flag must be respected, if set.
+  int64_t committed_config_opid_index = cstate.committed_config().opid_index();
+  s = bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::NON_VOTER,
+                      /*replace=*/ false, /*promote=*/ true } }, committed_config_opid_index + 1);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "specified cas_config_opid_index of .* but "
+                                   "the committed config has opid_index of .*");
+
+  // 7) Evict down to 2 voters. We will evict a voter and a non-voter at once.
+  ASSERT_OK(bulk_change({ { REMOVE_PEER, replica1_idx, RaftPeerPB::UNKNOWN_MEMBER_TYPE,
+                            /*replace=*/ false, /*promote=*/ false },
+                          { REMOVE_PEER, replica2_idx, RaftPeerPB::UNKNOWN_MEMBER_TYPE,
+                            /*replace=*/ false, /*promote=*/ false } }));
+  ASSERT_OK(WaitUntilNoPendingConfig(leader_replica, tablet_id, kTimeout, &cstate));
+  ASSERT_EQ(2, cstate.committed_config().peers_size());
+  ASSERT_EQ(2, CountVoters(cstate.committed_config()));
+
+  // 8) We should reject adding multiple voters at once.
+  s = bulk_change({ { ADD_PEER, replica1_idx, RaftPeerPB::VOTER,
+                      /*replace=*/ false, /*promote=*/ false },
+                    { ADD_PEER, replica2_idx, RaftPeerPB::VOTER,
+                      /*replace=*/ false, /*promote=*/ false } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "not safe to modify the VOTER status of "
+                                   "more than one peer at a time");
+
+  // 9) Add them back one at a time so we get to full strength (4 voters) again.
+  auto to_restore = { replica1_idx, replica2_idx };
+  for (auto r : to_restore) {
+    ASSERT_OK(bulk_change({ { ADD_PEER, r, RaftPeerPB::VOTER,
+                              /*replace=*/ false, /*promote=*/ false } }));
+    ASSERT_OK(WaitUntilNoPendingConfig(leader_replica, tablet_id, kTimeout, &cstate));
+  }
+  ASSERT_EQ(kNumTabletServers, cstate.committed_config().peers_size());
+  ASSERT_EQ(kNumTabletServers, CountVoters(cstate.committed_config()));
+
+  // 10) We should reject removing multiple voters at once.
+  s = bulk_change({ { REMOVE_PEER, replica1_idx, RaftPeerPB::UNKNOWN_MEMBER_TYPE,
+                      /*replace=*/ false, /*promote=*/ false },
+                    { REMOVE_PEER, replica2_idx, RaftPeerPB::UNKNOWN_MEMBER_TYPE,
+                      /*replace=*/ false, /*promote=*/ false } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "not safe to modify the VOTER status of "
+                                   "more than one peer at a time");
+
+  // 11) Reject no-ops.
+  s = bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::VOTER,
+                      /*replace=*/ false, /*promote=*/ false } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "must modify a field when calling MODIFY_PEER");
+
+  // 12) Reject empty bulk change config operations.
+  s = bulk_change({ });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "requested configuration change does not "
+                                   "actually modify the config");
+
+  // 13) Reject multiple changes to the same peer in a single request.
+  s = bulk_change({ { MODIFY_PEER, replica1_idx, RaftPeerPB::VOTER,
+                      /*replace=*/ true, /*promote=*/ false },
+                    { MODIFY_PEER, replica1_idx, RaftPeerPB::VOTER,
+                      /*replace=*/ false, /*promote=*/ true } });
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "only one change allowed per peer");
 }
 
 } // namespace kudu

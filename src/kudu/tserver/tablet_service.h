@@ -45,6 +45,7 @@ class ServerBase;
 } // namespace server
 
 namespace consensus {
+class BulkChangeConfigRequestPB;
 class ChangeConfigRequestPB;
 class ChangeConfigResponsePB;
 class ConsensusRequestPB;
@@ -199,6 +200,10 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
   virtual void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
                             consensus::ChangeConfigResponsePB* resp,
                             rpc::RpcContext* context) OVERRIDE;
+
+  virtual void BulkChangeConfig(const consensus::BulkChangeConfigRequestPB* req,
+                                consensus::ChangeConfigResponsePB* resp,
+                                rpc::RpcContext* context) OVERRIDE;
 
   virtual void UnsafeChangeConfig(const consensus::UnsafeChangeConfigRequestPB* req,
                                   consensus::UnsafeChangeConfigResponsePB* resp,

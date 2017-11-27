@@ -136,6 +136,7 @@ DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
 
 using google::protobuf::RepeatedPtrField;
+using kudu::consensus::BulkChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigResponsePB;
 using kudu::consensus::ConsensusRequestPB;
@@ -1032,6 +1033,30 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
   boost::optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
+  if (PREDICT_FALSE(!s.ok())) {
+    HandleErrorResponse(req, resp, context, error_code, s);
+    return;
+  }
+  // The success case is handled when the callback fires.
+}
+
+void ConsensusServiceImpl::BulkChangeConfig(const BulkChangeConfigRequestPB* req,
+                                            ChangeConfigResponsePB* resp,
+                                            RpcContext* context) {
+  VLOG(1) << "Received BulkChangeConfig RPC: " << SecureDebugString(*req);
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "BulkChangeConfig", req, resp, context)) {
+    return;
+  }
+  scoped_refptr<TabletReplica> replica;
+  if (!LookupRunningTabletReplicaOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                           &replica)) {
+    return;
+  }
+
+  shared_ptr<RaftConsensus> consensus;
+  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  Status s = consensus->BulkChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
   if (PREDICT_FALSE(!s.ok())) {
     HandleErrorResponse(req, resp, context, error_code, s);
     return;

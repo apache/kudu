@@ -150,6 +150,14 @@ Status GetConsensusState(const TServerDetails* replica,
                          const MonoDelta& timeout,
                          consensus::ConsensusStatePB* consensus_state);
 
+// Wait until there is no longer a pending config on the specified server.
+// If OK is returned, the consensus state is also returned in 'cstate' if it is
+// not set to nullptr.
+Status WaitUntilNoPendingConfig(const TServerDetails* replica,
+                                const std::string& tablet_id,
+                                const MonoDelta& timeout,
+                                consensus::ConsensusStatePB* cstate = nullptr);
+
 // Wait until the number of voters in the committed consensus configuration is
 // 'quorum_size', according to the specified replica.
 Status WaitUntilCommittedConfigNumVotersIs(int config_size,
@@ -295,6 +303,15 @@ Status ChangeReplicaType(const TServerDetails* leader,
                          const MonoDelta& timeout,
                          const boost::optional<int64_t>& cas_config_index = boost::none,
                          tserver::TabletServerErrorPB::Code* error_code = nullptr);
+
+// Convenience function for bulk change config API.
+Status BulkChangeConfig(const TServerDetails* leader,
+                        const std::string& tablet_id,
+                        const std::vector<consensus::BulkChangeConfigRequestPB
+                                                            ::ConfigChangeItemPB>& changes,
+                        const MonoDelta& timeout,
+                        const boost::optional<int64_t>& cas_config_index = boost::none,
+                        tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
 // Get the list of tablets from the remote server.
 Status ListTablets(const TServerDetails* ts,
