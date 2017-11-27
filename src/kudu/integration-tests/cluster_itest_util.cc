@@ -23,6 +23,7 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
 #include "kudu/client/schema.h"
@@ -58,6 +59,8 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace itest {
@@ -366,7 +369,7 @@ Status WaitUntilNoPendingConfig(const TServerDetails* replica,
                                      SecureShortDebugString(cstate_tmp), s.ToString()));
 }
 
-Status WaitUntilCommittedConfigNumVotersIs(int config_size,
+Status WaitUntilCommittedConfigNumVotersIs(int num_voters,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout) {
@@ -381,7 +384,7 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
     MonoDelta remaining_timeout = deadline - MonoTime::Now();
     s = GetConsensusState(replica, tablet_id, remaining_timeout, &cstate);
     if (s.ok()) {
-      if (CountVoters(cstate.committed_config()) == config_size) {
+      if (CountVoters(cstate.committed_config()) == num_voters) {
         return Status::OK();
       }
     }
@@ -394,8 +397,21 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
   }
   return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1. "
                                      "Last consensus state: $2. Last status: $3",
-                                     config_size, timeout.ToString(),
+                                     num_voters, timeout.ToString(),
                                      SecureShortDebugString(cstate), s.ToString()));
+}
+
+void WaitUntilCommittedConfigNumMembersIs(int num_members,
+                                          const TServerDetails* replica,
+                                          const std::string& tablet_id,
+                                          const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now() + timeout;
+  AssertEventually([&] {
+    ConsensusStatePB cstate;
+    ASSERT_OK(GetConsensusState(replica, tablet_id, deadline - MonoTime::Now(), &cstate));
+    ASSERT_EQ(num_members, cstate.committed_config().peers_size());
+  }, timeout);
+  NO_PENDING_FATALS();
 }
 
 Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,

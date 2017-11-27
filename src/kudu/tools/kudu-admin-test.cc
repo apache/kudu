@@ -96,6 +96,13 @@ namespace kudu {
 namespace tools {
 
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
+ protected:
+  enum EnableKudu1097 {
+    kDisableKudu1097,
+    kEnableKudu1097
+  };
+
+  void DoTestMoveTablet(EnableKudu1097 enable_kudu_1097);
 };
 
 // Test config change while running a workload.
@@ -211,10 +218,17 @@ TEST_F(AdminCliTest, TestChangeConfig) {
 // 3. Start a workload.
 // 4. Using the CLI, move the 3 replicas around the 5 TS.
 // 5. Profit!
-TEST_F(AdminCliTest, TestMoveTablet) {
+void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
+  const string kKudu1097Flag = "--raft_prepare_replacement_before_eviction=true";
+
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart());
+
+  vector<string> ts_flags, master_flags;
+  if (enable_kudu_1097) {
+    ts_flags = master_flags = { kKudu1097Flag };
+  }
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<string> tservers;
   AppendKeysFromMap(tablet_servers_, &tservers);
@@ -249,15 +263,28 @@ TEST_F(AdminCliTest, TestMoveTablet) {
   for (int i = 0; i < num_moves; i++) {
     const string remove = active_tservers.front();
     const string add = inactive_tservers.front();
-    ASSERT_OK(RunKuduTool({
+    vector<string> tool_command = {
       "tablet",
       "change_config",
       "move_replica",
+    };
+    vector<string> kudu_1097_args = {
+      "--unlock_experimental_flags",
+      kKudu1097Flag,
+    };
+    vector<string> tool_args = {
       cluster_->master()->bound_rpc_addr().ToString(),
       tablet_id_,
       remove,
-      add
-    }));
+      add,
+    };
+    if (enable_kudu_1097 == kEnableKudu1097) {
+      // Only add these arguments if we running with Kudu 1097 enabled.
+      tool_command.insert(tool_command.end(), kudu_1097_args.begin(), kudu_1097_args.end());
+    }
+    tool_command.insert(tool_command.end(), tool_args.begin(), tool_args.end());
+
+    ASSERT_OK(RunKuduTool(tool_command));
     active_tservers.pop_front();
     active_tservers.push_back(add);
     inactive_tservers.pop_front();
@@ -269,13 +296,26 @@ TEST_F(AdminCliTest, TestMoveTablet) {
     for (const string& uuid : active_tservers) {
       InsertOrDie(&active_tservers_map, uuid, tablet_servers_[uuid]);
     }
-    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(FLAGS_num_replicas, active_tservers_map[add],
+    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(/*num_voters=*/ FLAGS_num_replicas,
+                                                  active_tservers_map[add],
                                                   tablet_id_, MonoDelta::FromSeconds(30)));
+    NO_FATALS(WaitUntilCommittedConfigNumMembersIs(/*num_members=*/ FLAGS_num_replicas,
+                                                   active_tservers_map[add],
+                                                   tablet_id_, MonoDelta::FromSeconds(30)));
+
   }
   workload.StopAndJoin();
 
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
+}
+
+TEST_F(AdminCliTest, TestMoveTablet_pre_KUDU_1097) {
+  DoTestMoveTablet(kDisableKudu1097);
+}
+
+TEST_F(AdminCliTest, TestMoveTablet_KUDU_1097) {
+  DoTestMoveTablet(kEnableKudu1097);
 }
 
 Status RunUnsafeChangeConfig(const string& tablet_id,

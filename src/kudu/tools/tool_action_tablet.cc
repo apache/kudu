@@ -28,6 +28,7 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -38,6 +39,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -56,6 +58,7 @@ DEFINE_int64(move_copy_timeout_sec, 600,
              "Number of seconds to wait for tablet copy to complete when relocating a tablet");
 DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 namespace kudu {
 namespace tools {
@@ -64,6 +67,8 @@ using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduTablet;
 using client::KuduTabletServer;
+using consensus::ADD_PEER;
+using consensus::BulkChangeConfigRequestPB;
 using consensus::ChangeConfigType;
 using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
@@ -71,6 +76,7 @@ using consensus::GetConsensusStateRequestPB;
 using consensus::GetConsensusStateResponsePB;
 using consensus::GetLastOpIdRequestPB;
 using consensus::GetLastOpIdResponsePB;
+using consensus::MODIFY_PEER;
 using consensus::OpId;
 using consensus::RaftPeerPB;
 using rpc::RpcController;
@@ -385,32 +391,119 @@ Status MoveReplica(const RunnerContext &context) {
   const string& from_ts_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
   const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
 
-  // Check the tablet is in perfect health and, if so, add the new server.
+  // Check the tablet is in perfect health first.
   RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
                         "ksck pre-move health check failed");
-  RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
-                               RaftPeerPB::VOTER, consensus::ADD_PEER));
 
-  // Wait until the tablet copy completes and the tablet returns to perfect health.
-  MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
-  RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses, tablet_id, copy_timeout),
-                        "failed waiting for clean ksck after add server");
+  // The pre- KUDU-1097 way of moving a replica involves first adding a new
+  // replica and then evicting the old one.
+  if (!FLAGS_raft_prepare_replacement_before_eviction) {
+    RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
+                                RaftPeerPB::VOTER, consensus::ADD_PEER));
 
-  // Finally, remove the chosen replica.
-  // If it is the leader, it will be asked to step down.
+    // Wait until the tablet copy completes and the tablet returns to perfect health.
+    MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
+    RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses, tablet_id, copy_timeout),
+                          "failed waiting for clean ksck after add server");
+
+    // Finally, remove the chosen replica.
+    // If it is the leader, it will be asked to step down.
+    client::sp::shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(KuduClientBuilder().master_server_addrs(master_addresses).Build(&client));
+    string leader_uuid;
+    HostPort leader_hp;
+    RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+    if (from_ts_uuid == leader_uuid) {
+      RETURN_NOT_OK_PREPEND(ChangeLeader(client, tablet_id,
+                                        leader_uuid, leader_hp,
+                                        MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
+                            "failed changing leadership from the replica to be removed");
+    }
+    return DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
+                          boost::none, consensus::REMOVE_PEER);
+  }
+
+  // In a post- KUDU-1097 world, the procedure to move a replica is to add the
+  // replace=true attribute to the replica to remove while simultaneously
+  // adding the replacement as a non-voter with promote=true.
+  // The following code implements tablet movement in that paradigm.
+
   client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder().master_server_addrs(master_addresses).Build(&client));
+  RETURN_NOT_OK(KuduClientBuilder()
+                .master_server_addrs(master_addresses)
+                .Build(&client));
+
+  BulkChangeConfigRequestPB bulk_req;
+  {
+    auto* change = bulk_req.add_config_changes();
+    change->set_type(MODIFY_PEER);
+    *change->mutable_peer()->mutable_permanent_uuid() = from_ts_uuid;
+    change->mutable_peer()->mutable_attrs()->set_replace(true);
+  }
+  {
+    auto* change = bulk_req.add_config_changes();
+    change->set_type(ADD_PEER);
+    *change->mutable_peer()->mutable_permanent_uuid() = to_ts_uuid;
+    change->mutable_peer()->set_member_type(RaftPeerPB::NON_VOTER);
+    change->mutable_peer()->mutable_attrs()->set_promote(true);
+    HostPort hp;
+    RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
+    RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
+  }
+
+  // Find this tablet's leader replica. We need its UUID and RPC address.
   string leader_uuid;
   HostPort leader_hp;
   RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
-  if (from_ts_uuid == leader_uuid) {
-    RETURN_NOT_OK_PREPEND(ChangeLeader(client, tablet_id,
-                                       leader_uuid, leader_hp,
-                                       MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
-                          "failed changing leadership from the replica to be removed");
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  BulkChangeConfigRequestPB req;
+  consensus::ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  bulk_req.set_dest_uuid(leader_uuid);
+  bulk_req.set_tablet_id(tablet_id);
+  RETURN_NOT_OK(proxy->BulkChangeConfig(bulk_req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
   }
-  return DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
-                        boost::none, consensus::REMOVE_PEER);
+
+  // Wait until the tablet copy completes and the tablet returns to perfect health.
+  MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
+  MonoTime start = MonoTime::Now();
+  MonoTime deadline = start + copy_timeout;
+  while (MonoTime::Now() < deadline) {
+    Status s = DoKsckForTablet(master_addresses, tablet_id);
+    if (s.ok()) {
+      // Get the latest leader info.
+      RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+      RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+      // Wait until 'from_ts_uuid' is no longer a member of the config.
+      ConsensusStatePB cstate;
+      RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                      client->default_admin_operation_timeout(), &cstate));
+      bool from_ts_uuid_in_config = false; // Is 'from_ts_uuid' still in the config?
+      for (const auto& peer : cstate.committed_config().peers()) {
+        if (peer.permanent_uuid() == from_ts_uuid) {
+          if (peer.attrs().replace() && peer.permanent_uuid() == leader_uuid) {
+            // The leader is the node we intend to remove and is currently
+            // marked for replacement; Make it step down.
+            ignore_result(DoLeaderStepDown(client, tablet_id, leader_uuid, leader_hp));
+          }
+          from_ts_uuid_in_config = true;
+          break;
+        }
+      }
+      if (!from_ts_uuid_in_config) {
+        return Status::OK();
+      }
+    }
+    SleepFor(MonoDelta::FromMilliseconds(50));
+  }
+  return Status::TimedOut(Substitute("unable to complete tablet replica move after $0",
+                                     (MonoTime::Now() - start).ToString()));
 }
 
 } // anonymous namespace

@@ -159,11 +159,18 @@ Status WaitUntilNoPendingConfig(const TServerDetails* replica,
                                 consensus::ConsensusStatePB* cstate = nullptr);
 
 // Wait until the number of voters in the committed consensus configuration is
-// 'quorum_size', according to the specified replica.
-Status WaitUntilCommittedConfigNumVotersIs(int config_size,
+// 'num_voters', according to the specified replica.
+Status WaitUntilCommittedConfigNumVotersIs(int num_voters,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
+
+// Wait until the number of voters in the committed consensus configuration is
+// 'num_members', according to the specified replica.
+void WaitUntilCommittedConfigNumMembersIs(int num_members,
+                                          const TServerDetails* replica,
+                                          const std::string& tablet_id,
+                                          const MonoDelta& timeout);
 
 // Wait until the opid_index of the committed consensus config on the
 // specified tablet is 'opid_index'.

@@ -219,7 +219,7 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
   });
 
   // Wait for there to be 4 voters in the config.
-  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(/*config_size=*/ 4,
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(/*num_voters=*/ 4,
                                                 leader_replica,
                                                 tablet_id,
                                                 kTimeout));
