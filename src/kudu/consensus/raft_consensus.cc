@@ -802,7 +802,7 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
   ChangeConfigRequestPB req;
   req.set_tablet_id(options_.tablet_id);
   req.mutable_server()->set_permanent_uuid(uuid);
-  req.set_type(REMOVE_SERVER);
+  req.set_type(REMOVE_PEER);
   req.set_cas_config_opid_index(committed_config.opid_index());
   LOG(INFO) << LogPrefixThreadSafe() << "Attempting to remove follower "
             << uuid << " from the Raft config. Reason: " << reason;
@@ -849,7 +849,7 @@ void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid,
 
   ChangeConfigRequestPB req;
   req.set_tablet_id(options_.tablet_id);
-  req.set_type(CHANGE_REPLICA_TYPE);
+  req.set_type(MODIFY_PEER);
   req.mutable_server()->set_permanent_uuid(peer_uuid);
   req.mutable_server()->set_member_type(RaftPeerPB::VOTER);
   req.mutable_server()->mutable_attrs()->set_promote(false);
@@ -1682,7 +1682,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
     new_config.clear_opid_index();
     const string& server_uuid = server.permanent_uuid();
     switch (type) {
-      case ADD_SERVER:
+      case ADD_PEER:
         // Ensure the server we are adding is not already a member of the configuration.
         if (IsRaftConfigMember(server_uuid, committed_config)) {
           return Status::InvalidArgument(
@@ -1700,7 +1700,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
         *new_config.add_peers() = server;
         break;
 
-      case REMOVE_SERVER:
+      case REMOVE_PEER:
         if (server_uuid == peer_uuid()) {
           return Status::InvalidArgument(
               Substitute("Cannot remove peer $0 from the config because it is the leader. "
@@ -1716,14 +1716,14 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
         }
         break;
 
-      case CHANGE_REPLICA_TYPE:
+      case MODIFY_PEER:
         if (server.member_type() == RaftPeerPB::UNKNOWN_MEMBER_TYPE) {
           return Status::InvalidArgument("Cannot change replica type to UNKNOWN_MEMBER_TYPE");
         }
         if (server_uuid == peer_uuid()) {
           return Status::InvalidArgument(
-              Substitute("Cannot change the replica type of peer $0 because it is the leader. "
-                         "Force another leader to be elected to modify the type of this replica. "
+              Substitute("Cannot modify peer $0 because it is the leader. "
+                         "Force another leader to be elected to modify this replica. "
                          "Consensus state: $1",
                          server_uuid,
                          SecureShortDebugString(cmeta_->ToConsensusStatePB())));

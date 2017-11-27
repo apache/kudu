@@ -269,7 +269,7 @@ Status WriteSimpleTestRow(const TServerDetails* replica,
                           const std::string& string_val,
                           const MonoDelta& timeout);
 
-// Run a ConfigChange to ADD_SERVER on 'replica_to_add'.
+// Run a ConfigChange to ADD_PEER on 'replica_to_add'.
 // The RPC request is sent to 'leader'.
 Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
@@ -280,7 +280,7 @@ Status AddServer(const TServerDetails* leader,
                  const boost::optional<int64_t>& cas_config_index = boost::none,
                  tserver::TabletServerErrorPB::Code* error_code = nullptr);
 
-// Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.
+// Run a ConfigChange to REMOVE_PEER on 'replica_to_remove'.
 // The RPC request is sent to 'leader'.
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,

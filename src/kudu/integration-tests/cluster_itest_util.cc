@@ -696,7 +696,7 @@ Status AddServer(const TServerDetails* leader,
   ChangeConfigRequestPB req;
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
-  req.set_type(consensus::ADD_SERVER);
+  req.set_type(consensus::ADD_PEER);
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_add->uuid());
   peer->set_member_type(member_type);
@@ -728,7 +728,7 @@ Status RemoveServer(const TServerDetails* leader,
   ChangeConfigRequestPB req;
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
-  req.set_type(consensus::REMOVE_SERVER);
+  req.set_type(consensus::REMOVE_PEER);
   if (cas_config_index) {
     req.set_cas_config_opid_index(*cas_config_index);
   }
@@ -758,7 +758,7 @@ Status ChangeReplicaType(const TServerDetails* leader,
   ChangeConfigRequestPB req;
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
-  req.set_type(consensus::CHANGE_REPLICA_TYPE);
+  req.set_type(consensus::MODIFY_PEER);
   if (cas_config_index) {
     req.set_cas_config_opid_index(*cas_config_index);
   }

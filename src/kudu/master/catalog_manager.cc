@@ -3106,7 +3106,7 @@ AsyncAddReplicaTask::AsyncAddReplicaTask(Master* master,
                                          RaftPeerPB::MemberType member_type,
                                          ThreadSafeRandom* rng)
     : AsyncChangeConfigTask(master, std::move(tablet), std::move(cstate),
-                            consensus::ADD_SERVER),
+                            consensus::ADD_PEER),
       member_type_(member_type),
       rng_(rng) {
 }
@@ -3147,7 +3147,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   consensus::ChangeConfigRequestPB req;
   req.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req.set_tablet_id(tablet_->id());
-  req.set_type(consensus::ADD_SERVER);
+  req.set_type(consensus::ADD_PEER);
   req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
@@ -3184,7 +3184,7 @@ AsyncEvictReplicaTask::AsyncEvictReplicaTask(Master* master,
                                              ConsensusStatePB cstate,
                                              string peer_uuid_to_evict)
     : AsyncChangeConfigTask(master, std::move(tablet), std::move(cstate),
-                            consensus::REMOVE_SERVER),
+                            consensus::REMOVE_PEER),
       peer_uuid_to_evict_(std::move(peer_uuid_to_evict)) {
 }
 
@@ -3205,7 +3205,7 @@ bool AsyncEvictReplicaTask::SendRequest(int attempt) {
   consensus::ChangeConfigRequestPB req;
   req.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req.set_tablet_id(tablet_->id());
-  req.set_type(consensus::REMOVE_SERVER);
+  req.set_type(consensus::REMOVE_PEER);
   req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(peer_uuid_to_evict_);

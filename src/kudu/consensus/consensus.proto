@@ -118,9 +118,9 @@ message ChangeConfigRecordPB {
 
 enum ChangeConfigType {
   UNKNOWN_CHANGE = 0;
-  ADD_SERVER = 1;
-  REMOVE_SERVER = 2;
-  CHANGE_REPLICA_TYPE = 3;
+  ADD_PEER = 1;
+  REMOVE_PEER = 2;
+  MODIFY_PEER = 3;
 }
 
 // A configuration change request for the tablet with 'tablet_id'.
@@ -139,7 +139,7 @@ message ChangeConfigRequestPB {
   optional ChangeConfigType type = 2;
 
   // The peer to add or remove.
-  // When 'type' == ADD_SERVER, both the permanent_uuid and last_known_addr
+  // When 'type' == ADD_PEER, both the permanent_uuid and last_known_addr
   // fields must be set. Otherwise, only the permanent_uuid field is required.
   optional RaftPeerPB server = 3;
 

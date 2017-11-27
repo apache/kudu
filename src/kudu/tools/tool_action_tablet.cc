@@ -163,10 +163,10 @@ Status DoChangeConfig(const vector<string>& master_addresses,
                       const string& replica_uuid,
                       const boost::optional<RaftPeerPB::MemberType>& member_type,
                       ChangeConfigType cc_type) {
-  if (cc_type == consensus::REMOVE_SERVER && member_type) {
+  if (cc_type == consensus::REMOVE_PEER && member_type) {
     return Status::InvalidArgument("cannot supply Raft member type when removing a server");
   }
-  if ((cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_REPLICA_TYPE) &&
+  if ((cc_type == consensus::ADD_PEER || cc_type == consensus::MODIFY_PEER) &&
       !member_type) {
     return Status::InvalidArgument(
         "must specify member type when adding a server or changing member type");
@@ -184,7 +184,7 @@ Status DoChangeConfig(const vector<string>& master_addresses,
                 .Build(&client));
 
   // When adding a new server, we need to provide the server's RPC address.
-  if (cc_type == consensus::ADD_SERVER) {
+  if (cc_type == consensus::ADD_PEER) {
     HostPort hp;
     RETURN_NOT_OK(GetRpcAddressForTS(client, replica_uuid, &hp));
     RETURN_NOT_OK(HostPortToPB(hp, peer_pb.mutable_last_known_addr()));
@@ -220,7 +220,7 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
   boost::optional<RaftPeerPB::MemberType> member_type;
-  if (cc_type == consensus::ADD_SERVER || cc_type == consensus::CHANGE_REPLICA_TYPE) {
+  if (cc_type == consensus::ADD_PEER || cc_type == consensus::MODIFY_PEER) {
     const string& replica_type = FindOrDie(context.required_args, kReplicaTypeArg);
     string uppercase_peer_type;
     ToUpperCase(replica_type, &uppercase_peer_type);
@@ -235,15 +235,15 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
 }
 
 Status AddReplica(const RunnerContext& context) {
-  return ChangeConfig(context, consensus::ADD_SERVER);
+  return ChangeConfig(context, consensus::ADD_PEER);
 }
 
 Status ChangeReplicaType(const RunnerContext& context) {
-  return ChangeConfig(context, consensus::CHANGE_REPLICA_TYPE);
+  return ChangeConfig(context, consensus::MODIFY_PEER);
 }
 
 Status RemoveReplica(const RunnerContext& context) {
-  return ChangeConfig(context, consensus::REMOVE_SERVER);
+  return ChangeConfig(context, consensus::REMOVE_PEER);
 }
 
 Status DoLeaderStepDown(const client::sp::shared_ptr<KuduClient>& client, const string& tablet_id,
@@ -389,7 +389,7 @@ Status MoveReplica(const RunnerContext &context) {
   RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
                         "ksck pre-move health check failed");
   RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
-                               RaftPeerPB::VOTER, consensus::ADD_SERVER));
+                               RaftPeerPB::VOTER, consensus::ADD_PEER));
 
   // Wait until the tablet copy completes and the tablet returns to perfect health.
   MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
@@ -410,7 +410,7 @@ Status MoveReplica(const RunnerContext &context) {
                           "failed changing leadership from the replica to be removed");
   }
   return DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
-                        boost::none, consensus::REMOVE_SERVER);
+                        boost::none, consensus::REMOVE_PEER);
 }
 
 } // anonymous namespace

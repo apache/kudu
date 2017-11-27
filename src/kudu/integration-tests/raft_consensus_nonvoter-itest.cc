@@ -678,7 +678,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
     const auto s_demote_str = s_demote.ToString();
     ASSERT_TRUE(s_demote.IsInvalidArgument()) << s_demote_str;
     ASSERT_STR_MATCHES(s_demote_str,
-        "Cannot change the replica type of peer .* because it is the leader");
+        "Cannot modify peer .* because it is the leader");
 
     // It should be impossible to promote a leader replica since it's
     // already a voter.
@@ -687,7 +687,7 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
     const auto s_promote_str = s_promote.ToString();
     ASSERT_TRUE(s_promote.IsInvalidArgument()) << s_promote_str;
     ASSERT_STR_MATCHES(s_promote_str,
-        "Cannot change the replica type of peer .* because it is the leader");
+        "Cannot modify peer .* because it is the leader");
   }
 
   // Demote the replica back.
