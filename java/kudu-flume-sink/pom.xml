@@ -20,42 +20,16 @@
   <artifactId>kudu-flume-sink</artifactId>
   <name>Kudu Flume NG Sink</name>
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>${maven-shade-plugin.version}</version>
-        <configuration>
-          <artifactSet>
-            <includes>
-              <!-- We want to transitively shade what kudu-client shades. -->
-              <include>org.apache.kudu:kudu-client</include>
-            </includes>
-          </artifactSet>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.avro</groupId>
-        <artifactId>avro-maven-plugin</artifactId>
-        <version>${avro.version}</version>
-        <executions>
-          <execution>
-            <phase>generate-test-sources</phase>
-              <goals>
-                <goal>schema</goal>
-              </goals>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
-
   <dependencies>
     <dependency>
       <groupId>org.apache.kudu</groupId>
       <artifactId>kudu-client</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.yetus</groupId>
+      <artifactId>audience-annotations</artifactId>
+      <version>${yetus.version}</version>
     </dependency>
 
     <dependency>
@@ -104,4 +78,35 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>${maven-shade-plugin.version}</version>
+        <configuration>
+          <artifactSet>
+            <includes>
+              <include>org.apache.kudu:kudu-client</include>
+              <include>org.slf4:slf4j-api</include>
+              <include>com.stumbleupon:async</include>
+            </includes>
+          </artifactSet>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.avro</groupId>
+        <artifactId>avro-maven-plugin</artifactId>
+        <version>${avro.version}</version>
+        <executions>
+          <execution>
+            <phase>generate-test-sources</phase>
+              <goals>
+                <goal>schema</goal>
+              </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

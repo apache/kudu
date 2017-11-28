@@ -110,7 +110,10 @@
                 <configuration>
                     <artifactSet>
                         <includes>
-                            <include>*:*</include>
+                            <include>org.apache.kudu:kudu-client</include>
+                            <include>org.apache.kudu:kudu-mapreduce</include>
+                            <include>org.apache.yetus:audience-annotations</include>
+                            <include>org.apache.parquet:parquet-hadoop</include>
                         </includes>
                     </artifactSet>
                 </configuration>

@@ -139,7 +139,9 @@
                 <configuration>
                     <artifactSet>
                         <includes>
-                            <include>*:*</include>
+                            <include>org.apache.kudu:kudu-client</include>
+                            <include>org.slf4:slf4j-api</include>
+                            <include>com.stumbleupon:async</include>
                         </includes>
                     </artifactSet>
                 </configuration>
