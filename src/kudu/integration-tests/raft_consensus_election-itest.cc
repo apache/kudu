@@ -485,7 +485,8 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
   string leader_uuid;
   int64_t orig_term;
   string follower_uuid;
-  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      active_tablet_servers, &leader_uuid, &orig_term, &follower_uuid));
 
   // Wait for the abandoned follower to be evicted.
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(2, tablet_servers_[leader_uuid],

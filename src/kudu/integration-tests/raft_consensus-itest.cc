@@ -843,7 +843,8 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   string leader_uuid;
   int64_t orig_term;
   string follower_uuid;
-  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid));
   SCOPED_TRACE(Substitute("leader: $0 follower: $1", leader_uuid, follower_uuid));
 
   // Wait for remaining majority to agree.
@@ -2244,7 +2245,8 @@ TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
   string leader_uuid;
   int64_t orig_term;
   string follower_uuid;
-  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid));
 
   // Wait for the abandoned follower to be evicted.
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(2, tablet_servers_[leader_uuid],
@@ -2265,7 +2267,8 @@ TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
   string leader_uuid;
   int64_t orig_term;
   string follower_uuid;
-  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid));
 
   // The follower will be evicted. Now wait for the master to cause it to be
   // copied.

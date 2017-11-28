@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/status.h"
@@ -67,7 +68,8 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
   //
   // Certain flags should be set. You can add the required flags with
   // AddFlagsForLogRolls() before starting the cluster.
-  void CauseFollowerToFallBehindLogGC(std::string* leader_uuid,
+  void CauseFollowerToFallBehindLogGC(const itest::TabletServerMap& tablet_servers,
+                                      std::string* leader_uuid,
                                       int64_t* orig_term,
                                       std::string* fell_behind_uuid);
 

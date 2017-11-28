@@ -190,13 +190,14 @@ void RaftConsensusITestBase::AddFlagsForLogRolls(vector<string>* extra_tserver_f
 }
 
 void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
+    const itest::TabletServerMap& tablet_servers,
     string* leader_uuid,
     int64_t* orig_term,
     string* fell_behind_uuid) {
   MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   // Wait for all of the replicas to have acknowledged the elected
   // leader and logged the first NO_OP.
-  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers, tablet_id_, 1));
 
   // Pause one server. This might be the leader, but pausing it will cause
   // a leader election to happen.
@@ -261,10 +262,11 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
   ASSERT_OK(replica_ets->Resume());
 
   // Ensure that none of the tablet servers crashed.
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    // Make sure it didn't crash.
-    ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
-      << "Tablet server " << i << " crashed";
+  for (const auto& e: tablet_servers) {
+  //for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    // Make sure the involved servsers didn't crash.
+    ASSERT_TRUE(cluster_->tablet_server_by_uuid(e.first)->IsProcessAlive())
+        << "Tablet server " << e.first << " crashed";
   }
   *fell_behind_uuid = replica->uuid();
 }

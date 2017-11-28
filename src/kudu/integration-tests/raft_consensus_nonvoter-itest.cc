@@ -45,6 +45,7 @@
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -118,6 +119,10 @@ class RaftConsensusNonVoterITest : public RaftConsensusITestBase {
   // Get a tablet server with at least one replica of the test tablet identified
   // by the 'tablet_id_' member.
   ExternalTabletServer* GetServerWithReplica() const;
+
+  // Get tablet servers not hosting replicas of the test tablet identified
+  // by the 'tablet_id_' member.
+  void GetServersWithoutReplica(vector<ExternalTabletServer*>* servers) const;
 };
 
 Status RaftConsensusNonVoterITest::GetTabletCopySourceSessionsCount(
@@ -206,6 +211,27 @@ ExternalTabletServer* RaftConsensusNonVoterITest::GetServerWithReplica() const {
     }
   }
   return ts;
+}
+
+void RaftConsensusNonVoterITest::GetServersWithoutReplica(
+    vector<ExternalTabletServer*>* servers) const {
+  ASSERT_NE(nullptr, servers);
+  servers->clear();
+
+  TabletServerMap replica_servers;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id_) {
+      replica_servers.emplace(e.second->uuid(), e.second);
+    }
+  }
+
+  for (const auto& ts : tablet_servers_) {
+    if (replica_servers.find(ts.first) == replica_servers.end()) {
+      auto* s = cluster_->tablet_server_by_uuid(ts.second->uuid());
+      ASSERT_NE(nullptr, s);
+      servers->push_back(s);
+    }
+  }
 }
 
 // Ensure that adding a NON_VOTER replica is properly handled by the system:
@@ -1156,6 +1182,127 @@ TEST_F(RaftConsensusNonVoterITest, TabletServerIsGoneAndBack) {
   ASSERT_TRUE(IsRaftConfigMember(ts_with_replica->uuid(), cstate.committed_config()));
 
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// A two-step sceanario: first, an existing tablet replica fails because it's
+// fails behind the threshold of the GCed WAL segment threshold. The catalog
+// manager should notice that and add a new non-voter replica in attempt to
+// replace the failed replica. Then, the newly added non-voter replica becomes
+// unavailable before completing the tablet copy phase. The catalog manager
+// should add a new non-voter replica to make it possible to replace the failed
+// voter replica, so eventually the tablet has appropriate number of functional
+// replicas to guarantee the tablet's replication factor.
+TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const auto kReplicasNum = 3;
+  const auto kConsensusRpcTimeout = MonoDelta::FromSeconds(5);
+  const auto kTimeoutSec = 60;
+  const auto kTimeout = MonoDelta::FromSeconds(kTimeoutSec);
+  FLAGS_num_replicas = kReplicasNum;
+  // Need two extra tablet servers for the scenario.
+  FLAGS_num_tablet_servers = kReplicasNum + 2;
+
+  const vector<string> kMasterFlags = {
+    // The scenario runs with the 3-4-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+
+    // Detect unavailable tablet servers faster.
+    Substitute("--tserver_unresponsive_timeout_ms=$0",
+        kConsensusRpcTimeout.ToMilliseconds() / 2),
+  };
+  vector<string> tserver_flags = {
+    // The scenario runs with the 3-4-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+
+    Substitute("--follower_unavailable_considered_failed_sec=$0",
+        2 * static_cast<int>(kConsensusRpcTimeout.ToSeconds())),
+
+    // Don't wait for the RPC timeout for too long.
+    Substitute("--consensus_rpc_timeout_ms=$0", kConsensusRpcTimeout.ToMilliseconds()),
+  };
+  AddFlagsForLogRolls(&tserver_flags); // For CauseFollowerToFallBehindLogGC().
+
+  NO_FATALS(BuildAndStart(tserver_flags, kMasterFlags));
+  ASSERT_EQ(kReplicasNum + 2, tablet_servers_.size());
+  ASSERT_EQ(kReplicasNum, tablet_replicas_.size());
+
+  // Make sure the tablet copy will fail on one of tablet servers without
+  // tablet replicas.
+  vector<ExternalTabletServer*> servers_without_replica;
+  NO_FATALS(GetServersWithoutReplica(&servers_without_replica));
+  ASSERT_EQ(2, servers_without_replica.size());
+  ExternalTabletServer* ts0 = *servers_without_replica.begin();
+  ASSERT_OK(cluster_->SetFlag(ts0,
+                              "tablet_copy_fault_crash_on_fetch_all", "1.0"));
+  // Make sure the second tablet server is not available as a candidate for
+  // the new non-voter replica.
+  ExternalTabletServer* ts1 = *servers_without_replica.rbegin();
+  ts1->Shutdown();
+  SleepFor(kConsensusRpcTimeout);
+
+  string follower_uuid;
+  {
+    TabletServerMap replica_servers;
+    for (const auto& e : tablet_replicas_) {
+      if (e.first == tablet_id_) {
+        replica_servers.emplace(e.second->uuid(), e.second);
+      }
+    }
+    string leader_uuid;
+    int64_t orig_term;
+    NO_FATALS(CauseFollowerToFallBehindLogGC(
+        replica_servers, &leader_uuid, &orig_term, &follower_uuid));
+  }
+
+  // The leader replica marks the non-responsive replica as failed after it
+  // realized the replica would not be able to catch up, and the catalog
+  // manager should add a new non-voter as a replacement.
+  bool has_leader = false;
+  TabletLocationsPB tablet_locations;
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum + 1,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader,
+                                            &tablet_locations));
+  // Make the second server available for placing a non-voter replica.
+  ASSERT_OK(ts1->Restart());
+
+  // The system should be able to recover, keeping only necessary number of
+  // voter replicas and purging the failed voters and non-voters.
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            &has_leader,
+                                            &tablet_locations));
+  consensus::ConsensusStatePB cstate;
+  ASSERT_EVENTUALLY([&] {
+    TServerDetails* leader = nullptr;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+    // The reason for the outside ASSERT_EVENTUALLY is that the leader might
+    // have changed in between of these two calls.
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+  });
+  // The original voter replica fallen behind WAL catchup threshold should be evicted.
+  EXPECT_FALSE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
+      << pb_util::SecureDebugString(cstate.committed_config())
+      << "fallen behind WAL replica UUID: " << follower_uuid;
+  // The first non-voter replica failed on tablet copy should be evicted.
+  EXPECT_FALSE(IsRaftConfigMember(ts0->uuid(), cstate.committed_config()))
+      << pb_util::SecureDebugString(cstate.committed_config())
+      << "failed tablet copy replica UUID: " << ts0->uuid();
+  // The tablet copy on the restarted server should succeed and this replica
+  // should replace the original failed replica.
+  EXPECT_TRUE(IsRaftConfigMember(ts1->uuid(), cstate.committed_config()))
+      << pb_util::SecureDebugString(cstate.committed_config())
+      << "new replacement replica UUID: " << ts1->uuid();
 }
 
 }  // namespace tserver

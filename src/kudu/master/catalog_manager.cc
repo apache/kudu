@@ -3151,6 +3151,10 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replacement_replica->permanent_uuid());
+  if (FLAGS_raft_prepare_replacement_before_eviction &&
+      member_type_ == RaftPeerPB::NON_VOTER) {
+    peer->mutable_attrs()->set_promote(true);
+  }
   ServerRegistrationPB peer_reg;
   replacement_replica->GetRegistration(&peer_reg);
   CHECK_GT(peer_reg.rpc_addresses_size(), 0);

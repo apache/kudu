@@ -382,6 +382,24 @@ TEST(QuorumUtilTest, IsUnderReplicated) {
     EXPECT_FALSE(IsUnderReplicated(config, 2));
     EXPECT_TRUE(IsUnderReplicated(config, 3));
   }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "E", N, '+', {{"PROMOTE", true}});
+    EXPECT_FALSE(IsUnderReplicated(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "E", N, '+', {{"PROMOTE", false}});
+    EXPECT_TRUE(IsUnderReplicated(config, 3));
+  }
 }
 
 // Verify logic of the kudu::consensus::CanEvictReplica(), anticipating

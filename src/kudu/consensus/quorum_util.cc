@@ -34,6 +34,7 @@
 
 using google::protobuf::RepeatedPtrField;
 using kudu::pb_util::SecureShortDebugString;
+using kudu::pb_util::SecureDebugString;
 using std::map;
 using std::pair;
 using std::set;
@@ -408,6 +409,7 @@ bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
   // While working with the optional fields related to per-replica health status
   // and attributes, has_a_field()-like methods are not called because of
   // the appropriate default values of those fields.
+  VLOG(2) << "config to evaluate: " << SecureDebugString(config);
   for (const RaftPeerPB& peer : config.peers()) {
     switch (peer.member_type()) {
       case RaftPeerPB::VOTER:
@@ -428,8 +430,11 @@ bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
         break;
     }
   }
-  return replication_factor > (num_voters_total - num_voters_need_replacement) +
-      num_non_voters_to_promote;
+  const bool is_under_replicated = replication_factor >
+      (num_voters_total - num_voters_need_replacement) + num_non_voters_to_promote;
+  VLOG(2) << "decision: the config is" << (is_under_replicated ? " " : " not ")
+          << "under-replicated";
+  return is_under_replicated;
 }
 
 // Whether there is an excess replica to evict.
@@ -453,6 +458,7 @@ bool CanEvictReplica(const RaftConfigPB& config,
   // While working with the optional fields related to per-replica health status
   // and attributes, has_a_field()-like methods are not called because of
   // the appropriate default values of those fields.
+  VLOG(2) << "config to evaluate: " << SecureDebugString(config);
   for (const RaftPeerPB& peer : config.peers()) {
     DCHECK(peer.has_permanent_uuid() && !peer.permanent_uuid().empty());
     const string& peer_uuid = peer.permanent_uuid();
@@ -566,6 +572,9 @@ bool CanEvictReplica(const RaftConfigPB& config,
       *uuid_to_evict = to_evict;
     }
   }
+  VLOG(2) << "decision: can"
+          << (can_evict ? "" : "not") << " evict replica "
+          << (can_evict ? to_evict : "");
   return can_evict;
 }
 

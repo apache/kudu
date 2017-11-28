@@ -76,6 +76,7 @@ TAG_FLAG(fault_crash_on_handle_tc_fetch_data, unsafe);
 DEFINE_double(tablet_copy_early_session_timeout_prob, 0,
               "The probability that a tablet copy session will time out early, "
               "resulting in tablet copy failure. (For testing only!)");
+TAG_FLAG(tablet_copy_early_session_timeout_prob, runtime);
 TAG_FLAG(tablet_copy_early_session_timeout_prob, unsafe);
 
 using std::string;
@@ -206,11 +207,11 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
 
   // For testing: Close the session prematurely if unsafe gflag is set but
   // still respond as if it was opened.
-  if (PREDICT_FALSE(FLAGS_tablet_copy_early_session_timeout_prob > 0 &&
-      rand_.NextDoubleFraction() <= FLAGS_tablet_copy_early_session_timeout_prob)) {
+  const auto timeout_prob = FLAGS_tablet_copy_early_session_timeout_prob;
+  if (PREDICT_FALSE(timeout_prob > 0 && rand_.NextDoubleFraction() <= timeout_prob)) {
     LOG_WITH_PREFIX(WARNING) << "Timing out tablet copy session due to flag "
                              << "--tablet_copy_early_session_timeout_prob "
-                             << "being set to " << FLAGS_tablet_copy_early_session_timeout_prob;
+                             << "being set to " << timeout_prob;
     MutexLock l(sessions_lock_);
     TabletCopyErrorPB::Code app_error;
     WARN_NOT_OK(TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(session_id, &app_error),
