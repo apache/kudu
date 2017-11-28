@@ -502,30 +502,32 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
 }
 
 HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPeer& peer) {
-  // Unreachable peers are considered failed.
+  // Replicas which have been unreachable for too long are considered failed.
   auto max_unreachable = MonoDelta::FromSeconds(FLAGS_follower_unavailable_considered_failed_sec);
   if (MonoTime::Now() - peer.last_communication_time > max_unreachable) {
     return HealthReportPB::FAILED;
   }
 
-  // Replicas returning TABLET_FAILED status are considered to have FAILED health.
-  if (peer.last_exchange_status == PeerStatus::TABLET_FAILED) {
-    return HealthReportPB::FAILED;
-  }
-
-  // If we have never connected to this peer before, and we have not exceeded
-  // the unreachable timeout, its health is unknown.
-  if (peer.last_exchange_status == PeerStatus::NEW) {
-    return HealthReportPB::UNKNOWN;
-  }
-
-  // Tablets that have fallen behind the leader's retained WAL are considered failed.
+  // Replicas that have fallen behind the leader's retained WAL are considered failed.
   if (!peer.wal_catchup_possible) {
     return HealthReportPB::FAILED;
   }
 
-  // All other cases are considered healthy.
-  return HealthReportPB::HEALTHY;
+  // Replicas returning TABLET_FAILED status are considered failed.
+  if (peer.last_exchange_status == PeerStatus::TABLET_FAILED) {
+    return HealthReportPB::FAILED;
+  }
+
+  // The happy case: replicas returned OK during the recent exchange are considered healthy.
+  if (peer.last_exchange_status == PeerStatus::OK) {
+    return HealthReportPB::HEALTHY;
+  }
+
+  // Other cases are for various situations when there hasn't been a contact
+  // with the replica yet or it's impossible to definitely tell the health
+  // status of the replica based on the last exchange status (transient error,
+  // etc.). For such cases, the replica health status is reported as UNKNOWN.
+  return HealthReportPB::UNKNOWN;
 }
 
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
