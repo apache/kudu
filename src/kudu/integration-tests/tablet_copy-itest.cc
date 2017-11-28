@@ -1745,6 +1745,10 @@ TEST_F(TabletCopyITest, TestMetricsResetAfterRevival) {
     ASSERT_OK(DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, kTimeout));
   });
 
+  // Don't cache the state metrics or the below assertion won't be accurate.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(follower_index),
+            "tablet_state_walk_min_period_ms", "0"));
+
   // Wait for the tablet to be successfully bootstrapped.
   ASSERT_EVENTUALLY([&] {
     ASSERT_EQ(1, CountRunningTablets(cluster_->tablet_server(follower_index)));
