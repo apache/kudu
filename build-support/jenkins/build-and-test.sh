@@ -395,6 +395,10 @@ if [ "$BUILD_JAVA" == "1" ]; then
      fi
   fi
 
+  # Run a script to verify the contents of the JARs to ensure the shading and
+  # packaging is correct.
+  $SOURCE_ROOT/build-support/verify_jars.pl .
+
   set +x
   popd
 fi
