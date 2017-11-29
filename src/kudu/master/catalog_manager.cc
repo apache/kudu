@@ -3488,32 +3488,36 @@ Status CatalogManager::ProcessTabletReport(
       // 7e. Make tablet configuration change depending on the mode the server
       // is running with. The choice between two alternative modes is controlled
       // by the 'raft_prepare_replacement_before_eviction' run-time flag.
-      if (FLAGS_raft_prepare_replacement_before_eviction) {
-        // An alternative scheme of managing tablet replicas: the catalog
-        // manager processes the health-related info on replicas from the tablet
-        // report and initiates appropriate modifications for the tablet Raft
-        // configuration: evict an already-replaced failed voter replica or add
-        // a new non-voter replica marked for promotion as a replacement.
+      if (!FLAGS_raft_prepare_replacement_before_eviction) {
+        if (consensus_state_updated &&
+            FLAGS_master_add_server_when_underreplicated &&
+            CountVoters(cstate.committed_config()) < replication_factor) {
+          // Add a server to the config if it is under-replicated.
+          //
+          // This is an idempotent operation due to a CAS enforced on the
+          // committed config's opid_index.
+          rpcs.emplace_back(new AsyncAddReplicaTask(
+              master_, tablet, cstate, RaftPeerPB::VOTER, &rng_));
+        }
+
+      // When --raft_prepare_replacement_before_eviction is enabled, we
+      // consider whether to add or evict replicas based on the health report
+      // included in the leader's tablet report. Since only the leader tracks
+      // health, we ignore reports from non-leaders in this case.
+      } else if (!cstate.leader_uuid().empty() &&
+                 ts_desc->permanent_uuid() == cstate.leader_uuid()) {
         const RaftConfigPB& config = cstate.committed_config();
         string to_evict;
-        if (IsUnderReplicated(config, replication_factor)) {
-          rpcs.emplace_back(new AsyncAddReplicaTask(
-              master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
-        } else if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
-                   CanEvictReplica(config, replication_factor, &to_evict)) {
+        if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
+                         CanEvictReplica(config, replication_factor, &to_evict)) {
           DCHECK(!to_evict.empty());
           rpcs.emplace_back(new AsyncEvictReplicaTask(
               master_, tablet, cstate, std::move(to_evict)));
+        } else if (FLAGS_master_add_server_when_underreplicated &&
+                   IsUnderReplicated(config, replication_factor)) {
+          rpcs.emplace_back(new AsyncAddReplicaTask(
+              master_, tablet, cstate, RaftPeerPB::NON_VOTER, &rng_));
         }
-      } else if (consensus_state_updated &&
-                 FLAGS_master_add_server_when_underreplicated &&
-                 CountVoters(cstate.committed_config()) < replication_factor) {
-        // Add a server to the config if it is under-replicated.
-        //
-        // This is an idempotent operation due to a CAS enforced on the
-        // committed config's opid_index.
-        rpcs.emplace_back(new AsyncAddReplicaTask(
-            master_, tablet, cstate, RaftPeerPB::VOTER, &rng_));
       }
     }
 
