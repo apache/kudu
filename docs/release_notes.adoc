@@ -45,7 +45,23 @@
 [[rn_1.6.0_new_features]]
 == New features
 
-* TBD
+* Tablet servers' tolerance of disk failures is now enabled by default and has
+  been extended to handle data directory failures at runtime. In the event of
+  a disk failure at runtime, any tablets with data on a failed disk will be
+  shut down and restarted on another tablet server. There is a configurable
+  tradeoff between a newly added tablet's tolerance to disk failures and its
+  ability to parallelize reads via the experimental
+  `--fs_target_data_dirs_per_tablet` flag. Tablets that are spread across fewer
+  disks are less likely to be affected by a disk failure, at the cost of
+  reduced parallelism. By default, tablets are striped across all available
+  disks. Note that the first configured data directory and the WAL directory
+  cannot currently tolerate disk failures. This will be further improved in
+  future Kudu releases.
+
+* Kudu servers can now adopt new data directories via the new
+  `kudu fs update_dirs` tool. The new directory will be used by new tablet
+  replicas only. Note that removing directories is not yet supported
+  (see link:https://issues.apache.org/jira/browse/KUDU-2202[KUDU-2202]).
 
 == Optimizations and improvements
 
