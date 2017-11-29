@@ -140,6 +140,7 @@ cd "$SITE_OUTPUT_DIR"
 SITE_ARCHIVE="$SITE_OUTPUT_DIR/website_archive.zip"
 zip -rq "$SITE_ARCHIVE" $SITE_SUBDIRS
 
+set +x
 echo "Generated web site at $SITE_OUTPUT_DIR"
 echo "Docs zip generated at $SITE_ARCHIVE"
 echo "To view live site locally, run: (cd $SITE_OUTPUT_DIR && ./site_tool jekyll serve)"
