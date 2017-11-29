@@ -3509,7 +3509,8 @@ Status CatalogManager::ProcessTabletReport(
         const RaftConfigPB& config = cstate.committed_config();
         string to_evict;
         if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
-                         CanEvictReplica(config, replication_factor, &to_evict)) {
+                         CanEvictReplica(config, cstate.leader_uuid(), replication_factor,
+                                         &to_evict)) {
           DCHECK(!to_evict.empty());
           rpcs.emplace_back(new AsyncEvictReplicaTask(
               master_, tablet, cstate, std::move(to_evict)));

@@ -410,16 +410,16 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "A", V);
     AddPeer(&config, "B", V);
     AddPeer(&config, "C", V);
-    EXPECT_FALSE(CanEvictReplica(config, 3));
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "", 3));
+    EXPECT_FALSE(CanEvictReplica(config, "", 2));
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
     AddPeer(&config, "B", V, '?');
     AddPeer(&config, "C", V, '-');
-    EXPECT_FALSE(CanEvictReplica(config, 3));
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "", 3));
+    EXPECT_FALSE(CanEvictReplica(config, "", 2));
   }
   {
     RaftConfigPB config;
@@ -427,18 +427,18 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", V, '+');
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "C", 1, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
-    EXPECT_FALSE(CanEvictReplica(config, 3));
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "C", 3));
+    EXPECT_FALSE(CanEvictReplica(config, "C", 2));
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "B", V);
     AddPeer(&config, "C", V);
-    EXPECT_FALSE(CanEvictReplica(config, 3));
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 3));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
   }
   {
     RaftConfigPB config;
@@ -446,9 +446,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '+', {{"REPLACE", false}});
     AddPeer(&config, "C", V, '-');
     AddPeer(&config, "D", V, '+');
-    EXPECT_FALSE(CanEvictReplica(config, 4));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 4));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &uuid_to_evict));
     EXPECT_EQ("C", uuid_to_evict);
   }
   {
@@ -457,9 +457,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '?');
     AddPeer(&config, "C", V, '+');
     AddPeer(&config, "D", V, '+');
-    EXPECT_FALSE(CanEvictReplica(config, 4));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 4));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
   {
@@ -468,9 +468,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '-');
     AddPeer(&config, "D", V, '?', {{"REPLACE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 3));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 2, &uuid_to_evict));
     EXPECT_EQ("D", uuid_to_evict);
   }
   {
@@ -479,9 +479,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '-');
     AddPeer(&config, "D", V, '-', {{"REPLACE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 3));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 2, &uuid_to_evict));
     EXPECT_EQ("D", uuid_to_evict);
   }
   {
@@ -490,9 +490,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '-');
     AddPeer(&config, "D", V, '+', {{"REPLACE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 3));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 2, &uuid_to_evict));
     EXPECT_EQ("D", uuid_to_evict);
   }
   {
@@ -501,9 +501,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '?');
     AddPeer(&config, "D", V, '+', {{"REPLACE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 3));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 2, &uuid_to_evict));
     EXPECT_EQ("D", uuid_to_evict);
   }
   {
@@ -512,9 +512,9 @@ TEST(QuorumUtilTest, CanEvictReplicaVoters) {
     AddPeer(&config, "B", V, '?');
     AddPeer(&config, "C", V, '+');
     AddPeer(&config, "D", V, '+');
-    EXPECT_FALSE(CanEvictReplica(config, 4));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 4));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 3, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
 }
@@ -525,20 +525,20 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V);
-    EXPECT_FALSE(CanEvictReplica(config, 1));
+    EXPECT_FALSE(CanEvictReplica(config, "", 1));
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
-    EXPECT_FALSE(CanEvictReplica(config, 1));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 1));
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", N);
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
   {
@@ -547,18 +547,18 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", N, '+');
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 2, &uuid_to_evict));
     EXPECT_EQ("C", uuid_to_evict);
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("C", uuid_to_evict);
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", N, '-', {{"PROMOTE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
   {
@@ -566,9 +566,9 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", N, '-');
     AddPeer(&config, "C", N);
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
   {
@@ -576,9 +576,9 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", N, '?');
     AddPeer(&config, "C", N, '+');
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("B", uuid_to_evict);
   }
   {
@@ -586,9 +586,9 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V);
     AddPeer(&config, "C", N);
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
     EXPECT_EQ("C", uuid_to_evict);
   }
   {
@@ -596,17 +596,17 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "A", V, '-');
     AddPeer(&config, "B", V);
     AddPeer(&config, "C", N);
-    EXPECT_FALSE(CanEvictReplica(config, 2));
-    EXPECT_FALSE(CanEvictReplica(config, 1));
+    EXPECT_FALSE(CanEvictReplica(config, "", 2));
+    EXPECT_FALSE(CanEvictReplica(config, "", 1));
   }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", N, '-', {{"PROMOTE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 2));
+    EXPECT_FALSE(CanEvictReplica(config, "A", 2));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 1, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "A", 1, &uuid_to_evict));
   }
   {
     RaftConfigPB config;
@@ -614,10 +614,26 @@ TEST(QuorumUtilTest, CanEvictReplicaNonVoters) {
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '+');
     AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
-    EXPECT_FALSE(CanEvictReplica(config, 3));
+    EXPECT_FALSE(CanEvictReplica(config, "B", 3));
     string uuid_to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, 2, &uuid_to_evict));
+    ASSERT_TRUE(CanEvictReplica(config, "B", 2, &uuid_to_evict));
     EXPECT_EQ("D", uuid_to_evict);
+  }
+}
+
+// Exhaustively loop through all nodes, each as leader, when over-replicated
+// and ensure that the leader never gets evicted.
+TEST(QuorumUtilTest, TestDontEvictLeader) {
+  const vector<string> nodes = { "A", "B", "C", "D" };
+  RaftConfigPB config;
+  AddPeer(&config, nodes[0], V, '+');
+  AddPeer(&config, nodes[1], V, '+');
+  AddPeer(&config, nodes[2], V, '+');
+  AddPeer(&config, nodes[3], V, '+');
+  for (const auto& leader_node : nodes) {
+    string to_evict;
+    ASSERT_TRUE(CanEvictReplica(config, leader_node, 3, &to_evict));
+    ASSERT_NE(leader_node, to_evict);
   }
 }
 
