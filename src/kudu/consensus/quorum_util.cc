@@ -449,6 +449,8 @@ bool CanEvictReplica(const RaftConfigPB& config,
 
   int num_voters_healthy = 0;
   int num_voters_total = 0;
+  int num_voters_with_replace = 0;
+  int num_voters_viable = 0;
 
   string non_voter_any;
   string non_voter_failed;
@@ -458,6 +460,8 @@ bool CanEvictReplica(const RaftConfigPB& config,
   string voter_failed;
   string voter_replace;
   string voter_unknown_health;
+
+  bool leader_with_replace = false;
 
   // While working with the optional fields related to per-replica health status
   // and attributes, has_a_field()-like methods are not called because of
@@ -475,22 +479,38 @@ bool CanEvictReplica(const RaftConfigPB& config,
 
     switch (peer.member_type()) {
       case RaftPeerPB::VOTER:
+        // A leader should always report itself as being healthy.
+        DCHECK(peer_uuid != leader_uuid || healthy) << Substitute(
+            "$0: leader reported as not healthy; config: $1",
+            peer_uuid, SecureShortDebugString(config));
+
         ++num_voters_total;
-        if (healthy && !has_replace) {
+        if (healthy) {
           ++num_voters_healthy;
+          if (!has_replace) {
+            ++num_voters_viable;
+          }
         }
-        // Everything below here is to check for replicas to evict.
+        if (has_replace) {
+          ++num_voters_with_replace;
+          if (peer_uuid == leader_uuid) {
+            leader_with_replace = true;
+          }
+        }
         if (peer_uuid == leader_uuid) {
-          // A leader should always report itself as being healthy.
-          DCHECK(healthy) << peer_uuid << ": " << SecureShortDebugString(config);
+          // Everything below is to keep track of replicas to evict; the leader
+          // replica is not to be evicted.
           break;
         }
-
         if (failed && has_replace) {
           voter_failed = voter_replace = peer_uuid;
         }
         if (failed && voter_failed.empty()) {
           voter_failed = peer_uuid;
+        }
+        if (unknown && has_replace &&
+            (voter_replace.empty() || voter_replace != voter_failed)) {
+          voter_replace = voter_unknown_health = peer_uuid;
         }
         if (has_replace && voter_replace.empty()) {
           voter_replace = peer_uuid;
@@ -520,33 +540,134 @@ bool CanEvictReplica(const RaftConfigPB& config,
     }
   }
 
-  // An conservative approach is used when evicting replicas.
+  // A few sanity checks: the leader replica UUID should not be among those
+  // to evict.
+  DCHECK_NE(leader_uuid, voter_any);
+  DCHECK_NE(leader_uuid, voter_failed);
+  DCHECK_NE(leader_uuid, voter_replace);
+  DCHECK_NE(leader_uuid, voter_unknown_health);
+
+  // A conservative approach is used when evicting replicas. In short, the
+  // removal of replicas from the tablet without exact knowledge of their health
+  // status could lead to removing the healthy ones and keeping the failed
+  // ones, or attempting a config change operation that cannot be committed.
+  // From the other side, if the number of voter replicas in good health is
+  // greater or equal to the required replication factor, a replica with any
+  // health status can be safely evicted without compromising the availability
+  // of the tablet. Also, the eviction policy is more liberal when dealing with
+  // failed replicas: if the total number of voter replicas is greater than or
+  // equal to the required replication factor, the failed replicas are evicted
+  // aggressively. The latter is to avoid polluting the tablet servers with
+  // failed replicas, limiting the available places for new non-voter replicas
+  // created to replace failed ones. See below for more details.
   //
-  // A non-voter replica may be evicted only if the number of voter replicas
-  // in good health without the REPLACE attribute is greater or equal to the
-  // specified replication factor. The idea is to avoid evicting non-voter
-  // replicas if there is uncertainty about the actual health status of the
-  // voters replicas of the tablet. This is because a present non-voter replica
-  // could to be a good fit to replace a voter replica which actual health
-  // status is not yet known.
+  // * A non-voter replica may be evicted regardless of its health status
+  //   if the number of voter replicas in good health without the 'replace'
+  //   attribute is greater than or equal to the required replication factor.
+  //   The idea is to not evict non-voter replicas that might be needed to reach
+  //   the required replication factor, while a present non-voter replica could
+  //   be a good fit to replace a voter replica, if needed.
   //
-  // A voter replica may be evicted only if the number of voter replicas in good
-  // health without the REPLACE attribute is greater or equal to the specified
-  // replication factor. Removal of voter replicas from the tablet without exact
-  // knowledge of their health status could lead to removing the healthy ones
-  // and keeping the failed ones.
-  const bool can_evict_non_voter =
-      num_voters_healthy >= replication_factor && num_non_voters_total > 0;
-  const bool can_evict_voter =
-      num_voters_healthy > replication_factor ||
-      (num_voters_healthy == replication_factor &&
-       num_voters_total > replication_factor);
+  // * A non-voter replica with FAILED health status may be evicted if the
+  //   number of voter replicas in good health without the 'replace' attribute
+  //   is greater than or equal to a strict majority of voter replicas. The idea
+  //   is to avoid polluting available tablet servers with failed non-voter
+  //   replicas, while replacing failed non-voters with healthy non-voters as
+  //   aggressively as possible. Also, we want to be sure that an eviction can
+  //   succeed before initiating it.
+  //
+  // * A voter replica may be evicted regardless of its health status
+  //   if after the eviction the number of voter replicas in good health will be
+  //   greater than or equal to the required replication factor and the leader
+  //   replica itself is not marked with the 'replace' attribute set. The latter
+  //   part of the condition emerges from the following observations:
+  //     ** By definition, a voter replica marked with the 'replace' attribute
+  //        should be eventually evicted from the Raft group.
+  //     ** If all voter replicas are in good health and their total count is
+  //        greater than the target replication and only a single one is marked
+  //        with the 'replace' attribute, that's the replica to be evicted.
+  //     ** Kudu Raft implementation does not support evicting the leader of
+  //        a Raft group.
+  //    So, the removal of a leader replica marked with the 'replace' attribute
+  //    is postponed until the leader replica steps down and becomes a follower.
+  //
+  // * A voter replica with FAILED health may be evicted only if the total
+  //   number of voter replicas is greater than the required replication factor
+  //   and the number of *other* voter replicas in good health without the
+  //   'replace' attribute is greater than or equal to a strict majority of
+  //   voter replicas.
+  //
+  // * A voter replica in good health marked with the 'replace' attribute may be
+  //   evicted when the number of replicas in good health after the eviction
+  //   is greater than or equal to the required replication factor.
+
+  bool need_to_evict_non_voter = false;
+
+  // Check if there is any excess non-voter replica. We add non-voter replicas
+  // to replace non-viable (i.e. failed or explicitly marked for eviction) ones.
+  need_to_evict_non_voter |=
+      num_voters_viable >= replication_factor &&
+      num_non_voters_total > 0;
+
+  // Some non-voter replica has failed: we want to remove those aggressively.
+  // This is to avoid polluting tablet servers with failed replicas. Otherwise,
+  // it may be a situation when it's impossible to add a new non-voter replica
+  // to replace failed ones.
+  need_to_evict_non_voter |= !non_voter_failed.empty();
+
+  // All the non-voter-related sub-cases are applicable only when there is at
+  // least one non-voter replica and a majority of voter replicas are on-line
+  // to commit the Raft configuration change.
+  const bool can_evict_non_voter = need_to_evict_non_voter &&
+      num_voters_healthy >= MajoritySize(num_voters_total);
+
+  bool need_to_evict_voter = false;
+
+  // The abundant case: can evict any voter replica. The code below will select
+  // the most appropriate candidate.
+  need_to_evict_voter |= num_voters_viable > replication_factor;
+
+  // Some voter replica has failed: we want to remove those aggressively.
+  // This is to avoid polluting tablet servers with failed replicas. Otherwise,
+  // it may be a situation when it's impossible to add a new non-voter replica
+  // to replace failed ones.
+  need_to_evict_voter |= !voter_failed.empty();
+
+  // In case if we already have enough healthy replicas running, it's safe to
+  // get rid of replicas with unknown health state.
+  need_to_evict_voter |=
+      num_voters_viable >= replication_factor &&
+      !voter_unknown_health.empty();
+
+  // Working with the replicas marked with the 'replace' attribute:
+  // the case when too many replicas are marked with the 'replace' attribute
+  // while all required replicas are healthy.
+  need_to_evict_voter |= (num_voters_healthy >= replication_factor) &&
+      ((num_voters_with_replace > replication_factor) ||
+       (num_voters_with_replace >= replication_factor && num_voters_viable > 0));
+
+  // Working with the replicas marked with the 'replace' attribute:
+  // the case where a few replicas are marked with the 'replace' attribute
+  // while all required replicas are healthy.
+  //
+  // In the special case when the leader replica is the only one marked with the
+  // 'replace' attribute, the leader replica cannot be evicted.
+  need_to_evict_voter |=
+      !(num_voters_with_replace == 1 && leader_with_replace) &&
+      (num_voters_with_replace > 0 && num_voters_healthy > replication_factor);
+
+  // The voter-related sub-cases are applicable only when the total number of
+  // voter replicas is greater than the target replication factor and a majority
+  // of voter replicas are on-line to commit the Raft configuration change.
+  const bool can_evict_voter = need_to_evict_voter &&
+      num_voters_total > replication_factor &&
+      num_voters_healthy >= MajoritySize(num_voters_total - 1);
 
   const bool can_evict = can_evict_non_voter || can_evict_voter;
   string to_evict;
   if (can_evict_non_voter) {
-    // First try to evict an excess non-voter, if present. This is to avoid
-    // possible IO load due to tablet copy in progress.
+    // First try to evict an excess non-voter, if present. This might help to
+    // avoid IO load due to a tablet copy in progress.
     //
     // Non-voter candidates for eviction (in decreasing priority):
     //   * failed
@@ -564,14 +685,14 @@ bool CanEvictReplica(const RaftConfigPB& config,
     //
     // Voter candidates for eviction (in decreasing priority):
     //   * failed and having the attribute REPLACE set
-    //   * having the attribute REPLACE set
     //   * failed
+    //   * having the attribute REPLACE set
     //   * in unknown health state
     //   * any other
-    if (!voter_replace.empty()) {
-      to_evict = voter_replace;
-    } else if (!voter_failed.empty()) {
+    if (!voter_failed.empty()) {
       to_evict = voter_failed;
+    } else if (!voter_replace.empty()) {
+      to_evict = voter_replace;
     } else if (!voter_unknown_health.empty()) {
       to_evict = voter_unknown_health;
     } else {
@@ -581,6 +702,7 @@ bool CanEvictReplica(const RaftConfigPB& config,
 
   if (can_evict) {
     DCHECK(!to_evict.empty());
+    DCHECK_NE(leader_uuid, to_evict);
     if (uuid_to_evict) {
       *uuid_to_evict = to_evict;
     }
@@ -588,6 +710,7 @@ bool CanEvictReplica(const RaftConfigPB& config,
   VLOG(2) << "decision: can"
           << (can_evict ? "" : "not") << " evict replica "
           << (can_evict ? to_evict : "");
+
   return can_evict;
 }
 

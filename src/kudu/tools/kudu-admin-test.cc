@@ -315,7 +315,7 @@ TEST_F(AdminCliTest, TestMoveTablet_pre_KUDU_1097) {
   DoTestMoveTablet(kDisableKudu1097);
 }
 
-TEST_F(AdminCliTest, DISABLED_TestMoveTablet_KUDU_1097) {
+TEST_F(AdminCliTest, TestMoveTablet_KUDU_1097) {
   DoTestMoveTablet(kEnableKudu1097);
 }
 

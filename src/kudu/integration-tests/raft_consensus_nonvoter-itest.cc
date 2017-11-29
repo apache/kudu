@@ -1385,7 +1385,7 @@ TEST_F(RaftConsensusNonVoterITest, TabletServerIsGoneAndBack) {
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 
-// A two-step sceanario: first, an existing tablet replica fails because it's
+// A two-step sceanario: first, an existing tablet replica fails because it
 // fails behind the threshold of the GCed WAL segment threshold. The catalog
 // manager should notice that and add a new non-voter replica in attempt to
 // replace the failed replica. Then, the newly added non-voter replica becomes
@@ -1445,6 +1445,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
   ts1->Shutdown();
   SleepFor(kConsensusRpcTimeout);
 
+  // Cause follower 'follower_uuid' to fail.
   string follower_uuid;
   {
     TabletServerMap replica_servers;
@@ -1460,7 +1461,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
   }
 
   // The leader replica marks the non-responsive replica as failed after it
-  // realized the replica would not be able to catch up, and the catalog
+  // realizes the replica would not be able to catch up, and the catalog
   // manager should add a new non-voter as a replacement.
   bool has_leader = false;
   TabletLocationsPB tablet_locations;
@@ -1472,11 +1473,12 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
                                             ANY_REPLICA,
                                             &has_leader,
                                             &tablet_locations));
-  // Make the second server available for placing a non-voter replica.
-  ASSERT_OK(ts1->Restart());
 
-  // The system should be able to recover, keeping only necessary number of
-  // voter replicas and purging the failed voters and non-voters.
+  // However, the tablet server with the new non-voter replica crashes during
+  // the tablet copy phase. Give the catalog manager some time to detect that
+  // and purge the failed non-voter from the configuration. Also, the TS manager
+  // should detect that the crashed server is not a candidate for new replicas
+  // anymore.
   ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
                                             kReplicasNum,
                                             tablet_id_,
@@ -1493,19 +1495,59 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
     // have changed in between of these two calls.
     ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
   });
-  // The original voter replica fallen behind WAL catchup threshold should be evicted.
-  EXPECT_FALSE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
+  // The original voter replica that fell behind WAL catchup threshold should
+  // still be there.
+  EXPECT_TRUE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
       << pb_util::SecureDebugString(cstate.committed_config())
-      << "fallen behind WAL replica UUID: " << follower_uuid;
+      << "fell behind WAL replica UUID: " << follower_uuid;
   // The first non-voter replica failed on tablet copy should be evicted.
   EXPECT_FALSE(IsRaftConfigMember(ts0->uuid(), cstate.committed_config()))
       << pb_util::SecureDebugString(cstate.committed_config())
       << "failed tablet copy replica UUID: " << ts0->uuid();
-  // The tablet copy on the restarted server should succeed and this replica
-  // should replace the original failed replica.
-  EXPECT_TRUE(IsRaftConfigMember(ts1->uuid(), cstate.committed_config()))
+  // No replicas from the second tablet server should be in the config yet.
+  EXPECT_FALSE(IsRaftConfigMember(ts1->uuid(), cstate.committed_config()))
       << pb_util::SecureDebugString(cstate.committed_config())
       << "new replacement replica UUID: " << ts1->uuid();
+
+  // Make the second server available for placing a non-voter replica. Tablet
+  // copy for replicas on this with this server should succeed.
+  ASSERT_OK(ts1->Restart());
+
+  // The system should be able to recover, replacing the failed replica with
+  // the replica on ts1. Since it's hard to predict when the replacement takes
+  // place, the easiest way is to wait until it's converges into the required
+  // state.
+  ASSERT_EVENTUALLY([&] {
+    bool has_leader = false;
+    TabletLocationsPB tablet_locations;
+    ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                              kReplicasNum,
+                                              tablet_id_,
+                                              kTimeout,
+                                              WAIT_FOR_LEADER,
+                                              ANY_REPLICA,
+                                              &has_leader,
+                                              &tablet_locations));
+
+    TServerDetails* leader = nullptr;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    // The original voter replica that fell behind the WAL catchup threshold
+    // should be evicted.
+    ASSERT_FALSE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "fell behind WAL replica UUID: " << follower_uuid;
+    // The first non-voter replica failed during the tablet copy phase
+    // should not be present.
+    ASSERT_FALSE(IsRaftConfigMember(ts0->uuid(), cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "failed tablet copy replica UUID: " << ts0->uuid();
+    // The tablet copy on the restarted server should succeed and this replica
+    // should replace the original failed replica.
+    ASSERT_TRUE(IsRaftConfigMember(ts1->uuid(), cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "new replacement replica UUID: " << ts1->uuid();
+  });
 }
 
 }  // namespace tserver

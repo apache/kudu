@@ -3507,9 +3507,13 @@ Status CatalogManager::ProcessTabletReport(
       // When --raft_prepare_replacement_before_eviction is enabled, we
       // consider whether to add or evict replicas based on the health report
       // included in the leader's tablet report. Since only the leader tracks
-      // health, we ignore reports from non-leaders in this case.
-      } else if (!cstate.leader_uuid().empty() &&
-                 ts_desc->permanent_uuid() == cstate.leader_uuid()) {
+      // health, we ignore reports from non-leaders in this case. Also, making
+      // the changes recommended by CanEvictReplica()/IsUnderReplicated()
+      // assumes that the leader replica has already committed the configuration
+      // it's working with.
+      } else if (!cstate.has_pending_config() &&
+                 !cstate.leader_uuid().empty() &&
+                 cstate.leader_uuid() == ts_desc->permanent_uuid()) {
         const RaftConfigPB& config = cstate.committed_config();
         string to_evict;
         if (PREDICT_TRUE(FLAGS_catalog_manager_evict_excess_replicas) &&
