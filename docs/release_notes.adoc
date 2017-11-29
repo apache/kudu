@@ -40,7 +40,7 @@
   the next major release.
 
 * Support for Spark 1 (kudu-spark_2.10) has been deprecated since Kudu 1.6.0
-  (TBD: no longer supported?
+  (TBD: no longer supported?)
 
 [[rn_1.6.0_new_features]]
 == New features
@@ -49,23 +49,62 @@
 
 == Optimizations and improvements
 
+* Kudu servers can now tolerate short interruptions in NTP clock
+  synchronization. NTP synchronization is still required when any Kudu daemon
+  starts up. If NTP synchronization is not available, diagnostic information
+  is now logged to help pinpoint the issue.
+  (link:https://issues.apache.org/jira/browse/KUDU-1578[KUDU-1578])
+
+* Tablet server startup time has been improved significantly on servers
+  containing large numbers of blocks.
+
 * The log block manager now performs disk data deletion in batches. This
   optimization can significantly reduce the time taken to delete data on a tablet.
 
 * The usage of sensitive data redaction flag has been slightly changed. By
   setting `--redact=log` flag, redaction will be disabled in the web UI but
-  retained for server logs. Alternatively, `--redact=none`can be used to
+  retained for server logs. Alternatively, `--redact=none` can be used to
   disable redaction completely.
 
 * The Spark DataSource integration now can take advantage of scan locality
   for better scan performance, the scan will take place at the closest replica
   instead of going to the leader.
 
+* Various optimizations were made to reduce the 99th percentile latency of
+  writes on the tablet server. This can also improve throughput on certain
+  write workloads, particularly on larger clusters.
+
+* Kudu may now be configured to ignore system-wide auth_to_local mappings
+  configured in /etc/krb5.conf by setting the configuration flag
+  `--use_system_auth_to_local=false`.
+  (link:https://issues.apache.org/jira/browse/KUDU-2198[KUDU-2198])
+
+* The performance of the compaction scheduler has been improved. In
+  previous versions, certain types of time series workloads were found to
+  cause compaction scheduling to take tens of seconds. These workloads now
+  schedule compactions an order of magnitude more efficiently.
+
+* The compaction scheduler has been improved to avoid running a compaction
+  when the benefit of that compaction is extremely small.
+
+* Tablet servers now consider the health of all replicas of a tablet before
+  deciding to evict one. This can improve stability of the Kudu cluster after
+  experiencing multiple simultaneous daemon failures.
+  (link:https://issues.apache.org/jira/browse/KUDU-2048[KUDU-2048])
+
+* Several performance improvements have been made to the Kudu master,
+  particularly in concurrency of clients opening tables. This should improve
+  performance in highly concurrent workloads.
+
 [[rn_1.6.0_fixed_issues]]
 == Fixed Issues
 
-* link:https://issues.apache.org/jira/browse/KUDU-1411[KUDU-1411] fixed HT
-  timestamp propagation in Java client's KuduScanToken.
+* HybridTime timestamp propagation now works in the Java client when using scan
+  tokens. (link:https://issues.apache.org/jira/browse/KUDU-1411[KUDU-1411])
+
+* Fixed an error message commonly found in tablet server logs indicating that
+  operations were being read "from the future".
+  (link:https://issues.apache.org/jira/browse/KUDU-1078[KUDU-1078])
 
 [[rn_1.6.0_wire_compatibility]]
 == Wire Protocol compatibility
