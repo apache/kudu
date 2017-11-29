@@ -439,8 +439,12 @@ bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
 
 // Whether there is an excess replica to evict.
 bool CanEvictReplica(const RaftConfigPB& config,
+                     const string& leader_uuid,
                      int replication_factor,
                      string* uuid_to_evict) {
+  // If there is no leader, we can't evict anybody.
+  if (leader_uuid.empty()) return false;
+
   int num_non_voters_total = 0;
 
   int num_voters_healthy = 0;
@@ -475,6 +479,13 @@ bool CanEvictReplica(const RaftConfigPB& config,
         if (healthy && !has_replace) {
           ++num_voters_healthy;
         }
+        // Everything below here is to check for replicas to evict.
+        if (peer_uuid == leader_uuid) {
+          // A leader should always report itself as being healthy.
+          DCHECK(healthy) << peer_uuid << ": " << SecureShortDebugString(config);
+          break;
+        }
+
         if (failed && has_replace) {
           voter_failed = voter_replace = peer_uuid;
         }
@@ -492,6 +503,8 @@ bool CanEvictReplica(const RaftConfigPB& config,
 
       case RaftPeerPB::NON_VOTER:
         ++num_non_voters_total;
+        DCHECK_NE(peer_uuid, leader_uuid) << peer_uuid
+            << ": non-voter as a leader; " << SecureShortDebugString(config);
         if (failed && non_voter_failed.empty()) {
           non_voter_failed = peer_uuid;
         }

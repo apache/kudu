@@ -94,11 +94,13 @@ bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor);
 
 // Check if the given Raft configuration contains at least one extra replica
 // which can be removed in accordance with the specified replication
-// factor. If so, then return 'true' and set the UUID of the best suited
-// replica into the 'uuid_to_evict' out parameter. Otherwise, return 'false'.
+// factor and current Raft leader. If so, then return 'true' and set the UUID
+// of the best suited replica into the 'uuid_to_evict' out parameter. Otherwise,
+// return 'false'.
 bool CanEvictReplica(const RaftConfigPB& config,
-                         int replication_factor,
-                         std::string* uuid_to_evict = nullptr);
+                     const std::string& leader_uuid,
+                     int replication_factor,
+                     std::string* uuid_to_evict = nullptr);
 
 }  // namespace consensus
 }  // namespace kudu
