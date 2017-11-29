@@ -3461,8 +3461,16 @@ Status CatalogManager::ProcessTabletReport(
             tablet_id, ts_desc->ToString(), cstate.committed_config().opid_index(),
             cstate.current_term());
 
+
         // 7d(ii). Update the consensus state.
-        *tablet->mutable_metadata()->mutable_dirty()->pb.mutable_consensus_state() = cstate;
+        // Strip the health report from the cstate before persisting it.
+        auto* dirty_cstate =
+            tablet->mutable_metadata()->mutable_dirty()->pb.mutable_consensus_state();
+        *dirty_cstate = cstate; // Copy in the updated cstate.
+        // Strip out the health reports from the persisted copy *only*.
+        for (auto& peer : *dirty_cstate->mutable_committed_config()->mutable_peers()) {
+          peer.clear_health_report();
+        }
         tablet_was_mutated = true;
 
         // 7d(iii). Delete any replicas from the previous config that are not
@@ -3473,6 +3481,7 @@ Status CatalogManager::ProcessTabletReport(
             InsertOrDie(&current_member_uuids, p.permanent_uuid());
           }
           for (const auto& p : prev_cstate.committed_config().peers()) {
+            DCHECK(!p.has_health_report()); // Health report shouldn't be persisted.
             const string& peer_uuid = p.permanent_uuid();
             if (!ContainsKey(current_member_uuids, peer_uuid)) {
               rpcs.emplace_back(new AsyncDeleteReplica(
@@ -4044,6 +4053,7 @@ Status CatalogManager::BuildLocationsForTablet(
 
   const ConsensusStatePB& cstate = l_tablet.data().pb.consensus_state();
   for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
+    DCHECK(!peer.has_health_report()); // Health report shouldn't be persisted.
     // TODO(adar): GetConsensusRole() iterates over all of the peers, making this an
     // O(n^2) loop. If replication counts get high, it should be optimized.
     switch (filter) {
