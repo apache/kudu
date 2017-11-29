@@ -61,6 +61,12 @@ set -x
 
 cd "$SOURCE_ROOT"
 
+GIT_REMOTE=$(git config --get remote.origin.url)
+if [ -z "$GIT_REMOTE" ]; then
+  echo "Error: The 'origin' git remote is expected but is not defined"
+  usage
+fi
+
 # Build Kudu thirdparty
 $SOURCE_ROOT/build-support/enable_devtoolset.sh $SOURCE_ROOT/thirdparty/build-if-necessary.sh
 echo "Successfully built third-party dependencies."
@@ -84,7 +90,7 @@ make -j$(getconf _NPROCESSORS_ONLN) $MAKE_TARGETS
 if [ -d "$SITE_OUTPUT_DIR" -a -n "$OPT_FORCE" ]; then
   rm -rf "$SITE_OUTPUT_DIR"
 fi
-git clone -q $(git config --get remote.apache.url) --reference $SOURCE_ROOT -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
+git clone -q "$GIT_REMOTE" --reference "$SOURCE_ROOT" -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
 
 # Build the docs using the styles from the Jekyll site
 rm -Rf "$SITE_OUTPUT_DIR/docs"
