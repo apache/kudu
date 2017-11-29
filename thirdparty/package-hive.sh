@@ -37,13 +37,14 @@ ARTIFACT=apache-hive-$VERSION-bin
 wget https://archive.apache.org/dist/hive/hive-$VERSION/$ARTIFACT.tar.gz
 tar xf $ARTIFACT.tar.gz
 
-# Note: as of Hive 2.3.1, the druid-common jar contains the log4j configuration
-# used for the HMS, so it can't be stripped.
-for PROJECT in accumulo aether curator druid-handler hbase icu4j jackson jetty jsp maven parquet zookeeper; do
+for PROJECT in accumulo aether avatica calcite curator druid groovy hbase icu4j jetty jsp maven parquet zookeeper; do
   rm $ARTIFACT/lib/*$PROJECT*.jar
 done
 
-rm -rf $ARTIFACT/jdbc
 rm -rf $ARTIFACT/hcatalog
+rm -rf $ARTIFACT/jdbc
+rm -rf $ARTIFACT/lib/php
+rm -rf $ARTIFACT/lib/python
+rm -rf $ARTIFACT/lib/py
 
 tar czf $ARTIFACT-stripped.tar.gz $ARTIFACT

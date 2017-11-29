@@ -104,6 +104,7 @@ Status MiniHms::Start() {
       { "HADOOP_HOME", hadoop_home },
       { "HIVE_AUX_JARS_PATH", aux_jars },
       { "HIVE_CONF_DIR", tmp_dir },
+      { "JAVA_TOOL_OPTIONS",  "-Dhive.log.level=WARN -Dhive.root.logger=console" },
   };
 
   // Start the HMS.
