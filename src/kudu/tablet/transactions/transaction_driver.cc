@@ -18,6 +18,7 @@
 #include "kudu/tablet/transactions/transaction_driver.h"
 
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <type_traits>
@@ -130,8 +131,11 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
   // Prevent further transacions from starting.
   // Note: Some tests may not have a replica.
   TabletReplica* replica = transaction->state()->tablet_replica();
-  if (PREDICT_TRUE(replica) && replica->tablet()->HasBeenStopped()) {
-    return Status::IllegalState("Not initializing new transaction; the tablet is stopped");
+  {
+    std::shared_ptr<Tablet> tablet = replica ? replica->shared_tablet() : nullptr;
+    if (PREDICT_FALSE(tablet && tablet->HasBeenStopped())) {
+      return Status::IllegalState("Not initializing new transaction; the tablet is stopped");
+    }
   }
   transaction_ = std::move(transaction);
 
