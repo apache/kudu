@@ -168,7 +168,7 @@ DEFINE_bool(env_use_ioctl_hole_punch_on_xfs, true,
 TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, advanced);
 TAG_FLAG(env_use_ioctl_hole_punch_on_xfs, experimental);
 
-DEFINE_bool(crash_on_eio, true,
+DEFINE_bool(crash_on_eio, false,
             "Kill the process if an I/O operation results in EIO. If false, "
             "I/O resulting in EIOs will return the status IOError and leave "
             "error-handling up to the caller.");
