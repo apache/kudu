@@ -112,6 +112,10 @@
   particularly in concurrency of clients opening tables. This should improve
   performance in highly concurrent workloads.
 
+* The on-disk size metric for a tablet now includes all data and metadata.
+  Previously, it excluded WAL segments and consensus metadata.
+  (link:https://issues.apache.org/jira/browse/KUDU-1755[KUDU-1755])
+
 [[rn_1.6.0_fixed_issues]]
 == Fixed Issues
 
@@ -121,6 +125,9 @@
 * Fixed an error message commonly found in tablet server logs indicating that
   operations were being read "from the future".
   (link:https://issues.apache.org/jira/browse/KUDU-1078[KUDU-1078])
+
+* Tombstoned tablets no longer report metrics.
+  (link:https://issues.apache.org/jira/browse/KUDU-2044[KUDU-2044])
 
 [[rn_1.6.0_wire_compatibility]]
 == Wire Protocol compatibility
