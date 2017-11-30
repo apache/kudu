@@ -123,6 +123,10 @@
   Previously, it excluded WAL segments and consensus metadata.
   (link:https://issues.apache.org/jira/browse/KUDU-1755[KUDU-1755])
 
+* Added verbose mode for the 'kudu cluster ksck' command to enable output
+  of detailed information on the cluster's metadata, even when no errors are
+  detected.
+
 [[rn_1.6.0_fixed_issues]]
 == Fixed Issues
 
@@ -146,6 +150,11 @@
   There was previously a bug in the release process which made them compatible
   only with JRE 8.
   (link:https://issues.apache.org/jira/browse/KUDU-2188[KUDU-2188])
+
+* Fixed a typo in the list of default TLS ciphers used by Kudu servers. As a
+  result, two additional cipher suites are now available:
+** ECDHE-RSA-AES128-SHA256 TLSv1.2 Kx=ECDH Au=RSA Enc=AES(128)  Mac=SHA256
+** AES256-GCM-SHA384       TLSv1.2 Kx=RSA  Au=RSA Enc=AESGCM(256) Mac=AEAD
 
 [[rn_1.6.0_wire_compatibility]]
 == Wire Protocol compatibility
