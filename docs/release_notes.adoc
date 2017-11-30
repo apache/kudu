@@ -63,6 +63,13 @@
   replicas only. Note that removing directories is not yet supported
   (see link:https://issues.apache.org/jira/browse/KUDU-2202[KUDU-2202]).
 
+* Kudu servers have two new flags to control webui TLS/HTTPS
+  settings: `--webserver_tls_ciphers` and `--webserver_tls_min_protocol`.
+  These flags allow the advertised TLS ciphers and TLS protocol versions to be
+  configured. Additionally, the webserver now excludes insecure legacy ciphers
+  by default.
+  (link:https://issues.apache.org/jira/browse/KUDU-2190[KUDU-2190]).
+
 == Optimizations and improvements
 
 * Kudu servers can now tolerate short interruptions in NTP clock
@@ -128,6 +135,17 @@
 
 * Tombstoned tablets no longer report metrics.
   (link:https://issues.apache.org/jira/browse/KUDU-2044[KUDU-2044])
+
+* Fixed a bug in the C++ client which could cause tablets to be erroneously
+  pruned, or skipped, during certain scans, resulting in fewer results than
+  expected being returned from queries. The bug only affected tables whose range
+  partition columns are a proper prefix of the primary key.
+  (link:https://issues.apache.org/jira/browse/KUDU-2173[KUDU-2173])
+
+* Published Kudu Java artifacts are now fully compatible with JRE 7 and JRE 8.
+  There was previously a bug in the release process which made them compatible
+  only with JRE 8.
+  (link:https://issues.apache.org/jira/browse/KUDU-2188[KUDU-2188])
 
 [[rn_1.6.0_wire_compatibility]]
 == Wire Protocol compatibility
