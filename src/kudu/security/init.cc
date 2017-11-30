@@ -56,16 +56,6 @@ DEFINE_string(keytab_file, "",
               "to be used to authenticate RPC connections.");
 TAG_FLAG(keytab_file, stable);
 
-DEFINE_string(principal, "kudu/_HOST",
-              "Kerberos principal that this daemon will log in as. The special token "
-              "_HOST will be replaced with the FQDN of the local host.");
-TAG_FLAG(principal, experimental);
-// This is currently tagged as unsafe because there is no way for users to configure
-// clients to expect a non-default principal. As such, configuring a server to login
-// as a different one would end up with a cluster that can't be connected to.
-// See KUDU-1884.
-TAG_FLAG(principal, unsafe);
-
 DEFINE_bool(allow_world_readable_credentials, false,
             "Enable the use of keytab files and TLS private keys with "
             "world-readable permissions.");
@@ -385,10 +375,14 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
   return Status::OK();
 }
 
-Status GetConfiguredPrincipal(string* principal) {
-  string p = FLAGS_principal;
+// 'in_principal' is the user specified principal to use with Kerberos. It may have a token
+// in the string of the form '_HOST', which if present, needs to be replaced with the FQDN of the
+// current host.
+// 'out_principal' has the final principal with which one may Kinit.
+Status GetConfiguredPrincipal(const std::string& in_principal, string* out_principal) {
+  *out_principal = in_principal;
   const auto& kHostToken = "_HOST";
-  if (p.find(kHostToken) != string::npos) {
+  if (in_principal.find(kHostToken) != string::npos) {
     string hostname;
     // Try to fill in either the FQDN or hostname.
     if (!GetFQDN(&hostname).ok()) {
@@ -396,9 +390,8 @@ Status GetConfiguredPrincipal(string* principal) {
     }
     // Hosts in principal names are canonicalized to lower-case.
     std::transform(hostname.begin(), hostname.end(), hostname.begin(), tolower);
-    GlobalReplaceSubstring(kHostToken, hostname, &p);
+    GlobalReplaceSubstring(kHostToken, hostname, out_principal);
   }
-  *principal = p;
   return Status::OK();
 }
 } // anonymous namespace
@@ -472,7 +465,8 @@ boost::optional<string> GetLoggedInUsernameFromKeytab() {
   return g_kinit_ctx->username_str();
 }
 
-Status InitKerberosForServer(const std::string& krb5ccname, bool disable_krb5_replay_cache) {
+Status InitKerberosForServer(const std::string& raw_principal, const std::string& krb5ccname,
+    bool disable_krb5_replay_cache) {
   if (FLAGS_keytab_file.empty()) return Status::OK();
 
   setenv("KRB5CCNAME", krb5ccname.c_str(), 1);
@@ -487,9 +481,10 @@ Status InitKerberosForServer(const std::string& krb5ccname, bool disable_krb5_re
   }
 
   g_kinit_ctx = new KinitContext();
-  string principal;
-  RETURN_NOT_OK(GetConfiguredPrincipal(&principal));
-  RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(FLAGS_keytab_file, principal), "unable to kinit");
+  string configured_principal;
+  RETURN_NOT_OK(GetConfiguredPrincipal(raw_principal, &configured_principal));
+  RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(
+      FLAGS_keytab_file, configured_principal), "unable to kinit");
 
   g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
   scoped_refptr<Thread> reacquire_thread;

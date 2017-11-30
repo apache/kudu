@@ -37,10 +37,13 @@ static const std::string kKrb5CCName = "MEMORY:kudu";
 
 // Initializes Kerberos for a server. In particular, this processes
 // the '--keytab_file' command line flag.
+// 'raw_principal' is the principal to Kinit with after calling GetConfiguredPrincipal()
+// on it.
 // 'krb5ccname' is passed into the KRB5CCNAME env var.
 // 'disable_krb5_replay_cache' if set to true, disables the kerberos replay cache by setting
 // the KRB5RCACHETYPE env var to "none".
-Status InitKerberosForServer(const std::string& krb5ccname = kKrb5CCName,
+Status InitKerberosForServer(const std::string& raw_principal,
+                             const std::string& krb5ccname = kKrb5CCName,
                              bool disable_krb5_replay_cache = true);
 
 // Returns the process lock 'kerberos_reinit_lock'

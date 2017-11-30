@@ -109,6 +109,16 @@ DEFINE_string(user_acl, "*",
 TAG_FLAG(user_acl, stable);
 TAG_FLAG(user_acl, sensitive);
 
+DEFINE_string(principal, "kudu/_HOST",
+              "Kerberos principal that this daemon will log in as. The special token "
+              "_HOST will be replaced with the FQDN of the local host.");
+TAG_FLAG(principal, experimental);
+// This is currently tagged as unsafe because there is no way for users to configure
+// clients to expect a non-default principal. As such, configuring a server to login
+// as a different one would end up with a cluster that can't be connected to.
+// See KUDU-1884.
+TAG_FLAG(principal, unsafe);
+
 DECLARE_bool(use_hybrid_clock);
 
 using std::ostringstream;
@@ -221,7 +231,7 @@ Status ServerBase::Init() {
   // if we're having clock problems.
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
 
-  RETURN_NOT_OK(security::InitKerberosForServer());
+  RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal));
 
   fs::FsReport report;
   Status s = fs_manager_->Open(&report);

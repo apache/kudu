@@ -77,8 +77,7 @@ TEST_F(MiniKdcTest, TestBasicOperation) {
   // Test programmatic keytab login.
   kdc.SetKrb5Environment();
   FLAGS_keytab_file = kt_path;
-  FLAGS_principal = kSPN;
-  ASSERT_OK(security::InitKerberosForServer());
+  ASSERT_OK(security::InitKerberosForServer(kSPN));
   ASSERT_EQ("kudu/foo.example.com@KRBTEST.COM", *security::GetLoggedInPrincipalFromKeytab());
 
   // Test principal canonicalization.
