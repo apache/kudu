@@ -38,10 +38,10 @@ blocks in a long-running scan will not be affected if garbage collection
 unlinks an open block that has become ancient history.
 
 Query engines that may perform many long-running scans at a single snapshot,
-such as Apache Impala (incubating) and Apache Spark, may end up too far in the
-past and error out if a scan query runs for too long. We still need to come up
-with a way to reliably prevent that. The current workaround is to tune the
-ancient history mark high enough to avoid most such errors.
+such as Apache Impala and Apache Spark, may end up too far in the past and error
+out if a scan query runs for too long. We still need to come up with a way to
+reliably prevent that. The current workaround is to tune the ancient history
+mark high enough to avoid most such errors.
 
 ## Removing old delta history
 

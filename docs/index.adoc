@@ -35,8 +35,8 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 
 - Fast processing of OLAP workloads.
 - Integration with MapReduce, Spark and other Hadoop ecosystem components.
-- Tight integration with Apache Impala (incubating), making it a good, mutable
-  alternative to using HDFS with Apache Parquet.
+- Tight integration with Apache Impala, making it a good, mutable alternative to
+  using HDFS with Apache Parquet.
 - Strong but flexible consistency model, allowing you to choose consistency
   requirements on a per-request basis, including the option for strict-serializable consistency.
 - Strong performance for running sequential and random workloads simultaneously.
