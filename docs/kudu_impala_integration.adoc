@@ -501,8 +501,8 @@ stored in the dropped partition.
 
 - For large tables, such as fact tables, aim for as many tablets as you have
   cores in the cluster.
-- For small tables, such as dimension tables, aim for a large enough number of tablets
-  that each tablet is at least 1 GB in size.
+- For small tables, such as dimension tables, ensure that each tablet is at
+  least 1 GB in size.
 
 In general, be mindful the number of tablets limits the parallelism of reads,
 in the current implementation. Increasing the number of tablets significantly
@@ -731,7 +731,7 @@ The examples above have only explored a fraction of what you can do with Impala 
 - Kudu tables with a name containing upper case or non-ascii characters must be
   assigned an alternate name when used as an external table in Impala.
 - Kudu tables with a column name containing upper case or non-ascii characters
-  may not be used as an external table in Impala. Columns may be renamed in Kudu 
+  may not be used as an external table in Impala. Columns may be renamed in Kudu
   to work around this issue.
 - When creating a Kudu table, the `CREATE TABLE` statement must include the
   primary key columns before other columns, in primary key order.
@@ -745,4 +745,4 @@ The examples above have only explored a fraction of what you can do with Impala 
   fails part of the way through, its partial effects will not be rolled back.
 - The maximum parallelism of a single query is limited to the number of tablets
   in a table. For good analytic performance, aim for 10 or more tablets per host
-  or use large tables.
+  for large tables.
