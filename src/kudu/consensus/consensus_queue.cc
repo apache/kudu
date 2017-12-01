@@ -122,11 +122,12 @@ const char* PeerStatusToString(PeerStatus p) {
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, Status: $1, Last received: $2, Next index: $3, "
-                    "Last known committed idx: $4",
+                    "Last known committed idx: $4, Time since last communication: $5",
                     uuid,
                     PeerStatusToString(last_exchange_status),
                     OpIdToString(last_received), next_index,
-                    last_known_committed_index);
+                    last_known_committed_index,
+                    (MonoTime::Now() - last_communication_time).ToString());
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -1159,6 +1160,7 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
                       EscapeForHtmlToString(entry.second->ToString())) << endl;
   }
   out << "</table>" << endl;
+  out << "<p>" << queue_state_.ToString() << "</p>" << endl;
 
   log_cache_.DumpToHtml(out);
 }
