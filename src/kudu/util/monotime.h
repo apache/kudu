@@ -162,7 +162,11 @@ class KUDU_EXPORT MonoDelta {
   static const int64_t kUninitialized;
 
   friend class MonoTime;
+
   friend MonoDelta operator-(const class MonoTime&, const class MonoTime&);
+  friend MonoDelta operator-(const MonoDelta&, const MonoDelta&);
+  friend MonoDelta operator+(const MonoDelta&, const MonoDelta&);
+
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
 
   explicit MonoDelta(int64_t delta);
@@ -356,6 +360,20 @@ bool KUDU_EXPORT operator>(const MonoDelta &lhs, const MonoDelta &rhs);
 /// @return @c true iff the time interval represented by @c lhs is longer
 ///   than or equal to the time interval represented by @c rhs.
 bool KUDU_EXPORT operator>=(const MonoDelta &lhs, const MonoDelta &rhs);
+
+/// @param [in] lhs
+///   A time interval for substraction: the left-hand operand.
+/// @param [in] rhs
+///   A time interval for substraction: the right-hand operand.
+/// @return A MonoDelta object representing the result time interval.
+MonoDelta KUDU_EXPORT operator-(const MonoDelta& lhs, const MonoDelta& rhs);
+
+/// @param [in] lhs
+///   A time interval for addition: the left-hand operand.
+/// @param [in] rhs
+///   A time interval for addition: the right-hand operand.
+/// @return A MonoDelta object representing the result time interval.
+MonoDelta KUDU_EXPORT operator+(const MonoDelta& lhs, const MonoDelta& rhs);
 ///@}
 
 /// @name Syntactic sugar: binary operators for MonoTime.

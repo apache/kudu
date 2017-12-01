@@ -296,6 +296,14 @@ bool operator>=(const MonoDelta &lhs, const MonoDelta &rhs) {
   return lhs.MoreThan(rhs) || lhs.Equals(rhs);
 }
 
+MonoDelta operator-(const MonoDelta &lhs, const MonoDelta &rhs) {
+  return MonoDelta(lhs.nano_delta_ - rhs.nano_delta_);
+}
+
+MonoDelta operator+(const MonoDelta &lhs, const MonoDelta &rhs) {
+  return MonoDelta(lhs.nano_delta_ + rhs.nano_delta_);
+}
+
 bool operator==(const MonoTime& lhs, const MonoTime& rhs) {
   return lhs.Equals(rhs);
 }

@@ -314,6 +314,61 @@ TEST(TestMonoTime, TestOperators) {
     EXPECT_TRUE(d21 >= d20);
   }
 
+  // MonoDelta operator-(const MonoDelta& lhs, const MonoDelta& rhs);
+  {
+    {
+      MonoDelta d0 = MonoDelta::FromNanoseconds(0);
+      MonoDelta d1 = MonoDelta::FromNanoseconds(1);
+      MonoDelta d01 = d0 - d1;
+      MonoDelta d10 = d1 - d0;
+      EXPECT_EQ(d1, d10);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(-1), d01);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(1), d10);
+      EXPECT_GT(d0, d01);
+      EXPECT_GT(d10, d0);
+      EXPECT_EQ(d1, d10);
+    }
+
+    {
+      MonoDelta d0 = MonoDelta::FromNanoseconds(2);
+      MonoDelta d1 = MonoDelta::FromNanoseconds(2);
+      MonoDelta d01 = d0 - d1;
+      MonoDelta d10 = d1 - d0;
+      EXPECT_EQ(d01, d10);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(0), d01);
+    }
+
+    {
+      MonoDelta d0 = MonoDelta::FromNanoseconds(3);
+      MonoDelta d1 = MonoDelta::FromNanoseconds(-3);
+      MonoDelta d01 = d0 - d1;
+      MonoDelta d10 = d1 - d0;
+      EXPECT_EQ(MonoDelta::FromNanoseconds(6), d01);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(-6), d10);
+    }
+  }
+
+  // MonoDelta operator+(const MonoDelta& lhs, const MonoDelta& rhs);
+  {
+    {
+      MonoDelta d0 = MonoDelta::FromNanoseconds(0);
+      MonoDelta d1 = MonoDelta::FromNanoseconds(1);
+      MonoDelta d01 = d0 + d1;
+      MonoDelta d10 = d1 + d0;
+      EXPECT_EQ(d01, d10);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(1), d01);
+    }
+
+    {
+      MonoDelta d0 = MonoDelta::FromNanoseconds(3);
+      MonoDelta d1 = MonoDelta::FromNanoseconds(-3);
+      MonoDelta d01 = d0 + d1;
+      MonoDelta d10 = d1 + d0;
+      EXPECT_EQ(d01, d10);
+      EXPECT_EQ(MonoDelta::FromNanoseconds(0), d01);
+    }
+  }
+
   // bool operator==(const MonoTime& lhs, const MonoTime& rhs);
   {
     MonoTime t0 = MonoTime::Now();
