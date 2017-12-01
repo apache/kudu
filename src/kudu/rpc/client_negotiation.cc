@@ -17,8 +17,8 @@
 
 #include "kudu/rpc/client_negotiation.h"
 
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -27,6 +27,8 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <gssapi/gssapi.h>
+#include <gssapi/gssapi_krb5.h>
 #include <sasl/sasl.h>
 
 #include "kudu/gutil/basictypes.h"
@@ -293,7 +295,7 @@ Status ClientNegotiation::InitSaslClient() {
           &callbacks_[0],               // Connection-specific callbacks.
           flags,
           &sasl_conn);
-    }), "Unable to create new SASL client");
+    }), Substitute("unable to create new SASL $0 client", sasl_proto_name_));
   sasl_conn_.reset(sasl_conn);
   return Status::OK();
 }
@@ -399,7 +401,7 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   DCHECK_EQ(negotiated_authn_, AuthenticationType::SASL);
 
   // Build a map of the SASL mechanisms offered by the server.
-  const set<SaslMechanism::Type>& client_mechs = helper_.EnabledMechs();
+  set<SaslMechanism::Type> client_mechs(helper_.EnabledMechs());
   set<SaslMechanism::Type> server_mechs;
   for (const NegotiatePB::SaslMechanism& sasl_mech : response.sasl_mechanisms()) {
     auto mech = SaslMechanism::value_of(sasl_mech.mechanism());
@@ -414,40 +416,50 @@ Status ClientNegotiation::HandleNegotiate(const NegotiatePB& response) {
   // The preference list in order of most to least preferred:
   //  * GSSAPI
   //  * PLAIN
-  set<SaslMechanism::Type> common_mechs = STLSetIntersection(client_mechs, server_mechs);
-
-  if (common_mechs.empty()) {
-    if (ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
-        !ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
-      return Status::NotAuthorized("server requires authentication, "
-                                   "but client does not have Kerberos enabled");
-    }
-    if (!ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
-        ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
-      return Status::NotAuthorized("client requires authentication, "
-                                   "but server does not have Kerberos enabled");
-    }
-    string msg = Substitute("client/server supported SASL mechanism mismatch; "
-                            "client mechanisms: [$0], server mechanisms: [$1]",
-                            JoinMapped(client_mechs, SaslMechanism::name_of, ", "),
-                            JoinMapped(server_mechs, SaslMechanism::name_of, ", "));
-
-    // For now, there should never be a SASL mechanism mismatch that isn't due
-    // to one of the sides requiring Kerberos and the other not having it, so
-    // lets sanity check that.
-    DLOG(FATAL) << msg;
-    return Status::NotAuthorized(msg);
-  }
-
+  //
   // TODO(KUDU-1921): allow the client to require authentication.
-  if (ContainsKey(common_mechs, SaslMechanism::GSSAPI)) {
-    negotiated_mech_ = SaslMechanism::GSSAPI;
-  } else {
-    DCHECK(ContainsKey(common_mechs, SaslMechanism::PLAIN));
-    negotiated_mech_ = SaslMechanism::PLAIN;
+  if (ContainsKey(client_mechs, SaslMechanism::GSSAPI) &&
+      ContainsKey(server_mechs, SaslMechanism::GSSAPI)) {
+
+    // Check that the client has local Kerberos credentials, and if not fall
+    // back to an alternate mechanism.
+    Status s = CheckGSSAPI();
+    if (s.ok()) {
+      negotiated_mech_ = SaslMechanism::GSSAPI;
+      return Status::OK();
+    }
+
+    TRACE("Kerberos authentication credentials are not available: $0", s.ToString());
+    client_mechs.erase(SaslMechanism::GSSAPI);
   }
 
-  return Status::OK();
+  if (ContainsKey(client_mechs, SaslMechanism::PLAIN) &&
+      ContainsKey(server_mechs, SaslMechanism::PLAIN)) {
+    negotiated_mech_ = SaslMechanism::PLAIN;
+    return Status::OK();
+  }
+
+  // There are no mechanisms in common.
+  if (ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
+      !ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
+    return Status::NotAuthorized("server requires authentication, "
+                                  "but client does not have Kerberos credentials available");
+  }
+  if (!ContainsKey(server_mechs, SaslMechanism::GSSAPI) &&
+      ContainsKey(client_mechs, SaslMechanism::GSSAPI)) {
+    return Status::NotAuthorized("client requires authentication, "
+                                  "but server does not have Kerberos enabled");
+  }
+  string msg = Substitute("client/server supported SASL mechanism mismatch; "
+                          "client mechanisms: [$0], server mechanisms: [$1]",
+                          JoinMapped(client_mechs, SaslMechanism::name_of, ", "),
+                          JoinMapped(server_mechs, SaslMechanism::name_of, ", "));
+
+  // For now, there should never be a SASL mechanism mismatch that isn't due
+  // to one of the sides requiring Kerberos and the other not having it, so
+  // lets sanity check that.
+  DCHECK(STLSetIntersection(client_mechs, server_mechs).empty()) << msg;
+  return Status::NotAuthorized(msg);
 }
 
 Status ClientNegotiation::SendTlsHandshake(string tls_token) {
@@ -768,6 +780,73 @@ int ClientNegotiation::SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecr
   }
 
   return SASL_OK;
+}
+
+namespace {
+// Retrieve the GSSAPI error description for an error code and type.
+string gss_error_description(OM_uint32 code, int type) {
+  string description;
+  OM_uint32 message_context = 0;
+
+  do {
+    if (!description.empty()) {
+      description.append(": ");
+    }
+    OM_uint32 minor = 0;
+    gss_buffer_desc buf;
+    gss_display_status(&minor, code, type, GSS_C_NULL_OID, &message_context, &buf);
+    description.append(static_cast<const char*>(buf.value), buf.length);
+    gss_release_buffer(&minor, &buf);
+  } while (message_context != 0);
+
+  return description;
+}
+
+// Transforms a GSSAPI major and minor error code into a Kudu Status.
+Status check_gss_error(OM_uint32 major, OM_uint32 minor) {
+    if (GSS_ERROR(major)) {
+      return Status::NotAuthorized(gss_error_description(major, GSS_C_GSS_CODE),
+                                   gss_error_description(minor, GSS_C_MECH_CODE));
+    }
+    return Status::OK();
+}
+} // anonymous namespace
+
+Status ClientNegotiation::CheckGSSAPI() {
+  OM_uint32 major, minor;
+  gss_cred_id_t cred = GSS_C_NO_CREDENTIAL;
+
+  // Acquire the Kerberos credential. This will fail if the client does not have
+  // a Kerberos tgt ticket. In theory it should be sufficient to call
+  // gss_inquire_cred_by_mech, but that causes a memory leak on RHEL 7.
+  major = gss_acquire_cred(&minor,
+                           GSS_C_NO_NAME,
+                           GSS_C_INDEFINITE,
+                           const_cast<gss_OID_set>(gss_mech_set_krb5),
+                           GSS_C_INITIATE,
+                           &cred,
+                           nullptr,
+                           nullptr);
+  Status s = check_gss_error(major, minor);
+
+  // Inspect the Kerberos credential to determine if it is expired. The lifetime
+  // returned from gss_acquire_cred in the RHEL 6 version of krb5 is always 0,
+  // so it has to be done with a separate call to gss_inquire_cred. The lifetime
+  // holds the remaining validity of the tgt in seconds.
+  OM_uint32 lifetime;
+  if (s.ok()) {
+    major = gss_inquire_cred(&minor, cred, nullptr, &lifetime, nullptr, nullptr);
+    s = check_gss_error(major, minor);
+  }
+
+  // Release the credential even if gss_inquire_cred fails.
+  gss_release_cred(&minor, &cred);
+  RETURN_NOT_OK(s);
+
+  if (lifetime == 0) {
+    return Status::NotAuthorized("Kerberos ticket expired");
+  }
+  return Status::OK();
 }
 
 } // namespace rpc

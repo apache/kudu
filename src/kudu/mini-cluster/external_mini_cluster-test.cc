@@ -197,10 +197,9 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     Status s = cluster.SetFlag(ts, "foo", "bar");
     // The error differs depending on the version of Kerberos, so we match
     // either message.
-    ASSERT_STR_MATCHES(s.ToString(), "Not authorized.*"
-                       "(Credentials cache file.*not found|"
-                        "No Kerberos credentials|"
-                        ".*No such file or directory)");
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "server requires authentication, "
+                        "but client does not have Kerberos credentials available");
   }
 
   // Verify that the HMS is reachable.

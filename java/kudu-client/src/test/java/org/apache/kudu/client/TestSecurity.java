@@ -53,8 +53,8 @@ public class TestSecurity extends BaseKuduTest {
         Assert.fail("should not have been able to connect to a secure cluster " +
             "with no credentials");
       } catch (NonRecoverableException e) {
-        Assert.assertTrue(e.getMessage().contains(
-            "Server requires Kerberos, but this client is not authenticated"));
+        Assert.assertTrue(e.getMessage().contains("server requires authentication, " +
+            "but client does not have Kerberos credentials available"));
       }
 
       // If we import the authentication data from the old authenticated client,

@@ -181,26 +181,38 @@ TEST_F(SecurityITest, SmokeTestAsAuthorizedUser) {
             s.ToString());
 }
 
-#ifndef __APPLE__
 // Test trying to access the cluster with no Kerberos credentials at all.
-// This test is ignored on macOS because the system Kerberos implementation
-// (Heimdal) caches the non-existence of client credentials, which causes
-// subsequent tests to fail.
 TEST_F(SecurityITest, TestNoKerberosCredentials) {
   ASSERT_OK(StartCluster());
   ASSERT_OK(cluster_->kdc()->Kdestroy());
 
   client::sp::shared_ptr<KuduClient> client;
   Status s = cluster_->CreateClient(nullptr, &client);
-  // The error message differs on el6 from newer krb5 implementations,
-  // so we'll check for either one.
   ASSERT_STR_MATCHES(s.ToString(),
                      "Not authorized: Could not connect to the cluster: "
                      "Client connection negotiation failed: client connection "
-                     "to .*: (No Kerberos credentials available|"
-                     "Credentials cache file.*not found)");
+                     "to .*: server requires authentication, "
+                     "but client does not have Kerberos credentials available");
 }
-#endif
+
+// Regression test for KUDU-2121. Set up a Kerberized cluster with optional
+// authentication. An un-Kerberized client should be able to connect with SASL
+// PLAIN authentication.
+TEST_F(SecurityITest, SaslPlainFallback) {
+  cluster_opts_.num_masters = 1;
+  cluster_opts_.num_tablet_servers = 0;
+  cluster_opts_.extra_master_flags.emplace_back("--rpc-authentication=optional");
+  cluster_opts_.extra_master_flags.emplace_back("--user-acl=*");
+  ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->kdc()->Kdestroy());
+
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  // Check client can successfully call ListTables().
+  vector<string> tables;
+  ASSERT_OK(client->ListTables(&tables));
+}
 
 // Test cluster access by a user who is not authorized as a client.
 TEST_F(SecurityITest, TestUnauthorizedClientKerberosCredentials) {

@@ -46,6 +46,7 @@ import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
+import javax.security.auth.kerberos.KerberosTicket;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
@@ -98,11 +99,14 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
           RpcHeader.RpcFeatureFlag.TLS);
 
   /**
-   * List of SASL mechanisms supported by the client, in descending priority order.
+   * Set of SASL mechanisms supported by the client, in descending priority order.
    * The client will pick the first of these mechanisms that is supported by
    * the server and also succeeds to initialize.
    */
-  private static final String[] PRIORITIZED_MECHS = new String[] { "GSSAPI", "PLAIN" };
+  private enum SaslMechanism {
+    GSSAPI,
+    PLAIN,
+  }
 
   static final int CONNECTION_CTX_CALL_ID = -3;
   static final int SASL_CALL_ID = -33;
@@ -131,7 +135,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   private SaslClient saslClient;
 
   /** The negotiated mechanism, set after NEGOTIATE stage. */
-  private String chosenMech;
+  private SaslMechanism chosenMech;
 
   /** The negotiated authentication type, set after NEGOTIATE state. */
   private AuthenticationTypePB.TypeCase chosenAuthnType;
@@ -343,31 +347,49 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private void chooseAndInitializeSaslMech(NegotiatePB response) throws NonRecoverableException {
     // Gather the set of server-supported mechanisms.
-    Set<String> serverMechs = Sets.newHashSet();
+    Map<String, String> errorsByMech = Maps.newHashMap();
+    Set<SaslMechanism> serverMechs = Sets.newHashSet();
     for (RpcHeader.NegotiatePB.SaslMechanism mech : response.getSaslMechanismsList()) {
-      serverMechs.add(mech.getMechanism());
+      switch (mech.getMechanism().toUpperCase()) {
+        case "GSSAPI":
+          serverMechs.add(SaslMechanism.GSSAPI);
+          break;
+        case "PLAIN":
+          serverMechs.add(SaslMechanism.PLAIN);
+          break;
+        default:
+          errorsByMech.put(mech.getMechanism(), "unrecognized mechanism");
+          break;
+      }
     }
 
     // For each of our own mechanisms, in descending priority, check if
     // the server also supports them. If so, try to initialize saslClient.
     // If we find a common mechanism that also can be successfully initialized,
     // choose that mech.
-    Map<String, String> errorsByMech = Maps.newHashMap();
-    for (String clientMech : PRIORITIZED_MECHS) {
+    for (SaslMechanism clientMech : SaslMechanism.values()) {
+
+      if (clientMech.equals(SaslMechanism.GSSAPI) &&
+          (securityContext.getSubject() == null ||
+           securityContext.getSubject().getPrivateCredentials(KerberosTicket.class).isEmpty())) {
+        errorsByMech.put(clientMech.name(), "Client does not have Kerberos credentials (tgt)");
+        continue;
+      }
+
       if (!serverMechs.contains(clientMech)) {
-        errorsByMech.put(clientMech, "not advertised by server");
+        errorsByMech.put(clientMech.name(), "not advertised by server");
         continue;
       }
       Map<String, String> props = Maps.newHashMap();
       // If the negotiated mechanism is GSSAPI (Kerberos), configure SASL to use
       // integrity protection so that the channel bindings and nonce can be
       // verified.
-      if ("GSSAPI".equals(clientMech)) {
+      if (clientMech == SaslMechanism.GSSAPI) {
         props.put(Sasl.QOP, "auth-int");
       }
 
       try {
-        saslClient = Sasl.createSaslClient(new String[]{ clientMech },
+        saslClient = Sasl.createSaslClient(new String[]{ clientMech.name() },
                                            null,
                                            "kudu",
                                            remoteHostname,
@@ -376,27 +398,28 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         chosenMech = clientMech;
         break;
       } catch (SaslException e) {
-        errorsByMech.put(clientMech, e.getMessage());
+        errorsByMech.put(clientMech.name(), e.getMessage());
       }
     }
 
     if (chosenMech != null) {
-      LOG.debug("SASL mechanism {} chosen for peer {}", chosenMech, remoteHostname);
+      LOG.debug("SASL mechanism {} chosen for peer {}", chosenMech.name(), remoteHostname);
       return;
     }
 
     // TODO(KUDU-1948): when the Java client has an option to require security, detect the case
     // where the server is configured without Kerberos and the client requires it.
     String message;
-    if (serverMechs.size() == 1 && serverMechs.contains("GSSAPI")) {
+    if (serverMechs.size() == 1 && serverMechs.contains(SaslMechanism.GSSAPI)) {
       // Give a better error diagnostic for common case of an unauthenticated client connecting
       // to a secure server.
-      message = "Server requires Kerberos, but this client is not authenticated (kinit)";
+      message = "server requires authentication, " +
+                "but client does not have Kerberos credentials available";
     } else {
-      message = "Unable to negotiate a matching mechanism. Errors: [" +
+      message = "client/server supported SASL mechanism mismatch: [" +
                 Joiner.on(", ").withKeyValueSeparator(": ").join(errorsByMech) + "]";
     }
-    throw new NonRecoverableException(Status.ConfigurationError(message));
+    throw new NonRecoverableException(Status.NotAuthorized(message));
   }
 
   private AuthenticationTypePB.TypeCase chooseAuthenticationType(NegotiatePB response) {
@@ -582,7 +605,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       builder.setToken(UnsafeByteOperations.unsafeWrap(initialResponse));
     }
     builder.setStep(RpcHeader.NegotiatePB.NegotiateStep.SASL_INITIATE);
-    builder.addSaslMechanismsBuilder().setMechanism(chosenMech);
+    builder.addSaslMechanismsBuilder().setMechanism(chosenMech.name());
     state = State.AWAIT_SASL;
     sendSaslMessage(chan, builder.build());
   }
@@ -625,7 +648,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   private void handleSuccessResponse(Channel chan, NegotiatePB response) throws IOException {
     Preconditions.checkState(saslClient.isComplete(),
                              "server sent SASL_SUCCESS step, but SASL negotiation is not complete");
-    if (chosenMech.equals("GSSAPI")) {
+    if (chosenMech == SaslMechanism.GSSAPI) {
       if (response.hasNonce()) {
         // Grab the nonce from the server, if it has sent one. We'll send it back
         // later with SASL integrity protection as part of the connection context.

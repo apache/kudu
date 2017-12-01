@@ -73,6 +73,7 @@ public class TestMiniKuduCluster {
 
   @Test(timeout = 50000)
   public void testKerberos() throws Exception {
+    FakeDNS.getInstance().install();
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
                                                       .numMasters(NUM_MASTERS)
                                                       .numTservers(NUM_TABLET_SERVERS)

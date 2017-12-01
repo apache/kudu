@@ -40,6 +40,7 @@ import org.apache.kudu.tools.Tool.DaemonInfoPB;
 import org.apache.kudu.tools.Tool.GetKDCEnvVarsRequestPB;
 import org.apache.kudu.tools.Tool.GetMastersRequestPB;
 import org.apache.kudu.tools.Tool.GetTServersRequestPB;
+import org.apache.kudu.tools.Tool.KdestroyRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
@@ -352,6 +353,15 @@ public class MiniKuduCluster implements AutoCloseable {
     for (HostAndPort hp : toRestart) {
       restartDeadTabletServerOnHostPort(hp);
     }
+  }
+
+  /**
+   * Removes all credentials for all principals from the KDC credential cache.
+   */
+  public void kdestroy() throws IOException {
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+                                              .setKdestroy(KdestroyRequestPB.getDefaultInstance())
+                                              .build());
   }
 
   /** {@override} */

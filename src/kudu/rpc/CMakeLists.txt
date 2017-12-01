@@ -76,6 +76,7 @@ set(KRPC_SRCS
 
 set(KRPC_LIBS
   cyrus_sasl
+  gssapi_krb5
   gutil
   kudu_util
   libev

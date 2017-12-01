@@ -140,6 +140,9 @@ message GetKDCEnvVarsResponsePB {
 // It is an error to call this on a non-Kerberized cluster.
 message GetKDCEnvVarsRequestPB {}
 
+// Removes all credentials for all principals from the KDC credential cache.
+message KdestroyRequestPB {};
+
 // Sent by the control shell in response to a control shell command request.
 message ControlShellResponsePB {
 
@@ -172,5 +175,6 @@ message ControlShellRequestPB {
     GetMastersRequestPB get_masters = 7;
     GetTServersRequestPB get_tservers = 8;
     GetKDCEnvVarsRequestPB get_kdc_env_vars = 9;
+    KdestroyRequestPB kdestroy = 10;
   }
 }

@@ -24,6 +24,7 @@
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/tls_socket.h"
@@ -255,14 +256,17 @@ string TlsHandshake::GetCipherDescription() const {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(has_started_);
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl_.get());
-  if (cipher == nullptr) {
+  if (!cipher) {
     return "NONE";
   }
   char buf[512];
-  const char* ret = SSL_CIPHER_description(cipher, buf, sizeof(buf));
-  if (ret == nullptr) {
+  const char* description = SSL_CIPHER_description(cipher, buf, sizeof(buf));
+  if (!description) {
     return "NONE";
   }
+  string ret(description);
+  StripTrailingNewline(&ret);
+  StripDupCharacters(&ret, ' ', 0);
   return ret;
 }
 

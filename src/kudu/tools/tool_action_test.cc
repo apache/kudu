@@ -270,6 +270,14 @@ Status ProcessRequest(const ControlShellRequestPB& req,
           env_vars.begin(), env_vars.end());
       break;
     }
+    case ControlShellRequestPB::kKdestroy:
+    {
+      if (!(*cluster)->kdc()) {
+        RETURN_NOT_OK(Status::NotFound("kdc not found"));
+      }
+      RETURN_NOT_OK((*cluster)->kdc()->Kdestroy());
+      break;
+    }
     default:
       RETURN_NOT_OK(Status::InvalidArgument("unknown cluster control request"));
   }

@@ -552,7 +552,7 @@ INSTANTIATE_TEST_CASE_P(NegotiationCombinations,
           },
           false,
           false,
-          Status::NotAuthorized(".*client does not have Kerberos enabled"),
+          Status::NotAuthorized(".*client does not have Kerberos credentials available"),
           Status::NetworkError(""),
           AuthenticationType::INVALID,
           SaslMechanism::INVALID,
@@ -1075,7 +1075,6 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
 #endif
                 }));
 
-
   // Create the server principal and keytab.
   string kt_path;
   ASSERT_OK(kdc.CreateServiceKeytab("kudu/127.0.0.1", &kt_path));
@@ -1094,10 +1093,9 @@ TEST_F(TestNegotiation, TestGSSAPIInvalidNegotiation) {
       std::bind(RunGSSAPINegotiationClient, std::placeholders::_1,
                 [](const Status& s, ClientNegotiation& client) {
                   CHECK(s.IsNotAuthorized());
-#ifndef KRB5_VERSION_LE_1_10
                   ASSERT_STR_MATCHES(s.ToString(),
-                                     "Not authorized: No Kerberos credentials available.*");
-#endif
+                                     "Not authorized: server requires authentication, "
+                                     "but client does not have Kerberos credentials available");
                 }));
 
   // Create and kinit as a client user.

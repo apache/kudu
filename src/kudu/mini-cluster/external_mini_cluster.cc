@@ -174,6 +174,7 @@ Status ExternalMiniCluster::Start() {
 
     RETURN_NOT_OK_PREPEND(kdc_->Kinit("test-admin"),
                           "could not kinit as admin");
+
     RETURN_NOT_OK_PREPEND(kdc_->SetKrb5Environment(),
                           "could not set krb5 client env");
   }
@@ -690,11 +691,17 @@ Status ExternalDaemon::EnableKerberos(MiniKdc* kdc, const string& bind_host) {
   RETURN_NOT_OK_PREPEND(kdc->CreateServiceKeytab(spn, &ktpath),
                         "could not create keytab");
   extra_env_ = kdc->GetEnvVars();
-  opts_.extra_flags.push_back(Substitute("--keytab_file=$0", ktpath));
-  opts_.extra_flags.push_back(Substitute("--principal=$0", spn));
-  opts_.extra_flags.emplace_back("--rpc_authentication=required");
-  opts_.extra_flags.emplace_back("--superuser_acl=test-admin");
-  opts_.extra_flags.emplace_back("--user_acl=test-user");
+
+  // Insert Kerberos flags at the front of extra_flags, so that user specified
+  // flags will override them.
+  opts_.extra_flags.insert(opts_.extra_flags.begin(), {
+    Substitute("--keytab_file=$0", ktpath),
+    Substitute("--principal=$0", spn),
+    "--rpc_authentication=required",
+    "--superuser_acl=test-admin",
+    "--user_acl=test-user",
+  });
+
   return Status::OK();
 }
 

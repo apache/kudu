@@ -139,6 +139,9 @@ class ClientNegotiation {
   // SASL callback for SASL_CB_PASS
   int SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecret);
 
+  // Check that GSSAPI/Kerberos credentials are available.
+  static Status CheckGSSAPI() WARN_UNUSED_RESULT;
+
  private:
 
   // Encode and send the specified negotiate request message to the server.

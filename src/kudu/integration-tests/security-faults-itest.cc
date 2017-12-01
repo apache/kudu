@@ -229,28 +229,12 @@ TEST_F(SecurityComponentsFaultsITest, KdcRestartsInTheMiddle) {
   // Wait for Kerberos tickets to expire.
   SleepFor(MonoDelta::FromSeconds(krb_lifetime_seconds_));
 
-#ifndef __APPLE__
-  // For some reason (may be caching negative responses?), calling this on OS X
-  // causes the next call to SmokeTestCluster() fail. Not sure that's expected
-  // or correct, so disabling this for OS X until it's clarified.
-
-  // It seems different version of krb5 library handles the error differently:
-  // in some cases, the error is about ticket expiration, in other -- failure
-  // to contact KDC.
-  //
-  // Also, different versions of krb5 library have different error messages
-  // for the same error.
   const Status s = SmokeTestCluster();
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_MATCHES(s.ToString(),
       "Not authorized: Could not connect to the cluster: "
-      "Client connection negotiation failed: client connection to .* ("
-      "Cannot contact any KDC for realm .*|"
-      "Ticket expired.*|"
-      "GSSAPI Error:  The context has expire.*|"
-      "GSSAPI Error: The referenced context has expired .*|"
-      "GSSAPI Error: The referenced credential has expired .*)");
-#endif
+      "Client connection negotiation failed: client connection to .*: "
+      "server requires authentication, but client does not have Kerberos credentials available");
 
   ASSERT_OK(cluster_->kdc()->Start());
 
