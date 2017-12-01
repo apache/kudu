@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -31,7 +32,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -326,14 +326,21 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
 
 void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(InstabilityType type) {
   if (!AllowSlowTests()) {
-    LOG(INFO) << "Skipping test in fast-test mode.";
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
   }
 
-  MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> ts_flags = { "--enable_leader_failure_detection=false",
-                              "--follower_unavailable_considered_failed_sec=5" };
-  vector<string> master_flags = { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false" };
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  const int kUnavailableSec = 3;
+  const int kConsensusRpcTimeoutSec = 2;
+  const vector<string> ts_flags = {
+    "--enable_leader_failure_detection=false",
+    Substitute("--follower_unavailable_considered_failed_sec=$0", kUnavailableSec),
+    Substitute("--consensus_rpc_timeout_ms=$0", kConsensusRpcTimeoutSec * 1000)
+  };
+  const vector<string> master_flags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+  };
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
@@ -346,18 +353,21 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(Instabilit
 
   // Figure out the tablet id of the created tablet.
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(itest::WaitForNumTabletsOnTS(leader_ts, 1, timeout, &tablets));
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(leader_ts, 1, kTimeout, &tablets));
   string tablet_id = tablets[0].tablet_status().tablet_id();
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
-                                            tablet_id, timeout));
+                                            tablet_id, kTimeout));
   }
 
   // Elect a leader (TS 0)
-  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
-  ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, kTimeout));
+  ASSERT_OK(itest::WaitForServersToAgree(kTimeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
+
+  consensus::ConsensusStatePB cstate_initial;
+  ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate_initial));
 
   // Shut down both followers and wait for enough time that the leader thinks they are
   // unresponsive. It should not trigger a config change to evict either one.
@@ -372,16 +382,52 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(Instabilit
       break;
   }
 
-  SleepFor(MonoDelta::FromSeconds(10));
-  consensus::ConsensusStatePB cstate;
-  ASSERT_OK(GetConsensusState(leader_ts, tablet_id, MonoDelta::FromSeconds(10), &cstate));
-  SCOPED_TRACE(cstate.DebugString());
-  ASSERT_FALSE(cstate.has_pending_config())
-      << "Leader should not have issued any config change";
+  // Sleep to make sure the leader replica recognized the stopped/shutdown
+  // followers as unresponsive according to
+  // --follower_unavailable_considered_failed_sec. Since unreachable peers
+  // are not considered viable per PeerMessageQueue::SafeToEvictUnlocked(),
+  // which makes that calculation based on --consensus_rpc_timeout_ms, we also
+  // wait until that timeout expires to proceed. This ensures that later, when
+  // we resume a follower, the leader does not consider itself unreachable,
+  // which was a bug that we had (KUDU-2230) and that this test also serves as
+  // a regression test for.
+  auto min_sleep_required_sec = std::max(kUnavailableSec, kConsensusRpcTimeoutSec);
+  SleepFor(MonoDelta::FromSeconds(2 * min_sleep_required_sec));
+
+  {
+    consensus::ConsensusStatePB cstate;
+    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate));
+    SCOPED_TRACE(cstate.DebugString());
+    ASSERT_FALSE(cstate.has_pending_config())
+        << "Leader should not have issued any config change";
+    ASSERT_EQ(cstate_initial.committed_config().opid_index(),
+              cstate.committed_config().opid_index())
+        << "Leader should not have issued any config change";
+  }
+
+  switch (type) {
+    case NODE_DOWN:
+      ASSERT_OK(cluster_->tablet_server(kFollower1Index)->Restart());
+      break;
+    case NODE_STOPPED:
+      ASSERT_OK(cluster_->tablet_server(kFollower1Index)->Resume());
+      break;
+  }
+
+  // At this point the majority of voters is back online, so the leader should
+  // evict the failed replica, resulting in Raft configuration update.
+  ASSERT_EVENTUALLY([&] {
+    consensus::ConsensusStatePB cstate;
+    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate));
+    ASSERT_GT(cstate.committed_config().opid_index(),
+              cstate_initial.committed_config().opid_index())
+        << "Leader should have issued config change to evict failed follower;"
+        << " the consensus state is: " << cstate.DebugString();
+  });
 }
 
-// Regression test for KUDU-2048. If a majority of followers are unresponsive, the
-// leader should not evict any of them.
+// Regression test for KUDU-2048 and KUDU-2230. If a majority of followers are
+// unresponsive, the leader should not evict any of them.
 TEST_F(TabletReplacementITest, TestDontEvictIfRemainingConfigIsUnstable_NodesDown) {
   TestDontEvictIfRemainingConfigIsUnstable(NODE_DOWN);
 }

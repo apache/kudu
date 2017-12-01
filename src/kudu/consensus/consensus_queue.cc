@@ -401,6 +401,7 @@ OpId PeerMessageQueue::GetNextOpId() const {
 
 bool PeerMessageQueue::SafeToEvictUnlocked(const string& evict_uuid) const {
   DCHECK(queue_lock_.is_locked());
+  DCHECK_EQ(LEADER, queue_state_.mode);
   auto now = MonoTime::Now();
 
   int remaining_voters = 0;
@@ -418,24 +419,26 @@ bool PeerMessageQueue::SafeToEvictUnlocked(const string& evict_uuid) const {
     remaining_voters++;
 
     bool viable = true;
+    // Being alive, the local peer itself (the leader) is always a viable
+    // voter: the criteria below apply only to non-local peers.
+    if (uuid != local_peer_pb_.permanent_uuid()) {
+      // Only consider a peer to be a viable voter if...
+      // ...its last exchange was successful
+      viable &= peer->last_exchange_status == PeerStatus::OK;
 
-    // Only consider a peer to be a viable voter if...
-    // ...its last exchange was successful
-    viable &= peer->last_exchange_status == PeerStatus::OK;
+      // ...the peer is up to date with the latest majority.
+      //
+      //    This indicates that it's actively participating in majorities and likely to
+      //    replicate a config change immediately when we propose it.
+      viable &= peer->last_received.index() >= queue_state_.majority_replicated_index;
 
-    // ...the peer is up to date with the latest majority.
-    //
-    //    This indicates that it's actively participating in majorities and likely to
-    //    replicate a config change immediately when we propose it.
-    viable &= peer->last_received.index() >= queue_state_.majority_replicated_index;
-
-    // ...we have communicated successfully with it recently.
-    //
-    //    This handles the case where the tablet has had no recent writes and therefore
-    //    even a replica that is down would have participated in the latest majority.
-    auto unreachable_time = now - peer->last_communication_time;
-    viable &= unreachable_time.ToMilliseconds() < FLAGS_consensus_rpc_timeout_ms;
-
+      // ...we have communicated successfully with it recently.
+      //
+      //    This handles the case where the tablet has had no recent writes and therefore
+      //    even a replica that is down would have participated in the latest majority.
+      auto unreachable_time = now - peer->last_communication_time;
+      viable &= unreachable_time.ToMilliseconds() < FLAGS_consensus_rpc_timeout_ms;
+    }
     if (viable) {
       remaining_viable_voters++;
     }
