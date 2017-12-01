@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -356,6 +357,32 @@ TEST_F(TabletServerTest, TestWebPages) {
   // only exists on Linux.
   ASSERT_STR_CONTAINS(buf.ToString(), "tablet_server-test");
 #endif
+}
+
+// Test that tablets that get failed and deleted will eventually show up as
+// failed tombstones on the web UI.
+TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
+  scoped_refptr<TabletReplica> replica;
+  TSTabletManager* tablet_manager = mini_server_->server()->tablet_manager();
+  ASSERT_TRUE(tablet_manager->LookupTablet(kTabletId, &replica));
+  replica->SetError(Status::IOError("This error will leave the replica FAILED state at shutdown"));
+  replica->Shutdown();
+  ASSERT_EQ(tablet::FAILED, replica->state());
+
+  // Now delete the tablet and leave it tombstoned, e.g. as if the failed
+  // replica were deleted.
+  TabletServerErrorPB::Code error_code;
+  ASSERT_OK(tablet_manager->DeleteTablet(kTabletId,
+      tablet::TABLET_DATA_TOMBSTONED, boost::none, &error_code));
+
+  EasyCurl c;
+  faststring buf;
+  const string addr = mini_server_->bound_http_addr().ToString();
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr), &buf));
+
+  // Ensure the html contains the "Tombstoned Tablets" header, indicating the
+  // failed tombstone is correctly displayed as a tombstone.
+  ASSERT_STR_CONTAINS(buf.ToString(), "Tombstoned Tablets");
 }
 
 class TabletServerDiskFailureTest : public TabletServerTestBase {

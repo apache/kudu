@@ -305,7 +305,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
   vector<scoped_refptr<TabletReplica>> live_replicas;
   vector<scoped_refptr<TabletReplica>> tombstoned_replicas;
   for (const scoped_refptr<TabletReplica>& replica : replicas) {
-    if (replica->HumanReadableState() != "TABLET_DATA_TOMBSTONED") {
+    if (replica->HumanReadableState().find("TABLET_DATA_TOMBSTONED") == string::npos) {
       live_replicas.push_back(replica);
     } else {
       tombstoned_replicas.push_back(replica);
