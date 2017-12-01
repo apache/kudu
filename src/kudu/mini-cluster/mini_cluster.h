@@ -129,6 +129,10 @@ class MiniCluster {
 
   virtual std::vector<HostPort> master_rpc_addrs() const = 0;
 
+  // Return the index of the tablet server that has the given 'uuid', or
+  // -1 if no such UUID can be found.
+  virtual int tablet_server_index_by_uuid(const std::string& uuid) const = 0;
+
   // Create a client configured to talk to this cluster. 'builder' may contain
   // override options for the client. The master address will be overridden to
   // talk to the running master(s). If 'builder' is a nullptr, default options

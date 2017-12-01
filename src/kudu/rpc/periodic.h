@@ -127,7 +127,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // otherwise the task is not guaranteed to run in a timely manner.
   //
   // Note: Snooze() is not additive. That is, if called at time X and again at
-  // time X + P/2, the timer is snoozed until X+P/2, not X+2P.
+  // time X + P/2, the timer is snoozed until X+P/2+P, not X+2P.
   //
   // Does nothing if the timer is stopped.
   void Snooze(boost::optional<MonoDelta> next_task_delta = boost::none);
@@ -140,6 +140,9 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   //
   // Does nothing if the timer is already stopped.
   void Stop();
+
+  // Returns true iff the failure detected has been started.
+  bool started() const;
 
  private:
   FRIEND_TEST(PeriodicTimerTest, TestCallbackRestartsTimer);
