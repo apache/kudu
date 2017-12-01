@@ -16,7 +16,7 @@
 // under the License.
 
 [[kudu_impala]]
-= Using Apache Kudu with Apache Impala (incubating)
+= Using Apache Kudu with Apache Impala
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
@@ -27,7 +27,7 @@
 :sectlinks:
 :experimental:
 
-Kudu has tight integration with Apache Impala (incubating), allowing you to use Impala
+Kudu has tight integration with Apache Impala, allowing you to use Impala
 to insert, query, update, and delete data from Kudu tablets using Impala's SQL
 syntax, as an alternative to using the link:installation.html#view_api[Kudu APIs]
 to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
