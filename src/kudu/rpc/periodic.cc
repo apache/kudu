@@ -117,6 +117,11 @@ void PeriodicTimer::SnoozeUnlocked(boost::optional<MonoDelta> next_task_delta) {
   next_task_time_ = MonoTime::Now() + *next_task_delta;
 }
 
+bool PeriodicTimer::started() const {
+  std::lock_guard<simple_spinlock> l(lock_);
+  return started_;
+}
+
 MonoDelta PeriodicTimer::GetMinimumPeriod() {
   // Given jitter percentage J and period P, this returns (1-J)*P, which is
   // the lowest possible jittered value.

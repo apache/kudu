@@ -230,6 +230,24 @@ MiniTabletServer* InternalMiniCluster::mini_tablet_server(int idx) const {
   return mini_tablet_servers_[idx].get();
 }
 
+MiniTabletServer* InternalMiniCluster::mini_tablet_server_by_uuid(const string& uuid) const {
+  for (const auto& ts : mini_tablet_servers_) {
+    if (ts->uuid() == uuid) {
+      return ts.get();
+    }
+  }
+  return nullptr;
+}
+
+int InternalMiniCluster::tablet_server_index_by_uuid(const std::string& uuid) const {
+  for (int i = 0; i < mini_tablet_servers_.size(); i++) {
+    if (mini_tablet_servers_[i]->uuid() == uuid) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 vector<HostPort> InternalMiniCluster::master_rpc_addrs() const {
   if (opts_.num_masters == 1) {
     const auto& addr = CHECK_NOTNULL(mini_master(0))->bound_rpc_addr();

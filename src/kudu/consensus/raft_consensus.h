@@ -158,6 +158,11 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Returns Status::TimedOut if the role is not LEADER within 'timeout'.
   Status WaitUntilLeaderForTests(const MonoDelta& timeout);
 
+  // Return a copy of the failure detector instance. Only for use in tests.
+  std::shared_ptr<rpc::PeriodicTimer> GetFailureDetectorForTests() const {
+    return failure_detector_;
+  }
+
   // Implement a LeaderStepDown() request.
   Status StepDown(LeaderStepDownResponsePB* resp);
 
@@ -582,13 +587,15 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If the failure detector is already disabled, has no effect.
   void DisableFailureDetector();
 
-  // Disable leader failure detector if transitioning from VOTER to NON_VOTER,
-  // and vice versa. The decision is based on the type of membership of the
-  // peer in the active Raft configuration.
+  // Enables or disables the failure detector based on the role of the local
+  // peer in the active config. If the local peer a VOTER, but not the leader,
+  // then failure detection will be enabled. If the local peer is the leader,
+  // or a NON_VOTER, then failure detection will be disabled.
   //
-  // If it's time to enable the leader failure detection, the specified
-  // 'delta' value is used as described in EnableFailureDetector()'s comment.
-  void ToggleFailureDetector(boost::optional<MonoDelta> delta = boost::none);
+  // See EnableFailureDetector() for an explanation of the 'delta' parameter,
+  // which is used if it is determined that the failure detector should be
+  // enabled.
+  void UpdateFailureDetectorState(boost::optional<MonoDelta> delta = boost::none);
 
   // "Reset" the failure detector to indicate leader activity.
   //

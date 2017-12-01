@@ -599,7 +599,7 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
 
   // Enable/disable leader failure detection if becoming VOTER/NON_VOTER replica
   // correspondingly.
-  ToggleFailureDetector(std::move(fd_delta));
+  UpdateFailureDetectorState(std::move(fd_delta));
 
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();
@@ -2610,7 +2610,7 @@ void RaftConsensus::CompleteConfigChangeRoundUnlocked(ConsensusRound* round, con
 
       // Disable leader failure detection if transitioning from VOTER to
       // NON_VOTER and vice versa.
-      ToggleFailureDetector();
+      UpdateFailureDetectorState();
     } else {
       LOG_WITH_PREFIX_UNLOCKED(INFO)
           << "Skipping abort of non-pending config change with OpId "
@@ -2670,14 +2670,15 @@ void RaftConsensus::DisableFailureDetector() {
   }
 }
 
-void RaftConsensus::ToggleFailureDetector(boost::optional<MonoDelta> delta) {
-  if (IsRaftConfigVoter(peer_uuid(), cmeta_->ActiveConfig())) {
-    // A non-leader voter replica should run failure detector.
+void RaftConsensus::UpdateFailureDetectorState(boost::optional<MonoDelta> delta) {
+  const auto& uuid = peer_uuid();
+  if (uuid != cmeta_->leader_uuid() &&
+      cmeta_->IsVoterInConfig(uuid, ACTIVE_CONFIG)) {
+    // A voter that is not the leader should run the failure detector.
     EnableFailureDetector(std::move(delta));
   } else {
-    // A non-voter should not start leader elections. The leader failure
-    // detector should be re-enabled once the non-voter replica is promoted
-    // to voter replica.
+    // Otherwise, the local peer should not start leader elections
+    // (e.g. if it is the leader, a non-voter, a non-participant, etc).
     DisableFailureDetector();
   }
 }
@@ -2805,9 +2806,7 @@ Status RaftConsensus::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   }
   cmeta_->set_pending_config(new_config);
 
-  // Disable leader failure detection if transitioning from VOTER to NON_VOTER
-  // and vice versa.
-  ToggleFailureDetector();
+  UpdateFailureDetectorState();
 
   return Status::OK();
 }
