@@ -69,6 +69,11 @@ TEST_F(RaftConsensusFailureDetectorIMCTest, TestFailureDetectorActivation) {
   NO_FATALS(StartCluster(/*num_tablet_servers=*/ kNumReplicas + 1));
   TestWorkload workload(cluster_.get());
   workload.Setup();
+  workload.Start();
+  while (workload.batches_completed() < 10) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
 
   // Identify the tablet id and locate the replicas.
   string tablet_id;
@@ -94,17 +99,6 @@ TEST_F(RaftConsensusFailureDetectorIMCTest, TestFailureDetectorActivation) {
     ASSERT_EQ(kNumReplicas, replica_map_.count(tablet_id));
     ASSERT_FALSE(tablet_id.empty());
   });
-
-  // Wait until tablets are running.
-  auto range = replica_map_.equal_range(tablet_id);
-  for (auto it = range.first; it != range.second; ++it) {
-    auto ts = it->second;
-    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id, kTimeout));
-  }
-  // Elect a leader.
-  string leader_uuid = range.first->second->uuid();
-  ASSERT_OK(StartElection(ts_map_[leader_uuid], tablet_id, kTimeout));
-  ASSERT_OK(WaitUntilLeader(ts_map_[leader_uuid], tablet_id, kTimeout));
 
   auto active_ts_map = ts_map_;
   ASSERT_EQ(1, active_ts_map.erase(missing_replica_uuid));
@@ -132,9 +126,13 @@ TEST_F(RaftConsensusFailureDetectorIMCTest, TestFailureDetectorActivation) {
   NO_FATALS(validate_failure_detector_status(active_ts_map));
 
   // Add a new non-voter.
-  ASSERT_OK(AddServer(ts_map_[leader_uuid], tablet_id,
-                      ts_map_[missing_replica_uuid],
-                      RaftPeerPB::NON_VOTER, kTimeout));
+  ASSERT_EVENTUALLY([&] {
+    itest::TServerDetails* leader;
+    ASSERT_OK(FindTabletLeader(active_ts_map, tablet_id, kTimeout, &leader));
+    ASSERT_OK(AddServer(leader, tablet_id,
+                        ts_map_[missing_replica_uuid],
+                        RaftPeerPB::NON_VOTER, kTimeout));
+  });
   ASSERT_OK(WaitForServersToAgree(kTimeout, ts_map_, tablet_id,
                                   /*minimum_index=*/ 2));
 
