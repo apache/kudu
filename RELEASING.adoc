@@ -39,7 +39,7 @@ in `master`.
 ----
   git checkout master
   git pull
-  git checkout -b branch-0.9.x
+  git checkout -b branch-1.x.y
 ----
 
 . Make a note of the SHA1 for the tip of the new branch, which is the first
@@ -54,15 +54,28 @@ http://git-wip-us.apache.org/repos/asf?p=kudu.git. The following example
 assumes they are called `cloudera` and `apache`.
 +
 ----
-  git push cloudera branch-0.9.x
-  git push apache branch-0.9.x
+  git push cloudera branch-1.x.y
+  git push apache branch-1.x.y
 ----
 
 . Create a new branch on Gerrit. Go to
 http://gerrit.cloudera.org:8080/#/admin/projects/kudu,branches and create a new
 branch with the same name and the previously-noted SHA1.
 
-. Notify Todd to fix the mirroring. He will know what that means.
+. Ask someone with permissions to fix the gerrit.cloudera.org mirroring
+  configuration. Cloudera hosts the Gerrit server and a Cloudera employee will
+  have to perform this step because SSH access is behind a firewall. The steps
+  are as follows:
+  1. Ensure your public SSH key is in `~gerrit/.ssh/authorized_keys` on gerrit.cloudera.org
+  2. From behind the firewall, `ssh gerrit@gerrit.cloudera.org` to log in.
+  3. Back up the existing replication configuration file by executing
+     `cp etc/replication.config etc/replication.config.bak.\`date '+%Y%m%d.%H%M%S'\``
+  4. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
+  5. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
+     dev@impala.apache.org) indicating that you are going to restart Gerrit
+     (link:https://s.apache.org/2Wj7[example]). It is best to do the restart at
+     some time of day when you don't expect many people to be using the system,
+     since Gerrit can take a few minutes to restart.
 
 . As needed, patches can be cherry-picked to the new branch.
 
@@ -74,7 +87,7 @@ branch with the same name and the previously-noted SHA1.
 +
 ----
   cd java
-  mvn versions:set -DnewVersion=0.X.0-SNAPSHOT
+  mvn versions:set -DnewVersion=1.x.y-SNAPSHOT
 ----
 
 . Update the version in `java/gradle.properties`.
@@ -97,6 +110,43 @@ branch with the same name and the previously-noted SHA1.
 ----
 
 . Fix any issues it finds, such as RAT.
+
+. Add the following information to your `~/.m2/settings.xml` file in order to
+  be able to deploy artifacts to the ASF Maven repository:
++
+----
+<settings>
+  <servers>
+    <server>
+      <id>apache.snapshots.https</id>
+      <username> <!-- YOUR APACHE LDAP USERNAME --> </username>
+      <password> <!-- YOUR APACHE LDAP PASSWORD (encrypted) --> </password>
+    </server>
+    <!-- To stage a release of some part of Maven -->
+    <server>
+      <id>apache.releases.https</id>
+      <username> <!-- YOUR APACHE LDAP USERNAME --> </username>
+      <password> <!-- YOUR APACHE LDAP PASSWORD (encrypted) --> </password>
+    </server>
+  </servers>
+</settings>
+----
++
+If you don't want to keep your ASF password in plaintext on your local machine,
+you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt it].
+
+. Test the full Java build. This will sign and build everything without
+  deploying any artifacts:
++
+----
+  # Run a gpg-agent if you don't normally. You may have to tweak it to get it
+  # to work with Maven, and this StackOverflow article might help:
+  # https://stackoverflow.com/questions/36506275/why-do-i-have-to-kill-gpg-agent-to-sign-my-commits
+  gpg-agent --daemon
+  cd java
+  mvn -DskipTests -Papache-release clean install
+----
++
 
 . Create a new version update commit which removes the -SNAPSHOT suffix (same
   process as above).
@@ -124,10 +174,10 @@ branch with the same name and the previously-noted SHA1.
   # Run a gpg-agent if you don't normally
   gpg-agent --daemon
   cd java
-  mvn -DskipTests clean -Papache-release clean deploy
+  mvn -DskipTests -Papache-release clean deploy
 ----
 +
-Go to the link:https://repository.apache.org/#stagingRepositories[staging repository]
+Go to the link:https://repository.apache.org/\#stagingRepositories[staging repository]
 and look for ‘orgapachekudu-####’ in the staging repositories list. You can
 check the ‘content’ tab at the bottom to make sure you have all of the expected
 stuff (client, various integrations, both versions of Spark) Hit the checkbox
@@ -135,6 +185,15 @@ next to your new staging repo and hit “close”. Enter “Apache Kudu 1.1.0-RC
 whatever into that box. Wait a minute or two and hit refresh, and your staging
 repo should now have a URL shown in its summary tab (eg
 `https://repository.apache.org/content/repositories/orgapachekudu-1005`)
+
+. Add your PGP key to the KEYS file:
++
+----
+svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
+cd kudu-dist-release
+(gpg --list-sigs <your-email-address> && gpg --armor --export <your-email-address>) >> KEYS
+svn commit -m "Adding my key to the KEYS file"
+----
 
 == Initiating a Vote for an RC
 
@@ -160,18 +219,18 @@ repo should now have a URL shown in its summary tab (eg
 +
 ----
   cd kudu
-  mkdir 0.9.2
-  cp <path_to_rc_artifacts>/* 0.9.2
-  svn add 0.9.2
-  svn commit -m "Adding files for Kudu 0.9.2 RC"
+  mkdir 1.x.y
+  cp <path_to_rc_artifacts>/* 1.x.y
+  svn add 1.x.y
+  svn commit -m "Adding files for Kudu 1.x.y RC"
 ----
 
 . In the Kudu git repo, create a signed tag from the RC’s tag, and push it to the
 Apache Git repository:
 +
 ----
-  git tag -s 0.9.2 -m 'Release Apache Kudu 0.9.2' 0.9.2-RC1
-  git push apache 0.9.2-RC1
+  git tag -s 1.x.y -m 'Release Apache Kudu 1.x.y' 1.x.y-RC1
+  git push apache 1.x.y-RC1
 ----
 
 . Release the staged Java artifacts. Select the release candidate staging
@@ -196,10 +255,10 @@ Apache Git repository:
 . About 24 hours after the first step was completed, send an email to
   user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org
   to announce the release. The email should be similar to
-  link:http://mail-archives.us.apache.org/mod_mbox/www-announce/201606.mbox/%3CCAGpTDNeHW53US=qdpQPCQk0WaFBxx_KNx1E9b6NBBnbWpkSpmQ@mail.gmail.com%3E[this].
+  link:https://s.apache.org/pduz[this].
 
 . About another 24 hours later, delete the previous minor version in the branch
   you released from, from SVN. For example, if you released 1.2.1, delete `1.2.0`.
 
 . Update the version number on the branch you released from back to a SNAPSHOT
-  for the next patch release, such as `0.9.2-SNAPSHOT` after the `0.9.1` release.
+  for the next patch release, such as `1.6.1-SNAPSHOT` after the `1.6.0` release.
