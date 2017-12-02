@@ -268,7 +268,7 @@
                     <name>User API</name>
                     <description>The Kudu Application Programmer's API</description>
                     <excludePackageNames>
-                        com.google:org.apache.kudu.cfile:org.apache.kudu.consensus:org.apache.kudu.log:org.apache.kudu.master:org.apache.kudu.rpc:org.apache.kudu.server:org.apache.kudu.tablet:org.apache.kudu.tserver
+                      com.google:org.apache.kudu.cfile:org.apache.kudu.consensus:org.apache.kudu.log:org.apache.kudu.master:org.apache.kudu.rpc:org.apache.kudu.server:org.apache.kudu.tablet:org.apache.kudu.tserver:org.apache.kudu.hive
                     </excludePackageNames>
                     <includeDependencySources>false</includeDependencySources>
                 </configuration>
