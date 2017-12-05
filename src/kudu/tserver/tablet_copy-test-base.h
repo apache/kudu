@@ -46,7 +46,7 @@ class TabletCopyTest : public TabletServerTestBase {
     // Create a tablet server with multiple data dirs. In most cases, this is
     // unimportant, but in some cases can be helpful to test multi-disk
     // behavior and disk failures.
-    NO_FATALS(StartTabletServer(/* num_data_dirs */ 3));
+    NO_FATALS(StartTabletServer(kNumDataDirs));
     // Prevent logs from being deleted out from under us until / unless we want
     // to test that we are anchoring correctly. Since GenerateTestData() does a
     // Flush(), Log GC is allowed to eat the logs before we get around to
@@ -62,6 +62,9 @@ class TabletCopyTest : public TabletServerTestBase {
   }
 
  protected:
+  // Number of data directories on the copying server.
+  const int kNumDataDirs = 3;
+
   // Grab the first column block we find in the SuperBlock.
   static BlockId FirstColumnBlockId(const tablet::TabletSuperBlockPB& superblock) {
     DCHECK_GT(superblock.rowsets_size(), 0);

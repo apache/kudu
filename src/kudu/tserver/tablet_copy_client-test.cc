@@ -84,6 +84,7 @@ using consensus::RaftPeerPB;
 using fs::DataDirManager;
 using std::tuple;
 using std::unique_ptr;
+using strings::Substitute;
 using tablet::TabletMetadata;
 
 class TabletCopyClientTest : public TabletCopyTest {
@@ -96,8 +97,9 @@ class TabletCopyClientTest : public TabletCopyTest {
     const string kTestDataDirPrefix = GetTestPath("client_tablet_data");
     FsManagerOpts opts;
     opts.wal_root = kTestWalDir;
-    opts.data_roots.emplace_back(kTestDataDirPrefix + "A");
-    opts.data_roots.emplace_back(kTestDataDirPrefix + "B");
+    for (int dir = 0; dir < kNumDataDirs; dir++) {
+      opts.data_roots.emplace_back(Substitute("$0-$1", kTestDataDirPrefix, dir));
+    }
 
     metric_entity_ = METRIC_ENTITY_server.Instantiate(&metric_registry_, "test");
     opts.metric_entity = metric_entity_;
@@ -147,7 +149,7 @@ Status TabletCopyClientTest::CompareFileContents(const string& path1, const stri
   RETURN_NOT_OK(file2->Size(&size2));
   if (size1 != size2) {
     return Status::Corruption("Sizes of files don't match",
-                              strings::Substitute("$0 vs $1 bytes", size1, size2));
+                              Substitute("$0 vs $1 bytes", size1, size2));
   }
 
   faststring scratch1, scratch2;
@@ -259,11 +261,15 @@ TEST_F(TabletCopyClientTest, TestDownloadAllBlocks) {
   ASSERT_OK(client_->transaction_->CommitCreatedBlocks());
 
   // Verify the disk synchronization count.
+  // TODO(awong): These values have been determined to be safe empirically.
+  // If kNumDataDirs changes, these values may also change. The point of this
+  // test is to exemplify the difference in syncs between the log and file
+  // block managers, but it would be nice to formulate a bound here.
   if (FLAGS_block_manager == "log") {
-    ASSERT_EQ(6, down_cast<Counter*>(
+    ASSERT_GE(9, down_cast<Counter*>(
         metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
   } else {
-    ASSERT_EQ(18, down_cast<Counter*>(
+    ASSERT_GE(22, down_cast<Counter*>(
         metric_entity_->FindOrNull(METRIC_block_manager_total_disk_sync).get())->value());
   }
 
