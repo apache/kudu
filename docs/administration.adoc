@@ -658,49 +658,133 @@ $ kudu cluster ksck --checksum_scan --tables IntegrationTestBigLinkedList master
 ----
 
 [[change_dir_config]]
+// TODO(awong): revise this when KUDU-2202 is fixed.
 === Changing Directory Configurations
-// TODO(awong): revise this when KUDU-2062 is fixed.
-Kudu does not allow for the addition or removal of directories on existing
-master or tablet servers. In order to start a server with a different directory
-configuration from what it was created with, the server needs to be rebuilt.
 
-WARNING: Before proceeding, ensure the contents of the directories are backed
-up, either as a copy or in the form of other tablet replicas.
+For higher read parallelism and larger volumes of storage per server, users may
+want to configure servers to store data in multiple directories on different
+devices. Once a server is started, users must go through the following steps
+to change the directory configuration.
 
-The first step to starting up a server with a new directory configuration is
-emptying all of the server's existing directories. For example, if a tablet
-server is configured with `--fs_wal_dir=/data/0/kudu-tserver-wal` and
-`--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver`, the following
-commands will remove the write-ahead-log (WAL) directory's and data
-directories' contents:
+==== Adding a Data Directory
 
+Users can add data directories to an existing master or tablet server via the
+`kudu fs update_dirs` tool. Data is striped across data directories, and when
+a new data directory is added, new data will be striped across the union of the
+old and new directories.
+
+NOTE: Only new tablet replicas (i.e. brand new tablets' replicas and replicas
+that are copied to the server for high availability) will use the new
+directory. Existing tablet replicas on the server will not be rebalanced across
+the new directory.
+
+// TODO(awong): revise when KUDU-2117 is fixed.
+WARNING: The first configured data directory on a server contains the metadata
+files for all tablets on that server. Kudu will not permit reordering of this
+"metadata directory". For example if a cluster is configured with `/data/1` as
+the first entry in `--fs_data_dirs`, all further configurations must be
+formatted as `/data/1,<new directories>`.
+
+WARNING: All of the command line steps below should be executed as the Kudu
+UNIX user, typically `kudu`.
+
+. The tool can only run while the server is offline, so establish a maintenance
+  window to update the server. The tool itself runs quickly, so this offline
+  window should be brief, and as such, only the server to update needs to be
+  offline. However, if the server is offline for too long (see the
+  `follower_unavailable_considered_failed_sec` flag), the tablet replicas on it
+  may be evicted from their Raft groups. To avoid this, it may be desirable to
+  bring the entire cluster offline while performing the update.
+
+. Run the tool with the desired directory configuration flags. For example, if a
+  cluster was set up with `--fs_wal_dir=/wals` and
+  `--fs_data_dirs=/data/1,/data2` and a new `/data/3` is desired, run the
+  command:
+
++
 [source,bash]
 ----
-$ rm -rf /data/0/kudu-tserver-wal/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*
+$ kudu fs update_dirs --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2,/data/3
 ----
++
 
-After the WAL and data directories are emptied, and any new directories are
-created with the appropriate permissions, the server process can be
-started with the new directory configuration. When Kudu is installed using
-system packages, `service` is typically used:
+. Modify the values of the `fs_wal_dir` and `fs_data_dirs` flags for the updated
+  sever. If using CM, make sure to only update the configurations of the updated
+  server, rather than of the entire Kudu service.
 
+. Once complete, the server process can be started. When Kudu is installed using
+  system packages, `service` is typically used:
+
++
 [source,bash]
 ----
 $ sudo service kudu-tserver start
 ----
++
+
+
+[[rebuilding_kudu]]
+==== Rebuilding a Kudu Filesystem Layout
+
+Kudu does not allow for the removal of directories, or for any changes to the
+write-ahead-log (WAL) directory or metadata directory. In order to start a
+server with such directory configuration changes, the WAL and data directories
+on the server must be deleted and rebuilt, destroying the copy of the data for
+each tablet replica hosted on the local server. Kudu will automatically
+re-replicate tablet replicas removed in this way, provided the replication
+factor is at least three and all other servers are online and healthy.
+
+NOTE: These steps use a tablet server as an example, but the steps are the same
+for Kudu master servers.
+
+WARNING: Before proceeding, ensure the contents of the directories are backed
+up, either as a copy or in the form of other tablet replicas.
+
+. The first step to rebuilding a server with a new directory configuration is
+  emptying all of the server's existing directories. For example, if a tablet
+  server is configured with `--fs_wal_dir=/data/0/kudu-tserver-wal` and
+  `--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver`, the following
+  commands will remove the WAL directory's and data directories' contents:
+
++
+[source,bash]
+----
+# Note: this will delete all of the data from the local tablet server.
+$ rm -rf /data/0/kudu-tserver-wal/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*
+----
++
+
+. If using CM, update the configurations for the rebuilt server to include only
+  the desired directories. Make sure to only update the configurations of servers
+  to which changes were applied, rather than of the entire Kudu service.
+
+. After the WAL and data directories are deleted, the server process can be
+  started with the new directory configuration. The appropriate sub-directories
+  will be created by Kudu upon starting up.
 
 [[disk_failure_recovery]]
+// TODO(awong): revise this when KUDU-616 is complete.
 === Recovering from Disk Failure
+As of Kudu 1.6.0, Kudu master servers are not resilient to any types of disk
+failures. Kudu tablet servers are only resilient to disk failures if they occur
+on a disk storing only data blocks, so the failure of a disk where the
+write-ahead logs or tablet metadata are stored will result in a crash of the
+entire tablet server.
 
-// TODO(awong): revise this when KUDU-616 is fixed.
-Kudu tablet servers are not resilient to disk failure. When a disk containing a
-data directory or WAL fails, the server will crash, and the entire server must
-be rebuilt. Kudu will automatically re-replicate tablets on other servers after
-a tablet server fails, but manual intervention is needed in order to restore the
-failed tablet server to a running state.
+Failures in failure-intolerant directories will lead to a crash, upon which the
+server must be rebuilt, replacing or removing the failed disk from Kudu's
+configuration. See the section on <<rebuilding_kudu,Rebuilding a Kudu
+Filesystem Layout>> for more details.
 
-To rebuild the tablet server after a disk failure, the failed disk needs to be
-replaced or removed from the data-directory and/or WAL configuration. Once this
-is complete the server needs to be rebuilt with this new configuration. See the
-section on <<change_dir_config,Changing Directory Configurations>> for more
-details.
+In the case of a failure in a failure-tolerant directory, Kudu will
+automatically stop using the affected disk, shut down tablets with blocks on
+the affected disk, and re-replicate the affected tablets to other tablet
+servers. The affected server will remain alive and print messages to the log
+indicating the disk failure, for example:
+
+----
+E1025 19:06:24.163748 27115 data_dirs.cc:1011] Directory /data/8/kudu/data marked as failed
+E1205 19:06:30.324795 27064 log_block_manager.cc:1822] Not using report from /data/8/kudu/data: IO error: Could not open container 0a6283cab82d4e75848f49772d2638fe: /data/8/kudu/data/0a6283cab82d4e75848f49772d2638fe.metadata: Read-only file system (error 30)
+E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c1394348d80 P 70f7ee61ead54b1885d819f354eb3405: aborting tablet bootstrap: tablet has data in a failed directory
+----
+
