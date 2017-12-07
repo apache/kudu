@@ -63,7 +63,7 @@ struct SaslMechanism {
 //
 // This function is thread safe and uses a static lock.
 // This function should NOT be called during static initialization.
-Status SaslInit() WARN_UNUSED_RESULT;
+Status SaslInit(bool kerberos_keytab_provided = false) WARN_UNUSED_RESULT;
 
 // Disable Kudu's initialization of SASL. See equivalent method in client.h.
 Status DisableSaslInitialization() WARN_UNUSED_RESULT;

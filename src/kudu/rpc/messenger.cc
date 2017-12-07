@@ -25,9 +25,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -51,14 +48,11 @@
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
-#include "kudu/util/env.h"
-#include "kudu/util/flag_tags.h"
-#include "kudu/util/flag_validators.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
 #include "kudu/util/scoped_cleanup.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
@@ -68,58 +62,6 @@ using std::shared_ptr;
 using std::make_shared;
 using strings::Substitute;
 
-DEFINE_string(rpc_authentication, "optional",
-              "Whether to require RPC connections to authenticate. Must be one "
-              "of 'disabled', 'optional', or 'required'. If 'optional', "
-              "authentication will be used when the remote end supports it. If "
-              "'required', connections which are not able to authenticate "
-              "(because the remote end lacks support) are rejected. Secure "
-              "clusters should use 'required'.");
-DEFINE_string(rpc_encryption, "optional",
-              "Whether to require RPC connections to be encrypted. Must be one "
-              "of 'disabled', 'optional', or 'required'. If 'optional', "
-              "encryption will be used when the remote end supports it. If "
-              "'required', connections which are not able to use encryption "
-              "(because the remote end lacks support) are rejected. If 'disabled', "
-              "encryption will not be used, and RPC authentication "
-              "(--rpc_authentication) must also be disabled as well. "
-              "Secure clusters should use 'required'.");
-TAG_FLAG(rpc_authentication, evolving);
-TAG_FLAG(rpc_encryption, evolving);
-
-DEFINE_string(rpc_certificate_file, "",
-              "Path to a PEM encoded X509 certificate to use for securing RPC "
-              "connections with SSL/TLS. If set, '--rpc_private_key_file' and "
-              "'--rpc_ca_certificate_file' must be set as well.");
-DEFINE_string(rpc_private_key_file, "",
-              "Path to a PEM encoded private key paired with the certificate "
-              "from '--rpc_certificate_file'");
-DEFINE_string(rpc_ca_certificate_file, "",
-              "Path to the PEM encoded X509 certificate of the trusted external "
-              "certificate authority. The provided certificate should be the root "
-              "issuer of the certificate passed in '--rpc_certificate_file'.");
-DEFINE_string(rpc_private_key_password_cmd, "", "A Unix command whose output "
-              "returns the password used to decrypt the RPC server's private key "
-              "file specified in --rpc_private_key_file. If the .PEM key file is "
-              "not password-protected, this flag does not need to be set. "
-              "Trailing whitespace will be trimmed before it is used to decrypt "
-              "the private key.");
-
-// Setting TLS certs and keys via CLI flags is only necessary for external
-// PKI-based security, which is not yet production ready. Instead, see
-// internal PKI (ipki) and Kerberos-based authentication.
-TAG_FLAG(rpc_certificate_file, experimental);
-TAG_FLAG(rpc_private_key_file, experimental);
-TAG_FLAG(rpc_ca_certificate_file, experimental);
-
-DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
-             "If an RPC connection from a client is idle for this amount of time, the server "
-             "will disconnect the client.");
-TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
-
-DECLARE_string(keytab_file);
-DECLARE_bool(allow_world_readable_credentials);
-
 namespace boost {
 template <typename Signature> class function;
 }
@@ -127,112 +69,19 @@ template <typename Signature> class function;
 namespace kudu {
 namespace rpc {
 
-template <typename T>
-static Status ParseTriState(const char* flag_name, const string& flag_value, T* tri_state) {
-  if (boost::iequals(flag_value, "required")) {
-    *tri_state = T::REQUIRED;
-  } else if (boost::iequals(flag_value, "optional")) {
-    *tri_state = T::OPTIONAL;
-  } else if (boost::iequals(flag_value, "disabled")) {
-    *tri_state = T::DISABLED;
-  } else {
-    return Status::InvalidArgument(Substitute(
-          "$0 flag must be one of 'required', 'optional', or 'disabled'",
-          flag_name));
-  }
-  return Status::OK();
-}
-
-static bool ValidateRpcAuthentication(const char* flag_name, const string& flag_value) {
-  RpcAuthentication result;
-  Status s = ParseTriState(flag_name, flag_value, &result);
-  if (!s.ok()) {
-    LOG(ERROR) << s.message().ToString();
-    return false;
-  }
-  return true;
-}
-DEFINE_validator(rpc_authentication, &ValidateRpcAuthentication);
-
-static bool ValidateRpcEncryption(const char* flag_name, const string& flag_value) {
-  RpcEncryption result;
-  Status s = ParseTriState(flag_name, flag_value, &result);
-  if (!s.ok()) {
-    LOG(ERROR) << s.message().ToString();
-    return false;
-  }
-  return true;
-}
-DEFINE_validator(rpc_encryption, &ValidateRpcEncryption);
-
-static bool ValidateRpcAuthnFlags() {
-  RpcAuthentication authentication;
-  CHECK_OK(ParseTriState("--rpc_authentication", FLAGS_rpc_authentication, &authentication));
-
-  RpcEncryption encryption;
-  CHECK_OK(ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption));
-
-  if (encryption == RpcEncryption::DISABLED && authentication != RpcAuthentication::DISABLED) {
-    LOG(ERROR) << "RPC authentication (--rpc_authentication) must be disabled "
-                  "if RPC encryption (--rpc_encryption) is disabled";
-    return false;
-  }
-
-  const bool has_keytab = !FLAGS_keytab_file.empty();
-  const bool has_cert = !FLAGS_rpc_certificate_file.empty();
-  if (authentication == RpcAuthentication::REQUIRED && !has_keytab && !has_cert) {
-    LOG(ERROR) << "RPC authentication (--rpc_authentication) may not be "
-                  "required unless Kerberos (--keytab_file) or external PKI "
-                  "(--rpc_certificate_file et al) are configured";
-    return false;
-  }
-
-  return true;
-}
-GROUP_FLAG_VALIDATOR(rpc_authn_flags, ValidateRpcAuthnFlags);
-
-static bool ValidateExternalPkiFlags() {
-  bool has_cert = !FLAGS_rpc_certificate_file.empty();
-  bool has_key = !FLAGS_rpc_private_key_file.empty();
-  bool has_ca = !FLAGS_rpc_ca_certificate_file.empty();
-
-  if (has_cert != has_key || has_cert != has_ca) {
-    LOG(ERROR) << "--rpc_certificate_file, --rpc_private_key_file, and "
-                  "--rpc_ca_certificate_file flags must be set as a group; "
-                  "i.e. either set all or none of them.";
-    return false;
-  }
-
-  if (has_key && !FLAGS_allow_world_readable_credentials) {
-    bool world_readable_private_key;
-    Status s = Env::Default()->IsFileWorldReadable(FLAGS_rpc_private_key_file,
-                                                   &world_readable_private_key);
-    if (!s.ok()) {
-      LOG(ERROR) << Substitute("$0: could not verify private key file does not have "
-                               "world-readable permissions: $1",
-                               FLAGS_rpc_private_key_file, s.ToString());
-      return false;
-    }
-    if (world_readable_private_key) {
-      LOG(ERROR) << "cannot use private key file with world-readable permissions: "
-                 << FLAGS_rpc_private_key_file;
-      return false;
-    }
-  }
-
-  return true;
-}
-GROUP_FLAG_VALIDATOR(external_pki_flags, ValidateExternalPkiFlags);
-
 MessengerBuilder::MessengerBuilder(std::string name)
     : name_(std::move(name)),
-      connection_keepalive_time_(
-          MonoDelta::FromMilliseconds(FLAGS_rpc_default_keepalive_time_ms)),
+      connection_keepalive_time_(MonoDelta::FromMilliseconds(65000)),
       num_reactors_(4),
       min_negotiation_threads_(0),
       max_negotiation_threads_(4),
       coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)),
+      rpc_negotiation_timeout_ms_(3000),
       sasl_proto_name_("kudu"),
+      rpc_authentication_("optional"),
+      rpc_encryption_("optional"),
+      rpc_tls_ciphers_(kudu::security::SecurityDefaults::kDefaultTlsCiphers),
+      rpc_tls_min_protocol_(kudu::security::SecurityDefaults::kDefaultTlsMinVersion),
       enable_inbound_tls_(false) {
 }
 
@@ -267,8 +116,61 @@ MessengerBuilder &MessengerBuilder::set_metric_entity(
   return *this;
 }
 
-MessengerBuilder &MessengerBuilder::set_sasl_proto_name(std::string sasl_proto_name) {
-  sasl_proto_name_ = std::move(sasl_proto_name);
+MessengerBuilder &MessengerBuilder::set_connection_keep_alive_time(int32_t time_in_ms) {
+  connection_keepalive_time_ = MonoDelta::FromMilliseconds(time_in_ms);
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_rpc_negotiation_timeout_ms(int64_t time_in_ms) {
+  rpc_negotiation_timeout_ms_ = time_in_ms;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_sasl_proto_name(const std::string& sasl_proto_name) {
+  sasl_proto_name_ = sasl_proto_name;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_rpc_authentication(const std::string& rpc_authentication) {
+  rpc_authentication_ = rpc_authentication;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_rpc_encryption(const std::string& rpc_encryption) {
+  rpc_encryption_ = rpc_encryption;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_rpc_tls_ciphers(const std::string& rpc_tls_ciphers) {
+  rpc_tls_ciphers_ = rpc_tls_ciphers;
+  return *this;
+}
+
+MessengerBuilder &MessengerBuilder::set_rpc_tls_min_protocol(
+    const std::string& rpc_tls_min_protocol) {
+  rpc_tls_min_protocol_ = rpc_tls_min_protocol;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_epki_cert_key_files(
+    const std::string& cert, const std::string& private_key) {
+  rpc_certificate_file_ = cert;
+  rpc_private_key_file_ = private_key;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_epki_certificate_authority_file(const std::string& ca) {
+  rpc_ca_certificate_file_ = ca;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_epki_private_password_key_cmd(const std::string& cmd) {
+  rpc_private_key_password_cmd_ = cmd;
+  return *this;
+}
+
+MessengerBuilder& MessengerBuilder::set_keytab_file(const std::string& keytab_file) {
+  keytab_file_ = keytab_file;
   return *this;
 }
 
@@ -278,7 +180,8 @@ MessengerBuilder& MessengerBuilder::enable_inbound_tls() {
 }
 
 Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
-  RETURN_NOT_OK(SaslInit()); // Initialize SASL library before we start making requests
+  // Initialize SASL library before we start making requests
+  RETURN_NOT_OK(SaslInit(!keytab_file_.empty()));
 
   Messenger* new_msgr(new Messenger(*this));
 
@@ -287,34 +190,34 @@ Status MessengerBuilder::Build(shared_ptr<Messenger> *msgr) {
   });
 
   RETURN_NOT_OK(ParseTriState("--rpc_authentication",
-                              FLAGS_rpc_authentication,
+                              rpc_authentication_,
                               &new_msgr->authentication_));
 
   RETURN_NOT_OK(ParseTriState("--rpc_encryption",
-                              FLAGS_rpc_encryption,
+                              rpc_encryption_,
                               &new_msgr->encryption_));
 
   RETURN_NOT_OK(new_msgr->Init());
   if (new_msgr->encryption_ != RpcEncryption::DISABLED && enable_inbound_tls_) {
     auto* tls_context = new_msgr->mutable_tls_context();
 
-    if (!FLAGS_rpc_certificate_file.empty()) {
-      CHECK(!FLAGS_rpc_private_key_file.empty());
-      CHECK(!FLAGS_rpc_ca_certificate_file.empty());
+    if (!rpc_certificate_file_.empty()) {
+      CHECK(!rpc_private_key_file_.empty());
+      CHECK(!rpc_ca_certificate_file_.empty());
 
       // TODO(KUDU-1920): should we try and enforce that the server
       // is in the subject or alt names of the cert?
-      RETURN_NOT_OK(tls_context->LoadCertificateAuthority(FLAGS_rpc_ca_certificate_file));
-      if (FLAGS_rpc_private_key_password_cmd.empty()) {
-        RETURN_NOT_OK(tls_context->LoadCertificateAndKey(FLAGS_rpc_certificate_file,
-                                                         FLAGS_rpc_private_key_file));
+      RETURN_NOT_OK(tls_context->LoadCertificateAuthority(rpc_ca_certificate_file_));
+      if (rpc_private_key_password_cmd_.empty()) {
+        RETURN_NOT_OK(tls_context->LoadCertificateAndKey(rpc_certificate_file_,
+                                                         rpc_private_key_file_));
       } else {
         RETURN_NOT_OK(tls_context->LoadCertificateAndPasswordProtectedKey(
-            FLAGS_rpc_certificate_file, FLAGS_rpc_private_key_file,
+            rpc_certificate_file_, rpc_private_key_file_,
             [&](){
               string ret;
               WARN_NOT_OK(security::GetPasswordFromShellCommand(
-                  FLAGS_rpc_private_key_password_cmd, &ret),
+                  rpc_private_key_password_cmd_, &ret),
                   "could not get RPC password from configured command");
               return ret;
             }
@@ -401,7 +304,7 @@ Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
   // Before listening, if we expect to require Kerberos, we want to verify
   // that everything is set up correctly. This way we'll generate errors on
   // startup rather than later on when we first receive a client connection.
-  if (!FLAGS_keytab_file.empty()) {
+  if (!keytab_file_.empty()) {
     RETURN_NOT_OK_PREPEND(ServerNegotiation::PreflightCheckGSSAPI(sasl_proto_name()),
                           "GSSAPI/Kerberos not properly configured");
   }
@@ -493,11 +396,13 @@ Messenger::Messenger(const MessengerBuilder &bld)
     closing_(false),
     authentication_(RpcAuthentication::REQUIRED),
     encryption_(RpcEncryption::REQUIRED),
-    tls_context_(new security::TlsContext()),
+    tls_context_(new security::TlsContext(bld.rpc_tls_ciphers_, bld.rpc_tls_min_protocol_)),
     token_verifier_(new security::TokenVerifier()),
     rpcz_store_(new RpczStore()),
     metric_entity_(bld.metric_entity_),
+    rpc_negotiation_timeout_ms_(bld.rpc_negotiation_timeout_ms_),
     sasl_proto_name_(bld.sasl_proto_name_),
+    keytab_file_(bld.keytab_file_),
     retain_self_(this) {
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));

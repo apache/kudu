@@ -21,6 +21,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "kudu/util/status.h"
+
 namespace google {
   struct CommandLineFlagInfo;
 }
@@ -71,6 +73,15 @@ typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
 std::string GetNonDefaultFlags(const GFlagsMap& default_flags);
 
 GFlagsMap GetFlagsMap();
+
+enum class TriStateFlag {
+  DISABLED,
+  OPTIONAL,
+  REQUIRED,
+};
+
+Status ParseTriState(const char* flag_name, const std::string& flag_value,
+    TriStateFlag* tri_state);
 
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

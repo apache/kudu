@@ -40,26 +40,13 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/flag_validators.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-
-DEFINE_string(keytab_file, "",
-              "Path to the Kerberos Keytab file for this server. Specifying a "
-              "keytab file will cause the server to kinit, and enable Kerberos "
-              "to be used to authenticate RPC connections.");
-TAG_FLAG(keytab_file, stable);
-
-DEFINE_bool(allow_world_readable_credentials, false,
-            "Enable the use of keytab files and TLS private keys with "
-            "world-readable permissions.");
-TAG_FLAG(allow_world_readable_credentials, unsafe);
 
 #ifndef __APPLE__
 static constexpr bool kDefaultSystemAuthToLocal = true;
@@ -90,26 +77,6 @@ namespace security {
 namespace {
 
 class KinitContext;
-
-bool ValidateKeytabPermissions() {
-  if (!FLAGS_keytab_file.empty() && !FLAGS_allow_world_readable_credentials) {
-    bool world_readable_keytab;
-    Status s = Env::Default()->IsFileWorldReadable(FLAGS_keytab_file, &world_readable_keytab);
-    if (!s.ok()) {
-      LOG(ERROR) << Substitute("$0: could not verify keytab file does not have world-readable "
-                               "permissions: $1", FLAGS_keytab_file, s.ToString());
-      return false;
-    }
-    if (world_readable_keytab) {
-      LOG(ERROR) << "cannot use keytab file with world-readable permissions: "
-                 << FLAGS_keytab_file;
-      return false;
-    }
-  }
-
-  return true;
-}
-GROUP_FLAG_VALIDATOR(keytab_permissions, &ValidateKeytabPermissions);
 
 // Global context for usage of the Krb5 library.
 krb5_context g_krb5_ctx;
@@ -465,12 +432,12 @@ boost::optional<string> GetLoggedInUsernameFromKeytab() {
   return g_kinit_ctx->username_str();
 }
 
-Status InitKerberosForServer(const std::string& raw_principal, const std::string& krb5ccname,
-    bool disable_krb5_replay_cache) {
-  if (FLAGS_keytab_file.empty()) return Status::OK();
+Status InitKerberosForServer(const std::string& raw_principal, const std::string& keytab_file,
+    const std::string& krb5ccname, bool disable_krb5_replay_cache) {
+  if (keytab_file.empty()) return Status::OK();
 
   setenv("KRB5CCNAME", krb5ccname.c_str(), 1);
-  setenv("KRB5_KTNAME", FLAGS_keytab_file.c_str(), 1);
+  setenv("KRB5_KTNAME", keytab_file.c_str(), 1);
 
   if (disable_krb5_replay_cache) {
     // KUDU-1897: disable the Kerberos replay cache. The KRPC protocol includes a
@@ -484,7 +451,7 @@ Status InitKerberosForServer(const std::string& raw_principal, const std::string
   string configured_principal;
   RETURN_NOT_OK(GetConfiguredPrincipal(raw_principal, &configured_principal));
   RETURN_NOT_OK_PREPEND(g_kinit_ctx->Kinit(
-      FLAGS_keytab_file, configured_principal), "unable to kinit");
+      keytab_file, configured_principal), "unable to kinit");
 
   g_kerberos_reinit_lock = new RWMutex(RWMutex::Priority::PREFER_WRITING);
   scoped_refptr<Thread> reacquire_thread;

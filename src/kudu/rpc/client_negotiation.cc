@@ -280,8 +280,6 @@ Status ClientNegotiation::SendConnectionHeader() {
 }
 
 Status ClientNegotiation::InitSaslClient() {
-  RETURN_NOT_OK(SaslInit());
-
   // TODO(KUDU-1922): consider setting SASL_SUCCESS_DATA
   unsigned flags = 0;
 

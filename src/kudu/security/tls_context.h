@@ -71,6 +71,8 @@ class TlsContext {
 
   TlsContext();
 
+  TlsContext(std::string tls_ciphers, std::string tls_min_protocol);
+
   ~TlsContext() = default;
 
   Status Init() WARN_UNUSED_RESULT;
@@ -173,6 +175,14 @@ class TlsContext {
  private:
 
   Status VerifyCertChainUnlocked(const Cert& cert) WARN_UNUSED_RESULT;
+
+  // The cipher suite preferences to use for TLS-secured RPC connections. Uses the OpenSSL
+  // cipher preference list format. See man (1) ciphers for more information.
+  std::string tls_ciphers_;
+
+  // The minimum protocol version to allow when for securing RPC connections with TLS. May be
+  // one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.
+  std::string tls_min_protocol_;
 
   // Protects all members.
   //

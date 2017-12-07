@@ -31,6 +31,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/security/security_flags.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
@@ -55,6 +56,9 @@ class TokenVerifier;
 
 namespace rpc {
 
+using security::RpcAuthentication;
+using security::RpcEncryption;
+
 class AcceptorPool;
 class DumpRunningRpcsRequestPB;
 class DumpRunningRpcsResponsePB;
@@ -76,20 +80,6 @@ struct AcceptorPoolInfo {
 
  private:
   Sockaddr bind_address_;
-};
-
-// Authentication configuration for RPC connections.
-enum class RpcAuthentication {
-  DISABLED,
-  OPTIONAL,
-  REQUIRED,
-};
-
-// Encryption configuration for RPC connections.
-enum class RpcEncryption {
-  DISABLED,
-  OPTIONAL,
-  REQUIRED,
 };
 
 // Used to construct a Messenger.
@@ -121,8 +111,54 @@ class MessengerBuilder {
   // Set metric entity for use by RPC systems.
   MessengerBuilder &set_metric_entity(const scoped_refptr<MetricEntity>& metric_entity);
 
+  // Set the time in milliseconds after which an idle connection from a client will be
+  // disconnected by the server.
+  MessengerBuilder &set_connection_keep_alive_time(int32_t time_in_ms);
+
+  // Set the timeout for negotiating an RPC connection.
+  MessengerBuilder &set_rpc_negotiation_timeout_ms(int64_t time_in_ms);
+
   // Set the SASL protocol name that is used for the SASL negotiation.
-  MessengerBuilder &set_sasl_proto_name(std::string sasl_proto_name);
+  MessengerBuilder &set_sasl_proto_name(const std::string& sasl_proto_name);
+
+  // Set the state of authentication required. If 'optional', authentication will be used when
+  // the remote end supports it. If 'required', connections which are not able to authenticate
+  // (because the remote end lacks support) are rejected.
+  MessengerBuilder &set_rpc_authentication(const std::string& rpc_authentication);
+
+  // Set the state of encryption required. If 'optional', encryption will be used when the
+  // remote end supports it. If 'required', connections which are not able to use encryption
+  // (because the remote end lacks support) are rejected. If 'disabled', encryption will not
+  // be used, and RPC authentication (--rpc_authentication) must also be disabled as well.
+  MessengerBuilder &set_rpc_encryption(const std::string& rpc_encryption);
+
+  // Set the cipher suite preferences to use for TLS-secured RPC connections. Uses the OpenSSL
+  // cipher preference list format. See man (1) ciphers for more information.
+  MessengerBuilder &set_rpc_tls_ciphers(const std::string& rpc_tls_ciphers);
+
+  // Set the minimum protocol version to allow when for securing RPC connections with TLS. May be
+  // one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.
+  MessengerBuilder &set_rpc_tls_min_protocol(const std::string& rpc_tls_min_protocol);
+
+  // Set the TLS server certificate and private key files paths. If this is set in conjunction
+  // with enable_inbound_tls(), internal PKI will not be used for encrypted communication and
+  // external PKI will be used instead.
+  MessengerBuilder &set_epki_cert_key_files(
+      const std::string& cert, const std::string& private_key);
+
+  // Set the TLS Certificate Authority file path. Must always be set with set_epki_cert_key_files().
+  // If this is set in conjunction with enable_inbound_tls(), internal PKI will not be used for
+  // encrypted communication and external PKI will be used instead.
+  MessengerBuilder &set_epki_certificate_authority_file(const std::string& ca);
+
+  // Set a Unix command whose output returns the password used to decrypt the RPC server's private
+  // key file specified via set_epki_cert_key_files(). If the .PEM key file is not
+  // password-protected, this flag does not need to be set. Trailing whitespace will be trimmed
+  // before it is used to decrypt the private key.
+  MessengerBuilder &set_epki_private_password_key_cmd(const std::string& cmd);
+
+  // Set the path to the Kerberos Keytab file for this server.
+  MessengerBuilder &set_keytab_file(const std::string& keytab_file);
 
   // Configure the messenger to enable TLS encryption on inbound connections.
   MessengerBuilder& enable_inbound_tls();
@@ -137,7 +173,17 @@ class MessengerBuilder {
   int max_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
   scoped_refptr<MetricEntity> metric_entity_;
+  int64_t rpc_negotiation_timeout_ms_;
   std::string sasl_proto_name_;
+  std::string rpc_authentication_;
+  std::string rpc_encryption_;
+  std::string rpc_tls_ciphers_;
+  std::string rpc_tls_min_protocol_;
+  std::string rpc_certificate_file_;
+  std::string rpc_private_key_file_;
+  std::string rpc_ca_certificate_file_;
+  std::string rpc_private_key_password_cmd_;
+  std::string keytab_file_;
   bool enable_inbound_tls_;
 };
 
@@ -264,9 +310,13 @@ class Messenger {
 
   scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_.get(); }
 
+  const int64_t rpc_negotiation_timeout_ms() const { return rpc_negotiation_timeout_ms_; }
+
   const std::string& sasl_proto_name() const {
     return sasl_proto_name_;
   }
+
+  const std::string& keytab_file() const { return keytab_file_; }
 
   const scoped_refptr<RpcService> rpc_service(const std::string& service_name) const;
 
@@ -338,8 +388,14 @@ class Messenger {
 
   scoped_refptr<MetricEntity> metric_entity_;
 
+  // Timeout in milliseconds after which an incomplete connection negotiation will timeout.
+  const int64_t rpc_negotiation_timeout_ms_;
+
   // The SASL protocol name that is used for the SASL negotiation.
   const std::string sasl_proto_name_;
+
+  // Path to the Kerberos Keytab file for this server.
+  const std::string keytab_file_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:

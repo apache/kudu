@@ -430,10 +430,17 @@ class RpcTestBase : public KuduTest {
  protected:
   std::shared_ptr<Messenger> CreateMessenger(const std::string &name,
                                              int n_reactors = 1,
-                                             bool enable_ssl = false) {
+                                             bool enable_ssl = false,
+                                             const std::string& rpc_certificate_file = "",
+                                             const std::string& rpc_private_key_file = "",
+                                             const std::string& rpc_ca_certificate_file = "",
+                                             const std::string& rpc_private_key_password_cmd = "") {
     MessengerBuilder bld(name);
 
     if (enable_ssl) {
+      bld.set_epki_cert_key_files(rpc_certificate_file, rpc_private_key_file);
+      bld.set_epki_certificate_authority_file(rpc_ca_certificate_file);
+      bld.set_epki_private_password_key_cmd(rpc_private_key_password_cmd);
       bld.enable_inbound_tls();
     }
 
@@ -554,8 +561,14 @@ class RpcTestBase : public KuduTest {
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
 
-  void StartTestServer(Sockaddr *server_addr, bool enable_ssl = false) {
-    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl);
+  void StartTestServer(Sockaddr *server_addr,
+                       bool enable_ssl = false,
+                       const std::string& rpc_certificate_file = "",
+                       const std::string& rpc_private_key_file = "",
+                       const std::string& rpc_ca_certificate_file = "",
+                       const std::string& rpc_private_key_password_cmd = "") {
+    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, rpc_certificate_file,
+        rpc_private_key_file, rpc_ca_certificate_file, rpc_private_key_password_cmd);
   }
 
   void StartTestServerWithGeneratedCode(Sockaddr *server_addr, bool enable_ssl = false) {
@@ -564,7 +577,7 @@ class RpcTestBase : public KuduTest {
 
   void StartTestServerWithCustomMessenger(Sockaddr *server_addr,
       const std::shared_ptr<Messenger>& messenger, bool enable_ssl = false) {
-    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, messenger);
+    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, "", "", "", "", messenger);
   }
 
   // Start a simple socket listening on a local port, returning the address.
@@ -590,11 +603,17 @@ class RpcTestBase : public KuduTest {
   }
 
   template<class ServiceClass>
-  void DoStartTestServer(Sockaddr *server_addr, bool enable_ssl = false,
-      const std::shared_ptr<Messenger>& messenger = nullptr) {
+  void DoStartTestServer(Sockaddr *server_addr,
+                         bool enable_ssl = false,
+                         const std::string& rpc_certificate_file = "",
+                         const std::string& rpc_private_key_file = "",
+                         const std::string& rpc_ca_certificate_file = "",
+                         const std::string& rpc_private_key_password_cmd = "",
+                         const std::shared_ptr<Messenger>& messenger = nullptr) {
     if (!messenger) {
       server_messenger_ =
-          CreateMessenger("TestServer", n_server_reactor_threads_, enable_ssl);
+          CreateMessenger("TestServer", n_server_reactor_threads_, enable_ssl, rpc_certificate_file,
+              rpc_private_key_file, rpc_ca_certificate_file, rpc_private_key_password_cmd);
     } else {
       server_messenger_ = messenger;
     }

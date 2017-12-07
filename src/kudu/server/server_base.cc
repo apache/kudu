@@ -49,6 +49,7 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/security/init.h"
+#include "kudu/security/security_flags.h"
 #include "kudu/server/default_path_handlers.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
@@ -62,6 +63,8 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
@@ -86,6 +89,11 @@ TAG_FLAG(min_negotiation_threads, advanced);
 
 DEFINE_int32(max_negotiation_threads, 50, "Maximum number of connection negotiation threads.");
 TAG_FLAG(max_negotiation_threads, advanced);
+
+DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
+             "Timeout for negotiating an RPC connection.");
+TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
+TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
 
 DEFINE_bool(webserver_enabled, true, "Whether to enable the web server on this daemon. "
             "NOTE: disabling the web server is also likely to prevent monitoring systems "
@@ -119,8 +127,85 @@ TAG_FLAG(principal, experimental);
 // See KUDU-1884.
 TAG_FLAG(principal, unsafe);
 
+
+DEFINE_string(keytab_file, "",
+              "Path to the Kerberos Keytab file for this server. Specifying a "
+              "keytab file will cause the server to kinit, and enable Kerberos "
+              "to be used to authenticate RPC connections.");
+TAG_FLAG(keytab_file, stable);
+
+DEFINE_bool(allow_world_readable_credentials, false,
+            "Enable the use of keytab files and TLS private keys with "
+            "world-readable permissions.");
+TAG_FLAG(allow_world_readable_credentials, unsafe);
+
+DEFINE_string(rpc_authentication, "optional",
+              "Whether to require RPC connections to authenticate. Must be one "
+              "of 'disabled', 'optional', or 'required'. If 'optional', "
+              "authentication will be used when the remote end supports it. If "
+              "'required', connections which are not able to authenticate "
+              "(because the remote end lacks support) are rejected. Secure "
+              "clusters should use 'required'.");
+DEFINE_string(rpc_encryption, "optional",
+              "Whether to require RPC connections to be encrypted. Must be one "
+              "of 'disabled', 'optional', or 'required'. If 'optional', "
+              "encryption will be used when the remote end supports it. If "
+              "'required', connections which are not able to use encryption "
+              "(because the remote end lacks support) are rejected. If 'disabled', "
+              "encryption will not be used, and RPC authentication "
+              "(--rpc_authentication) must also be disabled as well. "
+              "Secure clusters should use 'required'.");
+TAG_FLAG(rpc_authentication, evolving);
+TAG_FLAG(rpc_encryption, evolving);
+
+DEFINE_string(rpc_tls_ciphers,
+              kudu::security::SecurityDefaults::kDefaultTlsCiphers,
+              "The cipher suite preferences to use for TLS-secured RPC connections. "
+              "Uses the OpenSSL cipher preference list format. See man (1) ciphers "
+              "for more information.");
+TAG_FLAG(rpc_tls_ciphers, advanced);
+
+DEFINE_string(rpc_tls_min_protocol,
+              kudu::security::SecurityDefaults::kDefaultTlsMinVersion,
+              "The minimum protocol version to allow when for securing RPC "
+              "connections with TLS. May be one of 'TLSv1', 'TLSv1.1', or "
+              "'TLSv1.2'.");
+TAG_FLAG(rpc_tls_min_protocol, advanced);
+
+DEFINE_string(rpc_certificate_file, "",
+              "Path to a PEM encoded X509 certificate to use for securing RPC "
+              "connections with SSL/TLS. If set, '--rpc_private_key_file' and "
+              "'--rpc_ca_certificate_file' must be set as well.");
+DEFINE_string(rpc_private_key_file, "",
+              "Path to a PEM encoded private key paired with the certificate "
+              "from '--rpc_certificate_file'");
+DEFINE_string(rpc_ca_certificate_file, "",
+              "Path to the PEM encoded X509 certificate of the trusted external "
+              "certificate authority. The provided certificate should be the root "
+              "issuer of the certificate passed in '--rpc_certificate_file'.");
+DEFINE_string(rpc_private_key_password_cmd, "", "A Unix command whose output "
+              "returns the password used to decrypt the RPC server's private key "
+              "file specified in --rpc_private_key_file. If the .PEM key file is "
+              "not password-protected, this flag does not need to be set. "
+              "Trailing whitespace will be trimmed before it is used to decrypt "
+              "the private key.");
+
+// Setting TLS certs and keys via CLI flags is only necessary for external
+// PKI-based security, which is not yet production ready. Instead, see
+// internal PKI (ipki) and Kerberos-based authentication.
+TAG_FLAG(rpc_certificate_file, experimental);
+TAG_FLAG(rpc_private_key_file, experimental);
+TAG_FLAG(rpc_ca_certificate_file, experimental);
+
+DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
+             "If an RPC connection from a client is idle for this amount of time, the server "
+             "will disconnect the client.");
+TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
+
 DECLARE_bool(use_hybrid_clock);
 
+using kudu::security::RpcAuthentication;
+using kudu::security::RpcEncryption;
 using std::ostringstream;
 using std::shared_ptr;
 using std::string;
@@ -132,6 +217,111 @@ namespace kudu {
 class HostPortPB;
 
 namespace server {
+
+namespace {
+
+bool ValidateKeytabPermissions() {
+  if (!FLAGS_keytab_file.empty() && !FLAGS_allow_world_readable_credentials) {
+    bool world_readable_keytab;
+    Status s = Env::Default()->IsFileWorldReadable(FLAGS_keytab_file, &world_readable_keytab);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("$0: could not verify keytab file does not have world-readable "
+                               "permissions: $1", FLAGS_keytab_file, s.ToString());
+      return false;
+    }
+    if (world_readable_keytab) {
+      LOG(ERROR) << "cannot use keytab file with world-readable permissions: "
+                 << FLAGS_keytab_file;
+      return false;
+    }
+  }
+
+  return true;
+}
+GROUP_FLAG_VALIDATOR(keytab_permissions, &ValidateKeytabPermissions);
+
+} // namespace
+
+static bool ValidateRpcAuthentication(const char* flag_name, const string& flag_value) {
+  security::RpcAuthentication result;
+  Status s = ParseTriState(flag_name, flag_value, &result);
+  if (!s.ok()) {
+    LOG(ERROR) << s.message().ToString();
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rpc_authentication, &ValidateRpcAuthentication);
+
+static bool ValidateRpcEncryption(const char* flag_name, const string& flag_value) {
+  security::RpcEncryption result;
+  Status s = ParseTriState(flag_name, flag_value, &result);
+  if (!s.ok()) {
+    LOG(ERROR) << s.message().ToString();
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(rpc_encryption, &ValidateRpcEncryption);
+
+static bool ValidateRpcAuthnFlags() {
+  security::RpcAuthentication authentication;
+  CHECK_OK(ParseTriState("--rpc_authentication", FLAGS_rpc_authentication, &authentication));
+
+  security::RpcEncryption encryption;
+  CHECK_OK(ParseTriState("--rpc_encryption", FLAGS_rpc_encryption, &encryption));
+
+  if (encryption == RpcEncryption::DISABLED && authentication != RpcAuthentication::DISABLED) {
+    LOG(ERROR) << "RPC authentication (--rpc_authentication) must be disabled "
+                  "if RPC encryption (--rpc_encryption) is disabled";
+    return false;
+  }
+
+  const bool has_keytab = !FLAGS_keytab_file.empty();
+  const bool has_cert = !FLAGS_rpc_certificate_file.empty();
+  if (authentication == RpcAuthentication::REQUIRED && !has_keytab && !has_cert) {
+    LOG(ERROR) << "RPC authentication (--rpc_authentication) may not be "
+                  "required unless Kerberos (--keytab_file) or external PKI "
+                  "(--rpc_certificate_file et al) are configured";
+    return false;
+  }
+
+  return true;
+}
+GROUP_FLAG_VALIDATOR(rpc_authn_flags, ValidateRpcAuthnFlags);
+
+static bool ValidateExternalPkiFlags() {
+  bool has_cert = !FLAGS_rpc_certificate_file.empty();
+  bool has_key = !FLAGS_rpc_private_key_file.empty();
+  bool has_ca = !FLAGS_rpc_ca_certificate_file.empty();
+
+  if (has_cert != has_key || has_cert != has_ca) {
+    LOG(ERROR) << "--rpc_certificate_file, --rpc_private_key_file, and "
+                  "--rpc_ca_certificate_file flags must be set as a group; "
+                  "i.e. either set all or none of them.";
+    return false;
+  }
+
+  if (has_key && !FLAGS_allow_world_readable_credentials) {
+    bool world_readable_private_key;
+    Status s = Env::Default()->IsFileWorldReadable(FLAGS_rpc_private_key_file,
+                                                   &world_readable_private_key);
+    if (!s.ok()) {
+      LOG(ERROR) << Substitute("$0: could not verify private key file does not have "
+                               "world-readable permissions: $1",
+                               FLAGS_rpc_private_key_file, s.ToString());
+      return false;
+    }
+    if (world_readable_private_key) {
+      LOG(ERROR) << "cannot use private key file with world-readable permissions: "
+                 << FLAGS_rpc_private_key_file;
+      return false;
+    }
+  }
+
+  return true;
+}
+GROUP_FLAG_VALIDATOR(external_pki_flags, ValidateExternalPkiFlags);
 
 namespace {
 
@@ -231,7 +421,7 @@ Status ServerBase::Init() {
   // if we're having clock problems.
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
 
-  RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal));
+  RETURN_NOT_OK(security::InitKerberosForServer(FLAGS_principal, FLAGS_keytab_file));
 
   fs::FsReport report;
   Status s = fs_manager_->Open(&report);
@@ -255,7 +445,18 @@ Status ServerBase::Init() {
          .set_min_negotiation_threads(FLAGS_min_negotiation_threads)
          .set_max_negotiation_threads(FLAGS_max_negotiation_threads)
          .set_metric_entity(metric_entity())
+         .set_connection_keep_alive_time(FLAGS_rpc_default_keepalive_time_ms)
+         .set_rpc_negotiation_timeout_ms(FLAGS_rpc_negotiation_timeout_ms)
+         .set_rpc_authentication(FLAGS_rpc_authentication)
+         .set_rpc_encryption(FLAGS_rpc_encryption)
+         .set_rpc_tls_ciphers(FLAGS_rpc_tls_ciphers)
+         .set_rpc_tls_min_protocol(FLAGS_rpc_tls_min_protocol)
+         .set_epki_cert_key_files(FLAGS_rpc_certificate_file, FLAGS_rpc_private_key_file)
+         .set_epki_certificate_authority_file(FLAGS_rpc_ca_certificate_file)
+         .set_epki_private_password_key_cmd(FLAGS_rpc_private_key_password_cmd)
+         .set_keytab_file(FLAGS_keytab_file)
          .enable_inbound_tls();
+
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));

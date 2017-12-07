@@ -26,6 +26,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/security/security_flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 
@@ -97,20 +98,13 @@ TAG_FLAG(webserver_port, stable);
 
 DEFINE_string(webserver_tls_ciphers,
               // See security/tls_context.cc for origin of this list.
-              "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
-              "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
-              "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
-              "ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA384:"
-              "ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA256:"
-              "AES256-GCM-SHA384:AES128-GCM-SHA256:"
-              "AES256-SHA256:AES128-SHA256:"
-              "AES256-SHA:AES128-SHA",
+              kudu::security::SecurityDefaults::kDefaultTlsCiphers,
               "The cipher suite preferences to use for webserver HTTPS connections. "
               "Uses the OpenSSL cipher preference list format. See man (1) ciphers "
               "for more information.");
 TAG_FLAG(webserver_tls_ciphers, advanced);
 
-DEFINE_string(webserver_tls_min_protocol, "TLSv1",
+DEFINE_string(webserver_tls_min_protocol, kudu::security::SecurityDefaults::kDefaultTlsMinVersion,
               "The minimum protocol version to allow when for webserver HTTPS "
               "connections. May be one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.");
 TAG_FLAG(webserver_tls_min_protocol, advanced);

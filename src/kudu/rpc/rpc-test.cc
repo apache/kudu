@@ -71,10 +71,6 @@ METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
-DECLARE_string(rpc_certificate_file);
-DECLARE_string(rpc_ca_certificate_file);
-DECLARE_string(rpc_private_key_file);
-DECLARE_string(rpc_private_key_password_cmd);
 
 using std::shared_ptr;
 using std::string;
@@ -189,17 +185,22 @@ TEST_P(TestRpc, TestCallWithChainCerts) {
   // We're only interested in running this test with TLS enabled.
   if (!enable_ssl) return;
 
+  string rpc_certificate_file;
+  string rpc_private_key_file;
+  string rpc_ca_certificate_file;
   ASSERT_OK(security::CreateTestSSLCertSignedByChain(GetTestDataDirectory(),
-                                                     &FLAGS_rpc_certificate_file,
-                                                     &FLAGS_rpc_private_key_file,
-                                                     &FLAGS_rpc_ca_certificate_file));
+                                                     &rpc_certificate_file,
+                                                     &rpc_private_key_file,
+                                                     &rpc_ca_certificate_file));
   // Set up server.
   Sockaddr server_addr;
   StartTestServer(&server_addr, enable_ssl);
 
   // Set up client.
   SCOPED_TRACE(strings::Substitute("Connecting to $0", server_addr.ToString()));
-  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl,
+      rpc_certificate_file, rpc_private_key_file, rpc_ca_certificate_file));
+
   Proxy p(client_messenger, server_addr, server_addr.host(),
           GenericCalculatorService::static_service_name());
   ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
@@ -216,20 +217,26 @@ TEST_P(TestRpc, TestCallWithPasswordProtectedKey) {
   // We're only interested in running this test with TLS enabled.
   if (!enable_ssl) return;
 
+  string rpc_certificate_file;
+  string rpc_private_key_file;
+  string rpc_ca_certificate_file;
+  string rpc_private_key_password_cmd;
   string passwd;
   ASSERT_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
-                                                       &FLAGS_rpc_certificate_file,
-                                                       &FLAGS_rpc_private_key_file,
+                                                       &rpc_certificate_file,
+                                                       &rpc_private_key_file,
                                                        &passwd));
-  FLAGS_rpc_ca_certificate_file = FLAGS_rpc_certificate_file;
-  FLAGS_rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
+  rpc_ca_certificate_file = rpc_certificate_file;
+  rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
   // Set up server.
   Sockaddr server_addr;
   StartTestServer(&server_addr, enable_ssl);
 
   // Set up client.
   SCOPED_TRACE(strings::Substitute("Connecting to $0", server_addr.ToString()));
-  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl,
+      rpc_certificate_file, rpc_private_key_file, rpc_ca_certificate_file,
+      rpc_private_key_password_cmd));
   Proxy p(client_messenger, server_addr, server_addr.host(),
           GenericCalculatorService::static_service_name());
   ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
@@ -247,18 +254,23 @@ TEST_P(TestRpc, TestCallWithBadPasswordProtectedKey) {
   if (!enable_ssl) return;
   ::testing::FLAGS_gtest_death_test_style = "threadsafe";
 
+  string rpc_certificate_file;
+  string rpc_private_key_file;
+  string rpc_ca_certificate_file;
+  string rpc_private_key_password_cmd;
   string passwd;
   CHECK_OK(security::CreateTestSSLCertWithEncryptedKey(GetTestDataDirectory(),
-                                                       &FLAGS_rpc_certificate_file,
-                                                       &FLAGS_rpc_private_key_file,
+                                                       &rpc_certificate_file,
+                                                       &rpc_private_key_file,
                                                        &passwd));
   // Overwrite the password with an invalid one.
   passwd = "badpassword";
-  FLAGS_rpc_ca_certificate_file = FLAGS_rpc_certificate_file;
-  FLAGS_rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
+  rpc_ca_certificate_file = rpc_certificate_file;
+  rpc_private_key_password_cmd = strings::Substitute("echo $0", passwd);
   // Verify that the server fails to start up.
   Sockaddr server_addr;
-  ASSERT_DEATH(StartTestServer(&server_addr, enable_ssl), "failed to load private key file");
+  ASSERT_DEATH(StartTestServer(&server_addr, enable_ssl, rpc_certificate_file, rpc_private_key_file,
+      rpc_ca_certificate_file, rpc_private_key_password_cmd), "failed to load private key file");
 }
 
 // Test that connecting to an invalid server properly throws an error.

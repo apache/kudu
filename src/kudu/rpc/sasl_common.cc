@@ -26,14 +26,12 @@
 #include <string>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <regex.h>
 #include <sasl/sasl.h>
 #include <sasl/saslplug.h>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/once.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/security/init.h"
 #include "kudu/util/mutex.h"
@@ -42,8 +40,6 @@
 
 using std::set;
 using std::string;
-
-DECLARE_string(keytab_file);
 
 namespace kudu {
 namespace rpc {
@@ -61,6 +57,9 @@ static bool sasl_is_initialized = false;
 
 // If true, then we expect someone else has initialized SASL.
 static bool g_disable_sasl_init = false;
+
+// If true, we expect kerberos to be enabled.
+static bool has_kerberos_keytab = false;
 
 // Output Sasl messages.
 // context: not used.
@@ -211,8 +210,10 @@ static bool SaslMutexImplementationProvided() {
 
 // Actually perform the initialization for the SASL subsystem.
 // Meant to be called via GoogleOnceInit().
-static void DoSaslInit() {
+static void DoSaslInit(bool kerberos_keytab_provided) {
   VLOG(3) << "Initializing SASL library";
+
+  has_kerberos_keytab = kerberos_keytab_provided;
 
   bool sasl_initialized = SaslIsInitialized();
   if (sasl_initialized && !g_disable_sasl_init) {
@@ -264,10 +265,12 @@ Status DisableSaslInitialization() {
   return Status::OK();
 }
 
-Status SaslInit() {
+Status SaslInit(bool kerberos_keytab_provided) {
   // Only execute SASL initialization once
-  static GoogleOnceType once = GOOGLE_ONCE_INIT;
-  GoogleOnceInit(&once, &DoSaslInit);
+  static std::once_flag once;
+  std::call_once(once, DoSaslInit, kerberos_keytab_provided);
+  DCHECK_EQ(kerberos_keytab_provided, has_kerberos_keytab);
+
   return sasl_init_status;
 }
 
@@ -319,10 +322,9 @@ Status WrapSaslCall(sasl_conn_t* conn, const std::function<int()>& call) {
   g_auth_failure_capture = &err;
 
   // Take the 'kerberos_reinit_lock' here to avoid a possible race with ticket renewal.
-  bool kerberos_supported = !FLAGS_keytab_file.empty();
-  if (kerberos_supported) kudu::security::KerberosReinitLock()->ReadLock();
+  if (has_kerberos_keytab) kudu::security::KerberosReinitLock()->ReadLock();
   int rc = call();
-  if (kerberos_supported) kudu::security::KerberosReinitLock()->ReadUnlock();
+  if (has_kerberos_keytab) kudu::security::KerberosReinitLock()->ReadUnlock();
   g_auth_failure_capture = nullptr;
 
   switch (rc) {
