@@ -180,6 +180,7 @@
                     <artifactSet>
                         <includes>
                             <include>org.apache.kudu:kudu-client</include>
+                            <include>org.apache.kudu:kudu-client-tools</include>
                             <include>org.apache.kudu:kudu-${spark.version.label}_${scala.binary.version}</include>
                             <include>org.apache.yetus:audience-annotations</include>
                             <include>com.databricks:spark-avro_${scala.binary.version}</include>
