@@ -1178,8 +1178,7 @@ Status ValidateClientSchema(const boost::optional<string>& name,
                                      col.attributes().encoding,
                                      &dummy);
     if (!s.ok()) {
-      return s.CloneAndPrepend(
-          Substitute("invalid encoding for column '$0'", col.name()));
+      return s.CloneAndPrepend(Substitute("invalid encoding for column '$0'", col.name()));
     }
   }
   return Status::OK();
@@ -1406,8 +1405,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   actions.tablets_to_add = tablets;
   s = sys_catalog_->Write(actions);
   if (!s.ok()) {
-    s = s.CloneAndPrepend(Substitute("An error occurred while writing to sys-catalog: $0",
-                                     s.ToString()));
+    s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
     LOG(WARNING) << s.ToString();
     CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
@@ -1599,8 +1597,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     actions.tablets_to_update.assign(tablets.begin(), tablets.end());
     Status s = sys_catalog_->Write(actions);
     if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("An error occurred while updating sys tables: $0",
-                                       s.ToString()));
+      s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
       LOG(WARNING) << s.ToString();
       CheckIfNoLongerLeaderAndSetupError(s, resp);
       return s;
@@ -2081,9 +2078,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   Status s = sys_catalog_->Write(actions);
   if (!s.ok()) {
-    s = s.CloneAndPrepend(
-        Substitute("An error occurred while updating sys-catalog tables entry: $0",
-                   s.ToString()));
+    s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
     LOG(WARNING) << s.ToString();
     CheckIfNoLongerLeaderAndSetupError(s, resp);
     return s;
@@ -2541,7 +2536,7 @@ Status RetryingTSRpcTask::Run() {
       return Status::OK();
     }
   } else {
-    s = s.CloneAndPrepend("Failed to reset TS proxy");
+    s = s.CloneAndPrepend("failed to reset TS proxy");
   }
 
   if (!RescheduleWithBackoffDelay()) {
