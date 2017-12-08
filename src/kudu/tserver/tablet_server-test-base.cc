@@ -441,7 +441,8 @@ void TabletServerTestBase::VerifyScanRequestFailure(
 }
 
 // Open a new scanner which scans all of the columns in the table.
-void TabletServerTestBase::OpenScannerWithAllColumns(ScanResponsePB* resp) {
+void TabletServerTestBase::OpenScannerWithAllColumns(ScanResponsePB* resp,
+                                                     ReadMode read_mode) {
   ScanRequestPB req;
   RpcController rpc;
 
@@ -449,6 +450,7 @@ void TabletServerTestBase::OpenScannerWithAllColumns(ScanResponsePB* resp) {
   const Schema& projection = schema_;
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  scan->set_read_mode(read_mode);
   ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
   req.set_call_seq_id(0);
   req.set_batch_size_bytes(0); // so it won't return data right away

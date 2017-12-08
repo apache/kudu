@@ -183,6 +183,8 @@ class TabletServerTest : public TabletServerTestBase {
   }
 
   void DoOrderedScanTest(const Schema& projection, const string& expected_rows_as_string);
+
+  void ScanYourWritesTest(uint64_t propagated_timestamp, ScanResponsePB* resp);
 };
 
 TEST_F(TabletServerTest, TestPingServer) {
@@ -1412,7 +1414,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
                       "Log file corruption detected");
 }
 
-TEST_F(TabletServerTest, TestScan) {
+TEST_F(TabletServerTest, TestReadLatest) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
   InsertTestRowsDirect(0, num_rows);
 
@@ -1467,7 +1469,14 @@ TEST_F(TabletServerTest, TestScan) {
   ASSERT_EQ(0, tablet_active_scanners->value());
 }
 
-TEST_F(TabletServerTest, TestExpiredScanner) {
+class ExpiredScannerParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+
+TEST_P(ExpiredScannerParamTest, Test) {
+  const ReadMode mode = GetParam();
+
   // Make scanners expire quickly.
   FLAGS_scanner_ttl_ms = 1;
 
@@ -1484,7 +1493,7 @@ TEST_F(TabletServerTest, TestExpiredScanner) {
 
   // Open a scanner but don't read from it.
   ScanResponsePB resp;
-  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
+  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp, mode));
 
   // The scanner should expire after a short time.
   ASSERT_EVENTUALLY([&]() {
@@ -1502,7 +1511,22 @@ TEST_F(TabletServerTest, TestExpiredScanner) {
   ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
 }
 
-TEST_F(TabletServerTest, TestScanCorruptedDeltas) {
+const ReadMode read_modes[] = {
+    READ_LATEST,
+    READ_AT_SNAPSHOT,
+    READ_YOUR_WRITES,
+};
+
+INSTANTIATE_TEST_CASE_P(Params, ExpiredScannerParamTest,
+                        testing::ValuesIn(read_modes));
+
+class ScanCorruptedDeltasParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+
+TEST_P(ScanCorruptedDeltasParamTest, Test) {
+  const ReadMode mode = GetParam();
   // Ensure some rows get to disk with deltas.
   InsertTestRowsDirect(0, 100);
   ASSERT_OK(tablet_replica_->tablet()->Flush());
@@ -1540,6 +1564,7 @@ TEST_F(TabletServerTest, TestScanCorruptedDeltas) {
   RpcController rpc;
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  scan->set_read_mode(mode);
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Send the call. This first call should attempt to init the corrupted
@@ -1557,16 +1582,31 @@ TEST_F(TabletServerTest, TestScanCorruptedDeltas) {
   }
 }
 
-TEST_F(TabletServerTest, TestScannerOpenWhenServerShutsDown) {
-  InsertTestRowsDirect(0, 1);
+INSTANTIATE_TEST_CASE_P(Params, ScanCorruptedDeltasParamTest,
+                        testing::ValuesIn(read_modes));
+
+class ScannerOpenWhenServerShutsDownParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+TEST_P(ScannerOpenWhenServerShutsDownParamTest, Test) {
+  const ReadMode mode = GetParam();
+  // Write and flush the write, so we have some rows in MRS and DRS
+  InsertTestRowsDirect(0, 100);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  UpdateTestRowRemote(1, 100);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
 
   ScanResponsePB resp;
-  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp));
+  ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp, mode));
 
   // Scanner is now open. The test will now shut down the TS with the scanner still
   // out there. Due to KUDU-161 this used to fail, since the scanner (and thus the MRS)
   // stayed open longer than the anchor registry
 }
+
+INSTANTIATE_TEST_CASE_P(Params, ScannerOpenWhenServerShutsDownParamTest,
+                        testing::ValuesIn(read_modes));
 
 TEST_F(TabletServerTest, TestSnapshotScan) {
   const int num_rows = AllowSlowTests() ? 1000 : 100;
@@ -1721,40 +1761,6 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   }
 }
 
-
-// Test tserver shutdown with an active scanner open.
-TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
-  vector<uint64_t> write_timestamps_collector;
-  // Write and flush and write, so we have some rows in MRS and DRS
-  InsertTestRowsRemote(0, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
-  ASSERT_OK(tablet_replica_->tablet()->Flush());
-  InsertTestRowsRemote(100, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
-
-  ScanRequestPB req;
-  ScanResponsePB resp;
-  RpcController rpc;
-
-  // Set up a new request with no predicates, all columns.
-  const Schema& projection = schema_;
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
-  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
-  req.set_call_seq_id(0);
-  req.set_batch_size_bytes(0);
-  scan->set_read_mode(READ_AT_SNAPSHOT);
-
-  // Send the call
-  {
-    SCOPED_TRACE(SecureDebugString(req));
-    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(SecureDebugString(resp));
-    ASSERT_FALSE(resp.has_error());
-  }
-  // Intentionally do not drain the scanner at the end, to leave it open.
-  // This tests tablet server shutdown with an active scanner.
-}
-
-
 // Test retrying a snapshot scan using last_row.
 TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
   // Set the internal batching within the tserver to be small. Otherwise,
@@ -1837,7 +1843,6 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
     }
   }
 }
-
 
 // Tests that a read in the future succeeds if a propagated_timestamp (that is even
 // further in the future) follows along. Also tests that the clock was updated so
@@ -1939,6 +1944,85 @@ TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTi
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SNAPSHOT, resp.error().code());
   }
+}
+
+// Scan with READ_YOUR_WRITES mode to ensure it can
+// satisfy read-your-writes/read-your-reads session guarantee.
+TEST_F(TabletServerTest, TestScanYourWrites) {
+  vector<uint64_t> write_timestamps_collector;
+  const int kNumRows = 100;
+  // Perform a write.
+  InsertTestRowsRemote(0, kNumRows, 1, nullptr, kTabletId, &write_timestamps_collector);
+
+  // Scan with READ_YOUR_WRITES mode and use the previous
+  // write response as the propagated timestamp.
+  ScanResponsePB resp;
+  int64_t propagated_timestamp = write_timestamps_collector[0];
+  ScanYourWritesTest(propagated_timestamp, &resp);
+
+  // Store the returned snapshot timestamp as the propagated
+  // timestamp for the next read.
+  propagated_timestamp = resp.snap_timestamp();
+  // Drain all the rows from the scanner.
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(kNumRows, results.size());
+  ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
+  ASSERT_EQ(R"((int32 key=99, int32 int_val=99, string string_val="original99"))", results[99]);
+
+  // Rescan the tablet to ensure READ_YOUR_WRITES mode can
+  // satisfy read-your-reads session guarantee.
+  ScanResponsePB new_resp;
+  ScanYourWritesTest(propagated_timestamp, &new_resp);
+  // Drain all the rows from the scanner.
+  results.clear();
+  ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(new_resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(kNumRows, results.size());
+  ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
+  ASSERT_EQ(R"((int32 key=99, int32 int_val=99, string string_val="original99"))", results[99]);
+}
+
+// Tests that a read succeeds even without propagated_timestamp.
+TEST_F(TabletServerTest, TestScanYourWrites_WithoutPropagatedTimestamp) {
+  vector<uint64_t> write_timestamps_collector;
+  // Perform a write.
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+
+  ScanResponsePB resp;
+  ScanYourWritesTest(Timestamp::kMin.ToUint64(), &resp);
+}
+
+// Tests that a read succeeds even with a future propagated_timestamp. Also
+// tests that the clock was updated so that no writes will ever have a
+// timestamp before this snapshot.
+TEST_F(TabletServerTest, TestScanYourWrites_PropagatedTimestampInTheFuture) {
+  vector<uint64_t> write_timestamps_collector;
+  // Perform a write.
+  InsertTestRowsRemote(0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
+
+  ScanResponsePB resp;
+  // Increment the write timestamp by 5 secs: the server will definitely consider
+  // this in the future.
+  Timestamp propagated_timestamp(write_timestamps_collector[0]);
+  propagated_timestamp = HybridClock::TimestampFromMicroseconds(
+      HybridClock::GetPhysicalValueMicros(propagated_timestamp) + 5000000);
+  ScanYourWritesTest(propagated_timestamp.ToUint64(), &resp);
+
+  // Make sure the server's current clock returns a value that is larger than the
+  // propagated timestamp. It should have the same physical time, but higher
+  // logical time (due to various calls to clock.Now() when processing the request).
+  Timestamp now = mini_server_->server()->clock()->Now();
+
+  ASSERT_EQ(HybridClock::GetPhysicalValueMicros(propagated_timestamp),
+            HybridClock::GetPhysicalValueMicros(now));
+
+  ASSERT_GT(HybridClock::GetLogicalValue(now),
+            HybridClock::GetLogicalValue(propagated_timestamp));
+
+  vector<string> results;
+  NO_FATALS(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+  ASSERT_EQ(1, results.size());
+  ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="original0"))", results[0]);
 }
 
 TEST_F(TabletServerTest, TestScanWithStringPredicates) {
@@ -2088,13 +2172,19 @@ TEST_F(TabletServerTest, TestBadScannerID) {
 
 // Test passing a scanner ID, but also filling in some of the NewScanRequest
 // field.
-TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
+class InvalidScanRequest_NewScanAndScannerIDParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+TEST_P(InvalidScanRequest_NewScanAndScannerIDParamTest, Test) {
+  const ReadMode mode = GetParam();
   ScanRequestPB req;
   ScanResponsePB resp;
   RpcController rpc;
 
   NewScanRequestPB* scan = req.mutable_new_scan_request();
   scan->set_tablet_id(kTabletId);
+  scan->set_read_mode(mode);
   req.set_batch_size_bytes(0); // so it won't return data right away
   req.set_scanner_id("x");
   SCOPED_TRACE(SecureDebugString(req));
@@ -2103,6 +2193,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
   ASSERT_STR_CONTAINS(s.ToString(), "Must not pass both a scanner_id and new_scan_request");
 }
 
+INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_NewScanAndScannerIDParamTest,
+                        testing::ValuesIn(read_modes));
 
 // Test that passing a projection with fields not present in the tablet schema
 // throws an exception.
@@ -2157,13 +2249,20 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 // Test that passing a projection with Column IDs throws an exception.
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.
-TEST_F(TabletServerTest, TestInvalidScanRequest_WithIds) {
+class InvalidScanRequest_WithIdsParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+TEST_P(InvalidScanRequest_WithIdsParamTest, Test) {
   const Schema* projection = tablet_replica_->tablet()->schema();
   ASSERT_TRUE(projection->has_column_ids());
   VerifyScanRequestFailure(*projection,
                            TabletServerErrorPB::INVALID_SCHEMA,
                            "User requests should not have Column IDs");
 }
+
+INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_WithIdsParamTest,
+                        testing::ValuesIn(read_modes));
 
 // Test scanning a tablet that has no entries.
 TEST_F(TabletServerTest, TestScan_NoResults) {
@@ -2192,7 +2291,12 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
 }
 
 // Test scanning a tablet that has no entries.
-TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
+class InvalidScanSeqIdParamTest :
+    public TabletServerTest,
+    public ::testing::WithParamInterface<ReadMode> {
+};
+TEST_P(InvalidScanSeqIdParamTest, Test) {
+  const ReadMode mode = GetParam();
   InsertTestRowsDirect(0, 10);
 
   ScanRequestPB req;
@@ -2204,6 +2308,7 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
     const Schema& projection = schema_;
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(kTabletId);
+    scan->set_read_mode(mode);
     ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
     req.set_call_seq_id(0);
     req.set_batch_size_bytes(0); // so it won't return data right away
@@ -2233,6 +2338,9 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
   }
 }
 
+INSTANTIATE_TEST_CASE_P(Params, InvalidScanSeqIdParamTest,
+                        testing::ValuesIn(read_modes));
+
 // Regression test for KUDU-1789: when ScannerKeepAlive is called on a non-existent
 // scanner, it should properly respond with an error.
 TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
@@ -2245,6 +2353,39 @@ TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
   ASSERT_OK(proxy_->ScannerKeepAlive(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ(resp.error().code(), TabletServerErrorPB::SCANNER_EXPIRED);
+}
+
+void TabletServerTest::ScanYourWritesTest(uint64_t propagated_timestamp,
+                                          ScanResponsePB* resp) {
+  ScanRequestPB req;
+
+  // Set up a new request with no predicates, all columns.
+  const Schema &projection = schema_;
+  NewScanRequestPB *scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  scan->set_read_mode(READ_YOUR_WRITES);
+  if (propagated_timestamp != Timestamp::kInvalidTimestamp.ToUint64()) {
+    scan->set_propagated_timestamp(propagated_timestamp);
+  }
+  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  req.set_batch_size_bytes(0); // so it won't return data right away
+
+  {
+    RpcController rpc;
+    SCOPED_TRACE(SecureDebugString(req));
+    ASSERT_OK(proxy_->Scan(req, resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(*resp));
+    ASSERT_FALSE(resp->has_error());
+  }
+
+  // Make sure that the chosen snapshot timestamp is sent back and
+  // it is larger than the previous propagation timestamp.
+  ASSERT_TRUE(resp->has_snap_timestamp());
+  ASSERT_LT(propagated_timestamp, resp->snap_timestamp());
+  // The 'propagated_timestamp' field must be set for 'success' responses.
+  ASSERT_TRUE(resp->has_propagated_timestamp());
+  ASSERT_TRUE(resp->has_more_results());
 }
 
 void TabletServerTest::DoOrderedScanTest(const Schema& projection,

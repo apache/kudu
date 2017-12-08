@@ -217,7 +217,7 @@ enum ReadMode {
   // is lower than the snapshot's timestamp to complete.
   //
   // When mixing reads and writes clients that specify COMMIT_WAIT as their
-  // external consistency mode and then use the returned write_timestamp to
+  // external consistency mode and then use the returned write_timestamp
   // to perform snapshot reads are guaranteed that that snapshot time is
   // considered in the past by all servers and no additional action is
   // necessary. Clients using CLIENT_PROPAGATED however must forcibly propagate
@@ -231,6 +231,29 @@ enum ReadMode {
   // the former.
   // TODO implement actually signing the propagated timestamp.
   READ_AT_SNAPSHOT = 2;
+
+  // When READ_YOUR_WRITES is specified, the server will pick a timestamp to use
+  // for a server-local snapshot scan subject to the following criteria:
+  // (1) It will be higher than the propagated timestamp,
+  // (2) It will attempt to minimize latency caused by waiting for outstanding
+  //     write transactions to complete.
+  // More specifically, the server will choose the latest timestamp higher than
+  // the provided propagated timestamp bound that allows execution of the
+  // reads without being blocked by the in-flight transactions (however the
+  // read can be blocked if the propagated timestamp is higher than some in-flight
+  // transactions). If no propagated timestamp is provided the server will choose
+  // a timestamp such that all transactions before it are committed. The chosen
+  // timestamp will be returned back to the client as 'snapshot timestamp'. The Kudu
+  // client library will use it as the propagated timestamp for subsequent reads
+  // to avoid unnecessarily waiting.
+  //
+  // Reads in this mode are not repeatable: two READ_YOUR_WRITES reads, even if
+  // they provide the same propagated timestamp bound, can execute at different
+  // timestamps and thus return different results. However, it allows
+  // read-your-writes and read-your-reads for each client, as the chosen
+  // timestamp must be higher than the one of the last write or read,
+  // known from the propagated timestamp.
+  READ_YOUR_WRITES = 3;
 }
 
 // The possible order modes for clients.

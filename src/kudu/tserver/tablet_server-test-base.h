@@ -23,10 +23,10 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -117,7 +117,8 @@ class TabletServerTestBase : public KuduTest {
                                 const char *expected_message);
 
   // Open a new scanner which scans all of the columns in the table.
-  void OpenScannerWithAllColumns(ScanResponsePB* resp);
+  void OpenScannerWithAllColumns(ScanResponsePB* resp,
+                                 ReadMode read_mode = READ_LATEST);
 
  protected:
   static const char* kTableId;

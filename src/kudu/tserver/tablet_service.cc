@@ -1624,11 +1624,13 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 }
 
 namespace {
-// Checks if 'timestamp' is before the 'tablet's AHM if this is a READ_AT_SNAPSHOT scan.
-// Returns Status::OK() if it's not or Status::InvalidArgument() if it is.
+// Checks if 'timestamp' is before the tablet's AHM if this is a
+// READ_AT_SNAPSHOT/READ_YOUR_WRITES scan. Returns Status::OK() if it's
+// not or Status::InvalidArgument() if it is.
 Status VerifyNotAncientHistory(Tablet* tablet, ReadMode read_mode, Timestamp timestamp) {
   tablet::HistoryGcOpts history_gc_opts = tablet->GetHistoryGcOpts();
-  if (read_mode == READ_AT_SNAPSHOT && history_gc_opts.IsAncientHistory(timestamp)) {
+  if ((read_mode == READ_AT_SNAPSHOT || read_mode == READ_YOUR_WRITES) &&
+      history_gc_opts.IsAncientHistory(timestamp)) {
     return Status::InvalidArgument(
         Substitute("Snapshot timestamp is earlier than the ancient history mark. Consider "
                        "increasing the value of the configuration parameter "
@@ -1752,6 +1754,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
         s = tablet->NewRowIterator(projection, &iter);
         break;
       }
+      case READ_YOUR_WRITES: // Fallthrough intended
       case READ_AT_SNAPSHOT: {
         s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, replica,
                                  &iter, snap_timestamp);
@@ -2032,59 +2035,24 @@ MonoTime ClampScanDeadlineForWait(const MonoTime& deadline, bool* was_clamped) {
 Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const RpcContext* rpc_context,
                                                const Schema& projection,
-                                               TabletReplica* replica,
+                                               TabletReplica* tablet_replica,
                                                gscoped_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
-  // If the client sent a timestamp update our clock with it.
-  if (scan_pb.has_propagated_timestamp()) {
-    Timestamp propagated_timestamp(scan_pb.propagated_timestamp());
-
-    // Update the clock so that we never generate snapshots lower that
-    // 'propagated_timestamp'. If 'propagated_timestamp' is lower than
-    // 'now' this call has no effect. If 'propagated_timestamp' is too much
-    // into the future this will fail and we abort.
-    RETURN_NOT_OK(server_->clock()->Update(propagated_timestamp));
+  switch (scan_pb.read_mode()) {
+    case READ_AT_SNAPSHOT: // Fallthrough intended
+    case READ_YOUR_WRITES:
+      break;
+    default:
+      LOG(FATAL) << "Unsupported snapshot scan mode specified.";
   }
 
+  // Based on the read mode, pick a timestamp and verify it.
   Timestamp tmp_snap_timestamp;
-
-  // If the client provided no snapshot timestamp we take the current clock
-  // time as the snapshot timestamp.
-  if (!scan_pb.has_snap_timestamp()) {
-    tmp_snap_timestamp = server_->clock()->Now();
-  // ... else we use the client provided one, but make sure it is not too far
-  // in the future as to be invalid.
-  } else {
-
-    Timestamp max_allowed_ts;
-    Status s = server_->clock()->GetGlobalLatest(&max_allowed_ts);
-    if (s.IsNotSupported() &&
-        PREDICT_TRUE(!FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps)) {
-      return Status::NotSupported("Snapshot scans not supported on this server",
-                                  s.ToString());
-    }
-    tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
-
-    // Note: if 'max_allowed_ts' is not obtained from clock_->GetGlobalLatest() it's guaranteed
-    // to be higher than 'tmp_snap_timestamp'.
-    if (tmp_snap_timestamp > max_allowed_ts) {
-      return Status::InvalidArgument(
-          Substitute("Snapshot time $0 in the future. Max allowed timestamp is $1",
-                     server_->clock()->Stringify(tmp_snap_timestamp),
-                     server_->clock()->Stringify(max_allowed_ts)));
-    }
-  }
-
-  // Before we wait on anything check that the timestamp is after the AHM.
-  // This is not the final check. We'll check this again after the iterators are open but
-  // there is no point in waiting if we can't actually scan afterwards.
-  RETURN_NOT_OK(VerifyNotAncientHistory(replica->tablet(),
-                                        ReadMode::READ_AT_SNAPSHOT,
-                                        tmp_snap_timestamp));
+  RETURN_NOT_OK(PickAndVerifyTimestamp(scan_pb, tablet_replica->tablet(), &tmp_snap_timestamp));
 
   tablet::MvccSnapshot snap;
-  Tablet* tablet = replica->tablet();
-  scoped_refptr<consensus::TimeManager> time_manager = replica->time_manager();
+  Tablet* tablet = tablet_replica->tablet();
+  scoped_refptr<consensus::TimeManager> time_manager = tablet_replica->time_manager();
   tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
 
   // Reduce the client's deadline by a few msecs to allow for overhead.
@@ -2129,6 +2097,87 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
     return Status::InvalidArgument("Unknown order mode specified");
   }
   RETURN_NOT_OK(tablet->NewRowIterator(projection, snap, scan_pb.order_mode(), iter));
+
+  // Return the picked snapshot timestamp for both READ_AT_SNAPSHOT
+  // and READ_YOUR_WRITES mode.
+  *snap_timestamp = tmp_snap_timestamp;
+  return Status::OK();
+}
+
+Status TabletServiceImpl::ValidateTimestamp(const Timestamp& snap_timestamp) {
+  Timestamp max_allowed_ts;
+  Status s = server_->clock()->GetGlobalLatest(&max_allowed_ts);
+  if (PREDICT_FALSE(s.IsNotSupported()) &&
+      PREDICT_TRUE(!FLAGS_scanner_allow_snapshot_scans_with_logical_timestamps)) {
+    return Status::NotSupported("Snapshot scans not supported on this server",
+                                s.ToString());
+  }
+
+  // Note: if 'max_allowed_ts' is not obtained from clock_->GetGlobalLatest(), e.g.,
+  // in case logical clock is used, it's guaranteed to be higher than 'tmp_snap_timestamp',
+  // since 'max_allowed_ts' is default-constructed to kInvalidTimestamp (MAX_LONG - 1).
+  if (snap_timestamp > max_allowed_ts) {
+    return Status::InvalidArgument(
+        Substitute("Snapshot time $0 in the future. Max allowed timestamp is $1",
+                   server_->clock()->Stringify(snap_timestamp),
+                   server_->clock()->Stringify(max_allowed_ts)));
+  }
+
+  return Status::OK();
+}
+
+Status TabletServiceImpl::PickAndVerifyTimestamp(const NewScanRequestPB& scan_pb,
+                                                 Tablet* tablet,
+                                                 Timestamp* snap_timestamp) {
+  // If the client sent a timestamp update our clock with it.
+  if (scan_pb.has_propagated_timestamp()) {
+    Timestamp propagated_timestamp(scan_pb.propagated_timestamp());
+
+    // Update the clock so that we never generate snapshots lower than
+    // 'propagated_timestamp'. If 'propagated_timestamp' is lower than
+    // 'now' this call has no effect. If 'propagated_timestamp' is too far
+    // into the future this will fail and we abort.
+    RETURN_NOT_OK(server_->clock()->Update(propagated_timestamp));
+  }
+
+  Timestamp tmp_snap_timestamp;
+  ReadMode read_mode = scan_pb.read_mode();
+  tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
+
+  if (read_mode == READ_AT_SNAPSHOT) {
+    // For READ_AT_SNAPSHOT mode,
+    //   1) if the client provided no snapshot timestamp we take the current
+    //      clock time as the snapshot timestamp.
+    //   2) else we use the client provided one, but make sure it is not too
+    //      far in the future as to be invalid.
+    if (!scan_pb.has_snap_timestamp()) {
+      tmp_snap_timestamp = server_->clock()->Now();
+    } else {
+      tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
+      RETURN_NOT_OK(ValidateTimestamp(tmp_snap_timestamp));
+    }
+  } else {
+    // For READ_YOUR_WRITES mode, we use the following to choose a
+    // snapshot timestamp: MAX(propagated timestamp + 1, 'clean' timestamp).
+    // There is no need to validate if the chosen timestamp is too far in
+    // the future, since:
+    //   1) MVCC 'clean' timestamp is by definition in the past (it's maximally
+    //      bounded by safe time).
+    //   2) the propagated timestamp was used to update the clock above and the
+    //      update would have returned an error if the the timestamp was too
+    //      far in the future.
+    uint64_t clean_timestamp = mvcc_manager->GetCleanTimestamp().ToUint64();
+    uint64_t propagated_timestamp = scan_pb.has_propagated_timestamp() ?
+                                    scan_pb.propagated_timestamp() : Timestamp::kMin.ToUint64();
+    tmp_snap_timestamp = Timestamp(std::max(propagated_timestamp + 1, clean_timestamp));
+  }
+
+  // Before we wait on anything check that the timestamp is after the AHM.
+  // This is not the final check. We'll check this again after the iterators are open but
+  // there is no point in waiting if we can't actually scan afterwards.
+  RETURN_NOT_OK(VerifyNotAncientHistory(tablet,
+                                        read_mode,
+                                        tmp_snap_timestamp));
   *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
 }
