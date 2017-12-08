@@ -1,0 +1,5 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node2" href="$classkudu_1_1client_1_1KuduClient.html" title="A handle for a connection to a cluster. " alt="" coords="227,5,388,32"/>
+<area shape="rect" id="node3" href="$classkudu_1_1client_1_1KuduSession.html" title="Representation of a Kudu client session. " alt="" coords="220,56,395,83"/>
+<area shape="rect" id="node4" href="$classkudu_1_1client_1_1KuduTable.html" title="A representation of a table on a particular cluster. " alt="" coords="228,107,387,133"/>
+</map>
