@@ -401,7 +401,7 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
 //
 // TODO(aserbin): add a test scenario for the leader replica's logic to cover
 //                the latter case.
-bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
+bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
   int num_voters_total = 0;
   int num_voters_need_replacement = 0;
   int num_non_voters_to_promote = 0;
@@ -438,7 +438,7 @@ bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor) {
 }
 
 // Whether there is an excess replica to evict.
-bool CanEvictReplica(const RaftConfigPB& config,
+bool ShouldEvictReplica(const RaftConfigPB& config,
                      const string& leader_uuid,
                      int replication_factor,
                      string* uuid_to_evict) {

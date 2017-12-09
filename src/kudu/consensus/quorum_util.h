@@ -88,19 +88,21 @@ std::string DiffConsensusStates(const ConsensusStatePB& old_state,
 std::string DiffRaftConfigs(const RaftConfigPB& old_config,
                             const RaftConfigPB& new_config);
 
-// Return true iff the current cluster is under-replicated given the Raft
-// configuration and the included health status of the members.
-bool IsUnderReplicated(const RaftConfigPB& config, int replication_factor);
+// Return 'true' iff the specified tablet configuration is under-replicated
+// given the 'replication_factor' and should add a replica. The decision is
+// based on the health information provided by the Raft configuration
+// in the 'config' parameter.
+bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor);
 
 // Check if the given Raft configuration contains at least one extra replica
-// which can be removed in accordance with the specified replication
-// factor and current Raft leader. If so, then return 'true' and set the UUID
-// of the best suited replica into the 'uuid_to_evict' out parameter. Otherwise,
-// return 'false'.
-bool CanEvictReplica(const RaftConfigPB& config,
-                     const std::string& leader_uuid,
-                     int replication_factor,
-                     std::string* uuid_to_evict = nullptr);
+// which should (and can) be removed in accordance with the specified
+// replication factor and current Raft leader. If so, then return 'true' and set
+// the UUID of the best candidate for eviction into the 'uuid_to_evict'
+// out parameter. Otherwise, return 'false'.
+bool ShouldEvictReplica(const RaftConfigPB& config,
+                        const std::string& leader_uuid,
+                        int replication_factor,
+                        std::string* uuid_to_evict = nullptr);
 
 }  // namespace consensus
 }  // namespace kudu
