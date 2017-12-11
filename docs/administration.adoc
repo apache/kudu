@@ -765,26 +765,42 @@ $ rm -rf /data/0/kudu-tserver-wal/* /data/1/kudu-tserver/* /data/2/kudu-tserver/
 [[disk_failure_recovery]]
 // TODO(awong): revise this when KUDU-616 is complete.
 === Recovering from Disk Failure
-As of Kudu 1.6.0, Kudu master servers are not resilient to any types of disk
-failures. Kudu tablet servers are only resilient to disk failures if they occur
-on a disk storing only data blocks, so the failure of a disk where the
-write-ahead logs or tablet metadata are stored will result in a crash of the
-entire tablet server.
+Kudu nodes can only survive failures of disks on which certain Kudu directories
+are mounted. For more information about the different Kudu directory types, see
+the section on link:configuration.html#directory_configuration[Kudu Directory
+Configurations]. Below describes this behavior across different Apache Kudu
+releases.
 
-Failures in failure-intolerant directories will lead to a crash, upon which the
-server must be rebuilt, replacing or removing the failed disk from Kudu's
-configuration. See the section on <<rebuilding_kudu,Rebuilding a Kudu
-Filesystem Layout>> for more details.
+[[disk_failure_behavior]]
+.Kudu Disk Failure Behavior
+[cols="<,<,<",options="header"]
+|===
+| Node Type | Kudu Directory Type | Kudu Releases that Crash on Disk Failure
+| Master | All | All
+| Tablet Server | Directory containing WALs | All
+| Tablet Server | Directory containing data blocks and tablet metadata | All
+| Tablet Server | Directory containing data blocks only | Pre-1.6.0
+|===
 
-In the case of a failure in a failure-tolerant directory, Kudu will
-automatically stop using the affected disk, shut down tablets with blocks on
-the affected disk, and re-replicate the affected tablets to other tablet
-servers. The affected server will remain alive and print messages to the log
-indicating the disk failure, for example:
+If a node crashes due to a disk failure, the node must be emptied and rebuilt,
+replacing or removing the failed disk from Kudu's configuration. See the
+section on <<rebuilding_kudu,Rebuilding a Kudu Filesystem Layout>> for
+instructions on how to do so.
+
+When a disk failure occurs that does not lead to a crash, Kudu will stop using
+the affected directory, shut down tablets with blocks on the affected
+directories, and automatically re-replicate the affected tablets to other
+tablet servers. The affected server will remain alive and print messages to the
+log indicating the disk failure, for example:
 
 ----
-E1025 19:06:24.163748 27115 data_dirs.cc:1011] Directory /data/8/kudu/data marked as failed
+E1205 19:06:24.163748 27115 data_dirs.cc:1011] Directory /data/8/kudu/data marked as failed
 E1205 19:06:30.324795 27064 log_block_manager.cc:1822] Not using report from /data/8/kudu/data: IO error: Could not open container 0a6283cab82d4e75848f49772d2638fe: /data/8/kudu/data/0a6283cab82d4e75848f49772d2638fe.metadata: Read-only file system (error 30)
 E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c1394348d80 P 70f7ee61ead54b1885d819f354eb3405: aborting tablet bootstrap: tablet has data in a failed directory
 ----
 
+While in this state, the affected node will avoid using the failed disk,
+leading to lower storage volume and reduced read parallelism. Since removing
+data directories is not currently supported in Kudu, the administrator should
+schedule a window to bring the node down for maintenance and
+<<rebuilding_kudu,rebuild the node>> at their convenience.
