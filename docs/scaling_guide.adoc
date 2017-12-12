@@ -1,0 +1,182 @@
+[[scaling]]
+= Apache Kudu Scaling Guide
+
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 2
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+This document describes in detail how Kudu scales with respect to various system resources,
+including memory, file descriptors, and threads. See the
+link:known_issues.html#_scale[scaling limits] for the maximum recommended parameters of a Kudu
+cluster. They can be used to estimate roughly the number of servers required for a given quantity
+of data.
+
+WARNING: The recommendations and conclusions here are only approximations. Appropriate numbers
+depend on use case. There is no substitute for measurement and monitoring of resources used during a
+representative workload.
+
+== Terms
+
+We will use the following terms:
+
+* *hot replica*: A tablet replica that is continuously receiving writes. For example, in a time
+series use case, tablet replicas for the most recent range partition on a time column would be
+continuously receiving the latest data, and would be hot replicas.
+* *cold replica*: A tablet replica that is not hot, i.e. a replica that is not frequently receiving
+writes, for example, once every few minutes. A cold replica may be read from. For example, in a time
+series use case, tablet replicas for previous range partitions on a time column would not receive
+writes at all, or only occasionally receive late updates or additions, but may be constantly read.
+* *data on disk*: The total amount of data stored on a tablet server across all disks,
+post-replication, post-compression, and post-encoding.
+
+== Example Workload
+
+The sections below perform sample calculations using the following parameters:
+
+* 200 hot replicas per tablet server
+* 1600 cold replicas per tablet server
+* 8TB of data on disk per tablet server (about 4.5GB/replica)
+* 512MB block cache
+* 40 cores per server
+* limit of 32000 file descriptors per server
+* a read workload with 1 frequently-scanned table with 40 columns
+
+This workload resembles a time series use case, where the hot replicas correspond to the most recent
+range partition on time.
+
+[[memory]]
+== Memory
+
+The flag `--memory_limit_hard_bytes` determines the maximum amount of memory that a Kudu tablet
+server may use. The amount of memory used by a tablet server scales with data size, write workload,
+and read concurrency. The following table provides numbers that can be used to compute a rough
+estimate of memory usage.
+
+.Tablet Server Memory Usage
+|===
+| Type | Multiplier | Description
+
+| Memory required per TB of data on disk | 1.5GB per 1TB data on disk | Amount of memory per unit of data on disk required for
+basic operation of the tablet server.
+| Hot Replicas' MemRowSets and DeltaMemStores | minimum 128MB per hot replica | Minimum amount of data
+to flush per MemRowSet flush. For most use cases, updates should be rare compared to inserts, so the
+DeltaMemStores should be very small.
+| Scans | 256KB per column per core for read-heavy tables | Amount of memory used by scanners, and which
+will be constantly needed for tables which are constantly read.
+| Block Cache | Fixed by `--block_cache_capacity_mb` (default 512MB) | Amount of memory reserved for use by the
+block cache.
+|===
+
+Using this information for the example load gives the following breakdown of memory usage:
+
+.Example Tablet Server Memory Usage
+|===
+| Type | Amount
+
+| 8TB data on disk | 8TB * 1.5GB / 1TB = 12GB
+| 200 hot replicas | 200 * 128MB = 25.6GB
+| 1 40-column, frequently-scanned table | 40 * 40 * 256KB = 409.6MB
+| Block Cache | `--block_cache_capacity_mb=512` = 512MB
+| Expected memory usage | 38.5GB
+| Recommended hard limit | 52GB
+|===
+
+Using this as a rough estimate of Kudu's memory usage, select a memory limit so that the expected
+memory usage of Kudu is around 50-75% of the hard limit.
+
+=== Verifying if a Memory Limit is sufficient
+
+After configuring an appropriate memory limit with `--memory_limit_hard_bytes`, run a workload and
+monitor the Kudu tablet server process's RAM usage. The memory usage should stay around 50-75% of
+the hard limit, with occasional spikes above 75% but below 100%. If the tablet server runs above 75%
+consistently, the memory limit should be increased.
+
+Additionally, it's also useful to monitor the logs for memory rejections, which look like:
+
+----
+Service unavailable: Soft memory limit exceeded (at 96.35% of capacity)
+----
+
+and watch the memory rejections metrics:
+
+* `leader_memory_pressure_rejections`
+* `follower_memory_pressure_rejections`
+* `transaction_memory_pressure_rejections`
+
+Occasional rejections due to memory pressure are fine and act as backpressure to clients. Clients
+will transparently retry operations. However, no operations should time out.
+
+[[file_descriptors]]
+== File Descriptors
+
+Processes are allotted a maximum number of open file descriptors (also referred to as fds). If a
+tablet server attempts to open too many fds, it will typically crash with a message saying something
+like "too many open files". The following table summarizes the sources of file descriptor usage in a
+Kudu tablet server process:
+
+.Tablet Server File Descriptor Usage
+|===
+| Type | Multiplier | Description
+
+| File cache | Fixed by `--block_manager_max_open_files` (default 40% of process maximum) | Maximum allowed open fds reserved for use by
+the file cache.
+| Hot replicas | 2 per WAL segment, 1 per WAL index | Number of fds used by hot replicas. See below
+for more explanation.
+| Cold replicas | 3 per cold replica | Number of fds used per cold replica: 2 for the single WAL
+segment and 1 for the single WAL index.
+|===
+
+Every replica has at least one WAL segment and at least one WAL index, and should have the same
+number of segments and indices; however, the number of segments and indices can be greater for a
+replica if one of its peer replicas is falling behind. WAL segment and index fds are closed as WALs
+are garbage collected.
+
+Using this information for the example load gives the following breakdown of file descriptor usage,
+under the assumption that some replicas are lagging and using 10 WAL segments:
+
+.Example Tablet Server File Descriptor Usage
+|===
+| Type | Amount
+
+| file cache | 40% * 32000 fds = 12800 fds
+| 1600 cold replicas | 1600 cold replicas * 3 fds / cold replica = 4800 fds
+| 200 hot replicas | (2 / segment * 10 segments/hot replica * 200 hot replicas) + (1 / index * 10 indices / hot replica * 200 hot replicas) = 6000 fds
+| Total | 23600 fds
+|===
+
+So for this example, the tablet server process has about 32000 - 23600 = 8400 fds to spare.
+
+There is typically no downside to configuring a higher file descriptor limit if approaching the
+currently configured limit.
+
+[[threads]]
+== Threads
+
+Processes are allotted a maximum number of threads by the operating system, and this limit is
+typically difficult or impossible to change. Therefore, this section is more informational than
+advisory.
+
+If a Kudu tablet server's thread count exceeds the OS limit, it will crash, usually with a message
+in the logs like "pthread_create failed: Resource temporarily unavailable". If the system thread
+count limit is exceeded, other processes on the same node may also crash.
+
+The table below summarizes thread usage by a Kudu tablet server:
+
+.Tablet Server Thread Usage
+|===
+| Consumer | Multiplier
+
+| Hot replica | 5 threads per hot replica
+| Cold replica | 2 threads per cold replica
+| Replica at startup | 5 threads per replica
+|===
+
+As indicated in the table, all replicas may be considered "hot" when the tablet server starts, so,
+for our example load, thread usage should peak around 5 threads / replica * (200 hot replicas + 1600
+cold replicas) = 18000 threads at startup time.
