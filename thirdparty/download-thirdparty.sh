@@ -354,12 +354,15 @@ if [ ! -d "$THRIFT_SOURCE" ]; then
   popd
 fi
 
-BISON_PATCHLEVEL=0
+BISON_PATCHLEVEL=1
 if [ ! -d "$BISON_SOURCE" ]; then
   fetch_and_expand $BISON_NAME.tar.gz
   # This would normally call autoreconf, but it does not succeed with
   # autoreconf 2.69 (RHEL 7): "autoreconf: 'configure.ac' or 'configure.in' is required".
   pushd $BISON_SOURCE
+  # Fix compilation issue in macOS High Sierra
+  # See: https://github.com/spack/spack/issues/5521
+  patch -p0 < $TP_DIR/patches/bison-fix-high-sierra-compilation-issue.patch
   touch patchlevel-$BISON_PATCHLEVEL
   popd
 fi
