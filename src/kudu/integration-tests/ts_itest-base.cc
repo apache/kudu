@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,7 +69,9 @@ DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
+using kudu::cluster::ExternalTabletServer;
 using std::pair;
+using std::set;
 using std::string;
 using std::unordered_multimap;
 using std::unordered_set;
@@ -220,7 +223,7 @@ void TabletServerIntegrationTestBase::WaitForReplicasAndUpdateLocations(
   // reached, the wait here is best effort only. That is, if the wait
   // deadline expires, the resulting timeout failure is ignored.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
     int expected_tablet_count = 0;
     for (const auto& e : tablet_replicas_) {
       if (ts->uuid() == e.second->uuid()) {
@@ -458,7 +461,7 @@ int64_t TabletServerIntegrationTestBase::GetFurthestAheadReplicaIdx(
 
 Status TabletServerIntegrationTestBase::ShutdownServerWithUUID(const string& uuid) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
     if (ts->instance_id().permanent_uuid() == uuid) {
       ts->Shutdown();
       return Status::OK();
@@ -469,7 +472,7 @@ Status TabletServerIntegrationTestBase::ShutdownServerWithUUID(const string& uui
 
 Status TabletServerIntegrationTestBase::RestartServerWithUUID(const string& uuid) {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    cluster::ExternalTabletServer* ts = cluster_->tablet_server(i);
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
     if (ts->instance_id().permanent_uuid() == uuid) {
       ts->Shutdown();
       RETURN_NOT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
@@ -589,6 +592,31 @@ Status TabletServerIntegrationTestBase::WaitForLeaderWithCommittedOp(
                                          consensus::COMMITTED_OPID, timeout));
   *leader = leader_res;
   return Status::OK();
+}
+
+vector<string> TabletServerIntegrationTestBase::GetServersWithReplica(
+    const string& tablet_id) const {
+  std::set<string> uuids;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id) {
+      uuids.insert(e.second->uuid());
+    }
+  }
+  return vector<string>(uuids.begin(), uuids.end());
+}
+
+vector<string> TabletServerIntegrationTestBase::GetServersWithoutReplica(
+    const string& tablet_id) const {
+  std::set<string> uuids;
+  for (const auto& e : tablet_servers_) {
+    uuids.insert(e.first);
+  }
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id) {
+      uuids.erase(e.second->uuid());
+    }
+  }
+  return vector<string>(uuids.begin(), uuids.end());
 }
 
 }  // namespace tserver

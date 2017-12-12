@@ -140,6 +140,15 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   Status WaitForLeaderWithCommittedOp(const std::string& tablet_id,
                                       const MonoDelta& timeout,
                                       itest::TServerDetails** leader);
+
+  // Get UUIDs of tablet servers that have a replica of the tablet identified
+  // by the 'tablet_id' parameter. The result is sorted in ascending order.
+  std::vector<std::string> GetServersWithReplica(const std::string& tablet_id) const;
+
+  // Get UUIDs of tablet servers that do not have replicas of the tablet
+  // identified by the 'tablet_id' parameter. The result is sorted in ascending order.
+  std::vector<std::string> GetServersWithoutReplica(const std::string& tablet_id) const;
+
  protected:
   gscoped_ptr<cluster::ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;

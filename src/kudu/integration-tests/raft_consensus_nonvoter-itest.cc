@@ -133,14 +133,6 @@ class RaftConsensusNonVoterITest : public RaftConsensusITestBase {
                                  const string& tablet_id,
                                  const TServerDetails* replica,
                                  const MonoDelta& timeout);
-
-  // Get a tablet server with at least one replica of the test tablet identified
-  // by the 'tablet_id_' member.
-  ExternalTabletServer* GetServerWithReplica() const;
-
-  // Get tablet servers not hosting replicas of the test tablet identified
-  // by the 'tablet_id_' member.
-  void GetServersWithoutReplica(vector<ExternalTabletServer*>* servers) const;
 };
 
 Status RaftConsensusNonVoterITest::GetTabletCopySourceSessionsCount(
@@ -218,38 +210,6 @@ Status RaftConsensusNonVoterITest::ChangeReplicaMembership(
   return Status::TimedOut(
       Substitute("tablet $0: timeout changing replica $0 membership type",
                  tablet_id, replica->uuid()));
-}
-
-ExternalTabletServer* RaftConsensusNonVoterITest::GetServerWithReplica() const {
-  ExternalTabletServer* ts = nullptr;
-  for (const auto& e : tablet_replicas_) {
-    if (e.first == tablet_id_) {
-      ts = cluster_->tablet_server_by_uuid(e.second->uuid());
-      break;
-    }
-  }
-  return ts;
-}
-
-void RaftConsensusNonVoterITest::GetServersWithoutReplica(
-    vector<ExternalTabletServer*>* servers) const {
-  ASSERT_NE(nullptr, servers);
-  servers->clear();
-
-  TabletServerMap replica_servers;
-  for (const auto& e : tablet_replicas_) {
-    if (e.first == tablet_id_) {
-      replica_servers.emplace(e.second->uuid(), e.second);
-    }
-  }
-
-  for (const auto& ts : tablet_servers_) {
-    if (replica_servers.find(ts.first) == replica_servers.end()) {
-      auto* s = cluster_->tablet_server_by_uuid(ts.second->uuid());
-      ASSERT_NE(nullptr, s);
-      servers->push_back(s);
-    }
-  }
 }
 
 // Verify that GetTableLocations() and GetTabletLocations() return the expected
@@ -1263,7 +1223,10 @@ TEST_F(RaftConsensusNonVoterITest, CatalogManagerAddsNonVoter) {
   ASSERT_EQ(kReplicasNum + 1, tablet_servers_.size());
   ASSERT_EQ(kReplicasNum, tablet_replicas_.size());
 
-  ExternalTabletServer* ts_with_replica = GetServerWithReplica();
+  const auto server_uuids_with_replica = GetServersWithReplica(tablet_id_);
+  ASSERT_FALSE(server_uuids_with_replica.empty());
+  ExternalTabletServer* ts_with_replica =
+      cluster_->tablet_server_by_uuid(server_uuids_with_replica.front());
   ASSERT_NE(nullptr, ts_with_replica);
   ts_with_replica->Shutdown();
 
@@ -1339,7 +1302,10 @@ TEST_F(RaftConsensusNonVoterITest, TabletServerIsGoneAndBack) {
   }
   workload.StopAndJoin();
 
-  ExternalTabletServer* ts_with_replica = GetServerWithReplica();
+  const auto server_uuids_with_replica = GetServersWithReplica(tablet_id_);
+  ASSERT_FALSE(server_uuids_with_replica.empty());
+  ExternalTabletServer* ts_with_replica =
+      cluster_->tablet_server_by_uuid(server_uuids_with_replica.front());
   ASSERT_NE(nullptr, ts_with_replica);
   ts_with_replica->Shutdown();
 
@@ -1434,15 +1400,18 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
 
   // Make sure the tablet copy will fail on one of tablet servers without
   // tablet replicas.
-  vector<ExternalTabletServer*> servers_without_replica;
-  NO_FATALS(GetServersWithoutReplica(&servers_without_replica));
-  ASSERT_EQ(2, servers_without_replica.size());
-  ExternalTabletServer* ts0 = *servers_without_replica.begin();
+  const auto server_uuids_no_replica = GetServersWithoutReplica(tablet_id_);
+  ASSERT_EQ(2, server_uuids_no_replica.size());
+  ExternalTabletServer* ts0 =
+      cluster_->tablet_server_by_uuid(server_uuids_no_replica.front());
+  ASSERT_NE(nullptr, ts0);
   ASSERT_OK(cluster_->SetFlag(ts0,
                               "tablet_copy_fault_crash_on_fetch_all", "1.0"));
   // Make sure the second tablet server is not available as a candidate for
   // the new non-voter replica.
-  ExternalTabletServer* ts1 = *servers_without_replica.rbegin();
+  ExternalTabletServer* ts1 =
+      cluster_->tablet_server_by_uuid(server_uuids_no_replica.back());
+  ASSERT_NE(nullptr, ts1);
   ts1->Shutdown();
   SleepFor(kConsensusRpcTimeout);
 
