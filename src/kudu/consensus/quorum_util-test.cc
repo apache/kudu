@@ -847,13 +847,13 @@ TEST(QuorumUtilTest, ReplaceAttributeBasic) {
     AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "D", V, replica_health, {{"REPLACE", true}});
     string to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &to_evict));
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, &to_evict));
     if (replica_health == '+') {
       EXPECT_NE("A", to_evict);
     } else {
       EXPECT_EQ("D", to_evict);
     }
-    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(ShouldAddReplica(config, 3));
   }
   for (auto health_status : { '?', '-' }) {
     RaftConfigPB config;
@@ -865,9 +865,9 @@ TEST(QuorumUtilTest, ReplaceAttributeBasic) {
       SCOPED_TRACE(Substitute("health status '$0', leader $1",
                               health_status, leader_replica));
       string to_evict;
-      ASSERT_TRUE(CanEvictReplica(config, leader_replica, 3, &to_evict));
+      ASSERT_TRUE(ShouldEvictReplica(config, leader_replica, 3, &to_evict));
       EXPECT_EQ("A", to_evict);
-      EXPECT_TRUE(IsUnderReplicated(config, 3));
+      EXPECT_TRUE(ShouldAddReplica(config, 3));
     }
   }
   {
@@ -877,9 +877,9 @@ TEST(QuorumUtilTest, ReplaceAttributeBasic) {
     AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "D", V, '-');
     string to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &to_evict));
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, &to_evict));
     EXPECT_EQ("D", to_evict);
-    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -887,8 +887,8 @@ TEST(QuorumUtilTest, ReplaceAttributeBasic) {
     AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "D", V, '?');
-    EXPECT_FALSE(CanEvictReplica(config, "B", 3));
-    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_FALSE(ShouldEvictReplica(config, "B", 3));
+    EXPECT_TRUE(ShouldAddReplica(config, 3));
   }
   for (auto health_status : { '?', '-' }) {
     SCOPED_TRACE(Substitute("health status '$0'", health_status));
@@ -899,9 +899,9 @@ TEST(QuorumUtilTest, ReplaceAttributeBasic) {
     AddPeer(&config, "D", V, health_status, {{"REPLACE", true}});
     AddPeer(&config, "E", V, '+');
     string to_evict;
-    ASSERT_TRUE(CanEvictReplica(config, "A", 3, &to_evict));
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, &to_evict));
     EXPECT_EQ("D", to_evict);
-    EXPECT_TRUE(IsUnderReplicated(config, 3));
+    EXPECT_TRUE(ShouldAddReplica(config, 3));
   }
 }
 
