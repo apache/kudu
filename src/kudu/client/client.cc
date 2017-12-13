@@ -136,7 +136,7 @@ MAKE_ENUM_LIMITS(kudu::client::KuduSession::ExternalConsistencyMode,
 
 MAKE_ENUM_LIMITS(kudu::client::KuduScanner::ReadMode,
                  kudu::client::KuduScanner::READ_LATEST,
-                 kudu::client::KuduScanner::READ_AT_SNAPSHOT);
+                 kudu::client::KuduScanner::READ_YOUR_WRITES);
 
 MAKE_ENUM_LIMITS(kudu::client::KuduScanner::OrderMode,
                  kudu::client::KuduScanner::UNORDERED,
@@ -1363,6 +1363,20 @@ Status KuduScanner::Open() {
     data_->open_ = true;
     data_->short_circuit_ = true;
     return Status::OK();
+  }
+
+  // For READ_YOUR_WRITES scan mode, get the latest observed timestamp and store it
+  // to scan config. Always use this one as propagation timestamp for the duration
+  // of the scan to avoid unnecessarily wait.
+  if (data_->configuration().read_mode() == READ_YOUR_WRITES) {
+    const uint64_t lo_ts = data_->table_->client()->data_->GetLatestObservedTimestamp();
+    data_->mutable_configuration()->SetScanLowerBoundTimestampRaw(lo_ts);
+  }
+
+  if (data_->configuration().read_mode() != READ_AT_SNAPSHOT &&
+      data_->configuration().has_snapshot_timestamp()) {
+    return Status::InvalidArgument("Snapshot timestamp should only be configured "
+                                   "for READ_AT_SNAPSHOT scan mode.");
   }
 
   VLOG(2) << "Beginning " << data_->DebugString();

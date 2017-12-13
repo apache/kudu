@@ -82,9 +82,17 @@ class ScanConfiguration {
 
   Status SetFaultTolerant(bool fault_tolerant) WARN_UNUSED_RESULT;
 
+  // Sets the timestamp the scan must be executed at, in microseconds
+  // since the Unix epoch. Requires READ_AT_SNAPSHOT scan mode.
   void SetSnapshotMicros(uint64_t snapshot_timestamp_micros);
 
+  // Sets a previously encoded timestamp as a snapshot timestamp.
+  // Requires READ_AT_SNAPSHOT scan mode.
   void SetSnapshotRaw(uint64_t snapshot_timestamp);
+
+  // Set the lower bound of scan's propagation timestamp.
+  // It is only used in READ_YOUR_WRITES scan mode.
+  void SetScanLowerBoundTimestampRaw(uint64_t propagation_timestamp);
 
   void SetTimeoutMillis(int millis);
 
@@ -144,6 +152,15 @@ class ScanConfiguration {
     return snapshot_timestamp_;
   }
 
+  bool has_lower_bound_propagation_timestamp() const {
+    return lower_bound_propagation_timestamp_ != kNoTimestamp;
+  }
+
+  uint64_t lower_bound_propagation_timestamp() const {
+    CHECK(has_lower_bound_propagation_timestamp());
+    return lower_bound_propagation_timestamp_;
+  }
+
   const MonoDelta& timeout() const {
     return timeout_;
   }
@@ -183,6 +200,8 @@ class ScanConfiguration {
   bool is_fault_tolerant_;
 
   uint64_t snapshot_timestamp_;
+
+  uint64_t lower_bound_propagation_timestamp_;
 
   MonoDelta timeout_;
 

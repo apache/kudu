@@ -194,6 +194,28 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     ASSERT_EQ(0, scanner->data_->last_response_.data().num_rows());
   }
 
+  { // no predicates with READ_YOUR_WRITES mode
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.SetReadMode(KuduScanner::READ_YOUR_WRITES));
+    ASSERT_OK(builder.Build(&tokens));
+
+    ASSERT_EQ(8, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // Set snapshot timestamp with READ_YOUR_WRITES mode
+    // gives InvalidArgument error.
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    ASSERT_OK(builder.SetReadMode(KuduScanner::READ_YOUR_WRITES));
+    ASSERT_OK(builder.SetSnapshotMicros(1));
+    ASSERT_TRUE(builder.Build(&tokens).IsInvalidArgument());
+  }
+
   { // no predicates
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
@@ -414,10 +436,21 @@ TEST_F(ScanTokenTest, TestScanTokensWithNonCoveringRange) {
   }
 }
 
+const kudu::ReadMode read_modes[] = {
+    kudu::READ_LATEST,
+    kudu::READ_AT_SNAPSHOT,
+    kudu::READ_YOUR_WRITES,
+};
+
+class TimestampPropagationParamTest :
+    public ScanTokenTest,
+    public ::testing::WithParamInterface<kudu::ReadMode> {
+};
 // When building a scanner from a serialized scan token,
 // verify that the propagated timestamp from the token makes its way into the
 // latest observed timestamp of the client object.
-TEST_F(ScanTokenTest, TestTimestampPropagation) {
+TEST_P(TimestampPropagationParamTest, Test) {
+  const kudu::ReadMode read_mode = GetParam();
   static const string kTableName = "p_ts_table";
 
   // Create a table to work with:
@@ -448,27 +481,25 @@ TEST_F(ScanTokenTest, TestTimestampPropagation) {
   }
 
   // Deserialize a scan token and make sure the client's last observed timestamp
-  // is updated accordingly.
-  {
-    const uint64_t ts_prev = client_->GetLatestObservedTimestamp();
-    const uint64_t ts_propagated = ts_prev + 1000000;
+  // is always updated accordingly for any read modes.
+  const uint64_t ts_prev = client_->GetLatestObservedTimestamp();
+  const uint64_t ts_propagated = ts_prev + 1000000;
 
-    ScanTokenPB pb;
-    pb.set_table_name(kTableName);
-    pb.set_read_mode(::kudu::READ_AT_SNAPSHOT);
-    pb.set_propagated_timestamp(ts_propagated);
-    const string serialized_token = pb.SerializeAsString();
-    EXPECT_EQ(ts_prev, client_->GetLatestObservedTimestamp());
+  ScanTokenPB pb;
+  pb.set_table_name(kTableName);
+  pb.set_read_mode(read_mode);
+  pb.set_propagated_timestamp(ts_propagated);
+  const string serialized_token = pb.SerializeAsString();
+  EXPECT_EQ(ts_prev, client_->GetLatestObservedTimestamp());
 
-    KuduScanner* scanner_raw;
-    ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(),
-                                                    serialized_token,
-                                                    &scanner_raw));
-    // The caller of the DeserializeIntoScanner() is responsible for
-    // de-allocating the result scanner object.
-    unique_ptr<KuduScanner> scanner(scanner_raw);
-    EXPECT_EQ(ts_propagated, client_->GetLatestObservedTimestamp());
-  }
+  KuduScanner* scanner_raw;
+  ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(),
+                                                  serialized_token,
+                                                  &scanner_raw));
+  // The caller of the DeserializeIntoScanner() is responsible for
+  // de-allocating the result scanner object.
+  unique_ptr<KuduScanner> scanner(scanner_raw);
+  EXPECT_EQ(ts_propagated, client_->GetLatestObservedTimestamp());
 
   // Build the set of scan tokens for the table, serialize them and
   // make sure the serialized tokens contain the propagated timestamp.
@@ -492,6 +523,9 @@ TEST_F(ScanTokenTest, TestTimestampPropagation) {
     }
   }
 }
+
+INSTANTIATE_TEST_CASE_P(Params, TimestampPropagationParamTest,
+                        testing::ValuesIn(read_modes));
 
 // Tests the results of creating scan tokens, altering the columns being
 // scanned, and then executing the scan tokens.

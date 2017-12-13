@@ -537,14 +537,17 @@ class ClientTest : public KuduTest {
   }
 
   int CountRowsFromClient(KuduTable* table) {
-    return CountRowsFromClient(table, kNoBound, kNoBound);
+    return CountRowsFromClient(table, KuduScanner::READ_LATEST, kNoBound, kNoBound);
   }
 
-  int CountRowsFromClient(KuduTable* table, int32_t lower_bound, int32_t upper_bound) {
-    return CountRowsFromClient(table, KuduClient::LEADER_ONLY, lower_bound, upper_bound);
+  int CountRowsFromClient(KuduTable* table, KuduScanner::ReadMode scan_mode,
+                          int32_t lower_bound, int32_t upper_bound) {
+    return CountRowsFromClient(table, KuduClient::LEADER_ONLY, scan_mode,
+                               lower_bound, upper_bound);
   }
 
   int CountRowsFromClient(KuduTable* table, KuduClient::ReplicaSelection selection,
+                          KuduScanner::ReadMode scan_mode,
                           int32_t lower_bound, int32_t upper_bound) {
     KuduScanner scanner(table);
     CHECK_OK(scanner.SetSelection(selection));
@@ -559,7 +562,7 @@ class ClientTest : public KuduTest {
                    client_table_->NewComparisonPredicate("key", KuduPredicate::LESS_EQUAL,
                                                          KuduValue::FromInt(upper_bound))));
     }
-
+    CHECK_OK(scanner.SetReadMode(scan_mode));
     CHECK_OK(scanner.Open());
 
     int count = 0;
@@ -865,7 +868,19 @@ TEST_F(ClientTest, TestScanAtFutureTimestamp) {
   ASSERT_STR_CONTAINS(s.ToString(), "in the future.");
 }
 
-TEST_F(ClientTest, TestScanMultiTablet) {
+const KuduScanner::ReadMode read_modes[] = {
+    KuduScanner::READ_LATEST,
+    KuduScanner::READ_AT_SNAPSHOT,
+    KuduScanner::READ_YOUR_WRITES,
+};
+
+class ScanMultiTabletParamTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<KuduScanner::ReadMode> {
+};
+// Tests multiple tablet scan with all scan modes.
+TEST_P(ScanMultiTabletParamTest, Test) {
+  const KuduScanner::ReadMode read_mode = GetParam();
   // 5 tablets, each with 10 rows worth of space.
   static const int kTabletsNum = 5;
   static const int kRowsPerTablet = 10;
@@ -900,18 +915,17 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   }
   FlushSessionOrDie(session);
 
-  // Run through various scans.
   ASSERT_EQ(4 * (kTabletsNum - 1),
-            CountRowsFromClient(table.get(), kNoBound, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
-  ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
-  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 20));
-  ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
-  ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+            CountRowsFromClient(table.get(), read_mode, kNoBound, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), read_mode, kNoBound, 15));
+  ASSERT_EQ(9, CountRowsFromClient(table.get(), read_mode, 27, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), read_mode, 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 10));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), read_mode, 0, 20));
+  ASSERT_EQ(8, CountRowsFromClient(table.get(), read_mode, 0, 30));
+  ASSERT_EQ(6, CountRowsFromClient(table.get(), read_mode, 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kTabletsNum * kRowsPerTablet,
                                    kNoBound));
 
   // Update every other row
@@ -926,16 +940,16 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
   // Check all counts the same (make sure updates don't change # of rows)
   ASSERT_EQ(4 * (kTabletsNum - 1),
-            CountRowsFromClient(table.get(), kNoBound, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(table.get(), kNoBound, 15));
-  ASSERT_EQ(9, CountRowsFromClient(table.get(), 27, kNoBound));
-  ASSERT_EQ(3, CountRowsFromClient(table.get(), 0, 15));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
-  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 20));
-  ASSERT_EQ(8, CountRowsFromClient(table.get(), 0, 30));
-  ASSERT_EQ(6, CountRowsFromClient(table.get(), 14, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+            CountRowsFromClient(table.get(), read_mode, kNoBound, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), read_mode, kNoBound, 15));
+  ASSERT_EQ(9, CountRowsFromClient(table.get(), read_mode, 27, kNoBound));
+  ASSERT_EQ(3, CountRowsFromClient(table.get(), read_mode, 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 10));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), read_mode, 0, 20));
+  ASSERT_EQ(8, CountRowsFromClient(table.get(), read_mode, 0, 30));
+  ASSERT_EQ(6, CountRowsFromClient(table.get(), read_mode, 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kTabletsNum * kRowsPerTablet,
                                    kNoBound));
 
   // Delete half the rows
@@ -950,16 +964,16 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
   // Check counts changed accordingly
   ASSERT_EQ(2 * (kTabletsNum - 1),
-            CountRowsFromClient(table.get(), kNoBound, kNoBound));
-  ASSERT_EQ(2, CountRowsFromClient(table.get(), kNoBound, 15));
-  ASSERT_EQ(4, CountRowsFromClient(table.get(), 27, kNoBound));
-  ASSERT_EQ(2, CountRowsFromClient(table.get(), 0, 15));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
-  ASSERT_EQ(2, CountRowsFromClient(table.get(), 0, 20));
-  ASSERT_EQ(4, CountRowsFromClient(table.get(), 0, 30));
-  ASSERT_EQ(2, CountRowsFromClient(table.get(), 14, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+            CountRowsFromClient(table.get(), read_mode, kNoBound, kNoBound));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), read_mode, kNoBound, 15));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), read_mode, 27, kNoBound));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), read_mode, 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 10));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), read_mode, 0, 20));
+  ASSERT_EQ(4, CountRowsFromClient(table.get(), read_mode, 0, 30));
+  ASSERT_EQ(2, CountRowsFromClient(table.get(), read_mode, 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kTabletsNum * kRowsPerTablet,
                                    kNoBound));
 
   // Delete rest of rows
@@ -973,18 +987,20 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   FlushSessionOrDie(session);
 
   // Check counts changed accordingly
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kNoBound, kNoBound));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kNoBound, 15));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 27, kNoBound));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 15));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 10));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 20));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 0, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 14, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), 30, 30));
-  ASSERT_EQ(0, CountRowsFromClient(table.get(), kTabletsNum * kRowsPerTablet,
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kNoBound, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kNoBound, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 27, kNoBound));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 15));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 10));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 20));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 0, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 14, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, 30, 30));
+  ASSERT_EQ(0, CountRowsFromClient(table.get(), read_mode, kTabletsNum * kRowsPerTablet,
                                    kNoBound));
 }
+INSTANTIATE_TEST_CASE_P(Params, ScanMultiTabletParamTest,
+                        testing::ValuesIn(read_modes));
 
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
@@ -1189,6 +1205,26 @@ TEST_F(ClientTest, TestRowPtrNoRedaction) {
       ASSERT_NE("(int32 key=<redacted>)", row.ToString());
     }
   }
+}
+
+TEST_F(ClientTest, TestScanYourWrites) {
+  // Insert the rows
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         FLAGS_test_scan_num_rows));
+
+  // Verify that no matter which replica is selected, client could
+  // achieve read-your-writes/read-your-reads.
+  uint64_t count = CountRowsFromClient(client_table_.get(),
+                                       KuduClient::LEADER_ONLY,
+                                       KuduScanner::READ_YOUR_WRITES,
+                                       kNoBound, kNoBound);
+  ASSERT_EQ(FLAGS_test_scan_num_rows, count);
+
+  count = CountRowsFromClient(client_table_.get(),
+                              KuduClient::CLOSEST_REPLICA,
+                              KuduScanner::READ_YOUR_WRITES,
+                              kNoBound, kNoBound);
+  ASSERT_EQ(FLAGS_test_scan_num_rows, count);
 }
 
 namespace internal {
@@ -3816,6 +3852,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
     tries++;
     int num_rows = CountRowsFromClient(table.get(),
                                        KuduClient::LEADER_ONLY,
+                                       KuduScanner::READ_LATEST,
                                        kNoBound, kNoBound);
     int master_rpcs = CountMasterLookupRPCs() - master_rpcs_before;
 
@@ -3891,6 +3928,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   LOG(INFO) << "Counting rows...";
   ASSERT_EQ(2 * kNumRowsToWrite, CountRowsFromClient(table.get(),
                                                      KuduClient::FIRST_REPLICA,
+                                                     KuduScanner::READ_LATEST,
                                                      kNoBound, kNoBound));
 }
 
@@ -4477,9 +4515,14 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
   ASSERT_EQ("<none>", ReadRowAsString());
 }
 
+class LatestObservedTimestampParamTest :
+    public ClientTest,
+    public ::testing::WithParamInterface<KuduScanner::ReadMode> {
+};
 // Check the behavior of the latest observed timestamp when performing
 // write and read operations.
-TEST_F(ClientTest, TestLatestObservedTimestamp) {
+TEST_P(LatestObservedTimestampParamTest, Test) {
+  const KuduScanner::ReadMode read_mode = GetParam();
   // Check that a write updates the latest observed timestamp.
   const uint64_t ts0 = client_->GetLatestObservedTimestamp();
   ASSERT_EQ(KuduClient::kNoTimestamp, ts0);
@@ -4500,26 +4543,28 @@ TEST_F(ClientTest, TestLatestObservedTimestamp) {
     if (c != client_) {
       // Check that the new client has no latest observed timestamp.
       ASSERT_EQ(KuduClient::kNoTimestamp, c->GetLatestObservedTimestamp());
+      // The observed timestamp may not move forward when scan in
+      // READ_YOUR_WRITES mode by another client. Since other client
+      // does not have the same propagation timestamp bound and the
+      // chosen snapshot timestamp is returned as the new propagation
+      // timestamp.
+      if (read_mode == KuduScanner::READ_YOUR_WRITES) break;
     }
     shared_ptr<KuduTable> table;
     ASSERT_OK(c->OpenTable(client_table_->name(), &table));
-    static const KuduScanner::ReadMode kReadModes[] = {
-      KuduScanner::READ_AT_SNAPSHOT,
-      KuduScanner::READ_LATEST,
-    };
-    for (auto read_mode : kReadModes) {
-      KuduScanner scanner(table.get());
-      ASSERT_OK(scanner.SetReadMode(read_mode));
-      if (read_mode == KuduScanner::READ_AT_SNAPSHOT) {
-        ASSERT_OK(scanner.SetSnapshotRaw(ts1));
-      }
-      ASSERT_OK(scanner.Open());
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.SetReadMode(read_mode));
+    if (read_mode == KuduScanner::READ_AT_SNAPSHOT) {
+      ASSERT_OK(scanner.SetSnapshotRaw(ts1));
     }
+    ASSERT_OK(scanner.Open());
     const uint64_t ts = c->GetLatestObservedTimestamp();
     ASSERT_LT(latest_ts, ts);
     latest_ts = ts;
   }
 }
+INSTANTIATE_TEST_CASE_P(Params, LatestObservedTimestampParamTest,
+                        testing::ValuesIn(read_modes));
 
 // Insert bunch of rows, delete a row, and then insert the row back.
 // Run scans several scan and check the results are consistent with the

@@ -52,6 +52,7 @@ ScanConfiguration::ScanConfiguration(KuduTable* table)
       read_mode_(KuduScanner::READ_LATEST),
       is_fault_tolerant_(false),
       snapshot_timestamp_(kNoTimestamp),
+      lower_bound_propagation_timestamp_(kNoTimestamp),
       timeout_(MonoDelta::FromMilliseconds(KuduScanner::kScanTimeoutMillis)),
       arena_(256),
       row_format_flags_(KuduScanner::NO_FLAGS) {
@@ -178,6 +179,10 @@ void ScanConfiguration::SetSnapshotMicros(uint64_t snapshot_timestamp_micros) {
 
 void ScanConfiguration::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   snapshot_timestamp_ = snapshot_timestamp;
+}
+
+void ScanConfiguration::SetScanLowerBoundTimestampRaw(uint64_t propagation_timestamp) {
+  lower_bound_propagation_timestamp_ = propagation_timestamp;
 }
 
 void ScanConfiguration::SetTimeoutMillis(int millis) {

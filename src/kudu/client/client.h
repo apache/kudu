@@ -1735,7 +1735,19 @@ class KUDU_EXPORT KuduScanner {
     ///   by which writes are sometimes not externally consistent even when
     ///   action was taken to make them so. In these cases Isolation may
     ///   degenerate to mode "Read Committed". See KUDU-430.
-    READ_AT_SNAPSHOT
+    READ_AT_SNAPSHOT,
+
+    /// When @c READ_YOUR_WRITES is specified, the client will perform a read
+    /// such that it follows all previously known writes and reads from this client.
+    /// Specifically this mode:
+    ///  (1) ensures read-your-writes and read-your-reads session guarantees,
+    ///  (2) minimizes latency caused by waiting for outstanding write
+    ///      transactions to complete.
+    ///
+    /// Reads in this mode are not repeatable: two READ_YOUR_WRITES reads, even if
+    /// they provide the same propagated timestamp bound, can execute at different
+    /// timestamps and thus return different results.
+    READ_YOUR_WRITES
   };
 
   /// Whether the rows should be returned in order.

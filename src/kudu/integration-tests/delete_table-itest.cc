@@ -1497,6 +1497,8 @@ TEST_P(DeleteTableWhileScanInProgressParamTest, Test) {
         return "READ_LATEST";
       case KuduScanner::READ_AT_SNAPSHOT:
         return "READ_AT_SNAPSHOT";
+      case KuduScanner::READ_YOUR_WRITES:
+        return "READ_YOUR_WRITES";
       default:
         return "UNKNOWN";
     }
@@ -1563,7 +1565,7 @@ TEST_P(DeleteTableWhileScanInProgressParamTest, Test) {
 
   using kudu::client::sp::shared_ptr;
   shared_ptr<KuduTable> table;
-  ASSERT_OK(client_->OpenTable(w.table_name(), &table));
+  ASSERT_OK(w.client()->OpenTable(w.table_name(), &table));
   KuduScanner scanner(table.get());
   ASSERT_OK(scanner.SetReadMode(mode));
   ASSERT_OK(scanner.SetSelection(sel));
@@ -1621,6 +1623,7 @@ TEST_P(DeleteTableWhileScanInProgressParamTest, Test) {
 const KuduScanner::ReadMode read_modes[] = {
   KuduScanner::READ_LATEST,
   KuduScanner::READ_AT_SNAPSHOT,
+  KuduScanner::READ_YOUR_WRITES,
 };
 const KuduClient::ReplicaSelection replica_selectors[] = {
   KuduClient::LEADER_ONLY,
