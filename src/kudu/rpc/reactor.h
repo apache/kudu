@@ -244,7 +244,8 @@ class ReactorThread {
                          std::unique_ptr<ErrorStatusPB> rpc_error = {});
 
   // Scan any open connections for idle ones that have been idle longer than
-  // connection_keepalive_time_
+  // connection_keepalive_time_. If connection_keepalive_time_ < 0, the scan
+  // is skipped.
   void ScanIdleConnections();
 
   // Create a new client socket (non-blocking, NODELAY)

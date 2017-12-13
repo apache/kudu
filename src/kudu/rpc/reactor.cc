@@ -403,28 +403,30 @@ void ReactorThread::ScanIdleConnections() {
   // Enforce TCP connection timeouts: server-side connections.
   const auto server_conns_end = server_conns_.end();
   uint64_t timed_out = 0;
-  for (auto it = server_conns_.begin(); it != server_conns_end; ) {
-    Connection* conn = it->get();
-    if (!conn->Idle()) {
-      VLOG(10) << "Connection " << conn->ToString() << " not idle";
-      ++it;
-      continue;
-    }
+  // Scan for idle server connections if it's enabled.
+  if (connection_keepalive_time_ >= MonoDelta::FromMilliseconds(0)) {
+    for (auto it = server_conns_.begin(); it != server_conns_end; ) {
+      Connection* conn = it->get();
+      if (!conn->Idle()) {
+        VLOG(10) << "Connection " << conn->ToString() << " not idle";
+        ++it;
+        continue;
+      }
 
-    const MonoDelta connection_delta(cur_time_ - conn->last_activity_time());
-    if (connection_delta <= connection_keepalive_time_) {
-      ++it;
-      continue;
-    }
+      const MonoDelta connection_delta(cur_time_ - conn->last_activity_time());
+      if (connection_delta <= connection_keepalive_time_) {
+        ++it;
+        continue;
+      }
 
-    conn->Shutdown(Status::NetworkError(
-        Substitute("connection timed out after $0", connection_keepalive_time_.ToString())));
-    VLOG(1) << "Timing out connection " << conn->ToString() << " - it has been idle for "
-            << connection_delta.ToString();
-    ++timed_out;
-    it = server_conns_.erase(it);
+      conn->Shutdown(Status::NetworkError(
+          Substitute("connection timed out after $0", connection_keepalive_time_.ToString())));
+      VLOG(1) << "Timing out connection " << conn->ToString() << " - it has been idle for "
+              << connection_delta.ToString();
+      ++timed_out;
+      it = server_conns_.erase(it);
+    }
   }
-
   // Take care of idle client-side connections marked for shutdown.
   uint64_t shutdown = 0;
   for (auto it = client_conns_.begin(); it != client_conns_.end();) {

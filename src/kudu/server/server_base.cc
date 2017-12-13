@@ -199,7 +199,8 @@ TAG_FLAG(rpc_ca_certificate_file, experimental);
 
 DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
              "If an RPC connection from a client is idle for this amount of time, the server "
-             "will disconnect the client.");
+             "will disconnect the client. Setting this to any negative value keeps connections "
+             "always alive.");
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
 DECLARE_bool(use_hybrid_clock);

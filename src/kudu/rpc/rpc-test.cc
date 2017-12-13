@@ -403,6 +403,47 @@ TEST_P(TestRpc, TestConnectionKeepalive) {
   ASSERT_EQ(0, metrics.num_client_connections_) << "Client should have 0 client connections";
 }
 
+// Test that idle connection is kept alive when 'keepalive_time_ms_' is set to -1.
+TEST_P(TestRpc, TestConnectionAlwaysKeepalive) {
+  // Only run one reactor per messenger, so we can grab the metrics from that
+  // one without having to check all.
+  n_server_reactor_threads_ = 1;
+  keepalive_time_ms_ = -1;
+
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  StartTestServer(&server_addr, enable_ssl);
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client", 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
+
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+
+  ReactorMetrics metrics;
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(1, metrics.num_server_connections_) << "Server should have 1 server connection";
+  ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
+
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
+  ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
+
+  SleepFor(MonoDelta::FromSeconds(3));
+
+  // After sleeping, the connection should still be alive.
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(1, metrics.num_server_connections_) << "Server should have 1 server connections";
+  ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
+
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
+  ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
+}
+
 // Test that outbound connections to the same server are reopen upon every RPC
 // call when the 'rpc_reopen_outbound_connections' flag is set.
 TEST_P(TestRpc, TestReopenOutboundConnections) {
