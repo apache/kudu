@@ -67,6 +67,7 @@ ADD_KUDU_TEST(client-negotiation-failover-itest
 ADD_KUDU_TEST(client-stress-test
   RESOURCE_LOCK "master-rpc-ports"
   RUN_SERIAL true)
+ADD_KUDU_TEST(consensus_peer_health_status-itest)
 ADD_KUDU_TEST(consistency-itest PROCESSORS 5)
 ADD_KUDU_TEST(create-table-itest PROCESSORS 3)
 ADD_KUDU_TEST(create-table-stress-test RUN_SERIAL true)

@@ -47,6 +47,7 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
     STOP_CONTINUE,    // Send SIGSTOP and then SIGCONT to the affected tserver.
     SHUTDOWN_RESTART, // Shutdown and then restart the affected tserver.
     SHUTDOWN,         // Shutdown the affected tserver, don't start it back up.
+    DO_NOT_TAMPER,    // Leave the affected tserver alone, running or not.
   };
 
   RaftConsensusITestBase();
@@ -83,9 +84,18 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
   // AddFlagsForLogRolls() before starting the cluster.
   void CauseFollowerToFallBehindLogGC(
       const itest::TabletServerMap& tablet_servers,
-      std::string* leader_uuid,
-      int64_t* orig_term,
-      std::string* fell_behind_uuid,
+      std::string* leader_uuid = nullptr,
+      int64_t* orig_term = nullptr,
+      std::string* fell_behind_uuid = nullptr,
+      BehindWalGcBehavior tserver_behavior = BehindWalGcBehavior::STOP_CONTINUE,
+      const MonoDelta& pre_workload_delay = {});
+
+  // Same as above, but the follower to fail is chosen in advance.
+  void CauseSpecificFollowerToFallBehindLogGC(
+      const itest::TabletServerMap& tablet_servers,
+      const std::string& follower_uuid_to_fail,
+      std::string* leader_uuid = nullptr,
+      int64_t* orig_term = nullptr,
       BehindWalGcBehavior tserver_behavior = BehindWalGcBehavior::STOP_CONTINUE,
       const MonoDelta& pre_workload_delay = {});
 

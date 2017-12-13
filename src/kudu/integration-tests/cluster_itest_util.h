@@ -360,7 +360,7 @@ Status WaitForNumTabletsOnTS(
     TServerDetails* ts,
     int count,
     const MonoDelta& timeout,
-    std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets,
+    std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets = nullptr,
     boost::optional<tablet::TabletStatePB> state = boost::none);
 
 // Check if the tablet is in the specified state.

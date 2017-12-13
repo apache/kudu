@@ -40,6 +40,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
@@ -206,7 +207,23 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
 
   // Pause or shutdown one server. This might be the leader, and making it
   // unresponsive will cause a leader election to happen.
-  TServerDetails* replica = (*tablet_replicas_.begin()).second;
+  TServerDetails* replica = tablet_replicas_.begin()->second;
+  CauseSpecificFollowerToFallBehindLogGC(tablet_servers, replica->uuid(),
+                                         leader_uuid, orig_term,
+                                         tserver_behavior, pre_workload_delay);
+  if (fell_behind_uuid) *fell_behind_uuid = replica->uuid();
+}
+
+void RaftConsensusITestBase::CauseSpecificFollowerToFallBehindLogGC(
+    const itest::TabletServerMap& tablet_servers,
+    const string& follower_uuid_to_fail,
+    string* leader_uuid,
+    int64_t* orig_term,
+    BehindWalGcBehavior tserver_behavior,
+    const MonoDelta& pre_workload_delay) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+
+  TServerDetails* replica = FindOrDie(tablet_servers_, follower_uuid_to_fail);
   ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
   switch (tserver_behavior) {
     case BehindWalGcBehavior::STOP_CONTINUE:
@@ -215,6 +232,9 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
     case BehindWalGcBehavior::SHUTDOWN_RESTART: FALLTHROUGH_INTENDED;
     case BehindWalGcBehavior::SHUTDOWN:
       replica_ets->Shutdown();
+      break;
+    case BehindWalGcBehavior::DO_NOT_TAMPER:
+      // Do nothing.
       break;
     default:
       CHECK(false) << tserver_behavior
@@ -232,8 +252,8 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  *leader_uuid = leader->uuid();
-  int leader_index = cluster_->tablet_server_index_by_uuid(*leader_uuid);
+  if (leader_uuid) *leader_uuid = leader->uuid();
+  int leader_index = cluster_->tablet_server_index_by_uuid(leader->uuid());
 
   if (pre_workload_delay.Initialized()) {
     SleepFor(pre_workload_delay);
@@ -274,8 +294,8 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
     OpId op_id;
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, consensus::RECEIVED_OPID, kTimeout,
                                     &op_id));
-    *orig_term = op_id.term();
-    LOG(INFO) << "Servers converged with original term " << *orig_term;
+    if (orig_term) *orig_term = op_id.term();
+    LOG(INFO) << "Servers converged with original term " << op_id.term();
   }
 
   if (tserver_behavior == BehindWalGcBehavior::STOP_CONTINUE) {
@@ -294,12 +314,11 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
         uuid == replica->uuid()) {
       ASSERT_TRUE(cluster_->tablet_server_by_uuid(uuid)->IsShutdown())
           << "Tablet server " << uuid << " is not shutdown";
-    } else {
+    } else if (tserver_behavior != BehindWalGcBehavior::DO_NOT_TAMPER) {
       ASSERT_TRUE(cluster_->tablet_server_by_uuid(uuid)->IsProcessAlive())
           << "Tablet server " << uuid << " crashed";
     }
   }
-  *fell_behind_uuid = replica->uuid();
 }
 
 Status RaftConsensusITestBase::GetTermMetricValue(ExternalTabletServer* ts,
