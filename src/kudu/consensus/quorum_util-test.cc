@@ -1220,5 +1220,98 @@ TEST(QuorumUtilTest, NewlyPromotedReplicaCrashes) {
   EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
 }
 
+// A scenario to verify that the catalog manager does not do anything unexpected
+// in the 3-4-3 replica management mode when replica's health is flapping
+// between HEALTHY and UNKNOWN (e.g., when leader replica changes).
+TEST(QuorumUtilTest, ReplicaHealthFlapping) {
+  constexpr auto kReplicationFactor = 3;
+
+  // The initial tablet report after the tablet replica A has started and
+  // become the leader.
+  RaftConfigPB config;
+  AddPeer(&config, "A", V, '+');
+  AddPeer(&config, "B", V, '?');
+  AddPeer(&config, "C", V, '?');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica B is reported as healthy.
+  SetPeerHealth(&config, "B", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica C is reported as healthy.
+  SetPeerHealth(&config, "C", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica B becomes the new leader.
+  SetPeerHealth(&config, "A", '?');
+  SetPeerHealth(&config, "B", '+');
+  SetPeerHealth(&config, "C", '?');
+  EXPECT_FALSE(ShouldEvictReplica(config, "B", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica A is reported as healthy; replica C fails.
+  SetPeerHealth(&config, "A", '+');
+  SetPeerHealth(&config, "B", '+');
+  SetPeerHealth(&config, "C", '-');
+  EXPECT_FALSE(ShouldEvictReplica(config, "B", kReplicationFactor));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor));
+
+  // A new non-voter replica has been added to replace failed replica C.
+  AddPeer(&config, "D", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "B", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica A becomes the new leader.
+  SetPeerHealth(&config, "A", '+');
+  SetPeerHealth(&config, "B", '?');
+  SetPeerHealth(&config, "C", '?');
+  SetPeerHealth(&config, "D", '?');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // The new leader has contacted on-line replicas.
+  SetPeerHealth(&config, "A", '+');
+  SetPeerHealth(&config, "B", '+');
+  SetPeerHealth(&config, "C", '?');
+  SetPeerHealth(&config, "D", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica D catches up with the leader's WAL and gets promoted.
+  PromotePeer(&config, "D");
+  string to_evict;
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, &to_evict));
+  EXPECT_EQ("C", to_evict);
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  // Replica D becomes the new leader.
+  SetPeerHealth(&config, "A", '?');
+  SetPeerHealth(&config, "B", '?');
+  SetPeerHealth(&config, "C", '?');
+  SetPeerHealth(&config, "D", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "D", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  SetPeerHealth(&config, "A", '+');
+  SetPeerHealth(&config, "B", '+');
+  SetPeerHealth(&config, "C", '?');
+  SetPeerHealth(&config, "D", '+');
+  ASSERT_TRUE(ShouldEvictReplica(config, "D", kReplicationFactor, &to_evict));
+  EXPECT_EQ("C", to_evict);
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  SetPeerHealth(&config, "C", '-');
+  ASSERT_TRUE(ShouldEvictReplica(config, "D", kReplicationFactor, &to_evict));
+  EXPECT_EQ("C", to_evict);
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+
+  RemovePeer(&config, "C");
+  EXPECT_FALSE(ShouldEvictReplica(config, "D", kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
+}
+
 } // namespace consensus
 } // namespace kudu
