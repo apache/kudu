@@ -19,6 +19,7 @@
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -450,28 +451,20 @@ class PeerMessageQueue {
   // Calculate a peer's up-to-date health status based on internal fields.
   static HealthReportPB::HealthStatus PeerHealthStatus(const TrackedPeer& peer);
 
+  // Asynchronously trigger various types of observer notifications on a
+  // separate thread.
   void NotifyObserversOfCommitIndexChange(int64_t new_commit_index);
-  void NotifyObserversOfCommitIndexChangeTask(int64_t new_commit_index);
-
   void NotifyObserversOfTermChange(int64_t term);
-  void NotifyObserversOfTermChangeTask(int64_t term);
-
   void NotifyObserversOfFailedFollower(const std::string& uuid,
                                        int64_t term,
                                        const std::string& reason);
-  void NotifyObserversOfFailedFollowerTask(const std::string& uuid,
-                                           int64_t term,
-                                           const std::string& reason);
-
   void NotifyObserversOfPeerToPromote(const std::string& peer_uuid,
                                       int64_t term,
                                       int64_t committed_config_opid_index);
-  void NotifyObserversOfPeerToPromoteTask(const std::string& peer_uuid,
-                                          int64_t term,
-                                          int64_t committed_config_opid_index);
-
   void NotifyObserversOfPeerHealthChange();
-  void NotifyObserversOfPeerHealthChangeTask();
+
+  // Notify all PeerMessageQueueObservers using the given callback function.
+  void NotifyObserversTask(const std::function<void(PeerMessageQueueObserver*)>& func);
 
   typedef std::unordered_map<std::string, TrackedPeer*> PeersMap;
 

@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -1275,97 +1276,55 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
 
 void PeerMessageQueue::NotifyObserversOfCommitIndexChange(int64_t new_commit_index) {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversOfCommitIndexChangeTask,
-           Unretained(this), new_commit_index)),
-              LogPrefixUnlocked() + "Unable to notify RaftConsensus of "
-                                    "commit index change.");
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [=](PeerMessageQueueObserver* observer) {
+             observer->NotifyCommitIndex(new_commit_index);
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus of commit index change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfTermChange(int64_t term) {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversOfTermChangeTask,
-           Unretained(this), term)),
-              LogPrefixUnlocked() + "Unable to notify RaftConsensus of term change.");
-}
-
-void PeerMessageQueue::NotifyObserversOfCommitIndexChangeTask(int64_t new_commit_index) {
-  std::vector<PeerMessageQueueObserver*> copy;
-  {
-    std::lock_guard<simple_spinlock> lock(queue_lock_);
-    copy = observers_;
-  }
-  for (PeerMessageQueueObserver* observer : copy) {
-    observer->NotifyCommitIndex(new_commit_index);
-  }
-}
-
-void PeerMessageQueue::NotifyObserversOfTermChangeTask(int64_t term) {
-  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
-  std::vector<PeerMessageQueueObserver*> copy;
-  {
-    std::lock_guard<simple_spinlock> lock(queue_lock_);
-    copy = observers_;
-  }
-  for (PeerMessageQueueObserver* observer : copy) {
-    observer->NotifyTermChange(term);
-  }
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [=](PeerMessageQueueObserver* observer) {
+             observer->NotifyTermChange(term);
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus of term change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
                                                        int64_t term,
                                                        const string& reason) {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversOfFailedFollowerTask,
-           Unretained(this), uuid, term, reason)),
-              LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");
-}
-
-void PeerMessageQueue::NotifyObserversOfFailedFollowerTask(const string& uuid,
-                                                           int64_t term,
-                                                           const string& reason) {
-  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
-  std::vector<PeerMessageQueueObserver*> observers_copy;
-  {
-    std::lock_guard<simple_spinlock> lock(queue_lock_);
-    observers_copy = observers_;
-  }
-  for (PeerMessageQueueObserver* observer : observers_copy) {
-    observer->NotifyFailedFollower(uuid, term, reason);
-  }
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [=](PeerMessageQueueObserver* observer) {
+             observer->NotifyFailedFollower(uuid, term, reason);
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid,
                                                       int64_t term,
                                                       int64_t committed_config_opid_index) {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversOfPeerToPromoteTask,
-           Unretained(this), peer_uuid, term, committed_config_opid_index)),
-              LogPrefixUnlocked() + "unable to notify RaftConsensus of peer to promote");
-
-}
-
-void PeerMessageQueue::NotifyObserversOfPeerToPromoteTask(const string& peer_uuid,
-                                                          int64_t term,
-                                                          int64_t committed_config_opid_index) {
-  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
-  std::vector<PeerMessageQueueObserver*> observers_copy;
-  {
-    std::lock_guard<simple_spinlock> lock(queue_lock_);
-    observers_copy = observers_;
-  }
-  for (PeerMessageQueueObserver* observer : observers_copy) {
-    observer->NotifyPeerToPromote(peer_uuid, term, committed_config_opid_index);
-  }
-
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [=](PeerMessageQueueObserver* observer) {
+             observer->NotifyPeerToPromote(peer_uuid, term, committed_config_opid_index);
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus of peer to promote.");
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
-      Bind(&PeerMessageQueue::NotifyObserversOfPeerHealthChangeTask, Unretained(this))),
-              LogPrefixUnlocked() + "Unable to notify RaftConsensus peer health change.");
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [](PeerMessageQueueObserver* observer) {
+             observer->NotifyPeerHealthChange();
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus peer health change.");
 }
 
-void PeerMessageQueue::NotifyObserversOfPeerHealthChangeTask() {
+void PeerMessageQueue::NotifyObserversTask(
+    const std::function<void(PeerMessageQueueObserver*)>& func) {
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
   std::vector<PeerMessageQueueObserver*> observers_copy;
   {
@@ -1373,7 +1332,7 @@ void PeerMessageQueue::NotifyObserversOfPeerHealthChangeTask() {
     observers_copy = observers_;
   }
   for (PeerMessageQueueObserver* observer : observers_copy) {
-    observer->NotifyPeerHealthChange();
+    func(observer);
   }
 }
 
