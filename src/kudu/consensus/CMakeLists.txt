@@ -25,7 +25,8 @@ PROTOBUF_GENERATE_CPP(
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES
     metadata.proto
-    opid.proto)
+    opid.proto
+    replica_management.proto)
 set(METADATA_PROTO_LIBS
   kudu_common_proto
   fs_proto

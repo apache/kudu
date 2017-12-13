@@ -22,6 +22,7 @@ option java_package = "org.apache.kudu.master";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/consensus/replica_management.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/security/token.proto";
 import "kudu/tablet/metadata.proto";
@@ -73,6 +74,10 @@ message MasterErrorPB {
 
     // The number of replicas requested is illegal (eg non-positive).
     ILLEGAL_REPLICATION_FACTOR = 11;
+
+    // The caller detected an application-level incompatibility with the callee.
+    // This might be caused by a misconfiguration, incompatible features, etc.
+    INCOMPATIBILITY = 12;
   }
 
   // The error code.
@@ -283,6 +288,10 @@ message TSHeartbeatRequestPB {
   // The most recently known TSK sequence number. Allows the master to
   // selectively notify the tablet server of more recent TSKs.
   optional int64 latest_tsk_seq_num = 6;
+
+  // Replica management parameters that the tablet server is running with.
+  // This field is set only if the registration field is present.
+  optional consensus.ReplicaManagementInfoPB replica_management_info = 7;
 }
 
 message TSHeartbeatResponsePB {

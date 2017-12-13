@@ -24,11 +24,13 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
@@ -45,8 +47,11 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
              "Number of milliseconds that the master will sleep before responding to "
@@ -67,6 +72,7 @@ DEFINE_bool(master_non_leader_masters_propagate_tsk, false,
 TAG_FLAG(master_non_leader_masters_propagate_tsk, hidden);
 
 using google::protobuf::Message;
+using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::security::SignedTokenPB;
@@ -146,13 +152,43 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   // 3. Register or look up the tserver.
   shared_ptr<TSDescriptor> ts_desc;
   if (req->has_registration()) {
+    const auto scheme = FLAGS_raft_prepare_replacement_before_eviction
+        ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+        : ReplicaManagementInfoPB::EVICT_FIRST;
+    const auto ts_scheme = req->has_replica_management_info()
+        ? req->replica_management_info().replacement_scheme()
+        : ReplicaManagementInfoPB::EVICT_FIRST;
+    // If the catalog manager is running with some different replica management
+    // scheme, report back an error and do not register the tablet server.
+    if (scheme != ts_scheme) {
+      const auto& ts_uuid = req->common().ts_instance().permanent_uuid();
+      const auto& ts_addr = rpc->remote_address().ToString();
+      Status s = Status::ConfigurationError(
+          Substitute("replica replacement scheme ($0) of the tablet server "
+                     "$1 at $2 differs from the catalog manager's ($3); "
+                     "they must be run with the same scheme (controlled "
+                     "by the --raft_prepare_replacement_before_eviction flag)",
+                     ReplicaManagementInfoPB::ReplacementScheme_Name(ts_scheme),
+                     ts_uuid, ts_addr,
+                     ReplicaManagementInfoPB::ReplacementScheme_Name(scheme)));
+      LOG(WARNING) << s.ToString();
+
+      auto* error = resp->mutable_error();
+      StatusToPB(s, error->mutable_status());
+      error->set_code(MasterErrorPB::INCOMPATIBILITY);
+
+      // Yes, this is confusing: the RPC result is success, but the response
+      // contains an application-level error.
+      rpc->RespondSuccess();
+      return;
+    }
     Status s = server_->ts_manager()->RegisterTS(req->common().ts_instance(),
                                                  req->registration(),
                                                  &ts_desc);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Unable to register tserver ($0): $1",
                                  rpc->requestor_string(), s.ToString());
-      // TODO: add service-specific errors
+      // TODO(todd): add service-specific errors
       rpc->RespondFailure(s);
       return;
     }
@@ -170,7 +206,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 
       rpc->RespondSuccess();
       return;
-    } else if (!s.ok()) {
+    }
+    if (!s.ok()) {
       LOG(WARNING) << Substitute("Unable to look up tserver for heartbeat "
           "request $0 from $1: $2", SecureDebugString(*req),
           rpc->requestor_string(), s.ToString());

@@ -57,6 +57,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 DECLARE_double(leader_failure_max_missed_heartbeat_periods);
@@ -88,6 +89,7 @@ using kudu::itest::StartElection;
 using kudu::itest::TServerDetails;
 using kudu::itest::TabletServerMap;
 using kudu::itest::WAIT_FOR_LEADER;
+using kudu::itest::WaitForNumTabletsOnTS;
 using kudu::itest::WaitForReplicasReportedToMaster;
 using kudu::master::ANY_REPLICA;
 using kudu::master::GetTableLocationsResponsePB;
@@ -1242,9 +1244,9 @@ TEST_F(RaftConsensusNonVoterITest, CatalogManagerAddsNonVoter) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(6 * kReplicaUnavailableSec);
   const int kReplicasNum = 3;
   FLAGS_num_replicas = kReplicasNum;
-  // Need one extra tserver after the tserver with on of the replicas stopped.
-  // Otherwise, the catalog manager would not be able to spawn a new non-voter
-  // replacement replica.
+  // Will need one extra tserver after the tserver with existing voter replica
+  // is stopped. Otherwise, the catalog manager would not be able to spawn
+  // a new non-voter replacement replica.
   FLAGS_num_tablet_servers = kReplicasNum + 1;
   const vector<string> kMasterFlags = {
     // The scenario runs with the new replica management scheme.
@@ -1826,6 +1828,64 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
   });
 
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// This test runs master and tablet server with different replica replacement
+// schemes and makes sure that the tablet server is not registered with the
+// master in such case.
+// Also, it makes sure the tablet server crashes to signal the misconfiguration.
+class IncompatibleReplicaReplacementSchemesITest :
+    public RaftConsensusNonVoterITest,
+    public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_CASE_P(, IncompatibleReplicaReplacementSchemesITest,
+                        ::testing::Bool());
+TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int64_t heartbeat_interval_ms = 500;
+
+  const bool is_3_4_3 = GetParam();
+
+  // The easiest way to have everything setup is to start the cluster with
+  // compatible parameters.
+  const vector<string> kMasterFlags = {
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
+  };
+  const vector<string> kTsFlags = {
+    Substitute("--heartbeat_interval_ms=$0", heartbeat_interval_ms),
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
+  };
+
+  NO_FATALS(BuildAndStart(kTsFlags, kMasterFlags));
+
+  vector<master::ListTabletServersResponsePB_Entry> tservers;
+  ASSERT_OK(itest::ListTabletServers(cluster_->master_proxy(), kTimeout, &tservers));
+  ASSERT_EQ(1, tservers.size());
+
+  ASSERT_EQ(1, cluster_->num_tablet_servers());
+  auto* ts = cluster_->tablet_server(0);
+  ASSERT_NE(nullptr, ts);
+  ts->Shutdown();
+
+  auto* master = cluster_->master(0);
+  master->Shutdown();
+  ASSERT_OK(master->Restart());
+
+  // Update corresponding flags to induce a misconfiguration between the master
+  // and the tablet server.
+  ts->mutable_flags()->push_back(
+      Substitute("--raft_prepare_replacement_before_eviction=$0", !is_3_4_3));
+  ASSERT_OK(ts->Restart());
+
+  ASSERT_OK(ts->WaitForFatal(kTimeout));
+
+  SleepFor(MonoDelta::FromMilliseconds(heartbeat_interval_ms * 3));
+
+  // The tablet server should not be registered with the master.
+  ASSERT_OK(itest::ListTabletServers(cluster_->master_proxy(), kTimeout, &tservers));
+  ASSERT_EQ(0, tservers.size());
 }
 
 }  // namespace tserver

@@ -29,10 +29,12 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -84,6 +86,9 @@ DEFINE_int32(heartbeat_inject_latency_before_heartbeat_ms, 0,
 TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, runtime);
 TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, unsafe);
 
+DECLARE_bool(raft_prepare_replacement_before_eviction);
+
+using kudu::master::MasterErrorPB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
 using kudu::pb_util::SecureDebugString;
@@ -145,7 +150,7 @@ class Heartbeater::Thread {
   Status ConnectToMaster();
   int GetMinimumHeartbeatMillis() const;
   int GetMillisUntilNextHeartbeat() const;
-  Status DoHeartbeat();
+  Status DoHeartbeat(MasterErrorPB* error = nullptr);
   Status SetupRegistration(ServerRegistrationPB* reg);
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
@@ -164,7 +169,7 @@ class Heartbeater::Thread {
   scoped_refptr<kudu::Thread> thread_;
 
   // Current RPC proxy to the leader master.
-  gscoped_ptr<master::MasterServiceProxy> proxy_;
+  gscoped_ptr<MasterServiceProxy> proxy_;
 
   // The most recent response from a heartbeat.
   master::TSHeartbeatResponsePB last_hb_response_;
@@ -374,7 +379,7 @@ int Heartbeater::Thread::GetMillisUntilNextHeartbeat() const {
   return FLAGS_heartbeat_interval_ms;
 }
 
-Status Heartbeater::Thread::DoHeartbeat() {
+Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error) {
   if (PREDICT_FALSE(server_->fail_heartbeats_for_tests())) {
     return Status::IOError("failing all heartbeats for tests");
   }
@@ -401,12 +406,18 @@ Status Heartbeater::Thread::DoHeartbeat() {
     LOG(INFO) << "Registering TS with master...";
     RETURN_NOT_OK_PREPEND(SetupRegistration(req.mutable_registration()),
                           "Unable to set up registration");
+    // If registering, let the catalog manager know what replica replacement
+    // scheme the tablet server is running with.
+    auto* info = req.mutable_replica_management_info();
+    info->set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+        ? consensus::ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+        : consensus::ReplicaManagementInfoPB::EVICT_FIRST);
   }
 
   // Check with the TS cert manager if it has a cert that needs signing.
-  // if so, send the CSR in the heartbeat for the master to sign.
+  // If so, send the CSR in the heartbeat for the master to sign.
   boost::optional<security::CertSignRequest> csr =
-    server_->mutable_tls_context()->GetCsrIfNecessary();
+      server_->mutable_tls_context()->GetCsrIfNecessary();
   if (csr != boost::none) {
     RETURN_NOT_OK(csr->ToString(req.mutable_csr_der(), security::DataFormat::DER));
     VLOG(1) << "Sending a CSR to the master in the next heartbeat";
@@ -444,7 +455,10 @@ Status Heartbeater::Thread::DoHeartbeat() {
   RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
                         "Failed to send heartbeat to master");
   if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
+    if (error) {
+      error->Swap(resp.mutable_error());
+    }
+    return StatusFromPB(error ? error->status() : resp.error().status());
   }
 
   VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
@@ -533,16 +547,21 @@ void Heartbeater::Thread::RunThread() {
       }
     }
 
-    Status s = DoHeartbeat();
+    MasterErrorPB error;
+    const auto& s = DoHeartbeat(&error);
     if (!s.ok()) {
+      const auto& err_msg = s.ToString();
       LOG(WARNING) << Substitute("Failed to heartbeat to $0: $1",
-                                 master_address_.ToString(), s.ToString());
+                                 master_address_.ToString(), err_msg);
       consecutive_failed_heartbeats_++;
       // If we encountered a network error (e.g., connection
       // refused), try reconnecting.
       if (s.IsNetworkError() ||
           consecutive_failed_heartbeats_ >= FLAGS_heartbeat_max_failures_before_backoff) {
         proxy_.reset();
+      }
+      if (error.has_code() && error.code() == MasterErrorPB::INCOMPATIBILITY) {
+        LOG(FATAL) << "master detected incompatibility: " << err_msg;
       }
       continue;
     }
@@ -554,7 +573,7 @@ bool Heartbeater::Thread::IsCurrentThread() const {
   return thread_.get() == kudu::Thread::current_thread();
 }
 
-void Heartbeater::Thread::MarkTabletReportAcknowledged(const master::TabletReportPB& report) {
+void Heartbeater::Thread::MarkTabletReportAcknowledged(const TabletReportPB& report) {
   std::lock_guard<simple_spinlock> l(dirty_tablets_lock_);
 
   int32_t acked_seq = report.sequence_number();
