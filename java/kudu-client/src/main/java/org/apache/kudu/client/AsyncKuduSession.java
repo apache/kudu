@@ -530,7 +530,18 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
       operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
+
+      // Add a callback to update the propagated timestamp returned from the server.
+      Callback<Deferred<OperationResponse>, OperationResponse> cb =
+        new Callback<Deferred<OperationResponse>, OperationResponse>() {
+          @Override
+          public Deferred<OperationResponse> call(OperationResponse resp) throws Exception {
+            client.updateLastPropagatedTimestamp(resp.getWriteTimestampRaw());
+            return Deferred.fromResult(resp);
+          }
+        };
       return client.sendRpcToTablet(operation)
+          .addCallbackDeferring(cb)
           .addErrback(new SingleOperationErrCallback(operation));
     }
 

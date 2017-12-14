@@ -283,6 +283,8 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testScanTokenPropagatesTimestamp() throws Exception {
+    resetClients();
+
     // Initially, the client does not have the timestamp set.
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
     assertEquals(KuduClient.NO_TIMESTAMP, syncClient.getLastPropagatedTimestamp());

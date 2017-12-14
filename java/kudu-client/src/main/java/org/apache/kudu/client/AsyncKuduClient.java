@@ -333,6 +333,16 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
+   * Checks if the client received any timestamps from a server. Used for
+   * CLIENT_PROPAGATED external consistency.
+   *
+   * @return true if last propagated timestamp has been set
+   */
+  public synchronized boolean hasLastPropagatedTimestamp() {
+    return lastPropagatedTimestamp != NO_TIMESTAMP;
+  }
+
+  /**
    * Returns a synchronous {@link KuduClient} which wraps this asynchronous client.
    * Calling {@link KuduClient#close} on the returned client will close this client.
    * If this asynchronous client should outlive the returned synchronous client,

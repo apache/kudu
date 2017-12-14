@@ -87,23 +87,25 @@ public class TestHybridTime extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void test() throws Exception {
-    AsyncKuduSession session = client.newSession();
-    session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
+    KuduSession session = syncClient.newSession();
+
+    // Test timestamp propagation with AUTO_FLUSH_SYNC flush mode.
+    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
     session.setExternalConsistencyMode(CLIENT_PROPAGATED);
     long[] clockValues;
     long previousLogicalValue = 0;
     long previousPhysicalValue = 0;
 
-    // Test timestamp propagation with single operations
     String[] keys = new String[] {"1", "2", "3"};
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
       row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
-      Deferred<OperationResponse> d = session.apply(insert);
-      OperationResponse response = d.join(DEFAULT_SLEEP);
-      assertTrue(response.getWriteTimestampRaw() != 0);
-      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestampRaw());
+      OperationResponse response = session.apply(insert);
+      assertTrue(client.hasLastPropagatedTimestamp());
+      assertEquals(client.getLastPropagatedTimestamp(),
+                   response.getWriteTimestampRaw());
+      clockValues = HTTimestampToPhysicalAndLogical(client.getLastPropagatedTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);
       // on the very first write we update the clock into the future
@@ -123,7 +125,7 @@ public class TestHybridTime extends BaseKuduTest {
       }
     }
 
-    // Test timestamp propagation with Batches
+    // Test timestamp propagation with MANUAL_FLUSH flush mode.
     session.setFlushMode(AsyncKuduSession.FlushMode.MANUAL_FLUSH);
     keys = new String[] {"11", "22", "33"};
     for (int i = 0; i < keys.length; i++) {
@@ -131,14 +133,15 @@ public class TestHybridTime extends BaseKuduTest {
       PartialRow row = insert.getRow();
       row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
       session.apply(insert);
-      Deferred<List<OperationResponse>> d = session.flush();
-      List<OperationResponse> responses = d.join(DEFAULT_SLEEP);
+      List<OperationResponse> responses = session.flush();
       assertEquals("Response was not of the expected size: " + responses.size(),
         1, responses.size());
 
       OperationResponse response = responses.get(0);
-      assertTrue(response.getWriteTimestampRaw() != 0);
-      clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestampRaw());
+      assertTrue(client.hasLastPropagatedTimestamp());
+      assertEquals(client.getLastPropagatedTimestamp(),
+                   response.getWriteTimestampRaw());
+      clockValues = HTTimestampToPhysicalAndLogical(client.getLastPropagatedTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
         + " Logical value: " + clockValues[1]);
       assertEquals(clockValues[0], previousPhysicalValue);

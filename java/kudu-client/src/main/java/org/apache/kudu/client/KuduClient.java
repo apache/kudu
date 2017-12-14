@@ -73,6 +73,16 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Checks if the client received any timestamps from a server. Used for
+   * CLIENT_PROPAGATED external consistency.
+   *
+   * @return true if last propagated timestamp has been set
+   */
+  public boolean hasLastPropagatedTimestamp() {
+    return asyncClient.hasLastPropagatedTimestamp();
+  }
+
+  /**
    * Create a table on the cluster with the specified name, schema, and table configurations.
    * @param name the table's name
    * @param schema the table's schema
