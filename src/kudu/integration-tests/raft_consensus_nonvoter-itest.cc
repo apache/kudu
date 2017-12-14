@@ -1585,14 +1585,13 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
   }
   workload.StopAndJoin();
 
-  vector<ExternalTabletServer*> servers_without_replica;
-  NO_FATALS(GetServersWithoutReplica(&servers_without_replica));
-  ASSERT_EQ(4, servers_without_replica.size());
-
-  ExternalTabletServer* ts_with_replica = GetServerWithReplica();
+  const auto server_uuids_with_replica = GetServersWithReplica(tablet_id_);
+  ASSERT_FALSE(server_uuids_with_replica.empty());
+  const string& failed_replica_uuid = server_uuids_with_replica.front();
+  ExternalTabletServer* ts_with_replica =
+      cluster_->tablet_server_by_uuid(failed_replica_uuid);
   ASSERT_NE(nullptr, ts_with_replica);
   ts_with_replica->Shutdown();
-  const string& failed_replica_uuid = ts_with_replica->uuid();
 
   bool has_leader = false;
   TabletLocationsPB tablet_locations;
