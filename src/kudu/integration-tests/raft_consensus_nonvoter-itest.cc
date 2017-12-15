@@ -217,9 +217,15 @@ Status RaftConsensusNonVoterITest::ChangeReplicaMembership(
 TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
   const int kOriginalReplicasNum = 3;
+  const vector<string> kMasterFlags = {
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
   FLAGS_num_tablet_servers = kOriginalReplicasNum + 1;
   FLAGS_num_replicas = kOriginalReplicasNum;
-  NO_FATALS(BuildAndStart());
+  NO_FATALS(BuildAndStart({}, kMasterFlags));
   ASSERT_EQ(FLAGS_num_tablet_servers, tablet_servers_.size());
   ASSERT_EQ(kOriginalReplicasNum, tablet_replicas_.size());
 
@@ -318,7 +324,13 @@ TEST_F(RaftConsensusNonVoterITest, ReplicaMatchPolicy) {
   const int kOriginalReplicasNum = 3;
   FLAGS_num_tablet_servers = kOriginalReplicasNum + 1;
   FLAGS_num_replicas = kOriginalReplicasNum;
-  NO_FATALS(BuildAndStart());
+  const vector<string> kMasterFlags = {
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  NO_FATALS(BuildAndStart({}, kMasterFlags));
   ASSERT_EQ(FLAGS_num_tablet_servers, tablet_servers_.size());
   ASSERT_EQ(kOriginalReplicasNum, tablet_replicas_.size());
 
@@ -411,6 +423,11 @@ TEST_F(RaftConsensusNonVoterITest, AddNonVoterReplica) {
   const vector<string> kMasterFlags = {
     // Allow replication factor of 2.
     "--allow_unsafe_replication_factor=true",
+
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
   };
   const vector<string> kTserverFlags = {
     // Slow down tablet copy to observe active source and target sessions.
@@ -562,6 +579,11 @@ TEST_F(RaftConsensusNonVoterITest, AddThenRemoveNonVoterReplica) {
   const vector<string> kMasterFlags = {
     // Allow replication factor of 2.
     "--allow_unsafe_replication_factor=true",
+
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
   };
   const int kOriginalReplicasNum = 2;
 
@@ -668,6 +690,11 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasDoNotVote) {
   const vector<string> kMasterFlags = {
     // Allow replication factor of 2.
     "--allow_unsafe_replication_factor=true",
+
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
   };
   const vector<string> kTserverFlags = {
     Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
@@ -806,7 +833,12 @@ TEST_F(RaftConsensusNonVoterITest, PromoteAndDemote) {
   };
   const vector<string> kMasterFlags = {
     // The election is run manually after BuildAndStart().
-    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false"
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
   };
 
   FLAGS_num_tablet_servers = 4;
@@ -973,6 +1005,12 @@ TEST_F(RaftConsensusNonVoterITest, PromotedReplicaCanVote) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
   const int kInitialReplicasNum = 3;
   const int kHbIntervalMs = 50;
+  const vector<string> kMasterFlags = {
+    // In the 3-4-3 replication scheme, the catalog manager removes excess
+    // replicas, so it's necessary to disable that default behavior since we
+    // want the newly added non-voter replica to stay.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
   const vector<string> kTserverFlags = {
     // Run the test faster: shorten the default interval for Raft heartbeats.
     Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
@@ -983,7 +1021,7 @@ TEST_F(RaftConsensusNonVoterITest, PromotedReplicaCanVote) {
 
   FLAGS_num_tablet_servers = 4;
   FLAGS_num_replicas = kInitialReplicasNum;
-  NO_FATALS(BuildAndStart(kTserverFlags));
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
   ASSERT_EQ(4, tablet_servers_.size());
   ASSERT_EQ(kInitialReplicasNum, tablet_replicas_.size());
 

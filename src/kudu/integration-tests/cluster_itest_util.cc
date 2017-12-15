@@ -1023,24 +1023,27 @@ Status WaitUntilTabletInState(TServerDetails* ts,
                               const std::string& tablet_id,
                               tablet::TabletStatePB state,
                               const MonoDelta& timeout) {
-  MonoTime start = MonoTime::Now();
-  MonoTime deadline = start + timeout;
+  static const MonoDelta kSleepInterval = MonoDelta::FromMilliseconds(10);
+  const MonoTime start = MonoTime::Now();
+  const MonoTime deadline = start + timeout;
+  MonoTime now;
   Status s;
   while (true) {
-    s = CheckIfTabletInState(ts, tablet_id, state, deadline - MonoTime::Now());
+    now = MonoTime::Now();
+    s = CheckIfTabletInState(ts, tablet_id, state, deadline - now);
     if (s.ok()) {
       return Status::OK();
     }
-    if (MonoTime::Now() > deadline) {
+    if (now + kSleepInterval >= deadline) {
       break;
     }
-    SleepFor(MonoDelta::FromMilliseconds(10));
+    SleepFor(kSleepInterval);
   }
   return Status::TimedOut(Substitute("T $0 P $1: Tablet not in $2 state after $3: "
                                      "Status message: $4",
                                      tablet_id, ts->uuid(),
                                      tablet::TabletStatePB_Name(state),
-                                     (MonoTime::Now() - start).ToString(),
+                                     (now - start).ToString(),
                                      s.ToString()));
 }
 

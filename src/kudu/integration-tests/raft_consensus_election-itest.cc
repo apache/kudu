@@ -468,14 +468,21 @@ TEST_F(RaftConsensusElectionITest, ElectPendingVoter) {
 
 // Have a replica fall behind the leader's log, then fail a tablet copy. It
 // should still be able to vote in leader elections.
+// This test is relevant only for 3-2-3 replica management scheme when the
+// replica with tombstoned tablet is added back into the tablet as a voter
+// (that's why the flag "--raft_prepare_replacement_before_eviction=false"
+//  is added). In case of 3-4-3 replica management scheme the newly added
+// replica is a non-voter and it's irrelevant whether it can or cannot vote.
 TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
-
-  vector<string> ts_flags;
-  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
   const vector<string> kMasterFlags = {
     "--master_add_server_when_underreplicated=false",
+    "--raft_prepare_replacement_before_eviction=false",
   };
+  vector<string> ts_flags {
+    "--raft_prepare_replacement_before_eviction=false",
+  };
+  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
   NO_FATALS(BuildAndStart(ts_flags, kMasterFlags));
 
   TabletServerMap active_tablet_servers = tablet_servers_;
