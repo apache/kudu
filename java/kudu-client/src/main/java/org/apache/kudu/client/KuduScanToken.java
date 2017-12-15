@@ -219,6 +219,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           builder.readMode(AsyncKuduScanner.ReadMode.READ_LATEST);
           break;
         }
+        case READ_YOUR_WRITES: {
+          builder.readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES);
+          break;
+        }
         default: throw new IllegalArgumentException("unknown read mode");
       }
     }

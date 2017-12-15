@@ -118,7 +118,21 @@ public final class AsyncKuduScanner {
      * are sometimes not externally consistent even when action was taken to make them so.
      * In these cases Isolation may degenerate to mode "Read Committed". See KUDU-430.
      */
-    READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT);
+    READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT),
+
+    /**
+     * When @c READ_YOUR_WRITES is specified, the client will perform a read
+     * such that it follows all previously known writes and reads from this client.
+     * Specifically this mode:
+     *  (1) ensures read-your-writes and read-your-reads session guarantees,
+     *  (2) minimizes latency caused by waiting for outstanding write
+     *      transactions to complete.
+     *
+     * Reads in this mode are not repeatable: two READ_YOUR_WRITES reads, even if
+     * they provide the same propagated timestamp bound, can execute at different
+     * timestamps and thus may return different results.
+     */
+    READ_YOUR_WRITES(Common.ReadMode.READ_YOUR_WRITES);
 
     private Common.ReadMode pbVersion;
     ReadMode(Common.ReadMode pbVersion) {
@@ -182,6 +196,8 @@ public final class AsyncKuduScanner {
   private final boolean isFaultTolerant;
 
   private long htTimestamp;
+
+  private long lowerBoundPropagationTimestamp = AsyncKuduClient.NO_TIMESTAMP;
 
   private final ReplicaSelection replicaSelection;
 
@@ -293,6 +309,13 @@ public final class AsyncKuduScanner {
     }
 
     this.replicaSelection = replicaSelection;
+
+    // For READ_YOUR_WRITES scan mode, get the latest observed timestamp
+    // and store it. Always use this one as the propagated timestamp for
+    // the duration of the scan to avoid unnecessary wait.
+    if (readMode == ReadMode.READ_YOUR_WRITES) {
+      this.lowerBoundPropagationTimestamp = this.client.getLastPropagatedTimestamp();
+    }
   }
 
   /**
@@ -389,8 +412,24 @@ public final class AsyncKuduScanner {
             // context of the same scan.
             htTimestamp = resp.scanTimestamp;
           }
-          if (resp.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
-            client.updateLastPropagatedTimestamp(resp.propagatedTimestamp);
+
+          long lastPropagatedTimestamp = AsyncKuduClient.NO_TIMESTAMP;
+          if (readMode == ReadMode.READ_YOUR_WRITES &&
+              resp.scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            // For READ_YOUR_WRITES mode, update the latest propagated timestamp
+            // with the chosen snapshot timestamp sent back from the server, to
+            // avoid unnecessarily wait for subsequent reads. Since as long as
+            // the chosen snapshot timestamp of the next read is greater than
+            // the previous one, the scan does not violate READ_YOUR_WRITES
+            // session guarantees.
+            lastPropagatedTimestamp = resp.scanTimestamp;
+          } else if (resp.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            // Otherwise we just use the propagated timestamp returned from
+            // the server as the latest propagated timestamp.
+            lastPropagatedTimestamp = resp.propagatedTimestamp;
+          }
+          if (lastPropagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            client.updateLastPropagatedTimestamp(lastPropagatedTimestamp);
           }
 
           if (isFaultTolerant && resp.lastPrimaryKey != null) {
@@ -694,7 +733,7 @@ public final class AsyncKuduScanner {
 
     /**
      * The server timestamp to propagate, if set. If the server response does
-     * not contain propagation timestamp, this field is set to special value
+     * not contain propagated timestamp, this field is set to special value
      * AsyncKuduClient.NO_TIMESTAMP
      */
     private final long propagatedTimestamp;
@@ -785,9 +824,17 @@ public final class AsyncKuduScanner {
           newBuilder.setTabletId(UnsafeByteOperations.unsafeWrap(tablet.getTabletIdAsBytes()));
           newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());
           newBuilder.setCacheBlocks(cacheBlocks);
-          // if the last propagated timestamp is set send it with the scan
-          if (table.getAsyncClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
-            newBuilder.setPropagatedTimestamp(table.getAsyncClient().getLastPropagatedTimestamp());
+          // If the last propagated timestamp is set, send it with the scan.
+          // For READ_YOUR_WRITES scan, use the propagated timestamp from
+          // the scanner.
+          long timestamp;
+          if (readMode == ReadMode.READ_YOUR_WRITES) {
+            timestamp = lowerBoundPropagationTimestamp;
+          } else {
+            timestamp = table.getAsyncClient().getLastPropagatedTimestamp();
+          }
+          if (timestamp != AsyncKuduClient.NO_TIMESTAMP) {
+            newBuilder.setPropagatedTimestamp(timestamp);
           }
           newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
 

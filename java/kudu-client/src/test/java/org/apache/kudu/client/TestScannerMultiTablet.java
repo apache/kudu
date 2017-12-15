@@ -240,6 +240,62 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(9, rowCount);
   }
 
+  // Test multi tablets scan in READ_YOUR_WRITES mode for both AUTO_FLUSH_SYNC
+  // (single operation) and MANUAL_FLUSH (batches) flush modes to ensure
+  // client-local read-your-writes.
+  @Test(timeout = 100000)
+  public void testReadYourWrites() throws Exception {
+    // Perform scan in READ_YOUR_WRITES mode. Before the scan, verify that the
+    // propagated timestamp is set via previous write session while snapshot
+    // timestamp is not.
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+                                     .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+                                     .build();
+    KuduScanner syncScanner = new KuduScanner(scanner);
+    assertEquals(scanner.getReadMode(), syncScanner.getReadMode());
+    long preTs = client.getLastPropagatedTimestamp();
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, client.getLastPropagatedTimestamp());
+    assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+
+    assertEquals(9, countRowsInScan(syncScanner));
+
+    // After the scan, verify that the chosen snapshot timestamp is
+    // returned from the server and it is larger than the previous
+    // propagated timestamp.
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+    assertTrue(preTs < scanner.getSnapshotTimestamp());
+    syncScanner.close();
+
+    // Perform write in MANUAL_FLUSH (batch) mode.
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
+    String[] keys = new String[] {"11", "22", "33"};
+    for (int i = 0; i < keys.length; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
+      row.addString(schema.getColumnByIndex(1).getName(), keys[i]);
+      session.apply(insert);
+    }
+    session.flush();
+    session.close();
+
+    scanner = client.newScannerBuilder(table)
+                    .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+                    .build();
+    syncScanner = new KuduScanner(scanner);
+    assertTrue(preTs < client.getLastPropagatedTimestamp());
+    preTs = client.getLastPropagatedTimestamp();
+
+    assertEquals(12, countRowsInScan(syncScanner));
+
+    // After the scan, verify that the chosen snapshot timestamp is
+    // returned from the server and it is larger than the previous
+    // propagated timestamp.
+    assertTrue(preTs < scanner.getSnapshotTimestamp());
+    syncScanner.close();
+  }
+
   @Test(timeout = 100000)
   public void testScanPropagatesLatestTimestamp() throws Exception {
     // Reset the clients in order to clear the propagated timestamp, which may
@@ -307,6 +363,19 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(tsPrev, client.getLastPropagatedTimestamp());
     KuduScanToken.deserializeIntoScanner(serializedToken, syncClient);
     assertEquals(tsPropagated, client.getLastPropagatedTimestamp());
+  }
+
+  @Test(timeout = 100000)
+  public void testScanTokenReadMode() throws Exception {
+    ScanTokenPB.Builder pbBuilder = ScanTokenPB.newBuilder();
+    pbBuilder.setTableName(table.getName());
+    pbBuilder.setReadMode(Common.ReadMode.READ_YOUR_WRITES);
+    Client.ScanTokenPB scanTokenPB = pbBuilder.build();
+    final byte[] serializedToken = KuduScanToken.serialize(scanTokenPB);
+
+    // Deserialize scan tokens and make sure the read mode is updated accordingly.
+    KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serializedToken, syncClient);
+    assertEquals(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES, scanner.getReadMode());
   }
 
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,

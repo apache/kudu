@@ -25,6 +25,7 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -35,7 +36,10 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
@@ -1037,5 +1041,110 @@ public class TestKuduClient extends BaseKuduTest {
 
     // If createTable() was disrupted by the alterTable(), this will throw.
     d.join();
+  }
+
+  // This is a test that verifies, when multiple clients run
+  // simultaneously, a client can get read-your-writes and
+  // read-your-reads session guarantees using READ_YOUR_WRITES
+  // scan mode, from leader replica. In this test writes are
+  // performed in AUTO_FLUSH_SYNC (single operation) flush modes.
+  @Test(timeout = 100000)
+  public void testReadYourWritesSyncLeaderReplica() throws Exception {
+    readYourWrites(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC,
+                   ReplicaSelection.LEADER_ONLY);
+  }
+
+  // Similar test as above but scan from the closest replica.
+  @Test(timeout = 100000)
+  public void testReadYourWritesSyncClosestReplica() throws Exception {
+    readYourWrites(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC,
+            ReplicaSelection.CLOSEST_REPLICA);
+  }
+
+  // Similar to testReadYourWritesSyncLeaderReplica, but in this
+  // test writes are performed in MANUAL_FLUSH (batches) flush modes.
+  @Test(timeout = 100000)
+  public void testReadYourWritesBatchLeaderReplica() throws Exception {
+    readYourWrites(SessionConfiguration.FlushMode.MANUAL_FLUSH,
+                   ReplicaSelection.LEADER_ONLY);
+  }
+
+  // Similar test as above but scan from the closest replica.
+  @Test(timeout = 100000)
+  public void testReadYourWritesBatchClosestReplica() throws Exception {
+    readYourWrites(SessionConfiguration.FlushMode.MANUAL_FLUSH,
+            ReplicaSelection.CLOSEST_REPLICA);
+  }
+
+  private void readYourWrites(final SessionConfiguration.FlushMode flushMode,
+                              final ReplicaSelection replicaSelection)
+          throws Exception {
+    Schema schema = createManyStringsSchema();
+    syncClient.createTable(tableName, schema, createTableOptions());
+
+    final int tasksNum = 4;
+    List<Callable<Void>> callables = new ArrayList<>();
+    for (int t = 0; t < tasksNum; t++) {
+      Callable<Void> callable = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          // From the same client continuously performs inserts to a tablet
+          // in the given flush mode.
+          KuduSession session = syncClient.newSession();
+          session.setFlushMode(flushMode);
+          KuduTable table = syncClient.openTable(tableName);
+          for (int i = 0; i < 3; i++) {
+            for (int j = 100 * i; j < 100 * (i + 1); j++) {
+              Insert insert = table.newInsert();
+              PartialRow row = insert.getRow();
+              row.addString("key", String.format("key_%02d", j));
+              row.addString("c1", "c1_" + j);
+              row.addString("c2", "c2_" + j);
+              row.addString("c3", "c3_" + j);
+              session.apply(insert);
+            }
+            session.flush();
+            session.close();
+
+            // Perform a bunch of READ_YOUR_WRITES scans to all the replicas
+            // that count the rows. And verify that the count of the rows
+            // never go down from what previously observed, to ensure subsequent
+            // reads will not "go back in time" regarding writes that other
+            // clients have done.
+            for (int k = 0; k < 3; k++) {
+              AsyncKuduScanner scanner = client.newScannerBuilder(table)
+                      .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+                      .replicaSelection(replicaSelection)
+                      .build();
+              KuduScanner syncScanner = new KuduScanner(scanner);
+              long preTs = client.getLastPropagatedTimestamp();
+              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP,
+                              client.getLastPropagatedTimestamp());
+
+              long row_count = countRowsInScan(syncScanner);
+              long expected_count = 100 * (i + 1);
+              assertTrue(expected_count <= row_count);
+
+              // After the scan, verify that the chosen snapshot timestamp is
+              // returned from the server and it is larger than the previous
+              // propagated timestamp.
+              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+              assertTrue(preTs < scanner.getSnapshotTimestamp());
+              syncScanner.close();
+            }
+          }
+          return null;
+        }
+      };
+      callables.add(callable);
+    }
+    ExecutorService executor = Executors.newFixedThreadPool(tasksNum);
+    List<Future<Void>> futures = executor.invokeAll(callables);
+
+    // Waits for the spawn tasks to complete, and then retrieves the results.
+    // Any exceptions or assertion errors in the spawn tasks will be thrown here.
+    for (Future<Void> future : futures) {
+      future.get();
+    }
   }
 }
