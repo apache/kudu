@@ -69,7 +69,7 @@ usage: %(prog)s <tool> ..."
 
     Runs htmlproof to check for broken links, etc.
 
-  %(prog)s publish
+  %(prog)s publish [--no-verify-source]
 
     Checks out the destination (i.e. static HTML) repository into
     _publish, builds the current version of the site, and creates
