@@ -1138,11 +1138,25 @@ INSTANTIATE_TEST_CASE_P(FailureCause, TabletCopyFailureITest,
 TEST_P(TabletCopyFailureITest, TestTabletCopyNewReplicaFailureCanVote) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
   const string& failure_flag = GetParam();
-  NO_FATALS(StartCluster({failure_flag}, {}, /*num_tablet_servers=*/ 4));
+  const vector<string> kMasterFlags = {
+    // If running with the 3-4-3 replication scheme, it's necessary to disable
+    // the default catalog manager's behavior of adding and evicting tablet
+    // replicas: this test scenario manages replicasa on its own.
+    "--catalog_manager_evict_excess_replicas=false",
+    "--master_add_server_when_underreplicated=false",
+  };
+  const vector<string> kTserverFlags = {
+    failure_flag
+  };
+  constexpr auto kNumReplicas = 3;
+  constexpr auto kNumTabletServers = kNumReplicas + 1;
+
+  NO_FATALS(StartCluster(kTserverFlags, kMasterFlags, kNumTabletServers));
+
   TestWorkload workload(cluster_.get());
   workload.Setup();
 
-  ASSERT_OK(inspect_->WaitForReplicaCount(3));
+  ASSERT_OK(inspect_->WaitForReplicaCount(kNumReplicas));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
                                      kTimeout, master::VOTER_REPLICA, &table_locations));

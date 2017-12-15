@@ -110,10 +110,8 @@ class TsTabletManagerITest : public KuduTest {
     ASSERT_OK(bld.Build(&client_messenger_));
   }
 
-  void StartCluster(int num_replicas) {
-    InternalMiniClusterOptions opts;
-    opts.num_tablet_servers = num_replicas;
-    cluster_.reset(new InternalMiniCluster(env_, opts));
+  void StartCluster(InternalMiniClusterOptions opts) {
+    cluster_.reset(new InternalMiniCluster(env_, std::move(opts)));
     ASSERT_OK(cluster_->Start());
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
   }
@@ -185,61 +183,90 @@ void TsTabletManagerITest::GetIncrementalTabletReports(
   reports->swap(r);
 }
 
-// Test that when a tablet is marked as failed, it will eventually be evicted
-// and replaced.
-TEST_F(TsTabletManagerITest, TestFailedTabletsAreReplaced) {
-  const int kNumReplicas = 3;
-  NO_FATALS(StartCluster(kNumReplicas));
+class FailedTabletsAreReplacedITest :
+    public TsTabletManagerITest,
+    public ::testing::WithParamInterface<bool> {
+};
+// Test that when a tablet replica is marked as failed, it will eventually be
+// evicted and replaced.
+TEST_P(FailedTabletsAreReplacedITest, OneReplica) {
+  const bool is_3_4_3_mode = GetParam();
+  FLAGS_raft_prepare_replacement_before_eviction = is_3_4_3_mode;
+  const auto kNumReplicas = 3;
+  const auto kNumTabletServers = kNumReplicas + (is_3_4_3_mode ? 1 : 0);
 
-  InternalMiniClusterOptions opts;
-  opts.num_tablet_servers = kNumReplicas;
-  unique_ptr<InternalMiniCluster> cluster(new InternalMiniCluster(env_, opts));
-  ASSERT_OK(cluster->Start());
-  TestWorkload work(cluster.get());
-  work.set_num_replicas(3);
+  {
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = kNumTabletServers;
+    NO_FATALS(StartCluster(std::move(opts)));
+  }
+  TestWorkload work(cluster_.get());
+  work.set_num_replicas(kNumReplicas);
   work.Setup();
   work.Start();
 
   // Insert data until the tablet becomes visible to the server.
-  // We'll operate on the first tablet server, chosen arbitrarily.
-  MiniTabletServer* ts = cluster->mini_tablet_server(0);
   string tablet_id;
   ASSERT_EVENTUALLY([&] {
-    vector<string> tablet_ids = ts->ListTablets();
+    auto idx = rand() % kNumTabletServers;
+    vector<string> tablet_ids = cluster_->mini_tablet_server(idx)->ListTablets();
     ASSERT_EQ(1, tablet_ids.size());
     tablet_id = tablet_ids[0];
   });
 
-  // Wait until the replica is running before failing it.
+  // Wait until all the replicas are running before failing one arbitrarily.
   const auto wait_until_running = [&]() {
     AssertEventually([&]{
-      scoped_refptr<TabletReplica> replica;
-      ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
-      ASSERT_EQ(replica->state(), tablet::RUNNING);
+      auto num_replicas_running = 0;
+      for (auto idx = 0; idx < cluster_->num_tablet_servers(); ++idx) {
+        MiniTabletServer* ts = cluster_->mini_tablet_server(idx);
+        scoped_refptr<TabletReplica> replica;
+        Status s = ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica);
+        if (s.IsNotFound()) {
+          continue;
+        }
+        ASSERT_OK(s);
+        if (tablet::RUNNING == replica->state()) {
+          ++num_replicas_running;
+        }
+      }
+      ASSERT_EQ(kNumReplicas, num_replicas_running);
     }, MonoDelta::FromSeconds(60));
     NO_PENDING_FATALS();
   };
-  wait_until_running();
+  NO_FATALS(wait_until_running());
 
   {
-    // Inject an error to the replica. Shutting it down will leave it FAILED.
+    // Inject an error into one of replicas. Shutting it down will leave it in
+    // the FAILED state.
     scoped_refptr<TabletReplica> replica;
-    ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
+    ASSERT_EVENTUALLY([&] {
+      auto idx = rand() % kNumTabletServers;
+      MiniTabletServer* ts = cluster_->mini_tablet_server(idx);
+      ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
+    });
     replica->SetError(Status::IOError("INJECTED ERROR: tablet failed"));
     replica->Shutdown();
     ASSERT_EQ(tablet::FAILED, replica->state());
   }
 
   // Ensure the tablet eventually is replicated.
-  wait_until_running();
+  NO_FATALS(wait_until_running());
   work.StopAndJoin();
 }
+INSTANTIATE_TEST_CASE_P(,
+                        FailedTabletsAreReplacedITest,
+                        ::testing::Bool());
 
 // Test that when the leader changes, the tablet manager gets notified and
 // includes that information in the next tablet report.
 TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   const int kNumReplicas = 2;
-  NO_FATALS(StartCluster(kNumReplicas));
+  {
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = kNumReplicas;
+    NO_FATALS(StartCluster(std::move(opts)));
+  }
 
   // We need to control elections precisely for this test since we're using
   // EmulateElection() with a distributed consensus configuration.
@@ -331,8 +358,13 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
   constexpr int kNumReplicas = 3;
   const auto kTimeout = MonoDelta::FromSeconds(60);
 
+  // This test is specific to the 3-4-3 replica management scheme.
   FLAGS_raft_prepare_replacement_before_eviction = true;
-  NO_FATALS(StartCluster(kNumReplicas));
+  {
+    InternalMiniClusterOptions opts;
+    opts.num_tablet_servers = kNumReplicas;
+    NO_FATALS(StartCluster(std::move(opts)));
+  }
 
   // Create the table.
   client::sp::shared_ptr<KuduTable> table;
