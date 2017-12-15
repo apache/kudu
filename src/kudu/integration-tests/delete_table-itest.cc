@@ -451,21 +451,26 @@ TEST_F(DeleteTableITest, TestDeleteTableWithConcurrentWrites) {
 // test for KUDU-1605.
 TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
   // Set up flags to flush frequently, so that we get data on disk.
-  vector<string> ts_flags = {
+  const vector<string> ts_flags = {
     "--flush_threshold_mb=0",
-    "--maintenance_manager_polling_interval_ms=100"
+    "--maintenance_manager_polling_interval_ms=100",
   };
-  vector<string> master_flags = {
-    "--allow_unsafe_replication_factor=true"
+  const vector<string> master_flags = {
+    "--allow_unsafe_replication_factor=true",
+    // If running with the 3-4-3 replication scheme, the catalog manager
+    // controls replacement of replicas: it's necessary to disable that default
+    // behavior since this test manages replicas on its own.
+    "--catalog_manager_evict_excess_replicas=false",
+    "--master_add_server_when_underreplicated=false",
   };
   NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0; // We'll test with the first TS.
 
   // Shut down TS 1, 2, write some data to TS 0 alone.
+  cluster_->master()->Shutdown();
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
-  cluster_->master()->Shutdown();
   ASSERT_OK(cluster_->master()->Restart());
   ASSERT_OK(cluster_->WaitForTabletServerCount(1, MonoDelta::FromSeconds(30)));
 
@@ -608,14 +613,19 @@ TEST_F(DeleteTableITest, TestAutoTombstoneAfterCrashDuringTabletCopy) {
 // server fails in the middle of the Tablet Copy process.
 // Also test that we can Copy Tablet over a tombstoned tablet.
 TEST_F(DeleteTableITest, TestAutoTombstoneAfterTabletCopyRemoteFails) {
-  vector<string> ts_flags = {
-      "--enable_leader_failure_detection=false",  // Make test deterministic.
-      "--log_segment_size_mb=1",                  // Faster log rolls.
-      "--log_compression_codec=NO_COMPRESSION"    // Faster log rolls.
+  const vector<string> ts_flags = {
+    "--enable_leader_failure_detection=false",  // Make test deterministic.
+    "--log_segment_size_mb=1",                  // Faster log rolls.
+    "--log_compression_codec=NO_COMPRESSION",   // Faster log rolls.
   };
-  vector<string> master_flags = {
-      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
-      "--allow_unsafe_replication_factor=true"
+  const vector<string> master_flags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+    "--allow_unsafe_replication_factor=true",
+    // If running with the 3-4-3 replication scheme, the catalog manager
+    // controls replacement of replicas: it's necessary to disable that default
+    // behavior since this test manages replicas on its own.
+    "--catalog_manager_evict_excess_replicas=false",
+    "--master_add_server_when_underreplicated=false",
   };
   NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta kTimeout = MonoDelta::FromSeconds(20);

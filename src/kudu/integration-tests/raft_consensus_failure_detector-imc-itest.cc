@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -42,6 +43,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(catalog_manager_evict_excess_replicas);
+
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::WaitForServersToAgree;
 using kudu::tablet::TabletReplica;
@@ -59,11 +62,17 @@ class RaftConsensusFailureDetectorIMCTest : public MiniClusterITestBase {
 // Regression test for KUDU-2229.
 TEST_F(RaftConsensusFailureDetectorIMCTest, TestFailureDetectorActivation) {
   if (!AllowSlowTests()) {
-    LOG(WARNING) << "Skipping test in fast-test mode.";
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
   }
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+
+  // If running with the 3-4-3 replication scheme, the catalog manager removes
+  // excess replicas, so it's necessary to disable that default behavior since
+  // this test adds an extra non-voter to validate its leader failure detector
+  // status.
+  FLAGS_catalog_manager_evict_excess_replicas = false;
 
   const int kNumReplicas = 3;
   NO_FATALS(StartCluster(/*num_tablet_servers=*/ kNumReplicas + 1));

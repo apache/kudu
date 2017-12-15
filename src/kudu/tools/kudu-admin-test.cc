@@ -113,12 +113,22 @@ class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
 // 4. Wait until the new server bootstraps.
 // 5. Profit!
 TEST_F(AdminCliTest, TestChangeConfig) {
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+    "--allow_unsafe_replication_factor=true",
+
+    // If running with the 3-4-3 replication scheme, the catalog manager removes
+    // excess replicas, so it's necessary to disable that default behavior
+    // since this test manages replicas on its own.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
+
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
-  NO_FATALS(BuildAndStart(
-      { "--enable_leader_failure_detection=false" },
-      { "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
-        "--allow_unsafe_replication_factor=true"}));
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -138,7 +148,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
       break;
     }
   }
-  ASSERT_TRUE(new_node != nullptr);
+  ASSERT_NE(nullptr, new_node);
 
   // Elect the leader (still only a consensus config size of 2).
   ASSERT_OK(StartElection(leader, tablet_id_, MonoDelta::FromSeconds(10)));
@@ -160,7 +170,8 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
   ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
 
-  LOG(INFO) << "Adding tserver with uuid " << new_node->uuid() << " as VOTER...";
+  LOG(INFO) << "Adding replica at tserver with UUID "
+            << new_node->uuid() << " as VOTER...";
   ASSERT_OK(RunKuduTool({
     "tablet",
     "change_config",
@@ -196,8 +207,9 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::AT_LEAST, rows_inserted));
 
-  // Now remove the server once again.
-  LOG(INFO) << "Removing tserver with uuid " << new_node->uuid() << " from the config...";
+  // Now remove the server.
+  LOG(INFO) << "Removing replica at tserver with UUID "
+            << new_node->uuid() << " from the config...";
   ASSERT_OK(RunKuduTool({
     "tablet",
     "change_config",
