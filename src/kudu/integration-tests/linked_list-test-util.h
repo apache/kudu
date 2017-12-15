@@ -325,6 +325,7 @@ class PeriodicWebUIChecker {
     }
     ts_pages.emplace_back("/maintenance-manager");
     ts_pages.emplace_back("/mem-trackers");
+    ts_pages.emplace_back("/scans");
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {

@@ -153,9 +153,9 @@ TEST_F(CompositeIntKeysTest, TestSimplify) {
   SCOPED_TRACE(spec.ToString(schema_));
 
   ASSERT_EQ(3, spec.predicates().size());
-  ASSERT_EQ("`a` = 127", FindOrDie(spec.predicates(), "a").ToString());
-  ASSERT_EQ("`b` >= 3 AND `b` < 101", FindOrDie(spec.predicates(), "b").ToString());
-  ASSERT_EQ("`c` < 65", FindOrDie(spec.predicates(), "c").ToString());
+  ASSERT_EQ("a = 127", FindOrDie(spec.predicates(), "a").ToString());
+  ASSERT_EQ("b >= 3 AND b < 101", FindOrDie(spec.predicates(), "b").ToString());
+  ASSERT_EQ("c < 65", FindOrDie(spec.predicates(), "c").ToString());
 }
 
 // Predicate: a == 64
@@ -197,7 +197,7 @@ TEST_F(CompositeIntKeysTest, TestConsecutiveLowerRangePredicates) {
   AddPredicate<int8_t>(&spec, "c", GE, 5);
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=5) AND `b` >= 4 AND `c` >= 5",
+  EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=5) AND b >= 4 AND c >= 5",
             spec.ToString(schema_));
 }
 
@@ -209,7 +209,7 @@ TEST_F(CompositeIntKeysTest, TestConsecutiveUpperRangePredicates) {
   AddPredicate<int8_t>(&spec, "c", LE, 5);
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("PK < (int8 a=3, int8 b=4, int8 c=6) AND `b` < 5 AND `c` < 6",
+  EXPECT_EQ("PK < (int8 a=3, int8 b=4, int8 c=6) AND b < 5 AND c < 6",
             spec.ToString(schema_));
 }
 
@@ -223,7 +223,7 @@ TEST_F(CompositeIntKeysTest, TestEqualityAndConsecutiveLowerRangePredicates) {
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=5) AND "
             "PK < (int8 a=4, int8 b=-128, int8 c=-128) AND "
-            "`c` >= 5", spec.ToString(schema_));
+            "c >= 5", spec.ToString(schema_));
 }
 
 // Predicates: a = 3 AND 4 <= b <= 14 AND 15 <= c <= 15
@@ -238,7 +238,7 @@ TEST_F(CompositeIntKeysTest, TestEqualityAndConsecutiveRangePredicates) {
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=3, int8 b=4, int8 c=5) AND "
             "PK < (int8 a=3, int8 b=14, int8 c=16) AND "
-            "`c` >= 5 AND `c` < 16", spec.ToString(schema_));
+            "c >= 5 AND c < 16", spec.ToString(schema_));
 }
 
 // Test a predicate on a non-prefix part of the key. Can't be pushed.
@@ -249,8 +249,8 @@ TEST_F(CompositeIntKeysTest, TestNonPrefix) {
   AddPredicate<int8_t>(&spec, "b", EQ, 64);
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  // Expect: nothing pushed (predicate is still on `b`, not PK)
-  EXPECT_EQ("`b` = 64", spec.ToString(schema_));
+  // Expect: nothing pushed (predicate is still on b, not PK)
+  EXPECT_EQ("b = 64", spec.ToString(schema_));
 }
 
 // Test what happens when an upper bound on a cell is equal to the maximum
@@ -308,7 +308,7 @@ TEST_F(CompositeIntKeysTest, TestNoErasePredicates) {
   spec.OptimizeScan(schema_, &arena_, &pool_, false);
   EXPECT_EQ("PK >= (int8 a=126, int8 b=-128, int8 c=-128) AND "
             "PK < (int8 a=127, int8 b=-128, int8 c=-128) AND "
-            "`a` = 126", spec.ToString(schema_));
+            "a = 126", spec.ToString(schema_));
 }
 
 // Test that, if pushed predicates are erased, that we don't
@@ -326,7 +326,7 @@ TEST_F(CompositeIntKeysTest, TestNoErasePredicates2) {
   // The predicate on column A should be pushed while "c" remains.
   EXPECT_EQ("PK >= (int8 a=126, int8 b=-128, int8 c=-128) AND "
             "PK < (int8 a=127, int8 b=-128, int8 c=-128) AND "
-            "`c` = 126", spec.ToString(schema_));
+            "c = 126", spec.ToString(schema_));
 }
 
 // Test that predicates added out of key order are OK.
@@ -352,7 +352,7 @@ TEST_F(CompositeIntKeysTest, TestIsNotNullPushdown) {
   spec.AddPredicate(ColumnPredicate::IsNotNull(schema_.column(3)));
   SCOPED_TRACE(spec.ToString(schema_));
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
-  EXPECT_EQ("`d` IS NOT NULL", spec.ToString(schema_));
+  EXPECT_EQ("d IS NOT NULL", spec.ToString(schema_));
 }
 
 // Test that IN list predicates get pushed into the primary key bounds.
@@ -364,7 +364,7 @@ TEST_F(CompositeIntKeysTest, TestInListPushdown) {
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=0, int8 b=50, int8 c=-128) AND "
             "PK < (int8 a=10, int8 b=101, int8 c=-128) AND "
-            "`a` IN (0, 10) AND `b` IN (50, 100)",
+            "a IN (0, 10) AND b IN (50, 100)",
             spec.ToString(schema_));
 }
 
@@ -379,14 +379,14 @@ TEST_F(CompositeIntKeysTest, TestInListPushdownWithRange) {
   spec.OptimizeScan(schema_, &arena_, &pool_, true);
   EXPECT_EQ("PK >= (int8 a=10, int8 b=50, int8 c=-128) AND "
             "PK < (int8 a=100, int8 b=101, int8 c=-128) AND "
-            "`b` IN (50, 100)",
+            "b IN (50, 100)",
             spec.ToString(schema_));
 
   // Test redaction.
   ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   EXPECT_EQ("PK >= (int8 a=<redacted>, int8 b=<redacted>, int8 c=<redacted>) AND "
             "PK < (int8 a=<redacted>, int8 b=<redacted>, int8 c=<redacted>) AND "
-            "`b` IN (<redacted>, <redacted>)",
+            "b IN (<redacted>)",
             spec.ToString(schema_));
 }
 
@@ -413,7 +413,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_LowerBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` >= 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a >= 10", FindOrDie(spec.predicates(), "a").ToString());
   }
   { // key >= (10, 11, min)
     ScanSpec spec;
@@ -427,7 +427,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_LowerBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` >= 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a >= 10", FindOrDie(spec.predicates(), "a").ToString());
   }
   { // key >= (10, min, min)
     ScanSpec spec;
@@ -441,7 +441,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_LowerBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` >= 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a >= 10", FindOrDie(spec.predicates(), "a").ToString());
   }
 }
 
@@ -461,7 +461,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_UpperBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` < 11", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a < 11", FindOrDie(spec.predicates(), "a").ToString());
   }
   {
     // key < (10, 11, min)
@@ -476,7 +476,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_UpperBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` < 11", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a < 11", FindOrDie(spec.predicates(), "a").ToString());
   }
   {
     // key < (10, min, min)
@@ -491,7 +491,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_UpperBound) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` < 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a < 10", FindOrDie(spec.predicates(), "a").ToString());
   }
 }
 
@@ -518,9 +518,9 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(3, spec.predicates().size());
-    ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-    ASSERT_EQ("`b` = 11", FindOrDie(spec.predicates(), "b").ToString());
-    ASSERT_EQ("`c` = 12", FindOrDie(spec.predicates(), "c").ToString());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b = 11", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("c = 12", FindOrDie(spec.predicates(), "c").ToString());
   }
   {
     // key >= (10, 11, 12)
@@ -542,9 +542,9 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(3, spec.predicates().size());
-    ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-    ASSERT_EQ("`b` = 11", FindOrDie(spec.predicates(), "b").ToString());
-    ASSERT_EQ("`c` >= 12 AND `c` < 14", FindOrDie(spec.predicates(), "c").ToString());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b = 11", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("c >= 12 AND c < 14", FindOrDie(spec.predicates(), "c").ToString());
   }
   {
     // key >= (10, 11, 12)
@@ -566,9 +566,9 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(3, spec.predicates().size());
-    ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-    ASSERT_EQ("`b` = 11", FindOrDie(spec.predicates(), "b").ToString());
-    ASSERT_EQ("`c` >= 12", FindOrDie(spec.predicates(), "c").ToString());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b = 11", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("c >= 12", FindOrDie(spec.predicates(), "c").ToString());
   }
   {
     // key >= (10, 11, 12)
@@ -590,8 +590,8 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(2, spec.predicates().size());
-    ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-    ASSERT_EQ("`b` >= 11 AND `b` < 13", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b >= 11 AND b < 13", FindOrDie(spec.predicates(), "b").ToString());
   }
   {
     // key >= (10, 11, 12)
@@ -613,8 +613,8 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(2, spec.predicates().size());
-    ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-    ASSERT_EQ("`b` >= 11", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b >= 11", FindOrDie(spec.predicates(), "b").ToString());
   }
   {
     // key >= (10, min, min)
@@ -636,7 +636,7 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 
     spec.OptimizeScan(schema_, &arena_, &pool_, false);
     ASSERT_EQ(1, spec.predicates().size());
-    ASSERT_EQ("`a` >= 10 AND `a` < 12", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("a >= 10 AND a < 12", FindOrDie(spec.predicates(), "a").ToString());
   }
 }
 
@@ -668,9 +668,9 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_WithPredicates) {
 
   spec.OptimizeScan(schema_, &arena_, &pool_, false);
   ASSERT_EQ(3, spec.predicates().size());
-  ASSERT_EQ("`a` = 10", FindOrDie(spec.predicates(), "a").ToString());
-  ASSERT_EQ("`b` >= 15 AND `b` < 90", FindOrDie(spec.predicates(), "b").ToString());
-  ASSERT_EQ("`c` >= 3 AND `c` < 101", FindOrDie(spec.predicates(), "c").ToString());
+  ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+  ASSERT_EQ("b >= 15 AND b < 90", FindOrDie(spec.predicates(), "b").ToString());
+  ASSERT_EQ("c >= 3 AND c < 101", FindOrDie(spec.predicates(), "c").ToString());
 }
 
 // Tests for String parts in composite keys
@@ -719,7 +719,7 @@ TEST_F(CompositeIntStringKeysTest, TestDecreaseUpperBoundKey) {
     SCOPED_TRACE(spec.ToString(schema_));
     spec.OptimizeScan(schema_, &arena_, &pool_, true);
     EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="") AND )"
-              R"(`b` < "abc" AND `c` < "def\000")",
+              R"(b < "abc" AND c < "def\000")",
               spec.ToString(schema_));
   }
   {
@@ -730,7 +730,7 @@ TEST_F(CompositeIntStringKeysTest, TestDecreaseUpperBoundKey) {
     SCOPED_TRACE(spec.ToString(schema_));
     spec.OptimizeScan(schema_, &arena_, &pool_, true);
     EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="def") AND )"
-              R"(`b` < "abc\000" AND `c` < "def")",
+              R"(b < "abc\000" AND c < "def")",
               spec.ToString(schema_));
   }
   {
@@ -741,7 +741,7 @@ TEST_F(CompositeIntStringKeysTest, TestDecreaseUpperBoundKey) {
     SCOPED_TRACE(spec.ToString(schema_));
     spec.OptimizeScan(schema_, &arena_, &pool_, true);
     EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="def\000") AND )"
-              R"(`b` < "abc\000" AND `c` < "def\000")",
+              R"(b < "abc\000" AND c < "def\000")",
               spec.ToString(schema_));
   }
   {
@@ -752,7 +752,7 @@ TEST_F(CompositeIntStringKeysTest, TestDecreaseUpperBoundKey) {
     SCOPED_TRACE(spec.ToString(schema_));
     spec.OptimizeScan(schema_, &arena_, &pool_, true);
     EXPECT_EQ(R"(PK < (int8 a=63, string b="abc", string c="") AND )"
-              R"(`b` < "abc" AND `c` < "def")",
+              R"(b < "abc" AND c < "def")",
               spec.ToString(schema_));
   }
 }

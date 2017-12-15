@@ -119,21 +119,23 @@ Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
 }
 
 string EncodedKey::Stringify(const Schema &schema) const {
-  if (num_key_cols_ == 1) {
-    return schema.column(0).Stringify(raw_keys_.front());
-  }
+  DCHECK_EQ(schema.num_key_columns(), num_key_cols_);
+  DCHECK_EQ(schema.num_key_columns(), raw_keys_.size());
 
   faststring s;
   s.append("(");
-  for (int i = 0; i < num_key_cols_; i++) {
+  for (int i = 0; i < raw_keys_.size(); i++) {
     if (i > 0) {
-      s.append(",");
+      if (schema.column(i).type_info()->IsMinValue(raw_keys_[i])) {
+        // If the value is the minimum, short-circuit to avoid printing keys such as
+        // '(2, -9223372036854775808, -9223372036854775808, -9223372036854775808)',
+        // and instead print '(2)'. The minimum values are usually filled in
+        // automatically upon decoding, so it makes sense to omit them.
+        break;
+      }
+      s.append(", ");
     }
-    if (i < raw_keys_.size()) {
-      s.append(schema.column(i).Stringify(raw_keys_[i]));
-    } else {
-      s.append("*");
-    }
+    s.append(schema.column(i).Stringify(raw_keys_[i]));
   }
   s.append(")");
   return s.ToString();

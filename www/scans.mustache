@@ -1,0 +1,72 @@
+{{!
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+}}{{#raw}}{{{.}}}{{/raw}}{{^raw}}
+
+<h1>Scans</h1>
+<table class="table table-striped">
+  <thead>
+    <tr>
+      <th>Tablet id</th>
+      <th>Scanner id</th>
+      <th>State</th>
+      <th title="pseudo-SQL query description">Query</th>
+      <th>Requestor</th>
+      <th title="running time of the scan">Duration</th>
+      <th title="elapsed time since the scan started">Time since start</th>
+      <th>Column Stats</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#scans}}
+    <tr>
+      <td><a href="/tablet?id={{tablet_id}}"><samp>{{tablet_id}}</samp></a></td>
+      <td><samp>{{scanner_id}}</samp></td>
+      <td>{{state}}</td>
+      {{! The query string is pre-formatted HTML, so don't escape it (triple-brace). }}
+      <td><pre>{{{query}}}</pre></td>
+      <td><samp>{{requestor}}</samp></td>
+      <td title="{{duration_title}}">{{duration}}</td>
+      <td title="{{time_since_start_title}}">{{time_since_start}}</td>
+
+      <td>
+        <table class="table table-striped">
+          <thead>
+            <tr>
+              <th>column</th>
+              <th title="cells read from the column (disk or cache), exclusive of the MRS">cells read</th>
+              <th title="bytes read from the column (disk or cache), exclusive of the MRS">bytes read</th>
+              <th title="CFile data blocks read from the column (disk or cache)">cblocks read</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#stats}}
+            <tr>
+              <td>{{column}}</td>
+              <td title="{{cells_read_title}}">{{cells_read}}</td>
+              <td title="{{bytes_read_title}}">{{bytes_read}}</td>
+              <td title="{{cblocks_read_title}}">{{cblocks_read}}</td>
+            </tr>
+            {{/stats}}
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    {{/scans}}
+  </tbody>
+</table>
+{{/raw}}

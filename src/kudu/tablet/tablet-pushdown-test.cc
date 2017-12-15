@@ -160,8 +160,8 @@ class TabletPushdownTest : public KuduTabletTest,
       vector<IteratorStats> stats;
       iter->GetIteratorStats(&stats);
       for (const IteratorStats& col_stats : stats) {
-        EXPECT_EQ(expected_blocks_from_disk, col_stats.data_blocks_read_from_disk);
-        EXPECT_EQ(expected_rows_from_disk, col_stats.cells_read_from_disk);
+        EXPECT_EQ(expected_blocks_from_disk, col_stats.cblocks_read);
+        EXPECT_EQ(expected_rows_from_disk, col_stats.cells_read);
       }
     }
   }
@@ -282,11 +282,12 @@ TEST_F(TabletSparsePushdownTest, Kudu2231) {
   vector<IteratorStats> stats;
   iter->GetIteratorStats(&stats);
 
-  EXPECT_EQ(1, stats[0].data_blocks_read_from_disk);
-  EXPECT_EQ(1, stats[1].data_blocks_read_from_disk);
+  ASSERT_EQ(2, stats.size());
+  EXPECT_EQ(1, stats[0].cblocks_read);
+  EXPECT_EQ(1, stats[1].cblocks_read);
 
-  EXPECT_EQ(400, stats[0].cells_read_from_disk);
-  EXPECT_EQ(400, stats[1].cells_read_from_disk);
+  EXPECT_EQ(400, stats[0].cells_read);
+  EXPECT_EQ(400, stats[1].cells_read);
 }
 
 } // namespace tablet

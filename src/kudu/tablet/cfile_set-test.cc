@@ -227,15 +227,15 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   }
 
   // Since we pushed down the block size, we expect to have read 100+ blocks of column 0
-  ASSERT_GT(stats[0].data_blocks_read_from_disk, 100);
+  ASSERT_GT(stats[0].cblocks_read, 100);
 
   // Since we didn't ever materialize column 2, we shouldn't have read any data blocks.
-  ASSERT_EQ(0, stats[2].data_blocks_read_from_disk);
+  ASSERT_EQ(0, stats[2].cblocks_read);
 
   // Column 0 and 1 skipped a lot of blocks, so should not have read all of the cells
   // from either column.
-  ASSERT_LT(stats[0].cells_read_from_disk, kNumRows * 3 / 4);
-  ASSERT_LT(stats[1].cells_read_from_disk, kNumRows * 3 / 4);
+  ASSERT_LT(stats[0].cells_read, kNumRows * 3 / 4);
+  ASSERT_LT(stats[1].cells_read, kNumRows * 3 / 4);
 }
 
 TEST_F(TestCFileSet, TestIteratePartialSchema) {
@@ -316,9 +316,10 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Since it's a small range, it should be all in one data block in each column.
   vector<IteratorStats> stats;
   iter->GetIteratorStats(&stats);
-  EXPECT_EQ(stats[0].data_blocks_read_from_disk, 1);
-  EXPECT_EQ(stats[1].data_blocks_read_from_disk, 1);
-  EXPECT_EQ(stats[2].data_blocks_read_from_disk, 1);
+  ASSERT_EQ(3, stats.size());
+  EXPECT_EQ(1, stats[0].cblocks_read);
+  EXPECT_EQ(1, stats[1].cblocks_read);
+  EXPECT_EQ(1, stats[2].cblocks_read);
 }
 
 // Several other black-box tests for range scans. These are similar to

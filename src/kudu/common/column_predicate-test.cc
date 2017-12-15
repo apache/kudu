@@ -1096,7 +1096,7 @@ TEST_F(TestColumnPredicate, TestRedaction) {
   ASSERT_NE("", gflags::SetCommandLineOption("redact", "log"));
   ColumnSchema column_i32("a", INT32, true);
   int32_t one_32 = 1;
-  ASSERT_EQ("`a` = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
+  ASSERT_EQ("a = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
 }
 
 } // namespace kudu

@@ -18,8 +18,6 @@
 #include "kudu/tserver/tserver_path_handlers.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -33,14 +31,9 @@
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
 
-#include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/encoded_key.h"
-#include "kudu/common/iterator.h"
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/partition.h"
-#include "kudu/common/scan_spec.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -74,11 +67,11 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
-using kudu::consensus::GetConsensusRole;
+using kudu::MaintenanceManagerStatusPB;
 using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetConsensusRole;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
-using kudu::MaintenanceManagerStatusPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::tablet::Tablet;
@@ -95,13 +88,16 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+class Schema;
+
 namespace tserver {
 
 TabletServerPathHandlers::~TabletServerPathHandlers() {
 }
 
 Status TabletServerPathHandlers::Register(Webserver* server) {
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/scans", "Scans",
     boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
@@ -506,105 +502,103 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
   consensus->DumpStatusHtml(*output);
 }
 
-void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
-                                               Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
-  *output << "<h1>Scans</h1>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "<thead><tr><th>Tablet id</th><th>Scanner id</th><th>Total time in-flight</th>"
-      "<th>Time since last update</th><th>Requestor</th><th>Iterator Stats</th>"
-      "<th>Pushed down key predicates</th><th>Other predicates</th></tr></thead>\n";
-  *output << "<tbody>\n";
-
-  vector<SharedScanner> scanners;
-  tserver_->scanner_manager()->ListScanners(&scanners);
-  for (const SharedScanner& scanner : scanners) {
-    *output << ScannerToHtml(*scanner);
+namespace {
+// Pretty-prints a scan's state.
+const char* ScanStateToString(const ScanState& scan_state) {
+  switch (scan_state) {
+    case ScanState::kActive: return "Active";
+    case ScanState::kComplete: return "Complete";
+    case ScanState::kFailed: return "Failed";
+    case ScanState::kExpired: return "Expired";
   }
-  *output << "</tbody></table>";
+  LOG(FATAL) << "missing ScanState branch";
 }
 
-string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
-  std::ostringstream html;
-  uint64_t time_in_flight_us =
-      (MonoTime::Now() - scanner.start_time()).ToMicroseconds();
-  uint64_t time_since_last_access_us =
-      scanner.TimeSinceLastAccess(MonoTime::Now()).ToMicroseconds();
-
-  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>",
-                     EscapeForHtmlToString(scanner.tablet_id()), // $0
-                     EscapeForHtmlToString(scanner.id()), // $1
-                     time_in_flight_us, time_since_last_access_us, // $2, $3
-                     EscapeForHtmlToString(scanner.requestor_string())); // $4
-
-
-  if (!scanner.IsInitialized()) {
-    html << "<td colspan=\"3\">&lt;not yet initialized&gt;</td></tr>";
-    return html.str();
-  }
-
-  const Schema* projection = &scanner.iter()->schema();
-
-  vector<IteratorStats> stats;
-  scanner.GetIteratorStats(&stats);
-  CHECK_EQ(stats.size(), projection->num_columns());
-  html << Substitute("<td>$0</td>", IteratorStatsToHtml(*projection, stats));
-  scoped_refptr<TabletReplica> tablet_replica;
-  if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_replica)) {
-    html << Substitute("<td colspan=\"2\"><b>Tablet $0 is no longer valid.</b></td></tr>\n",
-                       scanner.tablet_id());
+// Formats the scan descriptor's pseudo-SQL query string as HTML.
+string ScanQueryHtml(const ScanDescriptor& scan) {
+  string query = "<b>SELECT</b> ";
+  if (scan.projected_columns.empty()) {
+    query.append("COUNT(*)");
   } else {
-    string range_pred_str;
-    vector<string> other_preds;
-    const ScanSpec& spec = scanner.spec();
-    if (spec.lower_bound_key() || spec.exclusive_upper_bound_key()) {
-      range_pred_str = EncodedKey::RangeToString(spec.lower_bound_key(),
-                                                 spec.exclusive_upper_bound_key());
-    }
-    for (const auto& col_pred : scanner.spec().predicates()) {
-      int32_t col_idx = projection->find_column(col_pred.first);
-      if (col_idx == Schema::kColumnNotFound) {
-        other_preds.emplace_back("unknown column");
-      } else {
-        other_preds.push_back(col_pred.second.ToString());
-      }
-    }
-    string other_pred_str = JoinStrings(other_preds, "\n");
-    html << Substitute("<td>$0</td><td>$1</td></tr>\n",
-                       EscapeForHtmlToString(range_pred_str),
-                       EscapeForHtmlToString(other_pred_str));
+    query.append(JoinMapped(scan.projected_columns, EscapeForHtmlToString, ",<br>       "));
   }
-  return html.str();
+  query.append("<br>  <b>FROM</b> ");
+  if (scan.table_name.empty()) {
+    query.append("&lt;unknown&gt;");
+  } else {
+    query.append(EscapeForHtmlToString(scan.table_name));
+  }
+
+  if (!scan.predicates.empty()) {
+    query.append("<br> <b>WHERE</b> ");
+    query.append(JoinMapped(scan.predicates, EscapeForHtmlToString, "<br>   <b>AND</b> "));
+  }
+
+  return query;
 }
 
-string TabletServerPathHandlers::IteratorStatsToHtml(const Schema& projection,
-                                                     const vector<IteratorStats>& stats) const {
-  std::ostringstream html;
-  html << "<table>\n";
-  html << "<tr><th>Column</th>"
-       << "<th>Blocks read from disk</th>"
-       << "<th>Bytes read from disk</th>"
-       << "<th>Cells read from disk</th>"
-       << "</tr>\n";
-  for (size_t idx = 0; idx < stats.size(); idx++) {
-    // We use 'title' attributes so that if the user hovers over the value, they get a
-    // human-readable tooltip.
-    html << Substitute("<tr>"
-                       "<td>$0</td>"
-                       "<td title=\"$1\">$2</td>"
-                       "<td title=\"$3\">$4</td>"
-                       "<td title=\"$5\">$6</td>"
-                       "</tr>\n",
-                       EscapeForHtmlToString(projection.column(idx).name()), // $0
-                       HumanReadableInt::ToString(stats[idx].data_blocks_read_from_disk), // $1
-                       stats[idx].data_blocks_read_from_disk, // $2
-                       HumanReadableNumBytes::ToString(stats[idx].bytes_read_from_disk), // $3
-                       stats[idx].bytes_read_from_disk, // $4
-                       HumanReadableInt::ToString(stats[idx].cells_read_from_disk), // $5
-                       stats[idx].cells_read_from_disk); // $6
+void IteratorStatsToJson(const ScanDescriptor& scan, EasyJson* json) {
+
+  auto fill_stats = [] (EasyJson& row, const string& column, const IteratorStats& stats) {
+    row["column"] = column;
+
+    row["bytes_read"] = HumanReadableNumBytes::ToString(stats.bytes_read);
+    row["cells_read"] = HumanReadableInt::ToString(stats.cells_read);
+    row["cblocks_read"] = HumanReadableInt::ToString(stats.cblocks_read);
+
+    row["bytes_read_title"] = stats.bytes_read;
+    row["cells_read_title"] = stats.cells_read;
+    row["cblocks_read_title"] = stats.cblocks_read;
+  };
+
+  IteratorStats total_stats;
+  for (const auto& column : scan.iterator_stats) {
+    EasyJson row = json->PushBack(EasyJson::kObject);
+    fill_stats(row, column.first, column.second);
+    total_stats += column.second;
   }
-  html << "</table>\n";
-  return html.str();
+
+  EasyJson total_row = json->PushBack(EasyJson::kObject);
+  fill_stats(total_row, "total", total_stats);
+}
+
+void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
+  MonoTime now = MonoTime::Now();
+  MonoDelta duration;
+  if (scan.state == ScanState::kActive) {
+    duration = now - scan.start_time;
+  } else {
+    duration = scan.last_access_time - scan.start_time;
+  }
+  MonoDelta time_since_start = now - scan.start_time;
+
+  json->Set("tablet_id", scan.tablet_id);
+  json->Set("scanner_id", scan.scanner_id);
+  json->Set("state", ScanStateToString(scan.state));
+  json->Set("query", ScanQueryHtml(scan));
+  json->Set("requestor", scan.requestor);
+
+  json->Set("duration", HumanReadableElapsedTime::ToShortString(duration.ToSeconds()));
+  json->Set("time_since_start",
+            HumanReadableElapsedTime::ToShortString(time_since_start.ToSeconds()));
+
+  json->Set("duration_title", duration.ToSeconds());
+  json->Set("time_since_start_title", time_since_start.ToSeconds());
+
+  EasyJson stats_json = json->Set("stats", EasyJson::kArray);
+  IteratorStatsToJson(scan, &stats_json);
+}
+} // anonymous namespace
+
+void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
+                                               Webserver::WebResponse* resp) {
+  EasyJson scans = resp->output->Set("scans", EasyJson::kArray);
+  vector<ScanDescriptor> descriptors = tserver_->scanner_manager()->ListScans();
+
+  for (const auto& descriptor : descriptors) {
+    EasyJson scan = scans.PushBack(EasyJson::kObject);
+    ScanToJson(descriptor, &scan);
+  }
 }
 
 void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest& /*req*/,
@@ -614,7 +608,8 @@ void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest&
   *output << "<table class='table table-striped'>\n";
   *output << "  <thead><tr><th>Dashboard</th><th>Description</th></tr></thead>\n";
   *output << "  <tbody\n";
-  *output << GetDashboardLine("scans", "Scans", "List of scanners that are currently running.");
+  *output << GetDashboardLine("scans", "Scans", "List of currently running and recently "
+                                                "completed scans.");
   *output << GetDashboardLine("transactions", "Transactions", "List of transactions that are "
                                                               "currently running.");
   *output << GetDashboardLine("maintenance-manager", "Maintenance Manager",

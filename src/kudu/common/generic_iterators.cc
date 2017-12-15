@@ -71,7 +71,7 @@ void AddIterStats(const RowwiseIterator& iter,
   iter.GetIteratorStats(&iter_stats);
   DCHECK_EQ(stats->size(), iter_stats.size());
   for (int i = 0; i < iter_stats.size(); i++) {
-    (*stats)[i].AddStats(iter_stats[i]);
+    (*stats)[i] += iter_stats[i];
   }
 }
 } // anonymous namespace

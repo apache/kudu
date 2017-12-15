@@ -22,6 +22,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -1983,21 +1984,17 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // total that we already reported in a previous scan.
   vector<IteratorStats> stats_by_col;
   scanner->GetIteratorStats(&stats_by_col);
-  IteratorStats total_stats;
-  for (const IteratorStats& stats : stats_by_col) {
-    total_stats.AddStats(stats);
-  }
-  IteratorStats delta_stats = total_stats;
-  delta_stats.SubtractStats(scanner->already_reported_stats());
+  IteratorStats total_stats = std::accumulate(stats_by_col.begin(),
+                                              stats_by_col.end(),
+                                              IteratorStats());
+
+  IteratorStats delta_stats = total_stats - scanner->already_reported_stats();
   scanner->set_already_reported_stats(total_stats);
 
   if (tablet) {
-    tablet->metrics()->scanner_rows_scanned->IncrementBy(
-        rows_scanned);
-    tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
-        delta_stats.cells_read_from_disk);
-    tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
-        delta_stats.bytes_read_from_disk);
+    tablet->metrics()->scanner_rows_scanned->IncrementBy(rows_scanned);
+    tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(delta_stats.cells_read);
+    tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(delta_stats.bytes_read);
   }
 
   scanner->UpdateAccessTime();

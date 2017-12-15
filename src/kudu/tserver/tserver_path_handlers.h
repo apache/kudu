@@ -18,16 +18,12 @@
 #define KUDU_TSERVER_TSERVER_PATH_HANDLERS_H
 
 #include <string>
-#include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/server/webserver.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-class Schema;
-struct IteratorStats;
 
 namespace consensus {
 class ConsensusStatePB;
@@ -36,7 +32,6 @@ class ConsensusStatePB;
 namespace tserver {
 
 class TabletServer;
-class Scanner;
 
 class TabletServerPathHandlers {
  public:
@@ -50,7 +45,7 @@ class TabletServerPathHandlers {
 
  private:
   void HandleScansPage(const Webserver::WebRequest& req,
-                       Webserver::PrerenderedWebResponse* resp);
+                       Webserver::WebResponse* resp);
   void HandleTabletsPage(const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp);
   void HandleTabletPage(const Webserver::WebRequest& req,
@@ -68,9 +63,6 @@ class TabletServerPathHandlers {
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                     Webserver::WebResponse* resp);
   std::string ConsensusStatePBToHtml(const consensus::ConsensusStatePB& cstate) const;
-  std::string ScannerToHtml(const Scanner& scanner) const;
-  std::string IteratorStatsToHtml(const Schema& projection,
-                                  const std::vector<IteratorStats>& stats) const;
   std::string GetDashboardLine(const std::string& link,
                                const std::string& text, const std::string& desc);
 

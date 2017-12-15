@@ -55,6 +55,8 @@ class Thread;
 namespace tserver {
 
 class Scanner;
+enum class ScanState;
+struct ScanDescriptor;
 struct ScannerMetrics;
 typedef std::shared_ptr<Scanner> SharedScanner;
 
@@ -96,7 +98,10 @@ class ScannerManager {
   // List all active scanners.
   // Note this method will not return a consistent view
   // of all active scanners if under concurrent modifications.
-  void ListScanners(std::vector<SharedScanner>* scanners);
+  void ListScanners(std::vector<SharedScanner>* scanners) const;
+
+  // List active and recently completed scans.
+  std::vector<ScanDescriptor> ListScans() const;
 
   // Iterate through scanners and remove any which are past their TTL.
   void RemoveExpiredScanners();
@@ -110,8 +115,6 @@ class ScannerManager {
 
   typedef std::unordered_map<std::string, SharedScanner> ScannerMap;
 
-  typedef std::pair<std::string, SharedScanner> ScannerMapEntry;
-
   struct ScannerMapStripe {
     // Lock protecting the scanner map.
     mutable RWMutex lock_;
@@ -124,6 +127,9 @@ class ScannerManager {
 
   ScannerMapStripe& GetStripeByScannerId(const std::string& scanner_id);
 
+  // Adds the scan descriptor to the completed scans FIFO.
+  void RecordCompletedScanUnlocked(ScanDescriptor descriptor);
+
   // (Optional) scanner metrics for this instance.
   gscoped_ptr<ScannerMetrics> metrics_;
 
@@ -134,6 +140,11 @@ class ScannerManager {
   ConditionVariable shutdown_cv_;
 
   std::vector<ScannerMapStripe*> scanner_maps_;
+
+  // completed_scans_ is a FIFO ring buffer of completed scans.
+  mutable RWMutex completed_scans_lock_;
+  std::vector<ScanDescriptor> completed_scans_;
+  size_t completed_scans_offset_;
 
   // Generator for scanner IDs.
   ObjectIdGenerator oid_generator_;
@@ -282,6 +293,8 @@ class Scanner {
     return row_format_flags_;
   }
 
+  ScanDescriptor descriptor() const;
+
  private:
   friend class ScannerManager;
 
@@ -339,6 +352,44 @@ class Scanner {
   DISALLOW_COPY_AND_ASSIGN(Scanner);
 };
 
+enum class ScanState {
+  // The scan is actively running.
+  kActive,
+  // The scan is complete.
+  kComplete,
+  // The scan failed.
+  kFailed,
+  // The scan timed out due to inactivity.
+  kExpired,
+};
+
+// ScanDescriptor holds information about a scan. The ScanDescriptor can outlive
+// the associated scanner without holding open any of the scanner's resources.
+struct ScanDescriptor {
+  // The tablet ID.
+  std::string tablet_id;
+  // The scanner ID.
+  std::string scanner_id;
+
+  // The scan requestor.
+  std::string requestor;
+
+  // The table name.
+  std::string table_name;
+  // The selected columns.
+  std::vector<std::string> projected_columns;
+  // The scan predicates. Holds both the primary key and column predicates.
+  std::vector<std::string> predicates;
+
+  // The per-column scan stats, paired with the column name.
+  std::vector<std::pair<std::string, IteratorStats>> iterator_stats;
+
+  ScanState state;
+
+  MonoTime start_time;
+  MonoTime last_access_time;
+  uint32_t last_call_seq_id;
+};
 
 } // namespace tserver
 } // namespace kudu

@@ -27,23 +27,24 @@ struct IteratorStats {
 
   std::string ToString() const;
 
-  // The number of data blocks read from disk (or cache) by the iterator.
-  int64_t data_blocks_read_from_disk;
-
-  // The number of bytes read from disk (or cache) by the iterator.
-  int64_t bytes_read_from_disk;
-
   // The number of cells which were read from disk --  regardless of whether
   // they were decoded/materialized.
-  int64_t cells_read_from_disk;
+  int64_t cells_read;
+
+  // The number of bytes read from disk (or cache) by the iterator.
+  int64_t bytes_read;
+
+  // The number of CFile data blocks read from disk (or cache) by the iterator.
+  int64_t cblocks_read;
 
   // Add statistics contained 'other' to this object (for each field
   // in this object, increment it by the value of the equivalent field
   // in 'other').
-  void AddStats(const IteratorStats& other);
+  IteratorStats& operator+=(const IteratorStats& other);
+  IteratorStats& operator-=(const IteratorStats& other);
 
-  // Same, except subtract.
-  void SubtractStats(const IteratorStats& other);
+  IteratorStats operator+(const IteratorStats& other);
+  IteratorStats operator-(const IteratorStats& other);
 
  private:
   // DCHECK that all of the stats are non-negative. This is a no-op in
