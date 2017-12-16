@@ -35,7 +35,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -68,7 +67,7 @@ class TabletPushdownTest : public KuduTabletTest,
                               ColumnSchema("string_val", STRING) }, 1)) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTabletTest::SetUp();
 
     FillTestTablet();
@@ -225,6 +224,70 @@ TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
 INSTANTIATE_TEST_CASE_P(AllMemory, TabletPushdownTest, ::testing::Values(ALL_IN_MEMORY));
 INSTANTIATE_TEST_CASE_P(SplitMemoryDisk, TabletPushdownTest, ::testing::Values(SPLIT_MEMORY_DISK));
 INSTANTIATE_TEST_CASE_P(AllDisk, TabletPushdownTest, ::testing::Values(ALL_ON_DISK));
+
+class TabletSparsePushdownTest : public KuduTabletTest {
+ public:
+  TabletSparsePushdownTest()
+      : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
+                                ColumnSchema("val", INT32, true) },
+                              1)) {
+  }
+
+  void SetUp() override {
+    KuduTabletTest::SetUp();
+
+    RowBuilder rb(client_schema_);
+
+    LocalTabletWriter writer(tablet().get(), &client_schema_);
+    KuduPartialRow row(&client_schema_);
+
+    // FLAGS_scanner_batch_size_rows * 2
+    int kWidth = 100 * 2;
+    for (int i = 0; i < kWidth * 2; i++) {
+      CHECK_OK(row.SetInt32(0, i));
+      if (i % 3 == 0) {
+        CHECK_OK(row.SetNull(1));
+      } else {
+        CHECK_OK(row.SetInt32(1, i % kWidth));
+      }
+      ASSERT_OK_FAST(writer.Insert(row));
+    }
+    ASSERT_OK(tablet()->Flush());
+  }
+};
+
+// The is a regression test for KUDU-2231, which fixed a CFileReader bug causing
+// cblocks to be repeatedly materialized when a scan had predicates on other
+// columns which caused sections of a column to be skipped. The setup for this
+// test creates a dataset and predicate which only match every-other batch of
+// 100 rows of the 'val' column.
+TEST_F(TabletSparsePushdownTest, Kudu2231) {
+  ScanSpec spec;
+  int32_t value = 50;
+  spec.AddPredicate(ColumnPredicate::Equality(schema_.column(1), &value));
+
+  gscoped_ptr<RowwiseIterator> iter;
+  ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+  ASSERT_OK(iter->Init(&spec));
+  ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
+
+  vector<string> results;
+  ASSERT_OK(IterateToStringList(iter.get(), &results));
+
+  EXPECT_EQ(results, vector<string>({
+      "(int32 key=50, int32 val=50)",
+      "(int32 key=250, int32 val=50)",
+  }));
+
+  vector<IteratorStats> stats;
+  iter->GetIteratorStats(&stats);
+
+  EXPECT_EQ(1, stats[0].data_blocks_read_from_disk);
+  EXPECT_EQ(1, stats[1].data_blocks_read_from_disk);
+
+  EXPECT_EQ(400, stats[0].cells_read_from_disk);
+  EXPECT_EQ(400, stats[1].cells_read_from_disk);
+}
 
 } // namespace tablet
 } // namespace kudu
