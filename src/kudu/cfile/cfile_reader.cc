@@ -668,37 +668,57 @@ CFileIterator::~CFileIterator() {
 }
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
-  RETURN_NOT_OK(PrepareForNewSeek());
-  if (PREDICT_FALSE(posidx_iter_ == nullptr)) {
-    return Status::NotSupported("no positional index in file");
+  // Check to see if we already have the required block prepared. Typically
+  // (when seeking forward during a scan), only the final block might be
+  // suitable, since all previous blocks will have been scanned in the prior
+  // batch. Only reusing the final block also ensures posidx_iter_ is already
+  // seeked to the correct block.
+  if (!prepared_blocks_.empty() &&
+      prepared_blocks_.back()->last_row_idx() >= ord_idx &&
+      prepared_blocks_.back()->first_row_idx() <= ord_idx) {
+    PreparedBlock* b = prepared_blocks_.back();
+    prepared_blocks_.pop_back();
+    for (PreparedBlock* pb : prepared_blocks_) {
+      prepared_block_pool_.Destroy(pb);
+    }
+    prepared_blocks_.clear();
+
+    prepared_blocks_.push_back(b);
+  } else {
+    // Otherwise, prepare a new cblock to scan.
+    RETURN_NOT_OK(PrepareForNewSeek());
+    if (PREDICT_FALSE(posidx_iter_ == nullptr)) {
+      return Status::NotSupported("no positional index in file");
+    }
+
+    tmp_buf_.clear();
+    KeyEncoderTraits<UINT32, faststring>::Encode(ord_idx, &tmp_buf_);
+    RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(Slice(tmp_buf_)));
+
+    pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
+      prepared_block_pool_.Construct());
+    RETURN_NOT_OK(ReadCurrentDataBlock(*posidx_iter_, b.get()));
+
+    // If the data block doesn't actually contain the data
+    // we're looking for, then we're probably in the last
+    // block in the file.
+    // TODO(unknown): could assert that each of the index layers is
+    // at its last entry (ie HasNext() is false for each)
+    if (PREDICT_FALSE(ord_idx > b->last_row_idx())) {
+      return Status::NotFound("trying to seek past highest ordinal in file");
+    }
+    prepared_blocks_.push_back(b.release());
   }
 
-  tmp_buf_.clear();
-  KeyEncoderTraits<UINT32, faststring>::Encode(ord_idx, &tmp_buf_);
-  RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(Slice(tmp_buf_)));
-
-  // TODO: fast seek within block (without reseeking index)
-  pblock_pool_scoped_ptr b = prepared_block_pool_.make_scoped_ptr(
-    prepared_block_pool_.Construct());
-  RETURN_NOT_OK(ReadCurrentDataBlock(*posidx_iter_, b.get()));
-
-  // If the data block doesn't actually contain the data
-  // we're looking for, then we're probably in the last
-  // block in the file.
-  // TODO: could assert that each of the index layers is
-  // at its last entry (ie HasNext() is false for each)
-  if (PREDICT_FALSE(ord_idx > b->last_row_idx())) {
-    return Status::NotFound("trying to seek past highest ordinal in file");
-  }
+  PreparedBlock* b = prepared_blocks_.back();
 
   // Seek data block to correct index
   DCHECK(ord_idx >= b->first_row_idx() &&
          ord_idx <= b->last_row_idx())
     << "got wrong data block. looking for ord_idx=" << ord_idx
     << " but got dblk " << b->ToString();
-         SeekToPositionInBlock(b.get(), ord_idx - b->first_row_idx());
+  SeekToPositionInBlock(b, ord_idx - b->first_row_idx());
 
-  prepared_blocks_.push_back(b.release());
   last_prepare_idx_ = ord_idx;
   last_prepare_count_ = 0;
   seeked_ = posidx_iter_.get();
