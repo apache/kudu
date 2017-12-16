@@ -194,7 +194,7 @@ When the MemRowSet fills up, a Flush occurs, which persists the data to disk.
 | DiskRowSet 0 |  | DiskRowSet 1 | .. | DiskRowSet N |
 +-------------+-  +--------------+    +--------------+
 ```
-When the data is flushed, it is stored as a set of CFiles (see src/kudu/cfile/README).
+When the data is flushed, it is stored as a set of CFiles (see cfile.md).
 Each of the rows in the data is addressable by a sequential "rowid", which is
 dense, immutable, and unique within this DiskRowSet. For example, if a given
 DiskRowSet contains 5 rows, then they will be assigned rowid 0 through 4, in
@@ -203,7 +203,7 @@ rows with the same rowids.
 
 Reads may map between primary keys (user-visible) and rowids (internal) using an index
 structure. In the case that the primary key is a simple key, the key structure is
-embedded within the primary key column's cfile. Otherwise, a separate index cfile
+embedded within the primary key column's CFile. Otherwise, a separate index CFile
 stores the encoded compound key and provides a similar function.
 
 NOTE: rowids are not explicitly stored with each row, but rather an implicit
