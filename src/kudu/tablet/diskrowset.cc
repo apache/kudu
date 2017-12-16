@@ -39,6 +39,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -517,7 +518,8 @@ DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
     : rowset_metadata_(std::move(rowset_metadata)),
       open_(false),
       log_anchor_registry_(log_anchor_registry),
-      mem_trackers_(std::move(mem_trackers)) {}
+      mem_trackers_(std::move(mem_trackers)),
+      has_been_compacted_(false) {}
 
 Status DiskRowSet::Open() {
   TRACE_EVENT0("tablet", "DiskRowSet::Open");

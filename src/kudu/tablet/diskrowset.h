@@ -18,10 +18,9 @@
 // A DiskRowSet is a horizontal slice of a Kudu tablet.
 // Each DiskRowSet contains data for a a disjoint set of keys.
 // See src/kudu/tablet/README for a detailed description.
+#pragma once
 
-#ifndef KUDU_TABLET_DISKROWSET_H_
-#define KUDU_TABLET_DISKROWSET_H_
-
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -39,7 +38,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -322,12 +320,12 @@ class DiskRowSet : public RowSet {
   ////////////////////////////////////////////////////////////
 
   // Flush all accumulated delta data to disk.
-  Status FlushDeltas() OVERRIDE;
+  Status FlushDeltas() override;
 
   // Perform delta store minor compaction.
   // This compacts the delta files down to a single one.
   // If there is already only a single delta file, this does nothing.
-  Status MinorCompactDeltaStores() OVERRIDE;
+  Status MinorCompactDeltaStores() override;
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -345,11 +343,11 @@ class DiskRowSet : public RowSet {
                    const RowChangeList &update,
                    const consensus::OpId& op_id,
                    ProbeStats* stats,
-                   OperationResultPB* result) OVERRIDE;
+                   OperationResultPB* result) override;
 
   Status CheckRowPresent(const RowSetKeyProbe &probe,
                          bool *present,
-                         ProbeStats* stats) const OVERRIDE;
+                         ProbeStats* stats) const override;
 
   ////////////////////
   // Read functions.
@@ -357,64 +355,72 @@ class DiskRowSet : public RowSet {
   virtual Status NewRowIterator(const Schema *projection,
                                 const MvccSnapshot &mvcc_snap,
                                 OrderMode order,
-                                gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
+                                gscoped_ptr<RowwiseIterator>* out) const override;
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
-                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE;
+                                    gscoped_ptr<CompactionInput>* out) const override;
 
   // Count the number of rows in this rowset.
-  Status CountRows(rowid_t *count) const OVERRIDE;
+  Status CountRows(rowid_t *count) const override;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,
-                           std::string* max_encoded_key) const OVERRIDE;
+                           std::string* max_encoded_key) const override;
 
   void GetDiskRowSetSpaceUsage(DiskRowSetSpace* drss) const;
 
-  uint64_t OnDiskSize() const OVERRIDE;
+  uint64_t OnDiskSize() const override;
 
-  uint64_t OnDiskBaseDataSize() const OVERRIDE;
+  uint64_t OnDiskBaseDataSize() const override;
 
-  uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE;
+  uint64_t OnDiskBaseDataSizeWithRedos() const override;
 
-  size_t DeltaMemStoreSize() const OVERRIDE;
+  size_t DeltaMemStoreSize() const override;
 
-  bool DeltaMemStoreEmpty() const OVERRIDE;
+  bool DeltaMemStoreEmpty() const override;
 
-  int64_t MinUnflushedLogIndex() const OVERRIDE;
+  int64_t MinUnflushedLogIndex() const override;
 
   size_t CountDeltaStores() const;
 
-  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const OVERRIDE;
+  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const override;
 
   Status EstimateBytesInPotentiallyAncientUndoDeltas(Timestamp ancient_history_mark,
-                                                     int64_t* bytes) OVERRIDE;
+                                                     int64_t* bytes) override;
 
   Status InitUndoDeltas(Timestamp ancient_history_mark,
                         MonoTime deadline,
                         int64_t* delta_blocks_initialized,
-                        int64_t* bytes_in_ancient_undos) OVERRIDE;
+                        int64_t* bytes_in_ancient_undos) override;
 
   Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
-                                 int64_t* blocks_deleted, int64_t* bytes_deleted) OVERRIDE;
+                                 int64_t* blocks_deleted, int64_t* bytes_deleted) override;
 
   // Major compacts all the delta files for all the columns.
   Status MajorCompactDeltaStores(HistoryGcOpts history_gc_opts);
 
-  std::mutex *compact_flush_lock() OVERRIDE {
+  std::mutex *compact_flush_lock() override {
     return &compact_flush_lock_;
+  }
+
+  bool has_been_compacted() const override {
+    return has_been_compacted_.load();
+  }
+
+  void set_has_been_compacted() override {
+    has_been_compacted_.store(true);
   }
 
   DeltaTracker *delta_tracker() {
     return DCHECK_NOTNULL(delta_tracker_.get());
   }
 
-  std::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+  std::shared_ptr<RowSetMetadata> metadata() override {
     return rowset_metadata_;
   }
 
-  std::string ToString() const OVERRIDE {
+  std::string ToString() const override {
     return rowset_metadata_->ToString();
   }
 
@@ -425,7 +431,7 @@ class DiskRowSet : public RowSet {
         ToString());
   }
 
-  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE;
+  virtual Status DebugDump(std::vector<std::string> *lines) override;
 
  private:
   FRIEND_TEST(TabletHistoryGcTest, TestMajorDeltaCompactionOnSubsetOfColumns);
@@ -468,10 +474,12 @@ class DiskRowSet : public RowSet {
   // no other compactor will attempt to include this rowset.
   std::mutex compact_flush_lock_;
 
+  // Flag indicating whether the rowset has been removed from a rowset tree,
+  // and thus should not be scheduled for further compactions.
+  std::atomic<bool> has_been_compacted_;
+
   DISALLOW_COPY_AND_ASSIGN(DiskRowSet);
 };
 
 } // namespace tablet
 } // namespace kudu
-
-#endif // KUDU_TABLET_DISKROWSET_H_

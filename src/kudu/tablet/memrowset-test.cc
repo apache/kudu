@@ -504,7 +504,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
     snapshots.emplace_back(mvcc_);
   }
   LOG(INFO) << "MemRowSet after inserts:";
-  ASSERT_OK(mrs->DebugDump());
+  ASSERT_OK(mrs->DebugDump(nullptr));
 
   ASSERT_EQ(5, snapshots.size());
   for (int i = 0; i < 5; i++) {
@@ -544,7 +544,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   }
 
   LOG(INFO) << "MemRowSet after updates:";
-  ASSERT_OK(mrs->DebugDump());
+  ASSERT_OK(mrs->DebugDump(nullptr));
 
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());

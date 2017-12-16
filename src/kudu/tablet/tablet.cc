@@ -1323,19 +1323,16 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     picked->AddRowSet(rs, std::move(lock));
   }
 
-  // When we iterated through the current rowsets, we should have found all of the
-  // rowsets that we picked. If we didn't, that implies that some other thread swapped
-  // them out while we were making our selection decision -- that's not possible
-  // since we only picked rowsets that were marked as available for compaction.
+  // When we iterated through the current rowsets, we should have found all of
+  // the rowsets that we picked. If we didn't, that implies that some other
+  // thread swapped them out while we were making our selection decision --
+  // that's not possible since we only picked rowsets that were marked as
+  // available for compaction.
   if (!picked_set.empty()) {
     for (const RowSet* not_found : picked_set) {
       LOG_WITH_PREFIX(ERROR) << "Rowset selected for compaction but not available anymore: "
                              << not_found->ToString();
     }
-    // TODO(todd): this should never happen, but KUDU-1959 is a bug which causes us to
-    // sometimes concurrently decide to compact the same rowsets. It should be harmless
-    // to simply abort the compaction when we hit this bug, though long term we should
-    // fix the underlying race.
     const char* msg = "Was unable to find all rowsets selected for compaction";
     LOG_WITH_PREFIX(DFATAL) << msg;
     return Status::RuntimeError(msg);
@@ -1622,6 +1619,12 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // Write out the new Tablet Metadata and remove old rowsets.
   RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), new_drs_metas, mrs_being_flushed),
                         "Failed to flush new tablet metadata");
+
+  // Now that we've completed the operation, mark any rowsets that have been
+  // compacted, preventing them from being considered for future compactions.
+  for (const auto& rs : input.rowsets()) {
+    rs->set_has_been_compacted();
+  }
 
   // Replace the compacted rowsets with the new on-disk rowsets, making them visible now that
   // their metadata was written to disk.

@@ -39,6 +39,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/mutation.h"
@@ -119,7 +120,8 @@ MemRowSet::MemRowSet(int64_t id,
     tree_(arena_),
     debug_insert_count_(0),
     debug_update_count_(0),
-    anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)) {
+    anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)),
+    has_been_compacted_(false) {
   CHECK(schema.has_column_ids());
   ANNOTATE_BENIGN_RACE(&debug_insert_count_, "insert count isnt accurate");
   ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");

@@ -228,9 +228,15 @@ class RowSet {
     // makes compaction selection at a time on a given Tablet due to
     // Tablet::compact_select_lock_.
     std::unique_lock<std::mutex> try_lock(*compact_flush_lock(), std::try_to_lock);
-    return try_lock.owns_lock();
+    return try_lock.owns_lock() && !has_been_compacted();
   }
 
+  // Checked while validating that a rowset is available for compaction.
+  virtual bool has_been_compacted() const = 0;
+
+  // Set after a compaction has completed to indicate that the rowset has been
+  // removed from the rowset tree and is thus longer available for compaction.
+  virtual void set_has_been_compacted() = 0;
 };
 
 // Used often enough, may as well typedef it.
@@ -368,6 +374,14 @@ class DuplicatingRowSet : public RowSet {
 
   virtual bool IsAvailableForCompaction() OVERRIDE {
     return false;
+  }
+
+  virtual bool has_been_compacted() const OVERRIDE {
+    return false;
+  }
+
+  virtual void set_has_been_compacted() OVERRIDE {
+    LOG(FATAL) << "Cannot be compacted";
   }
 
   ~DuplicatingRowSet();

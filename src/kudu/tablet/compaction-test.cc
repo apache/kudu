@@ -23,6 +23,7 @@
 #include <numeric>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -90,6 +91,8 @@ DECLARE_string(block_manager);
 
 using std::shared_ptr;
 using std::string;
+using std::thread;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -1059,6 +1062,50 @@ TEST_F(TestCompaction, BenchmarkMergeWithOverlap) {
   ASSERT_NO_FATAL_FAILURE(DoBenchmark<true>());
 }
 #endif
+
+// Test for KUDU-2115 to ensure that compaction selection will correctly pick
+// rowsets that exist in the rowset tree (i.e. rowsets that are removed by
+// concurrent compactions are not considered).
+//
+// Failure of this test may not necessarily mean that a compaction of the
+// single rowset will occur, but rather that a potentially sub-optimal
+// compaction may be scheduled.
+TEST_F(TestCompaction, TestConcurrentCompactionRowSetPicking) {
+  LocalTabletWriter writer(tablet().get(), &client_schema());
+  KuduPartialRow row(&client_schema());
+  const int kNumRowSets = 3;
+  const int kNumRowsPerRowSet = 2;
+  const int kExpectedRows = kNumRowSets * kNumRowsPerRowSet;
+
+  // Flush a few overlapping rowsets.
+  for (int i = 0; i < kNumRowSets; i++) {
+    for (int j = 0; j < kNumRowsPerRowSet; j++) {
+      const int val = i + j * 10;
+      ASSERT_OK(row.SetStringCopy("key", Substitute("hello $0", val)));
+      ASSERT_OK(row.SetInt32("val", val));
+      ASSERT_OK(writer.Insert(row));
+    }
+    ASSERT_OK(tablet()->Flush());
+  }
+  uint64_t num_rows;
+  ASSERT_OK(tablet()->CountRows(&num_rows));
+  ASSERT_EQ(kExpectedRows, num_rows);
+
+  // Schedule multiple compactions on the tablet at once. Concurrent
+  // compactions should not schedule the same rowsets for compaction, and we
+  // should end up with the same number of rows.
+  vector<unique_ptr<thread>> threads;
+  for (int i = 0; i < 10; i++) {
+    threads.emplace_back(new thread([&] {
+      ASSERT_OK(tablet()->Compact(Tablet::COMPACT_NO_FLAGS));
+    }));
+  }
+  for (int i = 0; i < 10; i++) {
+    threads[i]->join();
+  }
+  ASSERT_OK(tablet()->CountRows(&num_rows));
+  ASSERT_EQ(kExpectedRows, num_rows);
+}
 
 TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
   {

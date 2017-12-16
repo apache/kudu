@@ -92,6 +92,13 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
+  virtual bool has_been_compacted() const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return false;
+  }
+  virtual void set_has_been_compacted() OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+  }
   virtual std::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     return NULL;
   }
