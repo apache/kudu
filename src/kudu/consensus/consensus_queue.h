@@ -113,8 +113,8 @@ const char* PeerStatusToString(PeerStatus p);
 class PeerMessageQueue {
  public:
   struct TrackedPeer {
-    explicit TrackedPeer(std::string uuid)
-        : uuid(std::move(uuid)),
+    explicit TrackedPeer(RaftPeerPB peer_pb)
+        : peer_pb(std::move(peer_pb)),
           next_index(kInvalidOpIdIndex),
           last_received(MinimumOpId()),
           last_known_committed_index(MinimumOpId().index()),
@@ -136,10 +136,13 @@ class PeerMessageQueue {
       last_seen_term_ = term;
     }
 
+    const std::string& uuid() const {
+      return peer_pb.permanent_uuid();
+    }
+
     std::string ToString() const;
 
-    // UUID of the peer.
-    std::string uuid;
+    RaftPeerPB peer_pb;
 
     // Next index to send to the peer.
     // This corresponds to "nextIndex" as specified in Raft.
@@ -212,10 +215,10 @@ class PeerMessageQueue {
   // be tracked so that the cache is only evicted when the peers no longer need
   // the operations but the queue will no longer advance the majority replicated
   // index or notify observers of its advancement.
-  void SetNonLeaderMode();
+  void SetNonLeaderMode(const RaftConfigPB& active_config);
 
   // Makes the queue track this peer.
-  void TrackPeer(const std::string& uuid);
+  void TrackPeer(const RaftPeerPB& peer_pb);
 
   // Makes the queue untrack this peer.
   void UntrackPeer(const std::string& uuid);
@@ -378,6 +381,12 @@ class PeerMessageQueue {
     kQueueClosed
   };
 
+  // Types of replicas to count when advancing a queue watermark.
+  enum ReplicaTypes {
+    ALL_REPLICAS,
+    VOTER_REPLICAS,
+  };
+
   struct QueueState {
 
     // The first operation that has been replicated to all currently
@@ -485,7 +494,13 @@ class PeerMessageQueue {
   // 'preceding_first_op_in_queue_' if the queue is empty.
   const OpId& GetLastOp() const;
 
-  void TrackPeerUnlocked(const std::string& uuid);
+  void TrackPeerUnlocked(const RaftPeerPB& peer_pb);
+
+  void UntrackPeerUnlocked(const std::string& uuid);
+
+  // We need the local peer in the config because it contains the current
+  // 'member_type' of the local node while 'local_peer_pb_' does not.
+  void TrackLocalPeerUnlocked();
 
   // Checks that if the queue is in LEADER mode then all registered peers are
   // in the active config. Crashes with a FATAL log message if this invariant
@@ -498,11 +513,16 @@ class PeerMessageQueue {
                                const Status& status);
 
   // Advances 'watermark' to the smallest op that 'num_peers_required' have.
+  // If 'replica_types' is set to VOTER_REPLICAS, the 'num_peers_required' is
+  // interpreted as "number of voters required". If 'replica_types' is set to
+  // ALL_REPLICAS, 'num_peers_required' counts any peer, regardless of its
+  // voting status.
   void AdvanceQueueWatermark(const char* type,
                              int64_t* watermark,
                              const OpId& replicated_before,
                              const OpId& replicated_after,
                              int num_peers_required,
+                             ReplicaTypes replica_types,
                              const TrackedPeer* who_caused);
 
   std::vector<PeerMessageQueueObserver*> observers_;

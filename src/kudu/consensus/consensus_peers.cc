@@ -142,7 +142,7 @@ Peer::Peer(RaftPeerPB peer_pb,
 Status Peer::Init() {
   {
     std::lock_guard<simple_spinlock> l(peer_lock_);
-    queue_->TrackPeer(peer_pb_.permanent_uuid());
+    queue_->TrackPeer(peer_pb_);
   }
 
   // Capture a weak_ptr reference into the functor so it can safely handle

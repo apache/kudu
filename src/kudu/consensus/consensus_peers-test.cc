@@ -126,6 +126,7 @@ class ConsensusPeersTest : public KuduTest {
       shared_ptr<Peer>* peer) {
     RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
+    peer_pb.set_member_type(RaftPeerPB::VOTER);
     auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
         raft_pool_.get(), new NoOpTestPeerProxy(raft_pool_.get(), peer_pb));
     gscoped_ptr<PeerProxy> proxy(proxy_ptr);

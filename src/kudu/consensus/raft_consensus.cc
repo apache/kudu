@@ -604,12 +604,12 @@ Status RaftConsensus::BecomeReplicaUnlocked(boost::optional<MonoDelta> fd_delta)
   // Now that we're a replica, we can allow voting for other nodes.
   withhold_votes_until_ = MonoTime::Min();
 
+  // Deregister ourselves from the queue. We no longer need to track what gets
+  // replicated since we're stepping down.
   queue_->UnRegisterObserver(this);
-  // Deregister ourselves from the queue. We don't care what get's replicated, since
-  // we're stepping down.
-  queue_->SetNonLeaderMode();
-
+  queue_->SetNonLeaderMode(cmeta_->ActiveConfig());
   peer_manager_->Close();
+
   return Status::OK();
 }
 

@@ -126,6 +126,14 @@ class ConsensusQueueTest : public KuduTest {
                                                           payload_size).release()));
   }
 
+  RaftPeerPB MakePeer(const std::string& peer_uuid,
+                      RaftPeerPB::MemberType member_type) {
+    RaftPeerPB peer_pb;
+    *peer_pb.mutable_permanent_uuid() = peer_uuid;
+    peer_pb.set_member_type(member_type);
+    return peer_pb;
+  }
+
   // Updates the peer's watermark in the queue so that it matches
   // the operation we want, since the queue always assumes that
   // when a peer gets tracked it's always tracked starting at the
@@ -137,7 +145,7 @@ class ConsensusQueueTest : public KuduTest {
                                int last_committed_idx,
                                bool* more_pending) {
 
-    queue_->TrackPeer(kPeerUuid);
+    queue_->TrackPeer(MakePeer(kPeerUuid, RaftPeerPB::VOTER));
     response->set_responder_uuid(kPeerUuid);
 
     // Ask for a request. The queue assumes the peer is up-to-date so
@@ -406,10 +414,10 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm, BuildRaftConfigPBForTests(5));
   // Track 4 additional peers (in addition to the local peer)
-  queue_->TrackPeer("peer-1");
-  queue_->TrackPeer("peer-2");
-  queue_->TrackPeer("peer-3");
-  queue_->TrackPeer("peer-4");
+  queue_->TrackPeer(MakePeer("peer-1", RaftPeerPB::VOTER));
+  queue_->TrackPeer(MakePeer("peer-2", RaftPeerPB::VOTER));
+  queue_->TrackPeer(MakePeer("peer-3", RaftPeerPB::VOTER));
+  queue_->TrackPeer(MakePeer("peer-4", RaftPeerPB::VOTER));
 
   // Append 10 messages to the queue.
   // This should add messages 0.1 -> 0.7, 1.8 -> 1.10 to the queue.
@@ -477,6 +485,68 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   ASSERT_EQ(queue_->GetMajorityReplicatedIndexForTests(), 10);
   ASSERT_EQ(queue_->GetCommittedIndex(), 10);
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), 5);
+}
+
+// Ensure that the acks for a non-voter don't count toward the majority.
+TEST_F(ConsensusQueueTest, TestNonVoterAcksDontCountTowardMajority) {
+  const auto kOtherVoterPeer = "peer-1";
+  const auto kNonVoterPeer = "non-voter-peer-0";
+
+  // 1. Add a non-voter to the config where there are 2 voters.
+  queue_->SetLeaderMode(kMinimumOpIdIndex, kMinimumTerm,
+                        BuildRaftConfigPBForTests(/*num_voters=*/ 2,
+                                                  /*num_non_voters=*/ 1));
+  // Track 2 additional peers (in addition to the local peer)
+  queue_->TrackPeer(MakePeer(kOtherVoterPeer, RaftPeerPB::VOTER));
+  queue_->TrackPeer(MakePeer(kNonVoterPeer, RaftPeerPB::NON_VOTER));
+
+  // 2. Add some writes. Only the local leader immediately acks them, which is
+  // not enough to commit in a 2-voter + 1 non-voter config.
+  //
+  // Append 10 messages to the queue.
+  // This should add messages 0.1 -> 0.7, 1.8 -> 1.10 to the queue.
+  const int kNumMessages = 10;
+  AppendReplicateMessagesToQueue(queue_.get(), clock_,
+                                 /*first=*/ 1, /*count=*/ kNumMessages);
+  WaitForLocalPeerToAckIndex(kNumMessages);
+
+  // Since only the local log has acked at this point, the committed_index
+  // should be 0.
+  const int64_t kNoneCommittedIndex = 0;
+  ASSERT_EQ(kNoneCommittedIndex, queue_->GetCommittedIndex());
+
+  // 3. Ack the operations from the NON_VOTER peer. The writes will not have
+  // been committed yet, because the 2nd VOTER has not yet acked them.
+  ConsensusResponsePB response;
+  response.set_responder_uuid(kNonVoterPeer);
+  const int64_t kCurrentTerm = 1;
+  response.set_responder_term(kCurrentTerm);
+  SetLastReceivedAndLastCommitted(&response,
+                                  /*last_received=*/ MakeOpId(kCurrentTerm, kNumMessages),
+                                  /*last_committed_idx=*/ kNoneCommittedIndex);
+
+  bool more_pending;
+  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  ASSERT_FALSE(more_pending);
+
+  // Committed index should be the same.
+  ASSERT_EQ(kNoneCommittedIndex, queue_->GetCommittedIndex());
+
+  // 4. Send an identical ack from the 2nd VOTER peer. This should cause the
+  // operation to be committed.
+  response.set_responder_uuid(kOtherVoterPeer);
+  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  ASSERT_TRUE(more_pending); // The committed index has increased.
+
+  // The committed index should include the full set of ops now.
+  ASSERT_EQ(kNumMessages, queue_->GetCommittedIndex());
+
+  SetLastReceivedAndLastCommitted(&response,
+                                  /*last_received=*/ MakeOpId(kCurrentTerm, kNumMessages),
+                                  /*last_committed_idx=*/ kNumMessages);
+
+  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  ASSERT_FALSE(more_pending);
 }
 
 // In this test we append a sequence of operations to a log
@@ -588,7 +658,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   response.set_responder_uuid(kPeerUuid);
   bool more_pending = false;
 
-  queue_->TrackPeer(kPeerUuid);
+  queue_->TrackPeer(MakePeer(kPeerUuid, RaftPeerPB::VOTER));
 
   // Ask for a request. The queue assumes the peer is up-to-date so
   // this should contain no operations.
@@ -653,7 +723,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 // operations, which would cause a check failure on the write immediately
 // following the overwriting write.
 TEST_F(ConsensusQueueTest, TestQueueMovesWatermarksBackward) {
-  queue_->SetNonLeaderMode();
+  queue_->SetNonLeaderMode(BuildRaftConfigPBForTests(3));
   // Append a bunch of messages and update as if they were also appeneded to the leader.
   queue_->UpdateLastIndexAppendedToLeader(10);
   AppendReplicateMessagesToQueue(queue_.get(), clock_, 1, 10);
@@ -820,7 +890,7 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  queue_->TrackPeer(kPeerUuid);
+  queue_->TrackPeer(MakePeer(kPeerUuid, RaftPeerPB::VOTER));
 
   // Create request for new peer.
   vector<ReplicateRefPtr> refs;
@@ -848,7 +918,7 @@ TEST_F(ConsensusQueueTest, TestTriggerTabletCopyIfTabletNotFound) {
 }
 
 TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
-  queue_->SetNonLeaderMode();
+  queue_->SetNonLeaderMode(BuildRaftConfigPBForTests(3));
 
   // Emulate a follower sending a request to replicate 10 messages.
   queue_->UpdateLastIndexAppendedToLeader(10);
@@ -861,7 +931,8 @@ TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
 
   // Update the committed index. In real life, this would be done by the consensus
   // implementation when it receives an updated committed index from the leader.
-  queue_->UpdateFollowerWatermarks(10, 10);
+  queue_->UpdateFollowerWatermarks(/*committed_index=*/ 10,
+                                   /*all_replicated_index=*/ 10);
   ASSERT_EQ(10, queue_->GetCommittedIndex());
 
   // Check the metrics have the right values based on the updated committed index.

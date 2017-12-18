@@ -20,6 +20,7 @@
 #include <numeric>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -1724,7 +1725,7 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
 // The test scenario is simple: try to make a configuration change in a 3 voter
 // Raft cluster, adding a new non-voter replica, when a majority of voters
 // is not online. Make sure the configuration change is not committed.
-TEST_F(RaftConsensusNonVoterITest, DISABLED_NonVoterReplicasInConsensusQueue) {
+TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
@@ -1775,50 +1776,54 @@ TEST_F(RaftConsensusNonVoterITest, DISABLED_NonVoterReplicasInConsensusQueue) {
 
   // Pause all but the leader replica and try to add a new non-voter into the
   // configuration. It should not pass.
+  LOG(INFO) << "Getting leader replica...";
   TServerDetails* leader;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
 
-  const auto do_resume = [&] {
-    for (auto& e : replica_servers) {
-      const auto& uuid = e.first;
-      if (uuid == leader->uuid()) {
-        continue;
-      }
-      ExternalTabletServer* ts = cluster_->tablet_server_by_uuid(uuid);
-      ASSERT_OK(ts->Resume());
-    }
-  };
-  auto resumer = MakeScopedCleanup([&] {
-    do_resume();
-  });
-
+  LOG(INFO) << "Shutting down non-leader replicas...";
   for (auto& e : replica_servers) {
     const auto& uuid = e.first;
-    if (uuid == leader->uuid()) {
-      continue;
-    }
-    ExternalTabletServer* ts = cluster_->tablet_server_by_uuid(uuid);
-    ASSERT_OK(ts->Pause());
+    if (uuid == leader->uuid()) continue;
+    cluster_->tablet_server_by_uuid(uuid)->Shutdown();
   }
 
-  const Status s = AddServer(leader, tablet_id, new_replica,
-                             RaftPeerPB::NON_VOTER, kTimeout);
-  EXPECT_FALSE(s.ok()) << s.ToString();
-
-  NO_FATALS(do_resume());
-  resumer.cancel();
+  LOG(INFO) << "Adding NON_VOTER replica...";
+  std::thread t([&] {
+      AddServer(leader, tablet_id, new_replica, RaftPeerPB::NON_VOTER, kTimeout);
+  });
+  SCOPED_CLEANUP({ t.join(); });
 
   // Verify that the configuration hasn't changed.
+  LOG(INFO) << "Waiting for pending config...";
   consensus::ConsensusStatePB cstate;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+    ASSERT_TRUE(cstate.has_pending_config());
+  });
+
+  // Ensure it does not commit.
+  SleepFor(MonoDelta::FromSeconds(5));
+  ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+  ASSERT_TRUE(cstate.has_pending_config());
+
+  const auto& new_replica_uuid = new_replica->uuid();
+  ASSERT_FALSE(IsRaftConfigMember(new_replica_uuid, cstate.committed_config()))
+      << pb_util::SecureDebugString(cstate.committed_config())
+      << "new non-voter replica UUID: " << new_replica_uuid;
+  ASSERT_EQ(kOriginalReplicasNum, cstate.committed_config().peers_size());
+
+  // Restart the tablet servers.
+  for (auto& e : replica_servers) {
+    const auto& uuid = e.first;
+    if (uuid == leader->uuid()) continue;
+    ASSERT_OK(cluster_->tablet_server_by_uuid(uuid)->Restart());
+  }
+
+  // Once the new replicas come back online, this should be committed.
   ASSERT_EVENTUALLY([&] {
     ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
     ASSERT_FALSE(cstate.has_pending_config());
   });
-  const auto& new_replica_uuid = new_replica->uuid();
-  EXPECT_FALSE(IsRaftConfigMember(new_replica_uuid, cstate.committed_config()))
-      << pb_util::SecureDebugString(cstate.committed_config())
-      << "new non-voter replica UUID: " << new_replica_uuid;
-  EXPECT_EQ(kOriginalReplicasNum, cstate.committed_config().peers_size());
 
   NO_FATALS(cluster_->AssertNoCrashes());
 }

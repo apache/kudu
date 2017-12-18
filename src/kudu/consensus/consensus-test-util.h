@@ -80,6 +80,7 @@ inline gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int64_t term,
 inline RaftPeerPB FakeRaftPeerPB(const std::string& uuid) {
   RaftPeerPB peer_pb;
   peer_pb.set_permanent_uuid(uuid);
+  peer_pb.set_member_type(RaftPeerPB::VOTER);
   peer_pb.mutable_last_known_addr()->set_host(strings::Substitute(
       "$0-fake-hostname", CURRENT_TEST_NAME()));
   peer_pb.mutable_last_known_addr()->set_port(0);
@@ -107,14 +108,22 @@ inline void AppendReplicateMessagesToQueue(
 }
 
 // Builds a configuration of 'num' voters.
-inline RaftConfigPB BuildRaftConfigPBForTests(int num) {
+inline RaftConfigPB BuildRaftConfigPBForTests(int num_voters, int num_non_voters = 0) {
   RaftConfigPB raft_config;
-  for (int i = 0; i < num; i++) {
+  for (int i = 0; i < num_voters; i++) {
     RaftPeerPB* peer_pb = raft_config.add_peers();
     peer_pb->set_member_type(RaftPeerPB::VOTER);
     peer_pb->set_permanent_uuid(strings::Substitute("peer-$0", i));
     HostPortPB* hp = peer_pb->mutable_last_known_addr();
     hp->set_host(strings::Substitute("peer-$0.fake-domain-for-tests", i));
+    hp->set_port(0);
+  }
+  for (int i = 0; i < num_non_voters; i++) {
+    RaftPeerPB* peer_pb = raft_config.add_peers();
+    peer_pb->set_member_type(RaftPeerPB::NON_VOTER);
+    peer_pb->set_permanent_uuid(strings::Substitute("non-voter-peer-$0", i));
+    HostPortPB* hp = peer_pb->mutable_last_known_addr();
+    hp->set_host(strings::Substitute("non-voter-peer-$0.fake-domain-for-tests", i));
     hp->set_port(0);
   }
   return raft_config;
