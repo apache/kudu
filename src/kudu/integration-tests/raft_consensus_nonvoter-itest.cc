@@ -77,6 +77,7 @@ using kudu::consensus::RaftPeerPB;
 using kudu::consensus::IsRaftConfigMember;
 using kudu::consensus::IsRaftConfigVoter;
 using kudu::itest::AddServer;
+using kudu::itest::GetConsensusState;
 using kudu::itest::GetInt64Metric;
 using kudu::itest::GetTableLocations;
 using kudu::itest::GetTabletLocations;
@@ -1713,6 +1714,113 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
   EXPECT_TRUE(IsRaftConfigVoter(new_replica_uuid, cstate.committed_config()))
       << pb_util::SecureDebugString(cstate.committed_config())
       << "replacement replica UUID: " << new_replica_uuid;
+}
+
+// This test verifies that the consensus queue correctly distinguishes between
+// voter and non-voter acknowledgements of the Raft messages. Essentially, the
+// leader replica's consensus queue should not count an ack message from
+// a non-voter replica as if it was sent by a voter replica.
+//
+// The test scenario is simple: try to make a configuration change in a 3 voter
+// Raft cluster, adding a new non-voter replica, when a majority of voters
+// is not online. Make sure the configuration change is not committed.
+TEST_F(RaftConsensusNonVoterITest, DISABLED_NonVoterReplicasInConsensusQueue) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
+  const int kOriginalReplicasNum = 3;
+  const int kHbIntervalMs = 50;
+  const vector<string> kMasterFlags = {
+    // Don't evict excess replicas to avoid races in the scenario.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  const vector<string> kTserverFlags = {
+    Substitute("--raft_heartbeat_interval_ms=$0", kHbIntervalMs),
+  };
+
+  FLAGS_num_replicas = kOriginalReplicasNum;
+  FLAGS_num_tablet_servers = kOriginalReplicasNum + 1;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+  ASSERT_EQ(kOriginalReplicasNum + 1, tablet_servers_.size());
+
+  const string& tablet_id = tablet_id_;
+  TabletServerMap replica_servers;
+  for (const auto& e : tablet_replicas_) {
+    if (e.first == tablet_id) {
+      replica_servers.emplace(e.second->uuid(), e.second);
+    }
+  }
+  ASSERT_EQ(FLAGS_num_replicas, replica_servers.size());
+
+  ASSERT_OK(WaitForServersToAgree(kTimeout, replica_servers, tablet_id, 1));
+
+  TServerDetails* new_replica = nullptr;
+  for (const auto& ts : tablet_servers_) {
+    if (replica_servers.find(ts.first) == replica_servers.end()) {
+      new_replica = ts.second;
+      break;
+    }
+  }
+  ASSERT_NE(nullptr, new_replica);
+
+  // Disable failure detection for all replicas.
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    ASSERT_OK(cluster_->SetFlag(ts,
+        "enable_leader_failure_detection", "false"));
+  }
+
+  // Pause all but the leader replica and try to add a new non-voter into the
+  // configuration. It should not pass.
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id, &leader));
+
+  const auto do_resume = [&] {
+    for (auto& e : replica_servers) {
+      const auto& uuid = e.first;
+      if (uuid == leader->uuid()) {
+        continue;
+      }
+      ExternalTabletServer* ts = cluster_->tablet_server_by_uuid(uuid);
+      ASSERT_OK(ts->Resume());
+    }
+  };
+  auto resumer = MakeScopedCleanup([&] {
+    do_resume();
+  });
+
+  for (auto& e : replica_servers) {
+    const auto& uuid = e.first;
+    if (uuid == leader->uuid()) {
+      continue;
+    }
+    ExternalTabletServer* ts = cluster_->tablet_server_by_uuid(uuid);
+    ASSERT_OK(ts->Pause());
+  }
+
+  const Status s = AddServer(leader, tablet_id, new_replica,
+                             RaftPeerPB::NON_VOTER, kTimeout);
+  EXPECT_FALSE(s.ok()) << s.ToString();
+
+  NO_FATALS(do_resume());
+  resumer.cancel();
+
+  // Verify that the configuration hasn't changed.
+  consensus::ConsensusStatePB cstate;
+  ASSERT_EVENTUALLY([&] {
+    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+    ASSERT_FALSE(cstate.has_pending_config());
+  });
+  const auto& new_replica_uuid = new_replica->uuid();
+  EXPECT_FALSE(IsRaftConfigMember(new_replica_uuid, cstate.committed_config()))
+      << pb_util::SecureDebugString(cstate.committed_config())
+      << "new non-voter replica UUID: " << new_replica_uuid;
+  EXPECT_EQ(kOriginalReplicasNum, cstate.committed_config().peers_size());
+
+  NO_FATALS(cluster_->AssertNoCrashes());
 }
 
 }  // namespace tserver
