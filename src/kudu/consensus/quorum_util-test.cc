@@ -283,7 +283,9 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "C", V);
     EXPECT_FALSE(ShouldAddReplica(config, 2));
     EXPECT_FALSE(ShouldAddReplica(config, 3));
-    EXPECT_TRUE(ShouldAddReplica(config, 4));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 4));
   }
   {
     RaftConfigPB config;
@@ -292,7 +294,9 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "C", V, '?');
     EXPECT_FALSE(ShouldAddReplica(config, 2));
     EXPECT_FALSE(ShouldAddReplica(config, 3));
-    EXPECT_TRUE(ShouldAddReplica(config, 4));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 4));
   }
   {
     RaftConfigPB config;
@@ -300,7 +304,9 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "B", V, '?');
     AddPeer(&config, "C", V, '-');
     EXPECT_FALSE(ShouldAddReplica(config, 2));
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -316,7 +322,9 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "B", V, '?');
     AddPeer(&config, "C", N, '+');
     EXPECT_FALSE(ShouldAddReplica(config, 2));
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -324,8 +332,10 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", N, '+');
     EXPECT_FALSE(ShouldAddReplica(config, 1));
-    EXPECT_TRUE(ShouldAddReplica(config, 2));
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 2));
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -334,7 +344,9 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "C", N, '+', {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 1));
     EXPECT_FALSE(ShouldAddReplica(config, 2));
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    // The configuration is under-replicated, but there are not enough healthy
+    // voters to commit the configuration change.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -342,7 +354,7 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", N, '-', {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 1));
-    EXPECT_TRUE(ShouldAddReplica(config, 2));
+    EXPECT_FALSE(ShouldAddReplica(config, 2));
   }
   {
     RaftConfigPB config;
@@ -351,6 +363,16 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "C", V, '-');
     EXPECT_FALSE(ShouldAddReplica(config, 2));
     EXPECT_TRUE(ShouldAddReplica(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '?');
+    EXPECT_FALSE(ShouldAddReplica(config, 2));
+    // The catalog manager should wait for a definite health status of replica
+    // 'C' before making decision whether to add replica for replacement or not.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
   {
     RaftConfigPB config;
@@ -443,10 +465,20 @@ TEST(QuorumUtilTest, ShouldAddReplica) {
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", V, '-');
-    // The catalog manager will be able to carry on the required update of the
-    // configuration after achieving the majority.
-    // TODO(aserbin): add an integration test for that.
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    // The catalog manager will not add a new non-voter replica until the
+    // situation is resolved -- this case requires manual intervention.
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", V, '-');
+    AddPeer(&config, "E", V, '+');
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
+    EXPECT_TRUE(ShouldAddReplica(config, 4));
+    EXPECT_TRUE(ShouldAddReplica(config, 5));
   }
 }
 
@@ -760,9 +792,9 @@ TEST(QuorumUtilTest, TestDontEvictLeader) {
   }
 }
 
-// This is a testcase for tablet configurations which can simultaneously be
-// under-replicated and contain a replica suitable for eviction.
-TEST(QuorumUtilTest, TooManyVoters) {
+// This is a testcase for tablet configurations with more than the required
+// number of voter replicas but without a majority of replicas being on-line.
+TEST(QuorumUtilTest, TooManyVotersWithoutMajority) {
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
@@ -783,7 +815,7 @@ TEST(QuorumUtilTest, TooManyVoters) {
     string to_evict;
     ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, &to_evict));
     EXPECT_TRUE(to_evict == "C" || to_evict == "D") << to_evict;
-    EXPECT_TRUE(ShouldAddReplica(config, 3));
+    EXPECT_FALSE(ShouldAddReplica(config, 3));
   }
 }
 
@@ -1195,7 +1227,7 @@ TEST(QuorumUtilTest, NewlyPromotedReplicaCrashes) {
   SetPeerHealth(&config, "D", '-');
   ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, &to_evict));
   EXPECT_TRUE(to_evict == "B" || to_evict == "D") << to_evict;
-  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor));
 
   RemovePeer(&config, to_evict);
   EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor));

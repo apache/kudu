@@ -403,6 +403,7 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
 //                the latter case.
 bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
   int num_voters_total = 0;
+  int num_voters_healthy = 0;
   int num_voters_need_replacement = 0;
   int num_non_voters_to_promote = 0;
 
@@ -418,6 +419,9 @@ bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
             peer.health_report().overall_health() == HealthReportPB::FAILED) {
           ++num_voters_need_replacement;
         }
+        if (peer.health_report().overall_health() == HealthReportPB::HEALTHY) {
+          ++num_voters_healthy;
+        }
         break;
       case RaftPeerPB::NON_VOTER:
         if (peer.attrs().promote() &&
@@ -430,11 +434,22 @@ bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
         break;
     }
   }
+
+  // Whether the configuration is under-replicated: the projected number of
+  // viable replicas is less than the required replication factor.
   const bool is_under_replicated = replication_factor >
-      (num_voters_total - num_voters_need_replacement) + num_non_voters_to_promote;
+      num_voters_total - num_voters_need_replacement + num_non_voters_to_promote;
+
+  // Whether it's time to add a new replica: the tablet Raft configuration might
+  // be under-replicated, but it does not make much sense trying to add a new
+  // replica if the configuration change cannot be committed.
+  const bool should_add_replica = is_under_replicated &&
+      num_voters_healthy >= MajoritySize(num_voters_total);
+
   VLOG(2) << "decision: the config is" << (is_under_replicated ? " " : " not ")
-          << "under-replicated";
-  return is_under_replicated;
+          << "under-replicated; should" << (should_add_replica ? " " : " not ")
+          << "add a non-voter replica";
+  return should_add_replica;
 }
 
 // Whether there is an excess replica to evict.
