@@ -401,7 +401,9 @@ string DiffConsensusStates(const ConsensusStatePB& old_state,
 //
 // TODO(aserbin): add a test scenario for the leader replica's logic to cover
 //                the latter case.
-bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
+bool ShouldAddReplica(const RaftConfigPB& config,
+                      int replication_factor,
+                      MajorityHealthPolicy policy) {
   int num_voters_total = 0;
   int num_voters_healthy = 0;
   int num_voters_need_replacement = 0;
@@ -444,7 +446,8 @@ bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
   // be under-replicated, but it does not make much sense trying to add a new
   // replica if the configuration change cannot be committed.
   const bool should_add_replica = is_under_replicated &&
-      num_voters_healthy >= MajoritySize(num_voters_total);
+      (num_voters_healthy >= MajoritySize(num_voters_total) ||
+       policy == MajorityHealthPolicy::IGNORE);
 
   VLOG(2) << "decision: the config is" << (is_under_replicated ? " " : " not ")
           << "under-replicated; should" << (should_add_replica ? " " : " not ")
@@ -454,9 +457,10 @@ bool ShouldAddReplica(const RaftConfigPB& config, int replication_factor) {
 
 // Whether there is an excess replica to evict.
 bool ShouldEvictReplica(const RaftConfigPB& config,
-                     const string& leader_uuid,
-                     int replication_factor,
-                     string* uuid_to_evict) {
+                        const string& leader_uuid,
+                        int replication_factor,
+                        MajorityHealthPolicy policy,
+                        string* uuid_to_evict) {
   // If there is no leader, we can't evict anybody.
   if (leader_uuid.empty()) return false;
 
@@ -572,9 +576,9 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   // of the tablet. Also, the eviction policy is more liberal when dealing with
   // failed replicas: if the total number of voter replicas is greater than or
   // equal to the required replication factor, the failed replicas are evicted
-  // aggressively. The latter is to avoid polluting the tablet servers with
-  // failed replicas, limiting the available places for new non-voter replicas
-  // created to replace failed ones. See below for more details.
+  // aggressively. The latter is to avoid polluting tablet servers with failed
+  // replicas, reducing the number of possible locations for new non-voter
+  // replicas created to replace the failed ones. See below for more details.
   //
   // * A non-voter replica may be evicted regardless of its health status
   //   if the number of voter replicas in good health without the 'replace'
@@ -633,8 +637,9 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   // All the non-voter-related sub-cases are applicable only when there is at
   // least one non-voter replica and a majority of voter replicas are on-line
   // to commit the Raft configuration change.
-  const bool can_evict_non_voter = need_to_evict_non_voter &&
-      num_voters_healthy >= MajoritySize(num_voters_total);
+  const bool should_evict_non_voter = need_to_evict_non_voter &&
+      (num_voters_healthy >= MajoritySize(num_voters_total) ||
+       policy == MajorityHealthPolicy::IGNORE);
 
   bool need_to_evict_voter = false;
 
@@ -674,13 +679,14 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   // The voter-related sub-cases are applicable only when the total number of
   // voter replicas is greater than the target replication factor and a majority
   // of voter replicas are on-line to commit the Raft configuration change.
-  const bool can_evict_voter = need_to_evict_voter &&
+  const bool should_evict_voter = need_to_evict_voter &&
       num_voters_total > replication_factor &&
-      num_voters_healthy >= MajoritySize(num_voters_total - 1);
+      (num_voters_healthy >= MajoritySize(num_voters_total - 1) ||
+       policy == MajorityHealthPolicy::IGNORE);
 
-  const bool can_evict = can_evict_non_voter || can_evict_voter;
+  const bool should_evict = should_evict_non_voter || should_evict_voter;
   string to_evict;
-  if (can_evict_non_voter) {
+  if (should_evict_non_voter) {
     // First try to evict an excess non-voter, if present. This might help to
     // avoid IO load due to a tablet copy in progress.
     //
@@ -695,7 +701,7 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
     } else {
       to_evict = non_voter_any;
     }
-  } else if (can_evict_voter) {
+  } else if (should_evict_voter) {
     // Next try to evict an excess voter.
     //
     // Voter candidates for eviction (in decreasing priority):
@@ -715,18 +721,18 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
     }
   }
 
-  if (can_evict) {
+  if (should_evict) {
     DCHECK(!to_evict.empty());
     DCHECK_NE(leader_uuid, to_evict);
     if (uuid_to_evict) {
       *uuid_to_evict = to_evict;
     }
   }
-  VLOG(2) << "decision: can"
-          << (can_evict ? "" : "not") << " evict replica "
-          << (can_evict ? to_evict : "");
+  VLOG(2) << "decision: should"
+          << (should_evict ? "" : "not") << " evict replica "
+          << (should_evict ? to_evict : "");
 
-  return can_evict;
+  return should_evict;
 }
 
 }  // namespace consensus

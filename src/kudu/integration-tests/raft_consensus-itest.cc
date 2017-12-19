@@ -1599,8 +1599,8 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   TServerDetails* leader_tserver = tservers[0];
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, kTimeout));
   ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 1));
-
-  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_OK(WaitForOpFromCurrentTerm(leader_tserver, tablet_id_,
+                                     consensus::COMMITTED_OPID, kTimeout));
 
   // Start a write workload.
   LOG(INFO) << "Starting write workload...";
@@ -1637,6 +1637,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   ASSERT_OK(WaitForOpFromCurrentTerm(leader_tserver, tablet_id_,
                                      consensus::COMMITTED_OPID, kTimeout));
 
+  TabletServerMap active_tablet_servers = tablet_servers_;
   LOG(INFO) << "Removing servers...";
   // Go from 3 tablet servers down to 1 in the configuration.
   vector<int> remove_list = { 2, 1 };
