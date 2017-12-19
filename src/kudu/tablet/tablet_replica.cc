@@ -531,7 +531,8 @@ log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
   //   (a) don't GC any operations which are still in flight
   //   (b) don't GC any operations that are needed to catch up lagging peers.
   log::RetentionIndexes ret = consensus_->GetRetentionIndexes();
-
+  VLOG_WITH_PREFIX(4) << "Log GC: With Consensus retention: "
+                      << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
   // If we never have written to the log, no need to proceed.
   if (ret.for_durability == 0) return ret;
 
@@ -546,6 +547,8 @@ log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
       ret.for_durability = std::min(ret.for_durability, min_anchor_index);
     }
   }
+  VLOG_WITH_PREFIX(4) << "Log GC: With Anchor retention: "
+                      << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
 
   // Next, interrogate the TransactionTracker.
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
@@ -558,6 +561,8 @@ log::RetentionIndexes TabletReplica::GetRetentionIndexes() const {
       ret.for_durability = std::min(ret.for_durability, tx_op_id.index());
     }
   }
+  VLOG_WITH_PREFIX(4) << "Log GC: With Transaction retention: "
+                      << Substitute("{dur: $0, peers: $1}", ret.for_durability, ret.for_peers);
 
   return ret;
 }

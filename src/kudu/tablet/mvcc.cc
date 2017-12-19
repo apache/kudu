@@ -170,10 +170,10 @@ void MvccManager::AdvanceEarliestInFlightTimestamp() {
 
 void MvccManager::AdjustSafeTime(Timestamp safe_time) {
   std::lock_guard<LockType> l(lock_);
-
   // No more transactions will start with a ts that is lower than or equal
   // to 'safe_time', so we adjust the snapshot accordingly.
   if (PREDICT_TRUE(safe_time_ <= safe_time)) {
+    DVLOG(4) << "Adjusting safe time to: " << safe_time;
     safe_time_ = safe_time;
   } else {
     // TODO(dralves) This shouldn't happen, the safe time passed to MvccManager should be
@@ -232,6 +232,8 @@ void MvccManager::AdjustCleanTime() {
   } else {
     cur_snap_.all_committed_before_ = safe_time_;
   }
+
+  DVLOG(4) << "Adjusted clean time to: " << cur_snap_.all_committed_before_;
 
   // Filter out any committed timestamps that now fall below the watermark
   FilterTimestamps(&cur_snap_.committed_timestamps_, cur_snap_.all_committed_before_.value());

@@ -477,17 +477,23 @@ class MergeCompactionInput : public CompactionInput {
         if (smallest_idx < 0) {
           smallest_idx = i;
           smallest = state->next();
+          DVLOG(4) << "Set (initial) smallest from state: " << i << " smallest: "
+                   << CompactionInputRowToString(*smallest);
           continue;
         }
         int row_comp = schema_->Compare(state->next()->row, smallest->row);
         if (row_comp < 0) {
           smallest_idx = i;
           smallest = state->next();
+          DVLOG(4) << "Set (by comp) smallest from state: " << i << " smallest: "
+                   << CompactionInputRowToString(*smallest);
           continue;
         }
         // If we found two rows with the same key, we want to make the newer one point to the older
         // one, which must be a ghost.
         if (PREDICT_FALSE(row_comp == 0)) {
+          DVLOG(4) << "Duplicate row.\nLeft: " << CompactionInputRowToString(*state->next())
+                   << "\nRight: " << CompactionInputRowToString(*smallest);
           int mutation_comp = CompareDuplicatedRows(*state->next(), *smallest);
           CHECK_NE(mutation_comp, 0);
           if (mutation_comp > 0) {
@@ -498,11 +504,15 @@ class MergeCompactionInput : public CompactionInput {
             states_[smallest_idx]->pop_front();
             smallest_idx = i;
             smallest = state->next();
+            DVLOG(4) << "Set smallest to right duplicate: "
+                     << CompactionInputRowToString(*smallest);
             continue;
           }
           // .. otherwise copy and pop the other one.
           RETURN_NOT_OK(SetPreviousGhost(smallest, state->next(), true /* clone */,
                                          smallest->row.row_block()->arena()));
+          DVLOG(4) << "Updated left duplicate smallest: "
+                   << CompactionInputRowToString(*smallest);
           states_[i]->pop_front();
           continue;
         }
@@ -510,6 +520,7 @@ class MergeCompactionInput : public CompactionInput {
       DCHECK_GE(smallest_idx, 0);
 
       states_[smallest_idx]->pop_front();
+      DVLOG(4) << "Pushing smallest to block: " << CompactionInputRowToString(*smallest);
       block->push_back(*smallest);
     }
 
@@ -1227,6 +1238,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           // But was this row GCed at flush time?
           if (decoder.is_delete() &&
               history_gc_opts.IsAncientHistory(mut->timestamp())) {
+            DVLOG(3) << "Marking for garbage collection row: " << schema->DebugRow(row.row);
             is_garbage_collected = true;
           }
           continue;
