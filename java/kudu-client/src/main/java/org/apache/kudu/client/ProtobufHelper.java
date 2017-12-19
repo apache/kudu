@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -31,9 +32,11 @@ import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DecimalUtil;
 
 @InterfaceAudience.Private
 public class ProtobufHelper {
@@ -68,7 +71,7 @@ public class ProtobufHelper {
                                                  ColumnSchema column) {
     schemaBuilder
         .setName(column.getName())
-        .setType(column.getType().getDataType())
+        .setType(column.getType().getDataType(column.getTypeAttributes()))
         .setIsKey(column.isKey())
         .setIsNullable(column.isNullable())
         .setCfileBlockSize(column.getDesiredBlockSize());
@@ -82,13 +85,31 @@ public class ProtobufHelper {
       schemaBuilder.setReadDefaultValue(UnsafeByteOperations.unsafeWrap(
           objectToWireFormat(column, column.getDefaultValue())));
     }
+    if(column.getTypeAttributes() != null) {
+      schemaBuilder.setTypeAttributes(
+          columnTypeAttributesToPb(Common.ColumnTypeAttributesPB.newBuilder(), column));
+    }
     return schemaBuilder.build();
+  }
+
+  public static Common.ColumnTypeAttributesPB columnTypeAttributesToPb(
+      Common.ColumnTypeAttributesPB.Builder builder, ColumnSchema column) {
+    ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
+    if (typeAttributes.hasPrecision()) {
+      builder.setPrecision(typeAttributes.getPrecision());
+    }
+    if (typeAttributes.hasScale()) {
+      builder.setScale(typeAttributes.getScale());
+    }
+    return builder.build();
   }
 
   public static ColumnSchema pbToColumnSchema(Common.ColumnSchemaPB pb) {
     Type type = Type.getTypeForDataType(pb.getType());
+    ColumnTypeAttributes typeAttributes = pb.hasTypeAttributes() ?
+        pbToColumnTypeAttributes(pb.getTypeAttributes()) : null;
     Object defaultValue = pb.hasWriteDefaultValue() ?
-        byteStringToObject(type, pb.getWriteDefaultValue()) : null;
+        byteStringToObject(type, typeAttributes, pb.getWriteDefaultValue()) : null;
     ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(pb.getEncoding().name());
     ColumnSchema.CompressionAlgorithm compressionAlgorithm =
         ColumnSchema.CompressionAlgorithm.valueOf(pb.getCompression().name());
@@ -100,7 +121,20 @@ public class ProtobufHelper {
                            .encoding(encoding)
                            .compressionAlgorithm(compressionAlgorithm)
                            .desiredBlockSize(desiredBlockSize)
+                           .typeAttributes(typeAttributes)
                            .build();
+  }
+
+  public static ColumnTypeAttributes pbToColumnTypeAttributes(Common.ColumnTypeAttributesPB pb) {
+    ColumnTypeAttributes.ColumnTypeAttributesBuilder builder =
+        new ColumnTypeAttributes.ColumnTypeAttributesBuilder();
+    if(pb.hasPrecision()) {
+      builder.precision(pb.getPrecision());
+    }
+    if(pb.hasScale()) {
+      builder.scale(pb.getScale());
+    }
+    return builder.build();
   }
 
   public static Schema pbToSchema(Common.SchemaPB schema) {
@@ -205,13 +239,16 @@ public class ProtobufHelper {
         return Bytes.fromFloat((Float) value);
       case DOUBLE:
         return Bytes.fromDouble((Double) value);
+      case DECIMAL:
+        return Bytes.fromBigDecimal((BigDecimal) value, col.getTypeAttributes().getPrecision());
       default:
         throw new IllegalArgumentException("The column " + col.getName() + " is of type " + col
             .getType() + " which is unknown");
     }
   }
 
-  private static Object byteStringToObject(Type type, ByteString value) {
+  private static Object byteStringToObject(Type type, ColumnTypeAttributes typeAttributes,
+                                           ByteString value) {
     ByteBuffer buf = value.asReadOnlyByteBuffer();
     buf.order(ByteOrder.LITTLE_ENDIAN);
     switch (type) {
@@ -234,6 +271,9 @@ public class ProtobufHelper {
         return value.toStringUtf8();
       case BINARY:
         return value.toByteArray();
+      case DECIMAL:
+        return Bytes.getDecimal(value.toByteArray(),
+            typeAttributes.getPrecision(), typeAttributes.getScale());
       default:
         throw new IllegalArgumentException("This type is unknown: " + type);
     }
@@ -270,6 +310,8 @@ public class ProtobufHelper {
       bytes = Bytes.fromFloat((Float) value);
     } else if (value instanceof Double) {
       bytes = Bytes.fromDouble((Double) value);
+    } else if (value instanceof BigDecimal) {
+      bytes = Bytes.fromBigDecimal((BigDecimal) value, DecimalUtil.MAX_DECIMAL_PRECISION);
     } else {
       throw new IllegalArgumentException("The default value provided for " +
           "column " + colName + " is of class " + value.getClass().getName() +

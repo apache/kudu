@@ -20,6 +20,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 
 import org.junit.BeforeClass;
@@ -61,6 +62,7 @@ public class TestRowResult extends BaseKuduTest {
     row.addBinary(9, bb);
     row.setNull(10);
     row.addLong(11, 11l);
+    row.addDecimal(12, BigDecimal.valueOf(12345, 3));
 
     KuduSession session = syncClient.newSession();
     session.apply(insert);
@@ -113,6 +115,9 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals(11, rr.getLong(11));
       assertEquals(11, rr.getLong(allTypesSchema.getColumnByIndex(11).getName()));
 
+      assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(12));
+      assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));
+
       // We test with the column name once since it's the same method for all types, unlike above.
       assertEquals(Type.INT8, rr.getColumnType(allTypesSchema.getColumnByIndex(0).getName()));
       assertEquals(Type.INT8, rr.getColumnType(0));
@@ -125,6 +130,7 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals(Type.STRING, rr.getColumnType(7));
       assertEquals(Type.BINARY, rr.getColumnType(8));
       assertEquals(Type.UNIXTIME_MICROS, rr.getColumnType(11));
+      assertEquals(Type.DECIMAL, rr.getColumnType(12));
     }
   }
 }

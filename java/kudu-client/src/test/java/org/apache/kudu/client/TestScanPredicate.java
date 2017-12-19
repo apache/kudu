@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableSet;
@@ -31,6 +32,7 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestScanPredicate extends BaseKuduTest {
 
@@ -167,6 +169,36 @@ public class TestScanPredicate extends BaseKuduTest {
 
         // TODO: uncomment after fixing KUDU-1386
         // Double.NaN
+    );
+  }
+
+  // Returns a vector of decimal(4, 2) numbers from -50.50 (inclusive) to 50.50
+  // (exclusive) (100 values) and boundary values.
+  private NavigableSet<BigDecimal> createDecimalValues() {
+    NavigableSet<BigDecimal> values = new TreeSet<>();
+    for (long i = -50; i < 50; i++) {
+      values.add(BigDecimal.valueOf(i * 100 + i, 2));
+    }
+
+    values.add(BigDecimal.valueOf(-9999, 2));
+    values.add(BigDecimal.valueOf(-9998, 2));
+    values.add(BigDecimal.valueOf(9998, 2));
+    values.add(BigDecimal.valueOf(9999, 2));
+
+    return values;
+  }
+
+  private List<BigDecimal> createDecimalTestValues() {
+    return ImmutableList.of(
+        BigDecimal.valueOf(-9999, 2),
+        BigDecimal.valueOf(-9998, 2),
+        BigDecimal.valueOf(5100, 2),
+        BigDecimal.valueOf(-5000, 2),
+        BigDecimal.valueOf(0, 2),
+        BigDecimal.valueOf(4900, 2),
+        BigDecimal.valueOf(5000, 2),
+        BigDecimal.valueOf(9998, 2),
+        BigDecimal.valueOf(9999, 2)
     );
   }
 
@@ -487,6 +519,69 @@ public class TestScanPredicate extends BaseKuduTest {
     Assert.assertEquals(values.size() + 1, countRows(table));
 
     for (double v : testValues) {
+      // value = v
+      KuduPredicate equal = KuduPredicate.newComparisonPredicate(col, ComparisonOp.EQUAL, v);
+      Assert.assertEquals(values.subSet(v, true, v, true).size(), countRows(table, equal));
+
+      // value >= v
+      KuduPredicate greaterEqual =
+          KuduPredicate.newComparisonPredicate(col, ComparisonOp.GREATER_EQUAL, v);
+      Assert.assertEquals(values.tailSet(v).size(), countRows(table, greaterEqual));
+
+      // value <= v
+      KuduPredicate lessEqual =
+          KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS_EQUAL, v);
+      Assert.assertEquals(values.headSet(v, true).size(), countRows(table, lessEqual));
+
+      // value > v
+      KuduPredicate greater =
+          KuduPredicate.newComparisonPredicate(col, ComparisonOp.GREATER, v);
+      Assert.assertEquals(values.tailSet(v, false).size(), countRows(table, greater));
+
+      // value < v
+      KuduPredicate less =
+          KuduPredicate.newComparisonPredicate(col, ComparisonOp.LESS, v);
+      Assert.assertEquals(values.headSet(v).size(), countRows(table, less));
+    }
+
+    KuduPredicate isNotNull = KuduPredicate.newIsNotNullPredicate(col);
+    Assert.assertEquals(values.size(), countRows(table, isNotNull));
+
+    KuduPredicate isNull = KuduPredicate.newIsNullPredicate(col);
+    Assert.assertEquals(1, countRows(table, isNull));
+  }
+
+  @Test
+  public void testDecimalPredicates() throws Exception {
+    ColumnSchema key = new ColumnSchema.ColumnSchemaBuilder("key", Type.INT64).key(true).build();
+    ColumnSchema val = new ColumnSchema.ColumnSchemaBuilder("value", Type.DECIMAL)
+        .typeAttributes(DecimalUtil.typeAttributes(4, 2)).nullable(true).build();
+    Schema schema = new Schema(ImmutableList.of(key, val));
+
+    syncClient.createTable("decimal-table", schema, createTableOptions());
+    KuduTable table = syncClient.openTable("decimal-table");
+
+    NavigableSet<BigDecimal> values = createDecimalValues();
+    List<BigDecimal> testValues = createDecimalTestValues();
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    long i = 0;
+    for (BigDecimal value : values) {
+      Insert insert = table.newInsert();
+      insert.getRow().addLong("key", i++);
+      insert.getRow().addDecimal("value", value);
+      session.apply(insert);
+    }
+    Insert nullInsert = table.newInsert();
+    nullInsert.getRow().addLong("key", i++);
+    nullInsert.getRow().setNull("value");
+    session.apply(nullInsert);
+    session.flush();
+
+    ColumnSchema col = table.getSchema().getColumn("value");
+    Assert.assertEquals(values.size() + 1, countRows(table));
+
+    for (BigDecimal v : testValues) {
       // value = v
       KuduPredicate equal = KuduPredicate.newComparisonPredicate(col, ComparisonOp.EQUAL, v);
       Assert.assertEquals(values.subSet(v, true, v, true).size(), countRows(table, equal));

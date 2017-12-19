@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import java.math.BigInteger;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -35,9 +37,11 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.util.DecimalUtil;
 
 /**
  * A predicate which can be used to filter rows based on the value of a column.
@@ -218,6 +222,68 @@ public class KuduPredicate {
         return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
       case LESS:
         if (value == minValue) {
+          return none(column);
+        }
+        return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
+      default:
+        throw new RuntimeException("unknown comparison op");
+    }
+  }
+
+  /**
+   * Creates a new comparison predicate on a Decimal column.
+   * @param column the column schema
+   * @param op the comparison operation
+   * @param value the value to compare against
+   */
+  public static KuduPredicate newComparisonPredicate(ColumnSchema column,
+                                                     ComparisonOp op,
+                                                     BigDecimal value) {
+    checkColumn(column, Type.DECIMAL);
+    ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
+    int precision = typeAttributes.getPrecision();
+    int scale = typeAttributes.getScale();
+
+    BigDecimal minValue = DecimalUtil.minValue(precision, scale);
+    BigDecimal maxValue = DecimalUtil.maxValue(precision, scale);
+    Preconditions.checkArgument(value.compareTo(maxValue) <= 0 && value.compareTo(minValue) >= 0,
+        "Decimal value out of range for %s column: %s",
+        column.getType(), value);
+    BigDecimal smallestValue = DecimalUtil.smallestValue(scale);
+
+    if (op == ComparisonOp.LESS_EQUAL) {
+      if (value.equals(maxValue)) {
+        // If the value can't be incremented because it is at the top end of the
+        // range, then substitute the predicate with an IS NOT NULL predicate.
+        // This has the same effect as an inclusive upper bound on the maximum
+        // value. If the column is not nullable then the IS NOT NULL predicate
+        // is ignored.
+        return newIsNotNullPredicate(column);
+      }
+      value = value.add(smallestValue);
+      op = ComparisonOp.LESS;
+    } else if (op == ComparisonOp.GREATER) {
+      if (value == maxValue) {
+        return none(column);
+      }
+      value = value.add(smallestValue);
+      op = ComparisonOp.GREATER_EQUAL;
+    }
+
+    byte[] bytes = Bytes.fromBigDecimal(value, precision);
+
+    switch (op) {
+      case GREATER_EQUAL:
+        if (value.equals(minValue)) {
+          return newIsNotNullPredicate(column);
+        } else if (value.equals(maxValue)) {
+          return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+        }
+        return new KuduPredicate(PredicateType.RANGE, column, bytes, null);
+      case EQUAL:
+        return new KuduPredicate(PredicateType.EQUALITY, column, bytes, null);
+      case LESS:
+        if (value.equals(minValue)) {
           return none(column);
         }
         return new KuduPredicate(PredicateType.RANGE, column, null, bytes);
@@ -449,6 +515,12 @@ public class KuduPredicate {
       for (T value : values) {
         vals.add(Bytes.fromDouble((Double) value));
       }
+    } else if (t instanceof BigDecimal) {
+        checkColumn(column, Type.DECIMAL);
+        for (T value : values) {
+          vals.add(Bytes.fromBigDecimal((BigDecimal) value,
+              column.getTypeAttributes().getPrecision()));
+        }
     } else if (t instanceof String) {
       checkColumn(column, Type.STRING);
       for (T value : values) {
@@ -647,7 +719,8 @@ public class KuduPredicate {
    */
   private static KuduPredicate buildInList(ColumnSchema column, Collection<byte[]> values) {
     // IN (true, false) predicates can be simplified to IS NOT NULL.
-    if (column.getType().getDataType() == Common.DataType.BOOL && values.size() > 1) {
+    if (column.getType().getDataType(column.getTypeAttributes()) ==
+        Common.DataType.BOOL && values.size() > 1) {
       return newIsNotNullPredicate(column);
     }
 
@@ -785,7 +858,7 @@ public class KuduPredicate {
    * @return the comparison of the serialized values based on the column type
    */
   private static int compare(ColumnSchema column, byte[] a, byte[] b) {
-    switch (column.getType().getDataType()) {
+    switch (column.getType().getDataType(column.getTypeAttributes())) {
       case BOOL:
         return Boolean.compare(Bytes.getBoolean(a), Bytes.getBoolean(b));
       case INT8:
@@ -793,9 +866,11 @@ public class KuduPredicate {
       case INT16:
         return Short.compare(Bytes.getShort(a), Bytes.getShort(b));
       case INT32:
+      case DECIMAL32:
         return Integer.compare(Bytes.getInt(a), Bytes.getInt(b));
       case INT64:
       case UNIXTIME_MICROS:
+      case DECIMAL64:
         return Long.compare(Bytes.getLong(a), Bytes.getLong(b));
       case FLOAT:
         return Float.compare(Bytes.getFloat(a), Bytes.getFloat(b));
@@ -804,6 +879,8 @@ public class KuduPredicate {
       case STRING:
       case BINARY:
         return UnsignedBytes.lexicographicalComparator().compare(a, b);
+      case DECIMAL128:
+        return Bytes.getBigInteger(a).compareTo(Bytes.getBigInteger(b));
       default:
         throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
     }
@@ -816,7 +893,7 @@ public class KuduPredicate {
    * @return true if increment(a) == b
    */
   private boolean areConsecutive(byte[] a, byte[] b) {
-    switch (column.getType().getDataType()) {
+    switch (column.getType().getDataType(column.getTypeAttributes())) {
       case BOOL: return false;
       case INT8: {
         byte m = Bytes.getByte(a);
@@ -828,13 +905,15 @@ public class KuduPredicate {
         short n = Bytes.getShort(b);
         return m < n && m + 1 == n;
       }
-      case INT32: {
+      case INT32:
+      case DECIMAL32:{
         int m = Bytes.getInt(a);
         int n = Bytes.getInt(b);
         return m < n && m + 1 == n;
       }
       case INT64:
-      case UNIXTIME_MICROS: {
+      case UNIXTIME_MICROS:
+      case DECIMAL64:  {
         long m = Bytes.getLong(a);
         long n = Bytes.getLong(b);
         return m < n && m + 1 == n;
@@ -860,6 +939,11 @@ public class KuduPredicate {
           }
         }
         return true;
+      }
+      case DECIMAL128: {
+        BigInteger m = Bytes.getBigInteger(a);
+        BigInteger n = Bytes.getBigInteger(b);
+        return m.compareTo(n) < 0 && m.add(BigInteger.ONE).equals(n);
       }
       default:
         throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
@@ -953,7 +1037,7 @@ public class KuduPredicate {
    * @return the text representation of the value
    */
   private String valueToString(byte[] value) {
-    switch (column.getType().getDataType()) {
+    switch (column.getType().getDataType(column.getTypeAttributes())) {
       case BOOL: return Boolean.toString(Bytes.getBoolean(value));
       case INT8: return Byte.toString(Bytes.getByte(value));
       case INT16: return Short.toString(Bytes.getShort(value));
@@ -971,6 +1055,12 @@ public class KuduPredicate {
         return sb.toString();
       }
       case BINARY: return Bytes.hex(value);
+      case DECIMAL32:
+      case DECIMAL64:
+      case DECIMAL128:
+       ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
+       return Bytes.getDecimal(value, typeAttributes.getPrecision(),
+           typeAttributes.getScale()).toString();
       default:
         throw new IllegalStateException(String.format("unknown column type %s", column.getType()));
     }

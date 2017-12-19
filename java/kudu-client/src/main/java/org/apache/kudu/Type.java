@@ -19,11 +19,18 @@ package org.apache.kudu;
 
 import static org.apache.kudu.Common.DataType;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
+
+import org.apache.kudu.ColumnTypeAttributes;
+import org.apache.kudu.util.DecimalUtil;
 
 /**
  * Describes all the types available to build table schemas.
@@ -41,9 +48,10 @@ public enum Type {
   BOOL(DataType.BOOL, "bool"),
   FLOAT(DataType.FLOAT, "float"),
   DOUBLE(DataType.DOUBLE, "double"),
-  UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros");
+  UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros"),
+  DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal");
 
-  private final DataType dataType;
+  private final List<DataType> dataTypes;
   private final String name;
   private final int size;
 
@@ -53,17 +61,40 @@ public enum Type {
    * @param name string representation of the type
    */
   private Type(DataType dataType, String name) {
-    this.dataType = dataType;
+    this.dataTypes = Collections.singletonList(dataType);
     this.name = name;
-    this.size = getTypeSize(this.dataType);
+    this.size = getTypeSize(dataType);
+  }
+
+  private Type(List<DataType> dataTypes, String name) {
+    this.dataTypes = dataTypes;
+    this.name = name;
+    this.size = -1;
   }
 
   /**
    * Get the data type from the common's pb
    * @return A DataType
+   * @deprecated use {@link #getDataType(ColumnTypeAttributes)}
    */
   public DataType getDataType() {
-    return this.dataType;
+    if (this == DECIMAL) {
+      throw new IllegalStateException("Please use the newer getDataType(ColumnTypeAttributes) " +
+          "to support the Decimal data type");
+    }
+    return this.dataTypes.get(0);
+  }
+
+  /**
+   * Get the data type from the common's pb
+   * @param typeAttributes the additional attributes of the type.
+   * @return A DataType
+   */
+  public DataType getDataType(ColumnTypeAttributes typeAttributes) {
+    if (this == DECIMAL) {
+      return DecimalUtil.precisionToDataType(typeAttributes.getPrecision());
+    }
+    return this.dataTypes.get(0);
   }
 
   /**
@@ -77,14 +108,31 @@ public enum Type {
   /**
    * The size of this type on the wire
    * @return A size
+   * @deprecated use {@link #getSize(ColumnTypeAttributes)}
    */
   public int getSize() {
+    if (this == DECIMAL) {
+      throw new IllegalStateException("Please use the newer getSize(ColumnTypeAttributes) " +
+          "to support the Decimal data type");
+    }
+    return this.size;
+  }
+
+  /**
+   * The size of this type on the wire
+   * @param typeAttributes the additional attributes of the type.
+   * @return A size
+   */
+  public int getSize(ColumnTypeAttributes typeAttributes) {
+    if (this == DECIMAL) {
+      return DecimalUtil.precisionToSize(typeAttributes.getPrecision());
+    }
     return this.size;
   }
 
   @Override
   public String toString() {
-    return "Type: " + this.name + ", size: " + this.size;
+    return "Type: " + this.name;
   }
 
   /**
@@ -92,7 +140,7 @@ public enum Type {
    * @param type pb type
    * @return size in bytes
    */
-  static int getTypeSize(DataType type) {
+  private static int getTypeSize(DataType type) {
     switch (type) {
       case STRING:
       case BINARY:
@@ -131,6 +179,10 @@ public enum Type {
       case UNIXTIME_MICROS: return UNIXTIME_MICROS;
       case FLOAT: return FLOAT;
       case DOUBLE: return DOUBLE;
+      case DECIMAL32:
+      case DECIMAL64:
+      case DECIMAL128:
+        return DECIMAL;
       default:
         throw new IllegalArgumentException("The provided data type doesn't map" +
             " to know any known one: " + type.getDescriptorForType().getFullName());

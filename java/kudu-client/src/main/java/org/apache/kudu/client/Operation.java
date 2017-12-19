@@ -303,10 +303,10 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
             indirectWrittenBytes += bbSize;
           } else {
             // This is for cols other than strings
-            rows.put(rowData, currentRowOffset, col.getType().getSize());
+            rows.put(rowData, currentRowOffset, col.getTypeSize());
           }
         }
-        currentRowOffset += col.getType().getSize();
+        currentRowOffset += col.getTypeSize();
         colIdx++;
       }
     }

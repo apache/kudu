@@ -168,7 +168,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     for (Common.ColumnSchemaPB column : message.getProjectedColumnsList()) {
       int columnIdx = table.getSchema().getColumnIndex(column.getName());
       ColumnSchema schema = table.getSchema().getColumnByIndex(columnIdx);
-      if (column.getType() != schema.getType().getDataType()) {
+      if (column.getType() != schema.getType().getDataType(schema.getTypeAttributes())) {
         throw new IllegalStateException(String.format(
             "invalid type %s for column '%s' in scan token, expected: %s",
             column.getType().name(), column.getName(), schema.getType().name()));

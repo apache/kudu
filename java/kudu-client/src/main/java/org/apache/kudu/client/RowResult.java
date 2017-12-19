@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.text.FieldPosition;
@@ -29,6 +30,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.Slice;
@@ -89,7 +91,8 @@ public class RowResult {
     // Pre-compute the columns offsets in rowData for easier lookups later.
     // If the schema has nullables, we also add the offset for the null bitmap at the end.
     for (int i = 1; i < columnOffsetsSize; i++) {
-      int previousSize = schema.getColumnByIndex(i - 1).getType().getSize();
+      org.apache.kudu.ColumnSchema column = schema.getColumnByIndex(i - 1);
+      int previousSize = column.getTypeSize();
       columnOffsets[i] = previousSize + currentOffset;
       currentOffset += previousSize;
     }
@@ -322,6 +325,36 @@ public class RowResult {
     return Bytes.getDouble(this.rowData.getRawArray(),
                            this.rowData.getRawOffset() +
                                getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's Decimal.
+   *
+   * @param columnName name of the column to get data for
+   * @return a BigDecimal
+   * @throws IllegalArgumentException if the column doesn't exist or is null
+   */
+  public BigDecimal getDecimal(String columnName) {
+    return getDecimal(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's Decimal.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a BigDecimal.
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public BigDecimal getDecimal(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    checkType(columnIndex, Type.DECIMAL);
+    ColumnSchema column = schema.getColumnByIndex(columnIndex);
+    ColumnTypeAttributes typeAttributes = column.getTypeAttributes();
+    return Bytes.getDecimal(this.rowData.getRawArray(),
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex),
+            typeAttributes.getPrecision(), typeAttributes.getScale());
   }
 
   /**
@@ -561,8 +594,13 @@ public class RowResult {
       if (i != 0) {
         buf.append(", ");
       }
-      buf.append(col.getType().name());
-      buf.append(" ").append(col.getName()).append("=");
+      Type type = col.getType();
+      buf.append(type.name());
+      buf.append(" ").append(col.getName());
+      if (col.getTypeAttributes() != null) {
+        buf.append(col.getTypeAttributes().toStringForType(type));
+      }
+      buf.append("=");
       if (isNull(i)) {
         buf.append("NULL");
       } else {
@@ -593,6 +631,9 @@ public class RowResult {
             break;
           case DOUBLE:
             buf.append(getDouble(i));
+            break;
+          case DECIMAL:
+            buf.append(getDecimal(i));
             break;
           case BOOL:
             buf.append(getBoolean(i));

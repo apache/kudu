@@ -18,7 +18,12 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
+import java.math.RoundingMode;
+
+import org.apache.kudu.util.DecimalUtil;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -27,7 +32,7 @@ public class TestBytes {
 
   @Test
   public void test() {
-    byte[] bytes = new byte[8];
+    byte[] bytes = new byte[16];
 
     // Boolean
     Bytes.setUnsignedByte(bytes, (short) 1);
@@ -94,6 +99,44 @@ public class TestBytes {
     double aDouble = 123.456;
     Bytes.setDouble(bytes, aDouble);
     assertEquals(aDouble, Bytes.getDouble(bytes), 0.001);
+
+    // DECIMAL (32 bits)
+    BigDecimal smallDecimal = new BigDecimal(BigInteger.valueOf(123456789), 0,
+        new MathContext(DecimalUtil.MAX_DECIMAL32_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, smallDecimal, DecimalUtil.MAX_DECIMAL32_PRECISION);
+    assertEquals(smallDecimal,
+        Bytes.getDecimal(bytes, 0, DecimalUtil.MAX_DECIMAL32_PRECISION, 0));
+    BigDecimal nSmallDecimal = new BigDecimal(BigInteger.valueOf(-123456789), 0,
+        new MathContext(DecimalUtil.MAX_DECIMAL32_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, nSmallDecimal, DecimalUtil.MAX_DECIMAL32_PRECISION);
+    assertEquals(nSmallDecimal,
+        Bytes.getDecimal(bytes, 0, DecimalUtil.MAX_DECIMAL32_PRECISION, 0));
+
+    // DECIMAL (64 bits)
+    BigDecimal mediumDecimal = new BigDecimal(BigInteger.valueOf(123456789L), 0,
+        new MathContext(DecimalUtil.MAX_DECIMAL64_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, mediumDecimal, DecimalUtil.MAX_DECIMAL64_PRECISION);
+    assertEquals(mediumDecimal,
+        Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL64_PRECISION, 0));
+    BigDecimal nMediumDecimal = new BigDecimal(BigInteger.valueOf(-123456789L), 0,
+        new MathContext(DecimalUtil.MAX_DECIMAL64_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, nMediumDecimal, DecimalUtil.MAX_DECIMAL64_PRECISION);
+    assertEquals(nMediumDecimal,
+        Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL64_PRECISION, 0));
+
+    // DECIMAL (128 bits)
+    BigDecimal largeDecimal =
+        new BigDecimal(new java.math.BigInteger("1234567891011121314151617181920212223"), 0,
+        new MathContext(DecimalUtil.MAX_DECIMAL128_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, largeDecimal, DecimalUtil.MAX_DECIMAL128_PRECISION);
+    assertEquals(largeDecimal,
+        Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL128_PRECISION, 0));
+    BigDecimal nLargeDecimal =
+        new BigDecimal(new java.math.BigInteger("-1234567891011121314151617181920212223"), 0,
+            new MathContext(DecimalUtil.MAX_DECIMAL128_PRECISION, RoundingMode.UNNECESSARY));
+    Bytes.setBigDecimal(bytes, nLargeDecimal, DecimalUtil.MAX_DECIMAL128_PRECISION);
+    assertEquals(nLargeDecimal,
+        Bytes.getDecimal(bytes, DecimalUtil.MAX_DECIMAL128_PRECISION, 0));
   }
 
   @Test

@@ -38,11 +38,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.LocatedTablet.Replica;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.util.DecimalUtil;
 
 public class BaseKuduTest {
 
@@ -237,7 +239,9 @@ public class BaseKuduTest {
             new ColumnSchema.ColumnSchemaBuilder("binary-array", Type.BINARY).build(),
             new ColumnSchema.ColumnSchemaBuilder("binary-bytebuffer", Type.BINARY).build(),
             new ColumnSchema.ColumnSchemaBuilder("null", Type.STRING).nullable(true).build(),
-            new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).build());
+            new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).build(),
+            new ColumnSchema.ColumnSchemaBuilder("decimal", Type.DECIMAL)
+                .typeAttributes(DecimalUtil.typeAttributes(5, 3)).build());
 
     return new Schema(columns);
   }

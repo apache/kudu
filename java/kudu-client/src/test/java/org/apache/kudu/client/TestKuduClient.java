@@ -31,6 +31,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.Closeable;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -47,9 +48,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestKuduClient extends BaseKuduTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
@@ -83,6 +86,21 @@ public class TestKuduClient extends BaseKuduTest {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS).nullable(true).build());
+    return new Schema(columns);
+  }
+
+  private Schema createSchemaWithDecimalColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.DECIMAL).key(true)
+        .typeAttributes(
+            new ColumnTypeAttributesBuilder()
+                .precision(org.apache.kudu.util.DecimalUtil.MAX_DECIMAL64_PRECISION).build()
+        ).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.DECIMAL).nullable(true)
+        .typeAttributes(
+            new ColumnTypeAttributesBuilder()
+                .precision(org.apache.kudu.util.DecimalUtil.MAX_DECIMAL128_PRECISION).build()
+        ).build());
     return new Schema(columns);
   }
 
@@ -418,6 +436,48 @@ public class TestKuduClient extends BaseKuduTest {
           timestampToString(timestamps.get(i))));
       if (i % 2 == 1) {
         expectedRow.append(timestampToString(timestamps.get(i)));
+      } else {
+        expectedRow.append("NULL");
+      }
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+  }
+
+  /**
+   * Test inserting and retrieving decimal columns.
+   */
+  @Test(timeout = 100000)
+  public void testDecimalColumns() throws Exception {
+    Schema schema = createSchemaWithDecimalColumns();
+    syncClient.createTable(tableName, schema, createTableOptions());
+
+    List<Long> timestamps = new ArrayList<>();
+
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+
+    // Verify ColumnTypeAttributes
+    assertEquals(DecimalUtil.MAX_DECIMAL128_PRECISION,
+        table.getSchema().getColumn("c1").getTypeAttributes().getPrecision());
+
+    for (int i = 0; i < 9; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addDecimal("key", BigDecimal.valueOf(i));
+      if (i % 2 == 1) {
+        row.addDecimal("c1", BigDecimal.valueOf(i));
+      }
+      session.apply(insert);
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(9, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append(String.format("DECIMAL key(18, 0)=%s, DECIMAL c1(38, 0)=", String.valueOf(i)));
+      if (i % 2 == 1) {
+        expectedRow.append(String.valueOf(i));
       } else {
         expectedRow.append("NULL");
       }

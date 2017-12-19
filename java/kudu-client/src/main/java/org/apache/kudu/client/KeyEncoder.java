@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -34,6 +36,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.util.ByteVec;
+import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.Pair;
 
 /**
@@ -41,6 +44,8 @@ import org.apache.kudu.util.Pair;
  */
 @InterfaceAudience.Private
 class KeyEncoder {
+
+  private static final BigInteger MIN_VALUE_128 = BigInteger.valueOf(-2).pow(127);
 
   /** Non-constructable utility class. */
   private KeyEncoder() {
@@ -139,13 +144,12 @@ class KeyEncoder {
                                                     column.getName()));
     }
     final Type type = column.getType();
-
     if (type == Type.STRING || type == Type.BINARY) {
       encodeBinary(row.getVarLengthData().get(columnIdx), isLast, buf);
     } else {
       encodeSignedInt(row.getRowAlloc(),
                       schema.getColumnOffset(columnIdx),
-                      type.getSize(),
+                      column.getTypeSize(),
                       buf);
     }
   }
@@ -313,7 +317,8 @@ class KeyEncoder {
    */
   private static void decodeColumn(ByteBuffer buf, PartialRow row, int idx, boolean isLast) {
     Schema schema = row.getSchema();
-    switch (schema.getColumnByIndex(idx).getType()) {
+    ColumnSchema column = schema.getColumnByIndex(idx);
+    switch (column.getType()) {
       case INT8:
         row.addByte(idx, (byte) (buf.get() ^ Byte.MIN_VALUE));
         break;
@@ -335,6 +340,29 @@ class KeyEncoder {
       case STRING: {
         byte[] binary = decodeBinaryColumn(buf, isLast);
         row.addStringUtf8(idx, binary);
+        break;
+      }
+      case DECIMAL: {
+        int scale = column.getTypeAttributes().getScale();
+        int size = column.getTypeSize();
+        switch (size) {
+          case  DecimalUtil.DECIMAL32_SIZE:
+            int intVal = buf.getInt() ^ Integer.MIN_VALUE;
+            row.addDecimal(idx, BigDecimal.valueOf(intVal, scale));
+            break;
+          case DecimalUtil.DECIMAL64_SIZE:
+            long longVal = buf.getLong() ^ Long.MIN_VALUE;
+            row.addDecimal(idx, BigDecimal.valueOf(longVal, scale));
+            break;
+          case DecimalUtil.DECIMAL128_SIZE:
+            byte[] bytes = new byte[size];
+            buf.get(bytes);
+            BigInteger bigIntVal = new BigInteger(bytes).xor(MIN_VALUE_128);
+            row.addDecimal(idx, new BigDecimal(bigIntVal, scale));
+            break;
+          default:
+            throw new IllegalArgumentException("Unsupported decimal type size: " + size);
+        }
         break;
       }
       default:

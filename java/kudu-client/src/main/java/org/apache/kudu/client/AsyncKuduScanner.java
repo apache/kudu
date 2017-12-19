@@ -303,6 +303,7 @@ public final class AsyncKuduScanner {
   private static ColumnSchema getStrippedColumnSchema(ColumnSchema columnToClone) {
     return new ColumnSchema.ColumnSchemaBuilder(columnToClone.getName(), columnToClone.getType())
         .nullable(columnToClone.isNullable())
+        .typeAttributes(columnToClone.getTypeAttributes())
         .build();
   }
 

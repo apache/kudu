@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -43,6 +44,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
 
+import org.apache.kudu.util.DecimalUtil;
 import org.apache.kudu.util.Slice;
 
 /**
@@ -56,6 +58,11 @@ public final class Bytes {
   // from http://stackoverflow.com/questions/10886962/interpret-a-negative-number-as-unsigned-with-
   // biginteger-java
   private static final BigInteger TWO_COMPL_REF = BigInteger.ONE.shiftLeft(64);
+
+  private static final BigInteger BIGINT32_MAX = BigInteger.valueOf(Integer.MAX_VALUE);
+  private static final BigInteger BIGINT32_MIN = BigInteger.valueOf(Integer.MIN_VALUE);
+  private static final BigInteger BIGINT64_MAX = BigInteger.valueOf(Long.MAX_VALUE);
+  private static final BigInteger BIGINT64_MIN = BigInteger.valueOf(Long.MIN_VALUE);
 
   private Bytes() {  // Can't instantiate.
   }
@@ -472,7 +479,7 @@ public final class Bytes {
    */
   public static BigInteger getUnsignedLong(final byte[] b, final int offset) {
     long l = getLong(b, offset);
-    BigInteger bi = new BigInteger(l + "");
+    BigInteger bi = BigInteger.valueOf(l);
     if (bi.compareTo(BigInteger.ZERO) < 0) {
       bi = bi.add(TWO_COMPL_REF);
     }
@@ -579,6 +586,89 @@ public final class Bytes {
   }
 
   /**
+   * Reads a little-endian 16-byte integer from the beginning of the given array.
+   * @param b The array to read from.
+   * @return A BigInteger.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigInteger getBigInteger(final byte[] b) {
+    return getBigInteger(b, 0);
+  }
+
+  /**
+   * Reads a little-endian 16-byte integer from an offset in the given array.
+   * @param b The array to read from.
+   * @param offset The offset in the array to start reading from.
+   * @return A BigInteger.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigInteger getBigInteger(final byte[] b, final int offset) {
+    // TODO: Support larger/smaller than 16 bytes (int128)
+    byte[] bytes = Arrays.copyOfRange(b, offset, offset + 16);
+    // BigInteger expects big-endian order.
+    reverseBytes(bytes);
+    return new BigInteger(bytes);
+  }
+
+  /**
+   * Writes a little-endian 16-byte BigInteger at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n A BigInteger.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setBigInteger(final byte[] b, final BigInteger n) {
+    setBigInteger(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 16-byte BigInteger at an offset in the given array.
+   * @param b The zeroed byte array to write to.
+   * @param n A BigInteger.
+   * @param offset The offset in the array to start writing at.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setBigInteger(final byte[] b, final BigInteger n, final int offset) {
+    byte[] bytes = n.toByteArray();
+    // TODO: Support larger/smaller than 16 bytes (int128)
+    // Guard against values that are too large.
+    if (bytes.length > 16) {
+      throw new IllegalArgumentException("Value is larger than the maximum 16 bytes: " + n);
+    }
+    // BigInteger is big-endian order.
+    reverseBytes(bytes);
+    System.arraycopy(bytes, 0, b, offset, bytes.length);
+    // If the value is negative trail with set bits.
+    if (n.compareTo(BigInteger.ZERO) < 0) {
+      Arrays.fill(b, offset + bytes.length, offset + 16, (byte) 0xff);
+    }
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian 16-byte BigInteger.
+   * @param n A BigInteger.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromBigInteger(final BigInteger n) {
+    // TODO: Support larger/smaller than 16 bytes (int128)
+    final byte[] b = new byte[16];
+    setBigInteger(b, n);
+    return b;
+  }
+
+  /**
+   * Reverses the passed byte array in place.
+   * @param b The array to reverse.
+   */
+  private static void reverseBytes(final byte[] b) {
+    // Swaps the items until the mid-point is reached.
+    for(int i = 0; i < b.length / 2; i++) {
+      byte temp = b[i];
+      b[i] = b[b.length - i - 1];
+      b[b.length - i - 1] = temp;
+    }
+  }
+
+  /**
    * Reads a little-endian 4-byte float from the beginning of the given array.
    * @param b The array to read from.
    * @return a float
@@ -682,6 +772,110 @@ public final class Bytes {
     byte[] b = new byte[8];
     setDouble(b, n);
     return b;
+  }
+
+  /**
+   * Reads a decimal from the beginning of the given array.
+   * @param b The array to read from.
+   * @param precision The precision of the decimal value.
+   * @return A BigDecimal.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigDecimal getDecimal(final byte[] b, int precision, int scale) {
+    return getDecimal(b, 0, precision, scale);
+  }
+
+  /**
+   * Reads a decimal from the beginning of the given array.
+   * @param b The array to read from.
+   * @param offset The offset in the array to start reading from.
+   * @param precision The precision of the decimal value.
+   * @return A BigDecimal.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static BigDecimal getDecimal(final byte[] b, final int offset, int precision, int scale) {
+    int size = DecimalUtil.precisionToSize(precision);
+    switch (size) {
+      case  DecimalUtil.DECIMAL32_SIZE:
+        int intVal = getInt(b, offset);
+        return BigDecimal.valueOf(intVal, scale);
+      case DecimalUtil.DECIMAL64_SIZE:
+        long longVal = getLong(b, offset);
+        return BigDecimal.valueOf(longVal, scale);
+      case DecimalUtil.DECIMAL128_SIZE:
+         BigInteger int128Val = getBigInteger(b, offset);
+        return new BigDecimal(int128Val, scale);
+      default:
+        throw new IllegalArgumentException("Unsupported decimal type size: " + size);
+    }
+  }
+
+  /**
+   * Writes a BigDecimal at the beginning of the given array.
+   *
+   * @param b The array to write to.
+   * @param n A BigDecimal.
+   * @param precision The target precision of the decimal value.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setBigDecimal(final byte[] b,  final BigDecimal n, int precision) {
+    setBigDecimal(b, n, precision, 0);
+  }
+
+  /**
+   * Writes a BigDecimal at an offset in the given array.
+   * @param b The array to write to.
+   * @param n A BigDecimal.
+   * @param precision The target precision of the decimal value.
+   * @param offset The offset in the array to start writing at.
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setBigDecimal(final byte[] b, final BigDecimal n, int precision, final int offset) {
+    int size = DecimalUtil.precisionToSize(precision);
+    BigInteger bigInt = n.unscaledValue();
+    switch (size) {
+      case  DecimalUtil.DECIMAL32_SIZE:
+        // TODO: use n.unscaledValue().intValueExact() when we drop Java7 support.
+        if (bigInt.compareTo(BIGINT32_MIN) >= 0 && bigInt.compareTo(BIGINT32_MAX) <= 0) {
+          setInt(b, bigInt.intValue(), offset);
+        } else {
+          throw new ArithmeticException("BigInteger out of int range");
+        }
+        break;
+      case DecimalUtil.DECIMAL64_SIZE:
+        // TODO: use n.unscaledValue().intValueExact() when we drop Java7 support.
+        if (bigInt.compareTo(BIGINT64_MIN) >= 0 && bigInt.compareTo(BIGINT64_MAX) <= 0) {
+          setLong(b, bigInt.longValue(), offset);
+        } else {
+          throw new ArithmeticException("BigInteger out of int range");
+        }
+        break;
+      case DecimalUtil.DECIMAL128_SIZE:
+        setBigInteger(b, bigInt, offset);
+        break;
+      default:
+        throw new IllegalArgumentException("Unsupported decimal type size: " + size);
+    }
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian BigDecimal.
+   * @param n A BigDecimal.
+   * @param precision The target precision of the decimal value.
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromBigDecimal(final BigDecimal n, int precision) {
+    int size = DecimalUtil.precisionToSize(precision);
+    switch (size) {
+      case  DecimalUtil.DECIMAL32_SIZE:
+        return fromInt(n.unscaledValue().intValue());
+      case DecimalUtil.DECIMAL64_SIZE:
+        return fromLong(n.unscaledValue().longValue());
+      case DecimalUtil.DECIMAL128_SIZE:
+        return fromBigInteger(n.unscaledValue());
+      default:
+        throw new IllegalArgumentException("Unsupported decimal type size: " + size);
+    }
   }
 
   // CHECKSTYLE:OFF

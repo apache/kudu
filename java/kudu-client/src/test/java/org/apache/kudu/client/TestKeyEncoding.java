@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -33,6 +34,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
+import org.apache.kudu.util.DecimalUtil;
 
 public class TestKeyEncoding extends BaseKuduTest {
 
@@ -164,6 +166,12 @@ public class TestKeyEncoding extends BaseKuduTest {
         new ColumnSchemaBuilder("int16", Type.INT16).key(true),
         new ColumnSchemaBuilder("int32", Type.INT32).key(true),
         new ColumnSchemaBuilder("int64", Type.INT64).key(true),
+        new ColumnSchemaBuilder("decimal32", Type.DECIMAL).key(true)
+            .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL32_PRECISION, 0)),
+        new ColumnSchemaBuilder("decimal64", Type.DECIMAL).key(true)
+            .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL64_PRECISION, 0)),
+        new ColumnSchemaBuilder("decimal128", Type.DECIMAL).key(true)
+            .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL128_PRECISION, 0)),
         new ColumnSchemaBuilder("string", Type.STRING).key(true),
         new ColumnSchemaBuilder("binary", Type.BINARY).key(true));
 
@@ -172,17 +180,26 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowA.addShort("int16", Short.MIN_VALUE);
     rowA.addInt("int32", Integer.MIN_VALUE);
     rowA.addLong("int64", Long.MIN_VALUE);
+    // Note: The decimal value is not the minimum of the underlying int32, int64, int128 type so
+    // we don't use "minimum" values in the test.
+    rowA.addDecimal("decimal32", BigDecimal.valueOf(5));
+    rowA.addDecimal("decimal64", BigDecimal.valueOf(6));
+    rowA.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowA.addString("string", "");
     rowA.addBinary("binary", "".getBytes(Charsets.UTF_8));
 
     byte[] rowAEncoded = rowA.encodePrimaryKey();
     assertBytesEquals(rowAEncoded,
-                      "\0"
-                    + "\0\0"
-                    + "\0\0\0\0"
-                    + "\0\0\0\0\0\0\0\0"
-                    + "\0\0"
-                    + "");
+                      new byte[] {
+                          0,
+                          0, 0,
+                          0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0,
+                          (byte) 0x80, 0, 0, 5,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 6,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
+                          0, 0
+                      });
     assertEquals(rowA.stringifyRowKey(),
                  KeyEncoder.decodePrimaryKey(schema, rowAEncoded).stringifyRowKey());
 
@@ -191,6 +208,11 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowB.addShort("int16", Short.MAX_VALUE);
     rowB.addInt("int32", Integer.MAX_VALUE);
     rowB.addLong("int64", Long.MAX_VALUE);
+    // Note: The decimal value is not the maximum of the underlying int32, int64, int128 type so
+    // we don't use "minimum" values in the test.
+    rowB.addDecimal("decimal32", BigDecimal.valueOf(5));
+    rowB.addDecimal("decimal64", BigDecimal.valueOf(6));
+    rowB.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowB.addString("string", "abc\1\0def");
     rowB.addBinary("binary", "\0\1binary".getBytes(Charsets.UTF_8));
 
@@ -201,6 +223,9 @@ public class TestKeyEncoding extends BaseKuduTest {
                           -1, -1,
                           -1, -1, -1, -1,
                           -1, -1, -1, -1, -1, -1, -1, -1,
+                          (byte) 0x80, 0, 0, 5,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 6,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
                           'a', 'b', 'c', 1, 0, 1, 'd', 'e', 'f', 0, 0,
                           0, 1, 'b', 'i', 'n', 'a', 'r', 'y',
                       });
@@ -212,6 +237,9 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowC.addShort("int16", (short) 2);
     rowC.addInt("int32", 3);
     rowC.addLong("int64", 4);
+    rowC.addDecimal("decimal32", BigDecimal.valueOf(5));
+    rowC.addDecimal("decimal64", BigDecimal.valueOf(6));
+    rowC.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowC.addString("string", "abc\n123");
     rowC.addBinary("binary", "\0\1\2\3\4\5".getBytes(Charsets.UTF_8));
 
@@ -222,6 +250,9 @@ public class TestKeyEncoding extends BaseKuduTest {
                           (byte) 0x80, 2,
                           (byte) 0x80, 0, 0, 3,
                           (byte) 0x80, 0, 0, 0, 0, 0, 0, 4,
+                          (byte) 0x80, 0, 0, 5,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 6,
+                          (byte) 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7,
                           'a', 'b', 'c', '\n', '1', '2', '3', 0, 0,
                           0, 1, 2, 3, 4, 5,
                       });
@@ -233,6 +264,9 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowD.addShort("int16", (short) -2);
     rowD.addInt("int32", -3);
     rowD.addLong("int64", -4);
+    rowD.addDecimal("decimal32", BigDecimal.valueOf(-5));
+    rowD.addDecimal("decimal64", BigDecimal.valueOf(-6));
+    rowD.addDecimal("decimal128", BigDecimal.valueOf(-7));
     rowD.addString("string", "\0abc\n\1\1\0 123\1\0");
     rowD.addBinary("binary", "\0\1\2\3\4\5\0".getBytes(Charsets.UTF_8));
 
@@ -243,6 +277,9 @@ public class TestKeyEncoding extends BaseKuduTest {
                           (byte) 127, -2,
                           (byte) 127, -1, -1, -3,
                           (byte) 127, -1, -1, -1, -1, -1, -1, -4,
+                          (byte) 127, -1, -1, -5,
+                          (byte) 127, -1, -1, -1, -1, -1, -1, -6,
+                          (byte) 127, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -7,
                           0, 1, 'a', 'b', 'c', '\n', 1, 1, 0, 1, ' ', '1', '2', '3', 1, 0, 1, 0, 0,
                           0, 1, 2, 3, 4, 5, 0,
                       });
@@ -325,6 +362,12 @@ public class TestKeyEncoding extends BaseKuduTest {
         new ColumnSchemaBuilder("string", Type.STRING).key(true),
         new ColumnSchemaBuilder("binary", Type.BINARY).key(true),
         new ColumnSchemaBuilder("timestamp", Type.UNIXTIME_MICROS).key(true),
+        new ColumnSchemaBuilder("decimal32", Type.DECIMAL).key(true)
+            .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL32_PRECISION, 0)),
+        new ColumnSchemaBuilder("decimal64", Type.DECIMAL).key(true)
+          .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL64_PRECISION, 0)),
+        new ColumnSchemaBuilder("decimal128", Type.DECIMAL).key(true)
+          .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL128_PRECISION, 0)),
         new ColumnSchemaBuilder("bool", Type.BOOL),       // not primary key type
         new ColumnSchemaBuilder("float", Type.FLOAT),     // not primary key type
         new ColumnSchemaBuilder("double", Type.DOUBLE));  // not primary key type
@@ -342,9 +385,12 @@ public class TestKeyEncoding extends BaseKuduTest {
     row.addString(4, "foo");
     row.addBinary(5, "bar".getBytes(Charsets.UTF_8));
     row.addLong(6, 6l);
-    row.addBoolean(7, true);
-    row.addFloat(8, 8.8f);
-    row.addDouble(9, 9.9);
+    row.addDecimal(7, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL32));
+    row.addDecimal(8, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64));
+    row.addDecimal(9, new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128));
+    row.addBoolean(10, true);
+    row.addFloat(11, 8.8f);
+    row.addDouble(12, 9.9);
     session.apply(insert);
     session.close();
 
@@ -360,9 +406,15 @@ public class TestKeyEncoding extends BaseKuduTest {
       assertBytesEquals(rr.getBinaryCopy(4), "foo");
       assertBytesEquals(rr.getBinaryCopy(5), "bar");
       assertEquals(6l, rr.getLong(6));
-      assertTrue(rr.getBoolean(7));
-      assertEquals(8.8f, rr.getFloat(8), .001f);
-      assertEquals(9.9, rr.getDouble(9), .001);
+      assertTrue(BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL32)
+          .compareTo(rr.getDecimal(7)) == 0);
+      assertTrue(BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64)
+          .compareTo(rr.getDecimal(8)) == 0);
+      assertTrue(new BigDecimal(DecimalUtil.MAX_UNSCALED_DECIMAL128)
+          .compareTo(rr.getDecimal(9)) == 0);
+      assertTrue(rr.getBoolean(10));
+      assertEquals(8.8f, rr.getFloat(11), .001f);
+      assertEquals(9.9, rr.getDouble(12), .001);
     }
   }
 }
