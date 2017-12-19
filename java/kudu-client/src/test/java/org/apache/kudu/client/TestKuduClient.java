@@ -835,11 +835,13 @@ public class TestKuduClient extends BaseKuduTest {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
       }
-      // Wait a little bit since the "channel disconnected" exceptions could come
-      // from threads that don't get synchronously joined by client.close().
-      Thread.sleep(500);
     }
-    assertFalse(cla.getAppendedText(), cla.getAppendedText().contains("Exception"));
+    // Allow "connection disconnected" exceptions, which can come from threads
+    // that don't get synchronously joined by client.close().
+    String exception_text = cla.getAppendedText();
+    assertTrue("Unexpected exception:\n" + exception_text,
+               !exception_text.contains("Exception") ||
+                   exception_text.contains("connection disconnected"));
   }
 
   @Test(timeout = 100000)
