@@ -184,7 +184,7 @@ void FlushDeltaMemStoresOp::Perform() {
                  << tablet_replica_->tablet_id();
     return;
   }
-  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushDMSWithHighestRetention(
+  KUDU_CHECK_OK_PREPEND(tablet_replica_->tablet()->FlushBestDMS(
                             max_idx_to_replay_size),
                             Substitute("Failed to flush DMS on $0",
                                        tablet_replica_->tablet()->tablet_id()));
