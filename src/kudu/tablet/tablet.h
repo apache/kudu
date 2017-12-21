@@ -278,7 +278,7 @@ class Tablet {
                                 int64_t* mem_size, int64_t* replay_size) const;
 
   // Flushes the DMS with the highest retention.
-  Status FlushDMSWithHighestRetention(const ReplaySizeMap& replay_size_map) const;
+  Status FlushBestDMS(const ReplaySizeMap &replay_size_map) const;
 
   // Flush only the biggest DMS
   Status FlushBiggestDMS();
