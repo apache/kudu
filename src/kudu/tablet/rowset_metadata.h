@@ -125,7 +125,7 @@ class RowSetMetadata {
     return !adhoc_index_block_.IsNull();
   }
 
-  BlockId column_data_block_for_col_id(ColumnId col_id) {
+  BlockId column_data_block_for_col_id(const ColumnId& col_id) const {
     std::lock_guard<LockType> l(lock_);
     return FindOrDie(blocks_by_col_id_, col_id);
   }

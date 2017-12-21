@@ -552,7 +552,7 @@ Status CFileReader::CountRows(rowid_t *count) const {
   return Status::OK();
 }
 
-bool CFileReader::GetMetadataEntry(const string &key, string *val) {
+bool CFileReader::GetMetadataEntry(const string &key, string *val) const {
   for (const FileMetadataPairPB &pair : header().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();

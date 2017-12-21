@@ -117,7 +117,7 @@ class CFileReader {
   //
   // Note that this implementation is currently O(n), so should not be used
   // in a hot path.
-  bool GetMetadataEntry(const std::string &key, std::string *val);
+  bool GetMetadataEntry(const std::string &key, std::string *val) const;
 
   // Can be called before Init().
   uint64_t file_size() const {
