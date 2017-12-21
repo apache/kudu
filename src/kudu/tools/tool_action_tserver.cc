@@ -107,31 +107,31 @@ Status ListTServers(const RunnerContext& context) {
     vector<string> values;
     if (boost::iequals(column, "uuid")) {
       for (const auto& server : servers) {
-        values.push_back(server.instance_id().permanent_uuid());
+        values.emplace_back(server.instance_id().permanent_uuid());
       }
     } else if (boost::iequals(column, "seqno")) {
       for (const auto& server : servers) {
-        values.push_back(std::to_string(server.instance_id().instance_seqno()));
+        values.emplace_back(std::to_string(server.instance_id().instance_seqno()));
       }
     } else if (boost::iequals(column, "rpc-addresses") ||
                boost::iequals(column, "rpc_addresses")) {
       for (const auto& server : servers) {
-        values.push_back(JoinMapped(server.registration().rpc_addresses(),
-                                    hostport_to_string, ","));
+        values.emplace_back(JoinMapped(server.registration().rpc_addresses(),
+                                       hostport_to_string, ","));
       }
     } else if (boost::iequals(column, "http-addresses") ||
                boost::iequals(column, "http_addresses")) {
       for (const auto& server : servers) {
-        values.push_back(JoinMapped(server.registration().http_addresses(),
-                                    hostport_to_string, ","));
+        values.emplace_back(JoinMapped(server.registration().http_addresses(),
+                                       hostport_to_string, ","));
       }
     } else if (boost::iequals(column, "version")) {
       for (const auto& server : servers) {
-        values.push_back(server.registration().software_version());
+        values.emplace_back(server.registration().software_version());
       }
     } else if (boost::iequals(column, "heartbeat")) {
       for (const auto& server : servers) {
-        values.push_back(strings::Substitute("$0ms", server.millis_since_heartbeat()));
+        values.emplace_back(strings::Substitute("$0ms", server.millis_since_heartbeat()));
       }
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);

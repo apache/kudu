@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -231,7 +232,7 @@ ActionBuilder& ActionBuilder::AddOptionalParameter(string param,
 #ifndef NDEBUG
   // Make sure this gflag exists.
   string option;
-  DCHECK(google::GetCommandLineOption(param.c_str(), &option));
+  DCHECK(google::GetCommandLineOption(param.c_str(), &option)) << "unknown option: " << param;
 #endif
   args_.optional.emplace_back(ActionArgsDescriptor::Flag({ std::move(param),
                                                            std::move(default_value),

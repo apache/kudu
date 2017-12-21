@@ -63,7 +63,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
@@ -406,7 +405,8 @@ TEST_F(ToolTest, TestModeHelp) {
         "check.*Kudu filesystem for inconsistencies",
         "dump.*Dump a Kudu filesystem",
         "format.*new Kudu filesystem",
-        "update_dirs.*Updates the set of data directories"
+        "list.*List metadata for on-disk tablets, rowsets, blocks",
+        "update_dirs.*Updates the set of data directories",
     };
     NO_FATALS(RunTestHelp("fs", kFsModeRegexes));
     NO_FATALS(RunTestHelp("fs not_a_mode", kFsModeRegexes,
@@ -1244,6 +1244,73 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
     SCOPED_TRACE(stdout);
     ASSERT_STR_MATCHES(stdout, kTestTablet);
+  }
+
+  // Test 'kudu fs list' tablet group.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+          Substitute("fs list $0 --columns=table,tablet-id --format=csv",
+                     fs_paths),
+          &stdout));
+
+    SCOPED_TRACE(stdout);
+    EXPECT_EQ(stdout, "KuduTableTest,test-tablet");
+  }
+
+  // Test 'kudu fs list' rowset group.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+          Substitute("fs list $0 --columns=table,tablet-id,rowset-id --format=csv",
+                     fs_paths),
+          &stdout));
+
+    SCOPED_TRACE(stdout);
+    EXPECT_EQ(stdout, "KuduTableTest,test-tablet,0");
+  }
+  // Test 'kudu fs list' block group.
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(
+          Substitute("fs list $0 "
+                     "--columns=table,tablet-id,rowset-id,block-kind,column "
+                     "--format=csv",
+                     fs_paths),
+          &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(5, stdout.size());
+    EXPECT_EQ(stdout[0], Substitute("KuduTableTest,$0,0,column,key", kTestTablet));
+    EXPECT_EQ(stdout[1], Substitute("KuduTableTest,$0,0,column,int_val", kTestTablet));
+    EXPECT_EQ(stdout[2], Substitute("KuduTableTest,$0,0,column,string_val", kTestTablet));
+    EXPECT_EQ(stdout[3], Substitute("KuduTableTest,$0,0,undo,", kTestTablet));
+    EXPECT_EQ(stdout[4], Substitute("KuduTableTest,$0,0,bloom,", kTestTablet));
+  }
+
+  // Test 'kudu fs list' cfile group.
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(
+          Substitute("fs list $0 "
+                     "--columns=table,tablet-id,rowset-id,block-kind,"
+                               "column,cfile-encoding,cfile-num-values "
+                     "--format=csv",
+                     fs_paths),
+          &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(5, stdout.size());
+    EXPECT_EQ(stdout[0],
+              Substitute("KuduTableTest,$0,0,column,key,BIT_SHUFFLE,10", kTestTablet));
+    EXPECT_EQ(stdout[1],
+              Substitute("KuduTableTest,$0,0,column,int_val,BIT_SHUFFLE,10", kTestTablet));
+    EXPECT_EQ(stdout[2],
+              Substitute("KuduTableTest,$0,0,column,string_val,DICT_ENCODING,10", kTestTablet));
+    EXPECT_EQ(stdout[3],
+              Substitute("KuduTableTest,$0,0,undo,,PLAIN_ENCODING,10", kTestTablet));
+    EXPECT_EQ(stdout[4],
+              Substitute("KuduTableTest,$0,0,bloom,,PLAIN_ENCODING,0", kTestTablet));
   }
 }
 

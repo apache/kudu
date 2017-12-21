@@ -180,16 +180,17 @@ inline std::string JoinStrings(const CONTAINER& components,
 // 'components'.
 template<class CONTAINER, typename FUNC>
 std::string JoinMapped(const CONTAINER& components,
-                  const FUNC& functor,
-                  const StringPiece& delim) {
+                       const FUNC& functor,
+                       const StringPiece& delim) {
   std::string result;
-  for (typename CONTAINER::const_iterator iter = components.begin();
-      iter != components.end();
-      iter++) {
-    if (iter != components.begin()) {
+  bool append_delim = false;
+  for (const auto& component : components) {
+    if (append_delim) {
       result.append(delim.data(), delim.size());
+    } else {
+      append_delim = true;
     }
-    result.append(functor(*iter));
+    result.append(functor(component));
   }
   return result;
 }
