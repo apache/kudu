@@ -86,6 +86,7 @@
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status_callback.h"
 #include "kudu/util/throttler.h"
@@ -1873,7 +1874,7 @@ void Tablet::GetInfoForBestDMSToFlush(const ReplaySizeMap& replay_size_map,
   }
 }
 
-Status Tablet::FlushDMSWithHighestRetention(const ReplaySizeMap& replay_size_map) const {
+Status Tablet::FlushBestDMS(const ReplaySizeMap &replay_size_map) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   shared_ptr<RowSet> rowset = FindBestDMSToFlush(replay_size_map);
   if (rowset) {
@@ -1887,6 +1888,13 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_m
   GetComponents(&comps);
   int64_t mem_size = 0;
   int64_t retention_size = 0;
+  double max_score = 0;
+  double mem_weight = 0;
+  // If system is under memory pressure, we use the percentage of the hard limit consumed
+  // as mem_weight, so the tighter memory, the higher weight. Otherwise just left the
+  // mem_weight to 0.
+  process_memory::UnderMemoryPressure(&mem_weight);
+
   shared_ptr<RowSet> best_dms;
   for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     if (rowset->DeltaMemStoreEmpty()) {
@@ -1894,11 +1902,14 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_m
     }
     int64_t size = GetReplaySizeForIndex(rowset->MinUnflushedLogIndex(),
                                          replay_size_map);
-    if ((size > retention_size) ||
-        (size == retention_size &&
-         (rowset->DeltaMemStoreSize() > mem_size))) {
-      mem_size = rowset->DeltaMemStoreSize();
+    int64_t mem = rowset->DeltaMemStoreSize();
+    double score = mem * mem_weight + size * (100 - mem_weight);
+
+    if ((score > max_score) ||
+        (score > max_score - 1 && mem > mem_size)) {
+      max_score = score;
       retention_size = size;
+      mem_size = mem;
       best_dms = rowset;
     }
   }
