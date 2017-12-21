@@ -239,7 +239,7 @@ static void ConfigurationHandler(const Webserver::WebRequest& /* req */,
   webserver_encryption["secure"] = !FLAGS_webserver_certificate_file.empty();
   webserver_encryption["id"] = "webserver_encryption";
   webserver_encryption["explanation"] = "Configure with --webserver_certificate_file and "
-                                        "webserver_private_key_file.";
+                                        "--webserver_private_key_file.";
 
   EasyJson webserver_redaction = security_configs.PushBack(EasyJson::kObject);
   webserver_redaction["name"] = "Webserver Redaction";
