@@ -836,12 +836,10 @@ public class TestKuduClient extends BaseKuduTest {
         localClient.exportAuthenticationCredentials();
       }
     }
-    // Allow "connection disconnected" exceptions, which can come from threads
-    // that don't get synchronously joined by client.close().
+    // Ensure there is no log spew due to an unexpected lost connection.
     String exception_text = cla.getAppendedText();
-    assertTrue("Unexpected exception:\n" + exception_text,
-               !exception_text.contains("Exception") ||
-                   exception_text.contains("connection disconnected"));
+    assertFalse("Unexpected exception:\n" + exception_text,
+               exception_text.contains("lost connection to peer"));
   }
 
   @Test(timeout = 100000)
