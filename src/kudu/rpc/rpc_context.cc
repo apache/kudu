@@ -96,18 +96,7 @@ void RpcContext::RespondNoCache() {
 }
 
 void RpcContext::RespondFailure(const Status &status) {
-  if (AreResultsTracked()) {
-    result_tracker_->FailAndRespond(call_->header().request_id(),
-                                    ErrorStatusPB::ERROR_APPLICATION, status);
-  } else {
-    VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
-        << call_->ToString() << ": " << status.ToString();
-    TRACE_EVENT_ASYNC_END2("rpc_call", "RPC", this,
-                           "status", status.ToString(),
-                           "trace", trace()->DumpToString());
-    call_->RespondFailure(ErrorStatusPB::ERROR_APPLICATION, status);
-    delete this;
-  }
+  return RespondRpcFailure(ErrorStatusPB::ERROR_APPLICATION, status);
 }
 
 void RpcContext::RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Status& status) {
