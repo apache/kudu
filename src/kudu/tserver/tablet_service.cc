@@ -53,6 +53,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
@@ -133,6 +134,7 @@ DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
              "Used for tests.");
 TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
 
@@ -1217,6 +1219,10 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
     tablet_info->set_tablet_id(replica->tablet_id());
     *tablet_info->mutable_cstate() = consensus->ConsensusState();
   }
+  const auto scheme = FLAGS_raft_prepare_replacement_before_eviction
+      ? consensus::ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+      : consensus::ReplicaManagementInfoPB::EVICT_FIRST;
+  resp->mutable_replica_management_info()->set_replacement_scheme(scheme);
 
   context->RespondSuccess();
 }

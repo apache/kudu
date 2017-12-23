@@ -232,14 +232,12 @@ TEST_F(AdminCliTest, TestChangeConfig) {
 // 4. Using the CLI, move the 3 replicas around the 5 TS.
 // 5. Profit!
 void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
-  const string kKudu1097Flag = "--raft_prepare_replacement_before_eviction=true";
-
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
 
   vector<string> ts_flags, master_flags;
   if (enable_kudu_1097) {
-    ts_flags = master_flags = { kKudu1097Flag };
+    ts_flags = master_flags = { "--raft_prepare_replacement_before_eviction=true" };
   }
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
@@ -281,20 +279,12 @@ void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
       "change_config",
       "move_replica",
     };
-    vector<string> kudu_1097_args = {
-      "--unlock_experimental_flags",
-      kKudu1097Flag,
-    };
     vector<string> tool_args = {
       cluster_->master()->bound_rpc_addr().ToString(),
       tablet_id_,
       remove,
       add,
     };
-    if (enable_kudu_1097 == kEnableKudu1097) {
-      // Only add these arguments if we running with Kudu 1097 enabled.
-      tool_command.insert(tool_command.end(), kudu_1097_args.begin(), kudu_1097_args.end());
-    }
     tool_command.insert(tool_command.end(), tool_args.begin(), tool_args.end());
 
     ASSERT_OK(RunKuduTool(tool_command));

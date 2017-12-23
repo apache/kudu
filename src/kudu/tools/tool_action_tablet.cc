@@ -28,7 +28,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -39,6 +38,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -58,28 +58,25 @@ DEFINE_int64(move_copy_timeout_sec, 600,
              "Number of seconds to wait for tablet copy to complete when relocating a tablet");
 DEFINE_int64(move_leader_timeout_sec, 30,
              "Number of seconds to wait for a leader when relocating a leader tablet");
-DECLARE_bool(raft_prepare_replacement_before_eviction);
 
-namespace kudu {
-namespace tools {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduTablet;
-using client::KuduTabletServer;
-using consensus::ADD_PEER;
-using consensus::BulkChangeConfigRequestPB;
-using consensus::ChangeConfigType;
-using consensus::ConsensusServiceProxy;
-using consensus::ConsensusStatePB;
-using consensus::GetConsensusStateRequestPB;
-using consensus::GetConsensusStateResponsePB;
-using consensus::GetLastOpIdRequestPB;
-using consensus::GetLastOpIdResponsePB;
-using consensus::MODIFY_PEER;
-using consensus::OpId;
-using consensus::RaftPeerPB;
-using rpc::RpcController;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduTablet;
+using kudu::client::KuduTabletServer;
+using kudu::consensus::ADD_PEER;
+using kudu::consensus::BulkChangeConfigRequestPB;
+using kudu::consensus::ChangeConfigType;
+using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetConsensusStateRequestPB;
+using kudu::consensus::GetConsensusStateResponsePB;
+using kudu::consensus::GetLastOpIdRequestPB;
+using kudu::consensus::GetLastOpIdResponsePB;
+using kudu::consensus::MODIFY_PEER;
+using kudu::consensus::OpId;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::rpc::RpcController;
 using std::cout;
 using std::endl;
 using std::shared_ptr;
@@ -87,6 +84,9 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
 
 namespace {
 
@@ -299,7 +299,8 @@ Status GetConsensusState(const unique_ptr<ConsensusServiceProxy>& proxy,
                          const string& tablet_id,
                          const string& replica_uuid,
                          const MonoDelta& timeout,
-                         ConsensusStatePB* consensus_state) {
+                         ConsensusStatePB* consensus_state,
+                         bool* is_3_4_3_replication = nullptr) {
   GetConsensusStateRequestPB req;
   GetConsensusStateResponsePB resp;
   RpcController controller;
@@ -314,7 +315,13 @@ Status GetConsensusState(const unique_ptr<ConsensusServiceProxy>& proxy,
     return Status::NotFound("tablet not found:", tablet_id);
   }
   DCHECK_EQ(1, resp.tablets_size());
-  *consensus_state = resp.tablets(0).cstate();
+  if (consensus_state) {
+    *consensus_state = resp.tablets(0).cstate();
+  }
+  if (is_3_4_3_replication) {
+    *is_3_4_3_replication = resp.replica_management_info().replacement_scheme() ==
+        ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION;
+  }
   return Status::OK();
 }
 
@@ -395,9 +402,28 @@ Status MoveReplica(const RunnerContext &context) {
   RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
                         "ksck pre-move health check failed");
 
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(KuduClientBuilder()
+                .master_server_addrs(master_addresses)
+                .Build(&client));
+
+  // Find this tablet's leader replica. We need its UUID and RPC address.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  // Get information on current replication scheme: the move scenario depends
+  // on the replication scheme used.
+  bool is_3_4_3_replication;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  nullptr, &is_3_4_3_replication));
+
   // The pre- KUDU-1097 way of moving a replica involves first adding a new
   // replica and then evicting the old one.
-  if (!FLAGS_raft_prepare_replacement_before_eviction) {
+  if (!is_3_4_3_replication) {
     RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
                                 RaftPeerPB::VOTER, consensus::ADD_PEER));
 
@@ -428,11 +454,6 @@ Status MoveReplica(const RunnerContext &context) {
   // adding the replacement as a non-voter with promote=true.
   // The following code implements tablet movement in that paradigm.
 
-  client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
-
   BulkChangeConfigRequestPB bulk_req;
   {
     auto* change = bulk_req.add_config_changes();
@@ -450,13 +471,6 @@ Status MoveReplica(const RunnerContext &context) {
     RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
     RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
   }
-
-  // Find this tablet's leader replica. We need its UUID and RPC address.
-  string leader_uuid;
-  HostPort leader_hp;
-  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
-  unique_ptr<ConsensusServiceProxy> proxy;
-  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
 
   BulkChangeConfigRequestPB req;
   consensus::ChangeConfigResponsePB resp;

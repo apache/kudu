@@ -23,6 +23,7 @@ import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
 import "kudu/consensus/opid.proto";
+import "kudu/consensus/replica_management.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/tablet/tablet.proto";
@@ -489,6 +490,8 @@ message GetConsensusStateResponsePB {
     optional ConsensusStatePB cstate = 2;
   }
   repeated TabletConsensusInfoPB tablets = 1;
+
+  optional ReplicaManagementInfoPB replica_management_info = 3;
 
   optional tserver.TabletServerErrorPB error = 2;
 }
