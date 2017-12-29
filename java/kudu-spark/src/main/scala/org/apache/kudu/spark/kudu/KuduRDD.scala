@@ -128,6 +128,11 @@ private class RowIterator(private val scanner: KuduScanner,
 
   override def next(): Row = {
     val rowResult = currentIterator.next()
-    Row.fromSeq(Range(0, rowResult.getColumnProjection.getColumnCount).map(get(rowResult, _)))
+    val columnCount = rowResult.getColumnProjection.getColumnCount
+    val columns = Array.ofDim[Any](columnCount)
+    for (i <- 0 until columnCount) {
+      columns(i) = get(rowResult, i)
+    }
+    Row.fromSeq(columns)
   }
 }
