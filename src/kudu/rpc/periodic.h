@@ -141,7 +141,7 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // Does nothing if the timer is already stopped.
   void Stop();
 
-  // Returns true iff the failure detected has been started.
+  // Returns true iff the timer has been started.
   bool started() const;
 
  private:
