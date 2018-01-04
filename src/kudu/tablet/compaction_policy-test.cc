@@ -200,5 +200,22 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
       << qualities;
 }
 
+// Regression test for KUDU-2251 which ensures that large (> 2GiB) rowsets don't
+// cause integer overflow in compaction planning.
+TEST_F(TestCompactionPolicy, KUDU2251) {
+  RowSetVector vec = {
+    std::make_shared<MockDiskRowSet>("C", "c", 1L << 31),
+    std::make_shared<MockDiskRowSet>("B", "a", 1L << 32),
+    std::make_shared<MockDiskRowSet>("A", "b", 1L << 33)
+  };
+
+  const int kBudgetMb = 1L << 30; // enough to select all
+  unordered_set<RowSet*> picked;
+  double quality = 0;
+  NO_FATALS(RunTestCase(vec, kBudgetMb, &picked, &quality));
+  ASSERT_EQ(3, picked.size());
+  ASSERT_GE(quality, 1.0);
+}
+
 } // namespace tablet
 } // namespace kudu
