@@ -17,10 +17,11 @@
 #ifndef KUDU_TABLET_ROWSET_INFO_H_
 #define KUDU_TABLET_ROWSET_INFO_H_
 
-#include "kudu/gutil/ref_counted.h"
-
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 namespace tablet {
@@ -43,7 +44,7 @@ class RowSetInfo {
                              std::vector<RowSetInfo>* min_key,
                              std::vector<RowSetInfo>* max_key);
 
-  int size_bytes() const { return extra_->size_bytes; }
+  uint64_t size_bytes() const { return extra_->size_bytes; }
   int size_mb() const { return size_mb_; }
 
   // Return the value of the CDF at the minimum key of this candidate.
@@ -97,8 +98,8 @@ class RowSetInfo {
   //
   // These are ref-counted so that RowSetInfo is copyable.
   struct ExtraData : public RefCounted<ExtraData> {
-    // Cached version of rowset_->OnDiskBaseDataSize().
-    int size_bytes;
+    // Cached version of rowset_->OnDiskBaseDataSizeWithRedos().
+    uint64_t size_bytes;
 
     // True if the RowSet has known bounds.
     // MemRowSets in particular do not.
