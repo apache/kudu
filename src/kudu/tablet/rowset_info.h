@@ -17,8 +17,11 @@
 #ifndef KUDU_TABLET_ROWSET_INFO_H_
 #define KUDU_TABLET_ROWSET_INFO_H_
 
+#include <cstdint>
 #include <string>
 #include <vector>
+
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 namespace tablet {
@@ -41,7 +44,7 @@ class RowSetInfo {
                              std::vector<RowSetInfo>* min_key,
                              std::vector<RowSetInfo>* max_key);
 
-  int size_bytes() const { return size_bytes_; }
+  uint64_t size_bytes() const { return size_bytes_; }
   int size_mb() const { return size_mb_; }
 
   // Return the value of the CDF at the minimum key of this candidate.
@@ -83,8 +86,8 @@ class RowSetInfo {
 
   RowSet* const rowset_;
 
-  // Cached version of rowset_->OnDiskDataSize().
-  const int size_bytes_;
+  // Cached version of rowset_->OnDiskDataSizeNoUndos().
+  const uint64_t size_bytes_;
 
   // The size in MB, already clamped so that all rowsets have size at least
   // 1MB. This is cached to avoid the branch during the selection hot path.

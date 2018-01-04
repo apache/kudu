@@ -153,7 +153,7 @@ class MockRowSet : public RowSet {
 class MockDiskRowSet : public MockRowSet {
  public:
   MockDiskRowSet(std::string first_key, std::string last_key,
-                 int size = 1000000)
+                 uint64_t size = 1000000)
       : first_key_(std::move(first_key)),
         last_key_(std::move(last_key)),
         size_(size) {}
