@@ -258,6 +258,21 @@ $ kudu fs dump uuid --fs_wal_dir=/var/lib/kudu/master 2>/dev/null
 WARNING: Without DNS aliases it is not possible to recover from permanent master failures without
 bringing the cluster down for maintenance, and as such, it is highly recommended.
 +
+. If you have Kudu tables that are accessed from Impala, you must update
+the master addresses in the Apache Hive Metastore (HMS) database.
+* If you set up the DNS aliases, run the following statement in `impala-shell`,
+replacing `master-1`, `master-2`, and `master-3` with your actual aliases.
++
+[source,sql]
+----
+ALTER TABLE table_name
+SET TBLPROPERTIES
+('kudu.master_addresses' = 'master-1,master-2,master-3');
+----
++
+* If you do not have DNS aliases set up, see Step #11 in the Performing
+the migration section for updating HMS.
++
 . Perform the following preparatory steps for each new master:
 * Choose an unused machine in the cluster. The master generates very little load so it can be
   colocated with other data services or load-generating processes, though not with another Kudu
@@ -361,6 +376,27 @@ hostname:: master's previously recorded hostname or alias
 port:: master's previously recorded RPC port number
 
 . Start all of the tablet servers.
+. If you have Kudu tables that are accessed from Impala and you didn't set up
+DNS aliases, update the HMS database manually in the underlying database that
+provides the storage for HMS.
+* The following is an example SQL statement you should run in the HMS database:
++
+[source,sql]
+----
+UPDATE TABLE_PARAMS
+SET PARAM_VALUE =
+  'master-1.example.com,master-2.example.com,master-3.example.com'
+WHERE PARAM_KEY = 'kudu.master_addresses' AND PARAM_VALUE = 'old-master';
+----
++
+* In `impala-shell`, run:
++
+[source,bash]
+----
+INVALIDATE METADATA;
+----
++
+
 
 Congratulations, the cluster has now been migrated to multiple masters! To verify that all masters
 are working properly, consider performing the following sanity checks:
