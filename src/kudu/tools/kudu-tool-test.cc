@@ -773,6 +773,25 @@ TEST_F(ToolTest, TestPbcTools) {
     ASSERT_EQ(Substitute("uuid: \"$0\"", uuid), stdout[2]);
     ASSERT_STR_MATCHES(stdout[3], "^format_stamp: \"Formatted at .*\"$");
   }
+  // Test dump --debug
+  {
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(Substitute(
+        "pbc dump $0 --debug", instance_path), &stdout));
+    SCOPED_TRACE(stdout);
+    ASSERT_EQ(12, stdout.size());
+    ASSERT_EQ("File header", stdout[0]);
+    ASSERT_EQ("-------", stdout[1]);
+    ASSERT_STR_MATCHES(stdout[2], "^Protobuf container version:");
+    ASSERT_STR_MATCHES(stdout[3], "^Total container file size:");
+    ASSERT_STR_MATCHES(stdout[4], "^Entry PB type:");
+    ASSERT_EQ("Message 0", stdout[6]);
+    ASSERT_STR_MATCHES(stdout[7], "^offset:");
+    ASSERT_STR_MATCHES(stdout[8], "^length:");
+    ASSERT_EQ("-------", stdout[9]);
+    ASSERT_EQ(Substitute("uuid: \"$0\"", uuid), stdout[10]);
+    ASSERT_STR_MATCHES(stdout[11], "^format_stamp: \"Formatted at .*\"$");
+  }
   // Test dump --oneline
   {
     string stdout;

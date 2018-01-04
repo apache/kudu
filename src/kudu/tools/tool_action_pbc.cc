@@ -58,6 +58,9 @@ TAG_FLAG(oneline, stable);
 DEFINE_bool(json, false, "print protobufs in JSON format");
 TAG_FLAG(json, stable);
 
+DEFINE_bool(debug, false, "print extra debugging information about each protobuf");
+TAG_FLAG(debug, stable);
+
 namespace kudu {
 
 using pb_util::ReadablePBContainerFile;
@@ -74,12 +77,18 @@ Status DumpPBContainerFile(const RunnerContext& context) {
     return Status::InvalidArgument("only one of --json or --oneline may be provided");
   }
 
+  if (FLAGS_debug && (FLAGS_oneline || FLAGS_json)) {
+    return Status::InvalidArgument("--debug is not compatible with --json or --oneline");
+  }
+
   const string& path = FindOrDie(context.required_args, kPathArg);
   auto format = ReadablePBContainerFile::Format::DEFAULT;
   if (FLAGS_json) {
     format = ReadablePBContainerFile::Format::JSON;
   } else if (FLAGS_oneline) {
     format = ReadablePBContainerFile::Format::ONELINE;
+  } else if (FLAGS_debug) {
+    format = ReadablePBContainerFile::Format::DEBUG;
   }
 
   Env* env = Env::Default();
@@ -220,6 +229,7 @@ unique_ptr<Mode> BuildPbcMode() {
   unique_ptr<Action> dump =
       ActionBuilder("dump", &DumpPBContainerFile)
       .Description("Dump a PBC (protobuf container) file")
+      .AddOptionalParameter("debug")
       .AddOptionalParameter("oneline")
       .AddOptionalParameter("json")
       .AddRequiredParameter({kPathArg, "path to PBC file"})

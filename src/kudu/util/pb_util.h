@@ -402,6 +402,8 @@ class ReadablePBContainerFile {
   enum class Format {
     // Print each message on multiple lines, with intervening headers.
     DEFAULT,
+    // Same as DEFAULT but includes additional metadata information.
+    DEBUG,
     // Print each message on its own line.
     ONELINE,
     // Dump in JSON.

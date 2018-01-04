@@ -940,6 +940,17 @@ Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Forma
     return Status::NotSupported("cannot dump PBC file in JSON format if redaction is enabled");
   }
 
+  const char* const kDashes = "-------";
+
+  if (format == Format::DEBUG) {
+    *os << "File header" << endl;
+    *os << kDashes << endl;
+    *os << "Protobuf container version: " << version_ << endl;
+    *os << "Total container file size: " << *cached_file_size_ << endl;
+    *os << "Entry PB type: " << pb_type_ << endl;
+    *os << endl;
+  }
+
   // Use the embedded protobuf information from the container file to
   // create the appropriate kind of protobuf Message.
   const Message* prototype;
@@ -948,6 +959,7 @@ Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Forma
 
   // Dump each message in the container file.
   int count = 0;
+  uint64_t prev_offset = offset_;
   Status s;
   string buf;
   for (s = ReadNextPB(msg.get());
@@ -958,8 +970,13 @@ Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Forma
         *os << count << "\t" << SecureShortDebugString(*msg) << endl;
         break;
       case Format::DEFAULT:
+      case Format::DEBUG:
         *os << "Message " << count << endl;
-        *os << "-------" << endl;
+        if (format == Format::DEBUG) {
+          *os << "offset: " << prev_offset << endl;
+          *os << "length: " << (offset_ - prev_offset) << endl;
+        }
+        *os << kDashes << endl;
         *os << SecureDebugString(*msg) << endl;
         break;
       case Format::JSON:
@@ -972,10 +989,18 @@ Status ReadablePBContainerFile::Dump(ostream* os, ReadablePBContainerFile::Forma
         *os << buf << endl;
         break;
     }
-    count++;
 
+    prev_offset = offset_;
+    count++;
   }
-  return s.IsEndOfFile() ? s.OK() : s;
+  if (format == Format::DEBUG && !s.IsEndOfFile()) {
+    *os << "Message " << count << endl;
+    *os << "error: failed to parse protobuf message" << endl;
+    *os << "offset: " << prev_offset << endl;
+    *os << "remaining file length: " << (*cached_file_size_ - prev_offset) << endl;
+    *os << kDashes << endl;
+  }
+  return s.IsEndOfFile() ? Status::OK() : s;
 }
 
 Status ReadablePBContainerFile::Close() {
