@@ -125,7 +125,7 @@ for PREFIX_DIR in $PREFIX_COMMON $PREFIX_DEPS $PREFIX_DEPS_TSAN; do
     # On some systems, autotools installs libraries to lib64 rather than lib.  Fix
     # this by setting up lib64 as a symlink to lib.  We have to do this step first
     # to handle cases where one third-party library depends on another.
-    ln -sf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
+    ln -nsf "$PREFIX_DIR/lib" "$PREFIX_DIR/lib64"
   fi
 done
 
