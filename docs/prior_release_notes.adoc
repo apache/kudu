@@ -91,12 +91,13 @@ for a list of known issues and limitations.
   as whether RPC authentication is required, or web server HTTPS encryption is
   enabled. Other types of configuration will be added in future releases.
 
-* The `kudu` command line tool has two new features: `kudu tablet move` and
-  `kudu local_replica data_size`. The 'tablet move' tool moves a tablet replica
-  from one tablet server to another, under the condition that the tablet is
-  healthy. An operator can use this tool to rebalance tablet replicas between
-  tablet servers. The 'local replica data size' tool summarizes the space usage
-  of a tablet, breaking it down by type of file, column, and rowset.
+* The `kudu` command line tool has two new features: `kudu tablet change_config
+  move_replica` and `kudu local_replica data_size`. The 'tablet change_config
+  move_replica' tool moves a tablet replica from one tablet server to another,
+  under the condition that the tablet is healthy. An operator can use this tool to
+  rebalance tablet replicas between tablet servers. The 'local_replica data size'
+  tool summarizes the space usage of a tablet, breaking it down by type of file,
+  column, and rowset.
 
 * kudu-client-tools now supports exporting CSV files and importing
   Apache Parquet files. This feature is unstable and may change APIs and
