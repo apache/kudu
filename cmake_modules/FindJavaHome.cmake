@@ -49,6 +49,7 @@ set(JAVA_HOME_CANDIDATES
 
     # OpenJDK 7 Candidates
     /usr/lib/jvm/java-1.7.0-openjdk
+    /usr/lib/jvm/java-7-openjdk-amd64
     /usr/lib/jvm/java-7-openjdk
 
     # Misc. Candidates
