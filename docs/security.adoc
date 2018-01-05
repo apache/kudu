@@ -99,6 +99,19 @@ planning stage, and distribute the token to tasks. This allows Spark to work
 against a secured Kudu cluster where only the planner node has Kerberos
 credentials.
 
+=== Client Authentication to Secure Kudu Clusters
+
+Users running client Kudu applications must first run the `kinit` command to
+obtain a Kerberos ticket-granting ticket. For example:
+
+[source,bash]
+----
+$ kinit admin@EXAMPLE-REALM.COM
+----
+
+Once authenticated, you use the same client code to read from and write to Kudu
+servers with and without Kerberos configuration.
+
 == Scalability
 
 Kudu authentication is designed to scale to thousands of nodes, which requires
