@@ -336,7 +336,7 @@ Status FsManager::Open(FsReport* report) {
   vector<string> created_files;
   auto deleter = MakeScopedCleanup([&]() {
     // Delete files first so that the directories will be empty when deleted.
-    for (const auto& f : created_dirs) {
+    for (const auto& f : created_files) {
       WARN_NOT_OK(env_->DeleteFile(f), "Could not delete file " + f);
     }
     // Delete directories in reverse order since parent directories will have
