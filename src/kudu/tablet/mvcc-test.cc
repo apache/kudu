@@ -740,5 +740,47 @@ TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
+// Test for a bug related to the initialization of the MvccManager without
+// any pending transactions, i.e. when there are only calls to AdvanceSafeTime().
+// Prior to the fix we would advance safe/clean time but not the
+// 'none_committed_at_or_after_' watermark, meaning the latter would become lower
+// than safe/clean time. This had the effect on compaction of culling delta files
+// even though they shouldn't be culled.
+// This test makes sure that watermarks are advanced correctly and that delta
+// files are culled correctly.
+TEST_F(MvccTest, TestCorrectInitWithNoTxns) {
+  MvccManager mgr;
+
+  MvccSnapshot snap;
+  mgr.TakeSnapshot(&snap);
+  EXPECT_EQ(snap.all_committed_before_, Timestamp::kInitialTimestamp);
+  EXPECT_EQ(snap.none_committed_at_or_after_, Timestamp::kInitialTimestamp);
+  EXPECT_EQ(snap.committed_timestamps_.size(), 0);
+
+  // Read the clock a few times to advance the timestamp
+  for (int i = 0; i < 10; i++) clock_->Now();
+
+  // Advance the safe timestamp.
+  Timestamp new_safe_time = clock_->Now();
+  mgr.AdjustSafeTime(new_safe_time);
+
+  // Test that the snapshot reports that a timestamp lower than the safe time
+  // may have be committed transaction before that timestamp.
+  // Conversely, test that the snapshot reports that a timestamp greater
+  // than the safe time (and thus greater than none_committed_at_or_after_'
+  // as there are no other transactions committed) cannot have any committed
+  // transactions after that timestamp.
+  MvccSnapshot snap2;
+  mgr.TakeSnapshot(&snap2);
+  Timestamp before_safe_time(new_safe_time.value() - 1);
+  Timestamp after_safe_time(new_safe_time.value() + 1);
+  EXPECT_TRUE(snap2.MayHaveCommittedTransactionsAtOrAfter(before_safe_time));
+  EXPECT_FALSE(snap2.MayHaveCommittedTransactionsAtOrAfter(after_safe_time));
+
+  EXPECT_EQ(snap2.all_committed_before_, new_safe_time);
+  EXPECT_EQ(snap2.none_committed_at_or_after_, new_safe_time);
+  EXPECT_EQ(snap2.committed_timestamps_.size(), 0);
+}
+
 } // namespace tablet
 } // namespace kudu

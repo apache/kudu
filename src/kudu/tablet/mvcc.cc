@@ -238,6 +238,13 @@ void MvccManager::AdjustCleanTime() {
   // Filter out any committed timestamps that now fall below the watermark
   FilterTimestamps(&cur_snap_.committed_timestamps_, cur_snap_.all_committed_before_.value());
 
+  // If the current snapshot doesn't have any committed timestamps, then make sure we still
+  // advance the 'none_committed_at_or_after_' watermark so that it never falls below
+  // 'all_committed_before_'.
+  if (cur_snap_.committed_timestamps_.empty()) {
+    cur_snap_.none_committed_at_or_after_ = cur_snap_.all_committed_before_;
+  }
+
   // it may also have unblocked some waiters.
   // Check if someone is waiting for transactions to be committed.
   if (PREDICT_FALSE(!waiters_.empty())) {

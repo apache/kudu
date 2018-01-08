@@ -116,6 +116,7 @@ class MvccSnapshot {
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);
   FRIEND_TEST(MvccTest, TestMayHaveUncommittedTransactionsBefore);
   FRIEND_TEST(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights);
+  FRIEND_TEST(MvccTest, TestCorrectInitWithNoTxns);
 
   bool IsCommittedFallback(const Timestamp& timestamp) const;
 
@@ -430,4 +431,3 @@ class ScopedTransaction {
 
 } // namespace tablet
 } // namespace kudu
-
