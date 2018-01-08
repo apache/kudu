@@ -88,6 +88,10 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
 
+DEFINE_bool(advance_safe_time_with_non_write_ops, false,
+            "Whether to advance safe time with committed non-write ops like NO_OP "
+            "or CONFIG_CHANGE. This is not totally safe until KUDU-2233 is fixed.");
+TAG_FLAG(advance_safe_time_with_non_write_ops, experimental);
 
 DECLARE_int32(group_commit_queue_size_bytes);
 
@@ -1079,11 +1083,11 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
 
 #undef RETURN_NOT_OK_REPLAY
 
-  // Non-tablet operations should not advance the safe time, because they are
-  // not started serially and so may have timestamps that are out of order.
-  if (op_type == NO_OP || op_type == CHANGE_CONFIG_OP) {
-    return Status::OK();
-  }
+   // Non-tablet operations should not advance the safe time until KUDU-2233 is fixed.
+   if (!FLAGS_advance_safe_time_with_non_write_ops &&
+       (op_type == NO_OP || op_type == CHANGE_CONFIG_OP)) {
+     return Status::OK();
+   }
 
   // Handle safe time advancement:
   //
@@ -1092,8 +1096,10 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
   // safe timestamp to this operation's timestamp.
   //
   // If the hybrid clock is disabled, all transactions will fall into this category.
+  DCHECK(replicate->has_timestamp());
   Timestamp safe_time;
-  if (replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
+  if (!replicate->write_request().has_external_consistency_mode() ||
+      replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
     safe_time = Timestamp(replicate->timestamp());
   // ... else we set the safe timestamp to be the transaction's timestamp minus the maximum clock
   // error. This opens the door for problems if the flags changed across reboots, but this is
