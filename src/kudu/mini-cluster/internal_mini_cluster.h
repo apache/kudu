@@ -144,7 +144,9 @@ class InternalMiniCluster : public MiniCluster {
   // Returns the TabletServer with uuid 'uuid', or nullptr if not found.
   tserver::MiniTabletServer* mini_tablet_server_by_uuid(const std::string& uuid) const;
 
-  int tablet_server_index_by_uuid(const std::string& uuid) const override;
+  // Return the index of the tablet server that has the given 'uuid', or
+  // -1 if no such UUID can be found.
+  int tablet_server_index_by_uuid(const std::string& uuid) const;
 
   int num_tablet_servers() const override {
     return mini_tablet_servers_.size();

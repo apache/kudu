@@ -232,7 +232,9 @@ class ExternalMiniCluster : public MiniCluster {
   // Return ExternalTabletServer given its UUID. If not found, returns NULL.
   ExternalTabletServer* tablet_server_by_uuid(const std::string& uuid) const;
 
-  int tablet_server_index_by_uuid(const std::string& uuid) const override;
+  // Return the index of the tablet server that has the given 'uuid', or
+  // -1 if no such UUID can be found.
+  int tablet_server_index_by_uuid(const std::string& uuid) const;
 
   // Return all tablet servers and masters.
   std::vector<ExternalDaemon*> daemons() const;
