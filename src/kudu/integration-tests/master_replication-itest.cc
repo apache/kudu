@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -29,6 +30,7 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -50,25 +52,26 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+DECLARE_bool(raft_prepare_replacement_before_eviction);
+
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
 using std::vector;
-
 using strings::Substitute;
 
 namespace kudu {
 namespace master {
 
 class TSDescriptor;
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduTableCreator;
-using client::sp::shared_ptr;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
 
 const char * const kTableId1 = "testMasterReplication-1";
 const char * const kTableId2 = "testMasterReplication-2";
@@ -253,6 +256,13 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
   std::shared_ptr<rpc::Messenger> messenger;
   rpc::MessengerBuilder bld("Client");
   ASSERT_OK(bld.Build(&messenger));
+
+  // Information on replica management scheme.
+  ReplicaManagementInfoPB rmi;
+  rmi.set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+      ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+      : ReplicaManagementInfoPB::EVICT_FIRST);
+
   for (int i = 0; i < cluster_->num_masters(); i++) {
     TSHeartbeatRequestPB req;
     TSHeartbeatResponsePB resp;
@@ -260,6 +270,7 @@ TEST_F(MasterReplicationTest, TestHeartbeatAcceptedByAnyMaster) {
 
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
 
     const auto& addr = cluster_->mini_master(i)->bound_rpc_addr();
     MasterServiceProxy proxy(messenger, addr, addr.host());

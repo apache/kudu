@@ -20,12 +20,13 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -45,19 +46,21 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/user.h"
 
+DECLARE_bool(raft_prepare_replacement_before_eviction);
+
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
+using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::security::ca::CertRequestGenerator;
+using kudu::security::Cert;
+using kudu::security::CertSignRequest;
+using kudu::security::DataFormat;
+using kudu::security::PrivateKey;
 using std::string;
 using std::shared_ptr;
 
+
 namespace kudu {
-
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
-using security::ca::CertRequestGenerator;
-using security::Cert;
-using security::CertSignRequest;
-using security::DataFormat;
-using security::PrivateKey;
-
 namespace master {
 
 class MasterCertAuthorityTest : public KuduTest {
@@ -71,7 +74,7 @@ class MasterCertAuthorityTest : public KuduTest {
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     cluster_.reset(new InternalMiniCluster(env_, opts_));
     ASSERT_OK(cluster_->Start());
@@ -117,6 +120,12 @@ class MasterCertAuthorityTest : public KuduTest {
     pb->set_host("localhost");
     pb->set_port(2000);
 
+    // Information on the replica management scheme.
+    ReplicaManagementInfoPB rmi;
+    rmi.set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+        ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+        : ReplicaManagementInfoPB::EVICT_FIRST);
+
     for (int i = 0; i < cluster_->num_masters(); ++i) {
       TSHeartbeatRequestPB req;
       TSHeartbeatResponsePB resp;
@@ -124,6 +133,7 @@ class MasterCertAuthorityTest : public KuduTest {
 
       req.mutable_common()->CopyFrom(common);
       req.mutable_registration()->CopyFrom(fake_reg);
+      req.mutable_replica_management_info()->CopyFrom(rmi);
 
       MiniMaster* m = cluster_->mini_master(i);
       if (!m->is_started()) {

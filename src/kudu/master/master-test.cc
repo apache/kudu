@@ -40,6 +40,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
@@ -72,6 +73,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/version_info.h"
 
+using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
@@ -89,6 +91,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
+DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 
 namespace kudu {
@@ -158,7 +161,7 @@ TEST_F(MasterTest, TestShutdownWithoutStart) {
 }
 
 TEST_F(MasterTest, TestRegisterAndHeartbeat) {
-  const char *kTsUUID = "my-ts-uuid";
+  const char* const kTsUUID = "my-ts-uuid";
 
   TSToMasterCommonPB common;
   common.mutable_ts_instance()->set_permanent_uuid(kTsUUID);
@@ -173,6 +176,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     req.mutable_common()->CopyFrom(common);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.leader_master());
     ASSERT_TRUE(resp.needs_reregister());
     ASSERT_TRUE(resp.needs_full_tablet_report());
@@ -192,14 +196,22 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
   fake_reg.set_software_version(VersionInfo::GetVersionInfo());
 
+  // Information on replica management scheme.
+  ReplicaManagementInfoPB rmi;
+  rmi.set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+      ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+      : ReplicaManagementInfoPB::EVICT_FIRST);
+
   {
     TSHeartbeatRequestPB req;
     TSHeartbeatResponsePB resp;
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -225,8 +237,10 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -242,8 +256,10 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_FALSE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -263,6 +279,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     tr->set_sequence_number(0);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_FALSE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -281,6 +298,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     tr->set_sequence_number(0);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -298,6 +316,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     tr->set_sequence_number(0);
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
+    ASSERT_FALSE(resp.has_error());
     ASSERT_TRUE(resp.leader_master());
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -316,7 +335,9 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ListTabletServersResponsePB resp;
     RpcController rpc;
     ASSERT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
+
     LOG(INFO) << SecureDebugString(resp);
+    ASSERT_FALSE(resp.has_error());
     ASSERT_EQ(1, resp.servers_size());
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
     ASSERT_EQ(1, resp.servers(0).instance_id().instance_seqno());
@@ -351,11 +372,13 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
     // This string should never match the actual VersionInfo string, although
     // the numeric portion will match.
     req.mutable_registration()->set_software_version(Substitute("kudu $0 (rev SOME_NON_GIT_HASH)",
                                                                 KUDU_VERSION_STRING));
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
   }
 
   // Ensure that trying to re-register with a different port fails.
@@ -365,12 +388,46 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
     req.mutable_registration()->mutable_rpc_addresses(0)->set_port(1001);
     Status s = proxy_->TSHeartbeat(req, &resp, &rpc);
     ASSERT_TRUE(s.IsRemoteError());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Tablet server my-ts-uuid is attempting to re-register "
                         "with a different host/port.");
+  }
+
+  // Ensure an attempt to register fails if the tablet server uses the replica
+  // management scheme which is different from the scheme that
+  // the catalog manager uses.
+  {
+    ServerRegistrationPB fake_reg;
+    MakeHostPortPB("localhost", 3000, fake_reg.add_rpc_addresses());
+    MakeHostPortPB("localhost", 4000, fake_reg.add_http_addresses());
+
+    // Set replica management scheme to something different that master uses
+    // (here, it's just inverted).
+    ReplicaManagementInfoPB rmi;
+    rmi.set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
+        ? ReplicaManagementInfoPB::EVICT_FIRST
+        : ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION);
+
+    TSHeartbeatRequestPB req;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
+
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    const Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsConfigurationError()) << s.ToString();
+    const string msg = Substitute(
+        "replica replacement scheme (.*) of the tablet server $0 "
+        "at .*:[0-9]+ differs from the catalog manager's (.*); "
+        "they must be run with the same scheme", kTsUUID);
+    ASSERT_STR_MATCHES(s.ToString(), msg);
   }
 }
 
