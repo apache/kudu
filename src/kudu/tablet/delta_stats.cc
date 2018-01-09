@@ -95,20 +95,16 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
 }
 
 string DeltaStats::ToString() const {
-  string ret = strings::Substitute(
-      "ts range=[$0, $1]",
+  return strings::Substitute(
+      "ts range=[$0, $1], delete_count=[$2], reinsert_count=[$3], update_counts_by_col_id=[$4]",
       min_timestamp_.ToString(),
-      max_timestamp_.ToString());
-  ret.append(Substitute(", delete_count=[$0]", delete_count_));
-  ret.append(Substitute(", reinsert_count=[$0]", reinsert_count_));
-  ret.append(", update_counts_by_col_id=[");
-  ret.append(JoinKeysAndValuesIterator(update_counts_by_col_id_.begin(),
-                                       update_counts_by_col_id_.end(),
-                                       ":", ","));
-  ret.append(")");
-  return ret;
+      max_timestamp_.ToString(),
+      delete_count_,
+      reinsert_count_,
+      JoinKeysAndValuesIterator(update_counts_by_col_id_.begin(),
+                                update_counts_by_col_id_.end(),
+                                ":", ","));
 }
-
 
 void DeltaStats::ToPB(DeltaStatsPB* pb) const {
   pb->Clear();
