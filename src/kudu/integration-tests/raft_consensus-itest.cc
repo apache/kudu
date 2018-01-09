@@ -2402,10 +2402,16 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
 TEST_F(RaftConsensusITest, Test_KUDU_1735) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   const vector<string> kTsFlags = {
+    // This scenario uses 'manual election' mode and assumes no leader change.
     "--enable_leader_failure_detection=false",
+    // This test is specific for the 3-2-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=false",
   };
   const vector<string> kMasterFlags = {
+    // This scenario uses 'manual election' mode and assumes no leader change.
     "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+    // This test is specific for the 3-2-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=false",
   };
 
   NO_FATALS(BuildAndStart(kTsFlags, kMasterFlags));
